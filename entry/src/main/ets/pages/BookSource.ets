@@ -49,6 +49,7 @@ struct BookSourcePage {
   @State sourceExplorePageFilter: string = 'all';
   @State sourceExploreEnabledFilter: string = 'all';
   @State sourceLoginFilter: string = 'all';
+  @State sourceValidationFilter: string = 'all';
   @State showAddDialog: boolean = false;
   @State showImportUrlDialog: boolean = false;
   @State selectionMode: boolean = false;
@@ -378,12 +379,18 @@ struct BookSourcePage {
                     .width('100%')
                     .alignItems(VerticalAlign.Center)
 
-                    Text(source.bookSourceUrl)
-                      .fontSize(12)
-                      .fontColor(this.subTextColor())
-                      .margin({ top: 4 })
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Row({ space: 7 }) {
+                      this.sourceValidationStatusBadge(source.validationStatus)
+                      Text(source.bookSourceUrl)
+                        .fontSize(12)
+                        .fontColor(this.subTextColor())
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .layoutWeight(1)
+                    }
+                    .width('100%')
+                    .margin({ top: 4 })
+                    .alignItems(VerticalAlign.Center)
 
                   }
                   .layoutWeight(1)
@@ -1186,6 +1193,7 @@ struct BookSourcePage {
         .alignItems(VerticalAlign.Center)
 
         this.sourceFilterRow('书源状态', 'enabled', '已启用', '未启用')
+        this.sourceValidationFilterRow()
         this.sourceFilterRow('发现页面', 'explorePage', '有发现页', '无发现页')
         this.sourceFilterRow('发现状态', 'exploreEnabled', '已启用', '未启用')
         this.sourceFilterRow('登录要求', 'login', '需要登录', '无需登录')
@@ -1237,6 +1245,25 @@ struct BookSourcePage {
         this.sourceFilterChoice(filterKey, 'all', '不限')
         this.sourceFilterChoice(filterKey, 'yes', yesLabel)
         this.sourceFilterChoice(filterKey, 'no', noLabel)
+      }
+      .layoutWeight(1)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  sourceValidationFilterRow() {
+    Row({ space: 10 }) {
+      Text('校验状态')
+        .fontSize(14)
+        .fontColor(this.primaryTextColor())
+        .width(66)
+      Row({ space: 6 }) {
+        this.sourceFilterChoice('validation', 'all', '不限')
+        this.sourceFilterChoice('validation', 'unchecked', '未校验')
+        this.sourceFilterChoice('validation', 'passed', '校验通过')
+        this.sourceFilterChoice('validation', 'failed', '校验不通过')
       }
       .layoutWeight(1)
     }
@@ -1480,6 +1507,31 @@ struct BookSourcePage {
       .borderRadius(12)
       .margin({ left: 6 })
       .accessibilityText(accessibilityLabel)
+  }
+
+  @Builder
+  sourceValidationStatusBadge(validationStatus: number) {
+    Text(this.sourceValidationStatusLabel(validationStatus))
+      .fontSize(10)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(this.sourceValidationStatusColor(validationStatus))
+      .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+      .backgroundColor(this.inputColor())
+      .borderRadius(4)
+      .maxLines(1)
+      .accessibilityText(this.sourceValidationStatusLabel(validationStatus))
+  }
+
+  sourceValidationStatusLabel(validationStatus: number): string {
+    if (validationStatus === BookSource.VALIDATION_PASSED) return '校验通过';
+    if (validationStatus === BookSource.VALIDATION_FAILED) return '校验不通过';
+    return '未校验';
+  }
+
+  sourceValidationStatusColor(validationStatus: number): string {
+    if (validationStatus === BookSource.VALIDATION_PASSED) return '#1E8E3E';
+    if (validationStatus === BookSource.VALIDATION_FAILED) return '#C62828';
+    return this.subTextColor();
   }
 
   @Builder
@@ -2532,11 +2584,18 @@ struct BookSourcePage {
       case 'explorePage': return this.sourceExplorePageFilter;
       case 'exploreEnabled': return this.sourceExploreEnabledFilter;
       case 'login': return this.sourceLoginFilter;
+      case 'validation': return this.sourceValidationFilter;
       default: return 'all';
     }
   }
 
   setSourceFilterValue(filterKey: string, value: string): void {
+    if (filterKey === 'validation') {
+      this.sourceValidationFilter =
+        value === 'unchecked' || value === 'passed' || value === 'failed' ? value : 'all';
+      this.applySourceFilters();
+      return;
+    }
     const normalized = value === 'yes' || value === 'no' ? value : 'all';
     switch (filterKey) {
       case 'enabled': this.sourceEnabledFilter = normalized; break;
@@ -2553,6 +2612,7 @@ struct BookSourcePage {
     this.sourceExplorePageFilter = 'all';
     this.sourceExploreEnabledFilter = 'all';
     this.sourceLoginFilter = 'all';
+    this.sourceValidationFilter = 'all';
     this.applySourceFilters();
   }
 
@@ -2562,6 +2622,7 @@ struct BookSourcePage {
     if (this.sourceExplorePageFilter !== 'all') count++;
     if (this.sourceExploreEnabledFilter !== 'all') count++;
     if (this.sourceLoginFilter !== 'all') count++;
+    if (this.sourceValidationFilter !== 'all') count++;
     return count;
   }
 
@@ -2602,6 +2663,12 @@ struct BookSourcePage {
     if (this.sourceLoginFilter !== 'all') {
       const expected = this.sourceLoginFilter === 'yes';
       filtered = filtered.filter((source: BookSource) => this.sourceNeedsLogin(source) === expected);
+    }
+    if (this.sourceValidationFilter !== 'all') {
+      const expected = this.sourceValidationFilter === 'passed' ? BookSource.VALIDATION_PASSED :
+        (this.sourceValidationFilter === 'failed' ? BookSource.VALIDATION_FAILED :
+          BookSource.VALIDATION_UNCHECKED);
+      filtered = filtered.filter((source: BookSource) => source.validationStatus === expected);
     }
     if (keyword) {
       filtered = filtered.filter((source: BookSource) => {
@@ -3048,7 +3115,7 @@ struct BookSourcePage {
   sourceListItemKey(source: BookSource): string {
     const loginStatus = this.sourceNeedsLogin(source) ? (this.sourceLoggedIn(source) ? 'logged' : 'unlogged') : 'none';
     const positionStatus = `${source.isPinned ? 'pinned' : 'normal'}_${this.isSourceAtBottom(source) ? 'bottom' : 'middle'}`;
-    return `${source.bookSourceUrl}_${source.bookSourceGroup || ''}_${source.enabled ? '1' : '0'}_${source.enabledExplore ? '1' : '0'}_${source.isLocked ? 'locked' : 'unlocked'}_${source.bookSourceName || ''}_${loginStatus}_${positionStatus}_${this.selectionMode ? 'select' : 'normal'}`;
+    return `${source.bookSourceUrl}_${source.bookSourceGroup || ''}_${source.enabled ? '1' : '0'}_${source.enabledExplore ? '1' : '0'}_${source.isLocked ? 'locked' : 'unlocked'}_${source.validationStatus}_${source.bookSourceName || ''}_${loginStatus}_${positionStatus}_${this.selectionMode ? 'select' : 'normal'}`;
   }
 
   isSourceSelected(bookSourceUrl: string): boolean {
@@ -3412,6 +3479,15 @@ struct BookSourcePage {
   }
 
   async handleCheckedSourceCompletion(source: BookSource, available: boolean): Promise<void> {
+    source.validationStatus = available ? BookSource.VALIDATION_PASSED : BookSource.VALIDATION_FAILED;
+    try {
+      await AppDatabase.getInstance().updateBookSourceValidationStatus(
+        source.bookSourceUrl, source.validationStatus);
+    } catch (e) {
+      console.error('保存书源校验状态失败:', source.bookSourceName, e);
+    }
+    this.applyCheckedSourceValidationStatus(source.bookSourceUrl, source.validationStatus);
+
     if (available) {
       this.checkOkCount++;
       return;
@@ -3446,6 +3522,25 @@ struct BookSourcePage {
     } catch (e) {
       console.error(`自动${this.checkInvalidAction === 'delete' ? '删除' : '禁用'}无效书源失败:`, e);
     }
+  }
+
+  applyCheckedSourceValidationStatus(bookSourceUrl: string, validationStatus: number): void {
+    this.allSources = this.allSources.map((item: BookSource) => {
+      if (item.bookSourceUrl === bookSourceUrl) item.validationStatus = validationStatus;
+      return item;
+    });
+    if (this.sourceValidationFilter !== 'all') {
+      this.applySourceFilters();
+      return;
+    }
+    this.sources = this.sources.map((item: BookSource) => {
+      if (item.bookSourceUrl === bookSourceUrl) item.validationStatus = validationStatus;
+      return item;
+    });
+    this.visibleSources = this.visibleSources.map((item: BookSource) => {
+      if (item.bookSourceUrl === bookSourceUrl) item.validationStatus = validationStatus;
+      return item;
+    });
   }
 
   checkSummaryText(): string {

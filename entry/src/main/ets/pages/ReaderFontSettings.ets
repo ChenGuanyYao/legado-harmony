@@ -14,6 +14,8 @@ import {
   ReaderResolvedRegexEmphasis
 } from '../model/reader/ReaderRegexFontRule';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
+import { ThemeAccessPolicy } from '../account/ThemeAccessPolicy';
 
 class ReaderCustomFontItem {
   familyName: string = '';
@@ -31,6 +33,16 @@ class ReaderRegexPreviewSlice {
   key: string = '';
 }
 
+class ReaderBubbleStyleOption {
+  styleId: string = '';
+  label: string = '';
+
+  constructor(styleId: string, label: string) {
+    this.styleId = styleId;
+    this.label = label;
+  }
+}
+
 @Entry
 @Component
 struct ReaderFontSettingsPage {
@@ -38,6 +50,7 @@ struct ReaderFontSettingsPage {
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
   @StorageLink('themeRevision') themeRevision: number = 0;
+  @StorageLink('accountEntitlementsRevision') accountEntitlementsRevision: number = 0;
   @State readerFontSize: number = 20;
   @State readerBodyFontMode: string = 'global';
   @State readerBodyFontFamily: string = '';
@@ -1034,6 +1047,58 @@ struct ReaderFontSettingsPage {
     return TextDecorationStyle.SOLID;
   }
 
+  shouldUseRegexPreviewDecoration(slice: ReaderRegexPreviewSlice, index: number): boolean {
+    if (!slice.highlighted) {
+      return false;
+    }
+    const style = this.resolvedRegexEmphasis(index);
+    return style.bubbleDecorationEnabled && ThemeAssetRegistry.hasRegexBubbleCap(style.bubbleStyleId);
+  }
+
+  regexPreviewBubbleStyleId(index: number): string {
+    return this.resolvedRegexEmphasis(index).bubbleStyleId;
+  }
+
+  regexPreviewBubbleCapSize(index: number): number {
+    return Math.max(15, Math.min(22, this.regexRuleAt(index).fontSize * 0.72));
+  }
+
+  @Builder
+  regexPreviewSliceItem(slice: ReaderRegexPreviewSlice, index: number) {
+    if (this.shouldUseRegexPreviewDecoration(slice, index)) {
+      ContainerSpan() {
+        ImageSpan(ThemeAssetRegistry.regexBubbleCap(this.regexPreviewBubbleStyleId(index)))
+          .width(this.regexPreviewBubbleCapSize(index))
+          .height(this.regexPreviewBubbleCapSize(index))
+          .objectFit(ImageFit.Contain)
+          .verticalAlign(ImageSpanAlignment.CENTER)
+        Span(slice.text)
+          .fontSize(this.regexRuleAt(index).fontSize)
+          .fontFamily(this.previewFontFamily(this.regexRuleAt(index).fontMode, this.regexRuleAt(index).fontFamily))
+          .fontColor(this.regexPreviewTextColor(true, index))
+          .textShadow(this.regexPreviewTextShadow(true, index))
+          .decoration(this.regexPreviewDecoration(true, index))
+        ImageSpan(ThemeAssetRegistry.regexBubbleCap(this.regexPreviewBubbleStyleId(index)))
+          .width(this.regexPreviewBubbleCapSize(index))
+          .height(this.regexPreviewBubbleCapSize(index))
+          .objectFit(ImageFit.Contain)
+          .verticalAlign(ImageSpanAlignment.CENTER)
+          .rotate({ angle: 180 })
+      }
+      .textBackgroundStyle(this.regexPreviewBackgroundStyle(true, index))
+    } else {
+      Span(slice.text)
+        .fontSize(slice.highlighted ? this.regexRuleAt(index).fontSize : this.readerFontSize)
+        .fontFamily(slice.highlighted ?
+          this.previewFontFamily(this.regexRuleAt(index).fontMode, this.regexRuleAt(index).fontFamily) :
+          this.previewFontFamily(this.readerBodyFontMode, this.readerBodyFontFamily))
+        .fontColor(this.regexPreviewTextColor(slice.highlighted, index))
+        .textBackgroundStyle(this.regexPreviewBackgroundStyle(slice.highlighted, index))
+        .textShadow(this.regexPreviewTextShadow(slice.highlighted, index))
+        .decoration(this.regexPreviewDecoration(slice.highlighted, index))
+    }
+  }
+
   @Builder
   regexRulePreviewItem(index: number, refreshKey: number) {
     Column({ space: 6 }) {
@@ -1043,14 +1108,7 @@ struct ReaderFontSettingsPage {
         .width('100%')
       Text() {
         ForEach(this.regexPreviewSlices(index, refreshKey), (slice: ReaderRegexPreviewSlice) => {
-          Span(slice.text)
-            .fontSize(slice.highlighted ? this.regexRuleAt(index).fontSize : this.readerFontSize)
-            .fontFamily(slice.highlighted ? this.previewFontFamily(this.regexRuleAt(index).fontMode, this.regexRuleAt(index).fontFamily) :
-              this.previewFontFamily(this.readerBodyFontMode, this.readerBodyFontFamily))
-            .fontColor(this.regexPreviewTextColor(slice.highlighted, index))
-            .textBackgroundStyle(this.regexPreviewBackgroundStyle(slice.highlighted, index))
-            .textShadow(this.regexPreviewTextShadow(slice.highlighted, index))
-            .decoration(this.regexPreviewDecoration(slice.highlighted, index))
+          this.regexPreviewSliceItem(slice, index)
         }, (slice: ReaderRegexPreviewSlice) => slice.key)
       }
       .width('100%')
@@ -1095,82 +1153,56 @@ struct ReaderFontSettingsPage {
   }
 
   bubbleStyleOptions(): SelectOption[] {
-    return [
-      { value: '跟随主题' },
-      { value: '柔和' },
-      { value: '实色' },
-      { value: '圆角胶囊' },
-      { value: '纸笺' },
-      { value: '霓虹' },
-      { value: '经典玻璃' },
-      { value: '暖纸卷轴' },
-      { value: '林间露珠' },
-      { value: '水墨笔触' },
-      { value: '霓虹脉冲' },
-      { value: '草莓软框' },
-      { value: '赤墨印章' },
-      { value: '青瓷纸笺' },
-      { value: '玫瑰信框' },
-      { value: '月光描边' }
+    const options: SelectOption[] = [];
+    for (const item of this.accessibleBubbleStyleOptions()) {
+      options.push({ value: item.label });
+    }
+    return options;
+  }
+
+  accessibleBubbleStyleOptions(): ReaderBubbleStyleOption[] {
+    const options: ReaderBubbleStyleOption[] = [
+      new ReaderBubbleStyleOption('inherit', '跟随主题'),
+      new ReaderBubbleStyleOption('qq-soft', '柔和'),
+      new ReaderBubbleStyleOption('qq-solid', '实色'),
+      new ReaderBubbleStyleOption('capsule', '圆角胶囊'),
+      new ReaderBubbleStyleOption('paper', '纸笺'),
+      new ReaderBubbleStyleOption('neon', '霓虹')
     ];
+    const revision = this.accountEntitlementsRevision;
+    this.appendAccessibleBubbleStyle(options, 'classic-glass', '经典玻璃', revision);
+    this.appendAccessibleBubbleStyle(options, 'warm-scroll', '暖纸卷轴', revision);
+    this.appendAccessibleBubbleStyle(options, 'forest-dew', '林间露珠', revision);
+    this.appendAccessibleBubbleStyle(options, 'ink-brush', '水墨笔触', revision);
+    this.appendAccessibleBubbleStyle(options, 'neon-pulse', '霓虹脉冲', revision);
+    this.appendAccessibleBubbleStyle(options, 'strawberry-ribbon', '草莓软框', revision);
+    this.appendAccessibleBubbleStyle(options, 'crimson-stamp', '赤墨印章', revision);
+    this.appendAccessibleBubbleStyle(options, 'celadon-slip', '青瓷纸笺', revision);
+    this.appendAccessibleBubbleStyle(options, 'rose-frame', '玫瑰信框', revision);
+    this.appendAccessibleBubbleStyle(options, 'moon-halo', '月光描边', revision);
+    return options;
+  }
+
+  appendAccessibleBubbleStyle(options: ReaderBubbleStyleOption[], styleId: string, label: string,
+    revision: number): void {
+    if (ThemeAccessPolicy.canUseBubbleStyle(styleId) || revision < 0) {
+      options.push(new ReaderBubbleStyleOption(styleId, label));
+    }
   }
 
   bubbleStyleIndex(styleId: string): number {
-    if (styleId === 'qq-soft') {
-      return 1;
+    const options = this.accessibleBubbleStyleOptions();
+    for (let index = 0; index < options.length; index++) {
+      if (options[index].styleId === styleId) {
+        return index;
+      }
     }
-    if (styleId === 'qq-solid') {
-      return 2;
-    }
-    if (styleId === 'capsule') {
-      return 3;
-    }
-    if (styleId === 'paper') {
-      return 4;
-    }
-    if (styleId === 'neon') {
-      return 5;
-    }
-    if (styleId === 'classic-glass') return 6;
-    if (styleId === 'warm-scroll') return 7;
-    if (styleId === 'forest-dew') return 8;
-    if (styleId === 'ink-brush') return 9;
-    if (styleId === 'neon-pulse') return 10;
-    if (styleId === 'strawberry-ribbon') return 11;
-    if (styleId === 'crimson-stamp') return 12;
-    if (styleId === 'celadon-slip') return 13;
-    if (styleId === 'rose-frame') return 14;
-    if (styleId === 'moon-halo') return 15;
     return 0;
   }
 
   bubbleStyleByIndex(index: number): string {
-    if (index === 1) {
-      return 'qq-soft';
-    }
-    if (index === 2) {
-      return 'qq-solid';
-    }
-    if (index === 3) {
-      return 'capsule';
-    }
-    if (index === 4) {
-      return 'paper';
-    }
-    if (index === 5) {
-      return 'neon';
-    }
-    if (index === 6) return 'classic-glass';
-    if (index === 7) return 'warm-scroll';
-    if (index === 8) return 'forest-dew';
-    if (index === 9) return 'ink-brush';
-    if (index === 10) return 'neon-pulse';
-    if (index === 11) return 'strawberry-ribbon';
-    if (index === 12) return 'crimson-stamp';
-    if (index === 13) return 'celadon-slip';
-    if (index === 14) return 'rose-frame';
-    if (index === 15) return 'moon-halo';
-    return 'inherit';
+    const options = this.accessibleBubbleStyleOptions();
+    return index >= 0 && index < options.length ? options[index].styleId : 'inherit';
   }
 
   bubbleStyleLabel(styleId: string): string {
@@ -1291,8 +1323,9 @@ struct ReaderFontSettingsPage {
               .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
               .menuBackgroundBlurStyle(BlurStyle.BACKGROUND_THIN)
               .onSelect((selectedIndex: number) => {
+                const selectedStyleId = this.bubbleStyleByIndex(selectedIndex);
                 this.updateRegexRule(index, (target: ReaderRegexFontRule) => {
-                  target.bubbleStyleId = this.bubbleStyleByIndex(selectedIndex);
+                  target.bubbleStyleId = selectedStyleId;
                 });
               })
           }

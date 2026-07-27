@@ -14,6 +14,7 @@ import { ReaderFontBootstrap } from '../utils/ReaderFontBootstrap';
 import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
 import { TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AccountSessionStore } from '../account/AccountSessionStore';
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
 
@@ -33,6 +34,7 @@ export default class EntryAbility extends UIAbility {
     AppStorage.setOrCreate('pendingLocalBookImportNonce', 0);
     AppStorage.setOrCreate('pendingLocalBookImportFormat', '');
     AppStorage.setOrCreate('pendingLocalBookImportName', '');
+    AccountSessionStore.initializeStorage();
     hilog.info(0x0000, 'testTag', 'StartupTrace onCreate %{public}d', Date.now());
     PersistentStorage.persistProp('appThemeMode', 'system');
     AppThemeModeStore.load(this.context).then((mode: string) => {
@@ -148,6 +150,9 @@ export default class EntryAbility extends UIAbility {
     }).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Sync tts settings failed: %{public}s', JSON.stringify(e));
     });
+    AccountSessionStore.load(this.context).catch((e: Error) => {
+      hilog.warn(0x0000, 'testTag', 'Load account session failed: %{public}s', JSON.stringify(e));
+    });
     this.themeBootstrapPromise = AppThemeSettingsStore.load(this.context).then((settings) => {
       AppThemeSettingsStore.applyToStorage(settings);
       return GlassSettingsStore.load(this.context);
@@ -244,15 +249,37 @@ export default class EntryAbility extends UIAbility {
     if (normalizedMode === 'dark') {
       AppStorage.setOrCreate('appDarkMode', true);
       this.setApplicationColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+      this.refreshModeDependentTheme(true);
       return;
     }
     if (normalizedMode === 'light') {
       AppStorage.setOrCreate('appDarkMode', false);
       this.setApplicationColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
+      this.refreshModeDependentTheme(false);
       return;
     }
     this.setApplicationColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
-    AppStorage.setOrCreate('appDarkMode', config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+    const darkMode = config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
+    AppStorage.setOrCreate('appDarkMode', darkMode);
+    this.refreshModeDependentTheme(darkMode);
+  }
+
+  private refreshModeDependentTheme(darkMode: boolean): void {
+    AppThemeSettingsStore.reapplyCustomForMode(darkMode);
+    try {
+      this.context.getApplicationContext().setFont(ThemeRuntime.fontFamily());
+    } catch (e) {
+      hilog.warn(0x0000, 'testTag', 'Apply mode-dependent theme font failed: %{public}s', JSON.stringify(e));
+    }
+    if (ThemeRuntime.currentThemeId() === 'custom') {
+      const layout = ThemeRuntime.readerLayout(darkMode);
+      ReaderSettingsStore.saveLayoutSettings(this.context, layout.fontSize, layout.lineHeight,
+        layout.paragraphSpacing, layout.marginLeft, layout.marginRight, layout.marginTop, layout.marginBottom)
+        .catch((e: Error) => {
+          hilog.warn(0x0000, 'testTag', 'Apply mode-dependent reader layout failed: %{public}s',
+            JSON.stringify(e));
+        });
+    }
   }
 
   private setApplicationColorMode(colorMode: number): void {

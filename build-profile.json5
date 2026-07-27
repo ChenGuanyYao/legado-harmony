@@ -7,31 +7,44 @@
         "material": {
           "certpath": "C:\\Users\\apart\\.ohos\\config\\default_legado-harmony_PApShW1orkn7C3OskTgaa_gvU1tdKIoK6G30oro8DA0=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001AB4D5D3003BE85972C76B405FFF8B6DDF4CCAC67C15D60E74572A2A130B3AA621CA20057BE1CD",
+          "keyPassword": "0000001ABDDB6CC5A45EC04C5DFEBB0E2531FF63D49DB1E790B2ECB86C9F5AC78B439D65AF13DBAC6F79",
           "profile": "C:\\Users\\apart\\.ohos\\config\\default_legado-harmony_PApShW1orkn7C3OskTgaa_gvU1tdKIoK6G30oro8DA0=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "C:\\Users\\apart\\.ohos\\config\\default_legado-harmony_PApShW1orkn7C3OskTgaa_gvU1tdKIoK6G30oro8DA0=.p12",
-          "storePassword": "0000001A143B9A4FBC4E44626953BF6D875DCAB4124382B03D384ED673F9C654391B30A9FCA042B7C059"
+          "storePassword": "0000001A9785C8AC111DFA21991E2704F601734C3B1F174D541B4D9AAACA5B26654345A0E2DFA89A1510"
         }
       },
       {
         "name": "release",
         "type": "HarmonyOS",
         "material": {
-          "storeFile": "C:\\harmony-key\\legado-harmony-release.p12",
-          "storePassword": "00000030CA2521DAC58D30FEE544A29B158D52CBD7F6D78EDCF1820A3F239230B32C60D0A14E2AC22610BF6AFAADB08D8A7B47EC5A2FA22F758DDAAE35F068EE",
+          "storeFile": "C:/harmony-key/legado-harmony-release.p12",
+          "storePassword": "00000030D16814188CF57D3D566D59C1BEAE1F91B1C3548218E4CF8B24C860B9E30523A929BC65698C09727DF2C1E298B11DC1B69FC93B5122569CE371C60DEA",
           "keyAlias": "legadoharmonyreleasekey",
-          "keyPassword": "00000030E296F0FD84CB18AC4AFA2117D456848E3E669EAB1A006DDFCFF4946FCB8F94A5919FDA86B2D247DD5FA7D14476853B06F84B2DB53E8C01AB6FFD936A",
+          "keyPassword": "00000030D9D84877BC8FEC20969484C9B669B4B60288A25F9311DE28C326BBCABC1165036A403F83D304DAC97CCAE237937C540320E708D465D196696576CA95",
           "signAlg": "SHA256withECDSA",
-          "profile": "C:\\harmony-key\\publicRelease.p7b",
-          "certpath": "C:\\harmony-key\\publicRelease-leaf-first.cer"
+          "profile": "C:/harmony-key/public2Release.p7b",
+          "certpath": "C:/harmony-key/publicRelease-leaf-first.cer"
+        }
+      },
+      {
+        "name": "accountDebug",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\apart\\.ohos\\config\\accountDebug_legado-harmony_PApShW1orkn7C3OskTgaa_gvU1tdKIoK6G30oro8DA0=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B2F55E05D7367BCCC19BA9FE2C7ADA8112223245C85DDFFE549EEB2A74F4AE5A2223E1246F95269",
+          "profile": "C:\\Users\\apart\\.ohos\\config\\accountDebug_legado-harmony_PApShW1orkn7C3OskTgaa_gvU1tdKIoK6G30oro8DA0=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\apart\\.ohos\\config\\accountDebug_legado-harmony_PApShW1orkn7C3OskTgaa_gvU1tdKIoK6G30oro8DA0=.p12",
+          "storePassword": "0000001B06838078B45429E4128FDD490504F9D0136F8CAD385145C42802CA7475480B2A85E797550DB29C"
         }
       }
     ],
     "products": [
       {
         "name": "default",
-        "signingConfig": "default",
+        "signingConfig": "accountDebug",
         "compatibleSdkVersion": "5.0.0(12)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
@@ -62,6 +75,12 @@
       },
       {
         "name": "release"
+      }
+    ],
+    "capabilities": [
+      {
+        "bundleName": "io.legado.read",
+        "config": []
       }
     ]
   },

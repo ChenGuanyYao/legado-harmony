@@ -1,7 +1,7 @@
 import { Context } from '@kit.AbilityKit';
 import preferences from '@ohos.data.preferences';
 import { BuiltinThemeRegistry } from '../theme/BuiltinThemeRegistry';
-import { ThemeIds, ThemePack } from '../theme/ThemeModels';
+import { ThemeComponentSourceIds, ThemeIds, ThemePack } from '../theme/ThemeModels';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ReaderSettings, ReaderSettingsStore } from './ReaderSettingsStore';
 import { ReaderThemeHelper, ReaderThemeItem } from './ReaderThemeHelper';
@@ -14,6 +14,8 @@ export class AppThemeSettings {
   lightButtonColor: string = AppThemeSettingsStore.DEFAULT_LIGHT_BUTTON_COLOR;
   darkButtonColor: string = AppThemeSettingsStore.DEFAULT_DARK_BUTTON_COLOR;
   customBaseThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
+  customLightSources: ThemeComponentSourceIds = new ThemeComponentSourceIds();
+  customDarkSources: ThemeComponentSourceIds = new ThemeComponentSourceIds();
   customLightAccentColor: string = AppThemeSettingsStore.DEFAULT_LIGHT_ACCENT_COLOR;
   customDarkAccentColor: string = AppThemeSettingsStore.DEFAULT_DARK_ACCENT_COLOR;
   customLightButtonColor: string = AppThemeSettingsStore.DEFAULT_LIGHT_BUTTON_COLOR;
@@ -40,6 +42,8 @@ export class AppThemeSettingsStore {
   static readonly KEY_LIGHT_BUTTON_COLOR: string = 'appLightButtonColor';
   static readonly KEY_DARK_BUTTON_COLOR: string = 'appDarkButtonColor';
   static readonly KEY_CUSTOM_BASE_THEME_ID: string = ThemeRuntime.KEY_CUSTOM_BASE_THEME_ID;
+  static readonly KEY_CUSTOM_LIGHT_SOURCES: string = ThemeRuntime.KEY_CUSTOM_LIGHT_SOURCES;
+  static readonly KEY_CUSTOM_DARK_SOURCES: string = ThemeRuntime.KEY_CUSTOM_DARK_SOURCES;
   static readonly KEY_CUSTOM_LIGHT_ACCENT_COLOR: string = 'appCustomLightAccentColor';
   static readonly KEY_CUSTOM_DARK_ACCENT_COLOR: string = 'appCustomDarkAccentColor';
   static readonly KEY_CUSTOM_LIGHT_BUTTON_COLOR: string = 'appCustomLightButtonColor';
@@ -81,6 +85,14 @@ export class AppThemeSettingsStore {
     settings.customBaseThemeId = BuiltinThemeRegistry.normalizeBuiltinId(await AppThemeSettingsStore.getString(
       store, AppThemeSettingsStore.KEY_CUSTOM_BASE_THEME_ID,
       AppStorage.get<string>(AppThemeSettingsStore.KEY_CUSTOM_BASE_THEME_ID) || customBaseFallback));
+    settings.customLightSources = AppThemeSettingsStore.parseSources(await AppThemeSettingsStore.getString(
+      store, AppThemeSettingsStore.KEY_CUSTOM_LIGHT_SOURCES,
+      AppStorage.get<string>(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_SOURCES) || ''),
+    settings.customBaseThemeId);
+    settings.customDarkSources = AppThemeSettingsStore.parseSources(await AppThemeSettingsStore.getString(
+      store, AppThemeSettingsStore.KEY_CUSTOM_DARK_SOURCES,
+      AppStorage.get<string>(AppThemeSettingsStore.KEY_CUSTOM_DARK_SOURCES) || ''),
+    settings.customBaseThemeId);
     const defaults = AppThemeSettingsStore.defaultsForTheme(
       settings.themeId === ThemeIds.CUSTOM ? settings.customBaseThemeId : settings.themeId);
     settings.lightAccentColor = AppThemeSettingsStore.normalizeColor(await AppThemeSettingsStore.getString(
@@ -141,6 +153,10 @@ export class AppThemeSettingsStore {
     await store.put(AppThemeSettingsStore.KEY_LIGHT_BUTTON_COLOR, normalized.lightButtonColor);
     await store.put(AppThemeSettingsStore.KEY_DARK_BUTTON_COLOR, normalized.darkButtonColor);
     await store.put(AppThemeSettingsStore.KEY_CUSTOM_BASE_THEME_ID, normalized.customBaseThemeId);
+    await store.put(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_SOURCES,
+      JSON.stringify(normalized.customLightSources));
+    await store.put(AppThemeSettingsStore.KEY_CUSTOM_DARK_SOURCES,
+      JSON.stringify(normalized.customDarkSources));
     await store.put(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_ACCENT_COLOR, normalized.customLightAccentColor);
     await store.put(AppThemeSettingsStore.KEY_CUSTOM_DARK_ACCENT_COLOR, normalized.customDarkAccentColor);
     await store.put(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_BUTTON_COLOR, normalized.customLightButtonColor);
@@ -174,12 +190,16 @@ export class AppThemeSettingsStore {
     const normalized = AppThemeSettingsStore.clone(settings);
     AppThemeSettingsStore.cachedSettings = AppThemeSettingsStore.clone(normalized);
     const theme = normalized.themeId === ThemeIds.CUSTOM ?
-      BuiltinThemeRegistry.customTheme(normalized.customBaseThemeId) :
+      AppThemeSettingsStore.customTheme(normalized, AppStorage.get<boolean>('appDarkMode') || false) :
       BuiltinThemeRegistry.findById(normalized.themeId);
     if (normalized.themeId === ThemeIds.CUSTOM) {
       AppThemeSettingsStore.applyCustomAppearance(theme, normalized);
     }
     AppStorage.setOrCreate(ThemeRuntime.KEY_CUSTOM_BASE_THEME_ID, normalized.customBaseThemeId);
+    AppStorage.setOrCreate(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_SOURCES,
+      JSON.stringify(normalized.customLightSources));
+    AppStorage.setOrCreate(AppThemeSettingsStore.KEY_CUSTOM_DARK_SOURCES,
+      JSON.stringify(normalized.customDarkSources));
     ThemeRuntime.applyPack(
       theme,
       normalized.lightAccentColor,
@@ -195,6 +215,10 @@ export class AppThemeSettingsStore {
     AppStorage.setOrCreate(AppThemeSettingsStore.KEY_LIGHT_BUTTON_COLOR, normalized.lightButtonColor);
     AppStorage.setOrCreate(AppThemeSettingsStore.KEY_DARK_BUTTON_COLOR, normalized.darkButtonColor);
     AppStorage.setOrCreate(AppThemeSettingsStore.KEY_CUSTOM_BASE_THEME_ID, normalized.customBaseThemeId);
+    AppStorage.setOrCreate(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_SOURCES,
+      JSON.stringify(normalized.customLightSources));
+    AppStorage.setOrCreate(AppThemeSettingsStore.KEY_CUSTOM_DARK_SOURCES,
+      JSON.stringify(normalized.customDarkSources));
     AppStorage.setOrCreate(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_ACCENT_COLOR, normalized.customLightAccentColor);
     AppStorage.setOrCreate(AppThemeSettingsStore.KEY_CUSTOM_DARK_ACCENT_COLOR, normalized.customDarkAccentColor);
     AppStorage.setOrCreate(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_BUTTON_COLOR, normalized.customLightButtonColor);
@@ -247,6 +271,8 @@ export class AppThemeSettingsStore {
       normalizedThemeId === ThemeIds.CUSTOM ? BuiltinThemeRegistry.DEFAULT_THEME_ID : normalizedThemeId);
     settings.themeId = normalizedThemeId;
     settings.customBaseThemeId = BuiltinThemeRegistry.normalizeBuiltinId(normalizedThemeId);
+    settings.customLightSources = AppThemeSettingsStore.sourcesForTheme(settings.customBaseThemeId);
+    settings.customDarkSources = AppThemeSettingsStore.sourcesForTheme(settings.customBaseThemeId);
     settings.customLightAccentColor = settings.lightAccentColor;
     settings.customDarkAccentColor = settings.darkAccentColor;
     settings.customLightButtonColor = settings.lightButtonColor;
@@ -270,11 +296,68 @@ export class AppThemeSettingsStore {
     return AppThemeSettingsStore.clone(settings);
   }
 
+  static customTheme(settings: AppThemeSettings, darkMode: boolean): ThemePack {
+    const normalized = AppThemeSettingsStore.clone(settings);
+    const light = normalized.customLightSources;
+    const dark = normalized.customDarkSources;
+    const theme = BuiltinThemeRegistry.customTheme(normalized.customBaseThemeId);
+    theme.light.colors = BuiltinThemeRegistry.findById(light.paletteThemeId).light.colors;
+    theme.light.reader = BuiltinThemeRegistry.findById(light.readerThemeId).light.reader;
+    theme.light.regexEmphasis = BuiltinThemeRegistry.findById(light.bubbleThemeId).light.regexEmphasis;
+    theme.dark.colors = BuiltinThemeRegistry.findById(dark.paletteThemeId).dark.colors;
+    theme.dark.reader = BuiltinThemeRegistry.findById(dark.readerThemeId).dark.reader;
+    theme.dark.regexEmphasis = BuiltinThemeRegistry.findById(dark.bubbleThemeId).dark.regexEmphasis;
+    const active = darkMode ? dark : light;
+    const typographyTheme = BuiltinThemeRegistry.findById(active.typographyThemeId);
+    const navigationTheme = BuiltinThemeRegistry.findById(active.navigationThemeId);
+    const bookTheme = BuiltinThemeRegistry.findById(active.bookThemeId);
+    const layoutTheme = BuiltinThemeRegistry.findById(active.layoutThemeId);
+    const radiusTheme = BuiltinThemeRegistry.findById(active.radiusThemeId);
+    const glassTheme = BuiltinThemeRegistry.findById(active.glassThemeId);
+    theme.typography = typographyTheme.typography;
+    theme.navigation = navigationTheme.navigation;
+    theme.book = bookTheme.book;
+    theme.readerLayout = layoutTheme.readerLayout;
+    theme.radius = radiusTheme.radius;
+    theme.glass = glassTheme.glass;
+    AppThemeSettingsStore.applyCustomAppearance(theme, normalized);
+    theme.light.colors.accentColor = normalized.customLightAccentColor;
+    theme.light.colors.buttonColor = normalized.customLightButtonColor;
+    theme.dark.colors.accentColor = normalized.customDarkAccentColor;
+    theme.dark.colors.buttonColor = normalized.customDarkButtonColor;
+    return theme;
+  }
+
+  static currentCustomTheme(darkMode: boolean): ThemePack {
+    if (AppThemeSettingsStore.cachedSettings) {
+      return AppThemeSettingsStore.customTheme(AppThemeSettingsStore.cachedSettings, darkMode);
+    }
+    const settings = AppThemeSettingsStore.createForTheme(ThemeIds.CUSTOM);
+    settings.customBaseThemeId = BuiltinThemeRegistry.normalizeBuiltinId(
+      AppStorage.get<string>(AppThemeSettingsStore.KEY_CUSTOM_BASE_THEME_ID) || settings.customBaseThemeId);
+    settings.customLightSources = AppThemeSettingsStore.parseSources(
+      AppStorage.get<string>(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_SOURCES) || '', settings.customBaseThemeId);
+    settings.customDarkSources = AppThemeSettingsStore.parseSources(
+      AppStorage.get<string>(AppThemeSettingsStore.KEY_CUSTOM_DARK_SOURCES) || '', settings.customBaseThemeId);
+    return AppThemeSettingsStore.customTheme(settings, darkMode);
+  }
+
+  static reapplyCustomForMode(darkMode: boolean): void {
+    if (!AppThemeSettingsStore.cachedSettings ||
+      AppThemeSettingsStore.cachedSettings.themeId !== ThemeIds.CUSTOM) {
+      return;
+    }
+    AppThemeSettingsStore.applyToStorage(AppThemeSettingsStore.cachedSettings);
+  }
+
   private static defaultsForTheme(themeId: string): AppThemeSettings {
     const normalizedThemeId = BuiltinThemeRegistry.normalizeBuiltinId(themeId);
     const theme: ThemePack = BuiltinThemeRegistry.findById(normalizedThemeId);
     const settings = new AppThemeSettings();
     settings.themeId = normalizedThemeId;
+    settings.customBaseThemeId = normalizedThemeId;
+    settings.customLightSources = AppThemeSettingsStore.sourcesForTheme(normalizedThemeId);
+    settings.customDarkSources = AppThemeSettingsStore.sourcesForTheme(normalizedThemeId);
     settings.lightAccentColor = AppThemeSettingsStore.normalizeColor(
       theme.light.colors.accentColor, AppThemeSettingsStore.DEFAULT_LIGHT_ACCENT_COLOR);
     settings.darkAccentColor = AppThemeSettingsStore.normalizeColor(
@@ -313,6 +396,54 @@ export class AppThemeSettingsStore {
     return fallback;
   }
 
+  static sourcesForTheme(themeId: string): ThemeComponentSourceIds {
+    const normalized = BuiltinThemeRegistry.normalizeBuiltinId(themeId);
+    const sources = new ThemeComponentSourceIds();
+    sources.paletteThemeId = normalized;
+    sources.readerThemeId = normalized;
+    sources.bubbleThemeId = normalized;
+    sources.navigationThemeId = normalized;
+    sources.bookThemeId = normalized;
+    sources.typographyThemeId = normalized;
+    sources.layoutThemeId = normalized;
+    sources.radiusThemeId = normalized;
+    sources.glassThemeId = normalized;
+    return sources;
+  }
+
+  static cloneSources(source: ThemeComponentSourceIds, fallbackThemeId: string): ThemeComponentSourceIds {
+    return AppThemeSettingsStore.normalizeSources(source, fallbackThemeId);
+  }
+
+  private static parseSources(raw: string, fallbackThemeId: string): ThemeComponentSourceIds {
+    if (!raw) {
+      return AppThemeSettingsStore.sourcesForTheme(fallbackThemeId);
+    }
+    try {
+      return AppThemeSettingsStore.normalizeSources(JSON.parse(raw) as ThemeComponentSourceIds, fallbackThemeId);
+    } catch (_) {
+      return AppThemeSettingsStore.sourcesForTheme(fallbackThemeId);
+    }
+  }
+
+  private static normalizeSources(
+    source: ThemeComponentSourceIds | null | undefined,
+    fallbackThemeId: string
+  ): ThemeComponentSourceIds {
+    const fallback = BuiltinThemeRegistry.normalizeBuiltinId(fallbackThemeId);
+    const normalized = new ThemeComponentSourceIds();
+    normalized.paletteThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source?.paletteThemeId || fallback);
+    normalized.readerThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source?.readerThemeId || fallback);
+    normalized.bubbleThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source?.bubbleThemeId || fallback);
+    normalized.navigationThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source?.navigationThemeId || fallback);
+    normalized.bookThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source?.bookThemeId || fallback);
+    normalized.typographyThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source?.typographyThemeId || fallback);
+    normalized.layoutThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source?.layoutThemeId || fallback);
+    normalized.radiusThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source?.radiusThemeId || fallback);
+    normalized.glassThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source?.glassThemeId || fallback);
+    return normalized;
+  }
+
   private static async getString(
     store: preferences.Preferences,
     key: string,
@@ -338,6 +469,10 @@ export class AppThemeSettingsStore {
     settings.themeId = AppThemeSettingsStore.normalizeThemeId(source.themeId || currentThemeId);
     settings.themeBookCoverEnabled = source.themeBookCoverEnabled === true;
     settings.customBaseThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.customBaseThemeId);
+    settings.customLightSources = AppThemeSettingsStore.normalizeSources(
+      source.customLightSources, settings.customBaseThemeId);
+    settings.customDarkSources = AppThemeSettingsStore.normalizeSources(
+      source.customDarkSources, settings.customBaseThemeId);
     const defaults = AppThemeSettingsStore.defaultsForTheme(settings.themeId === ThemeIds.CUSTOM ?
       settings.customBaseThemeId : settings.themeId);
     settings.lightAccentColor = AppThemeSettingsStore.normalizeColor(
@@ -382,6 +517,10 @@ export class AppThemeSettingsStore {
 
   private static copyCustom(source: AppThemeSettings, target: AppThemeSettings): void {
     target.customBaseThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.customBaseThemeId);
+    target.customLightSources = AppThemeSettingsStore.normalizeSources(
+      source.customLightSources, target.customBaseThemeId);
+    target.customDarkSources = AppThemeSettingsStore.normalizeSources(
+      source.customDarkSources, target.customBaseThemeId);
     target.customLightAccentColor = source.customLightAccentColor;
     target.customDarkAccentColor = source.customDarkAccentColor;
     target.customLightButtonColor = source.customLightButtonColor;
@@ -477,6 +616,10 @@ export class AppThemeSettingsStore {
     settings: AppThemeSettings
   ): Promise<void> {
     await store.put(AppThemeSettingsStore.KEY_CUSTOM_BASE_THEME_ID, settings.customBaseThemeId);
+    await store.put(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_SOURCES,
+      JSON.stringify(settings.customLightSources));
+    await store.put(AppThemeSettingsStore.KEY_CUSTOM_DARK_SOURCES,
+      JSON.stringify(settings.customDarkSources));
     await store.put(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_ACCENT_COLOR, settings.customLightAccentColor);
     await store.put(AppThemeSettingsStore.KEY_CUSTOM_DARK_ACCENT_COLOR, settings.customDarkAccentColor);
     await store.put(AppThemeSettingsStore.KEY_CUSTOM_LIGHT_BUTTON_COLOR, settings.customLightButtonColor);

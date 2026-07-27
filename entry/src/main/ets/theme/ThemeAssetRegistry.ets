@@ -100,6 +100,8 @@ export class ThemeAssetRegistry {
     switch ((themeId || '').trim().toLowerCase()) {
       case ThemeIds.CUSTOM:
         return $r('app.media.theme_logo_custom');
+      case ThemeIds.PLAIN_DEFAULT:
+        return $r('app.media.theme_logo_plain_default');
       case ThemeIds.WARM_PAPER:
         return $r('app.media.theme_logo_warm_paper');
       case ThemeIds.FOREST_MIST:
@@ -124,11 +126,13 @@ export class ThemeAssetRegistry {
   }
 
   static themeBookCover(assetId: string): ResourceStr {
-    return ThemeAssetRegistry.themeBookCovers(assetId)[0];
+    const covers = ThemeAssetRegistry.themeBookCovers(assetId);
+    return covers.length > 0 ? covers[0] : '';
   }
 
   static themeBookCovers(assetId: string): ResourceStr[] {
     switch ((assetId || '').trim().toLowerCase()) {
+      case '': return [];
       case ThemeIds.WARM_PAPER: return [$r('app.media.theme_cover_warm_paper')];
       case ThemeIds.FOREST_MIST: return [$r('app.media.theme_cover_forest_mist')];
       case ThemeIds.INK_WASH: return [$r('app.media.theme_cover_ink_wash')];
@@ -164,6 +168,7 @@ export class ThemeAssetRegistry {
 
   static themeShelfFrame(assetId: string): ResourceStr {
     switch ((assetId || '').trim().toLowerCase()) {
+      case '': return '';
       case ThemeIds.WARM_PAPER: return $r('app.media.theme_frame_warm_paper');
       case ThemeIds.FOREST_MIST: return $r('app.media.theme_frame_forest_mist');
       case ThemeIds.INK_WASH: return $r('app.media.theme_frame_ink_wash');
@@ -179,6 +184,7 @@ export class ThemeAssetRegistry {
 
   static themeShelfFolder(assetId: string): ResourceStr {
     switch ((assetId || '').trim().toLowerCase()) {
+      case '': return '';
       case ThemeIds.WARM_PAPER: return $r('app.media.theme_folder_art_warm_paper');
       case ThemeIds.FOREST_MIST: return $r('app.media.theme_folder_art_forest_mist');
       case ThemeIds.INK_WASH: return $r('app.media.theme_folder_art_ink_wash');

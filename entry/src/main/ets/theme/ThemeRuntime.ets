@@ -1,10 +1,13 @@
 import { BuiltinThemeRegistry } from './BuiltinThemeRegistry';
 import {
   ThemeBubbleStyles,
+  ThemeBookTokens,
+  ThemeComponentSourceIds,
   ThemeGlassSurfaceTokens,
   ThemeGlassTokens,
   ThemeIds,
   ThemePack,
+  ThemeReaderLayoutTokens,
   ThemeRegexEmphasisModes,
   ThemeVariant
 } from './ThemeModels';
@@ -34,6 +37,8 @@ export class ThemeRuntime {
   static readonly KEY_FONT_FAMILY: string = 'themeFontFamily';
   static readonly KEY_ICON_PACK_ID: string = 'themeIconPackId';
   static readonly KEY_CUSTOM_BASE_THEME_ID: string = 'appCustomBaseThemeId';
+  static readonly KEY_CUSTOM_LIGHT_SOURCES: string = 'appCustomLightThemeSources';
+  static readonly KEY_CUSTOM_DARK_SOURCES: string = 'appCustomDarkThemeSources';
 
   static readonly KEY_LIGHT_PAGE_COLOR: string = 'themeLightPageColor';
   static readonly KEY_DARK_PAGE_COLOR: string = 'themeDarkPageColor';
@@ -308,6 +313,9 @@ export class ThemeRuntime {
   }
 
   private static currentGlass(): ThemeGlassTokens {
+    if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
+      return ThemeRuntime.customSourceTheme('glass').glass || new ThemeGlassTokens();
+    }
     return ThemeRuntime.currentPack().glass || new ThemeGlassTokens();
   }
 
@@ -347,13 +355,33 @@ export class ThemeRuntime {
   }
 
   static fontFamily(): string {
+    if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
+      return ThemeRuntime.customSourceTheme('typography').typography.appFontFamily || 'sans-serif';
+    }
     const fallback = ThemeRuntime.currentPack().typography.appFontFamily || 'sans-serif';
     return ThemeRuntime.storageString(ThemeRuntime.KEY_FONT_FAMILY, fallback);
   }
 
   static iconPackId(): string {
+    if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
+      return ThemeRuntime.customSourceTheme('navigation').navigation.iconPackId || 'classic';
+    }
     const fallback = ThemeRuntime.currentPack().navigation.iconPackId || 'classic';
     return ThemeRuntime.storageString(ThemeRuntime.KEY_ICON_PACK_ID, fallback);
+  }
+
+  static bookTokens(darkMode: boolean = AppStorage.get<boolean>('appDarkMode') || false): ThemeBookTokens {
+    if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
+      return ThemeRuntime.customSourceTheme('book', darkMode).book;
+    }
+    return ThemeRuntime.currentPack().book;
+  }
+
+  static readerLayout(darkMode: boolean = AppStorage.get<boolean>('appDarkMode') || false): ThemeReaderLayoutTokens {
+    if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
+      return ThemeRuntime.customSourceTheme('layout', darkMode).readerLayout;
+    }
+    return ThemeRuntime.currentPack().readerLayout;
   }
 
   static readerBackgroundColor(darkMode: boolean): string {
@@ -433,26 +461,44 @@ export class ThemeRuntime {
   }
 
   static smallRadius(): number {
+    if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
+      return ThemeRuntime.customSourceTheme('radius').radius.small;
+    }
     return ThemeRuntime.radiusFromStorage(ThemeRuntime.KEY_RADIUS_SMALL, ThemeRuntime.currentPack().radius.small);
   }
 
   static mediumRadius(): number {
+    if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
+      return ThemeRuntime.customSourceTheme('radius').radius.medium;
+    }
     return ThemeRuntime.radiusFromStorage(ThemeRuntime.KEY_RADIUS_MEDIUM, ThemeRuntime.currentPack().radius.medium);
   }
 
   static largeRadius(): number {
+    if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
+      return ThemeRuntime.customSourceTheme('radius').radius.large;
+    }
     return ThemeRuntime.radiusFromStorage(ThemeRuntime.KEY_RADIUS_LARGE, ThemeRuntime.currentPack().radius.large);
   }
 
   static cardRadius(): number {
+    if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
+      return ThemeRuntime.customSourceTheme('radius').radius.card;
+    }
     return ThemeRuntime.radiusFromStorage(ThemeRuntime.KEY_RADIUS_CARD, ThemeRuntime.currentPack().radius.card);
   }
 
   static buttonRadius(): number {
+    if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
+      return ThemeRuntime.customSourceTheme('radius').radius.button;
+    }
     return ThemeRuntime.radiusFromStorage(ThemeRuntime.KEY_RADIUS_BUTTON, ThemeRuntime.currentPack().radius.button);
   }
 
   static bubbleRadius(): number {
+    if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
+      return ThemeRuntime.customSourceTheme('radius').radius.bubble;
+    }
     return ThemeRuntime.radiusFromStorage(ThemeRuntime.KEY_RADIUS_BUBBLE, ThemeRuntime.currentPack().radius.bubble);
   }
 
@@ -546,6 +592,51 @@ export class ThemeRuntime {
       return BuiltinThemeRegistry.customTheme(baseThemeId);
     }
     return BuiltinThemeRegistry.findById(themeId);
+  }
+
+  private static customSourceTheme(
+    category: string,
+    darkMode: boolean = AppStorage.get<boolean>('appDarkMode') || false
+  ): ThemePack {
+    const fallback = AppStorage.get<string>(ThemeRuntime.KEY_CUSTOM_BASE_THEME_ID) ||
+      BuiltinThemeRegistry.DEFAULT_THEME_ID;
+    const sources = ThemeRuntime.customSources(darkMode, fallback);
+    let themeId = fallback;
+    if (category === 'palette') themeId = sources.paletteThemeId;
+    else if (category === 'reader') themeId = sources.readerThemeId;
+    else if (category === 'bubble') themeId = sources.bubbleThemeId;
+    else if (category === 'navigation') themeId = sources.navigationThemeId;
+    else if (category === 'book') themeId = sources.bookThemeId;
+    else if (category === 'typography') themeId = sources.typographyThemeId;
+    else if (category === 'layout') themeId = sources.layoutThemeId;
+    else if (category === 'radius') themeId = sources.radiusThemeId;
+    else if (category === 'glass') themeId = sources.glassThemeId;
+    return BuiltinThemeRegistry.findById(themeId);
+  }
+
+  private static customSources(darkMode: boolean, fallbackThemeId: string): ThemeComponentSourceIds {
+    const fallback = BuiltinThemeRegistry.normalizeBuiltinId(fallbackThemeId);
+    const raw = AppStorage.get<string>(darkMode ? ThemeRuntime.KEY_CUSTOM_DARK_SOURCES :
+      ThemeRuntime.KEY_CUSTOM_LIGHT_SOURCES) || '';
+    let source = new ThemeComponentSourceIds();
+    if (raw) {
+      try {
+        source = JSON.parse(raw) as ThemeComponentSourceIds;
+      } catch (_) {
+        source = new ThemeComponentSourceIds();
+      }
+    }
+    const normalized = new ThemeComponentSourceIds();
+    normalized.paletteThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.paletteThemeId || fallback);
+    normalized.readerThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.readerThemeId || fallback);
+    normalized.bubbleThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.bubbleThemeId || fallback);
+    normalized.navigationThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.navigationThemeId || fallback);
+    normalized.bookThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.bookThemeId || fallback);
+    normalized.typographyThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.typographyThemeId || fallback);
+    normalized.layoutThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.layoutThemeId || fallback);
+    normalized.radiusThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.radiusThemeId || fallback);
+    normalized.glassThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.glassThemeId || fallback);
+    return normalized;
   }
 
   private static fallbackVariant(darkMode: boolean): ThemeVariant {

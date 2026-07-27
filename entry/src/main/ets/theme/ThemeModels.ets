@@ -1,5 +1,6 @@
 export class ThemeIds {
   static readonly CUSTOM: string = 'custom';
+  static readonly PLAIN_DEFAULT: string = 'plain-default';
   static readonly CLASSIC_BLUE: string = 'classic-blue';
   static readonly WARM_PAPER: string = 'warm-paper';
   static readonly FOREST_MIST: string = 'forest-mist';
@@ -10,6 +11,18 @@ export class ThemeIds {
   static readonly PLUM_TEA: string = 'plum-tea';
   static readonly ROSE_LETTER: string = 'rose-letter';
   static readonly MOON_CRANE: string = 'moon-crane';
+}
+
+export class ThemeComponentSourceIds {
+  paletteThemeId: string = ThemeIds.CLASSIC_BLUE;
+  readerThemeId: string = ThemeIds.CLASSIC_BLUE;
+  bubbleThemeId: string = ThemeIds.CLASSIC_BLUE;
+  navigationThemeId: string = ThemeIds.CLASSIC_BLUE;
+  bookThemeId: string = ThemeIds.CLASSIC_BLUE;
+  typographyThemeId: string = ThemeIds.CLASSIC_BLUE;
+  layoutThemeId: string = ThemeIds.CLASSIC_BLUE;
+  radiusThemeId: string = ThemeIds.CLASSIC_BLUE;
+  glassThemeId: string = ThemeIds.CLASSIC_BLUE;
 }
 
 export class ThemeRegexEmphasisModes {

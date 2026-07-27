@@ -68,6 +68,11 @@ export class BuiltinThemeRegistry {
     return false;
   }
 
+  static isFree(themeId: string): boolean {
+    const normalized = (themeId || '').trim();
+    return normalized === ThemeIds.PLAIN_DEFAULT || normalized === BuiltinThemeRegistry.DEFAULT_THEME_ID;
+  }
+
   static normalizeBuiltinId(themeId: string): string {
     const normalized = (themeId || '').trim();
     for (const theme of BuiltinThemeRegistry.THEMES) {
@@ -82,7 +87,7 @@ export class BuiltinThemeRegistry {
     const theme = BuiltinThemeRegistry.findById(BuiltinThemeRegistry.normalizeBuiltinId(baseThemeId));
     theme.id = ThemeIds.CUSTOM;
     theme.name = '自定义主题';
-    theme.description = '保留你的配色与阅读背景';
+    theme.description = '按浅色与深色模式自由组合已拥有主题';
     return theme;
   }
 
@@ -115,6 +120,7 @@ export class BuiltinThemeRegistry {
 
   private static createThemes(): ThemePack[] {
     const themes: ThemePack[] = [];
+    themes.push(BuiltinThemeRegistry.plainDefault());
     themes.push(BuiltinThemeRegistry.strawberryCream());
     themes.push(BuiltinThemeRegistry.crimsonArchive());
     themes.push(BuiltinThemeRegistry.plumTea());
@@ -126,6 +132,35 @@ export class BuiltinThemeRegistry {
     themes.push(BuiltinThemeRegistry.inkWash());
     themes.push(BuiltinThemeRegistry.neonNight());
     return themes;
+  }
+
+  private static plainDefault(): ThemePack {
+    const theme = BuiltinThemeRegistry.theme(
+      ThemeIds.PLAIN_DEFAULT,
+      '默认主题',
+      '无纹理、低装饰、清晰耐看的基础主题',
+      'sans-serif',
+      'classic'
+    );
+    theme.light = BuiltinThemeRegistry.variant(
+      BuiltinThemeRegistry.colors('#F7F7F7', '#FFFFFF', '#F0F0F0', '#202124', '#73777F', '#E2E2E2',
+        '#5B6573', '#505967', '#C93F3F'),
+      BuiltinThemeRegistry.reader('#FAFAFA', '', '#262626', '#777777', 'light'),
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.CAPSULE, '#E7E9EC', '#34383D')
+    );
+    theme.dark = BuiltinThemeRegistry.variant(
+      BuiltinThemeRegistry.colors('#111111', '#1B1B1B', '#262626', '#F0F0F0', '#A0A0A0', '#343434',
+        '#AAB2BD', '#737D8A', '#E86A6A'),
+      BuiltinThemeRegistry.reader('#161616', '', '#E1E1E1', '#9A9A9A', 'dark'),
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.CAPSULE, '#34383D', '#E4E7EB')
+    );
+    theme.book.coverAssetId = '';
+    theme.book.shelfFrameAssetId = '';
+    theme.book.shelfFolderAssetId = '';
+    theme.radius = BuiltinThemeRegistry.radius(4, 8, 12, 8, 16, 8);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 12, 10, 18, 18, 18, 18);
+    theme.glass.enabled = false;
+    return theme;
   }
 
   private static classicBlue(): ThemePack {

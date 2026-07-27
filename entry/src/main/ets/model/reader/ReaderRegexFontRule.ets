@@ -1,3 +1,5 @@
+import { ThemeAccessPolicy } from '../../account/ThemeAccessPolicy';
+
 export class ReaderRegexFontRule {
   id: string = '';
   name: string = '';
@@ -212,6 +214,7 @@ export class ReaderResolvedRegexEmphasis {
   bubbleStyleId: string = 'qq-soft';
   emphasisColor: string = '#007DFF';
   backgroundEnabled: boolean = false;
+  bubbleDecorationEnabled: boolean = false;
   backgroundColor: string = '#00000000';
   textColor: string = '#1F1F1F';
   radiusTopLeft: number = 0;
@@ -240,7 +243,15 @@ export class ReaderRegexBubbleStyleResolver {
     const configuredStyle = rule ? ReaderRegexFontCodec.normalizeBubbleStyleId(rule.bubbleStyleId) : 'inherit';
     result.bubbleStyleId = configuredStyle === 'inherit' ?
       ReaderRegexFontCodec.normalizeResolvedBubbleStyleId(context.inheritedBubbleStyleId) : configuredStyle;
-    const configuredColor = rule ? (rule.emphasisColor || rule.shadowColor || '').trim() : '';
+    result.bubbleStyleId = ThemeAccessPolicy.accessibleBubbleStyle(
+      result.bubbleStyleId,
+      ReaderRegexFontCodec.normalizeResolvedBubbleStyleId(context.inheritedBubbleStyleId)
+    );
+    // A rule that follows the theme must inherit the theme color as well as its
+    // bubble shape. Legacy shadowColor values otherwise make the reader differ
+    // from the exact preview shown on the theme card.
+    const configuredColor = rule && configuredMode !== 'inherit' ?
+      (rule.emphasisColor || rule.shadowColor || '').trim() : '';
     result.emphasisColor = ReaderRegexBubbleStyleResolver.normalizeColor(
       configuredColor || context.inheritedColor || context.accentColor,
       context.accentColor
@@ -266,6 +277,7 @@ export class ReaderRegexBubbleStyleResolver {
       if (rule.customBubbleEnabled) {
         result.emphasisColor = bubbleColor;
         result.backgroundEnabled = true;
+        result.bubbleDecorationEnabled = true;
         ReaderRegexBubbleStyleResolver.applyBubblePreset(result, context);
       }
       if (rule.customHighlightEnabled) {
@@ -307,6 +319,7 @@ export class ReaderRegexBubbleStyleResolver {
     }
 
     result.backgroundEnabled = true;
+    result.bubbleDecorationEnabled = true;
     ReaderRegexBubbleStyleResolver.applyBubblePreset(result, context);
     if (!configuredColor && context.inheritedTextColor) {
       result.textColor = ReaderRegexBubbleStyleResolver.normalizeColor(

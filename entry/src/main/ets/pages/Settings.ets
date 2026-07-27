@@ -61,7 +61,8 @@ struct SettingsPage {
   @StorageLink('readerLandscapeDoublePage') readerLandscapeDoublePage: boolean = false;
   @StorageLink('readerTapZoneActions') readerTapZoneActions: string = '3,3,3,3,1,2,2,2,2';
   @StorageLink('readerVolumeTurnPage') readerVolumeTurnPage: boolean = false;
-  @StorageLink('readerKeepScreenOn') readerKeepScreenOn: boolean = true;
+  @StorageLink('readerScreenTimeoutMinutes') readerScreenTimeoutMinutes: number =
+    ReaderSettingsStore.SCREEN_TIMEOUT_ALWAYS_ON;
   @StorageLink('readerExtendToStatusBar') readerExtendToStatusBar: boolean = false;
   @StorageLink('readerPreloadEnabled') readerPreloadEnabled: boolean = true;
   @StorageLink('readerPreloadChapterCount') readerPreloadChapterCount: number = 1;
@@ -167,9 +168,10 @@ struct SettingsPage {
           this.switchItem('音量键翻页', '阅读页获得焦点时使用音量上/下键切换上一页/下一页', this.readerVolumeTurnPage, (value: boolean) => {
             this.setReaderVolumeTurnPage(value);
           })
-          this.switchItem('阅读时保持屏幕常亮', '进入阅读页后尽量避免自动息屏', this.readerKeepScreenOn, (value: boolean) => {
-            this.setReaderKeepScreenOn(value);
-          })
+          this.selectItem('亮屏时间设置', '无操作达到所选时长后恢复系统息屏',
+            this.screenTimeoutOptions(), this.screenTimeoutSelectedIndex(), (index: number) => {
+              this.setReaderScreenTimeoutByIndex(index);
+            })
           this.switchItem('正文扩展至状态栏', '开启后正文阅读区域会延伸到顶部状态栏安全区', this.readerExtendToStatusBar, (value: boolean) => {
             this.setReaderExtendToStatusBar(value);
           })
@@ -506,7 +508,7 @@ struct SettingsPage {
     this.readerLandscapeDoublePage = settings.landscapeDoublePage;
     this.readerTapZoneActions = settings.tapZoneActions;
     this.readerVolumeTurnPage = settings.volumeTurnPage;
-    this.readerKeepScreenOn = settings.keepScreenOn;
+    this.readerScreenTimeoutMinutes = settings.screenTimeoutMinutes;
     this.readerExtendToStatusBar = settings.extendToStatusBar;
     this.readerPreloadEnabled = settings.preloadEnabled;
     this.readerPreloadChapterCount = settings.preloadChapterCount;
@@ -1231,7 +1233,7 @@ struct SettingsPage {
     ReaderSettingsStore.saveReadingInteractionSettings(
       getContext(this),
       this.readerVolumeTurnPage,
-      this.readerKeepScreenOn,
+      this.readerScreenTimeoutMinutes,
       this.readerExtendToStatusBar
     ).catch((e: Error) => {
       console.error('保存阅读交互设置失败:', e);
@@ -1243,8 +1245,38 @@ struct SettingsPage {
     this.saveReaderInteractionSettings();
   }
 
-  setReaderKeepScreenOn(enabled: boolean): void {
-    this.readerKeepScreenOn = enabled;
+  screenTimeoutOptions(): SelectOption[] {
+    return [
+      { value: '跟随系统' },
+      { value: '1分钟' },
+      { value: '5分钟' },
+      { value: '10分钟' },
+      { value: '常亮' }
+    ];
+  }
+
+  screenTimeoutValues(): number[] {
+    return [
+      ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM,
+      1,
+      5,
+      10,
+      ReaderSettingsStore.SCREEN_TIMEOUT_ALWAYS_ON
+    ];
+  }
+
+  screenTimeoutSelectedIndex(): number {
+    const index = this.screenTimeoutValues().indexOf(
+      ReaderSettingsStore.normalizeScreenTimeoutMinutes(this.readerScreenTimeoutMinutes)
+    );
+    return index >= 0 ? index : 0;
+  }
+
+  setReaderScreenTimeoutByIndex(index: number): void {
+    const values = this.screenTimeoutValues();
+    this.readerScreenTimeoutMinutes = index >= 0 && index < values.length ?
+      values[index] :
+      ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM;
     this.saveReaderInteractionSettings();
   }
 

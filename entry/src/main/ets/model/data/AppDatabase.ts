@@ -19,7 +19,7 @@ export class AppDatabase {
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
   private readonly DATABASE_NAME = 'legado.db';
-  private readonly SCHEMA_VERSION = 7;
+  private readonly SCHEMA_VERSION = 8;
 
   private constructor() {}
 
@@ -130,6 +130,7 @@ export class AppDatabase {
         enabled INTEGER DEFAULT 1,
         enabledExplore INTEGER DEFAULT 1,
         isLocked INTEGER DEFAULT 0,
+        validationStatus INTEGER DEFAULT 0,
         weight INTEGER DEFAULT 0,
         concurrentRate TEXT DEFAULT ''
       )
@@ -285,6 +286,7 @@ export class AppDatabase {
       { table: 'book_sources', column: 'loginHeader', definition: "loginHeader TEXT DEFAULT ''" },
       { table: 'book_sources', column: 'isLocked', definition: 'isLocked INTEGER DEFAULT 0' },
       { table: 'book_sources', column: 'isPinned', definition: 'isPinned INTEGER DEFAULT 0' },
+      { table: 'book_sources', column: 'validationStatus', definition: 'validationStatus INTEGER DEFAULT 0' },
       { table: 'book_chapters', column: 'variable', definition: "variable TEXT DEFAULT ''" }
     ];
 
@@ -788,6 +790,7 @@ export class AppDatabase {
       enabled: source.enabled ? 1 : 0,
       enabledExplore: source.enabledExplore ? 1 : 0,
       isLocked: source.isLocked ? 1 : 0,
+      validationStatus: this.normalizeBookSourceValidationStatus(source.validationStatus),
       weight: source.weight,
       concurrentRate: source.concurrentRate
     };
@@ -848,6 +851,7 @@ export class AppDatabase {
       enabled: source.enabled ? 1 : 0,
       enabledExplore: source.enabledExplore ? 1 : 0,
       isLocked: source.isLocked ? 1 : 0,
+      validationStatus: this.normalizeBookSourceValidationStatus(source.validationStatus),
       weight: source.weight,
       concurrentRate: source.concurrentRate
     };
@@ -918,6 +922,7 @@ export class AppDatabase {
       enabled: source.enabled ? 1 : 0,
       enabledExplore: source.enabledExplore ? 1 : 0,
       isLocked: source.isLocked ? 1 : 0,
+      validationStatus: this.normalizeBookSourceValidationStatus(source.validationStatus),
       weight: source.weight,
       concurrentRate: source.concurrentRate
     };
@@ -939,7 +944,8 @@ export class AppDatabase {
     predicates.orderByAsc('customOrder');
     const columns = [
       'bookSourceUrl', 'bookSourceName', 'bookSourceGroup', 'loginUrl', 'loginUi',
-      'loginCheckJs', 'loginHeader', 'exploreUrl', 'customOrder', 'isPinned', 'enabled', 'enabledExplore', 'isLocked'
+      'loginCheckJs', 'loginHeader', 'exploreUrl', 'customOrder', 'isPinned', 'enabled', 'enabledExplore', 'isLocked',
+      'validationStatus'
     ];
     const resultSet = await this.store.query(predicates, columns);
     const sources: BookSource[] = [];
@@ -958,6 +964,8 @@ export class AppDatabase {
       source.enabled = resultSet.getLong(resultSet.getColumnIndex('enabled')) === 1;
       source.enabledExplore = resultSet.getLong(resultSet.getColumnIndex('enabledExplore')) === 1;
       source.isLocked = this.getLongColumn(resultSet, 'isLocked') === 1;
+      source.validationStatus = this.normalizeBookSourceValidationStatus(
+        this.getLongColumn(resultSet, 'validationStatus'));
       sources.push(source);
     }
     return sources;
@@ -971,6 +979,9 @@ export class AppDatabase {
     if (fields['enabled'] !== undefined) bucket['enabled'] = fields['enabled'];
     if (fields['enabledExplore'] !== undefined) bucket['enabledExplore'] = fields['enabledExplore'];
     if (fields['customOrder'] !== undefined) bucket['customOrder'] = fields['customOrder'];
+    if (fields['validationStatus'] !== undefined) {
+      bucket['validationStatus'] = this.normalizeBookSourceValidationStatus(Number(fields['validationStatus']));
+    }
     bucket['lastUpdateTime'] = Date.now();
     const predicates = new relationalStore.RdbPredicates('book_sources');
     predicates.equalTo('bookSourceUrl', bookSourceUrl);
@@ -1010,6 +1021,21 @@ export class AppDatabase {
     const predicates = new relationalStore.RdbPredicates('book_sources');
     predicates.equalTo('bookSourceUrl', bookSourceUrl);
     await this.store.update({ isLocked: locked ? 1 : 0 }, predicates);
+  }
+
+  /** 校验结果是运行状态，锁定书源也需要正常记录。 */
+  async updateBookSourceValidationStatus(bookSourceUrl: string, validationStatus: number): Promise<void> {
+    if (!this.store || !bookSourceUrl) return;
+    const predicates = new relationalStore.RdbPredicates('book_sources');
+    predicates.equalTo('bookSourceUrl', bookSourceUrl);
+    await this.store.update({
+      validationStatus: this.normalizeBookSourceValidationStatus(validationStatus)
+    }, predicates);
+  }
+
+  private normalizeBookSourceValidationStatus(value: number): number {
+    if (value === BookSource.VALIDATION_PASSED || value === BookSource.VALIDATION_FAILED) return value;
+    return BookSource.VALIDATION_UNCHECKED;
   }
 
   private async isBookSourceLocked(bookSourceUrl: string): Promise<boolean> {
@@ -1093,6 +1119,8 @@ export class AppDatabase {
     source.enabled = resultSet.getLong(resultSet.getColumnIndex('enabled')) === 1;
     source.isLocked = this.getLongColumn(resultSet, 'isLocked') === 1;
     source.enabledExplore = resultSet.getLong(resultSet.getColumnIndex('enabledExplore')) === 1;
+    source.validationStatus = this.normalizeBookSourceValidationStatus(
+      this.getLongColumn(resultSet, 'validationStatus'));
     source.weight = resultSet.getLong(resultSet.getColumnIndex('weight'));
     source.concurrentRate = resultSet.getString(resultSet.getColumnIndex('concurrentRate'));
     return source;

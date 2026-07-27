@@ -233,6 +233,10 @@ export class BookChapter {
 }
 
 export class BookSource {
+  static readonly VALIDATION_UNCHECKED: number = 0;
+  static readonly VALIDATION_PASSED: number = 1;
+  static readonly VALIDATION_FAILED: number = 2;
+
   bookSourceUrl: string = '';
   bookSourceName: string = '';
   bookSourceGroup: string = '';
@@ -259,6 +263,7 @@ export class BookSource {
   enabled: boolean = true;
   enabledExplore: boolean = true;
   isLocked: boolean = false;
+  validationStatus: number = 0;
   weight: number = 0;
   concurrentRate: string = '';
 

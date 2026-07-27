@@ -9,7 +9,15 @@ interface JsonPathToken {
   expression: string;
 }
 
+interface JsonPathBudget {
+  visited: number;
+}
+
 export class JsonPathEvaluator {
+  private static readonly MAX_RESULTS = 5000;
+  private static readonly MAX_VISITED_NODES = 20000;
+  private static readonly MAX_RECURSION_DEPTH = 64;
+
   static evaluate(root: Object, path: string): Object[] {
     const value = (path || '').trim();
     if (!value) return [];
@@ -18,8 +26,9 @@ export class JsonPathEvaluator {
     if (tokens.length === 0) return [];
 
     let current: Object[] = [root];
+    const budget: JsonPathBudget = { visited: 0 };
     for (const token of tokens) {
-      current = this.applyToken(current, token);
+      current = this.applyToken(current, token, budget);
       if (current.length === 0) break;
     }
     return current;
@@ -160,16 +169,23 @@ export class JsonPathEvaluator {
     return names;
   }
 
-  private static applyToken(values: Object[], token: JsonPathToken): Object[] {
+  private static applyToken(values: Object[], token: JsonPathToken, budget: JsonPathBudget): Object[] {
     const out: Object[] = [];
     for (const value of values) {
-      if (token.kind === 'property') this.readProperty(value, token.name, out);
+      if (!this.canVisit(budget) || out.length >= this.MAX_RESULTS) break;
+      if (token.kind === 'property') this.readProperty(value, token.name, out, budget);
       else if (token.kind === 'properties') {
-        for (const name of token.names) this.readProperty(value, name, out);
+        for (const name of token.names) {
+          this.readProperty(value, name, out, budget);
+          if (out.length >= this.MAX_RESULTS) break;
+        }
       } else if (token.kind === 'recursiveProperty') {
-        for (const name of token.names) this.deepRead(value, name, out);
+        for (const name of token.names) {
+          this.deepRead(value, name, out, budget, 0);
+          if (out.length >= this.MAX_RESULTS) break;
+        }
       } else if (token.kind === 'wildcard') this.readWildcard(value, out);
-      else if (token.kind === 'recursiveWildcard') this.deepWildcard(value, out);
+      else if (token.kind === 'recursiveWildcard') this.deepWildcard(value, out, budget, 0);
       else if (token.kind === 'indexes') this.readIndexes(value, token.indexes, out);
       else if (token.kind === 'slice') this.readSlice(value, token.start, token.end, token.step, out);
       else if (token.kind === 'filter') this.readFilter(value, token.expression, out);
@@ -177,43 +193,63 @@ export class JsonPathEvaluator {
     return out;
   }
 
-  private static readProperty(value: Object, name: string, out: Object[]): void {
+  private static readProperty(value: Object, name: string, out: Object[], budget: JsonPathBudget,
+    depth: number = 0): void {
+    if (!this.canVisit(budget) || depth > this.MAX_RECURSION_DEPTH || out.length >= this.MAX_RESULTS) return;
     if (Array.isArray(value)) {
-      for (const item of value as Object[]) this.readProperty(item, name, out);
+      for (const item of value as Object[]) {
+        this.readProperty(item, name, out, budget, depth + 1);
+        if (out.length >= this.MAX_RESULTS || !this.hasBudget(budget)) break;
+      }
       return;
     }
     if (!value || typeof value !== 'object') return;
     const found = (value as Record<string, Object>)[name];
-    if (found !== undefined && found !== null) out.push(found);
+    if (found !== undefined && found !== null && out.length < this.MAX_RESULTS) out.push(found);
   }
 
   private static readWildcard(value: Object, out: Object[]): void {
     if (Array.isArray(value)) {
-      out.push(...value as Object[]);
+      for (const item of value as Object[]) {
+        if (out.length >= this.MAX_RESULTS) break;
+        out.push(item);
+      }
     } else if (value && typeof value === 'object') {
       const record = value as Record<string, Object>;
-      for (const key in record) if (record[key] !== undefined && record[key] !== null) out.push(record[key]);
+      for (const key in record) {
+        if (out.length >= this.MAX_RESULTS) break;
+        if (record[key] !== undefined && record[key] !== null) out.push(record[key]);
+      }
     }
   }
 
-  private static deepRead(value: Object, name: string, out: Object[]): void {
+  private static deepRead(value: Object, name: string, out: Object[], budget: JsonPathBudget, depth: number): void {
+    if (!this.canVisit(budget) || depth > this.MAX_RECURSION_DEPTH || out.length >= this.MAX_RESULTS) return;
     if (!value || typeof value !== 'object') return;
     if (Array.isArray(value)) {
-      for (const item of value as Object[]) this.deepRead(item, name, out);
+      for (const item of value as Object[]) {
+        this.deepRead(item, name, out, budget, depth + 1);
+        if (out.length >= this.MAX_RESULTS || !this.hasBudget(budget)) break;
+      }
       return;
     }
     const record = value as Record<string, Object>;
-    if (record[name] !== undefined && record[name] !== null) out.push(record[name]);
-    for (const key in record) this.deepRead(record[key], name, out);
+    if (record[name] !== undefined && record[name] !== null && out.length < this.MAX_RESULTS) out.push(record[name]);
+    for (const key in record) {
+      this.deepRead(record[key], name, out, budget, depth + 1);
+      if (out.length >= this.MAX_RESULTS || !this.hasBudget(budget)) break;
+    }
   }
 
-  private static deepWildcard(value: Object, out: Object[]): void {
+  private static deepWildcard(value: Object, out: Object[], budget: JsonPathBudget, depth: number): void {
+    if (!this.canVisit(budget) || depth > this.MAX_RECURSION_DEPTH || out.length >= this.MAX_RESULTS) return;
     if (!value || typeof value !== 'object') return;
     const children: Object[] = [];
     this.readWildcard(value, children);
     for (const child of children) {
+      if (out.length >= this.MAX_RESULTS || !this.hasBudget(budget)) break;
       out.push(child);
-      this.deepWildcard(child, out);
+      this.deepWildcard(child, out, budget, depth + 1);
     }
   }
 
@@ -221,6 +257,7 @@ export class JsonPathEvaluator {
     if (!Array.isArray(value)) return;
     const array = value as Object[];
     for (const raw of indexes) {
+      if (out.length >= this.MAX_RESULTS) break;
       const index = raw < 0 ? array.length + raw : raw;
       if (index >= 0 && index < array.length) out.push(array[index]);
     }
@@ -234,17 +271,32 @@ export class JsonPathEvaluator {
     if (step > 0) {
       from = Math.max(0, from);
       to = Math.min(array.length, to);
-      for (let i = from; i < to; i += step) out.push(array[i]);
+      for (let i = from; i < to && out.length < this.MAX_RESULTS; i += step) out.push(array[i]);
     } else {
       from = Math.min(array.length - 1, from);
       to = Math.max(-1, to);
-      for (let i = from; i > to; i += step) out.push(array[i]);
+      for (let i = from; i > to && out.length < this.MAX_RESULTS; i += step) out.push(array[i]);
     }
   }
 
   private static readFilter(value: Object, expression: string, out: Object[]): void {
     const candidates = Array.isArray(value) ? value as Object[] : [value];
-    for (const candidate of candidates) if (this.matchesFilter(candidate, expression)) out.push(candidate);
+    let checked = 0;
+    for (const candidate of candidates) {
+      if (out.length >= this.MAX_RESULTS || checked >= this.MAX_VISITED_NODES) break;
+      checked++;
+      if (this.matchesFilter(candidate, expression)) out.push(candidate);
+    }
+  }
+
+  private static canVisit(budget: JsonPathBudget): boolean {
+    if (budget.visited >= this.MAX_VISITED_NODES) return false;
+    budget.visited++;
+    return true;
+  }
+
+  private static hasBudget(budget: JsonPathBudget): boolean {
+    return budget.visited < this.MAX_VISITED_NODES;
   }
 
   private static matchesFilter(value: Object, expression: string): boolean {

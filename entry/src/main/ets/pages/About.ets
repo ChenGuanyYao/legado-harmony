@@ -79,6 +79,9 @@ struct AboutPage {
           this.infoCard('致谢',
             '感谢 @南破万卷墙 @一个人吃二二 @jueyaocaptain @茶安安安 @相思界 为App开发提出的建议和支持。')
 
+          this.infoCard('APP 备案信息',
+            '备案编号：蜀ICP备2023018793号-2A')
+
           Column() {
             Text('请仅使用自有、授权或明确允许访问的内容与规则。')
               .fontSize(12)

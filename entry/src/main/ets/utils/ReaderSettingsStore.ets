@@ -23,6 +23,8 @@ export class ReaderSettings {
   landscapeDoublePage: boolean = false;
   tapZoneActions: string = '3,3,3,3,1,2,2,2,2';
   volumeTurnPage: boolean = false;
+  screenTimeoutMinutes: number = -1;
+  // 保留旧字段用于读取已有主题配置，以及兼容旧版本降级读取。
   keepScreenOn: boolean = true;
   extendToStatusBar: boolean = false;
   preloadEnabled: boolean = true;
@@ -55,6 +57,8 @@ export class ReaderSettingsStore {
   static readonly PAGE_TURN_ANIMATION_FADE: number = 3;
   static readonly PAGE_TURN_ANIMATION_STACK: number = 4;
   static readonly PAGE_TURN_ANIMATION_VERTICAL: number = 5;
+  static readonly SCREEN_TIMEOUT_FOLLOW_SYSTEM: number = 0;
+  static readonly SCREEN_TIMEOUT_ALWAYS_ON: number = -1;
   static readonly KEY_FONT_SIZE: string = 'readerFontSize';
   static readonly KEY_LINE_HEIGHT: string = 'readerLineHeight';
   static readonly KEY_LINE_HEIGHT_MODE: string = 'readerLineHeightMode';
@@ -77,6 +81,7 @@ export class ReaderSettingsStore {
   static readonly KEY_LANDSCAPE_DOUBLE_PAGE: string = 'readerLandscapeDoublePage';
   static readonly KEY_TAP_ZONE_ACTIONS: string = 'readerTapZoneActions';
   static readonly KEY_VOLUME_TURN_PAGE: string = 'readerVolumeTurnPage';
+  static readonly KEY_SCREEN_TIMEOUT_MINUTES: string = 'readerScreenTimeoutMinutes';
   static readonly KEY_KEEP_SCREEN_ON: string = 'readerKeepScreenOn';
   static readonly KEY_EXTEND_TO_STATUS_BAR: string = 'readerExtendToStatusBar';
   static readonly KEY_PRELOAD_ENABLED: string = 'readerPreloadEnabled';
@@ -244,11 +249,21 @@ export class ReaderSettingsStore {
       ReaderSettingsStore.KEY_VOLUME_TURN_PAGE,
       AppStorage.get<boolean>(ReaderSettingsStore.KEY_VOLUME_TURN_PAGE) ?? false
     );
-    settings.keepScreenOn = await ReaderSettingsStore.getBoolean(
+    const legacyKeepScreenOn = await ReaderSettingsStore.getBoolean(
       store,
       ReaderSettingsStore.KEY_KEEP_SCREEN_ON,
       AppStorage.get<boolean>(ReaderSettingsStore.KEY_KEEP_SCREEN_ON) ?? true
     );
+    settings.screenTimeoutMinutes = await ReaderSettingsStore.getNumber(
+      store,
+      ReaderSettingsStore.KEY_SCREEN_TIMEOUT_MINUTES,
+      legacyKeepScreenOn ?
+        ReaderSettingsStore.SCREEN_TIMEOUT_ALWAYS_ON :
+        ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM,
+      'screenTimeoutMinutes'
+    );
+    settings.keepScreenOn =
+      settings.screenTimeoutMinutes !== ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM;
     settings.extendToStatusBar = await ReaderSettingsStore.getBoolean(
       store,
       ReaderSettingsStore.KEY_EXTEND_TO_STATUS_BAR,
@@ -432,17 +447,20 @@ export class ReaderSettingsStore {
   static async saveReadingInteractionSettings(
     context: Context,
     volumeTurnPage: boolean,
-    keepScreenOn: boolean,
+    screenTimeoutMinutes: number,
     extendToStatusBar: boolean
   ): Promise<void> {
     const settings = ReaderSettingsStore.cachedSettings || ReaderSettingsStore.fromStorage();
     settings.volumeTurnPage = volumeTurnPage;
-    settings.keepScreenOn = keepScreenOn;
+    settings.screenTimeoutMinutes = ReaderSettingsStore.normalizeScreenTimeoutMinutes(screenTimeoutMinutes);
+    settings.keepScreenOn =
+      settings.screenTimeoutMinutes !== ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM;
     settings.extendToStatusBar = extendToStatusBar;
     ReaderSettingsStore.cachedSettings = ReaderSettingsStore.clone(settings);
     ReaderSettingsStore.applyInteractionToStorage(settings);
     const store = await preferences.getPreferences(context, ReaderSettingsStore.STORE_NAME);
     await store.put(ReaderSettingsStore.KEY_VOLUME_TURN_PAGE, settings.volumeTurnPage);
+    await store.put(ReaderSettingsStore.KEY_SCREEN_TIMEOUT_MINUTES, settings.screenTimeoutMinutes);
     await store.put(ReaderSettingsStore.KEY_KEEP_SCREEN_ON, settings.keepScreenOn);
     await store.put(ReaderSettingsStore.KEY_EXTEND_TO_STATUS_BAR, settings.extendToStatusBar);
     await ReaderSettingsStore.persistActiveThemeProfile(store, settings);
@@ -675,6 +693,7 @@ export class ReaderSettingsStore {
 
   private static applyInteractionToStorage(settings: ReaderSettings): void {
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_VOLUME_TURN_PAGE, settings.volumeTurnPage);
+    AppStorage.setOrCreate(ReaderSettingsStore.KEY_SCREEN_TIMEOUT_MINUTES, settings.screenTimeoutMinutes);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_KEEP_SCREEN_ON, settings.keepScreenOn);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_EXTEND_TO_STATUS_BAR, settings.extendToStatusBar);
   }
@@ -844,6 +863,9 @@ export class ReaderSettingsStore {
     if (type === 'preloadChapterCount') {
       return ReaderSettingsStore.normalizePreloadChapterCount(value);
     }
+    if (type === 'screenTimeoutMinutes') {
+      return ReaderSettingsStore.normalizeScreenTimeoutMinutes(value);
+    }
     return fallback;
   }
 
@@ -911,6 +933,16 @@ export class ReaderSettingsStore {
     return Math.max(1, Math.min(value, 10));
   }
 
+  static normalizeScreenTimeoutMinutes(minutes: number): number {
+    const value = Math.round(minutes);
+    if (value === ReaderSettingsStore.SCREEN_TIMEOUT_ALWAYS_ON ||
+      value === ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM ||
+      value === 1 || value === 5 || value === 10) {
+      return value;
+    }
+    return ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM;
+  }
+
   private static normalizeTapZoneActions(actions: string): string {
     const fallback = [3, 3, 3, 3, 1, 2, 2, 2, 2];
     const parts = (actions || '').split(',');
@@ -963,7 +995,15 @@ export class ReaderSettingsStore {
     settings.landscapeDoublePage = source.landscapeDoublePage;
     settings.tapZoneActions = ReaderSettingsStore.normalizeTapZoneActions(source.tapZoneActions);
     settings.volumeTurnPage = source.volumeTurnPage;
-    settings.keepScreenOn = source.keepScreenOn;
+    settings.screenTimeoutMinutes = ReaderSettingsStore.normalizeScreenTimeoutMinutes(
+      typeof source.screenTimeoutMinutes === 'number' ?
+        source.screenTimeoutMinutes :
+        (source.keepScreenOn === false ?
+          ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM :
+          ReaderSettingsStore.SCREEN_TIMEOUT_ALWAYS_ON)
+    );
+    settings.keepScreenOn =
+      settings.screenTimeoutMinutes !== ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM;
     settings.extendToStatusBar = source.extendToStatusBar;
     settings.preloadEnabled = source.preloadEnabled;
     settings.preloadChapterCount = ReaderSettingsStore.normalizePreloadChapterCount(source.preloadChapterCount);
@@ -1057,7 +1097,15 @@ export class ReaderSettingsStore {
       AppStorage.get<string>(ReaderSettingsStore.KEY_TAP_ZONE_ACTIONS) || ''
     );
     settings.volumeTurnPage = AppStorage.get<boolean>(ReaderSettingsStore.KEY_VOLUME_TURN_PAGE) ?? false;
-    settings.keepScreenOn = AppStorage.get<boolean>(ReaderSettingsStore.KEY_KEEP_SCREEN_ON) ?? true;
+    const legacyKeepScreenOn = AppStorage.get<boolean>(ReaderSettingsStore.KEY_KEEP_SCREEN_ON) ?? true;
+    settings.screenTimeoutMinutes = ReaderSettingsStore.normalizeScreenTimeoutMinutes(
+      AppStorage.get<number>(ReaderSettingsStore.KEY_SCREEN_TIMEOUT_MINUTES) ??
+        (legacyKeepScreenOn ?
+          ReaderSettingsStore.SCREEN_TIMEOUT_ALWAYS_ON :
+          ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM)
+    );
+    settings.keepScreenOn =
+      settings.screenTimeoutMinutes !== ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM;
     settings.extendToStatusBar = AppStorage.get<boolean>(ReaderSettingsStore.KEY_EXTEND_TO_STATUS_BAR) ?? false;
     settings.preloadEnabled = AppStorage.get<boolean>(ReaderSettingsStore.KEY_PRELOAD_ENABLED) ?? true;
     settings.preloadChapterCount = ReaderSettingsStore.normalizePreloadChapterCount(

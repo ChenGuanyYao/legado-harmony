@@ -41,6 +41,7 @@ export class HttpClient {
       return { url: '', statusCode: 0, headers: {}, body: '', success: false, error: 'empty url' };
     }
     const client = http.createHttp();
+    let responseTooLarge = false;
     try {
       const method = this.resolveMethod(req.method);
       const headers: Record<string, string> = { ...this.defaultHeaders, ...req.headers };
@@ -48,6 +49,59 @@ export class HttpClient {
       if (cookie && !headers['Cookie']) {
         headers['Cookie'] = cookie;
       }
+      const maxResponseBytes = req.maxResponseBytes || 0;
+      if (maxResponseBytes > 0) {
+        const chunks: ArrayBuffer[] = [];
+        let receivedBytes = 0;
+        let streamedHeaders: Record<string, string> = {};
+        const onHeadersReceive = (value: Object): void => {
+          streamedHeaders = (value || {}) as Record<string, string>;
+          const contentLength = Number(this.findHeader(streamedHeaders, 'content-length') || '0');
+          if (contentLength > maxResponseBytes) {
+            responseTooLarge = true;
+            client.destroy();
+          }
+        };
+        const onDataReceive = (chunk: ArrayBuffer): void => {
+          if (responseTooLarge) return;
+          receivedBytes += chunk.byteLength;
+          if (receivedBytes > maxResponseBytes) {
+            responseTooLarge = true;
+            chunks.length = 0;
+            client.destroy();
+            return;
+          }
+          chunks.push(chunk);
+        };
+        client.on('headersReceive', onHeadersReceive);
+        client.on('dataReceive', onDataReceive);
+        let responseCode = 0;
+        try {
+          responseCode = await client.requestInStream(req.url, {
+            method: method,
+            header: headers,
+            extraData: req.body,
+            connectTimeout: req.connectTimeout || this.timeout,
+            readTimeout: req.readTimeout || this.timeout
+          });
+        } finally {
+          client.off('headersReceive', onHeadersReceive);
+          client.off('dataReceive', onDataReceive);
+        }
+        if (responseTooLarge) {
+          return {
+            url: req.url,
+            statusCode: responseCode,
+            headers: streamedHeaders,
+            body: '',
+            success: false,
+            error: `response too large: >${maxResponseBytes}`
+          };
+        }
+        const result = this.mergeArrayBuffers(chunks, receivedBytes);
+        return this.buildResponse(req, responseCode, streamedHeaders, result);
+      }
+
       const resp = await client.request(req.url, {
         method: method,
         header: headers,
@@ -58,35 +112,7 @@ export class HttpClient {
       });
 
       const responseHeaders = (resp.header || {}) as Record<string, string>;
-      const setCookie = this.findHeader(responseHeaders, 'set-cookie');
-      if (setCookie) {
-        CookieStore.setCookies(req.url, setCookie);
-        CookieStore.saveAsync();
-      }
-
-      const responseBytes = this.responseByteLength(resp.result);
-      if (req.maxResponseBytes && responseBytes > req.maxResponseBytes) {
-        return {
-          url: req.url,
-          statusCode: resp.responseCode,
-          headers: responseHeaders,
-          body: '',
-          success: false,
-          error: `response too large: ${responseBytes}`
-        };
-      }
-
-      const charset = req.charset || this.responseCharset(responseHeaders);
-      const body = this.decodeBody(resp.result, charset);
-      const finalBody = req.charset ? body : this.decodeBodyWithMetaCharset(resp.result, body, charset);
-
-      return {
-        url: req.url,
-        statusCode: resp.responseCode,
-        headers: responseHeaders,
-        body: finalBody,
-        success: resp.responseCode >= 200 && resp.responseCode < 300
-      };
+      return this.buildResponse(req, resp.responseCode, responseHeaders, resp.result);
     } catch (e) {
       return {
         url: req.url,
@@ -94,7 +120,8 @@ export class HttpClient {
         headers: {},
         body: '',
         success: false,
-        error: e instanceof Error ? e.message : String(e)
+        error: responseTooLarge ? `response too large: >${req.maxResponseBytes}` :
+          (e instanceof Error ? e.message : String(e))
       };
     } finally {
       client.destroy();
@@ -119,6 +146,37 @@ export class HttpClient {
     return '';
   }
 
+  private buildResponse(req: HttpRequest, responseCode: number, responseHeaders: Record<string, string>,
+    result: string | Object): HttpResponse {
+    const setCookie = this.findHeader(responseHeaders, 'set-cookie');
+    if (setCookie) {
+      CookieStore.setCookies(req.url, setCookie);
+      CookieStore.saveAsync();
+    }
+    const charset = req.charset || this.responseCharset(responseHeaders);
+    const body = this.decodeBody(result, charset);
+    const finalBody = req.charset ? body : this.decodeBodyWithMetaCharset(result, body, charset);
+    return {
+      url: req.url,
+      statusCode: responseCode,
+      headers: responseHeaders,
+      body: finalBody,
+      success: responseCode >= 200 && responseCode < 300
+    };
+  }
+
+  private mergeArrayBuffers(chunks: ArrayBuffer[], totalBytes: number): ArrayBuffer {
+    if (chunks.length === 1) return chunks[0];
+    const merged = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      const bytes = new Uint8Array(chunk);
+      merged.set(bytes, offset);
+      offset += bytes.byteLength;
+    }
+    return merged.buffer as ArrayBuffer;
+  }
+
   private responseCharset(headers: Record<string, string>): string {
     const contentType = this.findHeader(headers, 'content-type');
     const match = contentType.match(/charset\s*=\s*["']?([^;\s"']+)/i);
@@ -136,12 +194,6 @@ export class HttpClient {
       }
     }
     return String(result || '');
-  }
-
-  private responseByteLength(result: string | Object): number {
-    if (typeof result === 'string') return (result as string).length;
-    if (result instanceof ArrayBuffer) return (result as ArrayBuffer).byteLength;
-    return 0;
   }
 
   private decodeBodyWithMetaCharset(result: string | Object, decoded: string, charset: string): string {

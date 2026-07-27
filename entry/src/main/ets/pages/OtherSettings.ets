@@ -29,8 +29,11 @@ struct OtherSettingsPage {
         Column() {
           this.sectionTitle('数据')
           Column() {
-            this.menuItem('数据导入与导出', '跨签名迁移书源、书架、进度、本地图书和设置', false, () => {
-              router.pushUrl({ url: 'pages/DataBackup' });
+            this.menuItem('数据导入', '从备份文件导入书源、书架、进度、本地图书和设置', true, () => {
+              router.pushUrl({ url: 'pages/DataBackup', params: { mode: 'import' } });
+            })
+            this.menuItem('数据导出', '将书源、书架、进度、本地图书和设置导出为备份', false, () => {
+              router.pushUrl({ url: 'pages/DataBackup', params: { mode: 'export' } });
             })
           }
           .width('calc(100% - 24vp)')
@@ -41,9 +44,6 @@ struct OtherSettingsPage {
 
           this.sectionTitle('外观')
           Column() {
-            this.menuItem('主题与外观', '内置主题 / 阅读背景 / 气泡 / 导航图标', true, () => {
-              router.pushUrl({ url: 'pages/ThemeSettings' });
-            })
             this.menuItem('磨砂玻璃', '预设 / 模糊 / 透明度 / 边框 / 阴影', true, () => {
               router.pushUrl({ url: 'pages/GlassSettings' });
             })

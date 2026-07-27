@@ -4,9 +4,11 @@ import zlib from '@ohos.zlib';
 import util from '@ohos.util';
 import preferences from '@ohos.data.preferences';
 import { Context } from '@kit.AbilityKit';
+import { statfs } from '@kit.CoreFileKit';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { Book, BookGroup, Bookmark, BookSource, ReadConfig, SearchKeyword } from '../model/data/Book';
 import { LocalBookService } from '../core/book/LocalBookService';
+import { BackupCrypto } from './BackupCrypto';
 
 export class AppDataBackupSelection {
   sources: boolean = true;
@@ -29,8 +31,9 @@ export class BookProgressBackup {
 
 export class AppDataBackupManifest {
   format: string = 'legado-harmony-backup';
-  version: number = 1;
+  version: number = 2;
   createdAt: number = 0;
+  sensitiveDataExcluded: boolean = true;
   sourceFilesDir: string = '';
   categories: string[] = [];
   sources: BookSource[] = [];
@@ -52,7 +55,9 @@ export class AppDataBackupExportResult {
 }
 
 export class AppDataBackupImportSession {
+  tempRootPath: string = '';
   rootPath: string = '';
+  encrypted: boolean = false;
   manifest: AppDataBackupManifest = new AppDataBackupManifest();
 }
 
@@ -79,6 +84,7 @@ export class AppDataBackupImportResult {
 }
 
 export class AppDataBackupService {
+  static readonly PASSWORD_REQUIRED_MESSAGE: string = '备份已加密，请输入密码';
   static readonly CATEGORY_SOURCES: string = 'sources';
   static readonly CATEGORY_BOOKSHELF: string = 'bookshelf';
   static readonly CATEGORY_PROGRESS: string = 'progress';
@@ -114,31 +120,47 @@ export class AppDataBackupService {
     'readProgressPageCount'
   ];
 
-  static async createBackup(context: Context, selection: AppDataBackupSelection): Promise<AppDataBackupExportResult> {
+  static async createBackup(context: Context, selection: AppDataBackupSelection,
+    password: string, onProgress?: (message: string, percent: number) => void):
+    Promise<AppDataBackupExportResult> {
+    if ((password || '').length < 8) throw new Error('备份密码至少需要 8 个字符');
+    AppDataBackupService.reportProgress(onProgress, '正在读取应用数据...', 3);
     const db = AppDatabase.getInstance();
     await db.initWithContext(context);
     const root = `${context.tempDir}/app_backup_${Date.now()}`;
     const payloadRoot = `${root}/payload`;
+    const innerArchivePath = `${root}/payload.zip`;
+    const envelopeRoot = `${root}/encrypted`;
+    const encryptedPayloadPath = `${envelopeRoot}/payload.bin`;
+    // zlib.compressFile() produces a ZIP archive and requires a ZIP output
+    // path on some HarmonyOS versions. The user-facing picker can still save
+    // these bytes with the custom .qingyebak extension.
     const archivePath = `${root}/legado_backup.zip`;
-    await AppDataBackupService.ensureDir(payloadRoot);
-
     const manifest = new AppDataBackupManifest();
     manifest.createdAt = Date.now();
     manifest.sourceFilesDir = context.filesDir;
+    let archiveReady = false;
+    try {
 
     if (selection.sources) {
       manifest.categories.push(AppDataBackupService.CATEGORY_SOURCES);
-      manifest.sources = await db.getAllBookSources();
+      manifest.sources = (await db.getAllBookSources()).map((source: BookSource): BookSource =>
+        AppDataBackupService.sanitizeBookSource(source));
       manifest.sourceGroupPreferences = await AppDataBackupService.readPreferenceStore(context, 'book_source_groups');
     }
 
     const allBooks = await db.getAllBooks();
+    AppDataBackupService.reportProgress(onProgress, '正在检查可用空间...', 8);
+    await AppDataBackupService.ensureEnoughTempSpace(context, selection, allBooks);
+    await AppDataBackupService.ensureDir(payloadRoot);
+    await AppDataBackupService.ensureDir(envelopeRoot);
     if (selection.bookshelf || selection.localBooks) {
       manifest.bookGroups = await db.getCustomBookGroups();
     }
     if (selection.bookshelf) {
       manifest.categories.push(AppDataBackupService.CATEGORY_BOOKSHELF);
-      manifest.books = allBooks.filter((book: Book): boolean => !LocalBookService.isLocalBook(book));
+      manifest.books = allBooks.filter((book: Book): boolean => !LocalBookService.isLocalBook(book))
+        .map((book: Book): Book => AppDataBackupService.sanitizeBook(book));
       manifest.bookshelfSortMode = AppStorage.get<string>('bookshelfSortMode') || 'recentRead';
     }
 
@@ -162,32 +184,43 @@ export class AppDataBackupService {
     }
 
     if (selection.localBooks) {
+      AppDataBackupService.reportProgress(onProgress, '正在整理本地图书...', 22);
       manifest.categories.push(AppDataBackupService.CATEGORY_LOCAL_BOOKS);
-      manifest.localBooks = allBooks.filter((book: Book): boolean => LocalBookService.isLocalBook(book));
+      const localSourceBooks = allBooks.filter((book: Book): boolean => LocalBookService.isLocalBook(book));
+      manifest.localBooks = localSourceBooks
+        .map((book: Book): Book => AppDataBackupService.sanitizeBook(book));
       const localRoot = `${payloadRoot}/local_books`;
       await AppDataBackupService.ensureDir(localRoot);
       for (let index = 0; index < manifest.localBooks.length; index++) {
-        const book = manifest.localBooks[index];
+        const book = localSourceBooks[index];
         const sourcePath = book.getVariable('localFilePath');
         if (!sourcePath || !AppDataBackupService.exists(sourcePath)) continue;
         const format = book.getVariable('localFormat') || (book.type === LocalBookService.TYPE_EPUB ? 'epub' : 'txt');
         const archiveName = `${index}.${format}`;
         await AppDataBackupService.copyFile(sourcePath, `${localRoot}/${archiveName}`);
         manifest.localFiles[book.bookUrl] = archiveName;
+        const progress = manifest.localBooks.length > 0 ?
+          22 + Math.floor((index + 1) * 13 / manifest.localBooks.length) : 35;
+        AppDataBackupService.reportProgress(onProgress, '正在整理本地图书...', progress);
       }
     }
 
     if (selection.settings) {
+      AppDataBackupService.reportProgress(onProgress, '正在整理设置和自定义资源...', 36);
       manifest.categories.push(AppDataBackupService.CATEGORY_SETTINGS);
       for (const storeName of AppDataBackupService.SETTINGS_STORES) {
-        manifest.preferenceStores[storeName] = await AppDataBackupService.readPreferenceStore(context, storeName);
+        manifest.preferenceStores[storeName] = AppDataBackupService.sanitizeStructuredText(
+          await AppDataBackupService.readPreferenceStore(context, storeName));
       }
       const assetsRoot = `${payloadRoot}/assets`;
-      for (const dirName of AppDataBackupService.ASSET_DIRS) {
+      for (let index = 0; index < AppDataBackupService.ASSET_DIRS.length; index++) {
+        const dirName = AppDataBackupService.ASSET_DIRS[index];
         const source = `${context.filesDir}/${dirName}`;
         if (AppDataBackupService.exists(source)) {
           await AppDataBackupService.copyDirectory(source, `${assetsRoot}/${dirName}`);
         }
+        AppDataBackupService.reportProgress(onProgress, '正在整理设置和自定义资源...',
+          36 + Math.floor((index + 1) * 9 / AppDataBackupService.ASSET_DIRS.length));
       }
     }
 
@@ -196,33 +229,146 @@ export class AppDataBackupService {
       manifest.searchKeywords = await db.getSearchKeywords();
     }
 
-    await AppDataBackupService.writeText(`${payloadRoot}/manifest.json`, JSON.stringify(manifest));
-    await zlib.compressFile(payloadRoot, archivePath, {});
+      AppDataBackupService.reportProgress(onProgress, '正在生成备份清单...', 48);
+      await AppDataBackupService.writeText(`${payloadRoot}/manifest.json`, JSON.stringify(manifest));
+      AppDataBackupService.reportProgress(onProgress, '正在压缩备份数据...', 52);
+      try {
+        await zlib.compressFile(payloadRoot, innerArchivePath,
+          { level: zlib.CompressLevel.COMPRESS_LEVEL_BEST_SPEED });
+      } catch (error) {
+        throw new Error(`压缩备份数据失败：${error instanceof Error ? error.message : String(error)}`);
+      }
+      await AppDataBackupService.removeDirectory(payloadRoot);
+      AppDataBackupService.reportProgress(onProgress, '正在加密备份...', 68);
+      const encryption = await BackupCrypto.encryptFile(innerArchivePath, encryptedPayloadPath, password,
+        (processed: number, total: number): void => {
+          const ratio = total > 0 ? processed / total : 1;
+          AppDataBackupService.reportProgress(onProgress, '正在加密备份...',
+            68 + Math.min(17, Math.floor(ratio * 17)));
+        });
+      AppDataBackupService.reportProgress(onProgress, '加密完成，正在清理中间文件...', 86);
+      await AppDataBackupService.removeFile(innerArchivePath);
+      await AppDataBackupService.writeText(`${envelopeRoot}/encryption.json`, JSON.stringify(encryption));
+      AppDataBackupService.reportProgress(onProgress, '正在封装备份文件...', 88);
+      try {
+        await zlib.compressFile(envelopeRoot, archivePath,
+          { level: zlib.CompressLevel.COMPRESS_LEVEL_NO_COMPRESSION });
+        const archiveStat = await fs.stat(archivePath);
+        if (archiveStat.size <= 0) throw new Error('生成的归档文件为空');
+      } catch (error) {
+        throw new Error(`封装备份文件失败：${error instanceof Error ? error.message : String(error)}`);
+      }
+      await AppDataBackupService.removeDirectory(envelopeRoot);
+      archiveReady = true;
+      AppDataBackupService.reportProgress(onProgress, '备份文件已生成', 96);
+    } finally {
+      await AppDataBackupService.removeDirectory(payloadRoot);
+      await AppDataBackupService.removeFile(innerArchivePath);
+      await AppDataBackupService.removeDirectory(envelopeRoot);
+      if (!archiveReady) await AppDataBackupService.removeFile(archivePath);
+    }
     const result = new AppDataBackupExportResult();
     result.archivePath = archivePath;
     result.manifest = manifest;
     return result;
   }
 
-  static async prepareImport(context: Context, sourceUri: string): Promise<AppDataBackupImportSession> {
+  static async cleanupStaleTempFiles(context: Context): Promise<void> {
+    const staleBeforeSeconds = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
+    let names: string[] = [];
+    try {
+      names = await fs.listFile(context.tempDir);
+    } catch (_) {
+      return;
+    }
+    for (const name of names) {
+      if (!name.startsWith('app_backup_')) continue;
+      const path = `${context.tempDir}/${name}`;
+      try {
+        const stat = await fs.stat(path);
+        // A system picker can temporarily background and recreate the page.
+        // Keep active/recent exports; only remove leftovers older than one day.
+        if (stat.mtime >= staleBeforeSeconds) continue;
+        if (stat.isDirectory()) await AppDataBackupService.removeDirectory(path);
+        else await AppDataBackupService.removeFile(path);
+      } catch (_) {}
+    }
+  }
+
+  static async prepareImport(context: Context, sourceUri: string, password: string = '',
+    onProgress?: (message: string, percent: number) => void): Promise<AppDataBackupImportSession> {
     const root = `${context.tempDir}/app_backup_import_${Date.now()}`;
     const archivePath = `${root}/source.zip`;
     const outRoot = `${root}/out`;
+    AppDataBackupService.reportProgress(onProgress, '正在准备导入空间...', 3);
     await AppDataBackupService.ensureDir(root);
     await AppDataBackupService.ensureDir(outRoot);
-    await fs.copy(sourceUri, fileUri.getUriFromPath(archivePath));
-    await zlib.decompressFile(archivePath, outRoot);
-    const manifestPath = await AppDataBackupService.findFile(outRoot, 'manifest.json');
-    if (!manifestPath) throw new Error('不是有效的 Legado Harmony 备份文件');
-    const raw = await AppDataBackupService.readText(manifestPath);
-    const manifest = JSON.parse(raw) as AppDataBackupManifest;
-    if (manifest.format !== 'legado-harmony-backup' || manifest.version !== 1) {
-      throw new Error('备份格式不支持或版本过新');
+    try {
+      AppDataBackupService.reportProgress(onProgress, '正在复制备份文件...', 8);
+      await AppDataBackupService.copyFile(sourceUri, archivePath);
+      AppDataBackupService.reportProgress(onProgress, '正在解包备份文件...', 20);
+      await zlib.decompressFile(archivePath, outRoot);
+      AppDataBackupService.reportProgress(onProgress, '正在检查备份结构...', 42);
+      const encryptionPath = await AppDataBackupService.findFile(outRoot, 'encryption.json');
+      let manifestSearchRoot = outRoot;
+      if (encryptionPath) {
+        if (!password) throw new Error(AppDataBackupService.PASSWORD_REQUIRED_MESSAGE);
+        AppDataBackupService.reportProgress(onProgress, '正在校验备份密码...', 46);
+        const metadata = BackupCrypto.parseMetadata(await AppDataBackupService.readText(encryptionPath));
+        const envelopeRoot = AppDataBackupService.parentPath(encryptionPath);
+        const encryptedPayload = `${envelopeRoot}/${metadata.payloadFile}`;
+        if (!AppDataBackupService.exists(encryptedPayload)) throw new Error('加密备份载荷不存在');
+        const decryptedArchive = `${root}/decrypted.zip`;
+        const decryptedRoot = `${root}/decrypted`;
+        await AppDataBackupService.ensureDir(decryptedRoot);
+        await BackupCrypto.decryptFile(encryptedPayload, decryptedArchive, password, metadata,
+          (processed: number, total: number): void => {
+            const ratio = total > 0 ? processed / total : 1;
+            AppDataBackupService.reportProgress(onProgress, '正在解密备份数据...',
+              48 + Math.min(30, Math.floor(ratio * 30)));
+          });
+        try {
+          AppDataBackupService.reportProgress(onProgress, '正在解包应用数据...', 80);
+          await zlib.decompressFile(decryptedArchive, decryptedRoot);
+          AppDataBackupService.reportProgress(onProgress, '应用数据解包完成', 94);
+        } finally {
+          await AppDataBackupService.removeFile(decryptedArchive);
+        }
+        manifestSearchRoot = decryptedRoot;
+      } else {
+        AppDataBackupService.reportProgress(onProgress, '备份数据解包完成', 90);
+      }
+      AppDataBackupService.reportProgress(onProgress, '正在读取备份清单...', 96);
+      const manifestPath = await AppDataBackupService.findFile(manifestSearchRoot, 'manifest.json');
+      if (!manifestPath) throw new Error('不是有效的 Legado Harmony 备份文件');
+      const raw = await AppDataBackupService.readText(manifestPath);
+      const manifest = JSON.parse(raw) as AppDataBackupManifest;
+      if (manifest.format !== 'legado-harmony-backup' ||
+        (manifest.version !== 1 && manifest.version !== 2)) {
+        throw new Error('备份格式不支持或版本过新');
+      }
+      const session = new AppDataBackupImportSession();
+      session.tempRootPath = root;
+      session.rootPath = AppDataBackupService.parentPath(manifestPath);
+      session.encrypted = !!encryptionPath;
+      session.manifest = manifest;
+      AppDataBackupService.reportProgress(onProgress, '备份文件读取完成', 100);
+      return session;
+    } catch (error) {
+      await AppDataBackupService.removeDirectory(root);
+      throw new Error(error instanceof Error ? error.message : String(error));
     }
-    const session = new AppDataBackupImportSession();
-    session.rootPath = AppDataBackupService.parentPath(manifestPath);
-    session.manifest = manifest;
-    return session;
+  }
+
+  static async discardExport(archivePath: string): Promise<void> {
+    if (!archivePath) return;
+    await AppDataBackupService.removeDirectory(AppDataBackupService.parentPath(archivePath));
+  }
+
+  static async discardImport(session: AppDataBackupImportSession | null): Promise<void> {
+    if (!session || !session.tempRootPath) return;
+    await AppDataBackupService.removeDirectory(session.tempRootPath);
+    session.tempRootPath = '';
   }
 
   static async importBackup(context: Context, session: AppDataBackupImportSession,
@@ -399,6 +545,83 @@ export class AppDataBackupService {
     return JSON.stringify(await store.getAll());
   }
 
+  private static sanitizeBookSource(source: BookSource): BookSource {
+    const value = JSON.parse(JSON.stringify(source)) as Object;
+    return AppDataBackupService.sanitizeValue(value) as BookSource;
+  }
+
+  private static sanitizeBook(source: Book): Book {
+    const book = JSON.parse(JSON.stringify(source)) as Book;
+    book.variable = AppDataBackupService.sanitizeStructuredText(book.variable || '{}');
+    return book;
+  }
+
+  private static sanitizeStructuredText(raw: string): string {
+    const value = (raw || '').trim();
+    if (!value) return raw || '';
+    try {
+      const parsed = JSON.parse(value) as Object;
+      return JSON.stringify(AppDataBackupService.sanitizeValue(parsed));
+    } catch (_) {
+      return AppDataBackupService.redactSensitiveText(raw);
+    }
+  }
+
+  private static sanitizeValue(value: Object): Object {
+    if (typeof value === 'string') {
+      const text = value.trim();
+      if ((text.startsWith('{') && text.endsWith('}')) ||
+        (text.startsWith('[') && text.endsWith(']'))) {
+        try {
+          return JSON.stringify(AppDataBackupService.sanitizeValue(JSON.parse(text) as Object));
+        } catch (_) {}
+      }
+      return AppDataBackupService.redactSensitiveText(value);
+    }
+    if (Array.isArray(value)) {
+      const result: Object[] = [];
+      for (const item of value as Object[]) result.push(AppDataBackupService.sanitizeValue(item));
+      return result;
+    }
+    if (value !== null && typeof value === 'object') {
+      const source = value as Record<string, Object>;
+      const result: Record<string, Object> = {};
+      for (const key of Object.keys(source)) {
+        result[key] = AppDataBackupService.isSensitiveKey(key) ? '' :
+          AppDataBackupService.sanitizeValue(source[key]);
+      }
+      return result;
+    }
+    return value;
+  }
+
+  private static isSensitiveKey(key: string): boolean {
+    const normalized = (key || '').toLowerCase().replace(/[_\-\s]/g, '');
+    return normalized.includes('cookie') ||
+      normalized.includes('密码') ||
+      normalized.includes('password') ||
+      normalized.includes('passwd') ||
+      normalized.includes('credential') ||
+      normalized === 'pwd' ||
+      normalized.includes('token') ||
+      normalized.includes('authorization') ||
+      normalized.includes('loginheader') ||
+      normalized.includes('secret') ||
+      normalized.includes('apikey') ||
+      normalized.includes('accesskey') ||
+      normalized.includes('sessionid');
+  }
+
+  private static redactSensitiveText(raw: string): string {
+    return (raw || '')
+      .replace(/(^|\r?\n)\s*(cookie|authorization|proxy-authorization|x-api-key|x-access-token)\s*:[^\r\n]*/gi,
+        '$1')
+      .replace(/([?&](?:access_?token|refresh_?token|token|password|passwd|pwd|api_?key|secret|session_?id)=)[^&#\s"'\\]+/gi,
+        '$1[removed]')
+      .replace(/((?:cookie|authorization|access_?token|refresh_?token|token|password|passwd|pwd|api_?key|secret)\s*[:=]\s*["'])[^"'\r\n]*(["'])/gi,
+        '$1[removed]$2');
+  }
+
   private static async restorePreferenceStore(context: Context, storeName: string, raw: string,
     oldRoot: string): Promise<void> {
     const store = await preferences.getPreferences(context, storeName);
@@ -452,6 +675,61 @@ export class AppDataBackupService {
     book.replaceVariable(JSON.stringify(clean));
   }
 
+  private static reportProgress(onProgress: ((message: string, percent: number) => void) | undefined,
+    message: string, percent: number): void {
+    if (onProgress) onProgress(message, Math.max(0, Math.min(100, percent)));
+  }
+
+  private static async ensureEnoughTempSpace(context: Context, selection: AppDataBackupSelection,
+    allBooks: Book[]): Promise<void> {
+    let sourceBytes = 0;
+    const countedPaths: string[] = [];
+    if (selection.localBooks) {
+      for (const book of allBooks) {
+        if (!LocalBookService.isLocalBook(book)) continue;
+        const path = book.getVariable('localFilePath');
+        if (!path || countedPaths.includes(path) || !AppDataBackupService.exists(path)) continue;
+        countedPaths.push(path);
+        sourceBytes += await AppDataBackupService.pathSize(path);
+      }
+    }
+    if (selection.settings) {
+      for (const dirName of AppDataBackupService.ASSET_DIRS) {
+        const path = `${context.filesDir}/${dirName}`;
+        if (AppDataBackupService.exists(path)) sourceBytes += await AppDataBackupService.pathSize(path);
+      }
+    }
+
+    const reserve = 32 * 1024 * 1024;
+    const minimum = 64 * 1024 * 1024;
+    const required = Math.max(minimum, Math.ceil(sourceBytes * 2.25) + reserve);
+    let free = 0;
+    try {
+      free = await statfs.getFreeSize(context.tempDir);
+    } catch (error) {
+      console.warn('读取备份临时空间失败，将继续备份:', error);
+      return;
+    }
+    if (free < required) {
+      throw new Error(`存储空间不足：预计需要 ${AppDataBackupService.formatBytes(required)} 临时空间，` +
+        `当前可用 ${AppDataBackupService.formatBytes(free)}`);
+    }
+  }
+
+  private static async pathSize(path: string): Promise<number> {
+    const stat = await fs.stat(path);
+    if (!stat.isDirectory()) return stat.size;
+    let size = 0;
+    const names = await fs.listFile(path);
+    for (const name of names) size += await AppDataBackupService.pathSize(`${path}/${name}`);
+    return size;
+  }
+
+  private static formatBytes(bytes: number): string {
+    if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+    return `${Math.max(1, Math.ceil(bytes / (1024 * 1024)))} MB`;
+  }
+
   private static async copyDirectory(source: string, target: string): Promise<void> {
     await AppDataBackupService.ensureDir(target);
     const names = await fs.listFile(source);
@@ -469,11 +747,42 @@ export class AppDataBackupService {
 
   private static async copyFile(source: string, target: string): Promise<void> {
     await AppDataBackupService.ensureDir(AppDataBackupService.parentPath(target));
-    if (AppDataBackupService.exists(target)) {
-      try { await fs.unlink(target); } catch (_) {}
+    let sourceFile: fs.File | null = null;
+    let targetFile: fs.File | null = null;
+    try {
+      sourceFile = await fs.open(source, fs.OpenMode.READ_ONLY);
+      targetFile = await fs.open(target,
+        fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
+      await fs.copyFile(sourceFile.fd, targetFile.fd);
+    } finally {
+      if (sourceFile) {
+        try { await fs.close(sourceFile); } catch (_) {}
+      }
+      if (targetFile) {
+        try { await fs.close(targetFile); } catch (_) {}
+      }
     }
-    const sourceUri = source.startsWith('/') ? fileUri.getUriFromPath(source) : source;
-    await fs.copy(sourceUri, fileUri.getUriFromPath(target));
+  }
+
+  private static async removeDirectory(path: string): Promise<void> {
+    if (!AppDataBackupService.exists(path)) return;
+    const names = await fs.listFile(path);
+    for (const name of names) {
+      const child = `${path}/${name}`;
+      const stat = await fs.stat(child);
+      if (stat.isDirectory()) {
+        await AppDataBackupService.removeDirectory(child);
+      } else {
+        await AppDataBackupService.removeFile(child);
+      }
+    }
+    try { await fs.rmdir(path); } catch (_) {}
+  }
+
+  private static async removeFile(path: string): Promise<void> {
+    try {
+      if (AppDataBackupService.exists(path)) await fs.unlink(path);
+    } catch (_) {}
   }
 
   private static async writeText(path: string, value: string): Promise<void> {

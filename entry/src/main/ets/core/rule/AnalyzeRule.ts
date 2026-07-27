@@ -852,15 +852,28 @@ export class AnalyzeRule {
 
   private deepFindAll(obj: Object, key: string): Object[] {
     const values: Object[] = [];
-    if (Array.isArray(obj)) {
-      for (const item of obj) {
-        values.push(...this.deepFindAll(item as Object, key));
-      }
-    } else if (typeof obj === 'object' && obj !== null) {
-      const rec = obj as Record<string, Object>;
-      if (rec[key] !== undefined && rec[key] !== null) values.push(rec[key]);
-      for (const k in rec) {
-        values.push(...this.deepFindAll(rec[k] as Object, key));
+    const stack: Object[] = [obj];
+    let visited = 0;
+    while (stack.length > 0 && visited < 20000 && values.length < 5000) {
+      const current = stack.pop();
+      visited++;
+      if (Array.isArray(current)) {
+        const array = current as Object[];
+        for (let i = array.length - 1; i >= 0; i--) {
+          if (stack.length >= 20000) break;
+          stack.push(array[i]);
+        }
+      } else if (typeof current === 'object' && current !== null) {
+        const rec = current as Record<string, Object>;
+        if (rec[key] !== undefined && rec[key] !== null) values.push(rec[key]);
+        const childKeys: string[] = [];
+        for (const childKey in rec) {
+          childKeys.push(childKey);
+        }
+        for (let i = childKeys.length - 1; i >= 0; i--) {
+          if (stack.length >= 20000) break;
+          stack.push(rec[childKeys[i]]);
+        }
       }
     }
     return values;
@@ -869,8 +882,15 @@ export class AnalyzeRule {
   private applyTokenIndex(values: Object[], index: string): Object[] {
     const flattened: Object[] = [];
     for (const value of values) {
-      if (Array.isArray(value)) flattened.push(...value as Object[]);
-      else flattened.push(value);
+      if (Array.isArray(value)) {
+        for (const item of value as Object[]) {
+          if (flattened.length >= 5000) break;
+          flattened.push(item);
+        }
+      } else {
+        flattened.push(value);
+      }
+      if (flattened.length >= 5000) break;
     }
     if (!index || index === '*') return flattened;
     const idx = parseInt(index);
@@ -878,16 +898,28 @@ export class AnalyzeRule {
   }
 
   private deepFind(obj: Object, key: string): Object | string | undefined {
-    if (Array.isArray(obj)) {
-      for (const item of obj) {
-        const r = this.deepFind(item as Object, key);
-        if (r !== undefined) return r;
-      }
-    } else if (typeof obj === 'object' && obj !== null) {
-      if ((obj as Record<string, Object>)[key] !== undefined) return (obj as Record<string, Object>)[key];
-      for (const k in obj as Record<string, Object>) {
-        const r = this.deepFind((obj as Record<string, Object>)[k] as Object, key);
-        if (r !== undefined) return r;
+    const stack: Object[] = [obj];
+    let visited = 0;
+    while (stack.length > 0 && visited < 20000) {
+      const current = stack.pop();
+      visited++;
+      if (Array.isArray(current)) {
+        const array = current as Object[];
+        for (let i = array.length - 1; i >= 0; i--) {
+          if (stack.length >= 20000) break;
+          stack.push(array[i]);
+        }
+      } else if (typeof current === 'object' && current !== null) {
+        const rec = current as Record<string, Object>;
+        if (rec[key] !== undefined) return rec[key];
+        const childKeys: string[] = [];
+        for (const childKey in rec) {
+          childKeys.push(childKey);
+        }
+        for (let i = childKeys.length - 1; i >= 0; i--) {
+          if (stack.length >= 20000) break;
+          stack.push(rec[childKeys[i]]);
+        }
       }
     }
     return undefined;

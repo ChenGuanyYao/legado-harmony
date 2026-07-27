@@ -10,6 +10,10 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ThemeIds, ThemePack, ThemeVariant } from '../theme/ThemeModels';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AccountCommerceConfig } from '../account/AccountCommerceConfig';
+import { AccountApiError, ThemeEntitlement } from '../account/AccountCommerceModels';
+import { AccountSessionStore } from '../account/AccountSessionStore';
+import { HuaweiAccountService } from '../account/HuaweiAccountService';
 import {
   ReaderRegexBubbleStyleResolver,
   ReaderRegexEmphasisContext,
@@ -43,12 +47,16 @@ struct ThemeSettingsPage {
   @StorageLink('appCustomDarkReaderContentTone') customDarkReaderContentTone: string = 'dark';
   @StorageLink('readerLightThemeIndex') readerLightThemeIndex: number = 0;
   @StorageLink('readerDarkThemeIndex') readerDarkThemeIndex: number = 0;
+  @StorageLink('accountLoggedIn') accountLoggedIn: boolean = false;
+  @StorageLink('accountPoints') accountPoints: number = 0;
+  @StorageLink('accountEntitlementsRevision') accountEntitlementsRevision: number = 0;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State applyingThemeId: string = '';
 
   aboutToAppear(): void {
     this.loadThemeSettings();
+    this.initializeAccount();
     this.syncBars();
   }
 
@@ -62,15 +70,14 @@ struct ThemeSettingsPage {
 
       Scroll() {
         Column({ space: 12 }) {
-          this.currentThemeSummary()
-          this.themeBookCoverSetting()
+          this.sectionTitle('默认主题')
+          this.themeCard(BuiltinThemeRegistry.findById(ThemeIds.PLAIN_DEFAULT))
           this.sectionTitle('自定义主题')
           this.themeCard(this.customTheme())
           this.sectionTitle('内置主题')
-          ForEach(BuiltinThemeRegistry.all(), (theme: ThemePack) => {
+          ForEach(this.additionalBuiltinThemes(), (theme: ThemePack) => {
             this.themeCard(theme)
           }, (theme: ThemePack) => theme.id)
-          this.followThemeHint()
         }
         .width('100%')
         .padding({ left: 14, right: 14, top: 14, bottom: 32 })
@@ -85,11 +92,30 @@ struct ThemeSettingsPage {
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 
+  async initializeAccount(): Promise<void> {
+    try {
+      await HuaweiAccountService.initialize(getContext(this));
+      if (AccountSessionStore.isLoggedIn() && AccountCommerceConfig.isServerConfigured()) {
+        await HuaweiAccountService.refresh(getContext(this));
+      }
+    } catch (e) {
+      console.warn('同步主题权益失败:', e);
+    }
+  }
+
   async loadThemeSettings(): Promise<void> {
     try {
       const settings = await AppThemeSettingsStore.load(getContext(this));
+      const theme = settings.themeId === ThemeIds.CUSTOM ?
+        AppThemeSettingsStore.customTheme(settings, this.appDarkMode) :
+        BuiltinThemeRegistry.findById(settings.themeId);
+      if (settings.themeBookCoverEnabled && !this.themeHasBookCover(theme)) {
+        settings.themeBookCoverEnabled = false;
+        await AppThemeSettingsStore.save(getContext(this), settings);
+      }
       AppThemeSettingsStore.applyToStorage(settings);
       this.appThemeId = settings.themeId;
+      this.themeBookCoverEnabled = settings.themeBookCoverEnabled;
       const readerSettings = await ReaderSettingsStore.load(getContext(this));
       ReaderSettingsStore.applyToStorage(readerSettings);
     } catch (e) {
@@ -101,20 +127,28 @@ struct ThemeSettingsPage {
     if (this.applyingThemeId || themeId === this.appThemeId) {
       return;
     }
+    const accessible = await this.ensureThemeAccess(themeId);
+    if (!accessible) {
+      return;
+    }
     this.applyingThemeId = themeId;
     try {
       const theme = themeId === ThemeIds.CUSTOM ? this.customTheme() : BuiltinThemeRegistry.findById(themeId);
-      const coverDialog = await promptAction.showDialog({
-        title: `启用「${theme.name}」主题封面？`,
-        message: '启用后，书架会忽略图书原封面，改用这套主题封面与配套书籍边框。之后可在本页随时关闭。',
-        buttons: [
-          { text: '保留原封面', color: this.subTextColor() },
-          { text: '启用主题封面', color: this.accentColor() }
-        ]
-      });
+      let enableThemeBookCover = false;
+      if (this.themeHasBookCover(theme)) {
+        const coverDialog = await promptAction.showDialog({
+          title: `启用「${theme.name}」主题封面？`,
+          message: '启用后，书架会忽略图书原封面，改用这套主题封面与配套书籍边框。之后可在本页随时关闭。',
+          buttons: [
+            { text: '保留原封面', color: this.subTextColor() },
+            { text: '启用主题封面', color: this.accentColor() }
+          ]
+        });
+        enableThemeBookCover = coverDialog.index === 1;
+      }
       const previous: AppThemeSettings = await AppThemeSettingsStore.load(getContext(this));
       const settings: AppThemeSettings = AppThemeSettingsStore.activateTheme(themeId, previous);
-      settings.themeBookCoverEnabled = coverDialog.index === 1;
+      settings.themeBookCoverEnabled = enableThemeBookCover;
       AppThemeSettingsStore.applyToStorage(settings);
       await AppThemeSettingsStore.save(getContext(this), settings);
       this.appThemeId = settings.themeId;
@@ -142,6 +176,62 @@ struct ThemeSettingsPage {
     }
   }
 
+  async ensureThemeAccess(themeId: string): Promise<boolean> {
+    if (themeId === ThemeIds.CUSTOM || BuiltinThemeRegistry.isFree(themeId) || themeId === this.appThemeId ||
+      AccountSessionStore.hasValidEntitlement(themeId)) {
+      return true;
+    }
+    if (!this.accountLoggedIn) {
+      const loginDialog = await promptAction.showDialog({
+        title: '登录后获取主题',
+        message: `该主题需要 ${AccountCommerceConfig.THEME_PRICE_POINTS} 点，获取后有效一年。首次登录免费送 300 点。`,
+        buttons: [
+          { text: '取消', color: this.subTextColor() },
+          { text: '去登录', color: this.accentColor() }
+        ]
+      });
+      if (loginDialog.index === 1) {
+        router.pushUrl({ url: 'pages/AccountCenter' });
+      }
+      return false;
+    }
+    const theme = BuiltinThemeRegistry.findById(themeId);
+    const confirm = await promptAction.showDialog({
+      title: `获取「${theme.name}」`,
+      message: `将扣除 ${AccountCommerceConfig.THEME_PRICE_POINTS} 点，主题有效期为 365 天。有效期内可在所有已登录终端使用。`,
+      buttons: [
+        { text: '取消', color: this.subTextColor() },
+        { text: `确认 · ${AccountCommerceConfig.THEME_PRICE_POINTS} 点`, color: this.accentColor() }
+      ]
+    });
+    if (confirm.index !== 1) {
+      return false;
+    }
+    try {
+      await HuaweiAccountService.redeemTheme(getContext(this), themeId);
+      promptAction.showToast({ message: `已获取「${theme.name}」，有效期一年` });
+      return true;
+    } catch (e) {
+      const error = e as AccountApiError;
+      if (error.errorCode === 'INSUFFICIENT_POINTS') {
+        const recharge = await promptAction.showDialog({
+          title: '点数不足',
+          message: `当前有 ${this.accountPoints} 点，获取该主题需要 ${AccountCommerceConfig.THEME_PRICE_POINTS} 点。`,
+          buttons: [
+            { text: '取消', color: this.subTextColor() },
+            { text: '去充值', color: this.accentColor() }
+          ]
+        });
+        if (recharge.index === 1) {
+          router.pushUrl({ url: 'pages/AccountCenter' });
+        }
+      } else {
+        promptAction.showToast({ message: error.message || '获取主题失败，请稍后重试' });
+      }
+      return false;
+    }
+  }
+
   async setThemeBookCoverEnabled(enabled: boolean): Promise<void> {
     try {
       const settings = await AppThemeSettingsStore.load(getContext(this));
@@ -154,37 +244,6 @@ struct ThemeSettingsPage {
       console.error('保存主题封面设置失败:', e);
       promptAction.showToast({ message: '保存主题封面设置失败' });
     }
-  }
-
-  async useAppReaderTheme(): Promise<void> {
-    const settings: ReaderSettings = await ReaderSettingsStore.load(getContext(this));
-    this.readerLightThemeIndex = ReaderThemeHelper.APP_THEME_INDEX;
-    this.readerDarkThemeIndex = ReaderThemeHelper.APP_THEME_INDEX;
-    await ReaderSettingsStore.saveThemeSettings(
-      getContext(this),
-      this.readerLightThemeIndex,
-      this.readerDarkThemeIndex,
-      settings.lightCustomThemeBackgroundColor,
-      settings.lightCustomThemeTextColor,
-      settings.darkCustomThemeBackgroundColor,
-      settings.darkCustomThemeTextColor,
-      this.appDarkMode
-    );
-  }
-
-  async enableAppReaderTheme(): Promise<void> {
-    try {
-      await this.useAppReaderTheme();
-      promptAction.showToast({ message: '阅读背景已改为跟随应用主题' });
-    } catch (e) {
-      console.error('启用应用阅读主题失败:', e);
-      promptAction.showToast({ message: '设置阅读主题失败' });
-    }
-  }
-
-  readerFollowsAppTheme(): boolean {
-    return this.readerLightThemeIndex === ReaderThemeHelper.APP_THEME_INDEX &&
-      this.readerDarkThemeIndex === ReaderThemeHelper.APP_THEME_INDEX;
   }
 
   async applyThemeFontWhenAvailable(): Promise<void> {
@@ -217,32 +276,8 @@ struct ThemeSettingsPage {
     });
   }
 
-  activeTheme(): ThemePack {
-    if (this.appThemeId === ThemeIds.CUSTOM) {
-      return this.customTheme();
-    }
-    return BuiltinThemeRegistry.findById(this.appThemeId);
-  }
-
   customTheme(): ThemePack {
-    const theme = BuiltinThemeRegistry.customTheme(this.customBaseThemeId);
-    theme.light.colors.accentColor = this.customLightAccentColor;
-    theme.dark.colors.accentColor = this.customDarkAccentColor;
-    theme.light.colors.buttonColor = this.customLightButtonColor;
-    theme.dark.colors.buttonColor = this.customDarkButtonColor;
-    theme.light.reader.backgroundColor = this.customLightReaderBackgroundColor;
-    theme.light.reader.textColor = this.customLightReaderTextColor;
-    theme.light.reader.subTextColor = this.customLightReaderSubTextColor;
-    theme.light.reader.backgroundAssetId = this.customLightReaderBackgroundAssetId;
-    theme.light.reader.backgroundImageFit = this.customLightReaderBackgroundImageFit;
-    theme.light.reader.contentTone = this.customLightReaderContentTone;
-    theme.dark.reader.backgroundColor = this.customDarkReaderBackgroundColor;
-    theme.dark.reader.textColor = this.customDarkReaderTextColor;
-    theme.dark.reader.subTextColor = this.customDarkReaderSubTextColor;
-    theme.dark.reader.backgroundAssetId = this.customDarkReaderBackgroundAssetId;
-    theme.dark.reader.backgroundImageFit = this.customDarkReaderBackgroundImageFit;
-    theme.dark.reader.contentTone = this.customDarkReaderContentTone;
-    return theme;
+    return AppThemeSettingsStore.currentCustomTheme(this.appDarkMode);
   }
 
   activeVariant(theme: ThemePack): ThemeVariant {
@@ -283,7 +318,7 @@ struct ThemeSettingsPage {
       ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
-      Text('主题与外观')
+      Text('主题')
         .fontSize(20)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
@@ -297,28 +332,6 @@ struct ThemeSettingsPage {
   }
 
   @Builder
-  currentThemeSummary() {
-    Row({ space: 12 }) {
-      Image(ThemeAssetRegistry.themeLogo(this.activeTheme().id))
-        .width(52)
-        .height(52)
-        .borderRadius(16)
-        .objectFit(ImageFit.Contain)
-
-      Text(this.activeTheme().name)
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .padding(16)
-    .alignItems(VerticalAlign.Center)
-    .borderRadius(ThemeRuntime.cardRadius())
-    .backgroundColor(this.cardColor())
-  }
-
-  @Builder
   sectionTitle(title: string) {
     Text(title)
       .fontSize(13)
@@ -328,11 +341,11 @@ struct ThemeSettingsPage {
   }
 
   @Builder
-  themeBookCoverSetting() {
+  themeBookCoverSetting(theme: ThemePack) {
     Row({ space: 12 }) {
       Stack() {
         Swiper() {
-          ForEach(this.themeCoverSet(this.activeTheme()), (cover: ResourceStr, index: number) => {
+          ForEach(this.themeCoverSet(theme), (cover: ResourceStr, index: number) => {
             Image(cover)
               .width(42)
               .height(58)
@@ -341,11 +354,11 @@ struct ThemeSettingsPage {
         }
         .width(42)
         .height(58)
-        .autoPlay(this.themeCoverSet(this.activeTheme()).length > 1)
+        .autoPlay(this.themeCoverSet(theme).length > 1)
         .interval(2800)
         .indicator(false)
         .loop(true)
-        Image(ThemeAssetRegistry.themeShelfFrame(this.activeTheme().book.shelfFrameAssetId))
+        Image(ThemeAssetRegistry.themeShelfFrame(theme.book.shelfFrameAssetId))
           .width(42)
           .height(58)
           .objectFit(ImageFit.Fill)
@@ -357,10 +370,10 @@ struct ThemeSettingsPage {
         Text('主题书籍封面')
           .fontSize(15)
           .fontWeight(FontWeight.Medium)
-          .fontColor(this.primaryTextColor())
+          .fontColor(this.activeVariant(theme).colors.primaryTextColor)
         Text(this.themeBookCoverEnabled ? '书架已使用主题封面和配套边框' : '保留每本书原有封面')
           .fontSize(12)
-          .fontColor(this.subTextColor())
+          .fontColor(this.activeVariant(theme).colors.subTextColor)
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -372,10 +385,10 @@ struct ThemeSettingsPage {
         })
     }
     .width('100%')
-    .padding(14)
+    .padding(12)
     .alignItems(VerticalAlign.Center)
-    .borderRadius(ThemeRuntime.cardRadius())
-    .backgroundColor(this.cardColor())
+    .borderRadius(theme.radius.medium)
+    .backgroundColor(this.activeVariant(theme).colors.inputColor)
   }
 
   @Builder
@@ -414,45 +427,58 @@ struct ThemeSettingsPage {
           Text('应用中')
             .fontSize(12)
             .fontColor(this.activeVariant(theme).colors.accentColor)
+        } else if (theme.id !== ThemeIds.CUSTOM) {
+          Text(this.themeAccessLabel(theme.id))
+            .fontSize(11)
+            .fontColor(this.hasThemeAccess(theme.id) ?
+              this.activeVariant(theme).colors.accentColor : this.activeVariant(theme).colors.subTextColor)
+            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+            .borderRadius(11)
+            .backgroundColor(this.activeVariant(theme).colors.inputColor)
         }
       }
       .width('100%')
 
       this.themeVisualPreview(theme)
+      if (this.isSelected(theme) && this.themeHasBookCover(theme)) {
+        this.themeBookCoverSetting(theme)
+      }
       Row({ space: 8 }) {
-        Stack() {
-          Swiper() {
-            ForEach(this.themeCoverSet(theme), (cover: ResourceStr, index: number) => {
-              Image(cover)
-                .width(28)
-                .height(40)
-                .objectFit(ImageFit.Fill)
-            }, (_cover: ResourceStr, index: number) => `${theme.id}_cover_${index}`)
+        if (!this.isSelected(theme) && this.themeHasBookCover(theme)) {
+          Stack() {
+            Swiper() {
+              ForEach(this.themeCoverSet(theme), (cover: ResourceStr, index: number) => {
+                Image(cover)
+                  .width(28)
+                  .height(40)
+                  .objectFit(ImageFit.Fill)
+              }, (_cover: ResourceStr, index: number) => `${theme.id}_cover_${index}`)
+            }
+            .width(28)
+            .height(40)
+            .autoPlay(this.themeCoverSet(theme).length > 1)
+            .interval(3000)
+            .indicator(false)
+            .loop(true)
+            Image(ThemeAssetRegistry.themeShelfFrame(theme.book.shelfFrameAssetId))
+              .width(28)
+              .height(40)
+              .objectFit(ImageFit.Fill)
           }
           .width(28)
           .height(40)
-          .autoPlay(this.themeCoverSet(theme).length > 1)
-          .interval(3000)
-          .indicator(false)
-          .loop(true)
-          Image(ThemeAssetRegistry.themeShelfFrame(theme.book.shelfFrameAssetId))
-            .width(28)
-            .height(40)
-            .objectFit(ImageFit.Fill)
         }
-        .width(28)
-        .height(40)
         Text(`${theme.readerLayout.fontSize} 字号 · ${theme.readerLayout.lineHeight} 行距 · ` +
           `${theme.readerLayout.marginLeft}/${theme.readerLayout.marginRight} 左右边距`)
           .fontSize(11)
           .fontColor(this.activeVariant(theme).colors.subTextColor)
           .layoutWeight(1)
       }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
       if (theme.id === ThemeIds.CUSTOM) {
         Row() {
-          Text('已保存配色与阅读背景')
+          Text('浅色 / 深色可分别组合全部主题部件')
             .fontSize(11)
             .fontColor(this.activeVariant(theme).colors.subTextColor)
             .layoutWeight(1)
@@ -480,6 +506,43 @@ struct ThemeSettingsPage {
     .onClick(() => {
       this.selectTheme(theme.id);
     })
+  }
+
+  hasThemeAccess(themeId: string): boolean {
+    return BuiltinThemeRegistry.isFree(themeId) || themeId === this.appThemeId ||
+      AccountSessionStore.hasValidEntitlement(themeId);
+  }
+
+  additionalBuiltinThemes(): ThemePack[] {
+    const themes: ThemePack[] = [];
+    for (const theme of BuiltinThemeRegistry.all()) {
+      if (theme.id !== ThemeIds.PLAIN_DEFAULT) {
+        themes.push(theme);
+      }
+    }
+    return themes;
+  }
+
+  themeHasBookCover(theme: ThemePack): boolean {
+    return !!theme.book.coverAssetId && this.themeCoverSet(theme).length > 0;
+  }
+
+  themeAccessLabel(themeId: string): string {
+    if (BuiltinThemeRegistry.isFree(themeId)) {
+      return '免费';
+    }
+    const entitlement: ThemeEntitlement | null = AccountSessionStore.entitlement(themeId);
+    if (entitlement && entitlement.expiresAt > Date.now()) {
+      return `有效至 ${this.formatDate(entitlement.expiresAt)}`;
+    }
+    return `${AccountCommerceConfig.THEME_PRICE_POINTS}点 / 1年`;
+  }
+
+  formatDate(timestamp: number): string {
+    const date = new Date(timestamp);
+    const month = `${date.getMonth() + 1}`.padStart(2, '0');
+    const day = `${date.getDate()}`.padStart(2, '0');
+    return `${date.getFullYear()}-${month}-${day}`;
   }
 
   @Builder
@@ -628,38 +691,6 @@ struct ThemeSettingsPage {
     if (styleId === 'dashed') return TextDecorationStyle.DASHED;
     if (styleId === 'wavy') return TextDecorationStyle.WAVY;
     return TextDecorationStyle.SOLID;
-  }
-
-  @Builder
-  followThemeHint() {
-    Column({ space: 8 }) {
-      Row() {
-        Text(this.readerFollowsAppTheme() ? '阅读设置正在跟随应用主题' : '阅读设置正在使用独立配色')
-          .fontSize(14)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.primaryTextColor())
-          .layoutWeight(1)
-        if (!this.readerFollowsAppTheme()) {
-          Button('改为跟随')
-            .height(32)
-            .fontSize(12)
-            .fontColor('#FFFFFF')
-            .backgroundColor(this.accentColor())
-            .onClick(() => {
-              this.enableAppReaderTheme();
-            })
-        }
-      }
-      .width('100%')
-      Text('你仍可在阅读设置中单独选择米黄、素白、青绿或自定义配色。')
-        .fontSize(12)
-        .fontColor(this.subTextColor())
-    }
-    .width('100%')
-    .padding(14)
-    .alignItems(HorizontalAlign.Start)
-    .borderRadius(ThemeRuntime.cardRadius())
-    .backgroundColor(this.cardColor())
   }
 
 }

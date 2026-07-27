@@ -84,6 +84,7 @@ struct BookSourceEditPage {
     try {
       const db = AppDatabase.getInstance();
       const existing = await db.getBookSource(this.source.bookSourceUrl);
+      this.source.validationStatus = BookSource.VALIDATION_UNCHECKED;
       if (existing) {
         await db.updateBookSource(this.source);
       } else {
@@ -848,6 +849,7 @@ struct BookSourceEditPage {
     const db = AppDatabase.getInstance();
     await db.initWithContext(getContext(this));
     const existing = await db.getBookSource(this.source.bookSourceUrl);
+    this.source.validationStatus = BookSource.VALIDATION_UNCHECKED;
     if (existing) {
       await db.updateBookSource(this.source);
     } else {

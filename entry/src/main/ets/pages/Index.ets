@@ -29,7 +29,6 @@ import { SearchExploreSettings, SearchExploreSettingsStore } from '../utils/Sear
 import { AppThemeSettingsStore } from '../utils/AppThemeSettingsStore';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
-import { BuiltinThemeRegistry } from '../theme/BuiltinThemeRegistry';
 import { LocalBookService } from '../core/book/LocalBookService';
 
 const SHELF_FULL_TEXT_CACHE_CANCEL_EVENT: string = 'com.legado.harmony.action.SHELF_FULL_TEXT_CACHE_CANCEL';
@@ -2844,7 +2843,7 @@ struct BookshelfPage {
   @Builder
   shelfTileGroupFolder(group: BookGroup) {
     Column({ space: 6 }) {
-      if (this.themeBookCoverEnabled) {
+      if (this.shouldUseThemeBookCover()) {
         Stack() {
           Image(this.activeThemeShelfFolder())
             .width('100%')
@@ -3374,7 +3373,7 @@ struct BookshelfPage {
   @Builder
   coverView(book: Book, width: Length, height: Length, imageFit: ImageFit) {
     Stack() {
-      if (this.themeBookCoverEnabled) {
+      if (this.shouldUseThemeBookCover()) {
         if (this.activeThemeBookCovers(book).length === 1) {
           Image(this.activeThemeBookCovers(book)[0])
             .width(width)
@@ -3440,9 +3439,7 @@ struct BookshelfPage {
   }
 
   activeThemeBookCovers(book: Book): ResourceStr[] {
-    const theme = this.appThemeId === 'custom' ?
-      BuiltinThemeRegistry.customTheme(this.appCustomBaseThemeId) : BuiltinThemeRegistry.findById(this.appThemeId);
-    const covers = ThemeAssetRegistry.themeBookCovers(theme.book.coverAssetId);
+    const covers = ThemeAssetRegistry.themeBookCovers(ThemeRuntime.bookTokens(this.appDarkMode).coverAssetId);
     if (covers.length <= 1) return covers;
     const result: ResourceStr[] = [];
     const seed = this.themeBookCoverSeed(book);
@@ -3452,6 +3449,11 @@ struct BookshelfPage {
       result.push(covers[(start + index * direction) % covers.length]);
     }
     return result;
+  }
+
+  shouldUseThemeBookCover(): boolean {
+    return this.themeBookCoverEnabled &&
+      ThemeAssetRegistry.themeBookCovers(ThemeRuntime.bookTokens(this.appDarkMode).coverAssetId).length > 0;
   }
 
   themeBookCoverSeed(book: Book): number {
@@ -3468,15 +3470,11 @@ struct BookshelfPage {
   }
 
   activeThemeShelfFrame(): ResourceStr {
-    const theme = this.appThemeId === 'custom' ?
-      BuiltinThemeRegistry.customTheme(this.appCustomBaseThemeId) : BuiltinThemeRegistry.findById(this.appThemeId);
-    return ThemeAssetRegistry.themeShelfFrame(theme.book.shelfFrameAssetId);
+    return ThemeAssetRegistry.themeShelfFrame(ThemeRuntime.bookTokens(this.appDarkMode).shelfFrameAssetId);
   }
 
   activeThemeShelfFolder(): ResourceStr {
-    const theme = this.appThemeId === 'custom' ?
-      BuiltinThemeRegistry.customTheme(this.appCustomBaseThemeId) : BuiltinThemeRegistry.findById(this.appThemeId);
-    return ThemeAssetRegistry.themeShelfFolder(theme.book.shelfFolderAssetId);
+    return ThemeAssetRegistry.themeShelfFolder(ThemeRuntime.bookTokens(this.appDarkMode).shelfFolderAssetId);
   }
 
   getShelfCover(book: Book): string {
@@ -5341,7 +5339,7 @@ struct ExplorePage {
       this.finishExploreLoad(currentLoadVersion);
       return;
     }
-    this.status = '正在获取发现内容...';
+    this.status = '';
     this.verificationUrl = '';
     this.verificationTitle = '';
     try {
@@ -7353,6 +7351,10 @@ struct SettingsPage {
   @Prop navBarHeight: number = 0;
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
+  @StorageLink('accountLoggedIn') accountLoggedIn: boolean = false;
+  @StorageLink('accountDisplayName') accountDisplayName: string = '';
+  @StorageLink('accountAvatarUrl') accountAvatarUrl: string = '';
+  @StorageLink('accountPoints') accountPoints: number = 0;
 
   build() {
     Column() {
@@ -7370,34 +7372,41 @@ struct SettingsPage {
       .backgroundColor(this.glassCardColor())
 
       Scroll() {
-        Column() {
-          this.menuItem($r('sys.symbol.externaldrive'), '书源管理', true, () => {
-            router.pushUrl({ url: 'pages/BookSource' });
-          })
-          this.menuItem($r('sys.symbol.book'), '阅读设置', true, () => {
-            router.pushUrl({ url: 'pages/Settings' });
-          })
-          this.menuItem($r('sys.symbol.speaker_wave_3'), '朗读设置', true, () => {
-            router.pushUrl({ url: 'pages/TtsSettings' });
-          })
-          this.menuItem($r('sys.symbol.bookshelf'), '书架设置', true, () => {
-            router.pushUrl({ url: 'pages/BookshelfSettings' });
-          })
-          this.menuItem($r('sys.symbol.magnifyingglass'), '搜索/发现配置', true, () => {
-            router.pushUrl({ url: 'pages/SearchExploreSettings' });
-          })
-          this.menuItem($r('sys.symbol.gearshape'), '其他设置', true, () => {
-            router.pushUrl({ url: 'pages/OtherSettings' });
-          })
-          this.menuItem($r('sys.symbol.info_circle'), '关于', false, () => {
-            router.pushUrl({ url: 'pages/About' });
-          })
+        Column({ space: 12 }) {
+          this.accountSummaryCard()
+          Column() {
+            this.menuItem($r('sys.symbol.externaldrive'), '书源管理', true, () => {
+              router.pushUrl({ url: 'pages/BookSource' });
+            })
+            this.menuItem($r('sys.symbol.book'), '阅读设置', true, () => {
+              router.pushUrl({ url: 'pages/Settings' });
+            })
+            this.menuItem($r('sys.symbol.speaker_wave_3'), '朗读设置', true, () => {
+              router.pushUrl({ url: 'pages/TtsSettings' });
+            })
+            this.menuItem($r('sys.symbol.bookshelf'), '书架设置', true, () => {
+              router.pushUrl({ url: 'pages/BookshelfSettings' });
+            })
+            this.menuItem($r('sys.symbol.magnifyingglass'), '搜索/发现配置', true, () => {
+              router.pushUrl({ url: 'pages/SearchExploreSettings' });
+            })
+            this.menuItem($r('sys.symbol.circle_lefthalf_inset_filled'), '主题', true, () => {
+              router.pushUrl({ url: 'pages/ThemeSettings' });
+            })
+            this.menuItem($r('sys.symbol.gearshape'), '其他设置', true, () => {
+              router.pushUrl({ url: 'pages/OtherSettings' });
+            })
+            this.menuItem($r('sys.symbol.info_circle'), '关于', false, () => {
+              router.pushUrl({ url: 'pages/About' });
+            })
+          }
+          .width('100%')
+          .borderRadius(16)
+          .clip(true)
+          .backgroundColor(this.glassCardColor())
         }
         .width('calc(100% - 24vp)')
         .margin({ left: 12, right: 12, top: 12 })
-        .borderRadius(16)
-        .clip(true)
-        .backgroundColor(this.glassCardColor())
         .justifyContent(FlexAlign.Start)
       }
       .width('100%')
@@ -7411,6 +7420,48 @@ struct SettingsPage {
     .justifyContent(FlexAlign.Start)
     .padding({ top: this.statusBarHeight })
     .backgroundColor(this.pageColor())
+  }
+
+  @Builder
+  accountSummaryCard() {
+    Row({ space: 12 }) {
+      if (this.accountLoggedIn && this.accountAvatarUrl) {
+        Image(this.accountAvatarUrl)
+          .width(48)
+          .height(48)
+          .borderRadius(24)
+          .objectFit(ImageFit.Cover)
+      } else {
+        Image($r('app.media.ic_default_reader_avatar'))
+          .width(48)
+          .height(48)
+          .borderRadius(24)
+          .objectFit(ImageFit.Cover)
+      }
+
+      Column({ space: 4 }) {
+        Text(this.accountLoggedIn ? this.accountDisplayName : '登录华为账号')
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+        Text(this.accountLoggedIn ? `${this.accountPoints} 点` : '首次登录免费送 300 点')
+          .fontSize(12)
+          .fontColor(this.subTextColor())
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(18)
+        .fontColor([this.subTextColor()])
+    }
+    .width('100%')
+    .padding(16)
+    .borderRadius(16)
+    .backgroundColor(this.glassCardColor())
+    .onClick(() => {
+      router.pushUrl({ url: 'pages/AccountCenter' });
+    })
   }
 
   @Builder

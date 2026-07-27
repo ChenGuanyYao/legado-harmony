@@ -26,12 +26,14 @@ export interface SearchProgress {
 export type SearchCallback = (progress: SearchProgress) => void;
 
 const MAX_SEARCH_CONCURRENCY = 12;
-const MAX_VALIDATION_CONCURRENCY = 4;
+const MAX_VALIDATION_CONCURRENCY = 2;
 const SEARCH_PROGRESS_EMIT_INTERVAL_MS = 250;
 const MAX_SEARCH_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_VALIDATION_RESPONSE_BYTES = 1024 * 1024;
 const MAX_RESULTS_PER_SOURCE = 50;
 const MAX_TOTAL_SEARCH_RESULTS = 1000;
+const MAX_VALIDATION_RULE_CHARS = 32 * 1024;
+const MAX_VALIDATION_CONFIG_CHARS = 128 * 1024;
 const ENABLE_SEARCH_DEBUG_LOG = false;
 
 export interface SearchOptions {
@@ -168,6 +170,15 @@ export class SearchCoordinator {
   private async searchOne(source: BookSource, keyword: string, options: SearchOptions): Promise<SearchBook[]> {
     try {
       if (this.cancelled) return [];
+      if (options.validationOnly === true) {
+        const compatibilityIssue = this.validationCompatibilityIssue(source);
+        if (compatibilityIssue) {
+          AppStorage.setOrCreate('searchLastSourceError',
+            `${source.bookSourceName || source.bookSourceUrl}: ${compatibilityIssue}`);
+          console.warn('[SC] skip unsafe validation source:', source.bookSourceName, compatibilityIssue);
+          return [];
+        }
+      }
       const responseLimit = options.validationOnly === true ?
         MAX_VALIDATION_RESPONSE_BYTES : MAX_SEARCH_RESPONSE_BYTES;
       const resultLimit = options.validationOnly === true ? 1 : MAX_RESULTS_PER_SOURCE;
@@ -319,6 +330,47 @@ export class SearchCoordinator {
       }
       return [];
     }
+  }
+
+  private validationCompatibilityIssue(source: BookSource): string {
+    const searchRule = source.searchRule;
+    const executableRules = [
+      source.searchUrl || '',
+      searchRule?.bookList || '',
+      searchRule?.name || '',
+      searchRule?.author || '',
+      searchRule?.bookUrl || '',
+      searchRule?.coverUrl || '',
+      searchRule?.intro || '',
+      searchRule?.kind || '',
+      searchRule?.lastChapter || ''
+    ];
+    for (const rule of executableRules) {
+      if (rule.length > MAX_VALIDATION_RULE_CHARS) return '搜索规则过大';
+    }
+    const executable = executableRules.join('\n');
+    const hostCode = [source.jsLib || '', source.bookSourceComment || '', executable].join('\n');
+    if (hostCode.length > MAX_VALIDATION_CONFIG_CHARS) return '书源脚本配置过大';
+    const usesScript = /(?:@js:|<js>|\bjava\.|\bsource\.|\bcache\.)/i.test(executable);
+    if (usesScript &&
+      /\b(?:JavaImporter|Packages|javax?\.crypto|android\.|org\.mozilla|SecretKeySpec|IvParameterSpec|Cipher)\b/i
+        .test(hostCode)) {
+      return '依赖当前不支持的 Java/Android 脚本能力';
+    }
+    if (this.containsRiskyNestedQuantifier(executable)) return '包含高风险嵌套正则';
+    return '';
+  }
+
+  private containsRiskyNestedQuantifier(value: string): boolean {
+    const candidates = (value || '').match(/\/(?:\\.|[^/\r\n]){1,300}\/[gimsuy]*/g) || [];
+    for (const candidate of candidates) {
+      const body = candidate.replace(/^\/|\/[gimsuy]*$/g, '');
+      if (/\((?:\\.|[^()]){0,200}(?:\.\*|\.\+|[^\\][+*])(?:\\.|[^()]){0,200}\)\s*(?:[+*]|\{\d*,?\d*\})/
+        .test(body)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private sortSearchResults(results: SearchBook[], keyword: string): SearchBook[] {

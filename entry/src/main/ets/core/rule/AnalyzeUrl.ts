@@ -315,7 +315,7 @@ export class AnalyzeUrl {
     if (!req.url) {
       return { url: urlTemplate, statusCode: 0, headers: {}, body: '', success: false, error: 'empty url' };
     }
-    if (req.url.startsWith('data:')) return this.decodeDataUrl(req.url);
+    if (req.url.startsWith('data:')) return this.decodeDataUrl(req.url, maxResponseBytes);
     const resp = await this.fetchWithRetry(req);
     if (this.isUsableResponse(resp)) return resp;
 
@@ -337,12 +337,18 @@ export class AnalyzeUrl {
     return response;
   }
 
-  private decodeDataUrl(url: string): HttpResponse {
+  private decodeDataUrl(url: string, maxResponseBytes?: number): HttpResponse {
     try {
       const comma = url.indexOf(',');
       if (comma < 0) throw new Error('invalid data url');
       const meta = url.substring(5, comma);
       const payload = url.substring(comma + 1);
+      if (maxResponseBytes && this.estimatedDataUrlBytes(payload, /;base64(?:;|$)/i.test(meta)) > maxResponseBytes) {
+        return {
+          url: url, statusCode: 0, headers: { 'Content-Type': meta }, body: '', success: false,
+          error: `response too large: >${maxResponseBytes}`
+        };
+      }
       let body = '';
       if (/;base64(?:;|$)/i.test(meta)) {
         const bytes = new util.Base64Helper().decodeSync(payload);
@@ -354,6 +360,14 @@ export class AnalyzeUrl {
     } catch (e) {
       return { url: url, statusCode: 0, headers: {}, body: '', success: false, error: String(e) };
     }
+  }
+
+  private estimatedDataUrlBytes(payload: string, base64: boolean): number {
+    if (base64) {
+      const cleanLength = payload.replace(/\s/g, '').length;
+      return Math.ceil(cleanLength * 3 / 4);
+    }
+    return payload.length;
   }
 
   private async fetchFollowingRedirects(req: HttpRequest): Promise<HttpResponse> {

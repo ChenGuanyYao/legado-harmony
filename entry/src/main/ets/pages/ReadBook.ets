@@ -357,7 +357,8 @@ struct ReadBookPage {
   @StorageLink('readerLandscapeDoublePage') @Watch('onReaderLandscapeDoublePageChanged') readerLandscapeDoublePage: boolean = false;
   @StorageLink('readerTapZoneActions') readerTapZoneActions: string = '3,3,3,3,1,2,2,2,2';
   @StorageLink('readerVolumeTurnPage') @Watch('onReaderVolumeTurnPageChanged') readerVolumeTurnPage: boolean = false;
-  @StorageLink('readerKeepScreenOn') readerKeepScreenOn: boolean = true;
+  @StorageLink('readerScreenTimeoutMinutes') readerScreenTimeoutMinutes: number =
+    ReaderSettingsStore.SCREEN_TIMEOUT_ALWAYS_ON;
   @StorageLink('readerExtendToStatusBar') @Watch('onReaderExtendToStatusBarChanged') readerExtendToStatusBar: boolean = false;
   @StorageLink('readerPreloadEnabled') @Watch('onReaderPreloadChanged') readerPreloadEnabled: boolean = true;
   @StorageLink('readerPreloadChapterCount') @Watch('onReaderPreloadChanged') readerPreloadChapterCount: number = 1;
@@ -438,8 +439,12 @@ struct ReadBookPage {
   @State shelfOpeningEntryScale: number = 1;
   private shelfOpeningEntryTimer: number = -1;
   private openedWithShelfAnimation: boolean = false;
+  private readerScreenTimeoutTimerId: number = -1;
+  private readerScreenTimeoutSerial: number = 0;
+  private readerPageVisible: boolean = false;
 
   async aboutToAppear() {
+    this.readerPageVisible = true;
     this.shortcutRoutingActive = true;
     this.readerEntryInitializing = true;
     this.enterReaderImmersive();
@@ -479,6 +484,8 @@ struct ReadBookPage {
   }
 
   onPageShow(): void {
+    this.readerPageVisible = true;
+    this.applyReaderScreenTimeout();
     this.shortcutRoutingActive = true;
     if (!this.readerEntryInitializing) {
       this.reloadReaderSettingsAfterPageShow().catch((error: Error) => {
@@ -549,6 +556,8 @@ struct ReadBookPage {
   }
 
   aboutToDisappear() {
+    this.readerPageVisible = false;
+    this.releaseReaderScreenTimeout();
     this.shortcutRoutingActive = false;
     if (this.shelfOpeningEntryTimer >= 0) {
       clearTimeout(this.shelfOpeningEntryTimer);
@@ -576,6 +585,8 @@ struct ReadBookPage {
 
   onPageHide(): void {
     this.shortcutRoutingActive = false;
+    this.readerPageVisible = false;
+    this.releaseReaderScreenTimeout();
   }
 
   async openPendingShortcut(): Promise<void> {
@@ -998,6 +1009,62 @@ struct ReadBookPage {
       return true;
     }
     return false;
+  }
+
+  clearReaderScreenTimeoutTimer(): void {
+    if (this.readerScreenTimeoutTimerId >= 0) {
+      clearTimeout(this.readerScreenTimeoutTimerId);
+      this.readerScreenTimeoutTimerId = -1;
+    }
+  }
+
+  applyReaderScreenTimeout(): void {
+    this.clearReaderScreenTimeoutTimer();
+    const serial = ++this.readerScreenTimeoutSerial;
+    if (!this.readerPageVisible) {
+      this.setReaderWindowKeepScreenOn(false, serial);
+      return;
+    }
+    const minutes = ReaderSettingsStore.normalizeScreenTimeoutMinutes(this.readerScreenTimeoutMinutes);
+    if (minutes === ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM) {
+      this.setReaderWindowKeepScreenOn(false, serial);
+      return;
+    }
+    this.setReaderWindowKeepScreenOn(true, serial);
+    if (minutes > 0) {
+      this.readerScreenTimeoutTimerId = setTimeout(() => {
+        if (serial !== this.readerScreenTimeoutSerial) {
+          return;
+        }
+        this.readerScreenTimeoutTimerId = -1;
+        this.setReaderWindowKeepScreenOn(false, serial);
+      }, minutes * 60 * 1000);
+    }
+  }
+
+  refreshReaderScreenTimeout(): void {
+    if (this.readerPageVisible && this.readerScreenTimeoutMinutes > 0) {
+      this.applyReaderScreenTimeout();
+    }
+  }
+
+  releaseReaderScreenTimeout(): void {
+    this.clearReaderScreenTimeoutTimer();
+    const serial = ++this.readerScreenTimeoutSerial;
+    this.setReaderWindowKeepScreenOn(false, serial);
+  }
+
+  setReaderWindowKeepScreenOn(enabled: boolean, serial: number): void {
+    window.getLastWindow(getContext(this)).then((mainWindow: window.Window) => {
+      if (serial !== this.readerScreenTimeoutSerial) {
+        return;
+      }
+      mainWindow.setWindowKeepScreenOn(enabled).catch((error: Error) => {
+        console.warn('设置阅读页亮屏状态失败:', error);
+      });
+    }).catch((error: Error) => {
+      console.warn('获取阅读页窗口失败:', error);
+    });
   }
 
   async cacheFullTextChapter(engine: ReadBookEngine, chapterIndex: number, taskId: number): Promise<boolean> {
@@ -1472,6 +1539,11 @@ struct ReadBookPage {
     .opacity(this.shelfOpeningEntryOpacity)
     .scale({ x: this.shelfOpeningEntryScale, y: this.shelfOpeningEntryScale })
     .expandSafeArea([SafeAreaType.SYSTEM], this.getReaderSafeAreaEdges())
+    .onTouch((event: TouchEvent) => {
+      if (event.type === TouchType.Down) {
+        this.refreshReaderScreenTimeout();
+      }
+    })
   }
 
   @Builder
@@ -4129,7 +4201,8 @@ struct ReadBookPage {
     this.readerLandscapeDoublePage = settings.landscapeDoublePage;
     this.readerTapZoneActions = settings.tapZoneActions;
     this.readerVolumeTurnPage = settings.volumeTurnPage;
-    this.readerKeepScreenOn = settings.keepScreenOn;
+    this.readerScreenTimeoutMinutes = settings.screenTimeoutMinutes;
+    this.applyReaderScreenTimeout();
     this.readerExtendToStatusBar = settings.extendToStatusBar;
     this.readerPreloadEnabled = settings.preloadEnabled;
     this.readerPreloadChapterCount = settings.preloadChapterCount;
@@ -7189,6 +7262,11 @@ struct ReadBookPage {
           this.setReaderVolumeTurnPage(checked);
         })
 
+      this.readerSelectSettingItem('亮屏时间设置', '无操作达到所选时长后恢复系统息屏',
+        this.screenTimeoutOptions(), this.screenTimeoutSelectedIndex(), (index: number) => {
+          this.setReaderScreenTimeoutByIndex(index);
+        })
+
       Row({ space: 10 }) {
         ForEach(this.currentReaderThemes(), (theme: ReaderThemeItem, index: number) => {
           Text(index === ReaderThemeHelper.CUSTOM_THEME_INDEX ? '自' :
@@ -7621,6 +7699,37 @@ struct ReadBookPage {
     const index = this.pageTurnAnimationSelectedIndex();
     const option = options[index];
     return option && typeof option.value === 'string' ? option.value : '无动画';
+  }
+
+  screenTimeoutOptions(): SelectOption[] {
+    return [
+      { value: '跟随系统' },
+      { value: '1分钟' },
+      { value: '5分钟' },
+      { value: '10分钟' },
+      { value: '常亮' }
+    ];
+  }
+
+  screenTimeoutValues(): number[] {
+    return [
+      ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM,
+      1,
+      5,
+      10,
+      ReaderSettingsStore.SCREEN_TIMEOUT_ALWAYS_ON
+    ];
+  }
+
+  screenTimeoutSelectedIndex(): number {
+    const values = this.screenTimeoutValues();
+    const current = ReaderSettingsStore.normalizeScreenTimeoutMinutes(this.readerScreenTimeoutMinutes);
+    for (let i = 0; i < values.length; i++) {
+      if (values[i] === current) {
+        return i;
+      }
+    }
+    return 0;
   }
 
   @Builder
@@ -8236,7 +8345,7 @@ struct ReadBookPage {
     ReaderSettingsStore.saveReadingInteractionSettings(
       getContext(this),
       this.readerVolumeTurnPage,
-      this.readerKeepScreenOn,
+      this.readerScreenTimeoutMinutes,
       this.readerExtendToStatusBar
     ).catch((e: Error) => {
       console.error('保存阅读交互设置失败:', e);
@@ -8246,6 +8355,16 @@ struct ReadBookPage {
   setReaderVolumeTurnPage(enabled: boolean): void {
     this.readerVolumeTurnPage = enabled;
     this.updateVolumeKeySubscription();
+    this.saveReaderInteractionSettings();
+    this.saveReadConfig();
+  }
+
+  setReaderScreenTimeoutByIndex(index: number): void {
+    const values = this.screenTimeoutValues();
+    this.readerScreenTimeoutMinutes = index >= 0 && index < values.length ?
+      values[index] :
+      ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM;
+    this.applyReaderScreenTimeout();
     this.saveReaderInteractionSettings();
     this.saveReadConfig();
   }
@@ -10258,7 +10377,7 @@ struct ReadBookPage {
   shouldUseFullThemeRegexDecoration(slice: ReadTextSlice): boolean {
     if (!slice.highlighted) return false;
     const style = this.resolvedRegexEmphasis(this.getRegexRuleBySlice(slice));
-    return style.mode === 'bubble' && ThemeAssetRegistry.hasRegexBubbleCap(style.bubbleStyleId);
+    return style.bubbleDecorationEnabled && ThemeAssetRegistry.hasRegexBubbleCap(style.bubbleStyleId);
   }
 
   getRegexSliceBubbleStyleId(slice: ReadTextSlice): string {
@@ -10369,8 +10488,11 @@ struct ReadBookPage {
     if (ruleIndex < 0 || ruleIndex >= rules.length) {
       return '';
     }
-    const styleId = this.resolvedRegexEmphasis(rules[ruleIndex]).bubbleStyleId;
-    return ThemeAssetRegistry.hasRegexBubbleFrame(styleId) ? styleId : '';
+    const style = this.resolvedRegexEmphasis(rules[ruleIndex]);
+    if (!style.bubbleDecorationEnabled) {
+      return '';
+    }
+    return ThemeAssetRegistry.hasRegexBubbleFrame(style.bubbleStyleId) ? style.bubbleStyleId : '';
   }
 
   getRegexFrameHorizontalPadding(paragraph: ReaderTextParagraph, pageStart: number = -1): number {
