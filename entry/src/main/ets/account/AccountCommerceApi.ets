@@ -1,10 +1,14 @@
 import http from '@ohos.net.http';
+import { util } from '@kit.ArkTS';
 import { AccountCommerceConfig } from './AccountCommerceConfig';
 import {
   AccountApiError,
   AccountSnapshot,
   HuaweiLoginResponse,
-  IapCreditResponse
+  IapCreditResponse,
+  TtsCatalogResponse,
+  TtsPackageRedeemResponse,
+  TtsWalletSnapshot
 } from './AccountCommerceModels';
 
 class ApiErrorBody {
@@ -52,6 +56,36 @@ export class AccountCommerceApi {
     return response;
   }
 
+  static async fetchTtsCatalog(): Promise<TtsCatalogResponse> {
+    const value = await AccountCommerceApi.request('/v1/tts/catalog', 'GET', '', '');
+    return JSON.parse(value) as TtsCatalogResponse;
+  }
+
+  static async fetchTtsWallet(sessionToken: string): Promise<TtsWalletSnapshot> {
+    const value = await AccountCommerceApi.request(
+      `/v1/tts/wallet?refresh=${Date.now()}`,
+      'GET',
+      '',
+      sessionToken
+    );
+    return AccountCommerceApi.parseTtsWalletText(value);
+  }
+
+  static async redeemTtsPackage(sku: string, requestId: string,
+    sessionToken: string): Promise<TtsPackageRedeemResponse> {
+    const value = await AccountCommerceApi.request(
+      `/v1/tts/packages/${encodeURIComponent(sku)}/redeem`,
+      'POST',
+      JSON.stringify({ requestId: requestId }),
+      sessionToken
+    );
+    const raw = JSON.parse(value) as TtsPackageRedeemResponse;
+    const response = new TtsPackageRedeemResponse();
+    response.account = AccountCommerceApi.normalizeAccount(raw.account);
+    response.ttsWallet = AccountCommerceApi.normalizeTtsWallet(raw.ttsWallet);
+    return response;
+  }
+
   private static async request(path: string, method: string, body: string, sessionToken: string): Promise<string> {
     if (!AccountCommerceConfig.isServerConfigured()) {
       throw new AccountApiError('账号服务端尚未配置', 0, 'SERVER_NOT_CONFIGURED');
@@ -59,7 +93,9 @@ export class AccountCommerceApi {
     const client = http.createHttp();
     const headers: Record<string, string> = {
       'Accept': 'application/json',
-      'Content-Type': 'application/json;charset=UTF-8'
+      'Content-Type': 'application/json;charset=UTF-8',
+      'Cache-Control': 'no-cache, no-store',
+      'Pragma': 'no-cache'
     };
     if (sessionToken) {
       headers['Authorization'] = `Bearer ${sessionToken}`;
@@ -70,10 +106,11 @@ export class AccountCommerceApi {
         header: headers,
         extraData: body || undefined,
         connectTimeout: 10000,
-        readTimeout: 15000
+        readTimeout: 15000,
+        expectDataType: http.HttpDataType.ARRAY_BUFFER
       });
       const statusCode = Number(response.responseCode);
-      const value = typeof response.result === 'string' ? response.result : JSON.stringify(response.result);
+      const value = AccountCommerceApi.responseText(response.result);
       if (statusCode < 200 || statusCode >= 300) {
         const error = AccountCommerceApi.parseError(value);
         throw new AccountApiError(error.message || `服务请求失败（${statusCode}）`, statusCode, error.code);
@@ -89,6 +126,49 @@ export class AccountCommerceApi {
       return http.RequestMethod.GET;
     }
     return http.RequestMethod.POST;
+  }
+
+  private static responseText(result: string | Object | ArrayBuffer): string {
+    if (typeof result === 'string') {
+      return result;
+    }
+    if (result instanceof ArrayBuffer) {
+      return util.TextDecoder.create('utf-8')
+        .decodeWithStream(new Uint8Array(result), { stream: false });
+    }
+    if (result instanceof Uint8Array) {
+      return util.TextDecoder.create('utf-8')
+        .decodeWithStream(result, { stream: false });
+    }
+    return JSON.stringify(result);
+  }
+
+  private static parseTtsWalletText(value: string): TtsWalletSnapshot {
+    const standardChars = AccountCommerceApi.jsonInteger(value, 'standardChars');
+    const premiumChars = AccountCommerceApi.jsonInteger(value, 'premiumChars');
+    if (standardChars === null || premiumChars === null) {
+      throw new AccountApiError('在线朗读额度响应格式异常', 502, 'INVALID_TTS_WALLET_RESPONSE');
+    }
+    const result = new TtsWalletSnapshot();
+    result.standardChars = standardChars;
+    result.premiumChars = premiumChars;
+    result.standardNextExpiry = AccountCommerceApi.jsonInteger(value, 'standardNextExpiry');
+    result.premiumNextExpiry = AccountCommerceApi.jsonInteger(value, 'premiumNextExpiry');
+    return result;
+  }
+
+  private static jsonInteger(value: string, field: string): number | null {
+    const expression = new RegExp(`"${field}"\\s*:\\s*(?:\"([0-9]+)\"|([0-9]+)|null)`);
+    const match = value.match(expression);
+    if (!match) {
+      return null;
+    }
+    const raw = match[1] || match[2] || '';
+    if (!raw) {
+      return null;
+    }
+    const parsed = Number(raw);
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
   }
 
   private static parseError(value: string): ApiErrorBody {
@@ -107,8 +187,23 @@ export class AccountCommerceApi {
     result.displayName = account?.displayName || '华为用户';
     result.avatarUrl = account?.avatarUrl || '';
     result.points = Math.max(0, Math.floor(Number(account?.points) || 0));
+    result.paidPoints = Math.max(0, Math.floor(Number(account?.paidPoints) || 0));
+    result.promoPoints = Math.max(0, Math.floor(Number(account?.promoPoints) || 0));
     result.welcomeGranted = account?.welcomeGranted === true;
     result.entitlements = account?.entitlements || [];
+    return result;
+  }
+
+  private static normalizeTtsWallet(wallet: TtsWalletSnapshot): TtsWalletSnapshot {
+    const result = new TtsWalletSnapshot();
+    const standardChars = wallet?.standardChars;
+    const premiumChars = wallet?.premiumChars;
+    const standardNextExpiry = wallet?.standardNextExpiry;
+    const premiumNextExpiry = wallet?.premiumNextExpiry;
+    result.standardChars = Math.max(0, Math.floor(Number(standardChars) || 0));
+    result.premiumChars = Math.max(0, Math.floor(Number(premiumChars) || 0));
+    result.standardNextExpiry = standardNextExpiry ? Number(standardNextExpiry) : null;
+    result.premiumNextExpiry = premiumNextExpiry ? Number(premiumNextExpiry) : null;
     return result;
   }
 }

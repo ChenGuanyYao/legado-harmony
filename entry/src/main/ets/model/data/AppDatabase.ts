@@ -1,5 +1,5 @@
 import relationalStore from '@ohos.data.relationalStore';
-import { Book, BookChapter, BookSource, BookGroup, Bookmark, SearchKeyword } from './Book';
+import { Book, BookChapter, BookSource, BookGroup, Bookmark, SearchKeyword, ExploreRule, TocRule, ContentRule } from './Book';
 import { Context } from '@kit.AbilityKit';
 
 interface ColumnMigration {
@@ -19,7 +19,7 @@ export class AppDatabase {
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
   private readonly DATABASE_NAME = 'legado.db';
-  private readonly SCHEMA_VERSION = 8;
+  private readonly SCHEMA_VERSION = 9;
 
   private constructor() {}
 
@@ -221,6 +221,9 @@ export class AppDatabase {
     const schemaVersion = await this.getSchemaVersion();
     if (schemaVersion < this.SCHEMA_VERSION) {
       await this.migrateTables();
+      if (schemaVersion < 9) {
+        await this.resetLegacyBookSourceValidationFailures();
+      }
       await this.setSchemaVersion(this.SCHEMA_VERSION);
     }
   }
@@ -308,6 +311,18 @@ export class AppDatabase {
       }
       await this.store.executeSql(`ALTER TABLE ${migration.table} ADD COLUMN ${migration.definition}`);
     } catch (e) {
+    }
+  }
+
+  private async resetLegacyBookSourceValidationFailures(): Promise<void> {
+    if (!this.store) return;
+    try {
+      await this.store.executeSql(
+        `UPDATE book_sources SET validationStatus = ${BookSource.VALIDATION_UNCHECKED} ` +
+        `WHERE validationStatus = ${BookSource.VALIDATION_FAILED}`
+      );
+    } catch (e) {
+      console.warn('重置旧版书源校验失败状态失败:', e);
     }
   }
 
@@ -1034,7 +1049,11 @@ export class AppDatabase {
   }
 
   private normalizeBookSourceValidationStatus(value: number): number {
-    if (value === BookSource.VALIDATION_PASSED || value === BookSource.VALIDATION_FAILED) return value;
+    if (value === BookSource.VALIDATION_PASSED || value === BookSource.VALIDATION_FAILED ||
+      value === BookSource.VALIDATION_NO_RESULTS || value === BookSource.VALIDATION_NEEDS_VERIFICATION ||
+      value === BookSource.VALIDATION_TEMPORARY_ERROR) {
+      return value;
+    }
     return BookSource.VALIDATION_UNCHECKED;
   }
 
@@ -1101,16 +1120,21 @@ export class AppDatabase {
       source.searchRule = JSON.parse(resultSet.getString(resultSet.getColumnIndex('searchRule')));
     } catch (e) {}
     try {
-      source.exploreRule = JSON.parse(resultSet.getString(resultSet.getColumnIndex('exploreRule')));
+      const parsed = JSON.parse(resultSet.getString(resultSet.getColumnIndex('exploreRule'))) as Object;
+      if (parsed && !Array.isArray(parsed)) source.exploreRule = parsed as ExploreRule;
     } catch (e) {}
     try {
       source.bookInfoRule = JSON.parse(resultSet.getString(resultSet.getColumnIndex('bookInfoRule')));
     } catch (e) {}
     try {
-      source.tocRule = JSON.parse(resultSet.getString(resultSet.getColumnIndex('tocRule')));
+      const parsed = JSON.parse(resultSet.getString(resultSet.getColumnIndex('tocRule'))) as Object;
+      if (parsed && !Array.isArray(parsed)) source.tocRule = parsed as TocRule;
+      source.tocRule.nextTocUrl = source.tocRule.nextTocUrl || '';
     } catch (e) {}
     try {
-      source.contentRule = JSON.parse(resultSet.getString(resultSet.getColumnIndex('contentRule')));
+      const parsed = JSON.parse(resultSet.getString(resultSet.getColumnIndex('contentRule'))) as Object;
+      if (parsed && !Array.isArray(parsed)) source.contentRule = parsed as ContentRule;
+      source.contentRule.nextContentUrl = source.contentRule.nextContentUrl || '';
     } catch (e) {}
     source.variableComment = resultSet.getString(resultSet.getColumnIndex('variableComment'));
     source.lastUpdateTime = resultSet.getLong(resultSet.getColumnIndex('lastUpdateTime'));

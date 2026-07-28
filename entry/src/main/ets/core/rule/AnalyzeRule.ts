@@ -4,6 +4,7 @@ import { VerificationSupport } from '../http/VerificationSupport';
 import { EncodedJsonMap, EncodedSourceUrl } from '../book/EncodedSourceUrl';
 import { JsonPathEvaluator } from './JsonPathEvaluator';
 import { ScriptEngine, ScriptEngineContext } from './ScriptEngine';
+import { BookUrlResolver } from '../book/BookUrlResolver';
 
 const MAX_HTML_PARSE_LENGTH = 4 * 1024 * 1024;
 
@@ -1189,6 +1190,8 @@ export class AnalyzeRule {
     if (!rule || !this.content) return [];
     rule = this.stripJsWrapper(rule).trim();
     if (rule.startsWith('@css:')) rule = rule.substring(5).trim();
+    const textSelectorValues = this.evalLegacyTextSelector(rule);
+    if (textSelectorValues !== null) return textSelectorValues;
     if (!rule.includes('@') && !this.isLegacySelector(rule) && !this.isAttrName(rule)) return [];
 
     const parts = rule.split('@').map(part => part.trim()).filter(part => part.length > 0);
@@ -1204,9 +1207,7 @@ export class AnalyzeRule {
         for (const item of current) next.push(...this.pickIndex(this.getDirectChildren(item), idx));
         current = next;
       } else
-      if (this.isAttrName(part)) {
-        current = current.map(item => this.extractAttr(item, this.normalizeAttrName(part))).filter(v => v.length > 0);
-      } else if (part === 'text') {
+      if (part === 'text') {
         current = current.map(item => this.stripHtml(item)).filter(v => v.length > 0);
       } else if (part === 'ownText') {
         current = current.map(item => this.extractOwnText(item)).filter(v => v.length > 0);
@@ -1214,6 +1215,8 @@ export class AnalyzeRule {
         current = current.map(item => this.extractTextNodes(item)).filter(v => v.length > 0);
       } else if (part === 'html') {
         current = current.filter(v => v.length > 0);
+      } else if (this.isAttrName(part)) {
+        current = current.map(item => this.extractAttr(item, this.normalizeAttrName(part))).filter(v => v.length > 0);
       } else {
         const next: string[] = [];
         for (const item of current) {
@@ -1224,6 +1227,36 @@ export class AnalyzeRule {
       if (current.length === 0) break;
     }
     return current;
+  }
+
+  private evalLegacyTextSelector(rule: string): string[] | null {
+    const parts = rule.split('@').map(part => part.trim()).filter(part => part.length > 0);
+    if (parts.length === 0 || !parts[0].startsWith('text.')) return null;
+    const expected = this.normalizeVisibleText(parts[0].substring(5));
+    if (!expected) return [];
+    const matches: string[] = [];
+    const tagPattern = '[a-zA-Z][a-zA-Z0-9_-]*';
+    const re = new RegExp(`<(${tagPattern})(\\s[^>]*)?>`, 'gi');
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(this.content)) !== null) {
+      const element = this.sliceWholeElement(this.content, match.index, match[0], match[1]);
+      const ownText = this.normalizeVisibleText(this.extractOwnText(element));
+      if (ownText === expected) matches.push(element);
+      if (matches.length >= 100) break;
+    }
+    if (parts.length === 1) return matches.map(item => this.stripHtml(item)).filter(value => value.length > 0);
+    const extractor = parts[parts.length - 1];
+    if (extractor === 'text') return matches.map(item => this.stripHtml(item)).filter(value => value.length > 0);
+    if (extractor === 'ownText') return matches.map(item => this.extractOwnText(item)).filter(value => value.length > 0);
+    if (extractor === 'html') return matches;
+    if (this.isAttrName(extractor)) {
+      return matches.map(item => this.extractAttr(item, this.normalizeAttrName(extractor))).filter(value => value.length > 0);
+    }
+    return [];
+  }
+
+  private normalizeVisibleText(value: string): string {
+    return this.decodeHtmlEntities(value || '').replace(/\s+/g, ' ').trim();
   }
 
   private isLegacySelector(part: string): boolean {
@@ -2493,13 +2526,6 @@ export class AnalyzeRule {
   }
 
   private resolveUrl(url: string): string {
-    if (!url || url.startsWith('http')) return url;
-    if (/^\/\/[A-Za-z0-9.-]+(?::\d+)?(?:[/?#]|$)/.test(url)) return 'https:' + url;
-    if (url.startsWith('/')) {
-      const m = this.baseUrl.match(/^(https?:\/\/[^/]+)/);
-      return m ? m[0] + url : this.baseUrl + url;
-    }
-    const b = this.baseUrl.endsWith('/') ? this.baseUrl.substring(0, this.baseUrl.length - 1) : this.baseUrl;
-    return b + '/' + url;
+    return BookUrlResolver.resolve(url, this.baseUrl);
   }
 }

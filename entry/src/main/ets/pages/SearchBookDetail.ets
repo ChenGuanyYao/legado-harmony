@@ -92,10 +92,11 @@ struct SearchBookDetailPage {
             .layoutWeight(1)
         }
         .width('100%')
-        .height(56)
-        .padding({ right: 16 })
+        .height(56 + this.statusBarHeight)
+        .padding({ right: 16, top: this.statusBarHeight })
         .alignItems(VerticalAlign.Center)
-        .backgroundColor(this.cardColor())
+        .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+        .backdropBlur(18)
 
         Scroll() {
           Column() {
@@ -227,14 +228,13 @@ struct SearchBookDetailPage {
             })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-        .backgroundColor(this.cardColor())
+        .padding({ left: 16, right: 16, top: 12, bottom: 12 + this.navBarHeight })
+        .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
       }
       .width('100%')
       .height('100%')
-      .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
       .backgroundColor(this.pageColor())
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
       if (this.showAddToShelfOnBackDialog) {
         this.addToShelfOnBackDialog()
@@ -242,7 +242,7 @@ struct SearchBookDetailPage {
     }
     .width('100%')
     .height('100%')
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   onBackPress(): boolean {

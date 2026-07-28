@@ -53,31 +53,30 @@ struct CoverGalleryManagerPage {
   }
 
   build() {
-    Stack() {
-      Column() {
-        this.titleBar()
+    Stack({ alignContent: Alignment.TopStart }) {
+      Scroll() {
+        Column() {
+          Row()
+            .height(56 + this.statusBarHeight)
 
-        Scroll() {
-          Column() {
-            this.summaryPanel()
+          this.summaryPanel()
 
-            this.albumSectionTitle()
-            this.albumListPanel()
+          this.albumSectionTitle()
+          this.albumListPanel()
 
-            if (this.getSelectedAlbum()) {
-              this.sectionTitle('编辑')
-              this.selectedAlbumPanel()
-            }
+          if (this.getSelectedAlbum()) {
+            this.sectionTitle('编辑')
+            this.selectedAlbumPanel()
           }
-          .width('100%')
-          .padding({ bottom: 32 })
         }
-        .layoutWeight(1)
+        .width('100%')
+        .padding({ bottom: 32 + this.navBarHeight })
       }
       .width('100%')
       .height('100%')
-      .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
       .backgroundColor(this.pageColor())
+
+      this.titleBar()
 
       if (this.showDeleteAlbumConfirm) {
         this.deleteAlbumConfirmDialog()
@@ -93,7 +92,7 @@ struct CoverGalleryManagerPage {
     }
     .width('100%')
     .height('100%')
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   async reloadAlbums(): Promise<void> {
@@ -632,8 +631,10 @@ struct CoverGalleryManagerPage {
         .layoutWeight(1)
     }
     .width('100%')
-    .height(56)
-    .backgroundColor(this.cardColor())
+    .height(56 + this.statusBarHeight)
+    .padding({ top: this.statusBarHeight })
+    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+    .backdropBlur(18)
     .alignItems(VerticalAlign.Center)
   }
 

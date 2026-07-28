@@ -138,8 +138,10 @@ struct BookSourceEditPage {
             })
         }
         .width('100%')
-        .height(56)
-        .backgroundColor(this.cardColor())
+        .height(56 + this.statusBarHeight)
+        .padding({ top: this.statusBarHeight })
+        .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+        .backdropBlur(18)
         .alignItems(VerticalAlign.Center)
 
         // Tab栏
@@ -253,7 +255,7 @@ struct BookSourceEditPage {
               }
             }
             .width('100%')
-            .padding(16)
+            .padding({ left: 16, right: 16, top: 16, bottom: 16 + this.navBarHeight })
           }
           .layoutWeight(1)
           .scrollBar(BarState.Off)
@@ -261,9 +263,8 @@ struct BookSourceEditPage {
       }
       .width('100%')
       .height('100%')
-      .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
       .backgroundColor(this.pageColor())
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
 
       if (this.showUnsavedDialog) {
         this.unsavedChangesDialog()
@@ -271,7 +272,7 @@ struct BookSourceEditPage {
     }
     .width('100%')
     .height('100%')
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   onBackPress(): boolean {
@@ -347,6 +348,7 @@ struct BookSourceEditPage {
     this.appendSnapshotPart(parts, this.source.tocRule.chapterList);
     this.appendSnapshotPart(parts, this.source.tocRule.chapterName);
     this.appendSnapshotPart(parts, this.source.tocRule.chapterUrl);
+    this.appendSnapshotPart(parts, this.source.tocRule.nextTocUrl);
     this.appendSnapshotPart(parts, this.source.tocRule.isVip);
     this.appendSnapshotPart(parts, this.source.tocRule.isPay);
     this.appendSnapshotPart(parts, this.source.tocRule.updateTime);
@@ -354,6 +356,7 @@ struct BookSourceEditPage {
     this.appendSnapshotPart(parts, this.source.contentRule.content);
     this.appendSnapshotPart(parts, this.source.contentRule.title);
     this.appendSnapshotPart(parts, this.source.contentRule.images);
+    this.appendSnapshotPart(parts, this.source.contentRule.nextContentUrl);
     this.appendSnapshotPart(parts, this.source.contentRule.replaceRegex);
     this.appendSnapshotPart(parts, this.source.contentRule.imageStyle);
     return parts.join('');
@@ -741,6 +744,10 @@ struct BookSourceEditPage {
         this.source.tocRule.chapterUrl = value;
       })
 
+      this.inputItemBuilder('目录下一页', this.source.tocRule.nextTocUrl, (value: string) => {
+        this.source.tocRule.nextTocUrl = value;
+      })
+
       this.inputItemBuilder('VIP标记', this.source.tocRule.isVip, (value: string) => {
         this.source.tocRule.isVip = value;
       })
@@ -774,6 +781,10 @@ struct BookSourceEditPage {
 
       this.inputItemBuilder('图片', this.source.contentRule.images, (value: string) => {
         this.source.contentRule.images = value;
+      })
+
+      this.inputItemBuilder('正文下一页', this.source.contentRule.nextContentUrl, (value: string) => {
+        this.source.contentRule.nextContentUrl = value;
       })
 
       this.inputItemBuilder('替换净化', this.source.contentRule.replaceRegex, (value: string) => {

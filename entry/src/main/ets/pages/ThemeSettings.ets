@@ -5,6 +5,8 @@ import { ReaderSettings, ReaderSettingsStore } from '../utils/ReaderSettingsStor
 import { ReaderThemeHelper } from '../utils/ReaderThemeHelper';
 import { syncSystemBars } from '../utils/SystemBars';
 import { RecentReadCardUpdater } from '../utils/RecentReadCardUpdater';
+import { ThemeTrialManager } from '../utils/ThemeTrialManager';
+import { CustomThemeScheme, CustomThemeSchemeStore } from '../utils/CustomThemeSchemeStore';
 import { BuiltinThemeRegistry } from '../theme/BuiltinThemeRegistry';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
@@ -50,46 +52,134 @@ struct ThemeSettingsPage {
   @StorageLink('accountLoggedIn') accountLoggedIn: boolean = false;
   @StorageLink('accountPoints') accountPoints: number = 0;
   @StorageLink('accountEntitlementsRevision') accountEntitlementsRevision: number = 0;
+  @StorageLink('themeTrialThemeId') trialThemeId: string = '';
+  @StorageLink('themeTrialEndsAt') trialEndsAt: number = 0;
+  @StorageLink('activeCustomThemeSchemeId') activeCustomSchemeId: string = '';
+  @StorageLink('activeCustomThemeSchemeRevision') activeCustomSchemeRevision: number = 0;
+  @StorageLink('customThemeSchemesRevision') @Watch('onCustomThemeSchemesRevisionChanged')
+  customThemeSchemesRevision: number = 0;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State applyingThemeId: string = '';
+  @State focusedThemeId: string = '';
+  @State customSchemes: CustomThemeScheme[] = [];
+  @State showCustomThemeActionMenu: boolean = false;
+  @State showRenameCustomThemeDialog: boolean = false;
+  @State showDeleteCustomThemeDialog: boolean = false;
+  @State actionCustomSchemeId: string = '';
+  @State renameCustomThemeName: string = '';
+  @State contextMenuX: number = 24;
+  @State contextMenuY: number = 120;
+  @State contextViewportWidth: number = 360;
+  @State contextViewportHeight: number = 720;
+  private customSchemeRefreshSerial: number = 0;
+  private themeListScroller: ListScroller = new ListScroller();
 
   aboutToAppear(): void {
     this.loadThemeSettings();
+    this.refreshCustomSchemes();
     this.initializeAccount();
     this.syncBars();
   }
 
   onPageShow(): void {
+    ThemeTrialManager.stopIfExpired();
+    this.refreshCustomSchemes();
     this.syncBars();
   }
 
+  onCustomThemeSchemesRevisionChanged(): void {
+    this.refreshCustomSchemes();
+  }
+
   build() {
-    Column() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      List({ space: 12, scroller: this.themeListScroller }) {
+        // List padding is fixed to the viewport in ArkUI. Use real list items
+        // for the safe-area gaps so they scroll away with the content.
+        ListItem() {
+          Row() {
+          }
+            .width('100%')
+            .height(this.statusBarHeight + 58)
+        }
+        ListItem() {
+          this.sectionTitle('默认主题')
+        }
+        ListItem() {
+          this.themeCard(BuiltinThemeRegistry.findById(ThemeIds.PLAIN_DEFAULT))
+        }
+        ListItem() {
+          this.customThemeSectionTitle()
+        }
+        ForEach(this.customSchemes, (scheme: CustomThemeScheme) => {
+          ListItem() {
+            this.themeCard(this.customTheme(scheme), scheme.id)
+          }
+          .width('100%')
+          .borderRadius(this.customTheme(scheme).radius.card)
+          .clip(true)
+          .swipeAction({
+            end: {
+              builder: () => {
+                this.customThemeDeleteSwipeAction(scheme)
+              },
+              actionAreaDistance: 64,
+              onAction: () => {
+                this.deleteCustomThemeFromSwipe(scheme);
+              }
+            },
+            edgeEffect: SwipeEdgeEffect.Spring
+          })
+        }, (scheme: CustomThemeScheme) => `${scheme.id}_${scheme.revision}`)
+        ListItem() {
+          this.sectionTitle('更多主题')
+        }
+        ForEach(this.additionalBuiltinThemes(), (theme: ThemePack) => {
+          ListItem() {
+            this.themeCard(theme)
+          }
+        }, (theme: ThemePack) => theme.id)
+        ListItem() {
+          Row() {
+          }
+            .width('100%')
+            .height(Math.max(20, this.navBarHeight + 8))
+        }
+      }
+      .width('100%')
+      .height('100%')
+      // The list itself must own the system-safe-area expansion. Expanding
+      // only its parent leaves the List viewport clipped to the safe area.
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+      .padding({
+        left: 14,
+        right: 14
+      })
+      .scrollBar(BarState.Off)
+      .backgroundColor(this.pageColor())
+
+      // Pinned over the edge-to-edge list so scrolled content remains visible
+      // beneath the status/title area instead of being clipped by it.
       this.titleBar()
 
-      Scroll() {
-        Column({ space: 12 }) {
-          this.sectionTitle('默认主题')
-          this.themeCard(BuiltinThemeRegistry.findById(ThemeIds.PLAIN_DEFAULT))
-          this.sectionTitle('自定义主题')
-          this.themeCard(this.customTheme())
-          this.sectionTitle('内置主题')
-          ForEach(this.additionalBuiltinThemes(), (theme: ThemePack) => {
-            this.themeCard(theme)
-          }, (theme: ThemePack) => theme.id)
-        }
-        .width('100%')
-        .padding({ left: 14, right: 14, top: 14, bottom: 32 })
+      if (this.showCustomThemeActionMenu) {
+        this.customThemeActionMenu()
       }
-      .layoutWeight(1)
-      .align(Alignment.TopStart)
+      if (this.showRenameCustomThemeDialog) {
+        this.renameCustomThemeDialog()
+      }
+      if (this.showDeleteCustomThemeDialog) {
+        this.deleteCustomThemeDialog()
+      }
     }
     .width('100%')
-    .height('100%').justifyContent(FlexAlign.Start)
-    .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
+    .height('100%')
     .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .onAreaChange((_oldValue: Area, newValue: Area) => {
+      this.updateContextViewport(newValue);
+    })
   }
 
   async initializeAccount(): Promise<void> {
@@ -123,17 +213,43 @@ struct ThemeSettingsPage {
     }
   }
 
-  async selectTheme(themeId: string): Promise<void> {
-    if (this.applyingThemeId || themeId === this.appThemeId) {
+  async refreshCustomSchemes(): Promise<void> {
+    const serial = ++this.customSchemeRefreshSerial;
+    try {
+      const settings = await AppThemeSettingsStore.load(getContext(this));
+      const schemes = await CustomThemeSchemeStore.load(getContext(this), settings);
+      if (serial === this.customSchemeRefreshSerial) {
+        this.customSchemes = schemes;
+      }
+    } catch (e) {
+      console.warn('加载自定义主题方案失败:', e);
+    }
+  }
+
+  async selectTheme(themeId: string, customSchemeId: string = ''): Promise<void> {
+    if (this.applyingThemeId) {
+      return;
+    }
+    const customScheme = themeId === ThemeIds.CUSTOM ?
+      CustomThemeSchemeStore.find(this.customSchemes, customSchemeId) : null;
+    if (themeId === ThemeIds.CUSTOM && !customScheme) {
+      return;
+    }
+    if (ThemeTrialManager.isActive()) {
+      ThemeTrialManager.stop(getContext(this) as common.UIAbilityContext);
+      this.appThemeId = AppStorage.get<string>('appThemeId') || AppThemeSettingsStore.DEFAULT_THEME_ID;
+      this.themeBookCoverEnabled = AppStorage.get<boolean>('appThemeBookCoverEnabled') || false;
+    }
+    if (themeId === this.appThemeId && themeId !== ThemeIds.CUSTOM) {
       return;
     }
     const accessible = await this.ensureThemeAccess(themeId);
     if (!accessible) {
       return;
     }
-    this.applyingThemeId = themeId;
+    this.applyingThemeId = customSchemeId || themeId;
     try {
-      const theme = themeId === ThemeIds.CUSTOM ? this.customTheme() : BuiltinThemeRegistry.findById(themeId);
+      const theme = customScheme ? this.customTheme(customScheme) : BuiltinThemeRegistry.findById(themeId);
       let enableThemeBookCover = false;
       if (this.themeHasBookCover(theme)) {
         const coverDialog = await promptAction.showDialog({
@@ -147,10 +263,18 @@ struct ThemeSettingsPage {
         enableThemeBookCover = coverDialog.index === 1;
       }
       const previous: AppThemeSettings = await AppThemeSettingsStore.load(getContext(this));
-      const settings: AppThemeSettings = AppThemeSettingsStore.activateTheme(themeId, previous);
+      let settings: AppThemeSettings = AppThemeSettingsStore.activateTheme(themeId, previous);
+      if (customScheme) {
+        settings = AppThemeSettingsStore.applyCustomSnapshot(settings, customScheme.settings);
+      }
       settings.themeBookCoverEnabled = enableThemeBookCover;
       AppThemeSettingsStore.applyToStorage(settings);
       await AppThemeSettingsStore.save(getContext(this), settings);
+      if (customScheme) {
+        await CustomThemeSchemeStore.setActiveScheme(getContext(this), customScheme);
+        this.activeCustomSchemeId = customScheme.id;
+        this.activeCustomSchemeRevision = customScheme.revision;
+      }
       this.appThemeId = settings.themeId;
       this.themeBookCoverEnabled = settings.themeBookCoverEnabled;
       const readerSettings = await ReaderSettingsStore.switchThemeProfile(
@@ -164,10 +288,11 @@ struct ThemeSettingsPage {
         readerSettings.darkCustomThemeTextColor, this.appDarkMode, readerSettings.customThemesRaw);
       this.readerLightThemeIndex = ReaderThemeHelper.APP_THEME_INDEX;
       this.readerDarkThemeIndex = ReaderThemeHelper.APP_THEME_INDEX;
+      this.focusedThemeId = '';
       await this.applyThemeFontWhenAvailable();
       this.refreshRecentReadCard();
       this.syncBars();
-      promptAction.showToast({ message: `已应用「${BuiltinThemeRegistry.findById(themeId).name}」主题` });
+      promptAction.showToast({ message: `已应用「${theme.name}」主题` });
     } catch (e) {
       console.error('应用主题失败:', e);
       promptAction.showToast({ message: '应用主题失败，请稍后重试' });
@@ -177,8 +302,7 @@ struct ThemeSettingsPage {
   }
 
   async ensureThemeAccess(themeId: string): Promise<boolean> {
-    if (themeId === ThemeIds.CUSTOM || BuiltinThemeRegistry.isFree(themeId) || themeId === this.appThemeId ||
-      AccountSessionStore.hasValidEntitlement(themeId)) {
+    if (themeId === ThemeIds.CUSTOM || this.hasThemeAccess(themeId)) {
       return true;
     }
     if (!this.accountLoggedIn) {
@@ -276,15 +400,23 @@ struct ThemeSettingsPage {
     });
   }
 
-  customTheme(): ThemePack {
-    return AppThemeSettingsStore.currentCustomTheme(this.appDarkMode);
+  customTheme(scheme: CustomThemeScheme): ThemePack {
+    const theme = AppThemeSettingsStore.customTheme(scheme.settings, this.appDarkMode);
+    theme.name = scheme.name;
+    theme.description = '自由组合浅色与深色模式下的主题部件';
+    return theme;
   }
 
   activeVariant(theme: ThemePack): ThemeVariant {
     return this.appDarkMode ? theme.dark : theme.light;
   }
 
-  isSelected(theme: ThemePack): boolean {
+  isSelected(theme: ThemePack, customSchemeId: string = ''): boolean {
+    if (theme.id === ThemeIds.CUSTOM) {
+      const scheme = CustomThemeSchemeStore.find(this.customSchemes, customSchemeId);
+      return this.appThemeId === ThemeIds.CUSTOM && this.activeCustomSchemeId === customSchemeId &&
+        !!scheme && scheme.revision === this.activeCustomSchemeRevision;
+    }
     return theme.id === this.appThemeId;
   }
 
@@ -294,6 +426,17 @@ struct ThemeSettingsPage {
 
   cardColor(): string {
     return ThemeRuntime.cardColor(this.appDarkMode);
+  }
+
+  titleBarSurfaceColor(): string {
+    const color = this.cardColor();
+    if (/^#[0-9A-Fa-f]{6}$/.test(color)) {
+      return `#D9${color.substring(1)}`;
+    }
+    if (/^#[0-9A-Fa-f]{8}$/.test(color)) {
+      return `#D9${color.substring(3)}`;
+    }
+    return this.appDarkMode ? '#D9202126' : '#D9FFFFFF';
   }
 
   primaryTextColor(): string {
@@ -325,9 +468,13 @@ struct ThemeSettingsPage {
         .layoutWeight(1)
     }
     .width('100%')
-    .height(56)
-    .padding({ right: 12 })
-    .backgroundColor(this.cardColor())
+    // The status-bar inset belongs to the pinned title itself, avoiding an
+    // additional opaque strip above it while keeping controls out of the
+    // system status area.
+    .height(56 + this.statusBarHeight)
+    .padding({ top: this.statusBarHeight, right: 12 })
+    .backgroundColor(this.titleBarSurfaceColor())
+    .backdropBlur(18)
     .alignItems(VerticalAlign.Center)
   }
 
@@ -341,6 +488,375 @@ struct ThemeSettingsPage {
   }
 
   @Builder
+  customThemeSectionTitle() {
+    Row({ space: 10 }) {
+      Text(`自定义主题 · ${this.customSchemes.length}/${CustomThemeSchemeStore.MAX_SCHEMES}`)
+        .fontSize(13)
+        .fontColor(this.subTextColor())
+        .layoutWeight(1)
+      Button('添加方案')
+        .height(30)
+        .fontSize(12)
+        .fontColor(this.customSchemes.length < CustomThemeSchemeStore.MAX_SCHEMES ?
+          '#FFFFFF' : this.subTextColor())
+        .backgroundColor(this.customSchemes.length < CustomThemeSchemeStore.MAX_SCHEMES ?
+          this.accentColor() : this.cardColor())
+        .enabled(this.customSchemes.length < CustomThemeSchemeStore.MAX_SCHEMES)
+        .onClick(() => {
+          this.addCustomScheme();
+        })
+    }
+    .width('100%')
+    .padding({ left: 2, top: 6, bottom: 0 })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  async addCustomScheme(): Promise<void> {
+    try {
+      const settings = await AppThemeSettingsStore.load(getContext(this));
+      const added = await CustomThemeSchemeStore.add(getContext(this), settings);
+      if (!added) {
+        promptAction.showToast({ message: '最多只能创建 5 套自定义主题' });
+        return;
+      }
+      await this.refreshCustomSchemes();
+      promptAction.showToast({ message: `已添加「${added.name}」` });
+    } catch (e) {
+      console.error('添加自定义主题方案失败:', e);
+      promptAction.showToast({ message: '添加方案失败，请稍后重试' });
+    }
+  }
+
+  @Builder
+  customThemeDeleteSwipeAction(scheme: CustomThemeScheme) {
+    Column({ space: 4 }) {
+      SymbolGlyph($r('sys.symbol.trash'))
+        .fontSize(22)
+        .fontColor(['#FFFFFF'])
+      Text('删除')
+        .fontSize(11)
+        .fontColor('#FFFFFF')
+    }
+    .width(64)
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor('#E53935')
+    .onClick(() => {
+      this.deleteCustomThemeFromSwipe(scheme);
+    })
+  }
+
+  @Builder
+  customThemeActionMenu() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.appDarkMode ? '#52000000' : '#26FFFFFF')
+        .backdropBlur(ThemeRuntime.glassBlur('popover', 18))
+        .onClick(() => this.closeCustomThemeActions())
+      Column() {
+        this.contextActionItem($r('sys.symbol.square_and_pencil'), '重命名', this.primaryTextColor(), () => {
+          const scheme = this.actionCustomScheme();
+          if (!scheme) return;
+          this.renameCustomThemeName = scheme.name;
+          this.showCustomThemeActionMenu = false;
+          this.showRenameCustomThemeDialog = true;
+        })
+        this.contextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
+          this.showCustomThemeActionMenu = false;
+          this.requestDeleteCustomTheme(this.actionCustomSchemeId);
+        })
+      }
+      .width(148)
+      .padding({ top: 6, bottom: 6 })
+      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+      .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({
+        width: ThemeRuntime.glassBorderWidth('panel'),
+        color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel')
+      })
+      .shadow({
+        radius: ThemeRuntime.glassShadowRadius('panel'),
+        color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'),
+        offsetX: ThemeRuntime.glassShadowOffsetX('panel'),
+        offsetY: ThemeRuntime.glassShadowOffsetY('panel')
+      })
+      .position({
+        x: this.contextMenuLeft(148),
+        y: this.contextMenuTop(104)
+      })
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder
+  contextActionItem(icon: Resource, label: string, color: string, action: () => void) {
+    Row({ space: 10 }) {
+      SymbolGlyph(icon)
+        .fontSize(18)
+        .fontColor([color])
+        .width(24)
+      Text(label)
+        .fontSize(15)
+        .fontColor(color)
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .height(46)
+    .padding({ left: 12, right: 12 })
+    .alignItems(VerticalAlign.Center)
+    .onClick(action)
+  }
+
+  @Builder
+  renameCustomThemeDialog() {
+    Column() {
+      Column({ space: 16 }) {
+        Text('重命名自定义主题')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+        TextInput({ placeholder: '输入方案名称', text: this.renameCustomThemeName })
+          .width('100%')
+          .height(42)
+          .fontColor(this.primaryTextColor())
+          .placeholderColor(this.subTextColor())
+          .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
+          .borderRadius(10)
+          .onChange((value: string) => {
+            this.renameCustomThemeName = value;
+          })
+        Row({ space: 12 }) {
+          Button('取消', { type: ButtonType.Normal })
+            .layoutWeight(1)
+            .height(42)
+            .borderRadius(10)
+            .backgroundColor(this.cardColor())
+            .fontColor(this.primaryTextColor())
+            .onClick(() => this.closeRenameCustomThemeDialog())
+          Button('保存', { type: ButtonType.Normal })
+            .layoutWeight(1)
+            .height(42)
+            .borderRadius(10)
+            .backgroundColor(this.accentColor())
+            .fontColor('#FFFFFF')
+            .enabled(!!this.renameCustomThemeName.trim())
+            .onClick(() => this.renameCustomTheme())
+        }
+        .width('100%')
+      }
+      .width('calc(100% - 48vp)')
+      .constraintSize({ maxWidth: 360 })
+      .padding(20)
+      .borderRadius(ThemeRuntime.glassCornerRadius(18, 'panel'))
+      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({
+        width: ThemeRuntime.glassBorderWidth('panel'),
+        color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel')
+      })
+      .shadow({
+        radius: ThemeRuntime.glassShadowRadius('panel'),
+        color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'),
+        offsetX: ThemeRuntime.glassShadowOffsetX('panel'),
+        offsetY: ThemeRuntime.glassShadowOffsetY('panel')
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(this.appDarkMode ? '#76000000' : '#52000000')
+    .backdropBlur(ThemeRuntime.glassBlur('popover', 18))
+  }
+
+  @Builder
+  deleteCustomThemeDialog() {
+    Column() {
+      Column({ space: 14 }) {
+        Text('删除自定义主题')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+        Text(`确定删除「${this.actionCustomScheme()?.name || '该方案'}」吗？此操作无法撤销。`)
+          .fontSize(14)
+          .fontColor(this.subTextColor())
+          .width('100%')
+        Row({ space: 12 }) {
+          Button('取消', { type: ButtonType.Normal })
+            .layoutWeight(1)
+            .height(42)
+            .borderRadius(10)
+            .backgroundColor(this.cardColor())
+            .fontColor(this.primaryTextColor())
+            .onClick(() => this.closeDeleteCustomThemeDialog())
+          Button('删除', { type: ButtonType.Normal })
+            .layoutWeight(1)
+            .height(42)
+            .borderRadius(10)
+            .backgroundColor('#E53935')
+            .fontColor('#FFFFFF')
+            .onClick(() => this.confirmDeleteCustomTheme())
+        }
+        .width('100%')
+      }
+      .width('calc(100% - 48vp)')
+      .constraintSize({ maxWidth: 360 })
+      .padding(20)
+      .borderRadius(ThemeRuntime.glassCornerRadius(18, 'panel'))
+      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({
+        width: ThemeRuntime.glassBorderWidth('panel'),
+        color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel')
+      })
+      .shadow({
+        radius: ThemeRuntime.glassShadowRadius('panel'),
+        color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'),
+        offsetX: ThemeRuntime.glassShadowOffsetX('panel'),
+        offsetY: ThemeRuntime.glassShadowOffsetY('panel')
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(this.appDarkMode ? '#76000000' : '#52000000')
+    .backdropBlur(ThemeRuntime.glassBlur('popover', 18))
+  }
+
+  openCustomThemeActions(schemeId: string, event?: GestureEvent): void {
+    const finger = event && event.fingerList.length > 0 ? event.fingerList[0] : undefined;
+    if (finger) {
+      this.contextMenuX = finger.globalX;
+      this.contextMenuY = finger.globalY;
+    }
+    this.actionCustomSchemeId = schemeId;
+    this.showCustomThemeActionMenu = true;
+  }
+
+  closeCustomThemeActions(): void {
+    this.showCustomThemeActionMenu = false;
+    this.actionCustomSchemeId = '';
+  }
+
+  actionCustomScheme(): CustomThemeScheme | null {
+    return CustomThemeSchemeStore.find(this.customSchemes, this.actionCustomSchemeId);
+  }
+
+  updateContextViewport(area: Area): void {
+    const width = Number(area.width);
+    const height = Number(area.height);
+    if (Number.isFinite(width) && width > 0) this.contextViewportWidth = width;
+    if (Number.isFinite(height) && height > 0) this.contextViewportHeight = height;
+  }
+
+  contextMenuLeft(menuWidth: number): number {
+    return Math.max(12, Math.min(this.contextMenuX - 18, this.contextViewportWidth - menuWidth - 12));
+  }
+
+  contextMenuTop(menuHeight: number): number {
+    const below = this.contextMenuY + 12;
+    if (below + menuHeight <= this.contextViewportHeight - 12) return below;
+    return Math.max(this.statusBarHeight + 8, this.contextMenuY - menuHeight - 12);
+  }
+
+  closeRenameCustomThemeDialog(): void {
+    this.showRenameCustomThemeDialog = false;
+    this.renameCustomThemeName = '';
+    this.actionCustomSchemeId = '';
+  }
+
+  async renameCustomTheme(): Promise<void> {
+    const scheme = this.actionCustomScheme();
+    const name = this.renameCustomThemeName.trim();
+    if (!scheme || !name) return;
+    try {
+      const settings = await AppThemeSettingsStore.load(getContext(this));
+      const renamed = await CustomThemeSchemeStore.rename(getContext(this), settings, scheme.id, name);
+      if (!renamed) {
+        promptAction.showToast({ message: '名称为空、重复或方案不存在' });
+        return;
+      }
+      this.closeRenameCustomThemeDialog();
+      await this.refreshCustomSchemes();
+      promptAction.showToast({ message: '自定义主题已重命名' });
+    } catch (e) {
+      console.error('重命名自定义主题失败:', e);
+      promptAction.showToast({ message: '重命名失败，请稍后重试' });
+    }
+  }
+
+  requestDeleteCustomTheme(schemeId: string): void {
+    if (this.customSchemes.length <= 1) {
+      this.closeCustomThemeActions();
+      promptAction.showToast({ message: '至少需要保留一套自定义主题' });
+      return;
+    }
+    this.actionCustomSchemeId = schemeId;
+    this.showDeleteCustomThemeDialog = true;
+  }
+
+  closeDeleteCustomThemeDialog(): void {
+    this.showDeleteCustomThemeDialog = false;
+    this.actionCustomSchemeId = '';
+  }
+
+  async confirmDeleteCustomTheme(): Promise<void> {
+    const schemeId = this.actionCustomSchemeId;
+    this.showDeleteCustomThemeDialog = false;
+    await this.deleteCustomThemeScheme(schemeId);
+  }
+
+  async deleteCustomThemeFromSwipe(scheme: CustomThemeScheme): Promise<void> {
+    await this.deleteCustomThemeScheme(scheme.id);
+  }
+
+  async deleteCustomThemeScheme(schemeId: string): Promise<void> {
+    const scheme = CustomThemeSchemeStore.find(this.customSchemes, schemeId);
+    if (!scheme) return;
+    if (this.customSchemes.length <= 1) {
+      this.closeCustomThemeSwipeActions();
+      promptAction.showToast({ message: '至少需要保留一套自定义主题' });
+      return;
+    }
+    try {
+      if (this.appThemeId === ThemeIds.CUSTOM && this.activeCustomSchemeId === schemeId) {
+        await this.selectTheme(ThemeIds.PLAIN_DEFAULT);
+        if (this.appThemeId === ThemeIds.CUSTOM) {
+          return;
+        }
+      }
+      const settings = await AppThemeSettingsStore.load(getContext(this));
+      const deleted = await CustomThemeSchemeStore.delete(getContext(this), settings, schemeId);
+      if (!deleted) {
+        promptAction.showToast({ message: '删除失败，至少需要保留一套方案' });
+        return;
+      }
+      this.actionCustomSchemeId = '';
+      await this.refreshCustomSchemes();
+      promptAction.showToast({ message: `已删除「${scheme.name}」` });
+    } catch (e) {
+      console.error('删除自定义主题失败:', e);
+      promptAction.showToast({ message: '删除失败，请稍后重试' });
+    }
+  }
+
+  closeCustomThemeSwipeActions(): void {
+    setTimeout(() => {
+      try {
+        this.themeListScroller.closeAllSwipeActions();
+      } catch (e) {
+        console.warn('关闭自定义主题滑动操作失败:', e);
+      }
+    }, 0);
+  }
+
+  @Builder
   themeBookCoverSetting(theme: ThemePack) {
     Row({ space: 12 }) {
       Stack() {
@@ -350,6 +866,7 @@ struct ThemeSettingsPage {
               .width(42)
               .height(58)
               .objectFit(ImageFit.Fill)
+              .draggable(false)
           }, (_cover: ResourceStr, index: number) => `active_cover_${index}`)
         }
         .width(42)
@@ -362,6 +879,7 @@ struct ThemeSettingsPage {
           .width(42)
           .height(58)
           .objectFit(ImageFit.Fill)
+          .draggable(false)
       }
       .width(42)
       .height(58)
@@ -380,6 +898,7 @@ struct ThemeSettingsPage {
 
       Toggle({ type: ToggleType.Switch, isOn: this.themeBookCoverEnabled })
         .selectedColor(this.accentColor())
+        .enabled(!this.isTrialTheme(theme.id))
         .onChange((enabled: boolean) => {
           this.setThemeBookCoverEnabled(enabled);
         })
@@ -392,7 +911,7 @@ struct ThemeSettingsPage {
   }
 
   @Builder
-  themeCard(theme: ThemePack) {
+  themeCard(theme: ThemePack, customSchemeId: string = '') {
     Column({ space: 12 }) {
       Row({ space: 10 }) {
         Image(ThemeAssetRegistry.themeLogo(theme.id))
@@ -400,6 +919,7 @@ struct ThemeSettingsPage {
           .height(42)
           .borderRadius(theme.radius.medium)
           .objectFit(ImageFit.Contain)
+          .draggable(false)
 
         Column({ space: 3 }) {
           Text(theme.name)
@@ -416,17 +936,31 @@ struct ThemeSettingsPage {
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
 
-        if (this.isSelected(theme)) {
+        if (this.isTrialTheme(theme.id)) {
+          Text('试用中')
+            .fontSize(12)
+            .fontColor('#FFFFFF')
+            .padding({ left: 9, right: 9, top: 4, bottom: 4 })
+            .borderRadius(12)
+            .backgroundColor(this.activeVariant(theme).colors.accentColor)
+        } else if (this.isSelected(theme, customSchemeId)) {
           Text('已启用')
             .fontSize(12)
             .fontColor('#FFFFFF')
             .padding({ left: 9, right: 9, top: 4, bottom: 4 })
             .borderRadius(12)
             .backgroundColor(this.activeVariant(theme).colors.accentColor)
-        } else if (this.applyingThemeId === theme.id) {
+        } else if (this.applyingThemeId === (customSchemeId || theme.id)) {
           Text('应用中')
             .fontSize(12)
             .fontColor(this.activeVariant(theme).colors.accentColor)
+        } else if (this.isCustomSchemePending(theme, customSchemeId)) {
+          Text('待应用')
+            .fontSize(12)
+            .fontColor(this.activeVariant(theme).colors.accentColor)
+            .padding({ left: 9, right: 9, top: 4, bottom: 4 })
+            .borderRadius(12)
+            .backgroundColor(this.activeVariant(theme).colors.inputColor)
         } else if (theme.id !== ThemeIds.CUSTOM) {
           Text(this.themeAccessLabel(theme.id))
             .fontSize(11)
@@ -440,11 +974,11 @@ struct ThemeSettingsPage {
       .width('100%')
 
       this.themeVisualPreview(theme)
-      if (this.isSelected(theme) && this.themeHasBookCover(theme)) {
+      if (this.isSelected(theme, customSchemeId) && this.themeHasBookCover(theme)) {
         this.themeBookCoverSetting(theme)
       }
       Row({ space: 8 }) {
-        if (!this.isSelected(theme) && this.themeHasBookCover(theme)) {
+        if (!this.isSelected(theme, customSchemeId) && this.themeHasBookCover(theme)) {
           Stack() {
             Swiper() {
               ForEach(this.themeCoverSet(theme), (cover: ResourceStr, index: number) => {
@@ -452,6 +986,7 @@ struct ThemeSettingsPage {
                   .width(28)
                   .height(40)
                   .objectFit(ImageFit.Fill)
+                  .draggable(false)
               }, (_cover: ResourceStr, index: number) => `${theme.id}_cover_${index}`)
             }
             .width(28)
@@ -464,6 +999,7 @@ struct ThemeSettingsPage {
               .width(28)
               .height(40)
               .objectFit(ImageFit.Fill)
+              .draggable(false)
           }
           .width(28)
           .height(40)
@@ -488,7 +1024,37 @@ struct ThemeSettingsPage {
             .fontColor('#FFFFFF')
             .backgroundColor(this.activeVariant(theme).colors.buttonColor)
             .onClick(() => {
-              router.pushUrl({ url: 'pages/ThemeColorSettings' });
+              router.pushUrl({
+                url: 'pages/ThemeColorSettings',
+                params: { schemeId: customSchemeId }
+              });
+            })
+        }
+        .width('100%')
+      }
+      if (this.focusedThemeId === theme.id && this.isThemeTrialCandidate(theme.id)) {
+        Row({ space: 10 }) {
+          Button(this.isTrialTheme(theme.id) ? '结束试用' : '试用5分钟')
+            .height(34)
+            .fontSize(12)
+            .fontColor(this.activeVariant(theme).colors.accentColor)
+            .backgroundColor(this.activeVariant(theme).colors.inputColor)
+            .layoutWeight(1)
+            .onClick(() => {
+              if (this.isTrialTheme(theme.id)) {
+                this.stopThemeTrial();
+              } else {
+                this.startThemeTrial(theme);
+              }
+            })
+          Button('获取主题')
+            .height(34)
+            .fontSize(12)
+            .fontColor('#FFFFFF')
+            .backgroundColor(this.activeVariant(theme).colors.buttonColor)
+            .layoutWeight(1)
+            .onClick(() => {
+              this.acquireTheme(theme.id);
             })
         }
         .width('100%')
@@ -499,18 +1065,89 @@ struct ThemeSettingsPage {
     .borderRadius(theme.radius.card)
     .backgroundColor(this.activeVariant(theme).colors.cardColor)
     .border({
-      width: this.isSelected(theme) ? 2 : 1,
-      color: this.isSelected(theme) ? this.activeVariant(theme).colors.accentColor :
+      width: this.isThemeCardHighlighted(theme, customSchemeId) ? 2 : 1,
+      color: this.isThemeCardHighlighted(theme, customSchemeId) ? this.activeVariant(theme).colors.accentColor :
         this.activeVariant(theme).colors.dividerColor
     })
+    .gesture(
+      LongPressGesture({ repeat: false })
+        .onAction((event: GestureEvent) => {
+          if (customSchemeId) {
+            this.openCustomThemeActions(customSchemeId, event);
+          }
+        })
+    )
     .onClick(() => {
-      this.selectTheme(theme.id);
+      this.handleThemeCardClick(theme, customSchemeId);
     })
   }
 
   hasThemeAccess(themeId: string): boolean {
-    return BuiltinThemeRegistry.isFree(themeId) || themeId === this.appThemeId ||
+    return BuiltinThemeRegistry.isFree(themeId) ||
+      (themeId === this.appThemeId && !this.isTrialTheme(themeId)) ||
       AccountSessionStore.hasValidEntitlement(themeId);
+  }
+
+  isTrialTheme(themeId: string): boolean {
+    return this.trialThemeId === themeId && this.trialEndsAt > Date.now() &&
+      ThemeTrialManager.isActive(themeId);
+  }
+
+  isThemeTrialCandidate(themeId: string): boolean {
+    return themeId !== ThemeIds.CUSTOM && !BuiltinThemeRegistry.isFree(themeId) &&
+      !AccountSessionStore.hasValidEntitlement(themeId);
+  }
+
+  isThemeCardHighlighted(theme: ThemePack, customSchemeId: string = ''): boolean {
+    return this.isSelected(theme, customSchemeId) || this.focusedThemeId === (customSchemeId || theme.id);
+  }
+
+  isCustomSchemePending(theme: ThemePack, customSchemeId: string): boolean {
+    return theme.id === ThemeIds.CUSTOM && this.appThemeId === ThemeIds.CUSTOM &&
+      this.activeCustomSchemeId === customSchemeId && !this.isSelected(theme, customSchemeId);
+  }
+
+  handleThemeCardClick(theme: ThemePack, customSchemeId: string = ''): void {
+    if (this.isThemeTrialCandidate(theme.id)) {
+      this.focusedThemeId = theme.id;
+      return;
+    }
+    this.focusedThemeId = '';
+    this.selectTheme(theme.id, customSchemeId);
+  }
+
+  async startThemeTrial(theme: ThemePack): Promise<void> {
+    if (this.applyingThemeId) {
+      return;
+    }
+    this.applyingThemeId = theme.id;
+    try {
+      await ThemeTrialManager.start(getContext(this) as common.UIAbilityContext, theme.id);
+      this.appThemeId = theme.id;
+      this.themeBookCoverEnabled = !!theme.book.coverAssetId;
+      this.focusedThemeId = theme.id;
+      this.syncBars();
+      promptAction.showToast({ message: `「${theme.name}」已开始试用，5分钟后自动恢复` });
+    } catch (e) {
+      console.error('启动主题试用失败:', e);
+      promptAction.showToast({ message: '主题试用启动失败，请稍后重试' });
+    } finally {
+      this.applyingThemeId = '';
+    }
+  }
+
+  stopThemeTrial(): void {
+    ThemeTrialManager.stop(getContext(this) as common.UIAbilityContext);
+    this.appThemeId = AppStorage.get<string>('appThemeId') || AppThemeSettingsStore.DEFAULT_THEME_ID;
+    this.themeBookCoverEnabled = AppStorage.get<boolean>('appThemeBookCoverEnabled') || false;
+    this.syncBars();
+  }
+
+  async acquireTheme(themeId: string): Promise<void> {
+    if (ThemeTrialManager.isActive()) {
+      this.stopThemeTrial();
+    }
+    await this.selectTheme(themeId);
   }
 
   additionalBuiltinThemes(): ThemePack[] {
@@ -554,6 +1191,7 @@ struct ThemeSettingsPage {
             .width('100%')
             .height('100%')
             .objectFit(ImageFit.Cover)
+            .draggable(false)
         }
         Text('阅读')
           .fontSize(13)
@@ -605,6 +1243,7 @@ struct ThemeSettingsPage {
               .width(16)
               .height(16)
               .fillColor(this.activeVariant(theme).colors.accentColor)
+              .draggable(false)
           }, (tabId: string) => `${theme.id}_${tabId}`)
         }
       }
@@ -628,7 +1267,10 @@ struct ThemeSettingsPage {
     context.surfaceColor = variant.reader.backgroundColor;
     context.normalTextColor = variant.reader.textColor;
     context.darkMode = variant.reader.contentTone === 'dark';
-    return ReaderRegexBubbleStyleResolver.resolve(null, context);
+    // Theme cards must preview the theme itself even before it is purchased.
+    // Runtime entitlement checks are still enforced in the reader and the
+    // regex-font settings page.
+    return ReaderRegexBubbleStyleResolver.resolve(null, context, false);
   }
 
   themeCoverSet(theme: ThemePack): ResourceStr[] {

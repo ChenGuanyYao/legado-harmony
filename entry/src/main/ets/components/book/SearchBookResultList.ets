@@ -31,12 +31,20 @@ export struct SearchBookResultList {
   @Prop primaryTextColor: string = '#1F1F1F';
   @Prop secondaryTextColor: string = '#666666';
   @Prop subTextColor: string = '#999999';
+  @Prop topPadding: number = 0;
   @Prop bottomPadding: number = 12;
   onOpenBook: SearchBookAction = (_book: SearchBook) => {};
   onToggleShelf: SearchBookAction = (_book: SearchBook) => {};
 
   build() {
     List({ space: 8 }) {
+      if (this.topPadding > 0) {
+        ListItem() {
+          Row()
+            .height(this.topPadding)
+        }
+      }
+
       ForEach(this.books, (book: SearchBook) => {
         ListItem() {
           Row() {

@@ -232,7 +232,8 @@ export class ReaderResolvedRegexEmphasis {
 }
 
 export class ReaderRegexBubbleStyleResolver {
-  static resolve(rule: ReaderRegexFontRule | null, context: ReaderRegexEmphasisContext): ReaderResolvedRegexEmphasis {
+  static resolve(rule: ReaderRegexFontRule | null, context: ReaderRegexEmphasisContext,
+    enforceThemeAccess: boolean = true): ReaderResolvedRegexEmphasis {
     const result = new ReaderResolvedRegexEmphasis();
     const configuredMode = rule ? ReaderRegexFontCodec.normalizeEmphasisMode(
       rule.emphasisMode,
@@ -243,10 +244,12 @@ export class ReaderRegexBubbleStyleResolver {
     const configuredStyle = rule ? ReaderRegexFontCodec.normalizeBubbleStyleId(rule.bubbleStyleId) : 'inherit';
     result.bubbleStyleId = configuredStyle === 'inherit' ?
       ReaderRegexFontCodec.normalizeResolvedBubbleStyleId(context.inheritedBubbleStyleId) : configuredStyle;
-    result.bubbleStyleId = ThemeAccessPolicy.accessibleBubbleStyle(
-      result.bubbleStyleId,
-      ReaderRegexFontCodec.normalizeResolvedBubbleStyleId(context.inheritedBubbleStyleId)
-    );
+    if (enforceThemeAccess) {
+      result.bubbleStyleId = ThemeAccessPolicy.accessibleBubbleStyle(
+        result.bubbleStyleId,
+        ReaderRegexFontCodec.normalizeResolvedBubbleStyleId(context.inheritedBubbleStyleId)
+      );
+    }
     // A rule that follows the theme must inherit the theme color as well as its
     // bubble shape. Legacy shadowColor values otherwise make the reader differ
     // from the exact preview shown on the theme card.
@@ -274,6 +277,30 @@ export class ReaderRegexBubbleStyleResolver {
         rule.customTextColor || context.inheritedTextColor || context.accentColor,
         context.accentColor
       );
+      // A dedicated app-theme bubble owns the complete emphasis appearance
+      // unless the user explicitly enables a custom bubble. Older rules can
+      // carry stale highlight, text-color and bubble-style values; letting
+      // those values win makes the reader differ from the theme-card preview.
+      // Font family and size are resolved separately and remain customizable.
+      const activeThemeBubbleStyle =
+        ReaderRegexFontCodec.normalizeResolvedBubbleStyleId(context.inheritedBubbleStyleId);
+      const themeBubbleOverridesLegacyEmphasis = !rule.customBubbleEnabled &&
+        ReaderRegexFontCodec.normalizeResolvedEmphasisMode(context.inheritedMode) === 'bubble' &&
+        !!ThemeAccessPolicy.requiredThemeForBubbleStyle(activeThemeBubbleStyle);
+      if (themeBubbleOverridesLegacyEmphasis) {
+        result.mode = 'bubble';
+        result.bubbleStyleId = enforceThemeAccess ?
+          ThemeAccessPolicy.accessibleBubbleStyle(activeThemeBubbleStyle, activeThemeBubbleStyle) :
+          activeThemeBubbleStyle;
+        result.emphasisColor = ReaderRegexBubbleStyleResolver.normalizeColor(
+          context.inheritedColor || context.accentColor,
+          context.accentColor
+        );
+        result.backgroundEnabled = true;
+        result.bubbleDecorationEnabled = true;
+        ReaderRegexBubbleStyleResolver.applyBubblePreset(result, context);
+        return result;
+      }
       if (rule.customBubbleEnabled) {
         result.emphasisColor = bubbleColor;
         result.backgroundEnabled = true;

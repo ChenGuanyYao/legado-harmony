@@ -283,6 +283,19 @@ export class AppThemeSettingsStore {
     return settings;
   }
 
+  static cloneSettings(settings: AppThemeSettings): AppThemeSettings {
+    return AppThemeSettingsStore.clone(settings);
+  }
+
+  static applyCustomSnapshot(target: AppThemeSettings, snapshot: AppThemeSettings): AppThemeSettings {
+    const settings = AppThemeSettingsStore.clone(target);
+    AppThemeSettingsStore.copyCustom(snapshot, settings);
+    if (settings.themeId === ThemeIds.CUSTOM) {
+      AppThemeSettingsStore.useCustomColors(settings);
+    }
+    return AppThemeSettingsStore.clone(settings);
+  }
+
   static activateTheme(themeId: string, previous: AppThemeSettings): AppThemeSettings {
     const normalizedThemeId = AppThemeSettingsStore.normalizeThemeId(themeId);
     const settings = AppThemeSettingsStore.defaultsForTheme(normalizedThemeId === ThemeIds.CUSTOM ?

@@ -88,13 +88,12 @@ struct LocalBookSettingsPage {
         }
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 24, bottom: 32 })
+      .padding({ left: 16, right: 16, top: 24, bottom: 32 + this.navBarHeight })
     }
     .width('100%')
     .height('100%')
-    .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
     .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   @Builder
@@ -149,8 +148,10 @@ struct LocalBookSettingsPage {
         .layoutWeight(1)
     }
     .width('100%')
-    .height(56)
-    .backgroundColor(this.cardColor())
+    .height(56 + this.statusBarHeight)
+    .padding({ top: this.statusBarHeight })
+    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+    .backdropBlur(18)
     .alignItems(VerticalAlign.Center)
   }
 

@@ -59,9 +59,7 @@ struct FontSettingsPage {
   }
 
   build() {
-    Column() {
-      this.titleBar()
-
+    Stack({ alignContent: Alignment.TopStart }) {
       Scroll() {
         Column() {
           this.sectionTitle('全局字体设置')
@@ -76,16 +74,18 @@ struct FontSettingsPage {
           .backgroundColor(this.cardColor())
         }
         .width('100%')
-        .padding({ bottom: 32 })
+        .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
       }
-      .layoutWeight(1)
+      .width('100%')
+      .height('100%')
       .align(Alignment.TopStart)
+
+      this.titleBar()
     }
     .width('100%')
-    .height('100%').justifyContent(FlexAlign.Start)
-    .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
+    .height('100%')
     .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   async reloadCustomFonts(): Promise<void> {
@@ -468,8 +468,10 @@ struct FontSettingsPage {
         .layoutWeight(1)
     }
     .width('100%')
-    .height(56)
-    .backgroundColor(Color.Transparent)
+    .height(56 + this.statusBarHeight)
+    .padding({ top: this.statusBarHeight })
+    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+    .backdropBlur(18)
     .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
     .alignItems(VerticalAlign.Center)
   }

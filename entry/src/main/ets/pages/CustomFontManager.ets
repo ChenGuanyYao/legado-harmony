@@ -57,9 +57,7 @@ struct CustomFontManagerPage {
   }
 
   build() {
-    Column() {
-      this.titleBar()
-
+    Stack({ alignContent: Alignment.TopStart }) {
       Scroll() {
         Column() {
           this.uploadPanel()
@@ -78,15 +76,17 @@ struct CustomFontManagerPage {
           }
         }
         .width('100%')
-        .padding({ bottom: 32 })
+        .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
       }
-      .layoutWeight(1)
+      .width('100%')
+      .height('100%')
+
+      this.titleBar()
     }
     .width('100%')
     .height('100%')
-    .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
     .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   async reloadCustomFonts(): Promise<void> {
@@ -514,8 +514,10 @@ struct CustomFontManagerPage {
         .layoutWeight(1)
     }
     .width('100%')
-    .height(56)
-    .backgroundColor(this.cardColor())
+    .height(56 + this.statusBarHeight)
+    .padding({ top: this.statusBarHeight })
+    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+    .backdropBlur(18)
     .alignItems(VerticalAlign.Center)
   }
 

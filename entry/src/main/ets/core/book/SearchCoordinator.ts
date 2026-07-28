@@ -1,6 +1,6 @@
 import { BookSource, SearchBook } from '../../model/data/Book';
 import { appDb } from '../../model/data/AppDatabase';
-import { HttpClient } from '../http/HttpClient';
+import { HttpClient, HttpResponse } from '../http/HttpClient';
 import { AnalyzeUrl } from '../rule/AnalyzeUrl';
 import { AnalyzeRule } from '../rule/AnalyzeRule';
 import { RuleContext } from '../rule/RuleContext';
@@ -25,6 +25,12 @@ export interface SearchProgress {
 
 export type SearchCallback = (progress: SearchProgress) => void;
 
+export interface SearchSourceResult {
+  books: SearchBook[];
+  validationStatus: number;
+  reason: string;
+}
+
 const MAX_SEARCH_CONCURRENCY = 12;
 const MAX_VALIDATION_CONCURRENCY = 2;
 const SEARCH_PROGRESS_EMIT_INTERVAL_MS = 250;
@@ -41,7 +47,7 @@ export interface SearchOptions {
   exactMatchAuthor?: boolean;
   sourceGroups?: string[];
   targetSources?: BookSource[];
-  onSourceComplete?: (source: BookSource, books: SearchBook[]) => Promise<void>;
+  onSourceComplete?: (source: BookSource, result: SearchSourceResult) => Promise<void>;
   validationOnly?: boolean;
 }
 
@@ -134,11 +140,12 @@ export class SearchCoordinator {
         currentSourceLabel = sources[sourceIndex].bookSourceName || `书源 ${sourceIndex + 1}`;
         AppStorage.setOrCreate('searchLastSource', currentSourceLabel);
         AppStorage.setOrCreate('searchLastSourceIndex', sourceIndex + 1);
-        const books = await this.searchOne(sources[sourceIndex], keyword, options);
+        const sourceResult = await this.searchOne(sources[sourceIndex], keyword, options);
+        const books = sourceResult.books;
         if (this.cancelled) break;
         if (options.onSourceComplete) {
           try {
-            await options.onSourceComplete(sources[sourceIndex], books);
+            await options.onSourceComplete(sources[sourceIndex], sourceResult);
           } catch (e) {
             console.error('[SC] source completion callback failed:', e);
           }
@@ -167,16 +174,18 @@ export class SearchCoordinator {
     return validationOnly ? [] : this.filterAndSortSearchResults(all, keyword, options);
   }
 
-  private async searchOne(source: BookSource, keyword: string, options: SearchOptions): Promise<SearchBook[]> {
+  private async searchOne(source: BookSource, keyword: string, options: SearchOptions): Promise<SearchSourceResult> {
     try {
-      if (this.cancelled) return [];
+      if (this.cancelled) {
+        return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
+      }
       if (options.validationOnly === true) {
         const compatibilityIssue = this.validationCompatibilityIssue(source);
         if (compatibilityIssue) {
           AppStorage.setOrCreate('searchLastSourceError',
             `${source.bookSourceName || source.bookSourceUrl}: ${compatibilityIssue}`);
           console.warn('[SC] skip unsafe validation source:', source.bookSourceName, compatibilityIssue);
-          return [];
+          return this.sourceResult([], BookSource.VALIDATION_FAILED, compatibilityIssue);
         }
       }
       const responseLimit = options.validationOnly === true ?
@@ -184,14 +193,23 @@ export class SearchCoordinator {
       const resultLimit = options.validationOnly === true ? 1 : MAX_RESULTS_PER_SOURCE;
       if (BookSourceDataUrlSupport.sourceUsesGySearch(source)) {
         const books = await BookSourceDataUrlSupport.search(this.http, source, keyword, 1, responseLimit);
-        return this.sanitizeSearchBooks(books, resultLimit);
+        const sanitized = this.sanitizeSearchBooks(books, resultLimit);
+        if (sanitized.length > 0) {
+          return this.sourceResult(sanitized, BookSource.VALIDATION_PASSED, '');
+        }
+        if (this.pendingVerificationMatchesSource(source)) {
+          return this.sourceResult([], BookSource.VALIDATION_NEEDS_VERIFICATION, '需要登录或网页验证');
+        }
+        return this.sourceResult([], BookSource.VALIDATION_NO_RESULTS, '未搜索到结果');
       }
-      if (this.cancelled) return [];
+      if (this.cancelled) {
+        return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
+      }
       if (!source.searchUrl || !source.searchRule?.bookList || !source.searchRule?.name || !source.searchRule?.bookUrl) {
         if (ENABLE_SEARCH_DEBUG_LOG) {
           console.warn('[SC] skip source without search rules:', source.bookSourceName);
         }
-        return [];
+        return this.sourceResult([], BookSource.VALIDATION_FAILED, '缺少搜索地址或必要搜索规则');
       }
       const js = new JsRuntime();
       js.setVar('key', encodeURIComponent(keyword));
@@ -205,12 +223,17 @@ export class SearchCoordinator {
       if (!urlTemplate && source.searchUrl.includes('gysearch')) {
         urlTemplate = EncodedSourceUrl.buildSearchUrl(keyword);
       }
+      if (!urlTemplate) {
+        return this.sourceResult([], BookSource.VALIDATION_FAILED, '搜索地址无法解析');
+      }
       if (ENABLE_SEARCH_DEBUG_LOG) {
         console.log('[SC] search source:', source.bookSourceName, 'url:', urlTemplate);
       }
       const resp = EncodedSourceUrl.canHandle(urlTemplate) ?
         await this.fetchEncodedDataUrl(urlTemplate, source, responseLimit) : await au.fetch(urlTemplate, responseLimit);
-      if (this.cancelled) return [];
+      if (this.cancelled) {
+        return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
+      }
 
       if (ENABLE_SEARCH_DEBUG_LOG) {
         console.log('[SC] response:', source.bookSourceName, resp.statusCode, 'len:', resp.body?.length || 0);
@@ -221,9 +244,14 @@ export class SearchCoordinator {
         if (ENABLE_SEARCH_DEBUG_LOG) {
           console.warn('[SC] source needs browser verification:', source.bookSourceName, verifyUrl);
         }
-        return [];
+        return this.sourceResult([], BookSource.VALIDATION_NEEDS_VERIFICATION, '需要登录或网页验证');
       }
-      if (!resp.success || !resp.body) return [];
+      if (!resp.success) {
+        return this.validationHttpFailure(resp);
+      }
+      if (!resp.body) {
+        return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '服务器返回空响应');
+      }
 
       const baseUrl = BookUrlResolver.effectiveBase(resp, urlTemplate, source.bookSourceUrl);
       const rule = new AnalyzeRule(resp.body, baseUrl);
@@ -234,7 +262,9 @@ export class SearchCoordinator {
       rule.setJsVar('page', '1');
       const searchRule = source.searchRule;
       const items = rule.getElements(searchRule.bookList || '');
-      if (this.cancelled) return [];
+      if (this.cancelled) {
+        return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
+      }
       if (ENABLE_SEARCH_DEBUG_LOG) {
         console.log('[SC] parsed list:', source.bookSourceName, 'rule:', searchRule.bookList, 'count:', items.length);
       }
@@ -244,7 +274,9 @@ export class SearchCoordinator {
       const normalizedKeyword = this.normalizeSearchText(keyword);
       const sourceBackendHost = BookSourceDataUrlSupport.sourceBackendHost(source);
       for (const item of items) {
-        if (this.cancelled) return [];
+        if (this.cancelled) {
+          return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
+        }
         const ir = new AnalyzeRule(item, baseUrl);
         this.seedSourceVariables(ir.getContext(), source);
         if (sourceBackendHost) {
@@ -323,13 +355,58 @@ export class SearchCoordinator {
             'firstItem:', items[0].substring(0, Math.min(items[0].length, 240)));
         }
       }
-      return books;
+      if (books.length > 0) {
+        return this.sourceResult(books, BookSource.VALIDATION_PASSED, '');
+      }
+      if (items.length > 0) {
+        return this.sourceResult([], BookSource.VALIDATION_FAILED, '搜索规则未能解析出有效书名和详情地址');
+      }
+      return this.sourceResult([], BookSource.VALIDATION_NO_RESULTS, '未搜索到结果');
     } catch (e) {
       if (ENABLE_SEARCH_DEBUG_LOG) {
         console.error('[SC] search failed:', source.bookSourceName, e);
       }
-      return [];
+      const reason = e instanceof Error ? e.message : String(e);
+      return this.sourceResult([], this.isExplicitRuleError(reason) ?
+        BookSource.VALIDATION_FAILED : BookSource.VALIDATION_TEMPORARY_ERROR,
+      reason || '搜索过程中发生异常');
     }
+  }
+
+  private sourceResult(books: SearchBook[], validationStatus: number, reason: string): SearchSourceResult {
+    return {
+      books: books,
+      validationStatus: validationStatus,
+      reason: reason
+    };
+  }
+
+  private pendingVerificationMatchesSource(source: BookSource): boolean {
+    return (AppStorage.get<string>('pendingVerificationSourceUrl') || '') === source.bookSourceUrl;
+  }
+
+  private validationHttpFailure(response: HttpResponse): SearchSourceResult {
+    const statusCode = response.statusCode;
+    if (statusCode === 401 || statusCode === 403) {
+      return this.sourceResult([], BookSource.VALIDATION_NEEDS_VERIFICATION,
+        `请求需要身份验证（HTTP ${statusCode}）`);
+    }
+    if (statusCode === 408 || statusCode === 425 || statusCode === 429 || statusCode >= 500 ||
+      statusCode === 0 || (response.error || '').includes('response too large')) {
+      const reason = statusCode > 0 ? `服务器暂时异常（HTTP ${statusCode}）` :
+        (response.error || '网络请求失败');
+      return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, reason);
+    }
+    if ((statusCode >= 300 && statusCode < 400) || (statusCode >= 400 && statusCode < 500)) {
+      return this.sourceResult([], BookSource.VALIDATION_FAILED, `搜索请求错误（HTTP ${statusCode}）`);
+    }
+    return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR,
+      response.error || '搜索请求暂时异常');
+  }
+
+  private isExplicitRuleError(reason: string): boolean {
+    return /(?:rule|规则|selector|选择器|xpath|jsonpath|regexp|regex|regular expression|正则|syntax|语法|parse error|解析错误)/i
+      .test(reason || '');
   }
 
   private validationCompatibilityIssue(source: BookSource): string {

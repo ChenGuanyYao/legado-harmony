@@ -24,6 +24,7 @@ struct CustomTtsVoiceManagerPage {
   @StorageLink('ttsLanguage') ttsLanguage: string = 'zh-CN';
   @StorageLink('ttsSpeed') ttsSpeed: number = 1;
   @StorageLink('ttsInstalledVoiceKeys') ttsInstalledVoiceKeys: string = '';
+  @StorageLink('ttsCloudVoiceId') ttsCloudVoiceId: string = '';
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
@@ -124,6 +125,11 @@ struct CustomTtsVoiceManagerPage {
                 edgeEffect: SwipeEdgeEffect.Spring
               })
             }, (voice: HttpTTS) => this.voiceKey(voice))
+
+            ListItem() {
+              Row()
+                .height(Math.max(20, this.navBarHeight + 12))
+            }
           }
           .width('100%')
           .layoutWeight(1)
@@ -139,7 +145,6 @@ struct CustomTtsVoiceManagerPage {
       }
       .width('100%')
       .height('100%')
-      .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
       .backgroundColor(this.pageColor())
 
       if (!this.selectionMode && !this.showAddDialog && !this.isImporting && !this.isBatchOperating) {
@@ -170,7 +175,7 @@ struct CustomTtsVoiceManagerPage {
       if (Number.isFinite(width) && width > 0) this.contextViewportWidth = width;
       if (Number.isFinite(height) && height > 0) this.contextViewportHeight = height;
     })
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   loadSettings(): void {
@@ -183,6 +188,7 @@ struct CustomTtsVoiceManagerPage {
       this.ttsLanguage = settings.language;
       this.ttsSpeed = settings.speed;
       this.ttsInstalledVoiceKeys = settings.installedVoiceKeys;
+      this.ttsCloudVoiceId = settings.cloudVoiceId;
       this.voices = SystemTtsReader.parseCustomVoices(settings.customVoices);
       this.pruneSelectedVoices();
     }).catch((error: Error) => {
@@ -202,6 +208,7 @@ struct CustomTtsVoiceManagerPage {
     settings.installedVoiceKeys = this.ttsInstalledVoiceKeys;
     settings.customVoiceId = this.ttsCustomVoiceId;
     settings.customVoices = this.ttsCustomVoices;
+    settings.cloudVoiceId = this.ttsCloudVoiceId;
     TtsSettingsStore.applyToStorage(settings);
     TtsSettingsStore.save(getContext(this), settings).catch((error: Error) => {
       console.warn('保存自定义音色失败:', error);
@@ -656,9 +663,10 @@ struct CustomTtsVoiceManagerPage {
 
     }
     .width('100%')
-    .height(56)
-    .padding({ right: 16 })
-    .backgroundColor(this.cardColor())
+    .height(56 + this.statusBarHeight)
+    .padding({ right: 16, top: this.statusBarHeight })
+    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+    .backdropBlur(18)
     .alignItems(VerticalAlign.Center)
   }
 

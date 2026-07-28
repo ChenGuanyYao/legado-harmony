@@ -449,9 +449,8 @@ struct FastBookshelfShell {
     }
     .width('100%')
     .height('100%')
-    .padding({ top: this.statusBarHeight })
     .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   @Builder
@@ -529,6 +528,9 @@ struct BookshelfPage {
   @State showShelfLayoutMenu: boolean = false;
   @State showShelfGroups: boolean = false;
   @State shelfGroups: BookGroup[] = [];
+  @State shelfScopeTransitionX: number = 0;
+  @State shelfScopeTransitionScale: number = 1;
+  @State shelfScopeTransitionOpacity: number = 1;
   @State tileGroupTransitionX: number = 0;
   @State tileGroupTransitionScale: number = 1;
   @State tileGroupTransitionOpacity: number = 1;
@@ -642,6 +644,9 @@ struct BookshelfPage {
   private openingBookGrowTimer: number = -1;
   private openingBookTurnTimer: number = -1;
   private openingBookRouteTimer: number = -1;
+  private shelfScopeSwapTimer: number = -1;
+  private shelfScopeFinishTimer: number = -1;
+  private shelfScopeSwitchAnimating: boolean = false;
   private openingBookOriginX: number = 0;
   private openingBookOriginY: number = 0;
   private networkCoverCoordinator: SearchCoordinator | null = null;
@@ -657,6 +662,7 @@ struct BookshelfPage {
     this.releaseShelfFullTextCacheCancelSubscriber();
     this.cancelShelfBookOpening();
     this.cancelNetworkCoverSearch();
+    this.clearShelfScopeTransition();
   }
 
   onActiveShelfGroupChanged(): void {
@@ -1076,6 +1082,7 @@ struct BookshelfPage {
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
       Column() {
+        Column() {
         Row() {
           if (this.isTileGroupPage() && !this.isBookMultiSelect) {
             ImmersiveBackButton({
@@ -1140,8 +1147,12 @@ struct BookshelfPage {
           }
         }
         .width('100%')
-        .height(56)
-        .padding({ left: this.isTileGroupPage() && !this.isBookMultiSelect ? 0 : 16, right: 16 })
+        .height(56 + this.statusBarHeight)
+        .padding({
+          left: this.isTileGroupPage() && !this.isBookMultiSelect ? 0 : 16,
+          right: 16,
+          top: this.statusBarHeight
+        })
         .alignItems(VerticalAlign.Center)
 
         if (this.isBookMultiSelect) {
@@ -1151,6 +1162,12 @@ struct BookshelfPage {
         if (this.showShelfGroups && !this.isBookMultiSelect) {
           this.shelfGroupBar()
         }
+        }
+        .width('100%')
+        .position({ x: 0, y: 0 })
+        .zIndex(4)
+        .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+        .backdropBlur(18)
 
         if (this.isLoading) {
           Column() {
@@ -1164,7 +1181,17 @@ struct BookshelfPage {
           }
           .width('100%')
           .height('100%')
+          .padding({ top: this.bookshelfTopOverlayHeight() })
           .justifyContent(FlexAlign.Center)
+          .translate({ x: this.shelfScopeTransitionX })
+          .scale({ x: this.shelfScopeTransitionScale, y: this.shelfScopeTransitionScale })
+          .opacity(this.shelfScopeTransitionOpacity)
+          .parallelGesture(
+            PanGesture({ direction: PanDirection.Horizontal, distance: 24 })
+              .onActionEnd((event: GestureEvent) => {
+                this.switchShelfScopeBySwipe(event.offsetX);
+              })
+          )
         } else if (this.books.length === 0) {
           Column() {
             Text('📚')
@@ -1180,13 +1207,28 @@ struct BookshelfPage {
           }
           .width('100%')
           .height('100%')
+          .padding({ top: this.bookshelfTopOverlayHeight() })
           .justifyContent(FlexAlign.Center)
+          .translate({ x: this.shelfScopeTransitionX })
+          .scale({ x: this.shelfScopeTransitionScale, y: this.shelfScopeTransitionScale })
+          .opacity(this.shelfScopeTransitionOpacity)
+          .parallelGesture(
+            PanGesture({ direction: PanDirection.Horizontal, distance: 24 })
+              .onActionEnd((event: GestureEvent) => {
+                this.switchShelfScopeBySwipe(event.offsetX);
+              })
+          )
         } else {
           Refresh({ refreshing: $$this.isShelfRefreshing, builder: this.shelfRefreshBuilder }) {
             if (this.isTileLayout()) {
               this.shelfTileGrid()
             } else {
               List({ space: 8 }) {
+              ListItem() {
+                Row()
+                  .height(this.bookshelfTopOverlayHeight())
+              }
+
               ForEach(this.books, (book: Book) => {
                 ListItem() {
                   Row() {
@@ -1253,11 +1295,19 @@ struct BookshelfPage {
           .onRefreshing(() => {
             this.refreshBookshelfToc();
           })
+          .translate({ x: this.shelfScopeTransitionX })
+          .scale({ x: this.shelfScopeTransitionScale, y: this.shelfScopeTransitionScale })
+          .opacity(this.shelfScopeTransitionOpacity)
+          .parallelGesture(
+            PanGesture({ direction: PanDirection.Horizontal, distance: 24 })
+              .onActionEnd((event: GestureEvent) => {
+                this.switchShelfScopeBySwipe(event.offsetX);
+              })
+          )
         }
       }
       .width('100%')
       .height('100%')
-      .padding({ top: this.statusBarHeight })
       .backgroundColor(this.pageColor())
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
 
@@ -1946,7 +1996,7 @@ struct BookshelfPage {
     .width('100%')
     .height('100%')
     .onAreaChange((_oldValue: Area, newValue: Area) => this.updateContextViewport(newValue))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   @Builder
@@ -2445,6 +2495,16 @@ struct BookshelfPage {
   }
 
 
+  bookshelfTopOverlayHeight(): number {
+    let height = this.statusBarHeight + 56;
+    if (this.isBookMultiSelect) {
+      height += 42;
+    } else if (this.showShelfGroups) {
+      height += 42;
+    }
+    return height;
+  }
+
   bookshelfListBottomInset(): number {
     const comfortableGap = 20;
     const multiSelectBarHeight = this.isBookMultiSelect ? 104 : 0;
@@ -2651,6 +2711,13 @@ struct BookshelfPage {
   @Builder
   shelfTileGrid() {
     Grid() {
+      GridItem() {
+        Row()
+          .height(this.bookshelfTopOverlayHeight())
+      }
+      .columnStart(0)
+      .columnEnd(this.shelfTileColumnCount() - 1)
+
       if (this.shouldShowLatestExpandedTileBook()) {
         ForEach(this.getLatestReadTileBooks(), (book: Book) => {
         GridItem() {
@@ -3672,8 +3739,64 @@ struct BookshelfPage {
     if (this.shelfScope === next) return;
     this.shelfScope = next;
     this.showShelfSortMenu = false;
+    this.showShelfLayoutMenu = false;
     this.applyShelfScope();
     this.refreshShelfCoverCache(this.books);
+  }
+
+  switchShelfScopeBySwipe(offsetX: number): void {
+    if (this.isBookMultiSelect || this.isTileGroupPage() || this.shelfScopeSwitchAnimating ||
+      Math.abs(offsetX) < 56) {
+      return;
+    }
+    if (offsetX < 0 && this.shelfScope === 'network') {
+      this.animateShelfScopeSwitch('local', -1);
+    } else if (offsetX > 0 && this.shelfScope === 'local') {
+      this.animateShelfScopeSwitch('network', 1);
+    }
+  }
+
+  animateShelfScopeSwitch(scope: string, outgoingDirection: number): void {
+    this.clearShelfScopeTransition(false);
+    this.shelfScopeSwitchAnimating = true;
+    animateTo({ duration: 130, curve: Curve.EaseIn }, () => {
+      this.shelfScopeTransitionX = outgoingDirection * 48;
+      this.shelfScopeTransitionScale = 0.985;
+      this.shelfScopeTransitionOpacity = 0.12;
+    });
+    this.shelfScopeSwapTimer = setTimeout(() => {
+      this.shelfScopeSwapTimer = -1;
+      this.setShelfScope(scope);
+      this.shelfScopeTransitionX = outgoingDirection * -48;
+      this.shelfScopeTransitionScale = 0.985;
+      this.shelfScopeTransitionOpacity = 0.12;
+      animateTo({ duration: 230, curve: Curve.Friction }, () => {
+        this.shelfScopeTransitionX = 0;
+        this.shelfScopeTransitionScale = 1;
+        this.shelfScopeTransitionOpacity = 1;
+      });
+      this.shelfScopeFinishTimer = setTimeout(() => {
+        this.shelfScopeFinishTimer = -1;
+        this.shelfScopeSwitchAnimating = false;
+      }, 250);
+    }, 135);
+  }
+
+  clearShelfScopeTransition(resetVisuals: boolean = true): void {
+    if (this.shelfScopeSwapTimer >= 0) {
+      clearTimeout(this.shelfScopeSwapTimer);
+      this.shelfScopeSwapTimer = -1;
+    }
+    if (this.shelfScopeFinishTimer >= 0) {
+      clearTimeout(this.shelfScopeFinishTimer);
+      this.shelfScopeFinishTimer = -1;
+    }
+    this.shelfScopeSwitchAnimating = false;
+    if (resetVisuals) {
+      this.shelfScopeTransitionX = 0;
+      this.shelfScopeTransitionScale = 1;
+      this.shelfScopeTransitionOpacity = 1;
+    }
   }
 
   closeCacheDialog(resetCaching: boolean = true): void {
@@ -4767,7 +4890,11 @@ struct BookshelfPage {
       .textAlign(TextAlign.Center)
       .borderRadius(13)
       .backgroundColor(this.shelfScope === scope ? this.accentColor() : '#00000000')
-      .onClick(() => this.setShelfScope(scope))
+      .onClick(() => {
+        if (!this.shelfScopeSwitchAnimating) {
+          this.setShelfScope(scope);
+        }
+      })
   }
 
   @Builder
@@ -5371,6 +5498,7 @@ struct ExplorePage {
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       Column() {
+        Column() {
         Row() {
         Row() {
           if (this.showExploreSourcePicker) {
@@ -5456,8 +5584,8 @@ struct ExplorePage {
           .margin({ left: 8, right: -24 })
       }
       .width('100%')
-      .height(56)
-      .padding({ left: 16, right: 16 })
+      .height(56 + this.statusBarHeight)
+      .padding({ left: 16, right: 16, top: this.statusBarHeight })
       .alignItems(VerticalAlign.Center)
 
       if (this.platformNames.length > 0) {
@@ -5535,6 +5663,12 @@ struct ExplorePage {
         .padding({ left: 16, right: 16, top: 6, bottom: 6 })
         .alignItems(VerticalAlign.Center)
       }
+        }
+        .width('100%')
+        .position({ x: 0, y: 0 })
+        .zIndex(4)
+        .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+        .backdropBlur(18)
 
       if (this.isLoading) {
         Column() {
@@ -5548,6 +5682,7 @@ struct ExplorePage {
         }
         .width('100%')
         .layoutWeight(1)
+        .padding({ top: this.exploreTopOverlayHeight() })
         .justifyContent(FlexAlign.Center)
       } else if (this.books.length > 0) {
         SearchBookResultList({
@@ -5567,6 +5702,7 @@ struct ExplorePage {
           primaryTextColor: this.primaryTextColor(),
           secondaryTextColor: this.secondaryTextColor(),
           subTextColor: this.subTextColor(),
+          topPadding: this.exploreTopOverlayHeight(),
           bottomPadding: this.resultListBottomInset(),
           onOpenBook: (book: SearchBook) => {
             this.openSearchBookDetail(book);
@@ -5601,12 +5737,12 @@ struct ExplorePage {
         }
         .width('100%')
         .layoutWeight(1)
+        .padding({ top: this.exploreTopOverlayHeight() })
         .justifyContent(FlexAlign.Center)
       }
       }
       .width('100%')
       .height('100%')
-      .padding({ top: this.statusBarHeight })
       .backgroundColor(this.pageColor())
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
 
@@ -5634,7 +5770,7 @@ struct ExplorePage {
         this.exploreViewportWidth = width;
       }
     })
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   openSearchBookDetail(book: SearchBook) {
@@ -6113,6 +6249,20 @@ struct ExplorePage {
     return this.entries.filter(entry => entry.sourceUrl === this.selectedSourceUrl);
   }
 
+  exploreTopOverlayHeight(): number {
+    let height = this.statusBarHeight + 56;
+    if (this.platformNames.length > 0) {
+      height += 48;
+    }
+    if (this.getActiveEntries().length > 0) {
+      height += 44;
+    }
+    if (this.shouldShowExploreStatus()) {
+      height += 40;
+    }
+    return height;
+  }
+
   resultListBottomInset(): number {
     const comfortableGap = 20;
     if (deviceInfo.sdkApiVersion < 23) {
@@ -6253,6 +6403,7 @@ struct SearchPage {
   build() {
     Stack() {
       Column() {
+        Column() {
         Row() {
           Row() {
             TextInput({ placeholder: '搜索书籍', text: this.keyword })
@@ -6316,8 +6467,8 @@ struct SearchPage {
             .margin({ left: 8, right: -24 })
         }
         .width('100%')
-        .height(56)
-        .padding({ left: 16, right: 16 })
+        .height(56 + this.statusBarHeight)
+        .padding({ left: 16, right: 16, top: this.statusBarHeight })
         .alignItems(VerticalAlign.Center)
 
         if (this.singleSourceSearchUrl) {
@@ -6375,6 +6526,12 @@ struct SearchPage {
           .backgroundColor(this.statusMessageColor())
           .alignItems(VerticalAlign.Center)
         }
+        }
+        .width('100%')
+        .position({ x: 0, y: 0 })
+        .zIndex(4)
+        .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+        .backdropBlur(18)
 
         if (this.showResult && this.searchResults.length > 0) {
           SearchBookResultList({
@@ -6393,6 +6550,7 @@ struct SearchPage {
             primaryTextColor: this.primaryTextColor(),
             secondaryTextColor: this.secondaryTextColor(),
             subTextColor: this.subTextColor(),
+            topPadding: this.searchTopOverlayHeight(),
             bottomPadding: this.resultListBottomInset(),
             onOpenBook: (book: SearchBook) => {
               this.openSearchBookDetail(book);
@@ -6413,6 +6571,7 @@ struct SearchPage {
           }
           .width('100%')
           .layoutWeight(1)
+          .padding({ top: this.searchTopOverlayHeight() })
           .justifyContent(FlexAlign.Center)
         } else if (this.showResult && this.searchResults.length === 0) {
           Column() {
@@ -6422,6 +6581,7 @@ struct SearchPage {
           }
           .width('100%')
           .layoutWeight(1)
+          .padding({ top: this.searchTopOverlayHeight() })
           .justifyContent(FlexAlign.Center)
         } else {
           Column() {
@@ -6431,12 +6591,12 @@ struct SearchPage {
           }
           .width('100%')
           .layoutWeight(1)
+          .padding({ top: this.searchTopOverlayHeight() })
           .justifyContent(FlexAlign.Center)
         }
       }
       .width('100%')
       .height('100%')
-      .padding({ top: this.statusBarHeight })
       .backgroundColor(this.pageColor())
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
 
@@ -6456,6 +6616,7 @@ struct SearchPage {
         this.searchViewportWidth = width;
       }
     })
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   searchHistoryPopupPanelWidth(): number {
@@ -7335,6 +7496,17 @@ struct SearchPage {
     return `#${this.appDarkMode ? '33' : '1A'}${normalized.substring(1)}`;
   }
 
+  searchTopOverlayHeight(): number {
+    let height = this.statusBarHeight + 56;
+    if (this.singleSourceSearchUrl) {
+      height += 42;
+    }
+    if (this.statusMessage) {
+      height += 40;
+    }
+    return height;
+  }
+
   resultListBottomInset(): number {
     const comfortableGap = 20;
     if (deviceInfo.sdkApiVersion < 23) {
@@ -7357,22 +7529,13 @@ struct SettingsPage {
   @StorageLink('accountPoints') accountPoints: number = 0;
 
   build() {
-    Column() {
-      Row() {
-        Text('我的')
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor())
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(56)
-      .padding({ left: 16 })
-      .alignItems(VerticalAlign.Center)
-      .backgroundColor(this.glassCardColor())
-
+    Stack({ alignContent: Alignment.TopStart }) {
       Scroll() {
         Column({ space: 12 }) {
+          Row()
+            .width('100%')
+            .height(56 + this.statusBarHeight)
+
           this.accountSummaryCard()
           Column() {
             this.menuItem($r('sys.symbol.externaldrive'), '书源管理', true, () => {
@@ -7404,22 +7567,39 @@ struct SettingsPage {
           .borderRadius(16)
           .clip(true)
           .backgroundColor(this.glassCardColor())
+
+          Row()
+            .width('100%')
+            .height(56 + Math.max(this.navBarHeight, 8) + 20)
         }
         .width('calc(100% - 24vp)')
         .margin({ left: 12, right: 12, top: 12 })
         .justifyContent(FlexAlign.Start)
       }
       .width('100%')
-      .layoutWeight(1)
+      .height('100%')
       .align(Alignment.TopStart)
-      .padding({ bottom: 96 })
       .backgroundColor(this.pageColor())
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+
+      Row() {
+        Text('我的')
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .height(56 + this.statusBarHeight)
+      .alignItems(VerticalAlign.Center)
+      .padding({ left: 16, top: this.statusBarHeight })
+      .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+      .backdropBlur(18)
     }
     .width('100%')
     .height('100%')
-    .justifyContent(FlexAlign.Start)
-    .padding({ top: this.statusBarHeight })
     .backgroundColor(this.pageColor())
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   @Builder

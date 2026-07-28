@@ -8,6 +8,8 @@ export class AccountSnapshot {
   displayName: string = '华为用户';
   avatarUrl: string = '';
   points: number = 0;
+  paidPoints: number = 0;
+  promoPoints: number = 0;
   welcomeGranted: boolean = false;
   entitlements: ThemeEntitlement[] = [];
 }
@@ -36,6 +38,47 @@ export class RechargeProduct {
     this.points = points;
     this.expectedPriceYuan = expectedPriceYuan;
   }
+}
+
+export class TtsVoiceInfo {
+  id: string = '';
+  name: string = '';
+  tier: string = 'STANDARD';
+  description: string = '';
+  supportsPitch: boolean = false;
+  supportsWordTimestamps: boolean = false;
+}
+
+export class TtsPackageInfo {
+  sku: string = '';
+  tier: string = 'STANDARD';
+  chars: number = 0;
+  points: number = 0;
+  validDays: number = 365;
+}
+
+export class TtsTrialInfo {
+  standardChars: number = 0;
+  premiumChars: number = 0;
+  validDays: number = 0;
+}
+
+export class TtsCatalogResponse {
+  voices: TtsVoiceInfo[] = [];
+  packages: TtsPackageInfo[] = [];
+  trial: TtsTrialInfo = new TtsTrialInfo();
+}
+
+export class TtsWalletSnapshot {
+  standardChars: number = 0;
+  premiumChars: number = 0;
+  standardNextExpiry: number | null = null;
+  premiumNextExpiry: number | null = null;
+}
+
+export class TtsPackageRedeemResponse {
+  account: AccountSnapshot = new AccountSnapshot();
+  ttsWallet: TtsWalletSnapshot = new TtsWalletSnapshot();
 }
 
 export class AccountApiError extends Error {

@@ -1,7 +1,8 @@
 import { textToSpeech } from '@kit.CoreSpeechKit';
+import { CloudTtsAudio, CloudTtsClient, CloudTtsTiming } from '../account/CloudTtsClient';
 import { HttpTTS } from '../model/data/Book';
 import { HttpTtsAudio, HttpTtsReader } from './HttpTtsReader';
-import { TtsPcmAudioPlayer } from './TtsPcmAudioPlayer';
+import { PcmPlaybackCue, TtsPcmAudioPlayer } from './TtsPcmAudioPlayer';
 
 export interface TtsChunk {
   text: string;
@@ -19,6 +20,9 @@ export interface TtsReadOptions {
   style?: string;
   language?: string;
   speed?: number;
+  cloudVoiceId?: string;
+  cloudVoiceName?: string;
+  focusBreakOffsets?: number[];
 }
 
 export interface TtsVoiceDownloadCallbacks {
@@ -36,6 +40,25 @@ interface CustomTtsAudioJob {
   chunk: TtsChunk;
   text: string;
   promise: Promise<CustomTtsAudioResult>;
+}
+
+interface CloudTtsAudioResult {
+  audio?: CloudTtsAudio;
+  error?: Error;
+}
+
+interface CloudTtsAudioJob {
+  index: number;
+  chunk: TtsChunk;
+  text: string;
+  promise: Promise<CloudTtsAudioResult>;
+}
+
+interface SystemPcmSegment {
+  index: number;
+  chunk: TtsChunk;
+  pcm: ArrayBuffer;
+  sampleRate: number;
 }
 
 export class TtsVoiceOption {
@@ -56,9 +79,13 @@ export class SystemTtsReader {
   private static readonly LEGACY_ONLINE_MODE: number = 0;
   private static readonly OFFLINE_MODE: number = 1;
   private static readonly CUSTOM_TTS_PREFETCH_WINDOW: number = 3;
+  private static readonly CLOUD_TTS_PREFETCH_WINDOW: number = 2;
+  private static readonly SYSTEM_TTS_START_BUFFER_SEGMENTS: number = 2;
+  private static readonly SYSTEM_TTS_MAX_BUFFERED_SEGMENTS: number = 3;
   private engine: textToSpeech.TextToSpeechEngine | null = null;
   private pcmPlayer: TtsPcmAudioPlayer = new TtsPcmAudioPlayer();
   private httpReader: HttpTtsReader = new HttpTtsReader();
+  private cloudReader: CloudTtsClient = new CloudTtsClient();
   private chunks: TtsChunk[] = [];
   private chunkIndex: number = 0;
   private active: boolean = false;
@@ -80,6 +107,7 @@ export class SystemTtsReader {
   private currentFocusQueued: boolean = false;
   private currentFocusAudioReceived: boolean = false;
   private currentFocusAudioWritten: boolean = false;
+  private currentAudioWritePromise: Promise<void> = Promise.resolve();
   private currentFocusRetryCount: number = 0;
   private ttsPcmPlayType: number = 0;
   private speakWatchdogId: number = -1;
@@ -93,6 +121,17 @@ export class SystemTtsReader {
   private optionStyle: string | null = null;
   private optionLanguage: string | null = null;
   private optionSpeed: number | null = null;
+  private optionCloudVoiceId: string = '';
+  private optionCloudVoiceName: string = '';
+  private optionFocusBreakOffsets: number[] = [];
+  private systemCurrentPcmBuffers: ArrayBuffer[] = [];
+  private systemCurrentPcmBytes: number = 0;
+  private systemReadySegments: SystemPcmSegment[] = [];
+  private systemPlaybackStarted: boolean = false;
+  private systemSynthesisFinished: boolean = false;
+  private systemDrainScheduled: boolean = false;
+  private systemLastWritePromise: Promise<void> = Promise.resolve();
+  private systemBufferedSegmentCount: number = 0;
 
   static async listAvailableVoices(): Promise<TtsVoiceOption[]> {
     try {
@@ -219,7 +258,8 @@ export class SystemTtsReader {
   }
 
   audioDebugState(): string {
-    return this.getCurrentCustomVoice() ? this.httpReader.debugState() : this.pcmPlayer.debugState();
+    return (this.getCurrentCustomVoice() || this.optionCloudVoiceId) ?
+      this.httpReader.debugState() : this.pcmPlayer.debugState();
   }
 
   private static createVoiceDownloadVariants(voice: TtsVoiceOption): textToSpeech.VoiceDownload[] {
@@ -322,10 +362,26 @@ export class SystemTtsReader {
     this.optionStyle = options?.style ?? null;
     this.optionLanguage = options?.language ?? null;
     this.optionSpeed = options?.speed ?? null;
-    this.chunks = this.splitText(cleanText, 64);
+    this.optionCloudVoiceId = options?.cloudVoiceId || '';
+    this.optionCloudVoiceName = options?.cloudVoiceName || '';
+    this.optionFocusBreakOffsets = this.normalizeFocusBreakOffsets(options?.focusBreakOffsets, cleanText.length);
+    const customVoice = this.getCurrentCustomVoice();
+    this.chunks = this.optionCloudVoiceId ? this.splitCloudText(cleanText) :
+      (customVoice ? this.splitText(cleanText, 64) :
+        this.splitSystemText(cleanText, this.optionFocusBreakOffsets));
     this.chunkIndex = 0;
     this.active = true;
-    const customVoice = this.getCurrentCustomVoice();
+    if (this.optionCloudVoiceId) {
+      if (this.engine) {
+        try {
+          this.engine.shutdown();
+        } catch (_) {
+        }
+        this.engine = null;
+      }
+      this.speakCloudNext(generation, this.optionCloudVoiceId);
+      return;
+    }
     if (customVoice) {
       if (this.engine) {
         try {
@@ -337,6 +393,7 @@ export class SystemTtsReader {
       this.speakCustomNext(generation, customVoice);
       return;
     }
+    this.resetSystemPcmPipeline();
     let engine: textToSpeech.TextToSpeechEngine;
     try {
       engine = await this.ensureEngine();
@@ -359,14 +416,22 @@ export class SystemTtsReader {
 
   private bindEngineListener(generation: number, engine: textToSpeech.TextToSpeechEngine): void {
     engine.setListener({
-      onStart: (_utteranceId: string, response: textToSpeech.StartResponse) => {
-        this.currentAudioSampleRate = response && response.sampleRate ? response.sampleRate : 16000;
-        console.info(`[TTS] speak start: audioType=${response ? response.audioType || '' : ''},sampleRate=${this.currentAudioSampleRate},${this.pcmPlayer.debugState()}`);
-      },
-      onComplete: (_utteranceId: string, _response: textToSpeech.CompleteResponse) => {
-        if (this.readGeneration !== generation || !this.active || !this.currentRequestId) {
+      onStart: (utteranceId: string, response: textToSpeech.StartResponse) => {
+        if (this.readGeneration !== generation || !this.active || utteranceId !== this.currentRequestId) {
           return;
         }
+        this.currentAudioSampleRate = response && response.sampleRate ? response.sampleRate : 16000;
+        console.info(`[TTS] speak start: audioType=${response ? response.audioType || '' : ''},sampleRate=${this.currentAudioSampleRate},${this.pcmPlayer.debugState()}`);
+        if (this.ttsPcmPlayType !== 0) {
+          this.emitCurrentSystemChunkFocus(generation);
+          this.notifyAudioStarted();
+        }
+      },
+      onComplete: (utteranceId: string, response: textToSpeech.CompleteResponse) => {
+        if (this.readGeneration !== generation || !this.active || utteranceId !== this.currentRequestId) {
+          return;
+        }
+        console.info(`[TTS] speak complete: type=${response ? response.type : -1},request=${utteranceId}`);
         if (!this.currentFocusAudioReceived) {
           console.info(`[TTS] speak complete without pcm data: ${this.pcmPlayer.debugState()}`);
           if (this.retryWithoutPcmData(generation)) {
@@ -374,12 +439,10 @@ export class SystemTtsReader {
           }
         }
         if (!this.currentFocusAudioReceived) {
-          this.queueCurrentChunkFocusOnAudio(generation);
-          this.clearSpeakWatchdog();
-        } else if (this.currentFocusAudioWritten) {
+          this.emitCurrentSystemChunkFocus(generation);
           this.clearSpeakWatchdog();
         }
-        this.completeCurrentChunk(generation);
+        this.completeCurrentChunk(generation, utteranceId);
       },
       onStop: () => {
         if (this.suppressEngineStopEvent) {
@@ -390,8 +453,8 @@ export class SystemTtsReader {
         }
         this.finish(false);
       },
-      onError: (_utteranceId: string, errorCode: number, errorMessage: string) => {
-        if (this.readGeneration !== generation || !this.active) {
+      onError: (utteranceId: string, errorCode: number, errorMessage: string) => {
+        if (this.readGeneration !== generation || !this.active || utteranceId !== this.currentRequestId) {
           return;
         }
         this.currentRequestId = '';
@@ -401,37 +464,20 @@ export class SystemTtsReader {
         console.error('[TTS] speak error:', message);
         if (this.onError) this.onError(message);
       },
-      onData: (_utteranceId: string, audioData: ArrayBuffer, response: textToSpeech.SynthesisResponse) => {
-        if (this.readGeneration !== generation || !this.active || !audioData || audioData.byteLength === 0) {
+      onData: (utteranceId: string, audioData: ArrayBuffer, response: textToSpeech.SynthesisResponse) => {
+        if (this.readGeneration !== generation || !this.active || utteranceId !== this.currentRequestId ||
+          !audioData || audioData.byteLength === 0) {
+          return;
+        }
+        if (this.ttsPcmPlayType !== 0) {
           return;
         }
         this.currentFocusAudioReceived = true;
-        if (!this.currentFocusQueued && this.currentFocusChunk && this.currentFocusChunkIndex >= 0) {
-          const focusChunk = this.currentFocusChunk;
-          const focusIndex = this.currentFocusChunkIndex;
-          const focusDuration = this.currentFocusDuration;
-          this.currentFocusQueued = true;
-          this.queueChunkFocus(generation, focusChunk, focusIndex, focusDuration);
-          this.pcmPlayer.write(audioData, this.currentAudioSampleRate)
-            .then(() => {
-              this.clearSpeakWatchdog();
-              this.currentFocusAudioWritten = true;
-              this.notifyAudioStarted();
-            })
-            .catch((error: Error) => {
-              console.warn(`[TTS] write synthesis data failed: sequence=${response ? response.sequence : -1}`, error);
-            });
-          return;
-        }
-        this.pcmPlayer.write(audioData, this.currentAudioSampleRate)
-          .then(() => {
-            this.clearSpeakWatchdog();
-            this.currentFocusAudioWritten = true;
-            this.notifyAudioStarted();
-          })
-          .catch((error: Error) => {
-            console.warn(`[TTS] write synthesis data failed: sequence=${response ? response.sequence : -1}`, error);
-          });
+        this.systemCurrentPcmBuffers.push(audioData.slice(0));
+        this.systemCurrentPcmBytes += audioData.byteLength;
+        this.armSpeakWatchdog(generation, this.currentFocusChunkIndex);
+        console.info(`[TTS] pcm data buffered: sequence=${response ? response.sequence : -1},` +
+          `bytes=${audioData.byteLength},total=${this.systemCurrentPcmBytes}`);
       }
     });
   }
@@ -449,6 +495,9 @@ export class SystemTtsReader {
     this.optionStyle = null;
     this.optionLanguage = null;
     this.optionSpeed = null;
+    this.optionCloudVoiceId = '';
+    this.optionCloudVoiceName = '';
+    this.optionFocusBreakOffsets = [];
     this.currentRequestId = '';
     this.currentSpeakStartedAt = 0;
     this.currentSpeakMinDuration = 0;
@@ -459,11 +508,14 @@ export class SystemTtsReader {
     this.currentFocusQueued = false;
     this.currentFocusAudioReceived = false;
     this.currentFocusAudioWritten = false;
+    this.currentAudioWritePromise = Promise.resolve();
     this.currentFocusRetryCount = 0;
     this.ttsPcmPlayType = 0;
+    this.resetSystemPcmPipeline();
     this.clearSpeakWatchdog();
     this.chunkFocusChain = Promise.resolve();
     this.httpReader.stop();
+    this.cloudReader.stop();
     this.pcmPlayer.stop();
     try {
       this.engine?.stop();
@@ -527,7 +579,12 @@ export class SystemTtsReader {
   private speakNext(generation: number): void {
     if (this.readGeneration !== generation || !this.active || !this.engine) return;
     if (this.chunkIndex >= this.chunks.length) {
-      this.finish(true);
+      if (this.ttsPcmPlayType === 0) {
+        this.systemSynthesisFinished = true;
+        this.pumpSystemPcmPlayback(generation);
+      } else {
+        this.finish(true);
+      }
       return;
     }
     const index = this.chunkIndex;
@@ -562,7 +619,10 @@ export class SystemTtsReader {
       this.currentFocusQueued = false;
       this.currentFocusAudioReceived = false;
       this.currentFocusAudioWritten = false;
+      this.currentAudioWritePromise = Promise.resolve();
       this.currentAudioSampleRate = 16000;
+      this.systemCurrentPcmBuffers = [];
+      this.systemCurrentPcmBytes = 0;
       this.armSpeakWatchdog(generation, index);
       this.engine.speak(speakText, {
         requestId: requestId,
@@ -604,14 +664,180 @@ export class SystemTtsReader {
     this.currentFocusQueued = false;
     this.currentFocusAudioReceived = false;
     this.currentFocusAudioWritten = false;
+    this.currentAudioWritePromise = Promise.resolve();
     this.currentFocusRetryCount = 0;
+    this.resetSystemPcmPipeline();
     this.clearSpeakWatchdog();
     this.chunkFocusChain = Promise.resolve();
     if (!notify) {
       this.pcmPlayer.stop();
     }
     this.audioStarted = false;
+    this.optionCloudVoiceId = '';
+    this.optionCloudVoiceName = '';
+    this.optionFocusBreakOffsets = [];
     if (notify && this.onFinished) this.onFinished();
+  }
+
+  private speakCloudNext(generation: number, voiceId: string): void {
+    this.playCloudQueue(generation, voiceId).catch((error: Error) => {
+      if (this.readGeneration !== generation || !this.active) {
+        return;
+      }
+      this.currentRequestId = '';
+      this.active = false;
+      const label = this.optionCloudVoiceName || '在线音色';
+      const message = `${label}朗读失败：${this.formatError(error)}`;
+      console.error('[TTS] cloud voice failed:', message);
+      if (this.onError) this.onError(message);
+    });
+  }
+
+  private async playCloudQueue(generation: number, voiceId: string): Promise<void> {
+    const jobs: CloudTtsAudioJob[] = [];
+    this.fillCloudAudioJobs(generation, voiceId, jobs);
+    while (this.readGeneration === generation && this.active) {
+      if (jobs.length === 0) {
+        await this.httpReader.drain();
+        if (this.readGeneration === generation && this.active) {
+          this.httpReader.stop();
+          this.finish(true);
+        }
+        return;
+      }
+      const job = jobs.shift() as CloudTtsAudioJob;
+      this.currentRequestId = this.createRequestId();
+      this.currentSpeakStartedAt = Date.now();
+      this.currentSpeakMinDuration = this.estimateSpeakDuration(job.text);
+      this.currentFocusChunk = job.chunk;
+      this.currentFocusChunkIndex = job.index;
+      this.currentFocusDuration = this.currentSpeakMinDuration;
+      this.currentFocusQueued = false;
+      this.currentFocusAudioReceived = false;
+      this.currentFocusAudioWritten = false;
+      const result = await job.promise;
+      if (this.readGeneration !== generation || !this.active) return;
+      if (result.error || !result.audio) {
+        throw result.error || new Error('在线音色合成失败');
+      }
+      this.fillCloudAudioJobs(generation, voiceId, jobs);
+      this.currentFocusAudioReceived = true;
+      const cues = this.buildCloudPlaybackCues(generation, job, result.audio);
+      await this.httpReader.writeTimedPcm(result.audio, cues);
+      if (this.readGeneration !== generation || !this.active) return;
+      this.currentFocusAudioWritten = true;
+      this.currentRequestId = '';
+      this.currentSpeakStartedAt = 0;
+      this.currentSpeakMinDuration = 0;
+      this.currentFocusChunk = null;
+      this.currentFocusChunkIndex = -1;
+      this.currentFocusDuration = 0;
+      this.currentFocusQueued = false;
+      this.currentFocusAudioReceived = false;
+      this.currentFocusAudioWritten = false;
+    }
+  }
+
+  private fillCloudAudioJobs(generation: number, voiceId: string, jobs: CloudTtsAudioJob[]): void {
+    while (this.readGeneration === generation && this.active &&
+      jobs.length < SystemTtsReader.CLOUD_TTS_PREFETCH_WINDOW && this.chunkIndex < this.chunks.length) {
+      const index = this.chunkIndex;
+      const chunk = this.chunks[this.chunkIndex++];
+      const speakText = this.normalizeChunkForSpeech(chunk.text);
+      if (!speakText) continue;
+      const promise = this.cloudReader.synthesize(voiceId, speakText, this.getTtsSpeed())
+        .then((audio: CloudTtsAudio): CloudTtsAudioResult => {
+          if (this.readGeneration !== generation || !this.active) {
+            return { error: new Error('在线音色合成已停止') };
+          }
+          return { audio };
+        })
+        .catch((error: Error): CloudTtsAudioResult => ({ error }));
+      jobs.push({ index, chunk, text: speakText, promise });
+    }
+  }
+
+  private buildCloudPlaybackCues(generation: number, job: CloudTtsAudioJob,
+    audio: CloudTtsAudio): PcmPlaybackCue[] {
+    const focusChunks = this.splitCloudFocusChunks(job.chunk);
+    const durationMs = audio.sampleRate > 0 ?
+      audio.pcm.byteLength * 1000 / (audio.sampleRate * 2) : 0;
+    const cues: PcmPlaybackCue[] = [];
+    let lastFrame = -1;
+    for (let focusIndex = 0; focusIndex < focusChunks.length; focusIndex++) {
+      const focusChunk = focusChunks[focusIndex];
+      const sourceOffset = Math.max(0, focusChunk.start - job.chunk.start);
+      const speechOffset = this.cloudSpeechOffset(job.chunk.text, job.text, sourceOffset);
+      const startTime = focusIndex === 0 ? 0 :
+        this.cloudTimingAtOffset(audio.timings, speechOffset, durationMs);
+      const frameOffset = Math.max(0, Math.round(startTime * audio.sampleRate / 1000));
+      if (frameOffset === lastFrame) {
+        continue;
+      }
+      const capturedChunk = focusChunk;
+      cues.push({
+        frameOffset,
+        callback: () => {
+          if (this.readGeneration !== generation || !this.active) {
+            return;
+          }
+          if (this.onChunkStart) {
+            this.onChunkStart(capturedChunk, job.index);
+          }
+          this.notifyAudioStarted();
+        }
+      });
+      lastFrame = frameOffset;
+    }
+    if (cues.length === 0) {
+      cues.push({
+        frameOffset: 0,
+        callback: () => {
+          if (this.readGeneration !== generation || !this.active) {
+            return;
+          }
+          if (this.onChunkStart) {
+            this.onChunkStart(job.chunk, job.index);
+          }
+          this.notifyAudioStarted();
+        }
+      });
+    }
+    console.info(`[TTS] cloud timeline queued: mode=${audio.timingMode},` +
+      `timings=${audio.timings.length},focus=${cues.length},bytes=${audio.pcm.byteLength}`);
+    return cues;
+  }
+
+  private cloudSpeechOffset(sourceText: string, speechText: string, sourceOffset: number): number {
+    if (!sourceText || sourceText === speechText) {
+      return Math.max(0, Math.min(speechText.length, sourceOffset));
+    }
+    const safeOffset = Math.max(0, Math.min(sourceText.length, sourceOffset));
+    const prefix = this.normalizeChunkForSpeech(sourceText.substring(0, safeOffset));
+    if (prefix && speechText.startsWith(prefix)) {
+      return Math.min(speechText.length, prefix.length);
+    }
+    return Math.round(safeOffset * speechText.length / Math.max(1, sourceText.length));
+  }
+
+  private cloudTimingAtOffset(timings: CloudTtsTiming[], offset: number, durationMs: number): number {
+    if (!timings || timings.length === 0) {
+      return 0;
+    }
+    for (let index = 0; index < timings.length; index++) {
+      const timing = timings[index];
+      if (offset < timing.startOffset) {
+        return timing.startTime;
+      }
+      if (offset >= timing.startOffset && offset < timing.endOffset) {
+        if (timing.endOffset <= timing.startOffset || timing.endTime <= timing.startTime) {
+          return timing.startTime;
+        }
+        const progress = (offset - timing.startOffset) / (timing.endOffset - timing.startOffset);
+        return timing.startTime + (timing.endTime - timing.startTime) * progress;
+      }
+    }
+    return Math.max(0, Math.min(durationMs, timings[timings.length - 1].startTime));
   }
 
   private speakCustomNext(generation: number, voice: HttpTTS): void {
@@ -720,6 +946,8 @@ export class SystemTtsReader {
       return false;
     }
     console.warn('[TTS] no pcm data with playType=0, fallback to playType=1');
+    this.resetSystemPcmPipeline();
+    this.pcmPlayer.stop();
     this.ttsPcmPlayType = 1;
     this.currentRequestId = '';
     this.currentSpeakStartedAt = 0;
@@ -730,6 +958,7 @@ export class SystemTtsReader {
     this.currentFocusQueued = false;
     this.currentFocusAudioReceived = false;
     this.currentFocusAudioWritten = false;
+    this.currentAudioWritePromise = Promise.resolve();
     this.currentFocusRetryCount = 0;
     this.chunkIndex = Math.max(0, Math.min(this.currentFocusChunkIndex, this.chunks.length));
     this.currentFocusChunkIndex = -1;
@@ -748,34 +977,260 @@ export class SystemTtsReader {
     }
   }
 
-  private completeCurrentChunk(generation: number): void {
-    if (this.readGeneration !== generation || !this.active || this.completionPending) {
+  private completeSystemPcmChunk(generation: number, requestId: string): void {
+    if (this.readGeneration !== generation || !this.active || requestId !== this.currentRequestId ||
+      !this.currentFocusChunk || this.currentFocusChunkIndex < 0) {
       return;
     }
     this.completionPending = true;
-    const elapsed = Date.now() - this.currentSpeakStartedAt;
-    const waitMs = Math.max(0, this.currentSpeakMinDuration - elapsed);
-    if (this.chunkIndex < this.chunks.length) {
-      this.clearSpeakWatchdog();
-      setTimeout(() => {
-        if (this.readGeneration !== generation || !this.active) {
+    this.clearSpeakWatchdog();
+    const pcm = this.mergeSystemPcmBuffers(this.systemCurrentPcmBuffers, this.systemCurrentPcmBytes);
+    const trimmedPcm = this.trimSystemPcmSilence(pcm, this.currentAudioSampleRate, this.currentFocusChunk.text);
+    if (trimmedPcm.byteLength === 0) {
+      this.completionPending = false;
+      this.currentFocusAudioReceived = false;
+      if (this.retryWithoutPcmData(generation)) {
+        return;
+      }
+      this.failSystemPcmPlayback('系统音色返回的PCM音频为空');
+      return;
+    }
+    this.systemReadySegments.push({
+      index: this.currentFocusChunkIndex,
+      chunk: this.currentFocusChunk,
+      pcm: trimmedPcm,
+      sampleRate: this.currentAudioSampleRate
+    });
+    this.systemBufferedSegmentCount++;
+    console.info(`[TTS] system pcm segment ready: index=${this.currentFocusChunkIndex},` +
+      `bytes=${trimmedPcm.byteLength},buffered=${this.systemBufferedSegmentCount}`);
+    this.resetCurrentSystemRequestState();
+    this.pumpSystemPcmPlayback(generation);
+    this.continueSystemPcmSynthesis(generation);
+  }
+
+  private pumpSystemPcmPlayback(generation: number): void {
+    if (this.readGeneration !== generation || !this.active || this.ttsPcmPlayType !== 0) {
+      return;
+    }
+    if (!this.systemPlaybackStarted) {
+      if (!this.systemSynthesisFinished &&
+        this.systemReadySegments.length < SystemTtsReader.SYSTEM_TTS_START_BUFFER_SEGMENTS) {
+        return;
+      }
+      this.systemPlaybackStarted = true;
+      console.info(`[TTS] system pcm playback starts: buffered=${this.systemReadySegments.length}`);
+    }
+    while (this.systemReadySegments.length > 0) {
+      const segment = this.systemReadySegments.shift() as SystemPcmSegment;
+      const writePromise = this.pcmPlayer.writeSegment(segment.pcm, segment.sampleRate, () => {
+        if (this.readGeneration !== generation || !this.active || this.ttsPcmPlayType !== 0) {
+          return;
+        }
+        if (this.onChunkStart) {
+          this.onChunkStart(segment.chunk, segment.index);
+        }
+        this.systemBufferedSegmentCount = Math.max(0, this.systemBufferedSegmentCount - 1);
+        this.notifyAudioStarted();
+        this.continueSystemPcmSynthesis(generation);
+      });
+      this.systemLastWritePromise = writePromise;
+    }
+    if (this.systemSynthesisFinished && !this.systemDrainScheduled) {
+      this.systemDrainScheduled = true;
+      this.finishSystemPcmPlayback(generation);
+    }
+  }
+
+  private async finishSystemPcmPlayback(generation: number): Promise<void> {
+    try {
+      await this.systemLastWritePromise;
+      await this.pcmPlayer.drain();
+    } catch (error) {
+      console.warn('[TTS] drain system pcm playback failed:', error);
+    }
+    if (this.readGeneration !== generation || !this.active || this.ttsPcmPlayType !== 0) {
+      return;
+    }
+    this.finish(true);
+  }
+
+  private continueSystemPcmSynthesis(generation: number): void {
+    if (this.readGeneration !== generation || !this.active || this.ttsPcmPlayType !== 0 ||
+      this.currentRequestId) {
+      return;
+    }
+    if (this.chunkIndex >= this.chunks.length) {
+      this.systemSynthesisFinished = true;
+      this.pumpSystemPcmPlayback(generation);
+      return;
+    }
+    if (this.systemBufferedSegmentCount >= SystemTtsReader.SYSTEM_TTS_MAX_BUFFERED_SEGMENTS) {
+      return;
+    }
+    this.speakNext(generation);
+  }
+
+  private resetCurrentSystemRequestState(): void {
+    this.currentRequestId = '';
+    this.currentSpeakStartedAt = 0;
+    this.currentSpeakMinDuration = 0;
+    this.completionPending = false;
+    this.currentFocusChunk = null;
+    this.currentFocusChunkIndex = -1;
+    this.currentFocusDuration = 0;
+    this.currentFocusQueued = false;
+    this.currentFocusAudioReceived = false;
+    this.currentFocusAudioWritten = false;
+    this.currentAudioWritePromise = Promise.resolve();
+    this.systemCurrentPcmBuffers = [];
+    this.systemCurrentPcmBytes = 0;
+  }
+
+  private resetSystemPcmPipeline(): void {
+    this.systemCurrentPcmBuffers = [];
+    this.systemCurrentPcmBytes = 0;
+    this.systemReadySegments = [];
+    this.systemPlaybackStarted = false;
+    this.systemSynthesisFinished = false;
+    this.systemDrainScheduled = false;
+    this.systemLastWritePromise = Promise.resolve();
+    this.systemBufferedSegmentCount = 0;
+  }
+
+  private mergeSystemPcmBuffers(buffers: ArrayBuffer[], totalBytes: number): ArrayBuffer {
+    if (buffers.length === 0 || totalBytes <= 0) {
+      return new ArrayBuffer(0);
+    }
+    if (buffers.length === 1) {
+      return buffers[0].slice(0);
+    }
+    const merged = new ArrayBuffer(totalBytes);
+    const output = new Uint8Array(merged);
+    let offset = 0;
+    for (const buffer of buffers) {
+      const bytes = new Uint8Array(buffer);
+      output.set(bytes, offset);
+      offset += bytes.length;
+    }
+    return merged;
+  }
+
+  private trimSystemPcmSilence(pcm: ArrayBuffer, sampleRate: number, text: string): ArrayBuffer {
+    const frameCount = Math.floor(pcm.byteLength / 2);
+    const safeSampleRate = Math.max(8000, Math.round(sampleRate || 16000));
+    if (frameCount < safeSampleRate / 4) {
+      return pcm;
+    }
+    const view = new DataView(pcm);
+    const threshold = 96;
+    let firstActive = 0;
+    while (firstActive < frameCount && Math.abs(view.getInt16(firstActive * 2, true)) <= threshold) {
+      firstActive++;
+    }
+    let lastActive = frameCount - 1;
+    while (lastActive > firstActive && Math.abs(view.getInt16(lastActive * 2, true)) <= threshold) {
+      lastActive--;
+    }
+    if (firstActive >= frameCount || lastActive <= firstActive) {
+      return pcm;
+    }
+    const leadingKeep = Math.round(safeSampleRate * 0.06);
+    const trailingKeep = Math.round(safeSampleRate * this.systemTrailingPauseSeconds(text));
+    const startFrame = firstActive > Math.round(safeSampleRate * 0.18) ?
+      Math.max(0, firstActive - leadingKeep) : 0;
+    const endFrame = frameCount - lastActive > trailingKeep + Math.round(safeSampleRate * 0.12) ?
+      Math.min(frameCount, lastActive + trailingKeep + 1) : frameCount;
+    if (startFrame <= 0 && endFrame >= frameCount) {
+      return pcm;
+    }
+    return pcm.slice(startFrame * 2, endFrame * 2);
+  }
+
+  private systemTrailingPauseSeconds(text: string): number {
+    const value = (text || '').trim();
+    let lastIndex = Math.max(0, value.length - 1);
+    while (lastIndex > 0 && this.isClosingPunctuation(value.charAt(lastIndex))) {
+      lastIndex--;
+    }
+    const last = value.charAt(lastIndex);
+    if (last === '。' || last === '！' || last === '？' || last === '!' || last === '?') {
+      return 0.26;
+    }
+    if (last === '；' || last === ';' || last === '：' || last === ':') {
+      return 0.18;
+    }
+    if (last === '，' || last === ',' || last === '、') {
+      return 0.12;
+    }
+    return 0.08;
+  }
+
+  private failSystemPcmPlayback(message: string): void {
+    this.currentRequestId = '';
+    this.active = false;
+    this.clearSpeakWatchdog();
+    console.error('[TTS] system pcm playback failed:', message);
+    if (this.onError) {
+      this.onError(message);
+    }
+  }
+
+  private completeCurrentChunk(generation: number, requestId: string): void {
+    if (this.readGeneration !== generation || !this.active || this.completionPending) {
+      return;
+    }
+    if (this.ttsPcmPlayType === 0 && this.currentFocusAudioReceived) {
+      this.completeSystemPcmChunk(generation, requestId);
+      return;
+    }
+    this.completionPending = true;
+    const writePromise = this.currentAudioWritePromise;
+    writePromise
+      .then(async () => {
+        if (this.readGeneration !== generation || !this.active || requestId !== this.currentRequestId) {
+          return;
+        }
+        this.clearSpeakWatchdog();
+        if (this.chunkIndex >= this.chunks.length) {
+          try {
+            await this.pcmPlayer.drain();
+          } catch (error) {
+            console.warn('[TTS] drain pcm audio failed:', error);
+          }
+          this.finishCurrentRead(generation, 0);
           return;
         }
         this.currentRequestId = '';
         this.currentSpeakStartedAt = 0;
         this.currentSpeakMinDuration = 0;
         this.completionPending = false;
+        this.currentFocusChunk = null;
+        this.currentFocusChunkIndex = -1;
+        this.currentFocusDuration = 0;
+        this.currentFocusQueued = false;
+        this.currentFocusAudioReceived = false;
+        this.currentFocusAudioWritten = false;
+        this.currentAudioWritePromise = Promise.resolve();
         this.speakNext(generation);
-      }, waitMs);
-      return;
-    }
-    this.pcmPlayer.drain()
-      .then(() => {
-        this.finishCurrentRead(generation, 0);
       })
       .catch((error: Error) => {
-        console.warn('[TTS] drain pcm audio failed:', error);
-        this.finishCurrentRead(generation, waitMs);
+        if (this.readGeneration !== generation || !this.active || requestId !== this.currentRequestId) {
+          return;
+        }
+        console.warn('[TTS] wait current pcm write failed:', error);
+        this.currentRequestId = '';
+        this.currentSpeakStartedAt = 0;
+        this.currentSpeakMinDuration = 0;
+        this.completionPending = false;
+        this.currentFocusChunk = null;
+        this.currentFocusChunkIndex = -1;
+        this.currentFocusDuration = 0;
+        this.currentFocusQueued = false;
+        this.currentFocusAudioReceived = false;
+        this.currentFocusAudioWritten = false;
+        this.currentAudioWritePromise = Promise.resolve();
+        this.speakNext(generation);
       });
   }
 
@@ -786,6 +1241,17 @@ export class SystemTtsReader {
     }
     this.currentFocusQueued = true;
     this.queueChunkFocus(generation, this.currentFocusChunk, this.currentFocusChunkIndex, this.currentFocusDuration);
+  }
+
+  private emitCurrentSystemChunkFocus(generation: number): void {
+    if (this.readGeneration !== generation || !this.active || this.currentFocusQueued ||
+      !this.currentFocusChunk || this.currentFocusChunkIndex < 0) {
+      return;
+    }
+    this.currentFocusQueued = true;
+    if (this.onChunkStart) {
+      this.onChunkStart(this.currentFocusChunk, this.currentFocusChunkIndex);
+    }
   }
 
   private armSpeakWatchdog(generation: number, chunkIndex: number): void {
@@ -831,7 +1297,9 @@ export class SystemTtsReader {
       this.currentFocusQueued = false;
       this.currentFocusAudioReceived = false;
       this.currentFocusAudioWritten = false;
+      this.currentAudioWritePromise = Promise.resolve();
       this.chunkIndex = Math.max(0, Math.min(chunkIndex, this.chunks.length));
+      this.resetSystemPcmPipeline();
       this.pcmPlayer.stop();
       if (this.engine) {
         try {
@@ -872,20 +1340,104 @@ export class SystemTtsReader {
   }
 
   private queueChunkFocus(generation: number, chunk: TtsChunk, index: number, duration: number): void {
-    const waitMs = Math.max(120, duration);
+    const focusChunks = this.optionCloudVoiceId ? this.splitCloudFocusChunks(chunk) : [chunk];
+    let totalWeight = 0;
+    for (const focusChunk of focusChunks) {
+      totalWeight += this.focusChunkWeight(focusChunk.text);
+    }
+    const safeTotalWeight = Math.max(1, totalWeight);
+    const safeDuration = Math.max(120, duration);
     this.chunkFocusChain = this.chunkFocusChain
       .then(async () => {
-        if (this.readGeneration !== generation || !this.active) {
-          return;
+        for (let focusIndex = 0; focusIndex < focusChunks.length; focusIndex++) {
+          if (this.readGeneration !== generation || !this.active) {
+            return;
+          }
+          const focusChunk = focusChunks[focusIndex];
+          if (this.onChunkStart) {
+            this.onChunkStart(focusChunk, index);
+          }
+          const weight = this.focusChunkWeight(focusChunk.text);
+          const waitMs = Math.max(120, Math.round(safeDuration * weight / safeTotalWeight));
+          await this.sleep(waitMs);
         }
-        if (this.onChunkStart) {
-          this.onChunkStart(chunk, index);
-        }
-        await this.sleep(waitMs);
       })
       .catch((error: Error) => {
         console.warn('[TTS] update chunk focus failed:', error);
       });
+  }
+
+  private splitCloudFocusChunks(chunk: TtsChunk): TtsChunk[] {
+    const sentenceChunks = this.splitText(chunk.text, 28);
+    const result: TtsChunk[] = [];
+    for (const sentenceChunk of sentenceChunks) {
+      const absoluteStart = chunk.start + sentenceChunk.start;
+      const absoluteEnd = chunk.start + sentenceChunk.end;
+      let partStart = absoluteStart;
+      for (const breakOffset of this.optionFocusBreakOffsets) {
+        if (breakOffset <= partStart) {
+          continue;
+        }
+        if (breakOffset >= absoluteEnd) {
+          break;
+        }
+        this.appendFocusChunk(result, chunk, partStart, breakOffset);
+        partStart = breakOffset;
+      }
+      this.appendFocusChunk(result, chunk, partStart, absoluteEnd);
+    }
+    return result.length > 0 ? result : [chunk];
+  }
+
+  private appendFocusChunk(result: TtsChunk[], sourceChunk: TtsChunk, start: number, end: number): void {
+    let safeStart = Math.max(sourceChunk.start, Math.min(start, sourceChunk.end));
+    let safeEnd = Math.max(safeStart, Math.min(end, sourceChunk.end));
+    while (safeStart < safeEnd &&
+      this.isTrimChar(sourceChunk.text.charAt(safeStart - sourceChunk.start))) {
+      safeStart++;
+    }
+    while (safeEnd > safeStart &&
+      this.isTrimChar(sourceChunk.text.charAt(safeEnd - sourceChunk.start - 1))) {
+      safeEnd--;
+    }
+    if (safeEnd <= safeStart) {
+      return;
+    }
+    result.push({
+      text: sourceChunk.text.substring(safeStart - sourceChunk.start, safeEnd - sourceChunk.start),
+      start: safeStart,
+      end: safeEnd
+    });
+  }
+
+  private focusChunkWeight(text: string): number {
+    const value = text || '';
+    const readableLength = value.replace(/\s/g, '').length;
+    const punctuationMatches = value.match(/[，。！？；;,.!?、：:]/g);
+    const punctuationCount = punctuationMatches ? punctuationMatches.length : 0;
+    return Math.max(1, readableLength + punctuationCount * 0.6);
+  }
+
+  private normalizeFocusBreakOffsets(offsets: number[] | undefined, textLength: number): number[] {
+    if (!offsets || offsets.length === 0 || textLength <= 0) {
+      return [];
+    }
+    const candidates: number[] = [];
+    for (const offset of offsets) {
+      const value = Math.round(offset);
+      if (!Number.isFinite(value) || value <= 0 || value >= textLength) {
+        continue;
+      }
+      candidates.push(value);
+    }
+    candidates.sort((left: number, right: number) => left - right);
+    const result: number[] = [];
+    for (const value of candidates) {
+      if (result.length === 0 || result[result.length - 1] !== value) {
+        result.push(value);
+      }
+    }
+    return result;
   }
 
   private sleep(ms: number): Promise<void> {
@@ -902,9 +1454,10 @@ export class SystemTtsReader {
   private normalizeChunkForSpeech(text: string): string {
     return (text || '')
       .replace(/\r\n/g, '\n')
-      .replace(/\s*\n+\s*/g, '，')
+      .replace(/\s*\n+\s*/g, '。')
       .replace(/[ \t]{2,}/g, ' ')
       .replace(/，{2,}/g, '，')
+      .replace(/。{2,}/g, '。')
       .replace(/^[，。！？；;,.!?]+/, '')
       .replace(/[，,]+$/, '')
       .trim();
@@ -1339,6 +1892,80 @@ export class SystemTtsReader {
     return text || JSON.stringify(error);
   }
 
+  private splitSystemText(text: string, pageBreakOffsets: number[]): TtsChunk[] {
+    const chunks: TtsChunk[] = [];
+    const preferredLength = 42;
+    const minimumLength = 16;
+    const maximumLength = 60;
+    let start = 0;
+    while (start < text.length) {
+      const limit = Math.min(text.length, start + maximumLength);
+      const preferredEnd = Math.min(limit, start + preferredLength);
+      let end = this.findLastCloudBreak(text, start + minimumLength, preferredEnd, true);
+      if (end <= start && preferredEnd < limit) {
+        end = this.findFirstCloudBreak(text, preferredEnd, limit, true);
+      }
+      if (end <= start) {
+        end = this.findLastCloudBreak(text, start + minimumLength, preferredEnd, false);
+      }
+      if (end <= start && preferredEnd < limit) {
+        end = this.findFirstCloudBreak(text, preferredEnd, limit, false);
+      }
+      if (end <= start) {
+        end = limit;
+      }
+      end = this.extendCloudBreak(text, end, limit);
+      this.appendAbsoluteTextChunk(chunks, text, start, end);
+      start = end;
+    }
+    return this.splitSystemChunksAtPageBreaks(chunks, text, pageBreakOffsets);
+  }
+
+  private splitSystemChunksAtPageBreaks(chunks: TtsChunk[], text: string,
+    pageBreakOffsets: number[]): TtsChunk[] {
+    if (pageBreakOffsets.length === 0) {
+      return chunks;
+    }
+    const result: TtsChunk[] = [];
+    for (const chunk of chunks) {
+      let partStart = chunk.start;
+      for (const breakOffset of pageBreakOffsets) {
+        if (breakOffset <= partStart) {
+          continue;
+        }
+        if (breakOffset >= chunk.end) {
+          break;
+        }
+        if (breakOffset - partStart < 6 || chunk.end - breakOffset < 6) {
+          continue;
+        }
+        this.appendAbsoluteTextChunk(result, text, partStart, breakOffset);
+        partStart = breakOffset;
+      }
+      this.appendAbsoluteTextChunk(result, text, partStart, chunk.end);
+    }
+    return result;
+  }
+
+  private appendAbsoluteTextChunk(result: TtsChunk[], text: string, start: number, end: number): void {
+    let chunkStart = Math.max(0, Math.min(start, text.length));
+    let chunkEnd = Math.max(chunkStart, Math.min(end, text.length));
+    while (chunkStart < chunkEnd && this.isTrimChar(text.charAt(chunkStart))) {
+      chunkStart++;
+    }
+    while (chunkEnd > chunkStart && this.isTrimChar(text.charAt(chunkEnd - 1))) {
+      chunkEnd--;
+    }
+    if (chunkEnd <= chunkStart) {
+      return;
+    }
+    result.push({
+      text: text.substring(chunkStart, chunkEnd),
+      start: chunkStart,
+      end: chunkEnd
+    });
+  }
+
   private splitText(text: string, maxLength: number): TtsChunk[] {
     const chunks: TtsChunk[] = [];
     let start = 0;
@@ -1367,6 +1994,90 @@ export class SystemTtsReader {
       start = end;
     }
     return chunks;
+  }
+
+  private splitCloudText(text: string): TtsChunk[] {
+    const chunks: TtsChunk[] = [];
+    const preferredLength = 200;
+    const minimumStrongLength = 80;
+    const minimumWeakLength = 140;
+    const maximumLength = 450;
+    let start = 0;
+    while (start < text.length) {
+      const limit = Math.min(text.length, start + maximumLength);
+      const preferredEnd = Math.min(limit, start + preferredLength);
+      let end = this.findLastCloudBreak(text, start + minimumStrongLength, preferredEnd, true);
+      if (end <= start && preferredEnd < limit) {
+        end = this.findFirstCloudBreak(text, preferredEnd, limit, true);
+      }
+      if (end <= start) {
+        end = this.findLastCloudBreak(text, start + minimumWeakLength, limit, false);
+      }
+      if (end <= start) {
+        end = limit;
+      }
+      end = this.extendCloudBreak(text, end, limit);
+      let chunkStart = start;
+      let chunkEnd = end;
+      while (chunkStart < chunkEnd && this.isTrimChar(text.charAt(chunkStart))) {
+        chunkStart++;
+      }
+      while (chunkEnd > chunkStart && this.isTrimChar(text.charAt(chunkEnd - 1))) {
+        chunkEnd--;
+      }
+      const chunk = text.substring(chunkStart, chunkEnd);
+      if (chunk) {
+        chunks.push({
+          text: chunk,
+          start: chunkStart,
+          end: chunkEnd
+        });
+      }
+      start = end;
+    }
+    return chunks;
+  }
+
+  private findLastCloudBreak(text: string, from: number, to: number, strong: boolean): number {
+    for (let index = Math.min(text.length, to) - 1; index >= from; index--) {
+      if (this.isCloudBreak(text.charAt(index), strong)) {
+        return index + 1;
+      }
+    }
+    return -1;
+  }
+
+  private findFirstCloudBreak(text: string, from: number, to: number, strong: boolean): number {
+    for (let index = Math.max(0, from); index < Math.min(text.length, to); index++) {
+      if (this.isCloudBreak(text.charAt(index), strong)) {
+        return index + 1;
+      }
+    }
+    return -1;
+  }
+
+  private isCloudBreak(value: string, strong: boolean): boolean {
+    if (strong) {
+      return value === '。' || value === '！' || value === '？' ||
+        value === '；' || value === ';' || value === '!' || value === '?' ||
+        value === '.' || value === '\n';
+    }
+    return value === '，' || value === ',' || value === '、' ||
+      value === '：' || value === ':';
+  }
+
+  private extendCloudBreak(text: string, end: number, limit: number): number {
+    let result = end;
+    while (result < Math.min(text.length, limit) && this.isClosingPunctuation(text.charAt(result))) {
+      result++;
+    }
+    return result;
+  }
+
+  private isClosingPunctuation(value: string): boolean {
+    return value === '”' || value === '’' || value === '"' || value === '\'' ||
+      value === '）' || value === ')' || value === '】' || value === ']' ||
+      value === '》' || value === '〉' || value === '」' || value === '』';
   }
 
   private findSentenceBreak(text: string, start: number, limit: number, maxLength: number): number {

@@ -12,6 +12,13 @@ import { BookUrlResolver } from './BookUrlResolver';
 import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
 import { AjaxRuleCompat } from '../rule/AjaxRuleCompat';
 import { ReaderImageMarker } from './ReaderImageMarker';
+import { JsRuntime } from '../rule/JsRuntime';
+import { ScriptEngine, ScriptEngineContext } from '../rule/ScriptEngine';
+
+class ContentPageData {
+  content: string = '';
+  nextUrl: string = '';
+}
 
 export class WebBookService {
   private http: HttpClient;
@@ -166,92 +173,107 @@ export class WebBookService {
       console.warn('[WS] Chaoxing toc api failed, fallback to detail page:', tocUrl);
       resp = await au.fetch(book.bookUrl);
     }
-    if (this.requestVerificationIfNeeded(source, tocUrl, resp.body, resp.statusCode, source.tocRule.chapterList)) {
-      return [];
-    }
     if (!resp.success || !resp.body) return [];
-    const baseUrl = BookUrlResolver.effectiveBase(resp, tocUrl, book.bookUrl || source.bookSourceUrl);
-
     const ctx = new RuleContext();
     ctx.loadFromJson(book.variable);
     this.seedBookVariables(ctx, book.bookUrl);
     this.seedSourceVariables(ctx, source);
-
-    const rule = new AnalyzeRule(resp.body, baseUrl, ctx);
     const tocRule = source.tocRule;
-    const specialChapters = await this.tryBuildSpecialChapterList(source, book, resp.body);
-    if (specialChapters.length > 0) {
-      book.variable = ctx.toJson();
-      return specialChapters;
+    const chapters: BookChapter[] = [];
+    const seenChapterUrls = new Set<string>();
+    const seenPageUrls = new Set<string>();
+    let currentUrl = resp.url || tocUrl;
+    let currentResp = resp;
+    let firstBody = resp.body;
+    let firstBaseUrl = BookUrlResolver.effectiveBase(resp, tocUrl, book.bookUrl || source.bookSourceUrl);
+    for (let page = 0; page < 100; page++) {
+      if (!currentResp.success || !currentResp.body) break;
+      const pageKey = this.urlWithoutFragment(currentResp.url || currentUrl);
+      if (seenPageUrls.has(pageKey)) break;
+      seenPageUrls.add(pageKey);
+      if (this.requestVerificationIfNeeded(source, currentUrl, currentResp.body, currentResp.statusCode, tocRule.chapterList)) {
+        break;
+      }
+      const baseUrl = BookUrlResolver.effectiveBase(currentResp, currentUrl, book.bookUrl || source.bookSourceUrl);
+      if (page === 0) {
+        firstBody = currentResp.body;
+        firstBaseUrl = baseUrl;
+        const specialChapters = await this.tryBuildSpecialChapterList(source, book, currentResp.body);
+        if (specialChapters.length > 0) {
+          book.variable = ctx.toJson();
+          return specialChapters;
+        }
+      }
+      const pageChapters = this.parseChapterPage(source, book, currentResp.body, baseUrl, ctx, chapters.length);
+      for (const chapter of pageChapters) {
+        const chapterKey = this.urlWithoutFragment(chapter.url);
+        if (seenChapterUrls.has(chapterKey)) continue;
+        seenChapterUrls.add(chapterKey);
+        chapter.index = chapters.length;
+        chapters.push(chapter);
+      }
+      if (!tocRule.nextTocUrl) break;
+      const pageRule = new AnalyzeRule(currentResp.body, baseUrl, ctx);
+      const nextUrl = pageRule.getString(tocRule.nextTocUrl, true);
+      const nextKey = this.urlWithoutFragment(nextUrl);
+      if (!nextUrl || seenPageUrls.has(nextKey)) break;
+      currentUrl = nextUrl;
+      currentResp = EncodedSourceUrl.canHandle(currentUrl) ?
+        await this.fetchEncodedDataUrl(currentUrl, source) : await au.fetch(currentUrl);
     }
-    const items = rule.getElements(tocRule.chapterList || '');
-    console.log('[WS] getChapterList items:', items.length, 'from resp:', resp.body.length);
 
+    book.variable = ctx.toJson();
+    if (chapters.length > 0) return chapters;
+
+    const chaoxingDetailChapter = this.tryBuildChaoxingDetailChapter(source, book, firstBody, firstBaseUrl);
+    if (chaoxingDetailChapter.length > 0) return chaoxingDetailChapter;
+
+    const fallbackChapters = this.tryBuildGenericChapterList(book, firstBody, firstBaseUrl);
+    if (fallbackChapters.length > 0) return fallbackChapters;
+    return chapters;
+  }
+
+  private parseChapterPage(source: BookSource, book: Book, body: string, baseUrl: string,
+    ctx: RuleContext, startIndex: number): BookChapter[] {
+    const tocRule = source.tocRule;
+    const rule = new AnalyzeRule(body, baseUrl, ctx);
+    const items = rule.getElements(tocRule.chapterList || '');
+    console.log('[WS] getChapterList page items:', items.length, 'from resp:', body.length);
     const chapters: BookChapter[] = [];
     for (let i = 0; i < items.length; i++) {
       const ir = new AnalyzeRule(items[i], baseUrl, ctx);
       this.seedSourceVariables(ctx, source);
       const chap = new BookChapter();
-      chap.title = this.cleanChapterTitle(ir.getString(tocRule.chapterName) || `第${i + 1}章`);
+      chap.title = this.cleanChapterTitle(ir.getString(tocRule.chapterName) || `第${startIndex + i + 1}章`);
       let rawUrl = ir.getString(tocRule.chapterUrl);
-
-      // 如果规则引擎没有完整处理 URL，再从 item/TOC 数据兜底修复。
       if (rawUrl && (rawUrl.startsWith('@js:') || rawUrl.includes('$..') || rawUrl.includes('$.'))) {
         const repairedUrl = ir.getString(tocRule.chapterUrl, true);
         if (repairedUrl && !repairedUrl.includes('@js:') && !repairedUrl.includes('$..') && !repairedUrl.includes('$.')) {
           rawUrl = repairedUrl;
         }
       }
-
-      // 如果 URL 仍含 @js: 或未解析的 JSONPath，从 item/TOC 数据解析
       if (rawUrl && (rawUrl.startsWith('@js:') || rawUrl.includes('$..') || rawUrl.includes('$.'))) {
-        // 解析 item 为 JSON（通常 chapterList 提取的是 JSON 片段）
         let itemData: Record<string, Object> | null = null;
         try { itemData = JSON.parse(items[i]) as Record<string, Object>; } catch (_) {}
-        // 同时尝试解析完整 TOC 响应
         let tocData: Record<string, Object> | null = null;
-        try { tocData = JSON.parse(resp.body) as Record<string, Object>; } catch (_) {}
-
-        // 去除 @js: 前缀
-        rawUrl = rawUrl.replace(/^@js:\s*/, '');
-        // 去除尾部配置对象 ,{'webView':true} 等
-        rawUrl = rawUrl.replace(/\s*,\s*\{[^}]*\}\s*$/, '');
-
-        // 解析 $..key（深层搜索）
+        try { tocData = JSON.parse(body) as Record<string, Object>; } catch (_) {}
+        rawUrl = rawUrl.replace(/^@js:\s*/, '').replace(/\s*,\s*\{[^}]*\}\s*$/, '');
         rawUrl = rawUrl.replace(/\$\.\.(\w+)/g, (_: string, key: string) => {
           return this.resolveJsonKey(itemData, tocData, key, true) || '';
         });
-        // 解析 $.key（根层搜索）
         rawUrl = rawUrl.replace(/\$\.(\w+)/g, (_: string, key: string) => {
           return this.resolveJsonKey(itemData, tocData, key, false) || '';
         });
-
-        // 移除字符串拼接符 + 和多余引号
-        rawUrl = rawUrl
-          .replace(/\s*\+\s*/g, '')
-          .replace(/^['"]|['"]$/g, '')
-          .trim();
-        console.warn('[WS] chapterUrl 修复后:', rawUrl.substring(0, 100));
+        rawUrl = rawUrl.replace(/\s*\+\s*/g, '').replace(/^['"]|['"]$/g, '').trim();
       }
-
       const resolvedChapterUrl = this.resolveVars(BookUrlResolver.resolve(rawUrl, baseUrl), ctx);
       chap.url = this.normalizeChaoxingUrl(source, this.repairUrlWithBookId(resolvedChapterUrl, book.bookUrl));
       chap.bookUrl = book.bookUrl;
-      chap.index = i;
+      chap.index = startIndex + i;
       chap.isVip = ir.getString(tocRule.isVip) === 'true';
       chap.variable = BookUrlResolver.setVariableJson(chap.variable, 'baseUrl', baseUrl);
       if (chap.title && chap.url) chapters.push(chap);
     }
-
-    // 保存变量回 book
-    book.variable = ctx.toJson();
-    if (chapters.length > 0) return chapters;
-
-    const chaoxingDetailChapter = this.tryBuildChaoxingDetailChapter(source, book, resp.body, baseUrl);
-    if (chaoxingDetailChapter.length > 0) return chaoxingDetailChapter;
-
-    const fallbackChapters = this.tryBuildGenericChapterList(book, resp.body, baseUrl);
-    if (fallbackChapters.length > 0) return fallbackChapters;
     return chapters;
   }
 
@@ -266,8 +288,13 @@ export class WebBookService {
     console.log('[WS] getContent, url:', chapter.url);
     const specialContent = await this.tryGetSpecialContent(source, chapter);
     if (specialContent) {
+      const specialCtx = new RuleContext();
+      specialCtx.loadFromJson(book.variable);
+      this.seedBookVariables(specialCtx, book.bookUrl);
+      this.seedSourceVariables(specialCtx, source);
+      this.seedChapterVariables(specialCtx, chapter);
       return this.normalizeReaderContent(
-        this.applyReplaceRegex(specialContent, source.contentRule.replaceRegex), chapter.url);
+        this.applyContentReplaceRule(specialContent, source.contentRule.replaceRegex, specialCtx, chapter), chapter.url);
     }
     const au = new AnalyzeUrl(source, this.http);
     let resp = EncodedSourceUrl.canHandle(chapter.url) ?
@@ -279,43 +306,72 @@ export class WebBookService {
       chapter.url = httpsUrl;
     }
     console.log('[WS] getContent resp:', resp.success, 'len:', resp.body.length);
-    if (this.requestVerificationIfNeeded(source, chapter.url, resp.body, resp.statusCode, source.contentRule.content)) {
-      return '';
-    }
     if (!resp.success || !resp.body) return '';
-    const baseUrl = BookUrlResolver.effectiveBase(resp, this.getChapterBaseUrl(chapter, book, source), book.bookUrl || source.bookSourceUrl);
-
     const ctx = new RuleContext();
     ctx.loadFromJson(book.variable);
     this.seedBookVariables(ctx, book.bookUrl);
     this.seedSourceVariables(ctx, source);
-
-    const rule = new AnalyzeRule(resp.body, baseUrl, ctx);
+    this.seedChapterVariables(ctx, chapter);
     const contentRule = source.contentRule;
+    const parts: string[] = [];
+    const seenPageUrls = new Set<string>();
+    let currentUrl = resp.url || chapter.url;
+    let currentResp = resp;
+    let totalLength = 0;
+    for (let page = 0; page < 50; page++) {
+      if (!currentResp.success || !currentResp.body) break;
+      const pageKey = this.urlWithoutFragment(currentResp.url || currentUrl);
+      if (seenPageUrls.has(pageKey)) break;
+      seenPageUrls.add(pageKey);
+      if (this.requestVerificationIfNeeded(source, currentUrl, currentResp.body, currentResp.statusCode, contentRule.content)) {
+        break;
+      }
+      const baseUrl = BookUrlResolver.effectiveBase(currentResp,
+        page === 0 ? this.getChapterBaseUrl(chapter, book, source) : currentUrl,
+        book.bookUrl || source.bookSourceUrl);
+      const pageData = await this.parseContentPage(source, book, chapter, currentResp.body, baseUrl, ctx);
+      if (pageData.content) {
+        totalLength += pageData.content.length;
+        if (totalLength > 8 * 1024 * 1024) break;
+        parts.push(pageData.content);
+      }
+      if (!contentRule.nextContentUrl || !pageData.nextUrl) break;
+      const nextKey = this.urlWithoutFragment(pageData.nextUrl);
+      if (seenPageUrls.has(nextKey)) break;
+      currentUrl = pageData.nextUrl;
+      currentResp = EncodedSourceUrl.canHandle(currentUrl) ?
+        await this.fetchEncodedDataUrl(currentUrl, source) : await au.fetch(currentUrl);
+    }
+    book.variable = ctx.toJson();
+    return parts.join('\n\n');
+  }
+
+  private async parseContentPage(source: BookSource, book: Book, chapter: BookChapter, body: string,
+    baseUrl: string, ctx: RuleContext): Promise<ContentPageData> {
+    const data = new ContentPageData();
+    const rule = new AnalyzeRule(body, baseUrl, ctx);
+    const contentRule = source.contentRule;
+    if (contentRule.nextContentUrl) {
+      data.nextUrl = rule.getString(contentRule.nextContentUrl, true);
+    }
     let imageRuleValues = contentRule.images ? rule.getStringList(contentRule.images) : [];
     if (imageRuleValues.length === 0) {
-      imageRuleValues = this.tryExtractScriptedComicImages(resp.body);
+      imageRuleValues = this.tryExtractScriptedComicImages(body);
     }
-
-    let content = await this.tryGetDirectAjaxRuleContent(source, resp.body, baseUrl, ctx, contentRule.content);
+    let content = await this.tryGetDirectAjaxRuleContent(source, body, baseUrl, ctx, contentRule.content);
     if (!content) content = rule.getString(contentRule.content);
     if (!content || this.isBadExtractedContent(content)) {
-      const fallbackContent = this.tryExtractReadableContentFromHtml(resp.body);
+      const fallbackContent = this.tryExtractReadableContentFromHtml(body);
       if (fallbackContent) content = fallbackContent;
     }
     if ((!content || this.isBadExtractedContent(content)) && this.isChaoxingSource(source, chapter.url)) {
-      const chaoxingContent = this.tryExtractChaoxingDetailContent(book, resp.body);
+      const chaoxingContent = this.tryExtractChaoxingDetailContent(book, body);
       if (chaoxingContent) content = chaoxingContent;
     }
-    if (!content && imageRuleValues.length === 0) return '';
-
-    // 替换净化: contentRule.replaceRegex
-    content = this.applyReplaceRegex(content, contentRule.replaceRegex);
-
-    content = this.normalizeReaderContent(content, baseUrl, imageRuleValues);
-
-    book.variable = ctx.toJson();
-    return content;
+    if (!content && imageRuleValues.length === 0) return data;
+    content = this.applyContentReplaceRule(content, contentRule.replaceRegex, ctx, chapter);
+    data.content = this.normalizeReaderContent(content, baseUrl, imageRuleValues);
+    return data;
   }
 
   /**
@@ -942,20 +998,62 @@ export class WebBookService {
     return (value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
-  private applyReplaceRegex(content: string, replaceRegex: string): string {
-    if (!content || !replaceRegex) return content;
-    try {
-      if (replaceRegex.startsWith('##')) {
-        return content.replace(new RegExp(replaceRegex.substring(2), 'g'), '');
+  private applyContentReplaceRule(content: string, replaceRule: string, ctx: RuleContext,
+    chapter: BookChapter): string {
+    if (!content || !replaceRule) return content;
+    let value = content
+      .replace(/<\/p>\s*<p/gi, '</p>\n<p')
+      .replace(/<br\s*\/?>/gi, (match: string) => `${match}\n`);
+    const jsIndex = replaceRule.indexOf('@js:');
+    const regexPart = (jsIndex >= 0 ? replaceRule.substring(0, jsIndex) : replaceRule).trim();
+    const jsPart = jsIndex >= 0 ? replaceRule.substring(jsIndex + 4).trim() : '';
+    if (regexPart) {
+      let pattern = '';
+      let replacement = '';
+      if (regexPart.startsWith('##')) {
+        pattern = regexPart.substring(2);
+      } else {
+        const delimiter = this.findUnescapedDoubleHash(regexPart);
+        if (delimiter >= 0) {
+          pattern = regexPart.substring(0, delimiter);
+          replacement = regexPart.substring(delimiter + 2);
+        } else {
+          pattern = regexPart;
+        }
       }
-      const parts = replaceRegex.split('##');
-      if (parts.length >= 2) {
-        return content.replace(new RegExp(parts[0], 'g'), parts[1] || '');
+      pattern = this.expandRuleTemplate(pattern.replace(/\\##/g, '##'), ctx);
+      replacement = this.expandRuleTemplate(replacement.replace(/\\##/g, '##'), ctx);
+      if (pattern) {
+        try {
+          value = value.replace(new RegExp(pattern, 'g'), replacement);
+        } catch (_) {
+        }
       }
-      return content.replace(new RegExp(replaceRegex, 'g'), '');
-    } catch (_) {
-      return content;
     }
+    if (jsPart) {
+      const env = new ScriptEngineContext();
+      env.content = value;
+      env.baseUrl = chapter.url;
+      env.ctx = ctx;
+      const result = new ScriptEngine(new JsRuntime()).evalResultJs(jsPart, value, env);
+      if (result.handled) value = result.value;
+    }
+    return value;
+  }
+
+  private findUnescapedDoubleHash(value: string): number {
+    for (let i = 0; i < value.length - 1; i++) {
+      if (value.charAt(i) === '#' && value.charAt(i + 1) === '#' && value.charAt(i - 1) !== '\\') {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private expandRuleTemplate(value: string, ctx: RuleContext): string {
+    return (value || '').replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_: string, key: string) => {
+      return ctx.get(key.trim());
+    });
   }
 
   private resolveVars(url: string, ctx: RuleContext): string {
@@ -980,6 +1078,18 @@ export class WebBookService {
       if (!ctx.get('book_id')) ctx.put('book_id', id);
       if (!ctx.get('id')) ctx.put('id', id);
     }
+  }
+
+  private seedChapterVariables(ctx: RuleContext, chapter: BookChapter): void {
+    ctx.put('chapter.title', chapter.title || '');
+    ctx.put('chapter.url', chapter.url || '');
+    ctx.put('chapter.index', String(chapter.index));
+    ctx.put('chapterTitle', chapter.title || '');
+  }
+
+  private urlWithoutFragment(url: string): string {
+    const index = (url || '').indexOf('#');
+    return index >= 0 ? url.substring(0, index) : (url || '');
   }
 
   private seedSourceVariables(ctx: RuleContext, source: BookSource): void {

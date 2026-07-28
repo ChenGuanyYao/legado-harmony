@@ -14,6 +14,7 @@ import { ReaderFontBootstrap } from '../utils/ReaderFontBootstrap';
 import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
 import { TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { ThemeTrialManager } from '../utils/ThemeTrialManager';
 import { AccountSessionStore } from '../account/AccountSessionStore';
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
@@ -81,6 +82,7 @@ export default class EntryAbility extends UIAbility {
     PersistentStorage.persistProp('ttsInstalledVoiceKeys', '');
     PersistentStorage.persistProp('ttsCustomVoiceId', '');
     PersistentStorage.persistProp('ttsCustomVoices', '');
+    PersistentStorage.persistProp('ttsCloudVoiceId', '');
     PersistentStorage.persistProp('ttsOfflineSdkModeMigrated', false);
     if (!AppStorage.get<boolean>('ttsOfflineSdkModeMigrated')) {
       if (AppStorage.get<number>('ttsOnline') === 0 &&
@@ -209,6 +211,7 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onForeground');
+    ThemeTrialManager.stopIfExpired();
     this.syncSystemColorMode(this.context.config);
   }
 

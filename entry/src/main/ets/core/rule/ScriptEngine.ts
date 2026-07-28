@@ -85,6 +85,7 @@ class ArkTsJsRunner {
   private env: ScriptEngineContext;
   private vars: Record<string, Object> = {};
   private functions: Record<string, ScriptFunction> = {};
+  private operationCount: number = 0;
 
   constructor(env: ScriptEngineContext) {
     this.env = env;
@@ -93,7 +94,7 @@ class ArkTsJsRunner {
   run(code: string, resultValue: string): ScriptEvalResult {
     const out = new ScriptEvalResult();
     const script = (code || '').trim();
-    if (!script || this.requiresHostFallback(script)) return out;
+    if (!script || script.length > 512 * 1024 || this.requiresHostFallback(script)) return out;
     this.vars['result'] = resultValue;
     this.vars['baseUrl'] = this.env.baseUrl;
     this.vars['location'] = { href: this.env.baseUrl };
@@ -110,7 +111,8 @@ class ArkTsJsRunner {
         if (value !== undefined && value !== null) last = value;
       }
       out.handled = true;
-      out.value = this.toString(last);
+      const value = this.toString(last);
+      out.value = value.length <= 2 * 1024 * 1024 ? value : '';
       return out;
     } catch (_) {
       return out;
@@ -124,12 +126,29 @@ class ArkTsJsRunner {
   }
 
   private stripLineComments(code: string): string {
-    return (code || '').split('\n').map(line => {
-      const index = line.indexOf('//');
-      if (index < 0) return line;
-      const before = line.substring(0, index);
-      return this.isInsideQuote(line, index) ? line : before;
-    }).join('\n');
+    const text = code || '';
+    let result = '';
+    let quote = '';
+    for (let i = 0; i < text.length; i++) {
+      const ch = text.charAt(i);
+      if (quote) {
+        result += ch;
+        if (ch === quote && text.charAt(i - 1) !== '\\') quote = '';
+        continue;
+      }
+      if (ch === '"' || ch === "'" || ch === '`') {
+        quote = ch;
+        result += ch;
+        continue;
+      }
+      if (ch === '/' && text.charAt(i + 1) === '/') {
+        while (i < text.length && text.charAt(i) !== '\n') i++;
+        if (i < text.length) result += '\n';
+        continue;
+      }
+      result += ch;
+    }
+    return result;
   }
 
   private isInsideQuote(text: string, index: number): boolean {
@@ -168,11 +187,16 @@ class ArkTsJsRunner {
   private evalStatement(statement: string): Object | undefined {
     let text = (statement || '').trim();
     if (!text) return undefined;
+    this.operationCount++;
+    if (this.operationCount > 50000) return undefined;
     if (text.startsWith('return ')) {
       const signal = new ScriptReturnSignal();
       signal.value = this.evalExpression(text.substring(7));
       return signal as Object;
     }
+
+    const forValue = this.evalForStatement(text);
+    if (forValue !== undefined) return forValue;
 
     const ifValue = this.evalIfStatement(text);
     if (ifValue !== undefined) return ifValue;
@@ -192,6 +216,48 @@ class ArkTsJsRunner {
     }
 
     return this.evalExpression(text);
+  }
+
+  private evalForStatement(text: string): Object | undefined {
+    if (!text.startsWith('for')) return undefined;
+    const open = text.indexOf('(');
+    const close = open >= 0 ? this.findMatching(text, open, '(', ')') : -1;
+    if (open < 0 || close < 0) return undefined;
+    const header = this.splitByTopLevel(text.substring(open + 1, close), [';']);
+    if (header.length !== 3) return undefined;
+    let body = text.substring(close + 1).trim();
+    if (!body.startsWith('{')) return undefined;
+    const bodyEnd = this.findMatching(body, 0, '{', '}');
+    if (bodyEnd < 0) return undefined;
+    body = body.substring(1, bodyEnd);
+    this.evalStatement(header[0]);
+    let last: Object = '';
+    let iterations = 0;
+    while (this.truthy(this.evalExpression(header[1])) && iterations < 10000 && this.operationCount < 50000) {
+      last = this.evalStatements(body);
+      if (last instanceof ScriptReturnSignal) return last;
+      this.evalForUpdate(header[2]);
+      iterations++;
+    }
+    return last;
+  }
+
+  private evalForUpdate(raw: string): void {
+    const text = (raw || '').trim();
+    const increment = text.match(/^([A-Za-z_$][A-Za-z0-9_$]*)(\+\+|--)$/);
+    if (increment) {
+      const current = Number(this.toString(this.vars[increment[1]]));
+      this.vars[increment[1]] = current + (increment[2] === '++' ? 1 : -1);
+      return;
+    }
+    const compound = text.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\s*([+\-])=\s*([\s\S]+)$/);
+    if (compound) {
+      const current = Number(this.toString(this.vars[compound[1]]));
+      const delta = Number(this.toString(this.evalExpression(compound[3])));
+      this.vars[compound[1]] = compound[2] === '+' ? current + delta : current - delta;
+      return;
+    }
+    this.evalStatement(text);
   }
 
   private evalIfStatement(text: string): Object | undefined {
@@ -240,6 +306,20 @@ class ArkTsJsRunner {
     if (text.startsWith('return ')) text = text.substring(7).trim();
     text = this.unwrapParens(text);
 
+    const orIndex = this.indexOfTopLevelOperator(text, '||');
+    if (orIndex >= 0) {
+      const left = this.evalExpression(text.substring(0, orIndex));
+      return this.truthy(left) ? left : this.evalExpression(text.substring(orIndex + 2));
+    }
+    const andIndex = this.indexOfTopLevelOperator(text, '&&');
+    if (andIndex >= 0) {
+      const left = this.evalExpression(text.substring(0, andIndex));
+      return this.truthy(left) ? this.evalExpression(text.substring(andIndex + 2)) : left;
+    }
+    if (text.startsWith('!') && !text.startsWith('!=')) {
+      return !this.truthy(this.evalExpression(text.substring(1)));
+    }
+
     const question = this.indexOfTopLevel(text, '?');
     if (question >= 0) {
       const colon = this.indexOfTopLevelFrom(text, ':', question + 1);
@@ -275,6 +355,13 @@ class ArkTsJsRunner {
       return Number.isNaN(value) ? '' : value;
     }
 
+    const moduloIndex = this.indexOfTopLevelOperator(text, '%');
+    if (moduloIndex >= 0) {
+      const left = Number(this.toString(this.evalExpression(text.substring(0, moduloIndex))));
+      const right = Number(this.toString(this.evalExpression(text.substring(moduloIndex + 1))));
+      return right === 0 || Number.isNaN(left) || Number.isNaN(right) ? 0 : left % right;
+    }
+
     const callValue = this.evalFunctionOrHostCall(text);
     if (callValue !== undefined) return callValue;
 
@@ -289,6 +376,27 @@ class ArkTsJsRunner {
     if (text === 'true') return true;
     if (text === 'false') return false;
     if (text === 'null') return null as Object;
+    if (text.startsWith('[') && text.endsWith(']')) {
+      const inner = text.substring(1, text.length - 1).trim();
+      if (!inner) return [] as Object;
+      return this.splitArgs(inner).map(item => this.evalExpression(item)) as Object;
+    }
+    if (text.startsWith('{') && text.endsWith('}')) {
+      const record: Record<string, Object> = {};
+      const inner = text.substring(1, text.length - 1).trim();
+      if (!inner) return record as Object;
+      for (const item of this.splitArgs(inner)) {
+        const colon = this.indexOfTopLevel(item, ':');
+        if (colon <= 0) continue;
+        let key = item.substring(0, colon).trim();
+        if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+          key = this.unescapeString(key.substring(1, key.length - 1));
+        }
+        if (!key) continue;
+        record[key] = this.evalExpression(item.substring(colon + 1));
+      }
+      return record as Object;
+    }
     if (/^\/[\s\S]+\/[gimsuy]*$/.test(text)) return text;
     if (/^-?\d+(?:\.\d+)?$/.test(text)) return Number(text);
     if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(text) && this.vars[text] !== undefined) return this.vars[text];
@@ -358,6 +466,10 @@ class ArkTsJsRunner {
     }
     while (index < expr.length) {
       const ch = expr.charAt(index);
+      if (/\s/.test(ch)) {
+        index++;
+        continue;
+      }
       if (ch === '.') {
         const next = this.readIdentifier(expr, index + 1);
         if (!next.name) return '';
@@ -415,6 +527,12 @@ class ArkTsJsRunner {
     if (name === 'toUpperCase') return text.toUpperCase();
     if (name === 'map' && Array.isArray(target)) return this.applyArrowMap(target as Object[], this.toString(args[0]));
     if (name === 'filter' && Array.isArray(target)) return this.applyArrowFilter(target as Object[], this.toString(args[0]));
+    if (name === 'push' && Array.isArray(target)) {
+      const values = target as Object[];
+      if (values.length + args.length > 10000) return values.length;
+      values.push(...args);
+      return values.length;
+    }
     return '';
   }
 
@@ -487,6 +605,13 @@ class ArkTsJsRunner {
       if (ch === '(' || ch === '[' || ch === '{') depth++;
       if (ch === ')' || ch === ']' || ch === '}') depth--;
       if (depth === 0 && separators.includes(ch)) {
+        if (ch === '\n') {
+          let next = i + 1;
+          while (next < text.length && (text.charAt(next) === ' ' || text.charAt(next) === '\t' || text.charAt(next) === '\r')) {
+            next++;
+          }
+          if (text.charAt(next) === '.') continue;
+        }
         const part = text.substring(start, i).trim();
         if (part) parts.push(part);
         start = i + 1;
@@ -617,9 +742,9 @@ class ArkTsJsRunner {
         continue;
       }
       if (ch === '"' || ch === "'" || ch === '`') { quote = ch; continue; }
+      if (depth === 0 && (ch === '.' || ch === '[')) return i;
       if (ch === '(' || ch === '[' || ch === '{') depth++;
       if (ch === ')' || ch === ']' || ch === '}') depth--;
-      if (depth === 0 && (ch === '.' || ch === '[')) return i;
     }
     return -1;
   }

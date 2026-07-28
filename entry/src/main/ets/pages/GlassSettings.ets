@@ -64,16 +64,15 @@ struct GlassSettingsPage {
           .opacity(this.settings.enabled ? 1 : 0.42)
         }
         .width('100%')
-        .padding({ left: 14, right: 14, top: 6, bottom: 32 })
+        .padding({ left: 14, right: 14, top: 6, bottom: 32 + this.navBarHeight })
       }
       .layoutWeight(1)
       .align(Alignment.TopStart)
     }
     .width('100%')
     .height('100%').justifyContent(FlexAlign.Start)
-    .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
     .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   async loadSettings(): Promise<void> {
@@ -230,9 +229,10 @@ struct GlassSettingsPage {
         .layoutWeight(1)
     }
     .width('100%')
-    .height(56)
-    .padding({ right: 12 })
-    .backgroundColor(this.cardColor())
+    .height(56 + this.statusBarHeight)
+    .padding({ right: 12, top: this.statusBarHeight })
+    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+    .backdropBlur(18)
   }
 
   @Builder

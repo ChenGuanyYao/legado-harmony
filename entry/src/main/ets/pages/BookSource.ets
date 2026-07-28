@@ -2,7 +2,7 @@ import { router, promptAction } from '@kit.ArkUI';
 import { BookSource, SearchBook, BookListRule, SearchRule, ExploreRule, BookInfoRule, TocRule, ContentRule } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { HttpClient } from '../core/http/HttpClient';
-import { SearchCoordinator, SearchProgress } from '../core/book/SearchCoordinator';
+import { SearchCoordinator, SearchProgress, SearchSourceResult } from '../core/book/SearchCoordinator';
 import { syncSystemBars } from '../utils/SystemBars';
 import { SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
@@ -89,8 +89,12 @@ struct BookSourcePage {
   @State checkDone: number = 0;
   @State checkTotal: number = 0;
   @State checkOkCount: number = 0;
+  @State checkFailedCount: number = 0;
+  @State checkNoResultCount: number = 0;
+  @State checkNeedVerificationCount: number = 0;
+  @State checkTemporaryErrorCount: number = 0;
   @State checkBadUrls: string[] = [];
-  @State checkBadNames: string[] = [];
+  @State checkResultDetails: string[] = [];
   @State checkStatus: string = '';
   @State checkInvalidAction: string = 'none';
   @State checkAutoHandledCount: number = 0;
@@ -217,9 +221,10 @@ struct BookSourcePage {
             })
         }
         .width('100%')
-        .height(56)
-        .padding({ right: 16 })
-        .backgroundColor(this.glassCardColor())
+        .height(56 + this.statusBarHeight)
+        .padding({ right: 16, top: this.statusBarHeight })
+        .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+        .backdropBlur(18)
         .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
         .alignItems(VerticalAlign.Center)
 
@@ -458,6 +463,11 @@ struct BookSourcePage {
                 edgeEffect: SwipeEdgeEffect.Spring
               })
             }, (source: BookSource) => this.sourceListItemKey(source))
+
+            ListItem() {
+              Row()
+                .height(Math.max(20, this.navBarHeight + 12))
+            }
             }
             .width('100%')
             .height('100%')
@@ -546,7 +556,6 @@ struct BookSourcePage {
       }
       .width('100%')
       .height('100%')
-      .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
       .backgroundColor(this.pageColor())
 
       if (!this.selectionMode && !this.showAddDialog && !this.isImporting && !this.isBatchOperating) {
@@ -867,24 +876,24 @@ struct BookSourcePage {
                 .textAlign(TextAlign.Center)
                 .margin({ bottom: 12 })
 
-              if (this.checkBadUrls.length > 0) {
+              if (this.checkResultDetails.length > 0) {
                 Scroll() {
                   Column() {
-                    ForEach(this.checkBadNames, (name: string, index: number) => {
+                    ForEach(this.checkResultDetails, (name: string, index: number) => {
                       Text(name)
                         .fontSize(13)
                         .fontColor(this.subTextColor())
                         .width('100%')
-                        .maxLines(1)
+                        .maxLines(2)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
-                        .margin({ bottom: index === this.checkBadNames.length - 1 ? 0 : 6 })
+                        .margin({ bottom: index === this.checkResultDetails.length - 1 ? 0 : 6 })
                     }, (name: string, index: number) => `${index}-${name}`)
                   }
                   .width('100%')
                   .alignItems(HorizontalAlign.Start)
                 }
                 .width('100%')
-                .height(Math.min(this.checkBadNames.length * 25 + 20, 120))
+                .height(Math.min(this.checkResultDetails.length * 40 + 20, 160))
                 .padding(10)
                 .backgroundColor(this.inputColor())
                 .borderRadius(8)
@@ -894,7 +903,7 @@ struct BookSourcePage {
 
               Row({ space: 8 }) {
                 if (this.checkInvalidAction === 'none') {
-                  Button('一键禁用', { type: ButtonType.Normal })
+                  Button('禁用失败项', { type: ButtonType.Normal })
                     .layoutWeight(1)
                     .height(42)
                     .borderRadius(10)
@@ -906,7 +915,7 @@ struct BookSourcePage {
                       this.disableFailedCheckedSources();
                     })
 
-                  Button('一键删除', { type: ButtonType.Normal })
+                  Button('删除失败项', { type: ButtonType.Normal })
                     .layoutWeight(1)
                     .height(42)
                     .borderRadius(10)
@@ -1033,7 +1042,7 @@ struct BookSourcePage {
     .height('100%')
     .backgroundColor(this.pageColor())
     .onAreaChange((_oldValue: Area, newValue: Area) => this.updateContextViewport(newValue))
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   @Builder
@@ -1123,6 +1132,14 @@ struct BookSourcePage {
           this.showMoreActionDialog = false;
           this.batchSetExploreEnabled(false);
         })
+        this.popupActionItem($r('sys.symbol.lock'), '锁定', this.primaryTextColor(), () => {
+          this.showMoreActionDialog = false;
+          this.batchSetLocked(true);
+        })
+        this.popupActionItem($r('sys.symbol.lock_open'), '解锁', this.primaryTextColor(), () => {
+          this.showMoreActionDialog = false;
+          this.batchSetLocked(false);
+        })
         this.popupActionItem($r('sys.symbol.download'), '导出 JSON', this.primaryTextColor(), () => {
           this.showMoreActionDialog = false;
           this.exportSelectedSources();
@@ -1140,7 +1157,7 @@ struct BookSourcePage {
       .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
       .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
       .position({ x: '100%', y: '100%' })
-      .translate({ x: -200, y: -(244 + Math.max(this.navBarHeight, 8)) })
+      .translate({ x: -200, y: -(334 + Math.max(this.navBarHeight, 8)) })
     }
     .width('100%')
     .height('100%')
@@ -1259,16 +1276,34 @@ struct BookSourcePage {
         .fontSize(14)
         .fontColor(this.primaryTextColor())
         .width(66)
-      Row({ space: 6 }) {
-        this.sourceFilterChoice('validation', 'all', '不限')
-        this.sourceFilterChoice('validation', 'unchecked', '未校验')
-        this.sourceFilterChoice('validation', 'passed', '校验通过')
-        this.sourceFilterChoice('validation', 'failed', '校验不通过')
+      Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween }) {
+        this.sourceValidationFilterChoice('all', '不限')
+        this.sourceValidationFilterChoice('unchecked', '未校验')
+        this.sourceValidationFilterChoice('passed', '通过')
+        this.sourceValidationFilterChoice('failed', '失败')
+        this.sourceValidationFilterChoice('noResults', '无结果')
+        this.sourceValidationFilterChoice('needsVerification', '需要验证')
+        this.sourceValidationFilterChoice('temporaryError', '暂时异常')
       }
       .layoutWeight(1)
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  sourceValidationFilterChoice(value: string, label: string) {
+    Text(label)
+      .fontSize(12)
+      .fontColor(this.sourceValidationFilter === value ? '#FFFFFF' : this.secondaryTextColor())
+      .width('32%')
+      .height(34)
+      .margin({ bottom: 6 })
+      .textAlign(TextAlign.Center)
+      .maxLines(1)
+      .backgroundColor(this.sourceValidationFilter === value ? this.accentColor() : this.inputColor())
+      .borderRadius(9)
+      .onClick(() => this.setSourceFilterValue('validation', value))
   }
 
   @Builder
@@ -1304,14 +1339,14 @@ struct BookSourcePage {
           .fontColor(this.primaryTextColor())
           .width('100%')
 
-        Text('选择发现无效书源时的处理方式。禁用或删除会在每个书源校验结束后立即执行。')
+        Text('只有明确的请求或规则错误会标记为失败并参与自动处理；无结果、需要验证和暂时异常不会被禁用或删除。')
           .fontSize(13)
           .fontColor(this.secondaryTextColor())
           .width('100%')
 
-        this.checkActionOption('仅校验', '记录无效书源，校验完成后再手动处理', 'none')
-        this.checkActionOption('自动禁用', '边校验边禁用无效书源，可稍后重新启用', 'disable')
-        this.checkActionOption('自动删除', '边校验边永久删除无效书源，此操作不可恢复', 'delete', true)
+        this.checkActionOption('仅校验', '记录各类校验状态，校验完成后再手动处理', 'none')
+        this.checkActionOption('自动禁用', '仅禁用明确失败的书源，可稍后重新启用', 'disable')
+        this.checkActionOption('自动删除', '仅删除明确失败的书源，此操作不可恢复', 'delete', true)
 
         Row({ space: 10 }) {
           Button('取消')
@@ -1523,14 +1558,20 @@ struct BookSourcePage {
   }
 
   sourceValidationStatusLabel(validationStatus: number): string {
-    if (validationStatus === BookSource.VALIDATION_PASSED) return '校验通过';
-    if (validationStatus === BookSource.VALIDATION_FAILED) return '校验不通过';
+    if (validationStatus === BookSource.VALIDATION_PASSED) return '通过';
+    if (validationStatus === BookSource.VALIDATION_FAILED) return '失败';
+    if (validationStatus === BookSource.VALIDATION_NO_RESULTS) return '无结果';
+    if (validationStatus === BookSource.VALIDATION_NEEDS_VERIFICATION) return '需要验证';
+    if (validationStatus === BookSource.VALIDATION_TEMPORARY_ERROR) return '暂时异常';
     return '未校验';
   }
 
   sourceValidationStatusColor(validationStatus: number): string {
     if (validationStatus === BookSource.VALIDATION_PASSED) return '#1E8E3E';
     if (validationStatus === BookSource.VALIDATION_FAILED) return '#C62828';
+    if (validationStatus === BookSource.VALIDATION_NO_RESULTS) return '#8A6D3B';
+    if (validationStatus === BookSource.VALIDATION_NEEDS_VERIFICATION) return '#1565C0';
+    if (validationStatus === BookSource.VALIDATION_TEMPORARY_ERROR) return '#F57C00';
     return this.subTextColor();
   }
 
@@ -2591,8 +2632,8 @@ struct BookSourcePage {
 
   setSourceFilterValue(filterKey: string, value: string): void {
     if (filterKey === 'validation') {
-      this.sourceValidationFilter =
-        value === 'unchecked' || value === 'passed' || value === 'failed' ? value : 'all';
+      const allowed = ['unchecked', 'passed', 'failed', 'noResults', 'needsVerification', 'temporaryError'];
+      this.sourceValidationFilter = allowed.includes(value) ? value : 'all';
       this.applySourceFilters();
       return;
     }
@@ -2665,9 +2706,7 @@ struct BookSourcePage {
       filtered = filtered.filter((source: BookSource) => this.sourceNeedsLogin(source) === expected);
     }
     if (this.sourceValidationFilter !== 'all') {
-      const expected = this.sourceValidationFilter === 'passed' ? BookSource.VALIDATION_PASSED :
-        (this.sourceValidationFilter === 'failed' ? BookSource.VALIDATION_FAILED :
-          BookSource.VALIDATION_UNCHECKED);
+      const expected = this.sourceValidationStatusForFilter(this.sourceValidationFilter);
       filtered = filtered.filter((source: BookSource) => source.validationStatus === expected);
     }
     if (keyword) {
@@ -2681,6 +2720,15 @@ struct BookSourcePage {
     this.sourceFirstVisibleIndex = 0;
     this.sourceVisibleItemCount = 1;
     this.pruneSelectedSources();
+  }
+
+  sourceValidationStatusForFilter(value: string): number {
+    if (value === 'passed') return BookSource.VALIDATION_PASSED;
+    if (value === 'failed') return BookSource.VALIDATION_FAILED;
+    if (value === 'noResults') return BookSource.VALIDATION_NO_RESULTS;
+    if (value === 'needsVerification') return BookSource.VALIDATION_NEEDS_VERIFICATION;
+    if (value === 'temporaryError') return BookSource.VALIDATION_TEMPORARY_ERROR;
+    return BookSource.VALIDATION_UNCHECKED;
   }
 
   loadMoreVisibleSources(): void {
@@ -3330,6 +3378,36 @@ struct BookSourcePage {
     }
   }
 
+  async batchSetLocked(locked: boolean): Promise<void> {
+    if (this.isBatchOperating) {
+      return;
+    }
+    const selectedSources = this.getSelectedSources()
+      .filter((source: BookSource) => source.isLocked !== locked);
+    if (selectedSources.length === 0) {
+      promptAction.showToast({ message: locked ? '所选书源均已锁定' : '所选书源均已解锁' });
+      return;
+    }
+
+    this.isBatchOperating = true;
+    this.batchOperationText = locked ? '正在锁定书源...' : '正在解锁书源...';
+    try {
+      const db = AppDatabase.getInstance();
+      for (const source of selectedSources) {
+        await db.setBookSourceLocked(source.bookSourceUrl, locked);
+        source.isLocked = locked;
+      }
+      this.reapplySourceFiltersPreservingViewport();
+      promptAction.showToast({ message: `已${locked ? '锁定' : '解锁'} ${selectedSources.length} 个书源` });
+    } catch (e) {
+      console.error(`批量${locked ? '锁定' : '解锁'}书源失败:`, e);
+      await this.loadSources();
+      promptAction.showToast({ message: `批量${locked ? '锁定' : '解锁'}失败` });
+    } finally {
+      this.isBatchOperating = false;
+    }
+  }
+
   async batchDeleteSelectedSources(): Promise<void> {
     if (this.isBatchOperating) {
       return;
@@ -3436,11 +3514,14 @@ struct BookSourcePage {
     this.checkDone = 0;
     this.checkTotal = targetSources.length;
     this.checkOkCount = 0;
+    this.checkFailedCount = 0;
+    this.checkNoResultCount = 0;
+    this.checkNeedVerificationCount = 0;
+    this.checkTemporaryErrorCount = 0;
     this.checkBadUrls = [];
-    this.checkBadNames = [];
+    this.checkResultDetails = [];
     this.checkAutoHandledCount = 0;
     this.checkStatus = `准备校验 ${targetSources.length} 个书源`;
-    const availableUrls = new Set<string>();
 
     try {
       const coordinator = new SearchCoordinator(SearchExploreSettingsStore.getSearchConcurrency());
@@ -3449,23 +3530,16 @@ struct BookSourcePage {
         this.checkTotal = progress.total;
         this.checkStatus = this.formatCheckProgressStatus(progress);
       }, {
-        onSourceComplete: async (source: BookSource, books: SearchBook[]) => {
-          if (books.length > 0) {
-            availableUrls.add(source.bookSourceUrl);
-          }
-          await this.handleCheckedSourceCompletion(source, books.length > 0);
+        onSourceComplete: async (source: BookSource, result: SearchSourceResult) => {
+          await this.handleCheckedSourceCompletion(source, result);
         },
         targetSources: targetSources,
         validationOnly: true
       });
 
-      const badSources = targetSources.filter((source: BookSource) => !availableUrls.has(source.bookSourceUrl));
-      this.checkOkCount = Math.max(0, targetSources.length - badSources.length);
-      this.checkBadUrls = badSources.map((source: BookSource) => source.bookSourceUrl);
-      this.checkBadNames = badSources.map((source: BookSource) => source.bookSourceName || source.bookSourceUrl);
       this.checkDone = targetSources.length;
       this.checkTotal = targetSources.length;
-      this.checkStatus = this.checkSummaryText();
+      this.checkStatus = this.checkResultText();
     } catch (e) {
       console.error('校验书源失败:', e);
       this.checkStatus = '校验失败，请稍后重试';
@@ -3478,8 +3552,8 @@ struct BookSourcePage {
     }
   }
 
-  async handleCheckedSourceCompletion(source: BookSource, available: boolean): Promise<void> {
-    source.validationStatus = available ? BookSource.VALIDATION_PASSED : BookSource.VALIDATION_FAILED;
+  async handleCheckedSourceCompletion(source: BookSource, result: SearchSourceResult): Promise<void> {
+    source.validationStatus = result.validationStatus;
     try {
       await AppDatabase.getInstance().updateBookSourceValidationStatus(
         source.bookSourceUrl, source.validationStatus);
@@ -3488,13 +3562,30 @@ struct BookSourcePage {
     }
     this.applyCheckedSourceValidationStatus(source.bookSourceUrl, source.validationStatus);
 
-    if (available) {
+    if (source.validationStatus === BookSource.VALIDATION_PASSED) {
       this.checkOkCount++;
+      return;
+    }
+    if (source.validationStatus === BookSource.VALIDATION_FAILED) {
+      this.checkFailedCount++;
+    } else if (source.validationStatus === BookSource.VALIDATION_NO_RESULTS) {
+      this.checkNoResultCount++;
+    } else if (source.validationStatus === BookSource.VALIDATION_NEEDS_VERIFICATION) {
+      this.checkNeedVerificationCount++;
+    } else if (source.validationStatus === BookSource.VALIDATION_TEMPORARY_ERROR) {
+      this.checkTemporaryErrorCount++;
+    }
+    const sourceName = source.bookSourceName || source.bookSourceUrl;
+    const detail = result.reason ?
+      `${sourceName}：${this.sourceValidationStatusLabel(source.validationStatus)}（${result.reason}）` :
+      `${sourceName}：${this.sourceValidationStatusLabel(source.validationStatus)}`;
+    this.checkResultDetails = [...this.checkResultDetails, detail];
+
+    if (source.validationStatus !== BookSource.VALIDATION_FAILED) {
       return;
     }
     if (!this.checkBadUrls.includes(source.bookSourceUrl)) {
       this.checkBadUrls = [...this.checkBadUrls, source.bookSourceUrl];
-      this.checkBadNames = [...this.checkBadNames, source.bookSourceName || source.bookSourceUrl];
     }
     if (this.checkInvalidAction === 'none') {
       return;
@@ -3566,10 +3657,9 @@ struct BookSourcePage {
     if (this.checkTotal === 0) {
       return '没有需要校验的书源';
     }
-    if (this.checkBadUrls.length === 0) {
-      return `全部可用，共 ${this.checkOkCount} 个书源通过校验`;
-    }
-    return `可用 ${this.checkOkCount} 个，异常 ${this.checkBadUrls.length} 个${this.checkAutoActionSummary()}`;
+    return `通过 ${this.checkOkCount}，失败 ${this.checkFailedCount}，无结果 ${this.checkNoResultCount}，` +
+      `需要验证 ${this.checkNeedVerificationCount}，暂时异常 ${this.checkTemporaryErrorCount}` +
+      this.checkAutoActionSummary();
   }
 
   async disableFailedCheckedSources(): Promise<void> {
@@ -3580,7 +3670,7 @@ struct BookSourcePage {
       .map((source: BookSource) => source.bookSourceUrl));
     const failedUrls = this.checkBadUrls.filter((url: string) => !lockedUrls.has(url));
     if (failedUrls.length === 0) {
-      promptAction.showToast({ message: '异常书源均已锁定，未执行禁用' });
+      promptAction.showToast({ message: '明确失败的书源均已锁定，未执行禁用' });
       return;
     }
 
@@ -3599,7 +3689,7 @@ struct BookSourcePage {
       const disabledCount = failedUrls.length;
       this.showCheckDialog = false;
       await this.loadSources();
-      promptAction.showToast({ message: `已禁用 ${disabledCount} 个异常书源` });
+      promptAction.showToast({ message: `已禁用 ${disabledCount} 个明确失败的书源` });
     } catch (e) {
       console.error('禁用异常书源失败:', e);
       promptAction.showToast({ message: '禁用失败' });
@@ -3616,7 +3706,7 @@ struct BookSourcePage {
       .map((source: BookSource) => source.bookSourceUrl));
     const failedUrls = this.checkBadUrls.filter((url: string) => !lockedUrls.has(url));
     if (failedUrls.length === 0) {
-      promptAction.showToast({ message: '异常书源均已锁定，未执行删除' });
+      promptAction.showToast({ message: '明确失败的书源均已锁定，未执行删除' });
       return;
     }
 
@@ -3628,10 +3718,9 @@ struct BookSourcePage {
         await db.deleteBookSource(url);
       }
       this.checkBadUrls = [];
-      this.checkBadNames = [];
       this.showCheckDialog = false;
       await this.loadSources();
-      promptAction.showToast({ message: `已删除 ${failedUrls.length} 个异常书源` });
+      promptAction.showToast({ message: `已删除 ${failedUrls.length} 个明确失败的书源` });
     } catch (e) {
       console.error('删除异常书源失败:', e);
       promptAction.showToast({ message: '删除失败' });
@@ -3915,6 +4004,7 @@ struct BookSourcePage {
     source.isPinned = obj['isPinned'] === true;
     source.isLocked = obj['isLocked'] === true || obj['locked'] === true;
     source.weight = (obj['weight'] as number) || 0;
+    source.concurrentRate = obj['concurrentRate'] as string || '';
     source.lastUpdateTime = Date.now();
 
     // 解析 searchRule (ruleSearch)
@@ -3937,7 +4027,7 @@ struct BookSourcePage {
       const rule = new ExploreRule();
       this.applyRuleToSearchRule(fields, rule);
       source.exploreRule = rule;
-    } else if (ruleExplore && typeof ruleExplore === 'object') {
+    } else if (ruleExplore && typeof ruleExplore === 'object' && !Array.isArray(ruleExplore)) {
       source.exploreRule = ruleExplore as ExploreRule;
     } else if (obj['exploreRule'] && typeof obj['exploreRule'] === 'object') {
       source.exploreRule = obj['exploreRule'] as ExploreRule;
@@ -4108,6 +4198,7 @@ struct BookSourcePage {
     rule.chapterList = fields['chapterList'] || fields['chapterlist'] || '';
     rule.chapterName = fields['chapterName'] || fields['chaptername'] || '';
     rule.chapterUrl = fields['chapterUrl'] || fields['chapterurl'] || '';
+    rule.nextTocUrl = fields['nextTocUrl'] || fields['nexttocurl'] || '';
     rule.isVip = fields['isVip'] || fields['isvip'] || '';
     rule.isPay = fields['isPay'] || fields['ispay'] || '';
     rule.updateTime = fields['updateTime'] || fields['updatetime'] || '';
@@ -4117,6 +4208,7 @@ struct BookSourcePage {
     rule.content = fields['content'] || '';
     rule.title = fields['title'] || '';
     rule.images = fields['images'] || '';
+    rule.nextContentUrl = fields['nextContentUrl'] || fields['nextcontenturl'] || '';
     rule.replaceRegex = fields['replaceRegex'] || fields['replaceregex'] || '';
     rule.imageStyle = fields['imageStyle'] || fields['imagestyle'] || '';
     rule.payAction = fields['payAction'] || fields['payaction'] || '';

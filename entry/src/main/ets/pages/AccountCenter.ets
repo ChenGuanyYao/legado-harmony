@@ -26,6 +26,8 @@ struct AccountCenterPage {
   @StorageLink('accountDisplayName') displayName: string = '';
   @StorageLink('accountAvatarUrl') avatarUrl: string = '';
   @StorageLink('accountPoints') points: number = 0;
+  @StorageLink('accountPaidPoints') paidPoints: number = 0;
+  @StorageLink('accountPromoPoints') promoPoints: number = 0;
   @StorageLink('accountEntitlementsRevision') entitlementsRevision: number = 0;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
@@ -62,8 +64,7 @@ struct AccountCenterPage {
   }
 
   build() {
-    Column() {
-      this.titleBar()
+    Stack({ alignContent: Alignment.TopStart }) {
       Scroll() {
         Column({ space: 14 }) {
           if (!this.editingProfile) {
@@ -86,16 +87,23 @@ struct AccountCenterPage {
           this.serviceHint()
         }
         .width('100%')
-        .padding({ left: 14, right: 14, top: 14, bottom: 32 })
+        .padding({
+          left: 14,
+          right: 14,
+          top: 70 + this.statusBarHeight,
+          bottom: 32 + this.navBarHeight
+        })
       }
-      .layoutWeight(1)
+      .width('100%')
+      .height('100%')
       .align(Alignment.TopStart)
+
+      this.titleBar()
     }
     .width('100%')
     .height('100%')
-    .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
     .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   async initialize(): Promise<void> {
@@ -544,9 +552,11 @@ struct AccountCenterPage {
       }
     }
     .width('100%')
-    .height(56)
+    .height(56 + this.statusBarHeight)
+    .padding({ top: this.statusBarHeight })
     .alignItems(VerticalAlign.Center)
-    .backgroundColor(this.cardColor())
+    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+    .backdropBlur(18)
   }
 
   @Builder
@@ -905,7 +915,7 @@ struct AccountCenterPage {
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
-      Text('• 每个华为账号首次登录赠送 300 点\n• 60 点获取一个内置主题，有效 365 天\n• 点数余额和主题有效期可跨终端同步')
+      Text('• 每个华为账号首次登录赠送 300 点\n• 点数余额和主题有效期可跨终端同步')
         .fontSize(13)
         .fontColor(this.subTextColor())
         .lineHeight(22)

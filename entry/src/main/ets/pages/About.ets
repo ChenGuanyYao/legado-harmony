@@ -22,23 +22,7 @@ struct AboutPage {
   }
 
   build() {
-    Column() {
-      Row() {
-        ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-          buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-          onBack: () => router.back() })
-
-        Text('关于')
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor())
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(56)
-      .backgroundColor(this.cardColor())
-      .alignItems(VerticalAlign.Center)
-
+    Stack({ alignContent: Alignment.TopStart }) {
       Scroll() {
         Column() {
           Column() {
@@ -89,18 +73,37 @@ struct AboutPage {
               .textAlign(TextAlign.Center)
           }
           .width('100%')
-          .padding({ left: 24, right: 24, top: 20, bottom: 32 })
+          .padding({ left: 24, right: 24, top: 20, bottom: 32 + this.navBarHeight })
         }
         .width('100%')
+        .padding({ top: 56 + this.statusBarHeight })
         .alignItems(HorizontalAlign.Center)
       }
-      .layoutWeight(1)
+      .width('100%')
+      .height('100%')
+
+      Row() {
+        ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
+          buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
+          onBack: () => router.back() })
+
+        Text('关于')
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .height(56 + this.statusBarHeight)
+      .padding({ top: this.statusBarHeight })
+      .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+      .backdropBlur(18)
+      .alignItems(VerticalAlign.Center)
     }
     .width('100%')
     .height('100%')
-    .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
     .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   @Builder

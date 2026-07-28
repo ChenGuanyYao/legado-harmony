@@ -13,6 +13,8 @@ export class AccountCommerceConfig {
   static readonly PRODUCT_POINTS_60: string = 'legado_points_60';
   static readonly PRODUCT_POINTS_100: string = 'legado_points_100';
   static readonly PRODUCT_POINTS_300: string = 'legado_points_300';
+  static readonly PRODUCT_POINTS_500: string = 'legado_points_500';
+  static readonly PRODUCT_POINTS_1000: string = 'legado_points_1000';
 
   static isServerConfigured(): boolean {
     const value = AccountCommerceConfig.API_BASE_URL.trim();
@@ -24,7 +26,9 @@ export class AccountCommerceConfig {
       new RechargeProduct(AccountCommerceConfig.PRODUCT_POINTS_10, 10, 1),
       new RechargeProduct(AccountCommerceConfig.PRODUCT_POINTS_60, 60, 6),
       new RechargeProduct(AccountCommerceConfig.PRODUCT_POINTS_100, 100, 10),
-      new RechargeProduct(AccountCommerceConfig.PRODUCT_POINTS_300, 300, 30)
+      new RechargeProduct(AccountCommerceConfig.PRODUCT_POINTS_300, 300, 30),
+      new RechargeProduct(AccountCommerceConfig.PRODUCT_POINTS_500, 500, 50),
+      new RechargeProduct(AccountCommerceConfig.PRODUCT_POINTS_1000, 1000, 100)
     ];
   }
 }

@@ -11,6 +11,8 @@ export class AccountSessionStore {
   static readonly STORAGE_DISPLAY_NAME: string = 'accountDisplayName';
   static readonly STORAGE_AVATAR_URL: string = 'accountAvatarUrl';
   static readonly STORAGE_POINTS: string = 'accountPoints';
+  static readonly STORAGE_PAID_POINTS: string = 'accountPaidPoints';
+  static readonly STORAGE_PROMO_POINTS: string = 'accountPromoPoints';
   static readonly STORAGE_ENTITLEMENTS_REVISION: string = 'accountEntitlementsRevision';
 
   private static readonly STORE_NAME: string = 'account_commerce_session';
@@ -25,6 +27,8 @@ export class AccountSessionStore {
     AppStorage.setOrCreate(AccountSessionStore.STORAGE_DISPLAY_NAME, '');
     AppStorage.setOrCreate(AccountSessionStore.STORAGE_AVATAR_URL, '');
     AppStorage.setOrCreate(AccountSessionStore.STORAGE_POINTS, 0);
+    AppStorage.setOrCreate(AccountSessionStore.STORAGE_PAID_POINTS, 0);
+    AppStorage.setOrCreate(AccountSessionStore.STORAGE_PROMO_POINTS, 0);
     AppStorage.setOrCreate(AccountSessionStore.STORAGE_ENTITLEMENTS_REVISION, 0);
   }
 
@@ -115,6 +119,10 @@ export class AccountSessionStore {
       AccountSessionStore.isLoggedIn() ? AccountSessionStore.snapshot.avatarUrl : '');
     AppStorage.setOrCreate(AccountSessionStore.STORAGE_POINTS,
       AccountSessionStore.isLoggedIn() ? AccountSessionStore.snapshot.points : 0);
+    AppStorage.setOrCreate(AccountSessionStore.STORAGE_PAID_POINTS,
+      AccountSessionStore.isLoggedIn() ? AccountSessionStore.snapshot.paidPoints : 0);
+    AppStorage.setOrCreate(AccountSessionStore.STORAGE_PROMO_POINTS,
+      AccountSessionStore.isLoggedIn() ? AccountSessionStore.snapshot.promoPoints : 0);
     const revision = (AppStorage.get<number>(AccountSessionStore.STORAGE_ENTITLEMENTS_REVISION) || 0) + 1;
     AppStorage.setOrCreate(AccountSessionStore.STORAGE_ENTITLEMENTS_REVISION, revision);
   }
@@ -139,6 +147,8 @@ export class AccountSessionStore {
     result.displayName = source.displayName || '华为用户';
     result.avatarUrl = source.avatarUrl || '';
     result.points = Math.max(0, Math.floor(Number(source.points) || 0));
+    result.paidPoints = Math.max(0, Math.floor(Number(source.paidPoints) || 0));
+    result.promoPoints = Math.max(0, Math.floor(Number(source.promoPoints) || 0));
     result.welcomeGranted = source.welcomeGranted === true;
     result.entitlements = [];
     if (source.entitlements) {

@@ -1,10 +1,11 @@
-import { BookSource, SearchBook } from '../../model/data/Book';
+import { BookSource, ExploreRule, SearchBook } from '../../model/data/Book';
 import { appDb } from '../../model/data/AppDatabase';
 import { HttpClient } from '../http/HttpClient';
 import { AnalyzeUrl } from '../rule/AnalyzeUrl';
 import { AnalyzeRule } from '../rule/AnalyzeRule';
 import { RuleContext } from '../rule/RuleContext';
 import { JsRuntime } from '../rule/JsRuntime';
+import { ScriptEngine, ScriptEngineContext } from '../rule/ScriptEngine';
 import { VerificationSupport } from '../http/VerificationSupport';
 import { EncodedSourceUrl } from './EncodedSourceUrl';
 import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
@@ -67,7 +68,8 @@ export class ExploreCoordinator {
         }
         continue;
       }
-      if (!source.exploreRule?.bookList || !source.exploreRule?.name || !source.exploreRule?.bookUrl) {
+      const exploreRule = this.effectiveExploreRule(source);
+      if (!exploreRule.bookList || !exploreRule.name || !exploreRule.bookUrl) {
         console.warn('[ExploreCoordinator] skip source without explore rules:', source.bookSourceName);
         continue;
       }
@@ -105,7 +107,7 @@ export class ExploreCoordinator {
       const baseUrl = BookUrlResolver.effectiveBase(resp, reqUrl, source.bookSourceUrl);
       const rule = new AnalyzeRule(resp.body, baseUrl);
       this.seedSourceVariables(rule.getContext(), source);
-      const exploreRule = source.exploreRule;
+      const exploreRule = this.effectiveExploreRule(source);
       const items = rule.getElements(exploreRule.bookList || '');
       console.info('[ExploreCoordinator] parsed list:', source.bookSourceName, 'rule:', exploreRule.bookList, 'count:', items.length);
       const books: SearchBook[] = [];
@@ -154,6 +156,19 @@ export class ExploreCoordinator {
     const raw = source.exploreUrl.trim();
     if (!raw) return entries;
 
+    if (raw.startsWith('@js:') || raw.startsWith('js:')) {
+      const scriptItems = this.evaluateExploreScript(raw, source);
+      if (scriptItems.length > 0) {
+        this.appendExploreItems(entries, scriptItems, source);
+        return entries;
+      }
+      const embeddedItems = this.parseEmbeddedExploreDsl(raw);
+      if (embeddedItems.length > 0) {
+        this.appendExploreItems(entries, embeddedItems, source);
+      }
+      return entries;
+    }
+
     try {
       const parsed = JSON.parse(raw) as ExploreUrlItem[];
       if (Array.isArray(parsed)) {
@@ -187,6 +202,53 @@ export class ExploreCoordinator {
       });
     }
     return entries;
+  }
+
+  private effectiveExploreRule(source: BookSource): ExploreRule {
+    const candidate = source.exploreRule;
+    if (candidate && !Array.isArray(candidate) && candidate.bookList && candidate.name && candidate.bookUrl) {
+      return candidate;
+    }
+    return source.searchRule as ExploreRule;
+  }
+
+  private evaluateExploreScript(raw: string, source: BookSource): ExploreUrlItem[] {
+    const code = raw.replace(/^\s*@?js:\s*/, '');
+    const env = new ScriptEngineContext();
+    env.baseUrl = source.bookSourceUrl;
+    this.seedSourceVariables(env.ctx, source);
+    const result = new ScriptEngine(new JsRuntime()).evalBlock(code, env);
+    if (!result.handled || !result.value) return [];
+    try {
+      const parsed = JSON.parse(result.value) as ExploreUrlItem[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  private parseEmbeddedExploreDsl(raw: string): ExploreUrlItem[] {
+    const blocks = raw.match(/`[\s\S]*?`/g) || [];
+    for (const block of blocks) {
+      const content = block.substring(1, block.length - 1);
+      if (!content.includes('::')) continue;
+      const items: ExploreUrlItem[] = [];
+      for (const rawLine of content.split(/[\n\r]+/)) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        const index = line.indexOf('::');
+        if (index > 0) {
+          items.push({
+            title: line.substring(0, index).trim(),
+            url: line.substring(index + 2).trim()
+          });
+        } else {
+          items.push({ title: line, url: '' });
+        }
+      }
+      if (items.length > 0) return items;
+    }
+    return [];
   }
 
   private appendExploreItems(entries: ExploreEntry[], items: ExploreUrlItem[], source: BookSource): void {

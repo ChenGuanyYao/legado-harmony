@@ -173,6 +173,11 @@ struct ExploreSourceSortPage {
               .borderRadius(8)
             }
           }, (source: BookSource) => source.bookSourceUrl)
+
+          ListItem() {
+            Row()
+              .height(Math.max(20, this.navBarHeight + 12))
+          }
         }
         .width('100%')
         .layoutWeight(1)
@@ -191,9 +196,8 @@ struct ExploreSourceSortPage {
     }
     .width('100%')
     .height('100%')
-    .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
     .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   moveSource(index: number, direction: number): void {
@@ -341,8 +345,10 @@ struct ExploreSourceSortPage {
         .height(56)
     }
     .width('100%')
-    .height(56)
-    .backgroundColor(this.cardColor())
+    .height(56 + this.statusBarHeight)
+    .padding({ top: this.statusBarHeight })
+    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+    .backdropBlur(18)
     .alignItems(VerticalAlign.Center)
   }
 }

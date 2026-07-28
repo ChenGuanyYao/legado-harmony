@@ -6,7 +6,7 @@ import { HttpTTS } from '../model/data/Book';
 import { CookieStore } from '../core/http/CookieStore';
 import { JsRuntime } from '../core/rule/JsRuntime';
 import { TtsAvAudioPlayer } from './TtsAvAudioPlayer';
-import { TtsPcmAudioPlayer } from './TtsPcmAudioPlayer';
+import { PcmPlaybackCue, TtsPcmAudioPlayer } from './TtsPcmAudioPlayer';
 
 class TtsRequestRule {
   url: string = '';
@@ -84,12 +84,24 @@ export class HttpTtsReader {
     }
   }
 
-  async writeAudio(audio: HttpTtsAudio): Promise<void> {
+  async writeAudio(audio: HttpTtsAudio, onPlaybackStart?: (durationMs: number) => void): Promise<void> {
     if (audio.filePath) {
-      await this.avPlayer.play(audio.filePath, audio.speed || 1);
+      await this.avPlayer.play(audio.filePath, audio.speed || 1, onPlaybackStart);
       return;
     }
+    if (onPlaybackStart) {
+      const durationMs = audio.sampleRate > 0 ?
+        audio.pcm.byteLength * 1000 / (audio.sampleRate * 2) : 0;
+      onPlaybackStart(durationMs);
+    }
     await this.pcmPlayer.write(audio.pcm, audio.sampleRate);
+  }
+
+  async writeTimedPcm(audio: HttpTtsAudio, cues: PcmPlaybackCue[]): Promise<void> {
+    if (audio.filePath || !audio.pcm || audio.pcm.byteLength === 0) {
+      throw new Error('时间轴朗读需要 PCM 音频');
+    }
+    await this.pcmPlayer.writeTimedSegment(audio.pcm, audio.sampleRate, cues);
   }
 
   async drain(): Promise<void> {

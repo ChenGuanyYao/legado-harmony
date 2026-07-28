@@ -236,6 +236,9 @@ export class BookSource {
   static readonly VALIDATION_UNCHECKED: number = 0;
   static readonly VALIDATION_PASSED: number = 1;
   static readonly VALIDATION_FAILED: number = 2;
+  static readonly VALIDATION_NO_RESULTS: number = 3;
+  static readonly VALIDATION_NEEDS_VERIFICATION: number = 4;
+  static readonly VALIDATION_TEMPORARY_ERROR: number = 5;
 
   bookSourceUrl: string = '';
   bookSourceName: string = '';
@@ -341,6 +344,7 @@ export class TocRule {
   chapterList: string = '';
   chapterName: string = '';
   chapterUrl: string = '';
+  nextTocUrl: string = '';
   isVip: string = '';
   isPay: string = '';
   updateTime: string = '';
@@ -351,6 +355,7 @@ export class ContentRule {
   content: string = '';
   title: string = '';
   images: string = '';
+  nextContentUrl: string = '';
   replaceRegex: string = '';
   imageStyle: string = '';
   payAction: string = '';

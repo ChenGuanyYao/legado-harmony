@@ -118,10 +118,7 @@ struct SettingsPage {
   }
 
   build() {
-    Stack() {
-      Column() {
-      this.titleBar()
-
+    Stack({ alignContent: Alignment.TopStart }) {
       Scroll() {
         Column() {
           this.sectionTitle('App 配色')
@@ -220,16 +217,14 @@ struct SettingsPage {
           .margin({ left: 12, right: 12, bottom: 32 })
         }
         .width('100%')
-      }
-      .layoutWeight(1)
-      .align(Alignment.TopStart)
+        .padding({ top: 56 + this.statusBarHeight, bottom: this.navBarHeight })
       }
       .width('100%')
       .height('100%')
-      .justifyContent(FlexAlign.Start)
-      .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
+      .align(Alignment.TopStart)
       .backgroundColor(this.pageColor())
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+
+      this.titleBar()
 
       if (this.showTapZoneSettings) {
         this.tapZoneSettingsDialog()
@@ -237,6 +232,8 @@ struct SettingsPage {
     }
     .width('100%')
     .height('100%')
+    .backgroundColor(this.pageColor())
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   applyThemeMode(mode: string, persist: boolean = true) {
@@ -1478,8 +1475,10 @@ struct SettingsPage {
         .layoutWeight(1)
     }
     .width('100%')
-    .height(56)
-    .backgroundColor(this.cardColor())
+    .height(56 + this.statusBarHeight)
+    .padding({ top: this.statusBarHeight })
+    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+    .backdropBlur(18)
     .alignItems(VerticalAlign.Center)
   }
 

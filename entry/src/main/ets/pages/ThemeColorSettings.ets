@@ -1,7 +1,7 @@
 import { router } from '@kit.ArkUI';
 import { syncSystemBars } from '../utils/SystemBars';
 import { AppThemeSettings, AppThemeSettingsStore } from '../utils/AppThemeSettingsStore';
-import { ReaderSettingsStore } from '../utils/ReaderSettingsStore';
+import { CustomThemeScheme, CustomThemeSchemeStore } from '../utils/CustomThemeSchemeStore';
 import { ColorCodePicker } from '../components/ColorCodePicker';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ThemeComponentSourceIds, ThemeIds, ThemePack, ThemeVariant } from '../theme/ThemeModels';
@@ -64,19 +64,26 @@ struct ThemeColorOption {
 @Component
 struct ThemeColorSettingsPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
-  @StorageLink('appCustomLightAccentColor') lightAccentColor: string = '#007DFF';
-  @StorageLink('appCustomDarkAccentColor') darkAccentColor: string = '#4E9BFF';
-  @StorageLink('appCustomLightButtonColor') lightButtonColor: string = '#007DFF';
-  @StorageLink('appCustomDarkButtonColor') darkButtonColor: string = '#3F8CFF';
-  @StorageLink('appCustomBaseThemeId') customBaseThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
   @StorageLink('appThemeId') appThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
   @StorageLink('accountEntitlementsRevision') accountEntitlementsRevision: number = 0;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State selectedMode: string = 'light';
+  @State lightAccentColor: string = '#007DFF';
+  @State darkAccentColor: string = '#4E9BFF';
+  @State lightButtonColor: string = '#007DFF';
+  @State darkButtonColor: string = '#3F8CFF';
+  @State customBaseThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
   @State lightSources: ThemeComponentSourceIds = new ThemeComponentSourceIds();
   @State darkSources: ThemeComponentSourceIds = new ThemeComponentSourceIds();
   @State availableThemes: ThemePack[] = [];
+  private schemeId: string = '';
+  private schemeName: string = '';
+  private draftSettings: AppThemeSettings = new AppThemeSettings();
+  private saveQueue: Promise<void> = Promise.resolve();
+  private closing: boolean = false;
+  private settingsLoaded: boolean = false;
+  private settingsLoading: boolean = false;
 
   aboutToAppear(): void {
     this.reloadSettings();
@@ -88,13 +95,16 @@ struct ThemeColorSettingsPage {
     this.syncBars();
   }
 
-  build() {
-    Column() {
-      this.titleBar()
+  onBackPress(): boolean {
+    this.closeEditor();
+    return true;
+  }
 
+  build() {
+    Stack({ alignContent: Alignment.TopStart }) {
       Scroll() {
         Column() {
-          this.sectionTitle('从免费或已购买主题中组合部件，修改后自动启用自定义主题')
+          this.sectionTitle('从免费或已购买主题中组合部件，修改只更新方案预览，需返回主题页手动启用')
           this.modeOptions()
           this.sectionTitle(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式 · 主题部件`)
           this.sourceOptions()
@@ -110,22 +120,42 @@ struct ThemeColorSettingsPage {
           this.previewPanel()
         }
         .width('100%')
-        .padding({ bottom: 32 })
+        .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
       }
-      .layoutWeight(1)
+      .width('100%')
+      .height('100%')
       .align(Alignment.TopStart)
+      .backgroundColor(this.pageColor())
+
+      this.titleBar()
     }
     .width('100%')
-    .height('100%').justifyContent(FlexAlign.Start)
-    .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
+    .height('100%')
     .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   async reloadSettings(): Promise<void> {
+    if (this.settingsLoaded || this.settingsLoading) {
+      return;
+    }
+    this.settingsLoading = true;
     try {
-      const settings = await AppThemeSettingsStore.load(getContext(this));
-      AppThemeSettingsStore.applyToStorage(settings);
+      const currentSettings = await AppThemeSettingsStore.load(getContext(this));
+      const params = router.getParams() as Record<string, string>;
+      this.schemeId = (params['schemeId'] || this.schemeId || '').trim();
+      const schemes = await CustomThemeSchemeStore.load(getContext(this), currentSettings);
+      let scheme = CustomThemeSchemeStore.find(schemes, this.schemeId);
+      if (!scheme && schemes.length > 0) {
+        scheme = schemes[0];
+        this.schemeId = scheme.id;
+      }
+      if (!scheme) {
+        return;
+      }
+      this.schemeName = scheme.name;
+      const settings = AppThemeSettingsStore.cloneSettings(scheme.settings);
+      this.draftSettings = settings;
       this.customBaseThemeId = settings.customBaseThemeId;
       this.lightAccentColor = settings.customLightAccentColor;
       this.darkAccentColor = settings.customDarkAccentColor;
@@ -136,40 +166,50 @@ struct ThemeColorSettingsPage {
       this.darkSources = AppThemeSettingsStore.cloneSources(
         settings.customDarkSources, settings.customBaseThemeId);
       this.refreshAvailableThemes();
+      this.settingsLoaded = true;
     } catch (e) {
       console.warn('读取主题色设置失败:', e);
+    } finally {
+      this.settingsLoading = false;
     }
   }
 
-  async onSettingChanged(): Promise<void> {
+  onSettingChanged(): Promise<void> {
+    this.saveQueue = this.saveQueue.then(() => this.persistCurrentScheme()).catch((e: Error) => {
+      console.warn('保存自定义主题方案失败:', e);
+    });
+    return this.saveQueue;
+  }
+
+  async persistCurrentScheme(): Promise<void> {
+    const currentSettings = await AppThemeSettingsStore.load(getContext(this));
+    const settings = this.settingsFromState();
+    this.draftSettings = settings;
+    const scheme = new CustomThemeScheme();
+    scheme.id = this.schemeId;
+    scheme.name = this.schemeName;
+    scheme.settings = settings;
+    await CustomThemeSchemeStore.saveScheme(getContext(this), currentSettings, scheme);
+  }
+
+  async closeEditor(): Promise<void> {
+    if (this.closing) {
+      return;
+    }
+    this.closing = true;
     try {
-      const settings: AppThemeSettings = await AppThemeSettingsStore.load(getContext(this));
-      const previousThemeId = settings.themeId;
-      settings.themeId = ThemeIds.CUSTOM;
-      settings.customBaseThemeId = this.customBaseThemeId;
-      settings.lightAccentColor = this.lightAccentColor;
-      settings.darkAccentColor = this.darkAccentColor;
-      settings.lightButtonColor = this.lightButtonColor;
-      settings.darkButtonColor = this.darkButtonColor;
-      settings.customLightAccentColor = this.lightAccentColor;
-      settings.customDarkAccentColor = this.darkAccentColor;
-      settings.customLightButtonColor = this.lightButtonColor;
-      settings.customDarkButtonColor = this.darkButtonColor;
-      AppThemeSettingsStore.applyToStorage(settings);
-      await AppThemeSettingsStore.save(getContext(this), settings);
-      if (previousThemeId !== settings.themeId) {
-        await ReaderSettingsStore.switchThemeProfile(getContext(this), previousThemeId, settings.themeId);
-      }
+      await this.onSettingChanged();
+      router.back();
     } catch (e) {
-      console.warn('保存主题色设置失败:', e);
+      this.closing = false;
+      console.warn('返回主题页前保存方案失败:', e);
     }
   }
 
   async setComponentSource(category: string, themeId: string): Promise<void> {
     if (!themeId) return;
     try {
-      const settings: AppThemeSettings = await AppThemeSettingsStore.load(getContext(this));
-      const previousThemeId = settings.themeId;
+      const settings = this.settingsFromState();
       const dark = this.selectedMode === 'dark';
       const sources = AppThemeSettingsStore.cloneSources(
         dark ? settings.customDarkSources : settings.customLightSources,
@@ -178,13 +218,7 @@ struct ThemeColorSettingsPage {
       if (dark) settings.customDarkSources = sources;
       else settings.customLightSources = sources;
       this.copyVariantOverrides(settings, BuiltinThemeRegistry.findById(themeId), dark, category);
-      settings.themeId = ThemeIds.CUSTOM;
-      settings.lightAccentColor = settings.customLightAccentColor;
-      settings.darkAccentColor = settings.customDarkAccentColor;
-      settings.lightButtonColor = settings.customLightButtonColor;
-      settings.darkButtonColor = settings.customDarkButtonColor;
-      AppThemeSettingsStore.applyToStorage(settings);
-      await AppThemeSettingsStore.save(getContext(this), settings);
+      this.draftSettings = settings;
       this.lightSources = AppThemeSettingsStore.cloneSources(
         settings.customLightSources, settings.customBaseThemeId);
       this.darkSources = AppThemeSettingsStore.cloneSources(
@@ -193,21 +227,9 @@ struct ThemeColorSettingsPage {
       this.darkAccentColor = settings.customDarkAccentColor;
       this.lightButtonColor = settings.customLightButtonColor;
       this.darkButtonColor = settings.customDarkButtonColor;
-      this.appThemeId = settings.themeId;
-      if (previousThemeId !== settings.themeId) {
-        await ReaderSettingsStore.switchThemeProfile(getContext(this), previousThemeId, settings.themeId);
-      }
-      if (dark === this.appDarkMode && category === 'layout') {
-        const layout = BuiltinThemeRegistry.findById(themeId).readerLayout;
-        await ReaderSettingsStore.saveLayoutSettings(getContext(this), layout.fontSize, layout.lineHeight,
-          layout.paragraphSpacing, layout.marginLeft, layout.marginRight, layout.marginTop, layout.marginBottom);
-      }
-      if (dark === this.appDarkMode && category === 'typography') {
-        getContext(this).getApplicationContext().setFont(ThemeRuntime.fontFamily());
-      }
-      this.syncBars();
+      await this.onSettingChanged();
     } catch (e) {
-      console.warn('保存自定义主题部件失败:', e);
+      console.warn('保存自定义主题方案部件失败:', e);
     }
   }
 
@@ -285,8 +307,30 @@ struct ThemeColorSettingsPage {
     return 0;
   }
 
+  settingsFromState(): AppThemeSettings {
+    const settings = AppThemeSettingsStore.cloneSettings(this.draftSettings);
+    settings.themeId = ThemeIds.CUSTOM;
+    settings.customBaseThemeId = this.customBaseThemeId;
+    settings.customLightSources = AppThemeSettingsStore.cloneSources(
+      this.lightSources, this.customBaseThemeId);
+    settings.customDarkSources = AppThemeSettingsStore.cloneSources(
+      this.darkSources, this.customBaseThemeId);
+    settings.customLightAccentColor = this.lightAccentColor;
+    settings.customDarkAccentColor = this.darkAccentColor;
+    settings.customLightButtonColor = this.lightButtonColor;
+    settings.customDarkButtonColor = this.darkButtonColor;
+    settings.lightAccentColor = this.lightAccentColor;
+    settings.darkAccentColor = this.darkAccentColor;
+    settings.lightButtonColor = this.lightButtonColor;
+    settings.darkButtonColor = this.darkButtonColor;
+    return AppThemeSettingsStore.cloneSettings(settings);
+  }
+
   customPreviewTheme(): ThemePack {
-    return AppThemeSettingsStore.currentCustomTheme(this.selectedMode === 'dark');
+    return AppThemeSettingsStore.customTheme(
+      this.settingsFromState(),
+      this.selectedMode === 'dark'
+    );
   }
 
   customPreviewVariant(): ThemeVariant {
@@ -297,8 +341,10 @@ struct ThemeColorSettingsPage {
   refreshAvailableThemes(): void {
     const themes = BuiltinThemeRegistry.all();
     const available: ThemePack[] = [];
+    const trialThemeId = AppStorage.get<string>('themeTrialThemeId') || '';
     for (const theme of themes) {
-      if (BuiltinThemeRegistry.isFree(theme.id) || theme.id === this.appThemeId ||
+      if (BuiltinThemeRegistry.isFree(theme.id) ||
+        (theme.id === this.appThemeId && theme.id !== trialThemeId) ||
         AccountSessionStore.hasValidEntitlement(theme.id) || this.isSourceInUse(theme.id)) {
         available.push(theme);
       }
@@ -375,7 +421,7 @@ struct ThemeColorSettingsPage {
     Row() {
       ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
+        onBack: () => this.closeEditor() })
       Text('自定义主题')
         .fontSize(20)
         .fontWeight(FontWeight.Bold)
@@ -383,8 +429,10 @@ struct ThemeColorSettingsPage {
         .layoutWeight(1)
     }
     .width('100%')
-    .height(56)
-    .backgroundColor(this.cardColor())
+    .height(56 + this.statusBarHeight)
+    .padding({ top: this.statusBarHeight })
+    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+    .backdropBlur(18)
     .alignItems(VerticalAlign.Center)
   }
 

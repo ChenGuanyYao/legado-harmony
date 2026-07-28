@@ -10,6 +10,9 @@ import fileUri from '@ohos.file.fileuri';
 import graphicsText from '@ohos.graphics.text';
 import deviceInfo from '@ohos.deviceInfo';
 import { HdsTabs, hdsMaterial } from '@kit.UIDesignKit';
+import { AccountCommerceApi } from '../account/AccountCommerceApi';
+import { AccountSessionStore } from '../account/AccountSessionStore';
+import { TtsVoiceInfo } from '../account/AccountCommerceModels';
 import { Book, BookChapter, Bookmark, BookSource, SearchBook, HttpTTS } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { ReadBookEngine } from '../core/book/ReadBookEngine';
@@ -257,6 +260,8 @@ struct ReadBookPage {
   private tocScroller: Scroller = new Scroller();
   private tocLoadingPreviousPage: boolean = false;
   private tocLoadingNextPage: boolean = false;
+  private tocPositioning: boolean = false;
+  private tocPositionRequestSerial: number = 0;
   private bookmarkScroller: ListScroller = new ListScroller();
   private readerComicScroller: ListScroller = new ListScroller();
   private readerComicPageDataSource: ReaderComicPageDataSource = new ReaderComicPageDataSource();
@@ -385,7 +390,7 @@ struct ReadBookPage {
   @State activeReaderFontFamily: string = '';
   @State readerFontRegistered: boolean = false;
   @State readerFontRenderReady: boolean = false;
-  @StorageLink('appDarkMode') @Watch('onReaderThemeChanged') appDarkMode: boolean = false;
+  @StorageLink('appDarkMode') @Watch('onReaderColorModeChanged') appDarkMode: boolean = false;
   @StorageLink('appThemeMode') appThemeMode: string = 'system';
   @StorageLink('themeRevision') @Watch('onReaderThemeChanged') themeRevision: number = 0;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
@@ -408,12 +413,15 @@ struct ReadBookPage {
   @StorageLink('ttsInstalledVoiceKeys') ttsInstalledVoiceKeys: string = '';
   @StorageLink('ttsCustomVoiceId') ttsCustomVoiceId: string = '';
   @StorageLink('ttsCustomVoices') @Watch('onTtsCustomVoicesChanged') ttsCustomVoices: string = '';
+  @StorageLink('ttsCloudVoiceId') ttsCloudVoiceId: string = '';
   @StorageLink('launchShortcutNonce') @Watch('onLaunchShortcutChanged') launchShortcutNonce: number = 0;
   @StorageLink('fullTextCacheCancelNonce') @Watch('onFullTextCacheCancelNonceChanged') fullTextCacheCancelNonce: number = 0;
   @State ttsVoices: TtsVoiceOption[] = [ReadBookPage.defaultTtsVoice()];
   @State ttsCustomVoiceOptions: HttpTTS[] = [];
+  @State ttsCloudVoices: TtsVoiceInfo[] = [];
   @State ttsSelectedVoiceKey: string = '';
   @State ttsVoicesLoading: boolean = false;
+  @State showTtsVoiceDropdown: boolean = false;
   @State fullTextCaching: boolean = false;
   @State fullTextCacheDone: number = 0;
   @State fullTextCacheTotal: number = 0;
@@ -502,6 +510,10 @@ struct ReadBookPage {
   }
 
   onBackPress(): boolean {
+    if (this.showTtsVoiceDropdown) {
+      this.showTtsVoiceDropdown = false;
+      return true;
+    }
     if (this.showTxtCharsetDialog) {
       if (!this.txtCharsetApplying) this.showTxtCharsetDialog = false;
       return true;
@@ -1516,6 +1528,9 @@ struct ReadBookPage {
 
       if (this.showSettings) {
         this.settingsPanel()
+        if (this.showTtsVoiceDropdown) {
+          this.ttsVoiceDropdownPanel()
+        }
         if (this.supportsReaderImmersiveMaterial()) {
           this.readerHdsFloatingActionBar(false, true)
         }
@@ -1904,20 +1919,25 @@ struct ReadBookPage {
   toggleReaderDayNightMode(): void {
     const currentMode = AppThemeModeStore.normalizeMode(this.appThemeMode);
     const nextMode = currentMode === 'light' ? 'dark' : (currentMode === 'dark' ? 'system' : 'light');
-    this.appThemeMode = nextMode;
-    if (nextMode === 'dark') {
-      this.appDarkMode = true;
-      getContext(this).getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
-    } else if (nextMode === 'light') {
-      this.appDarkMode = false;
-      getContext(this).getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT);
-    } else {
-      getContext(this).getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+    const context = getContext(this) as common.UIAbilityContext;
+    const systemDarkMode =
+      context.config.colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK;
+    const nextDarkMode = nextMode === 'dark' || (nextMode === 'system' && systemDarkMode);
+    const colorMode = nextMode === 'dark' ? ConfigurationConstant.ColorMode.COLOR_MODE_DARK :
+      (nextMode === 'light' ? ConfigurationConstant.ColorMode.COLOR_MODE_LIGHT :
+        ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
+
+    // 先同步模式来源，避免 setColorMode 触发的 ConfigurationUpdate 读到旧值，
+    // 又把刚选择的浅色模式覆盖回系统深色模式。
+    AppThemeModeStore.applyToStorage(nextMode);
+    if (this.appDarkMode !== nextDarkMode) {
+      this.appDarkMode = nextDarkMode;
     }
-    AppThemeModeStore.save(getContext(this), nextMode).catch((e: Error) => {
+    context.getApplicationContext().setColorMode(colorMode);
+
+    AppThemeModeStore.save(context, nextMode).catch((e: Error) => {
       console.warn('保存日间/夜间/自动模式失败:', e);
     });
-    this.saveReaderThemeSettings();
     promptAction.showToast({
       message: nextMode === 'light' ? '已切换至日间模式' :
         (nextMode === 'dark' ? '已切换至夜间模式' : '已切换至自动模式')
@@ -4568,6 +4588,7 @@ struct ReadBookPage {
     this.showReaderActionMenu = false;
     this.settingsPanelTab = 0;
     this.showToc = false;
+    this.showTtsVoiceDropdown = false;
     this.showSettings = true;
     this.showMenu = false;
   }
@@ -4577,12 +4598,14 @@ struct ReadBookPage {
     this.showReaderActionMenu = false;
     this.settingsPanelTab = 1;
     this.showToc = false;
+    this.showTtsVoiceDropdown = false;
     this.showSettings = true;
     this.showMenu = false;
     this.loadTtsSettingsAndVoices();
   }
 
   closeSettingsPanelKeepMenu(): void {
+    this.showTtsVoiceDropdown = false;
     this.showSettings = false;
     this.showQuickTypographyValueInput = false;
     this.showMenu = true;
@@ -4620,6 +4643,7 @@ struct ReadBookPage {
     this.ttsInstalledVoiceKeys = settings.installedVoiceKeys;
     this.ttsCustomVoiceId = settings.customVoiceId;
     this.ttsCustomVoices = settings.customVoices;
+    this.ttsCloudVoiceId = settings.cloudVoiceId;
     this.ttsCustomVoiceOptions = SystemTtsReader.parseCustomVoices(settings.customVoices);
   }
 
@@ -4646,6 +4670,7 @@ struct ReadBookPage {
     settings.installedVoiceKeys = this.ttsInstalledVoiceKeys;
     settings.customVoiceId = this.ttsCustomVoiceId;
     settings.customVoices = this.ttsCustomVoices;
+    settings.cloudVoiceId = this.ttsCloudVoiceId;
     return settings;
   }
 
@@ -4663,8 +4688,25 @@ struct ReadBookPage {
     }
     this.ttsVoicesLoading = true;
     try {
-      const voices = await SystemTtsReader.listAvailableVoices();
+      const voiceResults = await Promise.all([
+        SystemTtsReader.listAvailableVoices(),
+        AccountCommerceApi.fetchTtsCatalog().catch(() => null)
+      ]);
+      const voices = voiceResults[0] as TtsVoiceOption[];
+      const catalog = voiceResults[1];
+      this.ttsCloudVoices = catalog ? catalog.voices : [];
+      if (!catalog && this.ttsCloudVoiceId) {
+        const fallbackCloudVoice = new TtsVoiceInfo();
+        fallbackCloudVoice.id = this.ttsCloudVoiceId;
+        fallbackCloudVoice.name = '云端音色';
+        this.ttsCloudVoices = [fallbackCloudVoice];
+      }
       this.ttsVoices = this.applyInstalledTtsVoiceOverrides(this.mergeWithDefaultTtsVoice(voices));
+      const currentCloudVoice = this.findCurrentCloudTtsVoice();
+      if (currentCloudVoice) {
+        this.ttsSelectedVoiceKey = this.ttsCloudVoiceKey(currentCloudVoice);
+        return;
+      }
       const currentCustomVoice = this.findCurrentCustomTtsVoice();
       if (currentCustomVoice) {
         this.ttsSelectedVoiceKey = this.ttsCustomVoiceKey(currentCustomVoice);
@@ -4683,6 +4725,7 @@ struct ReadBookPage {
       this.ttsStyle = '';
       this.ttsLanguage = 'zh-CN';
       this.ttsCustomVoiceId = '';
+      this.ttsCloudVoiceId = '';
       this.saveTtsSettings();
       this.ttsSelectedVoiceKey = this.currentTtsVoiceKey();
       console.warn('加载朗读音色失败:', e);
@@ -4794,6 +4837,7 @@ struct ReadBookPage {
     this.ttsStyle = voice.style;
     this.ttsLanguage = voice.language;
     this.ttsCustomVoiceId = '';
+    this.ttsCloudVoiceId = '';
     this.ttsSelectedVoiceKey = this.ttsVoiceKey(voice);
     this.saveTtsSettings();
     if (shouldResume) {
@@ -4852,6 +4896,10 @@ struct ReadBookPage {
   }
 
   currentTtsVoiceKey(): string {
+    const cloudVoice = this.findCurrentCloudTtsVoice();
+    if (cloudVoice) {
+      return this.ttsCloudVoiceKey(cloudVoice);
+    }
     const customVoice = this.findCurrentCustomTtsVoice();
     if (customVoice) {
       return this.ttsCustomVoiceKey(customVoice);
@@ -4866,7 +4914,7 @@ struct ReadBookPage {
   }
 
   isCurrentTtsVoice(voice: TtsVoiceOption): boolean {
-    if (this.ttsCustomVoiceId) {
+    if (this.ttsCustomVoiceId || this.ttsCloudVoiceId) {
       return false;
     }
     return voice.id === this.ttsPerson && voice.online === this.ttsOnline &&
@@ -4884,6 +4932,7 @@ struct ReadBookPage {
       this.stopTtsReading();
     }
     this.ttsCustomVoiceId = String(voice.id);
+    this.ttsCloudVoiceId = '';
     this.ttsSelectedVoiceKey = this.ttsCustomVoiceKey(voice);
     this.saveTtsSettings();
     if (shouldResume) {
@@ -4959,6 +5008,80 @@ struct ReadBookPage {
       return this.tocSearchChapterIndexes[localIndex] ?? 0;
     }
     return this.tocWindowStart + localIndex;
+  }
+
+  applyCloudTtsVoice(voice: TtsVoiceInfo, restartSpeaking: boolean): void {
+    if (!AccountSessionStore.isLoggedIn()) {
+      promptAction.showToast({ message: '请先登录华为账号后使用在线音色' });
+      return;
+    }
+    const shouldResume = restartSpeaking && (this.isTtsSpeaking || this.ttsReader.isSpeaking());
+    if (shouldResume) {
+      this.stopTtsReading();
+    }
+    this.ttsCloudVoiceId = voice.id;
+    this.ttsCustomVoiceId = '';
+    this.ttsSelectedVoiceKey = this.ttsCloudVoiceKey(voice);
+    this.saveTtsSettings();
+    if (shouldResume) {
+      this.startTtsReadingFromCurrentPosition(false).catch((e: Error) => {
+        console.warn('切换在线朗读音色后恢复失败:', e);
+      });
+    }
+  }
+
+  findCurrentCloudTtsVoice(): TtsVoiceInfo | undefined {
+    const selectedId = (this.ttsCloudVoiceId || '').trim();
+    if (!selectedId) return undefined;
+    return this.ttsCloudVoices.find((voice: TtsVoiceInfo) => voice.id === selectedId);
+  }
+
+  ttsCloudVoiceKey(voice: TtsVoiceInfo): string {
+    return `cloud_${voice.id}`;
+  }
+
+  isCurrentCloudTtsVoice(voice: TtsVoiceInfo): boolean {
+    return (this.ttsCloudVoiceId || '') === voice.id;
+  }
+
+  ttsCloudVoiceTitle(voice: TtsVoiceInfo): string {
+    const tier = voice.tier === 'PREMIUM' ? '精品' : '标准';
+    const description = (voice.description || '').trim();
+    return description
+      ? `${voice.name} · ${description} · 云端${tier}`
+      : `${voice.name} · 云端${tier}`;
+  }
+
+  selectableCustomTtsVoices(): HttpTTS[] {
+    return this.ttsCustomVoiceOptions.filter((voice: HttpTTS) => voice.enabled !== false);
+  }
+
+  selectableSystemTtsVoices(): TtsVoiceOption[] {
+    return this.ttsVoices.filter((voice: TtsVoiceOption) => voice.available);
+  }
+
+  selectedTtsVoiceTitle(): string {
+    const cloudVoice = this.findCurrentCloudTtsVoice();
+    if (cloudVoice) {
+      return this.ttsCloudVoiceTitle(cloudVoice);
+    }
+    const customVoice = this.findCurrentCustomTtsVoice();
+    if (customVoice && customVoice.enabled !== false) {
+      return this.ttsCustomVoiceTitle(customVoice);
+    }
+    const systemVoice = this.findCurrentTtsVoice();
+    if (systemVoice && systemVoice.available) {
+      return this.ttsVoiceTitle(systemVoice);
+    }
+    const customVoices = this.selectableCustomTtsVoices();
+    if (this.ttsCloudVoices.length > 0) {
+      return this.ttsCloudVoiceTitle(this.ttsCloudVoices[0]);
+    }
+    if (customVoices.length > 0) {
+      return this.ttsCustomVoiceTitle(customVoices[0]);
+    }
+    const systemVoices = this.selectableSystemTtsVoices();
+    return systemVoices.length > 0 ? this.ttsVoiceTitle(systemVoices[0]) : '暂无可用音色';
   }
 
   isTocSearchActive(): boolean {
@@ -5121,7 +5244,7 @@ struct ReadBookPage {
   }
 
   loadNextTocPage(): void {
-    if (this.isTocSearchActive() || this.tocLoadingNextPage) {
+    if (this.isTocSearchActive() || this.tocPositioning || this.tocLoadingNextPage) {
       return;
     }
     const loadedEnd = this.tocWindowStart + this.tocVisibleChapters.length;
@@ -5137,7 +5260,8 @@ struct ReadBookPage {
   }
 
   loadPreviousTocPage(): void {
-    if (this.isTocSearchActive() || this.tocLoadingPreviousPage || this.tocWindowStart <= 0) {
+    if (this.isTocSearchActive() || this.tocPositioning || this.tocLoadingPreviousPage ||
+      this.tocWindowStart <= 0) {
       return;
     }
     this.tocLoadingPreviousPage = true;
@@ -5170,12 +5294,23 @@ struct ReadBookPage {
       return;
     }
     const targetIndex = Math.max(0, Math.min(index, this.chapters.length - 1));
+    const requestSerial = ++this.tocPositionRequestSerial;
+    this.tocPositioning = true;
     const localIndex = this.setTocWindowAround(targetIndex, align);
     setTimeout(() => {
+      if (requestSerial !== this.tocPositionRequestSerial) {
+        return;
+      }
       try {
         this.tocScroller.scrollToIndex(localIndex, smooth, align);
       } catch (e) {
         console.warn('定位目录章节失败:', e);
+      } finally {
+        setTimeout(() => {
+          if (requestSerial === this.tocPositionRequestSerial) {
+            this.tocPositioning = false;
+          }
+        }, 0);
       }
     }, 50);
   }
@@ -5426,9 +5561,19 @@ struct ReadBookPage {
 
   onReaderThemeChanged(): void {
     this.enterReaderImmersive();
+    this.readerPaginationCache.clear();
+    this.pageTurnPreviewKey = '';
     this.refreshReaderTextRender();
     this.paginateContent(this.content);
     this.saveReadingProgress();
+    this.onTtsCoverSettingsChanged();
+  }
+
+  onReaderColorModeChanged(): void {
+    // 明暗切换只改变配色和背景，不重新执行整章文本测量与分页。
+    // 自定义主题若同时改变字体或排版，会通过 themeRevision / 阅读设置的监听单独触发重排。
+    this.enterReaderImmersive();
+    this.refreshReaderTextRender();
     this.onTtsCoverSettingsChanged();
   }
 
@@ -7546,15 +7691,27 @@ struct ReadBookPage {
       }
       .width('100%')
 
-      Column({ space: 8 }) {
-        ForEach(this.ttsCustomVoiceOptions, (voice: HttpTTS) => {
-          this.ttsCustomVoiceRow(voice)
-        }, (voice: HttpTTS) => this.ttsCustomVoiceKey(voice))
-        ForEach(this.ttsVoices, (voice: TtsVoiceOption) => {
-          this.ttsVoiceRow(voice)
-        }, (voice: TtsVoiceOption) => this.ttsVoiceKey(voice))
+      Row() {
+        Text(this.selectedTtsVoiceTitle())
+          .fontSize(14)
+          .fontColor(this.getTextColor())
+          .layoutWeight(1)
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+        SymbolGlyph($r('sys.symbol.chevron_down'))
+          .fontSize(16)
+          .fontColor([this.getSubTextColor()])
+          .margin({ left: 10 })
       }
-      .width('100%')
+        .width('100%')
+        .height(44)
+        .padding({ left: 14, right: 14 })
+        .backgroundColor(this.isReaderThemeDark() ? '#24272D' : '#EEF0F3')
+        .borderRadius(8)
+        .onClick(() => {
+          this.showTtsVoiceDropdown = true;
+        })
 
       Button(this.isTtsSpeaking ? '停止朗读' : '开始朗读')
         .width('100%')
@@ -7566,6 +7723,143 @@ struct ReadBookPage {
         })
     }
     .width('100%')
+  }
+
+  @Builder
+  ttsVoiceDropdownPanel() {
+    Stack() {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(Color.Transparent)
+        .onClick(() => {
+          this.showTtsVoiceDropdown = false;
+        })
+
+      Column() {
+        Row() {
+          Text('朗读音色')
+            .fontSize(20)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.getTextColor())
+
+          Blank()
+            .layoutWeight(1)
+
+          ImmersiveBackButton({
+            icon: $r('sys.symbol.xmark'),
+            iconOffsetX: 0,
+            iconColor: this.getTextColor(),
+            darkMode: this.isReaderThemeDark(),
+            buttonSize: 40,
+            containerWidth: 40,
+            containerHeight: 40,
+            startInset: 0,
+            materialScale: 0.83,
+            compactLayout: true,
+            accessibilityLabel: '关闭音色选择',
+            onBack: () => {
+              this.showTtsVoiceDropdown = false;
+            }
+          })
+        }
+        .width('100%')
+        .padding({ left: 20, right: 16, top: 12, bottom: 10 })
+        .alignItems(VerticalAlign.Center)
+
+        Scroll() {
+          Column() {
+            if (this.ttsCloudVoices.length > 0) {
+              this.ttsVoiceDropdownSectionTitle('云端音色')
+              ForEach(this.ttsCloudVoices, (voice: TtsVoiceInfo) => {
+                this.ttsVoiceDropdownOption(this.ttsCloudVoiceTitle(voice),
+                  this.isCurrentCloudTtsVoice(voice), () => {
+                    this.showTtsVoiceDropdown = false;
+                    this.applyCloudTtsVoice(voice, true);
+                  })
+              }, (voice: TtsVoiceInfo) => this.ttsCloudVoiceKey(voice))
+            }
+
+            if (this.selectableCustomTtsVoices().length > 0) {
+              this.ttsVoiceDropdownSectionTitle('自定义音色')
+              ForEach(this.selectableCustomTtsVoices(), (voice: HttpTTS) => {
+                this.ttsVoiceDropdownOption(this.ttsCustomVoiceTitle(voice),
+                  this.isCurrentCustomTtsVoice(voice), () => {
+                    this.showTtsVoiceDropdown = false;
+                    this.applyCustomTtsVoice(voice, true);
+                  })
+              }, (voice: HttpTTS) => this.ttsCustomVoiceKey(voice))
+            }
+
+            if (this.selectableSystemTtsVoices().length > 0) {
+              this.ttsVoiceDropdownSectionTitle('系统音色')
+              ForEach(this.selectableSystemTtsVoices(), (voice: TtsVoiceOption) => {
+                this.ttsVoiceDropdownOption(this.ttsVoiceTitle(voice),
+                  this.isCurrentTtsVoice(voice), () => {
+                    this.showTtsVoiceDropdown = false;
+                    this.applyTtsVoice(voice, true);
+                  })
+              }, (voice: TtsVoiceOption) => this.ttsVoiceKey(voice))
+            }
+          }
+          .width('100%')
+          .padding({ left: 12, right: 12, bottom: 16 })
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .scrollBar(BarState.Auto)
+        .scrollBarColor(this.isReaderThemeDark() ? '#668A8F98' : '#667A6F63')
+      }
+      .width(this.readerFloatingBarWidth())
+      .height(this.readerTocPanelHeight())
+      .borderRadius(ThemeRuntime.glassCornerRadius(28, 'panel'))
+      .clip(true)
+      .backgroundColor(this.readerGlassPanelColor())
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.readerGlassBorderColor() })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: this.readerGlassShadowColor(),
+        offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
+      .position({ x: this.readerFloatingBarLeft(), y: '100%' })
+      .translate({ y: -(this.readerTocPanelHeight() + this.readerFloatingPanelBottomInset()) })
+      .transition(this.readerPanelTransition())
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder
+  ttsVoiceDropdownSectionTitle(title: string) {
+    Text(title)
+      .fontSize(12)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(this.getSubTextColor())
+      .width('100%')
+      .padding({ left: 10, right: 10, top: 12, bottom: 6 })
+  }
+
+  @Builder
+  ttsVoiceDropdownOption(title: string, selected: boolean, action: () => void) {
+    Row() {
+      Text(title)
+        .fontSize(14)
+        .fontColor(this.getTextColor())
+        .layoutWeight(1)
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+
+      if (selected) {
+        SymbolGlyph($r('sys.symbol.checkmark'))
+          .fontSize(18)
+          .fontColor([this.accentColor()])
+          .margin({ left: 10 })
+      }
+    }
+    .width('100%')
+    .constraintSize({ minHeight: 48 })
+    .padding({ left: 12, right: 12, top: 9, bottom: 9 })
+    .borderRadius(8)
+    .backgroundColor(selected ? this.tocSelectedBackgroundColor() : Color.Transparent)
+    .onClick(action)
   }
 
   @Builder
@@ -7598,58 +7892,6 @@ struct ReadBookPage {
     .backgroundColor(this.isReaderThemeDark() ? '#24272D' : '#EEF0F3')
     .accessibilityText(accessibilityText)
     .onClick(action)
-  }
-
-  @Builder
-  ttsVoiceRow(voice: TtsVoiceOption) {
-    Row() {
-      Text(this.ttsVoiceTitle(voice))
-        .fontSize(14)
-        .fontColor(voice.available ? this.getTextColor() : this.getSubTextColor())
-        .layoutWeight(1)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-      Text(this.isCurrentTtsVoice(voice) ? '✓' : (voice.downloadable ? '下载' : ''))
-        .fontSize(voice.downloadable && !voice.available ? 13 : 18)
-        .fontColor(this.accentColor())
-        .width(44)
-        .textAlign(TextAlign.Center)
-    }
-    .width('100%')
-    .padding({ left: 12, right: 12, top: 11, bottom: 11 })
-    .borderRadius(8)
-    .backgroundColor(this.isCurrentTtsVoice(voice) ? this.tocSelectedBackgroundColor() :
-      (this.isReaderThemeDark() ? '#202329' : '#F6F7F9'))
-    .onClick(() => {
-      this.applyTtsVoice(voice, true);
-    })
-  }
-
-  @Builder
-  ttsCustomVoiceRow(voice: HttpTTS) {
-    Row() {
-      Text(this.ttsCustomVoiceTitle(voice))
-        .fontSize(14)
-        .fontColor(this.getTextColor())
-        .layoutWeight(1)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-      Text(this.isCurrentCustomTtsVoice(voice) ? '✓' : '')
-        .fontSize(18)
-        .fontColor(this.accentColor())
-        .width(44)
-        .textAlign(TextAlign.Center)
-    }
-    .width('100%')
-    .padding({ left: 12, right: 12, top: 11, bottom: 11 })
-    .borderRadius(8)
-    .backgroundColor(this.isCurrentCustomTtsVoice(voice) ? this.tocSelectedBackgroundColor() :
-      (this.isReaderThemeDark() ? '#202329' : '#F6F7F9'))
-    .onClick(() => {
-      this.applyCustomTtsVoice(voice, true);
-    })
   }
 
   pageTurnModeOptions(): SelectOption[] {
@@ -8456,6 +8698,7 @@ struct ReadBookPage {
         this.stopTtsReading(false);
         return;
       }
+      const cloudVoice = this.findCurrentCloudTtsVoice();
       await this.ttsReader.start(text, {
         onFinished: () => {
           this.continueTtsReading(token).catch((e: Error) => {
@@ -8483,7 +8726,15 @@ struct ReadBookPage {
             return;
           }
           this.onTtsAudioStarted();
-        }
+        },
+        cloudVoiceId: cloudVoice?.id || '',
+        cloudVoiceName: cloudVoice?.name || '',
+        person: this.ttsPerson,
+        online: this.ttsOnline,
+        style: this.ttsStyle,
+        language: this.ttsLanguage,
+        speed: this.ttsSpeed,
+        focusBreakOffsets: this.getTtsFocusBreakOffsets(text.length)
       });
       if (showToast) {
         promptAction.showToast({ message: '开始连续朗读' });
@@ -9148,6 +9399,17 @@ struct ReadBookPage {
     return LocalBookService.stripEpubImageMarkers(source.substring(start), true);
   }
 
+  getTtsFocusBreakOffsets(textLength: number): number[] {
+    const result: number[] = [];
+    for (const pageStart of this.contentPageStarts) {
+      const offset = pageStart - this.ttsTextStartOffset;
+      if (offset > 0 && offset < textLength) {
+        result.push(offset);
+      }
+    }
+    return result;
+  }
+
   normalizeReaderText(text: string): string {
     return this.trimReaderContentText((text || '')
       .replace(/\r\n/g, '\n')
@@ -9343,7 +9605,8 @@ struct ReadBookPage {
     while (low <= high) {
       const mid = Math.floor((low + high) / 2);
       const candidate = source.substring(safeStart, mid);
-      if (this.measureReaderTextHeight(candidate, availableWidth, chapterIndex) <= availableHeight) {
+      if (this.measureReaderTextHeight(candidate, availableWidth, chapterIndex, source, safeStart) <=
+        availableHeight) {
         best = mid;
         low = mid + 1;
       } else {
@@ -9397,8 +9660,8 @@ struct ReadBookPage {
   doesMeasuredReaderPageFit(source: string, start: number, end: number, availableWidth: number,
     availableHeight: number, chapterIndex: number = this.currentChapterIndex): boolean {
     const safeEnd = Math.max(start + 1, Math.min(end, source.length));
-    return this.measureReaderTextHeight(source.substring(start, safeEnd), availableWidth, chapterIndex) <=
-      availableHeight;
+    return this.measureReaderTextHeight(source.substring(start, safeEnd), availableWidth, chapterIndex,
+      source, start) <= availableHeight;
   }
 
   findParagraphLayoutPageEnd(source: string, start: number, availableWidth: number, availableHeight: number,
@@ -9411,8 +9674,15 @@ struct ReadBookPage {
     if (this.readerParagraphSpacing > 0 && /\n/.test(layoutText)) {
       return -1;
     }
+    // Placeholder spans occupy a paragraph index but do not correspond to a
+    // source-text character. Use the precise height-search path for decorated
+    // theme bubbles so line metric indexes are never mistaken for source
+    // offsets.
+    if (this.hasMeasuredThemeRegexDecoration(layoutText, source, start)) {
+      return -1;
+    }
     try {
-      const paragraph = this.buildMeasuredReaderParagraph(layoutText, availableWidth, chapterIndex);
+      const paragraph = this.buildMeasuredReaderParagraph(layoutText, availableWidth, chapterIndex, source, start);
       const metrics = paragraph.getLineMetrics();
       if (metrics.length === 0) {
         return -1;
@@ -9509,7 +9779,8 @@ struct ReadBookPage {
   }
 
   measureReaderTextHeight(text: string, availableWidth: number,
-    chapterIndex: number = this.currentChapterIndex): number {
+    chapterIndex: number = this.currentChapterIndex, documentSource: string = text,
+    absoluteStart: number = 0): number {
     if (!text) {
       return 0;
     }
@@ -9517,23 +9788,26 @@ struct ReadBookPage {
     if (paragraphs.length > 1) {
       let totalHeight = 0;
       for (const paragraph of paragraphs) {
-        totalHeight += this.measureReaderSingleParagraphHeight(paragraph.text, availableWidth, chapterIndex);
+        totalHeight += this.measureReaderSingleParagraphHeight(paragraph.text, availableWidth, chapterIndex,
+          documentSource, absoluteStart + paragraph.start);
         if (!paragraph.isLast) {
           totalHeight += this.toMeasurePx(this.readerParagraphSpacing);
         }
       }
       return totalHeight;
     }
-    return this.measureReaderSingleParagraphHeight(text, availableWidth, chapterIndex);
+    return this.measureReaderSingleParagraphHeight(text, availableWidth, chapterIndex, documentSource, absoluteStart);
   }
 
   measureReaderSingleParagraphHeight(text: string, availableWidth: number,
-    chapterIndex: number = this.currentChapterIndex): number {
+    chapterIndex: number = this.currentChapterIndex, documentSource: string = text,
+    absoluteStart: number = 0): number {
     if (!text) {
       return 0;
     }
     try {
-      const paragraph = this.buildMeasuredReaderParagraph(text, availableWidth, chapterIndex);
+      const paragraph = this.buildMeasuredReaderParagraph(text, availableWidth, chapterIndex,
+        documentSource, absoluteStart);
       const metrics = paragraph.getLineMetrics();
       if (metrics.length > 0) {
         const height = this.toMeasurePx(metrics.length * this.getEffectiveReaderLineHeight());
@@ -9584,7 +9858,8 @@ struct ReadBookPage {
   }
 
   buildMeasuredReaderParagraph(text: string, availableWidth: number,
-    chapterIndex: number = this.currentChapterIndex): graphicsText.Paragraph {
+    chapterIndex: number = this.currentChapterIndex, documentSource: string = text,
+    absoluteStart: number = 0): graphicsText.Paragraph {
     const bodyStyle = this.buildReaderMeasureTextStyle(this.readerFontSize, this.getBodyReaderFontFamily());
     const paragraphStyle: graphicsText.ParagraphStyle = {
       textStyle: bodyStyle,
@@ -9596,14 +9871,14 @@ struct ReadBookPage {
       includeFontPadding: false
     };
     const builder = new graphicsText.ParagraphBuilder(paragraphStyle, graphicsText.FontCollection.getGlobalInstance());
-    this.addMeasuredReaderText(builder, text || '', chapterIndex, bodyStyle);
+    this.addMeasuredReaderText(builder, text || '', chapterIndex, bodyStyle, documentSource, absoluteStart);
     const paragraph = builder.build();
     paragraph.layoutSync(this.toMeasurePx(availableWidth));
     return paragraph;
   }
 
   addMeasuredReaderText(builder: graphicsText.ParagraphBuilder, text: string, chapterIndex: number,
-    bodyStyle: graphicsText.TextStyle): void {
+    bodyStyle: graphicsText.TextStyle, documentSource: string = text, absoluteStart: number = 0): void {
     if (this.shouldUseTitleStyle(text, chapterIndex)) {
       const title = this.getChapterTitle(chapterIndex).trim();
       const titleLength = Math.min(title.length, text.length);
@@ -9613,30 +9888,60 @@ struct ReadBookPage {
       builder.popStyle();
       const rest = text.substring(titleLength);
       if (rest) {
-        this.addMeasuredRegexReaderText(builder, rest, bodyStyle);
+        this.addMeasuredRegexReaderText(builder, rest, bodyStyle, documentSource, absoluteStart + titleLength);
       }
       return;
     }
-    this.addMeasuredRegexReaderText(builder, text, bodyStyle);
+    this.addMeasuredRegexReaderText(builder, text, bodyStyle, documentSource, absoluteStart);
   }
 
   addMeasuredRegexReaderText(builder: graphicsText.ParagraphBuilder, text: string,
-    bodyStyle: graphicsText.TextStyle): void {
+    bodyStyle: graphicsText.TextStyle, documentSource: string = text, absoluteStart: number = 0): void {
     if (!this.readerRegexFontEnabled) {
       builder.pushStyle(bodyStyle);
       builder.addText(text);
       builder.popStyle();
       return;
     }
-    const slices = this.getRegexTextSlices(text);
+    const slices = this.getRegexTextSlicesForDocumentRange(text, documentSource, absoluteStart);
     for (const slice of slices) {
       const style = slice.highlighted ?
         this.buildReaderMeasureTextStyle(this.getRegexSliceFontSize(slice), this.getRegexSliceFontFamily(slice)) :
         bodyStyle;
+      if (this.shouldUseFullThemeRegexDecoration(slice)) {
+        this.addMeasuredRegexBubbleCap(builder, slice);
+      }
       builder.pushStyle(style);
       builder.addText(slice.text);
       builder.popStyle();
+      if (this.shouldUseFullThemeRegexDecoration(slice)) {
+        this.addMeasuredRegexBubbleCap(builder, slice);
+      }
     }
+  }
+
+  addMeasuredRegexBubbleCap(builder: graphicsText.ParagraphBuilder, slice: ReadTextSlice): void {
+    const capSize = this.toMeasurePx(this.getRegexBubbleCapSize(slice));
+    builder.addPlaceholder({
+      width: capSize,
+      height: capSize,
+      align: graphicsText.PlaceholderAlignment.CENTER_OF_ROW_BOX,
+      baseline: graphicsText.TextBaseline.IDEOGRAPHIC,
+      baselineOffset: 0
+    });
+  }
+
+  hasMeasuredThemeRegexDecoration(text: string, documentSource: string, absoluteStart: number): boolean {
+    if (!this.readerRegexFontEnabled || !text) {
+      return false;
+    }
+    const slices = this.getRegexTextSlicesForDocumentRange(text, documentSource, absoluteStart);
+    for (const slice of slices) {
+      if (this.shouldUseFullThemeRegexDecoration(slice)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   getParagraphFallbackMeasureStyle(text: string, chapterIndex: number): ReaderParagraphMeasureFallback {
@@ -9788,7 +10093,7 @@ struct ReadBookPage {
     this.ttsAutoTurningPage = true;
     const turnSerial = this.ttsPageTurnSerial;
     try {
-      if (this.isTtsSpeaking && this.ttsAutoContinue &&
+      while (turnSerial === this.ttsPageTurnSerial && this.isTtsSpeaking && this.ttsAutoContinue &&
         this.ttsPendingTargetPageIndex > this.currentPageIndex && this.canTurnPage(1)) {
         await this.runTtsPageTurnAnimation(1, turnSerial);
         if (turnSerial !== this.ttsPageTurnSerial) {
@@ -10135,31 +10440,15 @@ struct ReadBookPage {
   readingText(text: string, bottomPadding: number) {
     Column() {
       ForEach(this.getReaderTextParagraphs(this.getReadingRenderText(text)), (paragraph: ReaderTextParagraph) => {
-        if (this.hasActiveTtsHighlight(text)) {
-          Text() {
-            ForEach(this.getReadingTextSlicesInRange(
-              paragraph.text,
-              this.ttsHighlightStart - paragraph.start,
-              this.ttsHighlightEnd - paragraph.start
-            ), (slice: ReadTextSlice) => {
-              Span(slice.text)
-                .fontColor(slice.highlighted ? this.getTtsHighlightTextColor() : this.getTextColor())
-                .textBackgroundStyle(slice.highlighted ? {
-                  color: this.getTtsHighlightColor(),
-                  radius: 4
-                } : {})
-            }, (slice: ReadTextSlice) => `${paragraph.key}_${slice.key}`)
-          }
-          .fontSize(this.readerFontSize)
-          .fontFamily(this.getBodyReaderFontFamily())
-          .lineHeight(this.getEffectiveReaderLineHeight())
-          .fontColor(this.getTextColor())
-          .textAlign(TextAlign.JUSTIFY)
-          .wordBreak(WordBreak.BREAK_WORD)
-          .width('100%')
-        } else {
-          this.styledReaderParagraph(paragraph, this.currentChapterIndex)
-        }
+        this.styledReaderParagraph(
+          paragraph,
+          this.currentChapterIndex,
+          this.hasActiveTtsHighlight(text),
+          this.ttsHighlightRenderVersion,
+          this.pageRenderVersion,
+          '',
+          -1
+        )
         this.readerParagraphGap(paragraph)
       }, (paragraph: ReaderTextParagraph) => paragraph.key)
     }
@@ -10943,15 +11232,25 @@ struct ReadBookPage {
     if (absoluteStart < 0 || !this.pagedContentText) {
       return this.getRegexTextSlices(displayText);
     }
+    return this.getRegexTextSlicesForDocumentRange(displayText, this.pagedContentText, absoluteStart);
+  }
+
+  getRegexTextSlicesForDocumentRange(text: string, documentSource: string,
+    absoluteStart: number): ReadTextSlice[] {
+    const displayText = text || '';
+    const source = documentSource || displayText;
+    if (!displayText || absoluteStart < 0 || !source) {
+      return this.getRegexTextSlices(displayText);
+    }
     this.getRegexRules();
     const documentRulesKey = `${this.readerRegexFontEnabled ? '1' : '0'}_${this.cachedRegexRulesKey}`;
-    if (this.cachedDocumentRegexSource !== this.pagedContentText ||
+    if (this.cachedDocumentRegexSource !== source ||
       this.cachedDocumentRegexRulesKey !== documentRulesKey) {
-      this.cachedDocumentRegexSource = this.pagedContentText;
+      this.cachedDocumentRegexSource = source;
       this.cachedDocumentRegexRulesKey = documentRulesKey;
-      this.cachedDocumentRegexSlices = this.getRegexTextSlices(this.pagedContentText);
+      this.cachedDocumentRegexSlices = this.getRegexTextSlices(source);
     }
-    const absoluteEnd = Math.min(this.pagedContentText.length, absoluteStart + displayText.length);
+    const absoluteEnd = Math.min(source.length, absoluteStart + displayText.length);
     const result: ReadTextSlice[] = [];
     for (const slice of this.cachedDocumentRegexSlices) {
       if (slice.end <= absoluteStart) continue;
@@ -10968,7 +11267,8 @@ struct ReadBookPage {
         end: localEnd,
         highlighted: slice.highlighted,
         ruleIndex: slice.ruleIndex,
-        key: `document_regex_${slice.ruleIndex}_${overlapStart}_${overlapEnd}_${this.buildTextSliceKey(sliceText)}`
+        key: `document_regex_${slice.ruleIndex}_${overlapStart}_${overlapEnd}_` +
+          `${this.buildTextSliceKey(sliceText)}`
       });
     }
     return result.length > 0 ? result : this.getRegexTextSlices(displayText);
@@ -11184,6 +11484,7 @@ struct ReadBookPage {
     this.showLayoutElementSettings = false;
     if (!this.txtCharsetApplying) this.showTxtCharsetDialog = false;
     this.showMenu = false;
+    this.showTtsVoiceDropdown = false;
     this.showSettings = false;
     this.showQuickTypographyValueInput = false;
   }
@@ -11336,7 +11637,7 @@ struct ReadBookPage {
   }
 
   buildReaderPaginationCacheKey(chapterIndex: number, source: string): string {
-    return `reader_page_v7_${chapterIndex}_${this.pageViewWidth}_${this.pageViewHeight}_` +
+    return `reader_page_v8_${chapterIndex}_${this.pageViewWidth}_${this.pageViewHeight}_` +
       `${this.isLandscapeDoublePageActive()}_${this.readerTypographyCacheIdentity()}_` +
       `${source.length}_${this.hashText(source)}`;
   }
@@ -11344,7 +11645,8 @@ struct ReadBookPage {
   readerTypographyCacheIdentity(): string {
     const regexIdentity = `${this.readerRegexFontEnabled}_${this.readerRegexFontRulesRaw}_` +
       `${this.readerRegexFontPattern}_${this.readerRegexFontMode}_${this.readerRegexFontFamily}_` +
-      `${this.readerRegexFontSize}_${this.readerRegexShadowColor}`;
+      `${this.readerRegexFontSize}_${this.readerRegexShadowColor}_${this.themeRevision}_` +
+      `${this.themeRegexEmphasisMode()}_${this.themeRegexBubbleStyleId()}`;
     return `${this.readerFontSize}_${this.readerLineHeight}_${this.readerParagraphSpacing}_` +
       `${this.readerMarginLeft}_${this.readerMarginRight}_${this.readerMarginTop}_${this.readerMarginBottom}_` +
       `${this.readerBodyFontMode}_${this.readerBodyFontFamily}_${this.getBodyReaderFontFamily()}_` +

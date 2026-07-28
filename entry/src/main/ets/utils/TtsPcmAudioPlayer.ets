@@ -1,10 +1,25 @@
 import { audio } from '@kit.AudioKit';
 
+interface PcmPlaybackMark {
+  frame: number;
+  callback: () => void;
+}
+
+export interface PcmPlaybackCue {
+  frameOffset: number;
+  callback: () => void;
+}
+
 export class TtsPcmAudioPlayer {
   private renderer: audio.AudioRenderer | null = null;
   private currentSampleRate: audio.AudioSamplingRate = audio.AudioSamplingRate.SAMPLE_RATE_16000;
   private playGeneration: number = 0;
   private writeChain: Promise<void> = Promise.resolve();
+  private queuedFrames: number = 0;
+  private queuedSampleRate: number = 0;
+  private playbackMarks: PcmPlaybackMark[] = [];
+  private armedMark: PcmPlaybackMark | null = null;
+  private armedMarkCallback: ((frame: number) => void) | null = null;
 
   async play(data: ArrayBuffer, sampleRate: number): Promise<void> {
     await this.write(data, sampleRate);
@@ -12,17 +27,55 @@ export class TtsPcmAudioPlayer {
   }
 
   write(data: ArrayBuffer, sampleRate: number): Promise<void> {
+    return this.enqueueWrite(data, sampleRate);
+  }
+
+  writeSegment(data: ArrayBuffer, sampleRate: number, onPlaybackStart: () => void): Promise<void> {
+    return this.enqueueWrite(data, sampleRate, [{
+      frameOffset: 0,
+      callback: onPlaybackStart
+    }]);
+  }
+
+  writeTimedSegment(data: ArrayBuffer, sampleRate: number, cues: PcmPlaybackCue[]): Promise<void> {
+    return this.enqueueWrite(data, sampleRate, cues);
+  }
+
+  private enqueueWrite(data: ArrayBuffer, sampleRate: number,
+    cues?: PcmPlaybackCue[]): Promise<void> {
     if (!data || data.byteLength === 0) {
       return this.writeChain;
     }
+    const normalizedSampleRate = Math.max(1, Math.round(sampleRate || 16000));
+    if (this.queuedSampleRate > 0 && this.queuedSampleRate !== normalizedSampleRate) {
+      console.info(`[TTS] pcm sample rate changed: ${this.queuedSampleRate} -> ${normalizedSampleRate}`);
+      this.stop();
+    }
     const audioData = data.slice(0);
     const generation = this.playGeneration;
+    if (this.queuedSampleRate === 0) {
+      this.queuedSampleRate = normalizedSampleRate;
+    }
+    const startFrame = this.queuedFrames;
+    const segmentFrames = Math.floor(audioData.byteLength / 2);
+    this.queuedFrames += segmentFrames;
+    if (cues && cues.length > 0) {
+      const sortedCues = cues.slice().sort((left: PcmPlaybackCue, right: PcmPlaybackCue) =>
+        left.frameOffset - right.frameOffset);
+      for (const cue of sortedCues) {
+        const frameOffset = Math.max(0, Math.min(
+          Math.max(0, segmentFrames - 1),
+          Math.round(cue.frameOffset)
+        ));
+        this.queuePlaybackMark(startFrame + frameOffset, cue.callback);
+      }
+    }
     this.writeChain = this.writeChain
       .then(async () => {
         if (generation !== this.playGeneration) {
           return;
         }
-        const renderer = await this.ensureRenderer(sampleRate);
+        const renderer = await this.ensureRenderer(normalizedSampleRate);
         if (generation !== this.playGeneration) {
           return;
         }
@@ -32,12 +85,27 @@ export class TtsPcmAudioPlayer {
         if (generation !== this.playGeneration) {
           return;
         }
-        await renderer.write(audioData);
+        this.armNextPlaybackMark(renderer, generation);
+        await this.writeAll(renderer, audioData, generation);
       })
       .catch((error: Error) => {
         console.warn('[TTS] write pcm audio failed:', error);
       });
     return this.writeChain;
+  }
+
+  private queuePlaybackMark(frame: number, callback: () => void): void {
+    const last = this.playbackMarks.length > 0 ?
+      this.playbackMarks[this.playbackMarks.length - 1] : undefined;
+    if (last && last.frame === frame) {
+      const previousCallback = last.callback;
+      last.callback = () => {
+        previousCallback();
+        callback();
+      };
+      return;
+    }
+    this.playbackMarks.push({ frame, callback });
   }
 
   async drain(): Promise<void> {
@@ -55,6 +123,7 @@ export class TtsPcmAudioPlayer {
     this.playGeneration++;
     this.writeChain = Promise.resolve();
     const renderer = this.renderer;
+    this.clearPlaybackTimeline(renderer);
     this.renderer = null;
     if (!renderer) {
       return;
@@ -68,9 +137,83 @@ export class TtsPcmAudioPlayer {
 
   debugState(): string {
     if (!this.renderer) {
-      return 'renderer=none';
+      return `renderer=none,queuedFrames=${this.queuedFrames},marks=${this.playbackMarks.length}`;
     }
-    return `renderer=${this.audioStateName(this.renderer.state)},sampleRate=${this.currentSampleRate},generation=${this.playGeneration}`;
+    return `renderer=${this.audioStateName(this.renderer.state)},sampleRate=${this.currentSampleRate},` +
+      `generation=${this.playGeneration},queuedFrames=${this.queuedFrames},marks=${this.playbackMarks.length}`;
+  }
+
+  private async writeAll(renderer: audio.AudioRenderer, data: ArrayBuffer, generation: number): Promise<void> {
+    let offset = 0;
+    while (offset < data.byteLength && generation === this.playGeneration) {
+      const remaining = offset === 0 ? data : data.slice(offset);
+      const written = await renderer.write(remaining);
+      if (written <= 0) {
+        throw new Error('PCM播放器未写入音频数据');
+      }
+      offset += written;
+    }
+  }
+
+  private armNextPlaybackMark(renderer: audio.AudioRenderer, generation: number): void {
+    if (generation !== this.playGeneration || this.armedMark || this.playbackMarks.length === 0) {
+      return;
+    }
+    const mark = this.playbackMarks.shift() as PcmPlaybackMark;
+    if (mark.frame <= 0) {
+      this.invokePlaybackMark(mark, generation);
+      this.armNextPlaybackMark(renderer, generation);
+      return;
+    }
+    const callback = (): void => {
+      if (generation !== this.playGeneration) {
+        return;
+      }
+      try {
+        renderer.off('markReach', callback);
+      } catch (_) {
+      }
+      this.armedMark = null;
+      this.armedMarkCallback = null;
+      this.invokePlaybackMark(mark, generation);
+      this.armNextPlaybackMark(renderer, generation);
+    };
+    this.armedMark = mark;
+    this.armedMarkCallback = callback;
+    try {
+      renderer.on('markReach', mark.frame, callback);
+    } catch (error) {
+      console.warn(`[TTS] register pcm playback mark failed: frame=${mark.frame}`, error);
+      this.armedMark = null;
+      this.armedMarkCallback = null;
+      this.invokePlaybackMark(mark, generation);
+      this.armNextPlaybackMark(renderer, generation);
+    }
+  }
+
+  private invokePlaybackMark(mark: PcmPlaybackMark, generation: number): void {
+    if (generation !== this.playGeneration) {
+      return;
+    }
+    try {
+      mark.callback();
+    } catch (error) {
+      console.warn('[TTS] pcm playback mark callback failed:', error);
+    }
+  }
+
+  private clearPlaybackTimeline(renderer: audio.AudioRenderer | null): void {
+    if (renderer && this.armedMarkCallback) {
+      try {
+        renderer.off('markReach', this.armedMarkCallback);
+      } catch (_) {
+      }
+    }
+    this.queuedFrames = 0;
+    this.queuedSampleRate = 0;
+    this.playbackMarks = [];
+    this.armedMark = null;
+    this.armedMarkCallback = null;
   }
 
   private audioStateName(state: audio.AudioState): string {

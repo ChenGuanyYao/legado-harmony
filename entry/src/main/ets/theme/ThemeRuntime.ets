@@ -150,6 +150,12 @@ export class ThemeRuntime {
       ThemeRuntime.KEY_LIGHT_CARD_COLOR, fallback);
   }
 
+  static topBarColor(darkMode: boolean): string {
+    const fallback = ThemeRuntime.fallbackVariant(darkMode).colors.cardColor;
+    const color = ThemeRuntime.normalizeColor(ThemeRuntime.cardColor(darkMode), fallback);
+    return `#D9${color.substring(1)}`;
+  }
+
   static inputColor(darkMode: boolean): string {
     const fallback = ThemeRuntime.fallbackVariant(darkMode).colors.inputColor;
     return ThemeRuntime.colorFromStorage(darkMode ? ThemeRuntime.KEY_DARK_INPUT_COLOR :

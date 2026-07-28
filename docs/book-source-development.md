@@ -165,7 +165,7 @@
 | `weight` | 权重 | 数字，默认 `0` | 搜索相关度相同时，权重较大者优先。 |
 | `customOrder` | 暂无编辑项 | 数字 | 模型和数据库可保存，并作为结果排序的次级依据；当前 JSON 导入器不映射该字段。 |
 | `lastUpdateTime` | 暂无编辑项 | 数字 | 导入时会重置为当前时间。 |
-| `concurrentRate` | 暂无编辑项 | 字符串 | 模型和数据库可保存，但当前 JSON 导入器不映射，书源搜索调度也不按此字段限流。 |
+| `concurrentRate` | 暂无编辑项 | 字符串 | 导入并保存；`次数/毫秒窗口`，例如 `20/60000`。普通 HTTP 请求、重试和重定向都会按书源限流。 |
 
 诸如 `bookSourceType`、`enabledCookieJar`、`respondTime` 等常见导出字段可以出现在 JSON 中，但当前通用书源导入器不会将它们映射到 `BookSource` 模型。Cookie 会由项目的 Cookie 存储和验证流程按请求 URL 自动附加，不依赖 `enabledCookieJar`。
 
@@ -525,6 +525,8 @@ js:表达式
 
 至少需要：`exploreUrl`、`bookList`、`name`、`bookUrl`。字段语义与搜索相同。发现链会读取 `wordCount`，并按“来源 + 详情 URL”去重。
 
+当 `ruleExplore` 为 `null`、空数组、空对象或缺少必要字段时，会自动回退到 `ruleSearch`。`exploreUrl` 以 `@js:` / `js:` 开头时会交给受限脚本引擎执行，结果应为分类对象数组的 JSON 字符串；脚本运行具有操作次数、数组大小、代码长度和输出长度限制。
+
 ### 7.3 详情规则 `ruleBookInfo`
 
 详情请求地址来自搜索/发现的 `bookUrl`。
@@ -551,6 +553,7 @@ js:表达式
 | `chapterList` | 是 | 在完整目录响应中选出章节元素。 |
 | `chapterName` | 建议 | 章节标题；空时自动使用“第 N 章”。 |
 | `chapterUrl` | 是 | 正文请求地址；空地址的章节会被丢弃。 |
+| `nextTocUrl` | 否 | 当前目录页的下一页地址；逐页请求、按章节 URL 去重，遇到空地址、重复页或 100 页上限时停止。 |
 | `isVip` | 否 | 只有解析结果严格等于字符串 `true` 时标记 VIP。 |
 | `isPay` | 否 | 可导入和编辑，当前通用目录链未消费。 |
 | `updateTime` | 否 | 可导入和编辑，当前通用目录链未消费。 |
@@ -566,6 +569,7 @@ js:表达式
 | `replaceRegex` | 对提取后的正文做全局正则替换。 |
 | `title` | 可导入和编辑，当前正文返回链不读取。 |
 | `images` | 漫画图片提取规则；支持返回单个地址、地址列表或图片标签，相对地址会按章节响应地址补全。 |
+| `nextContentUrl` | 正文下一页地址；逐页解析并拼接，遇到空地址、重复页、50 页或 8 MiB 正文上限时停止。 |
 | `imageStyle` | 可导入和编辑，当前正文返回链不读取。 |
 | `payAction` | 紧凑规则可导入到模型，当前通用正文链不执行。 |
 
@@ -745,9 +749,9 @@ js:表达式
 
 | 状态 | 字段/能力 |
 | --- | --- |
-| 通用链已实际使用 | 搜索/发现的列表、书名、作者、封面、简介、分类、最新章节、详情 URL；发现字数；详情 `init`、书籍字段、目录 URL；目录列表、章节名、章节 URL、VIP；正文内容、净化正则。 |
+| 通用链已实际使用 | 搜索/发现的列表、书名、作者、封面、简介、分类、最新章节、详情 URL；发现字数及空规则回退；详情 `init`、书籍字段、目录 URL；目录列表、章节名、章节 URL、下一页、VIP；正文内容、下一页、净化正则和 JS 后处理；书源请求限流。 |
 | 可导入/编辑，但通用链目前未消费 | 详情 `updateTime`；目录 `isPay`、`updateTime`；正文 `title`、`images`、`imageStyle`；`webView`、`webJs` URL 选项。 |
-| 模型或紧凑格式存在，但通用导入/UI/执行不完整 | `chapterListAddition`、`payAction`、`bookListRule`、`concurrentRate` 等。 |
+| 模型或紧凑格式存在，但通用导入/UI/执行不完整 | `chapterListAddition`、`payAction`、`bookListRule` 等。 |
 | 不应假定与 Android 版等价 | 任意 JavaScript、完整 XPath/CSS、WebView JS、全部 `java.*` API、动态登录 UI、付费购买动作、图片正文排版。 |
 
 ### 13.2 实现中的自动兜底

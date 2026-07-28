@@ -1,6 +1,7 @@
 import { BookSource } from '../../model/data/Book';
 import { HttpClient, HttpRequest, HttpResponse } from '../http/HttpClient';
 import { VerificationSupport } from '../http/VerificationSupport';
+import { BookSourceRateLimiter } from '../http/BookSourceRateLimiter';
 import { util } from '@kit.ArkTS';
 
 export interface UrlConfig {
@@ -372,6 +373,7 @@ export class AnalyzeUrl {
 
   private async fetchFollowingRedirects(req: HttpRequest): Promise<HttpResponse> {
     let currentReq = req;
+    await BookSourceRateLimiter.acquire(this.source);
     let lastResp = await this.client.execute(currentReq);
     for (let i = 0; i < 3; i++) {
       if (lastResp.statusCode < 300 || lastResp.statusCode >= 400) return lastResp;
@@ -382,6 +384,7 @@ export class AnalyzeUrl {
       const switchToGet = (lastResp.statusCode === 301 || lastResp.statusCode === 302 || lastResp.statusCode === 303) &&
         currentReq.method.toUpperCase() !== 'GET' && currentReq.method.toUpperCase() !== 'HEAD';
       currentReq = switchToGet ? { ...currentReq, url: nextUrl, method: 'GET', body: '' } : { ...currentReq, url: nextUrl };
+      await BookSourceRateLimiter.acquire(this.source);
       lastResp = await this.client.execute(currentReq);
     }
     return lastResp;

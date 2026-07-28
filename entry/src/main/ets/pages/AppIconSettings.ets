@@ -32,9 +32,7 @@ struct AppIconSettingsPage {
   }
 
   build() {
-    Column() {
-      this.titleBar()
-
+    Stack({ alignContent: Alignment.TopStart }) {
       Scroll() {
         Column() {
           Text('选择桌面图标')
@@ -52,15 +50,18 @@ struct AppIconSettingsPage {
           .padding({ left: 12, right: 12 })
         }
         .width('100%')
+        .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
       }
-      .layoutWeight(1)
+      .width('100%')
+      .height('100%')
       .align(Alignment.TopStart)
+
+      this.titleBar()
     }
     .width('100%')
-    .height('100%').justifyContent(FlexAlign.Start)
-    .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
+    .height('100%')
     .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   pageColor(): string {
@@ -162,8 +163,10 @@ struct AppIconSettingsPage {
         .layoutWeight(1)
     }
     .width('100%')
-    .height(56)
-    .backgroundColor(this.cardColor())
+    .height(56 + this.statusBarHeight)
+    .padding({ top: this.statusBarHeight })
+    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+    .backdropBlur(18)
     .alignItems(VerticalAlign.Center)
   }
 

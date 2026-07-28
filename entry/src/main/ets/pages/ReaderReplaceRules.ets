@@ -76,7 +76,6 @@ struct ReaderReplaceRulesPage {
       }
       .width('100%')
       .height('100%')
-      .padding({ top: this.statusBarHeight, bottom: this.navBarHeight })
       .backgroundColor(this.pageColor())
 
       if (!this.editing && !this.selectionMode) {
@@ -103,6 +102,7 @@ struct ReaderReplaceRulesPage {
     .width('100%')
     .height('100%')
     .onAreaChange((_oldValue: Area, newValue: Area) => this.updateContextViewport(newValue))
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   @Builder
@@ -148,8 +148,10 @@ struct ReaderReplaceRulesPage {
       }
     }
     .width('100%')
-    .height(56)
-    .backgroundColor(this.cardColor())
+    .height(56 + this.statusBarHeight)
+    .padding({ top: this.statusBarHeight })
+    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+    .backdropBlur(18)
     .alignItems(VerticalAlign.Center)
   }
 
