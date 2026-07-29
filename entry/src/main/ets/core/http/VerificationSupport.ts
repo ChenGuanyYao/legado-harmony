@@ -1,4 +1,5 @@
 import { BookSource } from '../../model/data/Book';
+import { BookSourceScriptRunner } from '../book/BookSourceScriptRunner';
 import { CookieStore } from './CookieStore';
 
 export class VerificationSupport {
@@ -80,6 +81,9 @@ export class VerificationSupport {
   static resolveBookSourceLoginUrl(source: BookSource): string {
     const loginUrl = this.cleanUrl(source.loginUrl || '');
     if (this.isHttpUrl(loginUrl)) return loginUrl;
+
+    const scriptedLoginUrl = BookSourceScriptRunner.loginEntryUrl(source);
+    if (this.isHttpUrl(scriptedLoginUrl)) return scriptedLoginUrl;
 
     const host = this.firstScriptHost(source);
     if (host) return `${host.replace(/\/+$/, '')}/login`;

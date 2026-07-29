@@ -10,6 +10,12 @@ import {
   TtsPackageRedeemResponse,
   TtsWalletSnapshot
 } from './AccountCommerceModels';
+import {
+  CloudSyncDeviceListResponse,
+  CloudSyncExchangeRequest,
+  CloudSyncExchangeResponse,
+  CloudSyncSummary
+} from './CloudSyncModels';
 
 class ApiErrorBody {
   code: string = '';
@@ -84,6 +90,45 @@ export class AccountCommerceApi {
     response.account = AccountCommerceApi.normalizeAccount(raw.account);
     response.ttsWallet = AccountCommerceApi.normalizeTtsWallet(raw.ttsWallet);
     return response;
+  }
+
+  static async exchangeSync(request: CloudSyncExchangeRequest,
+    sessionToken: string): Promise<CloudSyncExchangeResponse> {
+    const value = await AccountCommerceApi.request(
+      '/v1/sync/exchange',
+      'POST',
+      JSON.stringify(request),
+      sessionToken
+    );
+    return JSON.parse(value) as CloudSyncExchangeResponse;
+  }
+
+  static async fetchSyncDevices(sessionToken: string): Promise<CloudSyncDeviceListResponse> {
+    const value = await AccountCommerceApi.request('/v1/sync/devices', 'GET', '', sessionToken);
+    return JSON.parse(value) as CloudSyncDeviceListResponse;
+  }
+
+  static async fetchSyncSummary(sessionToken: string): Promise<CloudSyncSummary> {
+    const value = await AccountCommerceApi.request('/v1/sync/summary', 'GET', '', sessionToken);
+    return JSON.parse(value) as CloudSyncSummary;
+  }
+
+  static async renameSyncDevice(deviceId: string, deviceName: string, sessionToken: string): Promise<void> {
+    await AccountCommerceApi.request(
+      `/v1/sync/devices/${encodeURIComponent(deviceId)}/rename`,
+      'POST',
+      JSON.stringify({ deviceName: deviceName }),
+      sessionToken
+    );
+  }
+
+  static async revokeSyncDevice(deviceId: string, sessionToken: string): Promise<void> {
+    await AccountCommerceApi.request(
+      `/v1/sync/devices/${encodeURIComponent(deviceId)}/revoke`,
+      'POST',
+      '{}',
+      sessionToken
+    );
   }
 
   private static async request(path: string, method: string, body: string, sessionToken: string): Promise<string> {

@@ -10,6 +10,7 @@ import { VerificationSupport } from '../http/VerificationSupport';
 import { EncodedSourceUrl } from './EncodedSourceUrl';
 import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
 import { BookUrlResolver } from './BookUrlResolver';
+import { BookSourceScriptRunner } from './BookSourceScriptRunner';
 
 export interface ExploreEntry {
   title: string;
@@ -365,6 +366,13 @@ export class ExploreCoordinator {
   }
 
   private buildUrl(source: BookSource, url: string, page: number): string {
+    if (/^\s*@?js:/i.test(url || '')) {
+      const scripted = BookSourceScriptRunner.evaluateUrl(source, url, '', String(page));
+      if (scripted.handled && scripted.value) {
+        source.variable = scripted.variable;
+        return scripted.value;
+      }
+    }
     const built = BookSourceDataUrlSupport.buildRequestUrl(source, url, String(page));
     if (built) return built;
     const js = new JsRuntime();
@@ -389,7 +397,7 @@ export class ExploreCoordinator {
     ctx.put('bookSourceGroup', source.bookSourceGroup || '');
     ctx.put('source.bookSourceComment', source.bookSourceComment || '');
     ctx.put('bookSourceComment', source.bookSourceComment || '');
-    if (!ctx.has('source.variable')) ctx.put('source.variable', source.variableComment || '');
+    if (!ctx.has('source.variable')) ctx.put('source.variable', source.variable || '');
   }
 
   private async fetchEncodedDataUrl(url: string, source: BookSource): Promise<{ url: string, statusCode: number, headers: Record<string, string>, body: string, success: boolean, error?: string }> {

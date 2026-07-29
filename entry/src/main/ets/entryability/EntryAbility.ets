@@ -16,6 +16,9 @@ import { TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ThemeTrialManager } from '../utils/ThemeTrialManager';
 import { AccountSessionStore } from '../account/AccountSessionStore';
+import { CloudSyncSettingsStore } from '../account/CloudSyncSettingsStore';
+import { CloudSyncCoordinator } from '../account/CloudSyncCoordinator';
+import { CloudSyncChangeTracker } from '../account/CloudSyncChangeTracker';
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
 
@@ -31,11 +34,15 @@ export default class EntryAbility extends UIAbility {
     AppStorage.setOrCreate('appFilesDir', this.context.filesDir);
     AppStorage.setOrCreate('pendingBookSourceImportUri', '');
     AppStorage.setOrCreate('pendingBookSourceImportNonce', 0);
+    AppStorage.setOrCreate('bookSourceCheckOpenNonce', 0);
+    AppStorage.setOrCreate('shelfUpdateTime', 0);
     AppStorage.setOrCreate('pendingLocalBookImportUri', '');
     AppStorage.setOrCreate('pendingLocalBookImportNonce', 0);
     AppStorage.setOrCreate('pendingLocalBookImportFormat', '');
     AppStorage.setOrCreate('pendingLocalBookImportName', '');
     AccountSessionStore.initializeStorage();
+    CloudSyncSettingsStore.initializeStorage();
+    CloudSyncChangeTracker.initializeStorage();
     hilog.info(0x0000, 'testTag', 'StartupTrace onCreate %{public}d', Date.now());
     PersistentStorage.persistProp('appThemeMode', 'system');
     AppThemeModeStore.load(this.context).then((mode: string) => {
@@ -152,7 +159,10 @@ export default class EntryAbility extends UIAbility {
     }).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Sync tts settings failed: %{public}s', JSON.stringify(e));
     });
-    AccountSessionStore.load(this.context).catch((e: Error) => {
+    AccountSessionStore.load(this.context).then(() => {
+      const userId = AccountSessionStore.isLoggedIn() ? AccountSessionStore.account().userId : '';
+      return CloudSyncSettingsStore.load(this.context, userId);
+    }).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Load account session failed: %{public}s', JSON.stringify(e));
     });
     this.themeBootstrapPromise = AppThemeSettingsStore.load(this.context).then((settings) => {
@@ -213,6 +223,12 @@ export default class EntryAbility extends UIAbility {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onForeground');
     ThemeTrialManager.stopIfExpired();
     this.syncSystemColorMode(this.context.config);
+    setTimeout(() => {
+      CloudSyncCoordinator.syncAutomatically(
+        this.context, CloudSyncCoordinator.TRIGGER_FOREGROUND).catch((e: Error) => {
+        hilog.warn(0x0000, 'testTag', 'Foreground cloud sync failed: %{public}s', JSON.stringify(e));
+      });
+    }, 1200);
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -235,6 +251,10 @@ export default class EntryAbility extends UIAbility {
 
   onBackground(): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onBackground');
+    CloudSyncCoordinator.syncAutomatically(
+      this.context, CloudSyncCoordinator.TRIGGER_BACKGROUND).catch((e: Error) => {
+      hilog.warn(0x0000, 'testTag', 'Background cloud sync failed: %{public}s', JSON.stringify(e));
+    });
   }
 
   onConfigurationUpdate(newConfig: Configuration): void {
@@ -315,6 +335,10 @@ export default class EntryAbility extends UIAbility {
       return 'localBook';
     }
     const params = this.getLaunchParams(want);
+    if (params['bookSourceCheckAction'] === 'open') {
+      AppStorage.setOrCreate('bookSourceCheckOpenNonce', Date.now());
+      return 'bookSource';
+    }
     if (params['cacheAction'] === 'cancelFullTextCache') {
       const nonce = Date.now();
       AppStorage.setOrCreate('fullTextCacheCancelSignal', JSON.stringify({
@@ -532,6 +556,10 @@ export default class EntryAbility extends UIAbility {
     if (typeof cacheTaskKey === 'string') {
       result['cacheTaskKey'] = cacheTaskKey;
     }
+    const bookSourceCheckAction = parameters['bookSourceCheckAction'];
+    if (typeof bookSourceCheckAction === 'string') {
+      result['bookSourceCheckAction'] = bookSourceCheckAction;
+    }
 
     const cardParams = parameters['params'];
     if (typeof cardParams === 'string') {
@@ -552,6 +580,10 @@ export default class EntryAbility extends UIAbility {
         const parsedCacheTaskKey = parsed['cacheTaskKey'];
         if (typeof parsedCacheTaskKey === 'string') {
           result['cacheTaskKey'] = parsedCacheTaskKey;
+        }
+        const parsedBookSourceCheckAction = parsed['bookSourceCheckAction'];
+        if (typeof parsedBookSourceCheckAction === 'string') {
+          result['bookSourceCheckAction'] = parsedBookSourceCheckAction;
         }
       } catch (e) {
         hilog.warn(0x0000, 'testTag', 'Parse card params failed: %{public}s', JSON.stringify(e));

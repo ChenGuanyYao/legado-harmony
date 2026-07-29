@@ -148,18 +148,21 @@
 | --- | --- | --- | --- |
 | `bookSourceName` | 书源名称 | 字符串，必填 | UI 展示名称。 |
 | `bookSourceUrl` | 书源地址 | 字符串，必填 | 书源唯一键，也是相对请求地址的基础地址。建议写协议和主机，不带末尾业务路径。 |
+| `bookSourceType` | 书源类型 | 数字，默认 `0` | `2` 表示漫画源，阅读时优先进入连续全宽图片模式。 |
 | `bookSourceGroup` | 书源分组 | 字符串 | 搜索筛选和管理分组。 |
 | `bookSourceComment` | 书源备注 | 字符串 | 管理页说明，也会注入规则上下文。 |
 | `loginUrl` | 登录地址 | 字符串 | 网页登录/验证入口。检测到登录或验证页时可打开该地址并同步 Cookie。 |
-| `loginUi` | 暂无编辑项 | 字符串 | 导入和保存支持；用于判断该源存在登录能力。 |
+| `loginUi` | 登录界面 | JSON 字符串 | 管理页可渲染按钮，并在受限脚本环境中执行接口切换、提示和打开登录页动作。 |
 | `loginCheckJs` | 登录检测JS | 字符串 | 导入、保存及登录能力识别支持；当前不是通用完整 JS 登录框架。 |
 | `loginHeader` | 登录密钥 | 字符串 | 可用于特定登录源；通用请求头仍应写在 `header`。 |
 | `bookUrlPattern` | URL正则 | 字符串 | 保存和导入支持，用于描述书籍 URL；当前主解析链不依赖它。 |
 | `searchUrl` | 搜索地址 | 字符串 | 搜索请求模板。 |
 | `exploreUrl` | 发现地址 | 字符串 | 发现分类及请求模板。 |
-| `jsLib` | JS库 | 字符串 | 注入规则上下文，部分兼容逻辑会读取；不是浏览器中的任意 JavaScript 运行环境。 |
+| `jsLib` | JS库 | 字符串 | 搜索、发现和登录 URL 构建共用的受限脚本库；支持用户函数、数组、源变量和常用字符串操作，不提供任意系统访问。 |
 | `header` | 请求头 | 字符串 | 书源全局 HTTP 请求头。支持 JSON/宽松对象或每行一个 `名称: 值`。 |
-| `variableComment` / `variable` | 暂无编辑项 | 字符串 | 作为 `source.variable` 注入上下文，兼容部分源变量。 |
+| `variableComment` | 暂无编辑项 | 字符串 | 书源变量的说明文本。 |
+| `variable` | 书源变量 | 字符串 | 作为 `source.variable` 注入上下文并独立持久化，登录按钮可通过 `source.setVariable()` 修改。 |
+| `enabledCookieJar` | 启用 Cookie | 布尔，默认 `true` | 导入并保存 Cookie 偏好；登录 Cookie 仍按实际请求域名隔离和附加。 |
 | `enabled` | 启用书源 | 布尔，默认 `true` | 是否参与搜索和书源选择。 |
 | `enabledExplore` | 启用发现 | 布尔，默认 `true` | 是否显示此源的发现入口。 |
 | `weight` | 权重 | 数字，默认 `0` | 搜索相关度相同时，权重较大者优先。 |
@@ -167,7 +170,7 @@
 | `lastUpdateTime` | 暂无编辑项 | 数字 | 导入时会重置为当前时间。 |
 | `concurrentRate` | 暂无编辑项 | 字符串 | 导入并保存；`次数/毫秒窗口`，例如 `20/60000`。普通 HTTP 请求、重试和重定向都会按书源限流。 |
 
-诸如 `bookSourceType`、`enabledCookieJar`、`respondTime` 等常见导出字段可以出现在 JSON 中，但当前通用书源导入器不会将它们映射到 `BookSource` 模型。Cookie 会由项目的 Cookie 存储和验证流程按请求 URL 自动附加，不依赖 `enabledCookieJar`。
+`respondTime` 等统计字段可以出现在 JSON 中，但不会映射到运行模型。
 
 ## 5. URL 与 HTTP 请求规则
 
@@ -492,14 +495,20 @@ js:表达式
 - `encodeURIComponent`、`encodeURI`；
 - `java.urlEncode/urlDecode`；
 - Base64、Hex、MD5、SHA-1、SHA-256；
+- SHA-512、Base64 URL、HTML 实体编解码；
 - AES、DES/3DES 的常见 Base64 加解密；
 - `java.getString`、`java.getStringList` 读取当前 JSON；
 - `java.timeFormat`；
 - `java.getCookie`、`cookie.getCookie/setCookie/removeCookie`；
 - `java.randomUUID()`、`java.androidId()`；
-- 部分 `java.put/get` 和 source 变量调用。
+- 部分 `java.put/get` 和 source 变量调用；
+- `android.util.Base64`、`java.util.Base64`、`URLEncoder/URLDecoder`、`System.currentTimeMillis` 等常见 Java/Android 别名；
+- `StringBuilder`、`HashMap`、`ArrayList` 及常用 Java 字符串/集合方法；
+- 使用 `MessageDigest` 或 `Cipher/SecretKeySpec/IvParameterSpec` 封装的常见摘要、AES、DES/3DES 函数。
 
-不要假定支持任意函数定义、网络请求、DOM API、Promise、第三方库或复杂 JavaScript 语义。复杂源应先用一个最小表达式实机验证；若规则依赖完整 JS 环境，当前版本可能需要代码级适配。
+不要假定支持完整 Android、Rhino、浏览器或 Node.js 环境。同步脚本里的网络请求只覆盖已适配的
+`java.ajax/ajaxAll/connect` 形态；文件、进程、反射、系统组件、WebView 自动化、DOM、Promise、第三方库和复杂
+JavaScript 语义仍不开放。复杂源应先用一个最小表达式实机验证；若规则依赖站点私有流程，仍可能需要代码级适配。
 
 ## 7. 各阶段规则字段
 
@@ -570,7 +579,8 @@ js:表达式
 | `title` | 可导入和编辑，当前正文返回链不读取。 |
 | `images` | 漫画图片提取规则；支持返回单个地址、地址列表或图片标签，相对地址会按章节响应地址补全。 |
 | `nextContentUrl` | 正文下一页地址；逐页解析并拼接，遇到空地址、重复页、50 页或 8 MiB 正文上限时停止。 |
-| `imageStyle` | 可导入和编辑，当前正文返回链不读取。 |
+| `imageDecode` | 图片二进制解密规则；当前允许受限的 AES-CBC-PKCS5/PKCS7 解密，不执行文件、进程或反射 API。 |
+| `imageStyle` | `FULL`、`comic`、`manga`、`webtoon` 会让阅读器优先使用连续全宽漫画模式。 |
 | `payAction` | 紧凑规则可导入到模型，当前通用正文链不执行。 |
 
 `replaceRegex` 支持两种形式：
@@ -581,6 +591,14 @@ js:表达式
 ```
 
 之后应用还会执行基本 HTML 清理：`<br>` 转换为换行、`</p>` 转换为双换行、移除其他标签、解码部分实体、压缩连续空行。正文中的 `img`/SVG `image`、Markdown 图片和独立图片地址会保留为阅读器图片页；配置 `images` 时优先按该规则返回的图片顺序分页。其他复杂 HTML 布局不会保留。
+
+漫画图片支持阅读书源常见的请求参数写法：
+
+```text
+https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
+```
+
+带参数或 `imageDecode` 的图片由应用 HTTP 客户端携带 Cookie/白名单请求头下载，在最多 20 MiB 的限制内完成解密并写入应用缓存，再以本地文件交给阅读器。单章图片按最多 4 路并发处理。
 
 ## 8. HTML 书源示例
 
@@ -749,10 +767,10 @@ js:表达式
 
 | 状态 | 字段/能力 |
 | --- | --- |
-| 通用链已实际使用 | 搜索/发现的列表、书名、作者、封面、简介、分类、最新章节、详情 URL；发现字数及空规则回退；详情 `init`、书籍字段、目录 URL；目录列表、章节名、章节 URL、下一页、VIP；正文内容、下一页、净化正则和 JS 后处理；书源请求限流。 |
-| 可导入/编辑，但通用链目前未消费 | 详情 `updateTime`；目录 `isPay`、`updateTime`；正文 `title`、`images`、`imageStyle`；`webView`、`webJs` URL 选项。 |
+| 通用链已实际使用 | 搜索/发现的列表、书名、作者、封面、简介、分类、最新章节、详情 URL；`jsLib` URL 构建和持久化源变量；动态登录按钮和镜像切换；详情 `init`、书籍字段、目录 URL；目录列表、章节名、章节 URL、下一页、VIP；正文内容、图片、图片请求头、AES 图片解密、漫画模式、下一页、净化正则和 JS 后处理；书源请求限流。 |
+| 可导入/编辑，但通用链目前未消费 | 详情 `updateTime`；目录 `isPay`、`updateTime`；正文 `title`；`webView`、`webJs` URL 选项。 |
 | 模型或紧凑格式存在，但通用导入/UI/执行不完整 | `chapterListAddition`、`payAction`、`bookListRule` 等。 |
-| 不应假定与 Android 版等价 | 任意 JavaScript、完整 XPath/CSS、WebView JS、全部 `java.*` API、动态登录 UI、付费购买动作、图片正文排版。 |
+| 不应假定与 Android 版等价 | 任意 JavaScript、完整 XPath/CSS、WebView JS、全部 `java.*` API、付费购买动作及非白名单二进制解码流程。 |
 
 ### 13.2 实现中的自动兜底
 

@@ -33,6 +33,13 @@ class CloudTtsTimedResponse {
   timings: CloudTtsTiming[] = [];
 }
 
+class CloudTtsBinaryMetadata {
+  version: number = 0;
+  sampleRate: number = 16000;
+  timingMode: string = 'SILENCE_ALIGNED';
+  timings: CloudTtsTiming[] = [];
+}
+
 export class CloudTtsClient {
   private static readonly CACHE_DIR_NAME: string = 'sis_tts';
   private static readonly MAX_CACHE_FILES: number = 120;
@@ -111,7 +118,7 @@ export class CloudTtsClient {
         {
           method: http.RequestMethod.POST,
           header: {
-            'Accept': 'application/json',
+            'Accept': 'application/vnd.qingye.tts-timed, application/json',
             'Content-Type': 'application/json;charset=UTF-8',
             'Authorization': `Bearer ${AccountSessionStore.token()}`
           },
@@ -122,7 +129,8 @@ export class CloudTtsClient {
             speed: this.toSisSpeed(speed),
             pitch: 0,
             volume: 100,
-            timed: true
+            timed: true,
+            transport: 'binary-v1'
           }),
           connectTimeout: 10000,
           readTimeout: 60000,
@@ -159,7 +167,7 @@ export class CloudTtsClient {
     this.ensureDir(dir);
     const userId = AccountSessionStore.account().userId;
     const key = `${userId}\n${voiceId}\n${speed.toFixed(1)}\n${text}`;
-    return `${dir}/${this.hashText(key)}.json`;
+    return `${dir}/${this.hashText(key)}.bin`;
   }
 
   private audioFromFile(path: string): CloudTtsAudio {
@@ -182,6 +190,9 @@ export class CloudTtsClient {
   }
 
   private audioFromBuffer(buffer: ArrayBuffer): CloudTtsAudio {
+    if (this.isBinaryEnvelope(buffer)) {
+      return this.audioFromBinaryEnvelope(buffer);
+    }
     let body: CloudTtsTimedResponse;
     try {
       const value = util.TextDecoder.create('utf-8')
@@ -220,6 +231,51 @@ export class CloudTtsClient {
     return audio;
   }
 
+  private isBinaryEnvelope(buffer: ArrayBuffer): boolean {
+    if (buffer.byteLength < 8) return false;
+    const bytes = new Uint8Array(buffer, 0, 4);
+    return bytes[0] === 0x51 && bytes[1] === 0x59 && bytes[2] === 0x54 && bytes[3] === 0x42;
+  }
+
+  private audioFromBinaryEnvelope(buffer: ArrayBuffer): CloudTtsAudio {
+    if (buffer.byteLength < 10 || buffer.byteLength > 21 * 1024 * 1024) {
+      throw new AccountApiError('在线语音响应无效', 502, 'INVALID_TIMED_TTS_RESPONSE');
+    }
+    const view = new DataView(buffer);
+    const metadataLength = view.getUint32(4, false);
+    if (metadataLength <= 0 || metadataLength > 1024 * 1024 ||
+      8 + metadataLength >= buffer.byteLength) {
+      throw new AccountApiError('在线语音时间轴无效', 502, 'INVALID_TIMED_TTS_RESPONSE');
+    }
+    let metadata: CloudTtsBinaryMetadata;
+    try {
+      const metadataBytes = new Uint8Array(buffer, 8, metadataLength);
+      const value = util.TextDecoder.create('utf-8')
+        .decodeWithStream(metadataBytes, { stream: false });
+      metadata = JSON.parse(value) as CloudTtsBinaryMetadata;
+    } catch (_) {
+      throw new AccountApiError('在线语音时间轴无效', 502, 'INVALID_TIMED_TTS_RESPONSE');
+    }
+    const audioBytes = new Uint8Array(buffer, 8 + metadataLength);
+    if (metadata.version !== 2 ||
+      !Number.isFinite(metadata.sampleRate) ||
+      metadata.sampleRate < 8000 ||
+      metadata.sampleRate > 48000 ||
+      audioBytes.byteLength <= 0 ||
+      audioBytes.byteLength > 20 * 1024 * 1024 ||
+      audioBytes.byteLength % 2 !== 0) {
+      throw new AccountApiError('在线语音响应无效', 502, 'INVALID_TIMED_TTS_RESPONSE');
+    }
+    const audio = new CloudTtsAudio();
+    audio.pcm = this.copyBytes(audioBytes);
+    audio.sampleRate = Math.round(metadata.sampleRate);
+    audio.contentType = 'audio/pcm';
+    audio.speed = 1;
+    audio.timingMode = metadata.timingMode === 'WORD' ? 'WORD' : 'SILENCE_ALIGNED';
+    audio.timings = this.validTimings(metadata.timings, audio);
+    return audio;
+  }
+
   private writeCacheFile(path: string, buffer: ArrayBuffer): void {
     const temporaryPath = `${path}.${Date.now()}.part`;
     const file = fs.openSync(temporaryPath,
@@ -247,7 +303,8 @@ export class CloudTtsClient {
     const dir = root ? `${root}/${CloudTtsClient.CACHE_DIR_NAME}` : '';
     if (!dir) return;
     try {
-      const files = fs.listFileSync(dir).filter((name: string) => name.endsWith('.json'));
+      const files = fs.listFileSync(dir).filter((name: string) =>
+        name.endsWith('.bin') || name.endsWith('.json'));
       const removeCount = Math.max(0, files.length - CloudTtsClient.MAX_CACHE_FILES);
       for (let index = 0; index < removeCount; index++) {
         try {

@@ -1,5 +1,6 @@
 import { Context } from '@kit.AbilityKit';
 import preferences from '@ohos.data.preferences';
+import { CloudSyncChangeTracker } from '../account/CloudSyncChangeTracker';
 
 export class SearchExploreSettings {
   showResultCover: boolean = true;
@@ -75,6 +76,8 @@ export class SearchExploreSettingsStore {
   }
 
   static async save(context: Context, settings: SearchExploreSettings): Promise<void> {
+    const previous = SearchExploreSettingsStore.cachedSettings ?
+      SearchExploreSettingsStore.clone(SearchExploreSettingsStore.cachedSettings) : null;
     SearchExploreSettingsStore.cachedSettings = SearchExploreSettingsStore.clone(settings);
     const store = await preferences.getPreferences(context, SearchExploreSettingsStore.STORE_NAME);
     await store.put(SearchExploreSettingsStore.KEY_SHOW_RESULT_COVER, settings.showResultCover);
@@ -91,6 +94,9 @@ export class SearchExploreSettingsStore {
     await store.put(SearchExploreSettingsStore.KEY_EXPLORE_SOURCE_URL, settings.exploreSourceUrl);
     await store.put(SearchExploreSettingsStore.KEY_EXPLORE_PLATFORM, settings.explorePlatform);
     await store.flush();
+    if (!previous || SearchExploreSettingsStore.syncFieldsChanged(previous, settings)) {
+      CloudSyncChangeTracker.markApplicationPreferenceChanged();
+    }
   }
 
   static async saveExploreSelection(
@@ -206,5 +212,15 @@ export class SearchExploreSettingsStore {
       }
     }
     return fallback;
+  }
+
+  private static syncFieldsChanged(left: SearchExploreSettings, right: SearchExploreSettings): boolean {
+    return left.showResultCover !== right.showResultCover ||
+      left.useBookshelfCoverGallery !== right.useBookshelfCoverGallery ||
+      left.showResultTags !== right.showResultTags ||
+      left.promptAddToShelfOnBack !== right.promptAddToShelfOnBack ||
+      left.exactSearch !== right.exactSearch ||
+      left.exactSearchMatchAuthor !== right.exactSearchMatchAuthor ||
+      left.showSearchProgress !== right.showSearchProgress;
   }
 }

@@ -15,12 +15,22 @@ import { CookieStore } from '../core/http/CookieStore';
 import { BookSourceGroupStore } from '../utils/BookSourceGroupStore';
 import { ResponsiveManagerListLayout } from '../utils/ResponsiveManagerListLayout';
 import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
+import { common, WantAgent, wantAgent } from '@kit.AbilityKit';
+import { request } from '@kit.BasicServicesKit';
+import { webview } from '@kit.ArkWeb';
+import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
+import { notificationManager } from '@kit.NotificationKit';
+import commonEventManager from '@ohos.commonEventManager';
+import { BookSourceLoginItem, BookSourceScriptRunner } from '../core/book/BookSourceScriptRunner';
 
 const BOOK_SOURCE_IMPORT_FILE_LIMIT_BYTES = 25 * 1024 * 1024;
 const BOOK_SOURCE_IMPORT_TIMEOUT_MS = 20000;
 const BOOK_SOURCE_IMPORT_URL_RETRY_COUNT = 3;
 const BOOK_SOURCE_CHECK_KEYWORD = '斗破苍穹';
 const BOOK_SOURCE_LIST_BATCH_SIZE = 60;
+const BOOK_SOURCE_CHECK_CANCEL_EVENT: string = 'com.legado.harmony.action.BOOK_SOURCE_CHECK_CANCEL';
+const BOOK_SOURCE_CHECK_NOTIFICATION_INTERVAL_MS: number = 1000;
+const BOOK_SOURCE_CHECK_NOTIFICATION_ID: number = 2701;
 
 @Entry
 @Component
@@ -34,6 +44,8 @@ struct BookSourcePage {
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @StorageLink('pendingBookSourceImportNonce') @Watch('onPendingBookSourceImportChanged')
   pendingBookSourceImportNonce: number = 0;
+  @StorageLink('bookSourceCheckOpenNonce') @Watch('onBookSourceCheckOpenRequested')
+  bookSourceCheckOpenNonce: number = 0;
   @State allSources: BookSource[] = [];
   @State sources: BookSource[] = [];
   @State visibleSources: BookSource[] = [];
@@ -58,6 +70,8 @@ struct BookSourcePage {
   @State showGroupDialog: boolean = false;
   @State showMoreActionDialog: boolean = false;
   @State showSourceActionDialog: boolean = false;
+  @State showSourceLoginUiDialog: boolean = false;
+  @State sourceLoginItems: BookSourceLoginItem[] = [];
   @State showSourceDeleteDialog: boolean = false;
   @State showSourceGroupToolsMenu: boolean = false;
   @State showSourceGroupActionMenu: boolean = false;
@@ -98,26 +112,65 @@ struct BookSourcePage {
   @State checkStatus: string = '';
   @State checkInvalidAction: string = 'none';
   @State checkAutoHandledCount: number = 0;
+  @State checkBackgroundMode: boolean = false;
+  @State webImportActive: boolean = false;
+  @State webImportEntryUrl: string = 'about:blank';
   private sourceListScroller: Scroller = new Scroller();
   private hasShownOnce: boolean = false;
+  private checkCoordinator: SearchCoordinator | null = null;
+  private checkTaskSerial: number = 0;
+  private checkNotificationLastAt: number = 0;
+  private checkBackgroundRunning: boolean = false;
+  private checkCancelAgent: WantAgent | null = null;
+  private checkCancelSubscriber: commonEventManager.CommonEventSubscriber | null = null;
+  private pageVisible: boolean = true;
+  private webImportController: webview.WebviewController = new webview.WebviewController();
+  private webImportTargetUrl: string = '';
+  private webImportStarted: boolean = false;
+  private webImportResolve: ((value: string) => void) | null = null;
+  private webImportReject: ((reason: Error) => void) | null = null;
+  private webImportTimeoutId: number = -1;
+  private webImportPollId: number = -1;
 
   aboutToAppear() {
     this.syncBars();
     this.loadSources();
     this.handlePendingBookSourceImport();
+    this.ensureBookSourceCheckCancelSubscriber();
+  }
+
+  aboutToDisappear(): void {
+    this.finishWebImport('', '网页取数已取消');
+    if (!this.isCheckingSources) {
+      this.releaseBookSourceCheckCancelSubscriber();
+    }
   }
 
   onPendingBookSourceImportChanged(): void {
     this.handlePendingBookSourceImport();
   }
 
+  onBookSourceCheckOpenRequested(): void {
+    if (this.isCheckingSources || this.checkBackgroundMode) {
+      this.showCheckDialog = true;
+    }
+  }
+
   onPageShow(): void {
+    this.pageVisible = true;
     this.syncBars();
     if (!this.hasShownOnce) {
       this.hasShownOnce = true;
       return;
     }
     this.refreshSources();
+  }
+
+  onPageHide(): void {
+    this.pageVisible = false;
+    if (!this.isCheckingSources) {
+      this.releaseBookSourceCheckCancelSubscriber();
+    }
   }
 
   async refreshSources(): Promise<void> {
@@ -826,6 +879,10 @@ struct BookSourcePage {
         this.sourceActionDialog()
       }
 
+      if (this.showSourceLoginUiDialog) {
+        this.sourceLoginUiDialog()
+      }
+
       if (this.showSourceDeleteDialog) {
         this.sourceDeleteDialog()
       }
@@ -867,6 +924,34 @@ struct BookSourcePage {
               .fontSize(13)
               .fontColor(this.subTextColor())
               .margin({ bottom: this.isCheckingSources ? 0 : 12 })
+
+            if (this.isCheckingSources) {
+              Row({ space: 10 }) {
+                Button('取消', { type: ButtonType.Normal })
+                  .layoutWeight(1)
+                  .height(42)
+                  .borderRadius(10)
+                  .fontSize(13)
+                  .backgroundColor(this.inputColor())
+                  .fontColor(this.primaryTextColor())
+                  .onClick(() => {
+                    this.cancelBookSourceCheck(true);
+                  })
+
+                Button('后台', { type: ButtonType.Normal })
+                  .layoutWeight(1)
+                  .height(42)
+                  .borderRadius(10)
+                  .fontSize(13)
+                  .backgroundColor(this.buttonColor())
+                  .fontColor('#FFFFFF')
+                  .onClick(() => {
+                    this.continueBookSourceCheckInBackground();
+                  })
+              }
+              .width('100%')
+              .margin({ top: 16 })
+            }
 
             if (!this.isCheckingSources) {
               Text(this.checkResultText())
@@ -928,7 +1013,7 @@ struct BookSourcePage {
                     })
                 }
 
-                Button(this.checkInvalidAction === 'none' ? '取消' : '关闭', { type: ButtonType.Normal })
+                Button('关闭', { type: ButtonType.Normal })
                   .layoutWeight(1)
                   .height(42)
                   .borderRadius(10)
@@ -964,6 +1049,20 @@ struct BookSourcePage {
             this.showCheckDialog = false;
           }
         })
+      }
+
+      if (this.webImportActive) {
+        Web({ src: this.webImportEntryUrl, controller: this.webImportController })
+          .width(1)
+          .height(1)
+          .opacity(0.01)
+          .javaScriptAccess(true)
+          .domStorageAccess(true)
+          .mixedMode(MixedMode.All)
+          .userAgent('Mozilla/5.0 (Linux; HarmonyOS; Mobile) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36')
+          .onPageEnd(() => {
+            this.startWebImportFetch();
+          })
       }
 
       if (this.isImporting) {
@@ -1478,6 +1577,65 @@ struct BookSourcePage {
     }
     .width('100%')
     .height('100%')
+  }
+
+  @Builder
+  sourceLoginUiDialog() {
+    Column() {
+      Column() {
+        Text(`${this.actionSourceName()} · 登录与接口`)
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .margin({ bottom: 12 })
+
+        Scroll() {
+          Flex({ wrap: FlexWrap.Wrap }) {
+            ForEach(this.sourceLoginItems, (item: BookSourceLoginItem) => {
+              Button(item.name, { type: ButtonType.Normal })
+                .fontSize(14)
+                .fontColor(item.action ? this.primaryTextColor() : this.subTextColor())
+                .backgroundColor(item.action ? this.inputColor() : this.cardColor())
+                .margin({ right: 8, bottom: 8 })
+                .enabled(!!item.action)
+                .onClick(() => {
+                  this.executeSourceLoginAction(item);
+                })
+            }, (item: BookSourceLoginItem) => `${item.name}_${item.action}`)
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 430 })
+        .scrollBar(BarState.Auto)
+
+        Button('关闭')
+          .width('100%')
+          .height(42)
+          .margin({ top: 8 })
+          .backgroundColor(this.buttonColor())
+          .fontColor('#FFFFFF')
+          .onClick(() => {
+            this.showSourceLoginUiDialog = false;
+            this.sourceLoginItems = [];
+            this.actionSourceUrl = '';
+            this.actionSourceDetail = null;
+          })
+      }
+      .width('90%')
+      .padding(22)
+      .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
+      .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
+      .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
+      .border({ width: ThemeRuntime.glassBorderWidth('overlay'),
+        color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'overlay') })
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('#80000000')
+    .justifyContent(FlexAlign.Center)
   }
 
   @Builder
@@ -3012,6 +3170,13 @@ struct BookSourcePage {
       return;
     }
     this.showSourceActionDialog = false;
+    const loginItems = BookSourceScriptRunner.loginItems(source);
+    if (loginItems.some((item: BookSourceLoginItem): boolean => !!item.action)) {
+      this.actionSourceDetail = source;
+      this.sourceLoginItems = loginItems;
+      this.showSourceLoginUiDialog = true;
+      return;
+    }
     if (this.sourceUsesEditorLogin(source)) {
       this.actionSourceUrl = '';
       router.pushUrl({
@@ -3027,18 +3192,44 @@ struct BookSourcePage {
       promptAction.showToast({ message: '未找到可用的网页登录地址，请检查书源登录配置' });
       return;
     }
-    VerificationSupport.requestVerification(
-      loginEntryUrl,
-      `${source.bookSourceName || '书源'} 登录`,
-      source
-    );
+    this.openSourceLoginBrowser(source, loginEntryUrl, `${source.bookSourceName || '书源'} 登录`, true);
+  }
+
+  async executeSourceLoginAction(item: BookSourceLoginItem): Promise<void> {
+    const source = this.actionSourceDetail;
+    if (!source || !item.action) return;
+    const result = BookSourceScriptRunner.executeAction(source, item.action);
+    if (!result.handled) {
+      promptAction.showToast({ message: `暂不支持登录动作：${item.action}` });
+      return;
+    }
+    if (result.variable !== source.variable) {
+      source.variable = result.variable;
+      await AppDatabase.getInstance().updateBookSourceVariable(source.bookSourceUrl, source.variable);
+    }
+    if (result.toastMessage) {
+      promptAction.showToast({ message: result.toastMessage.trim() || '操作成功' });
+    }
+    if (result.requestedUrl) {
+      this.showSourceLoginUiDialog = false;
+      this.sourceLoginItems = [];
+      const isLogin = /(?:登录|login)/i.test(item.name) || /\/login(?:\.html)?(?:[?#]|$)/i.test(result.requestedUrl);
+      this.openSourceLoginBrowser(source, result.requestedUrl,
+        `${source.bookSourceName || '书源'} · ${item.name}`, isLogin);
+      return;
+    }
+    this.actionSourceDetail = source;
+  }
+
+  openSourceLoginBrowser(source: BookSource, url: string, title: string, requireLoginCookie: boolean): void {
+    VerificationSupport.requestVerification(url, title, source);
     this.actionSourceUrl = '';
     router.pushUrl({
       url: 'pages/VerifyWeb',
       params: {
-        url: loginEntryUrl,
-        title: `${source.bookSourceName || '书源'} 登录`,
-        requireLoginCookie: 'true'
+        url: url,
+        title: title,
+        requireLoginCookie: requireLoginCookie ? 'true' : 'false'
       }
     });
   }
@@ -3507,10 +3698,12 @@ struct BookSourcePage {
       return;
     }
 
+    const taskSerial = ++this.checkTaskSerial;
     this.checkInvalidAction = action === 'disable' || action === 'delete' ? action : 'none';
     this.showCheckOptionsDialog = false;
     this.showCheckDialog = true;
     this.isCheckingSources = true;
+    this.checkBackgroundMode = false;
     this.checkDone = 0;
     this.checkTotal = targetSources.length;
     this.checkOkCount = 0;
@@ -3522,33 +3715,277 @@ struct BookSourcePage {
     this.checkResultDetails = [];
     this.checkAutoHandledCount = 0;
     this.checkStatus = `准备校验 ${targetSources.length} 个书源`;
+    this.checkNotificationLastAt = 0;
+    this.checkCancelAgent = null;
+    await this.ensureBookSourceCheckCancelSubscriber();
+    if (taskSerial !== this.checkTaskSerial || !this.isCheckingSources) {
+      return;
+    }
 
     try {
       const coordinator = new SearchCoordinator(SearchExploreSettingsStore.getSearchConcurrency());
+      this.checkCoordinator = coordinator;
       await coordinator.search(BOOK_SOURCE_CHECK_KEYWORD, (progress: SearchProgress) => {
+        if (taskSerial !== this.checkTaskSerial || !this.isCheckingSources) {
+          return;
+        }
         this.checkDone = progress.done;
         this.checkTotal = progress.total;
         this.checkStatus = this.formatCheckProgressStatus(progress);
+        if (this.checkBackgroundMode) {
+          this.publishBookSourceCheckProgress(false).catch((e: Error) => {
+            console.warn('更新书源校验通知失败:', e);
+          });
+        }
       }, {
         onSourceComplete: async (source: BookSource, result: SearchSourceResult) => {
+          if (taskSerial !== this.checkTaskSerial || !this.isCheckingSources) {
+            return;
+          }
           await this.handleCheckedSourceCompletion(source, result);
         },
         targetSources: targetSources,
         validationOnly: true
       });
 
+      if (taskSerial !== this.checkTaskSerial) {
+        return;
+      }
       this.checkDone = targetSources.length;
       this.checkTotal = targetSources.length;
       this.checkStatus = this.checkResultText();
     } catch (e) {
+      if (taskSerial !== this.checkTaskSerial) {
+        return;
+      }
       console.error('校验书源失败:', e);
       this.checkStatus = '校验失败，请稍后重试';
       promptAction.showToast({ message: '校验失败' });
     } finally {
+      if (taskSerial !== this.checkTaskSerial) {
+        return;
+      }
+      const finishedInBackground = this.checkBackgroundMode;
+      this.checkCoordinator = null;
       this.isCheckingSources = false;
       if (this.checkInvalidAction !== 'none') {
         await this.loadSources();
       }
+      if (finishedInBackground) {
+        await this.publishBookSourceCheckNotification('书源校验完成', this.checkResultText(), false);
+      }
+      this.checkBackgroundMode = false;
+      await this.stopBookSourceCheckBackgroundRunning();
+      if (!this.pageVisible) {
+        this.releaseBookSourceCheckCancelSubscriber();
+      }
+    }
+  }
+
+  cancelBookSourceCheck(showToast: boolean): void {
+    if (!this.isCheckingSources) {
+      return;
+    }
+    const wasBackground = this.checkBackgroundMode;
+    this.checkTaskSerial++;
+    if (this.checkCoordinator) {
+      this.checkCoordinator.cancel();
+      this.checkCoordinator = null;
+    }
+    this.isCheckingSources = false;
+    this.checkBackgroundMode = false;
+    this.checkStatus = `校验已取消（${this.checkDone}/${this.checkTotal}）`;
+    if (showToast) {
+      promptAction.showToast({ message: '已停止书源校验' });
+    }
+    if (this.checkInvalidAction !== 'none') {
+      this.loadSources().catch((e: Error) => {
+        console.warn('取消校验后刷新书源失败:', e);
+      });
+    }
+    if (wasBackground) {
+      this.publishBookSourceCheckNotification('书源校验已取消', this.bookSourceCheckProgressText(), false)
+        .catch((e: Error) => {
+          console.warn('更新书源校验取消通知失败:', e);
+        });
+    }
+    this.stopBookSourceCheckBackgroundRunning().catch((e: Error) => {
+      console.warn('停止书源校验后台任务失败:', e);
+    });
+    if (!this.pageVisible) {
+      this.releaseBookSourceCheckCancelSubscriber();
+    }
+  }
+
+  async continueBookSourceCheckInBackground(): Promise<void> {
+    if (!this.isCheckingSources) {
+      return;
+    }
+    this.checkBackgroundMode = true;
+    this.showCheckDialog = false;
+    promptAction.showToast({ message: '书源校验将在后台继续，可在通知栏取消' });
+    await this.startBookSourceCheckBackgroundRunning();
+    await this.requestBookSourceCheckNotificationEnabled();
+    if (this.isCheckingSources && this.checkBackgroundMode) {
+      await this.publishBookSourceCheckProgress(true);
+    }
+  }
+
+  bookSourceCheckProgressText(): string {
+    const total = Math.max(0, this.checkTotal);
+    if (total === 0) {
+      return '正在准备校验书源（0%）';
+    }
+    const done = Math.max(0, Math.min(this.checkDone, total));
+    const percent = Math.floor((done / total) * 100);
+    return `已校验 ${done}/${total}（${percent}%）`;
+  }
+
+  async publishBookSourceCheckProgress(force: boolean): Promise<void> {
+    const now = Date.now();
+    if (!force && now - this.checkNotificationLastAt < BOOK_SOURCE_CHECK_NOTIFICATION_INTERVAL_MS) {
+      return;
+    }
+    this.checkNotificationLastAt = now;
+    await this.publishBookSourceCheckNotification(
+      this.checkStatus || '书源校验后台进行中',
+      this.bookSourceCheckProgressText(),
+      true
+    );
+  }
+
+  async publishBookSourceCheckNotification(text: string, additionalText: string, ongoing: boolean): Promise<void> {
+    try {
+      const request: notificationManager.NotificationRequest = {
+        id: BOOK_SOURCE_CHECK_NOTIFICATION_ID,
+        label: 'book_source_check',
+        notificationSlotType: notificationManager.SlotType.SERVICE_INFORMATION,
+        isOngoing: ongoing,
+        tapDismissed: false,
+        isAlertOnce: true,
+        wantAgent: await this.getBookSourceCheckOpenWantAgent(),
+        content: {
+          notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_BASIC_TEXT,
+          normal: {
+            title: '书源校验',
+            text: text,
+            additionalText: additionalText
+          }
+        }
+      };
+      if (ongoing) {
+        request.actionButtons = [{
+          title: '取消',
+          wantAgent: await this.getBookSourceCheckCancelWantAgent()
+        }];
+      } else {
+        request.autoDeletedTime = Date.now() + 5000;
+      }
+      await notificationManager.publish(request);
+    } catch (e) {
+      console.warn('发布书源校验通知失败:', e);
+    }
+  }
+
+  async requestBookSourceCheckNotificationEnabled(): Promise<void> {
+    try {
+      if (await notificationManager.isNotificationEnabled()) {
+        return;
+      }
+      await notificationManager.requestEnableNotification(getContext(this) as common.UIAbilityContext);
+    } catch (e) {
+      console.warn('请求书源校验通知权限失败:', e);
+    }
+  }
+
+  async getBookSourceCheckOpenWantAgent(): Promise<WantAgent> {
+    const context = getContext(this) as common.UIAbilityContext;
+    return await wantAgent.getWantAgent({
+      wants: [{
+        bundleName: context.abilityInfo.bundleName,
+        abilityName: 'EntryAbility',
+        parameters: {
+          bookSourceCheckAction: 'open'
+        }
+      }],
+      actionType: wantAgent.OperationType.START_ABILITY,
+      requestCode: 2702,
+      actionFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
+    });
+  }
+
+  async getBookSourceCheckCancelWantAgent(): Promise<WantAgent> {
+    if (this.checkCancelAgent) {
+      return this.checkCancelAgent;
+    }
+    this.checkCancelAgent = await wantAgent.getWantAgent({
+      wants: [{
+        action: BOOK_SOURCE_CHECK_CANCEL_EVENT
+      }],
+      actionType: wantAgent.OperationType.SEND_COMMON_EVENT,
+      requestCode: 2703,
+      actionFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
+    });
+    return this.checkCancelAgent;
+  }
+
+  async ensureBookSourceCheckCancelSubscriber(): Promise<void> {
+    if (this.checkCancelSubscriber) {
+      return;
+    }
+    try {
+      const subscriber = await commonEventManager.createSubscriber({
+        events: [BOOK_SOURCE_CHECK_CANCEL_EVENT]
+      });
+      this.checkCancelSubscriber = subscriber;
+      commonEventManager.subscribe(subscriber,
+        (error: Error | null, _data: commonEventManager.CommonEventData) => {
+          if (error) {
+            console.warn('接收书源校验取消事件失败:', error);
+            return;
+          }
+          this.cancelBookSourceCheck(false);
+        });
+    } catch (e) {
+      console.warn('注册书源校验取消事件失败:', e);
+    }
+  }
+
+  releaseBookSourceCheckCancelSubscriber(): void {
+    if (!this.checkCancelSubscriber) {
+      return;
+    }
+    const subscriber = this.checkCancelSubscriber;
+    this.checkCancelSubscriber = null;
+    commonEventManager.unsubscribe(subscriber, (error: Error | null) => {
+      if (error) {
+        console.warn('注销书源校验取消事件失败:', error);
+      }
+    });
+  }
+
+  async startBookSourceCheckBackgroundRunning(): Promise<void> {
+    if (this.checkBackgroundRunning) {
+      return;
+    }
+    try {
+      const agent = await this.getBookSourceCheckOpenWantAgent();
+      await backgroundTaskManager.startBackgroundRunning(getContext(this), ['dataTransfer'], agent);
+      this.checkBackgroundRunning = true;
+    } catch (e) {
+      console.warn('启动书源校验后台任务失败:', e);
+    }
+  }
+
+  async stopBookSourceCheckBackgroundRunning(): Promise<void> {
+    if (!this.checkBackgroundRunning) {
+      return;
+    }
+    this.checkBackgroundRunning = false;
+    try {
+      await backgroundTaskManager.stopBackgroundRunning(getContext(this));
+    } catch (e) {
+      console.warn('停止书源校验后台任务失败:', e);
     }
   }
 
@@ -3749,7 +4186,7 @@ struct BookSourcePage {
       await this.importSourcesFromJson(content);
     } catch (e) {
       console.error('从文件导入失败:', e);
-      const errMsg = e instanceof Error ? e.message : String(e);
+      const errMsg = this.importErrorMessage(e as Object);
       promptAction.showToast({ message: `导入失败: ${errMsg}` });
     } finally {
       this.isImporting = false;
@@ -3771,7 +4208,7 @@ struct BookSourcePage {
       await this.importSourcesFromJson(content);
     } catch (e) {
       console.error('打开 JSON 书源文件失败:', e);
-      const message = e instanceof Error ? e.message : String(e);
+      const message = this.importErrorMessage(e as Object);
       promptAction.showToast({ message: `导入失败: ${message}` });
     } finally {
       this.isImporting = false;
@@ -3879,7 +4316,7 @@ struct BookSourcePage {
       this.importUrl = '';
     } catch (e) {
       console.error('从URL导入失败:', e);
-      const errMsg = e instanceof Error ? e.message : String(e);
+      const errMsg = this.importErrorMessage(e as Object);
       promptAction.showToast({ message: `导入失败: ${errMsg}` });
     } finally {
       this.isImporting = false;
@@ -3888,28 +4325,300 @@ struct BookSourcePage {
 
   async fetchImportUrlBody(url: string): Promise<string> {
     let lastError = '';
-    for (let attempt = 1; attempt <= BOOK_SOURCE_IMPORT_URL_RETRY_COUNT; attempt++) {
+    let webFallbackError = '';
+    const candidates = this.importUrlCandidates(url);
+    const directAttempts = Math.min(BOOK_SOURCE_IMPORT_URL_RETRY_COUNT, candidates.length);
+    for (let attempt = 0; attempt < directAttempts; attempt++) {
+      const requestUrl = candidates[attempt];
       const response = await new HttpClient(BOOK_SOURCE_IMPORT_TIMEOUT_MS).execute({
-        url,
+        url: requestUrl,
         method: 'GET',
-        headers: {},
+        headers: {
+          'Accept': 'application/json,text/plain,*/*'
+        },
         connectTimeout: BOOK_SOURCE_IMPORT_TIMEOUT_MS,
-        readTimeout: BOOK_SOURCE_IMPORT_TIMEOUT_MS
+        readTimeout: BOOK_SOURCE_IMPORT_TIMEOUT_MS,
+        maxResponseBytes: BOOK_SOURCE_IMPORT_FILE_LIMIT_BYTES
       });
       if (response.success && this.looksLikeBookSourceJson(response.body)) {
         return response.body.replace(/^\uFEFF/, '');
       }
-      lastError = response.success ? '响应内容不是有效书源JSON' : (response.error || `HTTP ${response.statusCode}`);
-      if (attempt < BOOK_SOURCE_IMPORT_URL_RETRY_COUNT) {
-        await new Promise<void>((resolve) => setTimeout(resolve, attempt * 500));
+      const reason = response.success ? '响应内容不是有效书源JSON' :
+        (response.error || `HTTP ${response.statusCode}`);
+      lastError = `${this.importUrlHost(requestUrl)}: ${reason}`;
+      if (reason.includes('2300056') || reason.toLowerCase().includes('failed to receive data from the peer')) {
+        break;
+      }
+      if (attempt + 1 < directAttempts) {
+        await new Promise<void>((resolve) => setTimeout(resolve, (attempt + 1) * 300));
+      }
+    }
+
+    const webRequestUrl = candidates.length > 0 ? candidates[candidates.length - 1] : url;
+    try {
+      const body = await this.fetchImportUrlViaWeb(webRequestUrl);
+      if (this.looksLikeBookSourceJson(body)) return body.replace(/^\uFEFF/, '');
+      lastError = `${this.importUrlHost(webRequestUrl)}: 网页响应不是有效书源JSON`;
+    } catch (webError) {
+      webFallbackError = `网页取数失败: ${this.importErrorMessage(webError as Object)}`;
+      lastError = `${this.importUrlHost(webRequestUrl)}: ${webFallbackError}`;
+    }
+
+    for (const requestUrl of candidates) {
+      try {
+        const body = await this.fetchImportUrlViaDownload(requestUrl);
+        if (this.looksLikeBookSourceJson(body)) return body.replace(/^\uFEFF/, '');
+        lastError = `${this.importUrlHost(requestUrl)}: 下载内容不是有效书源JSON`;
+      } catch (downloadError) {
+        const downloadMessage = this.importErrorMessage(downloadError as Object);
+        const combinedMessage = webFallbackError ? `${webFallbackError}；${downloadMessage}` : downloadMessage;
+        lastError = `${this.importUrlHost(requestUrl)}: ${combinedMessage}`;
       }
     }
     throw new Error(lastError || '获取书源失败');
   }
 
+  fetchImportUrlViaWeb(url: string): Promise<string> {
+    const origin = this.importUrlOrigin(url);
+    if (!origin) return Promise.reject(new Error('网页取数仅支持 HTTP/HTTPS 地址'));
+    if (this.webImportResolve || this.webImportReject) {
+      return Promise.reject(new Error('已有网页取数任务正在运行'));
+    }
+    this.webImportTargetUrl = url;
+    this.webImportStarted = false;
+    this.webImportEntryUrl = `${origin}/`;
+    this.webImportActive = true;
+    return new Promise<string>((resolve, reject) => {
+      this.webImportResolve = resolve;
+      this.webImportReject = reject;
+      this.webImportTimeoutId = setTimeout(() => {
+        this.finishWebImport('', '网页取数超时');
+      }, BOOK_SOURCE_IMPORT_TIMEOUT_MS);
+    });
+  }
+
+  startWebImportFetch(): void {
+    if (!this.webImportActive || this.webImportStarted || !this.webImportTargetUrl) return;
+    this.webImportStarted = true;
+    const target = JSON.stringify(this.webImportTargetUrl);
+    const script = `(function(){` +
+      `window.__legadoBookSourceImportResult='';` +
+      `fetch(${target},{method:'GET',cache:'no-store',credentials:'same-origin',` +
+      `headers:{'Accept':'application/json,text/plain,*/*'}})` +
+      `.then(function(r){return r.text().then(function(t){` +
+      `window.__legadoBookSourceImportResult='OK|'+r.status+'|'+encodeURIComponent(t);` +
+      `});})` +
+      `.catch(function(e){window.__legadoBookSourceImportResult='ERR|0|'+` +
+      `encodeURIComponent(String((e&&e.message)||e||'网页请求失败'));});` +
+      `return 'started';})()`;
+    this.webImportController.runJavaScript(script)
+      .then((): void => {
+        this.pollWebImportResult();
+      })
+      .catch((error: Object): void => {
+        this.finishWebImport('', `网页脚本执行失败: ${this.importErrorMessage(error)}`);
+      });
+  }
+
+  pollWebImportResult(): void {
+    if (!this.webImportActive) return;
+    this.webImportController.runJavaScript('window.__legadoBookSourceImportResult || ""')
+      .then((raw: string): void => {
+        if (!this.webImportActive) return;
+        const result = this.cleanWebImportResult(raw);
+        if (!result) {
+          this.webImportPollId = setTimeout(() => this.pollWebImportResult(), 180);
+          return;
+        }
+        const firstSeparator = result.indexOf('|');
+        const secondSeparator = result.indexOf('|', firstSeparator + 1);
+        if (firstSeparator <= 0 || secondSeparator <= firstSeparator) {
+          this.finishWebImport('', '网页取数返回格式异常');
+          return;
+        }
+        const state = result.substring(0, firstSeparator);
+        const status = Number(result.substring(firstSeparator + 1, secondSeparator)) || 0;
+        let payload = result.substring(secondSeparator + 1);
+        try {
+          payload = decodeURIComponent(payload);
+        } catch (_) {
+          this.finishWebImport('', '网页取数结果解码失败');
+          return;
+        }
+        if (state !== 'OK') {
+          this.finishWebImport('', payload || '网页请求失败');
+          return;
+        }
+        if (status < 200 || status >= 300) {
+          this.finishWebImport('', `网页请求 HTTP ${status}`);
+          return;
+        }
+        if (payload.length > BOOK_SOURCE_IMPORT_FILE_LIMIT_BYTES) {
+          this.finishWebImport('', '网页响应过大，请使用 25MB 以内的书源文件');
+          return;
+        }
+        this.finishWebImport(payload);
+      })
+      .catch((error: Object): void => {
+        this.finishWebImport('', `读取网页结果失败: ${this.importErrorMessage(error)}`);
+      });
+  }
+
+  cleanWebImportResult(value: string): string {
+    let result = (value || '').trim();
+    if ((result.startsWith('"') && result.endsWith('"')) ||
+      (result.startsWith("'") && result.endsWith("'"))) {
+      result = result.substring(1, result.length - 1);
+    }
+    return result.trim();
+  }
+
+  finishWebImport(body: string = '', errorMessage: string = ''): void {
+    if (!this.webImportResolve && !this.webImportReject) return;
+    if (this.webImportTimeoutId >= 0) clearTimeout(this.webImportTimeoutId);
+    if (this.webImportPollId >= 0) clearTimeout(this.webImportPollId);
+    const resolve = this.webImportResolve;
+    const reject = this.webImportReject;
+    this.webImportResolve = null;
+    this.webImportReject = null;
+    this.webImportTimeoutId = -1;
+    this.webImportPollId = -1;
+    this.webImportStarted = false;
+    this.webImportTargetUrl = '';
+    this.webImportActive = false;
+    this.webImportEntryUrl = 'about:blank';
+    if (errorMessage) {
+      if (reject) reject(new Error(errorMessage));
+    } else if (resolve) {
+      resolve(body);
+    }
+  }
+
+  async fetchImportUrlViaDownload(url: string): Promise<string> {
+    const context = getContext(this) as common.UIAbilityContext;
+    const suffix = `${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+    const filePath = `${context.cacheDir}/book_source_import_${suffix}.json`;
+    let task: request.DownloadTask | null = null;
+    try {
+      task = await request.downloadFile(context, {
+        url: url,
+        header: {
+          'Accept': 'application/json,text/plain,*/*',
+          'User-Agent': 'Mozilla/5.0 (Linux; HarmonyOS; Mobile) AppleWebKit/537.36 Safari/537.36'
+        },
+        enableMetered: true,
+        enableRoaming: true,
+        filePath: filePath,
+        background: false,
+        title: '导入书源'
+      });
+      await this.waitForImportDownload(task);
+      return await this.readTextFile(filePath);
+    } finally {
+      if (task) {
+        try {
+          await task.delete();
+        } catch (_) {
+        }
+      }
+      try {
+        fs.unlinkSync(filePath);
+      } catch (_) {
+      }
+    }
+  }
+
+  waitForImportDownload(task: request.DownloadTask): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (errorMessage: string = ''): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeoutId);
+        try {
+          task.off('complete', onComplete);
+          task.off('fail', onFail);
+        } catch (_) {
+        }
+        if (errorMessage) reject(new Error(errorMessage));
+        else resolve();
+      };
+      const onComplete = (): void => finish();
+      const onFail = (errorCode: number): void => finish(this.downloadServiceErrorMessage(errorCode));
+      const timeoutId = setTimeout(() => finish('下载服务超时'), BOOK_SOURCE_IMPORT_TIMEOUT_MS);
+      try {
+        task.on('complete', onComplete);
+        task.on('fail', onFail);
+      } catch (subscribeError) {
+        finish(this.importErrorMessage(subscribeError as Object));
+        return;
+      }
+      task.query().then((info: request.DownloadInfo): void => {
+        if (info.status === request.SESSION_SUCCESSFUL) finish();
+        else if (info.status === request.SESSION_FAILED) finish(this.downloadServiceErrorMessage(info.failedReason));
+      }).catch((queryError: Object): void => {
+        if (!settled) console.warn('查询书源下载状态失败:', queryError);
+      });
+    });
+  }
+
+  downloadServiceErrorMessage(errorCode: number): string {
+    if (errorCode === 8) return '下载服务未知错误 (8)';
+    return `下载服务失败 (${errorCode})`;
+  }
+
+  importUrlCandidates(url: string): string[] {
+    const raw = (url || '').trim();
+    if (!raw) return [];
+    const candidates: string[] = [raw];
+    if (/^http:\/\//i.test(raw)) {
+      const secure = `https://${raw.substring('http://'.length)}`;
+      if (!candidates.includes(secure)) candidates.push(secure);
+    }
+    return candidates;
+  }
+
+  importUrlHost(url: string): string {
+    const match = (url || '').match(/^https?:\/\/([^/?#]+)/i);
+    return match ? match[1] : '书源地址';
+  }
+
+  importUrlOrigin(url: string): string {
+    const match = (url || '').match(/^(https?:\/\/[^/?#]+)/i);
+    return match ? match[1] : '';
+  }
+
   looksLikeBookSourceJson(body: string): boolean {
     const text = (body || '').replace(/^\uFEFF/, '').replace(/^\s+/, '');
     return text.startsWith('[') || text.startsWith('{');
+  }
+
+  importErrorMessage(error: Object): string {
+    if (error instanceof Error && this.isReadableErrorText(error.message)) return error.message;
+    if (typeof error === 'string' && this.isReadableErrorText(error as string)) return error as string;
+    if (error && typeof error === 'object') {
+      const record = error as Record<string, Object>;
+      const rawMessage = record['message'] || record['msg'] || record['reason'];
+      let message = typeof rawMessage === 'string' ? (rawMessage as string).trim() : '';
+      if (!this.isReadableErrorText(message) && rawMessage && typeof rawMessage === 'object') {
+        const nested = rawMessage as Record<string, Object>;
+        message = String(nested['message'] || nested['msg'] || nested['reason'] || '').trim();
+      }
+      const code = String(record['code'] || record['errorCode'] || '').trim();
+      if (this.isReadableErrorText(message)) return code ? `${message} (${code})` : message;
+      try {
+        const json = JSON.stringify(error);
+        if (json && json !== '{}') return json;
+      } catch (_) {
+      }
+    }
+    const fallback = String(error || '').trim();
+    return this.isReadableErrorText(fallback) ? fallback : '未知错误';
+  }
+
+  isReadableErrorText(value: string): boolean {
+    const text = (value || '').trim().toLowerCase();
+    return !!text && !text.includes('[object object]') && text !== 'object object' && text !== '{}';
   }
 
   async importSourcesFromJson(json: string) {
@@ -3961,7 +4670,7 @@ struct BookSourcePage {
             importCount++;
           } catch (insertErr) {
             failedCount++;
-            lastInsertError = insertErr instanceof Error ? insertErr.message : String(insertErr);
+            lastInsertError = this.importErrorMessage(insertErr as Object);
             console.error('插入书源失败:', source.bookSourceName, insertErr);
           }
         }
@@ -3978,7 +4687,7 @@ struct BookSourcePage {
       await this.loadSources();
     } catch (e) {
       console.error('解析书源失败:', e);
-      const errMsg = e instanceof Error ? e.message : String(e);
+      const errMsg = this.importErrorMessage(e as Object);
       promptAction.showToast({ message: `书源格式错误: ${errMsg}` });
     }
   }
@@ -3987,6 +4696,7 @@ struct BookSourcePage {
     const source = new BookSource();
     source.bookSourceUrl = obj['bookSourceUrl'] as string || '';
     source.bookSourceName = obj['bookSourceName'] as string || '';
+    source.bookSourceType = Number(obj['bookSourceType'] || 0);
     source.bookSourceGroup = obj['bookSourceGroup'] as string || '';
     source.bookSourceComment = obj['bookSourceComment'] as string || '';
     source.loginUrl = obj['loginUrl'] as string || '';
@@ -3998,7 +4708,9 @@ struct BookSourcePage {
     source.exploreUrl = obj['exploreUrl'] as string || '';
     source.jsLib = obj['jsLib'] as string || '';
     source.header = obj['header'] as string || '';
-    source.variableComment = obj['variableComment'] as string || obj['variable'] as string || '';
+    source.variableComment = obj['variableComment'] as string || '';
+    source.variable = obj['variable'] as string || '';
+    source.enabledCookieJar = obj['enabledCookieJar'] !== false;
     source.enabled = obj['enabled'] !== false;
     source.enabledExplore = obj['enabledExplore'] !== false;
     source.isPinned = obj['isPinned'] === true;
@@ -4210,6 +4922,7 @@ struct BookSourcePage {
     rule.images = fields['images'] || '';
     rule.nextContentUrl = fields['nextContentUrl'] || fields['nextcontenturl'] || '';
     rule.replaceRegex = fields['replaceRegex'] || fields['replaceregex'] || '';
+    rule.imageDecode = fields['imageDecode'] || fields['imagedecode'] || '';
     rule.imageStyle = fields['imageStyle'] || fields['imagestyle'] || '';
     rule.payAction = fields['payAction'] || fields['payaction'] || '';
   }

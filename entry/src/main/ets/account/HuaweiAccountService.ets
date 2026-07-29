@@ -4,6 +4,7 @@ import { util } from '@kit.ArkTS';
 import { AccountCommerceApi } from './AccountCommerceApi';
 import { AccountSnapshot, HuaweiLoginResponse, IapCreditResponse } from './AccountCommerceModels';
 import { AccountSessionStore } from './AccountSessionStore';
+import { CloudSyncSettingsStore } from './CloudSyncSettingsStore';
 
 export class HuaweiAccountService {
   static async initialize(context: Context): Promise<void> {
@@ -29,6 +30,7 @@ export class HuaweiAccountService {
       throw new Error('账号服务返回的数据不完整');
     }
     await AccountSessionStore.saveLogin(context, loginResponse);
+    await CloudSyncSettingsStore.load(context, AccountSessionStore.account().userId);
     return AccountSessionStore.account();
   }
 
@@ -77,5 +79,6 @@ export class HuaweiAccountService {
 
   static async logout(context: Context): Promise<void> {
     await AccountSessionStore.clear(context);
+    await CloudSyncSettingsStore.load(context, '');
   }
 }

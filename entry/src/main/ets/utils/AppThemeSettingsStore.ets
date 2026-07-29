@@ -5,6 +5,7 @@ import { ThemeComponentSourceIds, ThemeIds, ThemePack } from '../theme/ThemeMode
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ReaderSettings, ReaderSettingsStore } from './ReaderSettingsStore';
 import { ReaderThemeHelper, ReaderThemeItem } from './ReaderThemeHelper';
+import { CloudSyncChangeTracker } from '../account/CloudSyncChangeTracker';
 
 export class AppThemeSettings {
   themeId: string = '';
@@ -184,6 +185,7 @@ export class AppThemeSettingsStore {
     await store.put(AppThemeSettingsStore.KEY_CUSTOM_DARK_READER_CONTENT_TONE,
       normalized.customDarkReaderContentTone);
     await store.flush();
+    CloudSyncChangeTracker.markPreferenceChanged();
   }
 
   static applyToStorage(settings: AppThemeSettings): void {

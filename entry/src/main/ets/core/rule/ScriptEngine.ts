@@ -1,6 +1,7 @@
 import { EncodedSourceUrl } from '../book/EncodedSourceUrl';
 import { RuleContext } from './RuleContext';
 import { JsRuntime } from './JsRuntime';
+import { ScriptCompatibility } from './ScriptCompatibility';
 
 export class ScriptEvalResult {
   handled: boolean = false;
@@ -11,6 +12,8 @@ export class ScriptEngineContext {
   content: string = '';
   baseUrl: string = '';
   ctx: RuleContext = new RuleContext();
+  requestedUrl: string = '';
+  toastMessage: string = '';
 
   getVar(key: string): string {
     return this.ctx.get(key);
@@ -83,6 +86,7 @@ class ArkTsJsEngineBackend implements ScriptEngineBackend {
 
 class ArkTsJsRunner {
   private env: ScriptEngineContext;
+  private js: JsRuntime = new JsRuntime();
   private vars: Record<string, Object> = {};
   private functions: Record<string, ScriptFunction> = {};
   private operationCount: number = 0;
@@ -93,11 +97,12 @@ class ArkTsJsRunner {
 
   run(code: string, resultValue: string): ScriptEvalResult {
     const out = new ScriptEvalResult();
-    const script = (code || '').trim();
+    const script = ScriptCompatibility.normalize((code || '').trim());
     if (!script || script.length > 512 * 1024 || this.requiresHostFallback(script)) return out;
     this.vars['result'] = resultValue;
     this.vars['baseUrl'] = this.env.baseUrl;
     this.vars['location'] = { href: this.env.baseUrl };
+    this.seedContextObjects();
     try {
       const body = this.collectFunctions(this.stripLineComments(script));
       let last: Object = '';
@@ -121,8 +126,26 @@ class ArkTsJsRunner {
 
   private requiresHostFallback(code: string): boolean {
     const jsLib = this.env.getJsLib();
-    return /\bjava\.(?:ajax|ajaxAll|post|connect|aes|des|getCookie|cookie)|\b(?:JavaImporter|Packages|Cipher|SecretKeySpec|IvParameterSpec)\b/.test(code) ||
-      /\b(?:JavaImporter|Packages|Cipher|SecretKeySpec|IvParameterSpec)\b/.test(jsLib);
+    return /\bjava\.(?:ajax|ajaxAll|post|connect)|\b(?:JavaImporter|Packages|Cipher|SecretKeySpec|IvParameterSpec|MessageDigest)\b/.test(code) ||
+      /\b(?:JavaImporter|Packages|Cipher|SecretKeySpec|IvParameterSpec|MessageDigest|android\.util\.Base64)\b/.test(jsLib);
+  }
+
+  private seedContextObjects(): void {
+    const values = this.env.ctx.toRecord();
+    const source: Record<string, Object> = {};
+    const book: Record<string, Object> = {};
+    const chapter: Record<string, Object> = {};
+    for (const key in values) {
+      const value = values[key];
+      if (key.startsWith('source.')) source[key.substring(7)] = value;
+      if (key.startsWith('book.')) book[key.substring(5)] = value;
+      if (key.startsWith('chapter.')) chapter[key.substring(8)] = value;
+      if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) && this.vars[key] === undefined) this.vars[key] = value;
+    }
+    source['key'] = this.env.getSourceKey();
+    this.vars['source'] = source;
+    this.vars['book'] = book;
+    this.vars['chapter'] = chapter;
   }
 
   private stripLineComments(code: string): string {
@@ -181,6 +204,22 @@ class ArkTsJsRunner {
       text = text.substring(0, start) + text.substring(braceEnd + 1);
       index = start;
     }
+    index = 0;
+    while (index < text.length) {
+      const match = /(?:var|let|const)?\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\(([^)]*)\)\s*=>\s*\{/.exec(
+        text.substring(index));
+      if (!match) break;
+      const start = index + match.index;
+      const braceStart = text.indexOf('{', start + match[0].length - 1);
+      const braceEnd = this.findMatching(text, braceStart, '{', '}');
+      if (braceEnd < 0) break;
+      const fn = new ScriptFunction();
+      fn.params = match[2].split(',').map(item => item.trim()).filter(item => item.length > 0);
+      fn.body = text.substring(braceStart + 1, braceEnd);
+      this.functions[match[1]] = fn;
+      text = text.substring(0, start) + text.substring(braceEnd + 1);
+      index = start;
+    }
     return text;
   }
 
@@ -205,6 +244,45 @@ class ArkTsJsRunner {
     if (declare) {
       const value = this.evalExpression(declare[2]);
       this.vars[declare[1]] = value;
+      return value;
+    }
+    const emptyDeclare = text.match(/^(?:var|let|const)\s+([A-Za-z_$][A-Za-z0-9_$]*)$/);
+    if (emptyDeclare) {
+      this.vars[emptyDeclare[1]] = '';
+      return '';
+    }
+
+    const compound = text.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\s*([+\-])=\s*([\s\S]+)$/);
+    if (compound) {
+      const current = this.vars[compound[1]] || '';
+      const next = this.evalExpression(compound[3]);
+      const numeric = /^-?\d+(?:\.\d+)?$/.test(this.toString(current)) &&
+        /^-?\d+(?:\.\d+)?$/.test(this.toString(next));
+      const value = compound[2] === '+' ?
+        (numeric ? Number(this.toString(current)) + Number(this.toString(next)) : this.toString(current) + this.toString(next)) :
+        Number(this.toString(current)) - Number(this.toString(next));
+      this.vars[compound[1]] = value;
+      return value;
+    }
+
+    const increment = text.match(/^([A-Za-z_$][A-Za-z0-9_$]*)(\+\+|--)$/);
+    if (increment) {
+      const value = Number(this.toString(this.vars[increment[1]])) + (increment[2] === '++' ? 1 : -1);
+      this.vars[increment[1]] = value;
+      return value;
+    }
+
+    const memberAssign = text.match(/^([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\[\s*([\s\S]+?)\s*\]|\.\s*([A-Za-z_$][A-Za-z0-9_$]*))\s*=\s*([\s\S]+)$/);
+    if (memberAssign) {
+      const target = this.vars[memberAssign[1]];
+      const key = memberAssign[3] || this.toString(this.evalExpression(memberAssign[2]));
+      const value = this.evalExpression(memberAssign[4]);
+      if (Array.isArray(target) && /^\d+$/.test(key)) {
+        const index = Number(key);
+        if (index < 10000) (target as Object[])[index] = value;
+      } else if (target && typeof target === 'object') {
+        (target as Record<string, Object>)[key] = value;
+      }
       return value;
     }
 
@@ -355,6 +433,24 @@ class ArkTsJsRunner {
       return Number.isNaN(value) ? '' : value;
     }
 
+    const multiply = this.splitTopLevel(text, '*');
+    if (multiply.length > 1) {
+      let value = Number(this.toString(this.evalExpression(multiply[0])));
+      for (let i = 1; i < multiply.length; i++) value *= Number(this.toString(this.evalExpression(multiply[i])));
+      return Number.isNaN(value) ? '' : value;
+    }
+
+    const divide = this.splitTopLevel(text, '/');
+    if (divide.length > 1) {
+      let value = Number(this.toString(this.evalExpression(divide[0])));
+      for (let i = 1; i < divide.length; i++) {
+        const divisor = Number(this.toString(this.evalExpression(divide[i])));
+        if (divisor === 0 || Number.isNaN(divisor)) return 0;
+        value /= divisor;
+      }
+      return Number.isNaN(value) ? '' : value;
+    }
+
     const moduloIndex = this.indexOfTopLevelOperator(text, '%');
     if (moduloIndex >= 0) {
       const left = Number(this.toString(this.evalExpression(text.substring(0, moduloIndex))));
@@ -369,13 +465,16 @@ class ArkTsJsRunner {
   }
 
   private evalLiteralOrVariable(text: string): Object | undefined {
-    if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+    if (((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) &&
+      this.splitTopLevel(text, '+').length === 1) {
       return this.unescapeString(text.substring(1, text.length - 1));
     }
     if (text.startsWith('`') && text.endsWith('`')) return this.evalTemplateLiteral(text.substring(1, text.length - 1));
     if (text === 'true') return true;
     if (text === 'false') return false;
+    if (text === 'undefined') return '';
     if (text === 'null') return null as Object;
+    if (text === 'Date.now()') return Date.now();
     if (text.startsWith('[') && text.endsWith(']')) {
       const inner = text.substring(1, text.length - 1).trim();
       if (!inner) return [] as Object;
@@ -415,9 +514,32 @@ class ArkTsJsRunner {
     if (name === 'String') return this.toString(args[0]);
     if (name === 'Number') return Number(this.toString(args[0]));
     if (name === 'parseInt') return parseInt(this.toString(args[0]));
+    if (name === 'parseFloat') return parseFloat(this.toString(args[0]));
+    if (name === 'isNaN') return Number.isNaN(Number(this.toString(args[0])));
+    if (name === 'Date.now') return Date.now();
+    if (name === 'Math.abs') return Math.abs(Number(this.toString(args[0])));
+    if (name === 'Math.floor') return Math.floor(Number(this.toString(args[0])));
+    if (name === 'Math.ceil') return Math.ceil(Number(this.toString(args[0])));
+    if (name === 'Math.round') return Math.round(Number(this.toString(args[0])));
+    if (name === 'Math.max') return Math.max(...args.map(item => Number(this.toString(item))));
+    if (name === 'Math.min') return Math.min(...args.map(item => Number(this.toString(item))));
+    if (name === 'Math.pow') return Math.pow(Number(this.toString(args[0])), Number(this.toString(args[1])));
     if (name === 'encodeURIComponent') return encodeURIComponent(this.toString(args[0]));
+    if (name === 'encodeURI') return encodeURI(this.toString(args[0]));
     if (name === 'decodeURIComponent') {
       try { return decodeURIComponent(this.toString(args[0])); } catch (_) { return this.toString(args[0]); }
+    }
+    if (name === 'decodeURI') {
+      try { return decodeURI(this.toString(args[0])); } catch (_) { return this.toString(args[0]); }
+    }
+    if (name === 'StringBuilder') {
+      return { __compatType: 'StringBuilder', value: this.toString(args[0]) } as Object;
+    }
+    if (name === 'HashMap') return {} as Object;
+    if (name === 'ArrayList' || name === 'Array') return [] as Object;
+    if (name === 'isEmpty') {
+      const value = args[0];
+      return value === undefined || value === null || this.toString(value).length === 0;
     }
     if (name === 'source.getKey') return this.env.getSourceKey();
     if (name === 'source.getVariable') return this.env.getSourceVariable(args.length > 0 ? this.toString(args[0]) : undefined);
@@ -431,8 +553,51 @@ class ArkTsJsRunner {
       this.env.putCache(this.toString(args[0]), this.toString(args[1]));
       return this.toString(args[1]);
     }
+    if (name === 'java.put') {
+      this.env.putVar(this.toString(args[0]), this.toString(args[1]));
+      return this.toString(args[1]);
+    }
+    if (name === 'java.get') return this.env.getVar(this.toString(args[0]));
+    if (name === 'java.startBrowser' || name === 'java.startBrowserAwait') {
+      this.env.requestedUrl = this.toString(args[0]);
+      return this.env.requestedUrl;
+    }
+    if (name === 'java.toast' || name === 'java.longToast') {
+      this.env.toastMessage = this.toString(args[0]);
+      return this.env.toastMessage;
+    }
+    if (name === 'java.getStringList') {
+      return this.js.getStringList(this.toString(args[0]), this.env.content) as Object;
+    }
+    if (this.isJavaRuntimeCall(name)) return this.evalJavaRuntimeCall(name, args);
+    if (name === 'cookie.getCookie' || name === 'cookie.getKey' || name === 'cookie.setCookie' ||
+      name === 'cookie.removeCookie') {
+      return this.evalJavaRuntimeCall(name, args);
+    }
     if (this.functions[name]) return this.callUserFunction(name, args);
     return undefined;
+  }
+
+  private isJavaRuntimeCall(name: string): boolean {
+    return [
+      'java.base64Encode', 'java.base64EncodeToString', 'java.base64Decode', 'java.base64DecodeToString',
+      'java.base64UrlEncode', 'java.base64UrlDecode',
+      'java.hexDecodeToString', 'java.hexEncodeToString', 'java.md5Encode16',
+      'java.md5Encode32', 'java.md5Encode', 'java.sha1Encode', 'java.sha256Encode', 'java.sha512Encode',
+      'java.urlEncode', 'java.urlDecode', 'java.encodeURI', 'java.htmlEncode', 'java.htmlDecode',
+      'java.getCookie', 'java.timeFormat',
+      'java.getString', 'java.getElement', 'java.t2s', 'java.androidId',
+      'java.randomUUID', 'java.aesBase64DecodeToString', 'java.aesEncodeToBase64String',
+      'java.desBase64DecodeToString', 'java.desEncodeToBase64String'
+    ].includes(name);
+  }
+
+  private evalJavaRuntimeCall(name: string, args: Object[]): string {
+    const normalizedName = name === 'cookie.getKey' ? 'java.getCookie' :
+      name === 'cookie.getCookie' ? 'java.getCookie' : name;
+    const expression = `${normalizedName}(${args.map(item => this.quoteString(this.toString(item))).join(',')})`;
+    this.js.setJsonContext(this.env.content);
+    return this.js.evaluate(expression, this.env.content);
   }
 
   private callUserFunction(name: string, args: Object[]): Object {
@@ -499,10 +664,30 @@ class ArkTsJsRunner {
 
   private isCallableChainBase(name: string): boolean {
     return !name.includes('.') || name === 'JSON.parse' || name === 'JSON.stringify' ||
-      name.startsWith('source.') || name.startsWith('cache.');
+      name.startsWith('source.') || name.startsWith('cache.') ||
+      name.startsWith('java.') || name.startsWith('cookie.');
   }
 
   private applyMethod(target: Object, name: string, args: Object[]): Object {
+    if (this.isStringBuilder(target)) {
+      const builder = target as Record<string, Object>;
+      if (name === 'append') {
+        builder['value'] = this.toString(builder['value']) + this.toString(args[0]);
+        return builder as Object;
+      }
+      if (name === 'insert') {
+        const value = this.toString(builder['value']);
+        const index = Math.max(0, Math.min(value.length, Number(this.toString(args[0]))));
+        builder['value'] = value.substring(0, index) + this.toString(args[1]) + value.substring(index);
+        return builder as Object;
+      }
+      if (name === 'reverse') {
+        builder['value'] = this.toString(builder['value']).split('').reverse().join('');
+        return builder as Object;
+      }
+      if (name === 'toString') return this.toString(builder['value']);
+      if (name === 'length') return this.toString(builder['value']).length;
+    }
     const text = this.toString(target);
     if (name === 'replace') {
       const pattern = this.asRegExp(args[0]);
@@ -513,6 +698,12 @@ class ArkTsJsRunner {
       const match = pattern ? text.match(pattern) : null;
       return match ? Array.from(match) as Object : [];
     }
+    if (name === 'replaceAll') {
+      try { return text.replace(new RegExp(this.toString(args[0]), 'g'), this.toString(args[1])); } catch (_) { return text; }
+    }
+    if (name === 'replaceFirst') {
+      try { return text.replace(new RegExp(this.toString(args[0])), this.toString(args[1])); } catch (_) { return text; }
+    }
     if (name === 'substring') return text.substring(Number(this.toString(args[0])), args.length > 1 ? Number(this.toString(args[1])) : undefined);
     if (name === 'substr') return text.substr(Number(this.toString(args[0])), args.length > 1 ? Number(this.toString(args[1])) : undefined);
     if (name === 'slice') {
@@ -522,9 +713,66 @@ class ArkTsJsRunner {
     if (name === 'split') return text.split(this.toString(args[0])) as Object;
     if (name === 'join' && Array.isArray(target)) return (target as Object[]).map(item => this.toString(item)).join(this.toString(args[0]));
     if (name === 'trim') return text.trim();
+    if (name === 'concat') return text + args.map(item => this.toString(item)).join('');
     if (name === 'toString') return text;
+    if (name === 'getBytes' || name === 'toByteArray') return text;
+    if (name === 'toCharArray') return text.split('') as Object;
     if (name === 'toLowerCase') return text.toLowerCase();
     if (name === 'toUpperCase') return text.toUpperCase();
+    if (name === 'startsWith') return text.startsWith(this.toString(args[0]));
+    if (name === 'endsWith') return text.endsWith(this.toString(args[0]));
+    if (name === 'contains' || name === 'includes') {
+      if (Array.isArray(target)) return (target as Object[]).some(item => this.toString(item) === this.toString(args[0]));
+      return text.includes(this.toString(args[0]));
+    }
+    if (name === 'indexOf') return text.indexOf(this.toString(args[0]), args.length > 1 ? Number(this.toString(args[1])) : 0);
+    if (name === 'lastIndexOf') return text.lastIndexOf(this.toString(args[0]));
+    if (name === 'charAt') return text.charAt(Number(this.toString(args[0])));
+    if (name === 'equals') return text === this.toString(args[0]);
+    if (name === 'equalsIgnoreCase') return text.toLowerCase() === this.toString(args[0]).toLowerCase();
+    if (name === 'isEmpty') return Array.isArray(target) ? (target as Object[]).length === 0 : text.length === 0;
+    if (name === 'size' && Array.isArray(target)) return (target as Object[]).length;
+    if (name === 'get' && Array.isArray(target)) return (target as Object[])[Number(this.toString(args[0]))] || '';
+    if (name === 'set' && Array.isArray(target)) {
+      const values = target as Object[];
+      const index = Number(this.toString(args[0]));
+      if (index >= 0 && index < 10000) values[index] = args[1];
+      return args[1];
+    }
+    if (name === 'add' && Array.isArray(target)) {
+      const values = target as Object[];
+      if (values.length >= 10000) return false;
+      if (args.length > 1) values.splice(Number(this.toString(args[0])), 0, args[1]);
+      else values.push(args[0]);
+      return true;
+    }
+    if (name === 'remove' && Array.isArray(target)) {
+      const values = target as Object[];
+      const index = Number(this.toString(args[0]));
+      if (!Number.isNaN(index) && index >= 0 && index < values.length) return values.splice(index, 1)[0];
+      const found = values.findIndex(item => this.toString(item) === this.toString(args[0]));
+      return found >= 0 ? values.splice(found, 1)[0] : '';
+    }
+    if (name === 'put' && target && typeof target === 'object' && !Array.isArray(target)) {
+      const record = target as Record<string, Object>;
+      const key = this.toString(args[0]);
+      const previous = record[key] || '';
+      record[key] = args[1];
+      return previous;
+    }
+    if (name === 'get' && target && typeof target === 'object' && !Array.isArray(target)) {
+      const record = target as Record<string, Object>;
+      return record[this.toString(args[0])] || '';
+    }
+    if (name === 'containsKey' && target && typeof target === 'object' && !Array.isArray(target)) {
+      return this.toString(args[0]) in (target as Record<string, Object>);
+    }
+    if (name === 'keySet' && target && typeof target === 'object' && !Array.isArray(target)) {
+      return Object.keys(target as Record<string, Object>) as Object;
+    }
+    if (name === 'values' && target && typeof target === 'object' && !Array.isArray(target)) {
+      return Object.values(target as Record<string, Object>) as Object;
+    }
     if (name === 'map' && Array.isArray(target)) return this.applyArrowMap(target as Object[], this.toString(args[0]));
     if (name === 'filter' && Array.isArray(target)) return this.applyArrowFilter(target as Object[], this.toString(args[0]));
     if (name === 'push' && Array.isArray(target)) {
@@ -534,6 +782,11 @@ class ArkTsJsRunner {
       return values.length;
     }
     return '';
+  }
+
+  private isStringBuilder(value: Object): boolean {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+    return this.toString((value as Record<string, Object>)['__compatType']) === 'StringBuilder';
   }
 
   private applyArrowMap(items: Object[], rawArrow: string): Object {
@@ -776,7 +1029,12 @@ class ArkTsJsRunner {
     if (typeof value === 'string') return value as string;
     if (typeof value === 'number' || typeof value === 'boolean') return String(value);
     if (Array.isArray(value)) return (value as Object[]).map(item => this.toString(item)).join(',');
+    if (this.isStringBuilder(value)) return this.toString((value as Record<string, Object>)['value']);
     try { return JSON.stringify(value); } catch (_) { return String(value); }
+  }
+
+  private quoteString(value: string): string {
+    return `"${(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r/g, '\\r').replace(/\n/g, '\\n')}"`;
   }
 }
 
@@ -820,7 +1078,7 @@ export class ScriptEngine {
       result.value = knownValue;
       return result;
     }
-    if (/\bjava\.(?:base64|hex|md5|sha|url|encodeURI|aes|des|getCookie)/.test(code || '')) {
+    if (/\bjava\.(?:base64|hex|md5|sha|url|encodeURI|html|aes|des|getCookie|timeFormat|randomUUID|androidId)/.test(code || '')) {
       this.js.setVar('baseUrl', env.baseUrl);
       result.handled = true;
       result.value = this.js.evaluate(code, value);
@@ -906,6 +1164,8 @@ export class ScriptEngine {
     if (!func) return null;
     const cipherCall = this.evalJavaCipherFunction(func, value);
     if (cipherCall !== null) return cipherCall;
+    const utilityCall = this.evalJavaUtilityFunction(func, value);
+    if (utilityCall !== null) return utilityCall;
     return null;
   }
 
@@ -916,16 +1176,47 @@ export class ScriptEngine {
     const ivMatch = functionBody.match(/IvParameterSpec\s*\(\s*(?:new\s+)?String\s*\(\s*(['"])(.*?)\1\s*\)\.getBytes\(\s*\)\s*\)/) ||
       functionBody.match(/IvParameterSpec\s*\(\s*(['"])(.*?)\1\.getBytes\(\s*\)\s*\)/);
     const cipherMatch = functionBody.match(/Cipher\.getInstance\s*\(\s*(['"])(.*?)\1\s*\)/);
-    if (!keyMatch || !cipherMatch) return null;
-    const key = keyMatch[2];
-    const keyAlg = keyMatch[4] || '';
-    const iv = ivMatch ? ivMatch[2] : '';
+    const variableKeyMatch = functionBody.match(/SecretKeySpec\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\.getBytes\s*\([^)]*\)\s*,\s*(['"])(.*?)\2\s*\)/);
+    if ((!keyMatch && !variableKeyMatch) || !cipherMatch) return null;
+    const key = keyMatch ? keyMatch[2] : this.extractStringVariable(functionBody, variableKeyMatch ? variableKeyMatch[1] : '');
+    const keyAlg = keyMatch ? (keyMatch[4] || '') : (variableKeyMatch ? variableKeyMatch[3] : '');
+    const variableIvMatch = functionBody.match(/IvParameterSpec\s*\(\s*([A-Za-z_$][A-Za-z0-9_$]*)\.getBytes\s*\([^)]*\)\s*\)/);
+    const iv = ivMatch ? ivMatch[2] :
+      this.extractStringVariable(functionBody, variableIvMatch ? variableIvMatch[1] : '');
+    if (!key) return null;
     const transformation = cipherMatch[2] || keyAlg || 'AES/CBC/PKCS5Padding';
     const upper = transformation.toUpperCase();
-    const method = upper.startsWith('DES') || upper.startsWith('3DES') || upper.startsWith('TRIPLEDES') ?
-      'java.desBase64DecodeToString' : 'java.aesBase64DecodeToString';
+    const encrypt = /\bCipher\.ENCRYPT_MODE\b/.test(functionBody);
+    const des = upper.startsWith('DES') || upper.startsWith('3DES') || upper.startsWith('TRIPLEDES');
+    const method = des ?
+      (encrypt ? 'java.desEncodeToBase64String' : 'java.desBase64DecodeToString') :
+      (encrypt ? 'java.aesEncodeToBase64String' : 'java.aesBase64DecodeToString');
     this.js.setVar('result', value);
     return this.js.evaluate(`${method}(result,${this.quoteJsString(key)},${this.quoteJsString(transformation)},${this.quoteJsString(iv)})`, value);
+  }
+
+  private evalJavaUtilityFunction(functionBody: string, value: string): string | null {
+    const normalized = ScriptCompatibility.normalize(functionBody || '');
+    let method = '';
+    if (/\bMessageDigest\.getInstance\s*\(\s*['"]MD5['"]\s*\)/i.test(functionBody)) method = 'java.md5Encode';
+    else if (/\bMessageDigest\.getInstance\s*\(\s*['"]SHA-?1['"]\s*\)/i.test(functionBody)) method = 'java.sha1Encode';
+    else if (/\bMessageDigest\.getInstance\s*\(\s*['"]SHA-?256['"]\s*\)/i.test(functionBody)) method = 'java.sha256Encode';
+    else if (/\bMessageDigest\.getInstance\s*\(\s*['"]SHA-?512['"]\s*\)/i.test(functionBody)) method = 'java.sha512Encode';
+    else if (/\b(?:java\.base64Decode|Base64\.decode)\s*\(/.test(normalized)) method = 'java.base64Decode';
+    else if (/\b(?:java\.base64Encode(?:ToString)?|Base64\.encode(?:ToString)?)\s*\(/.test(normalized)) {
+      method = 'java.base64EncodeToString';
+    }
+    else if (/\bjava\.urlDecode\s*\(/.test(normalized)) method = 'java.urlDecode';
+    else if (/\bjava\.urlEncode\s*\(/.test(normalized)) method = 'java.urlEncode';
+    if (!method) return null;
+    return this.js.evaluate(`${method}(${this.quoteJsString(value)})`, value);
+  }
+
+  private extractStringVariable(code: string, name: string): string {
+    if (!name) return '';
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = (code || '').match(new RegExp(`(?:var|let|const)?\\s*${escaped}\\s*=\\s*(['"])(.*?)\\1`));
+    return match ? match[2] : '';
   }
 
   private extractFunctionBody(code: string, name: string): string {

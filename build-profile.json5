@@ -7,11 +7,11 @@
         "material": {
           "certpath": "C:\\Users\\apart\\.ohos\\config\\default_legado-harmony_PApShW1orkn7C3OskTgaa_gvU1tdKIoK6G30oro8DA0=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001ABDDB6CC5A45EC04C5DFEBB0E2531FF63D49DB1E790B2ECB86C9F5AC78B439D65AF13DBAC6F79",
+          "keyPassword": "0000001AD4F877F0C3B09C272A3F59F49334C38C463DDB71FAB7462043F55A258F5C8B161022E544FA34",
           "profile": "C:\\Users\\apart\\.ohos\\config\\default_legado-harmony_PApShW1orkn7C3OskTgaa_gvU1tdKIoK6G30oro8DA0=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "C:\\Users\\apart\\.ohos\\config\\default_legado-harmony_PApShW1orkn7C3OskTgaa_gvU1tdKIoK6G30oro8DA0=.p12",
-          "storePassword": "0000001A9785C8AC111DFA21991E2704F601734C3B1F174D541B4D9AAACA5B26654345A0E2DFA89A1510"
+          "storePassword": "0000001AF148EBA89F0DB7493052F5B857AE70F99B839A28EC4D05AE4FDE3F354E94AF65402198E3D38F"
         }
       },
       {
@@ -33,11 +33,11 @@
         "material": {
           "certpath": "C:\\Users\\apart\\.ohos\\config\\accountDebug_legado-harmony_PApShW1orkn7C3OskTgaa_gvU1tdKIoK6G30oro8DA0=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001B2F55E05D7367BCCC19BA9FE2C7ADA8112223245C85DDFFE549EEB2A74F4AE5A2223E1246F95269",
+          "keyPassword": "0000001BC201970EF9F4840056A5407B72F77AA03D6E14B9EC5020A8B910CA83F3DCF175F14BD631AC01FB",
           "profile": "C:\\Users\\apart\\.ohos\\config\\accountDebug_legado-harmony_PApShW1orkn7C3OskTgaa_gvU1tdKIoK6G30oro8DA0=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "C:\\Users\\apart\\.ohos\\config\\accountDebug_legado-harmony_PApShW1orkn7C3OskTgaa_gvU1tdKIoK6G30oro8DA0=.p12",
-          "storePassword": "0000001B06838078B45429E4128FDD490504F9D0136F8CAD385145C42802CA7475480B2A85E797550DB29C"
+          "storePassword": "0000001B3F8D8929285F00F759A621F043F9D27B0B511B4F67C15FDD171C6A0560C3DA5B4834C526959A1C"
         }
       }
     ],

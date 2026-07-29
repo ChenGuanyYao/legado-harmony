@@ -13,7 +13,7 @@ import {
 } from './ThemeModels';
 
 export class BuiltinThemeRegistry {
-  static readonly DEFAULT_THEME_ID: string = ThemeIds.CLASSIC_BLUE;
+  static readonly DEFAULT_THEME_ID: string = ThemeIds.PLAIN_DEFAULT;
   static readonly THEMES: ThemePack[] = BuiltinThemeRegistry.createThemes();
 
   static all(): ThemePack[] {

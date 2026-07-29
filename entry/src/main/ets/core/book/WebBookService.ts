@@ -14,6 +14,7 @@ import { AjaxRuleCompat } from '../rule/AjaxRuleCompat';
 import { ReaderImageMarker } from './ReaderImageMarker';
 import { JsRuntime } from '../rule/JsRuntime';
 import { ScriptEngine, ScriptEngineContext } from '../rule/ScriptEngine';
+import { ComicImagePipeline } from './ComicImagePipeline';
 
 class ContentPageData {
   content: string = '';
@@ -293,7 +294,7 @@ export class WebBookService {
       this.seedBookVariables(specialCtx, book.bookUrl);
       this.seedSourceVariables(specialCtx, source);
       this.seedChapterVariables(specialCtx, chapter);
-      return this.normalizeReaderContent(
+      return await this.normalizeReaderContent(source,
         this.applyContentReplaceRule(specialContent, source.contentRule.replaceRegex, specialCtx, chapter), chapter.url);
     }
     const au = new AnalyzeUrl(source, this.http);
@@ -370,7 +371,7 @@ export class WebBookService {
     }
     if (!content && imageRuleValues.length === 0) return data;
     content = this.applyContentReplaceRule(content, contentRule.replaceRegex, ctx, chapter);
-    data.content = this.normalizeReaderContent(content, baseUrl, imageRuleValues);
+    data.content = await this.normalizeReaderContent(source, content, baseUrl, imageRuleValues);
     return data;
   }
 
@@ -878,10 +879,12 @@ export class WebBookService {
       .replace(/&#39;/g, "'");
   }
 
-  private normalizeReaderContent(content: string, baseUrl: string, imageRuleValues: string[] = []): string {
+  private async normalizeReaderContent(source: BookSource, content: string, baseUrl: string,
+    imageRuleValues: string[] = []): Promise<string> {
     const explicitImages = this.collectReaderImageUrls(imageRuleValues, baseUrl, true);
     if (explicitImages.length > 0) {
-      return explicitImages.map((url: string): string => ReaderImageMarker.create(url)).join('\n\n');
+      return await this.materializeReaderImageMarkers(source,
+        explicitImages.map((url: string): string => ReaderImageMarker.create(url)).join('\n\n'));
     }
 
     let value = content || '';
@@ -906,7 +909,7 @@ export class WebBookService {
       }
     }
 
-    return lines.join('\n')
+    const normalized = lines.join('\n')
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/p>/gi, '\n\n')
       .replace(/<\/div>/gi, '\n')
@@ -915,6 +918,40 @@ export class WebBookService {
       .replace(/&amp;/g, '&')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
+    return await this.materializeReaderImageMarkers(source, normalized);
+  }
+
+  private async materializeReaderImageMarkers(source: BookSource, content: string): Promise<string> {
+    if (!content || !content.includes(ReaderImageMarker.PREFIX)) return content;
+    const pattern = new RegExp(`${this.escapeRegex(ReaderImageMarker.PREFIX)}([^\\]]+)` +
+      `${this.escapeRegex(ReaderImageMarker.SUFFIX)}`, 'g');
+    const values: string[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(content)) !== null) {
+      try {
+        const raw = decodeURIComponent(match[1]);
+        if (raw && !values.includes(raw)) values.push(raw);
+      } catch (_) {
+      }
+    }
+    if (values.length === 0) return content;
+    const resolved: Record<string, string> = {};
+    for (let start = 0; start < values.length; start += 4) {
+      const batch = values.slice(start, start + 4);
+      const paths = await Promise.all(batch.map((value: string): Promise<string> =>
+        ComicImagePipeline.materialize(this.http, source, value)));
+      for (let index = 0; index < batch.length; index++) {
+        resolved[batch[index]] = paths[index] || batch[index];
+      }
+    }
+    return content.replace(pattern, (_all: string, encoded: string): string => {
+      try {
+        const raw = decodeURIComponent(encoded);
+        return ReaderImageMarker.create(resolved[raw] || raw);
+      } catch (_) {
+        return _all;
+      }
+    });
   }
 
   private collectReaderImageUrls(values: string[], baseUrl: string, trustPlainValue: boolean): string[] {
@@ -952,8 +989,10 @@ export class WebBookService {
   }
 
   private findReaderImageAttribute(tag: string): string {
+    const protectedSource = /(?:^|\s)(?:src|data-r-src|data-src)\s*=\s*["']([\s\S]*,\s*\{[\s\S]*\})["']/i.exec(tag);
+    if (protectedSource && protectedSource[1]) return protectedSource[1];
     const names = ['data-original', 'data-src', 'data-url', 'data-lazy-src', 'data-echo', 'src',
-      'xlink:href', 'href', 'srcset'];
+      'data-r-src', 'xlink:href', 'href', 'srcset'];
     for (const name of names) {
       const escaped = name.replace(':', '\\:');
       const quoted = new RegExp(`(?:^|\\s)${escaped}\\s*=\\s*["']([^"']+)["']`, 'i').exec(tag);
@@ -977,15 +1016,29 @@ export class WebBookService {
       .replace(/^url\(\s*|\s*\)$/gi, '')
       .replace(/^['"]|['"]$/g, '');
     if (!value || /^(?:javascript:|about:|#)/i.test(value)) return '';
+    const optionIndex = this.readerImageOptionIndex(value);
+    const options = optionIndex >= 0 ? value.substring(optionIndex) : '';
+    if (optionIndex >= 0) value = value.substring(0, optionIndex).trim();
     if (!trustValue && !this.isLikelyReaderImageUrl(value)) return '';
     if (/^data:image\//i.test(value)) return value;
     if (/^(?:https?:)?\/\//i.test(value) || /^\.?\.?\//.test(value)) {
-      return BookUrlResolver.resolve(value, baseUrl);
+      const resolved = BookUrlResolver.resolve(value, baseUrl);
+      return resolved ? `${resolved}${options}` : '';
     }
     if (trustValue && !/\s/.test(value) && !value.startsWith('<') && !value.startsWith('{')) {
-      return BookUrlResolver.resolve(value, baseUrl);
+      const resolved = BookUrlResolver.resolve(value, baseUrl);
+      return resolved ? `${resolved}${options}` : '';
     }
     return '';
+  }
+
+  private readerImageOptionIndex(value: string): number {
+    for (let index = value.length - 1; index >= 0; index--) {
+      if (value.charAt(index) !== ',') continue;
+      const tail = value.substring(index + 1).trim();
+      if (tail.startsWith('{') && tail.endsWith('}')) return index;
+    }
+    return -1;
   }
 
   private isLikelyReaderImageUrl(value: string): boolean {
@@ -1103,7 +1156,7 @@ export class WebBookService {
     ctx.put('bookSourceComment', source.bookSourceComment || '');
     ctx.put('source.jsLib', source.jsLib || '');
     ctx.put('jsLib', source.jsLib || '');
-    if (!ctx.has('source.variable')) ctx.put('source.variable', source.variableComment || '');
+    if (!ctx.has('source.variable')) ctx.put('source.variable', source.variable || '');
   }
 
   private extractQueryParam(url: string, key: string): string {

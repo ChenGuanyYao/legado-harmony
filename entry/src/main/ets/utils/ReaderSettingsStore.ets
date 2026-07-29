@@ -1,6 +1,7 @@
 import { Context } from '@kit.AbilityKit';
 import preferences from '@ohos.data.preferences';
 import { ReaderThemeHelper } from './ReaderThemeHelper';
+import { CloudSyncChangeTracker } from '../account/CloudSyncChangeTracker';
 
 export class ReaderSettings {
   fontSize: number = 20;
@@ -648,6 +649,59 @@ export class ReaderSettingsStore {
     await store.flush();
   }
 
+  static async saveAll(context: Context, settings: ReaderSettings,
+    currentDarkMode: boolean = false): Promise<void> {
+    await ReaderSettingsStore.saveLayoutSettings(
+      context,
+      settings.fontSize,
+      settings.lineHeight,
+      settings.paragraphSpacing,
+      settings.marginLeft,
+      settings.marginRight,
+      settings.marginTop,
+      settings.marginBottom
+    );
+    await ReaderSettingsStore.saveThemeSettings(
+      context,
+      settings.lightThemeIndex,
+      settings.darkThemeIndex,
+      settings.lightCustomThemeBackgroundColor,
+      settings.lightCustomThemeTextColor,
+      settings.darkCustomThemeBackgroundColor,
+      settings.darkCustomThemeTextColor,
+      currentDarkMode,
+      settings.customThemesRaw
+    );
+    await ReaderSettingsStore.savePageTurnMode(context, settings.pageTurnMode);
+    await ReaderSettingsStore.savePageTurnAnimationType(context, settings.pageTurnAnimationType);
+    await ReaderSettingsStore.saveLandscapeDoublePage(context, settings.landscapeDoublePage);
+    await ReaderSettingsStore.saveReadingInteractionSettings(
+      context,
+      settings.volumeTurnPage,
+      settings.screenTimeoutMinutes,
+      settings.extendToStatusBar
+    );
+    await ReaderSettingsStore.saveTapZoneActions(context, settings.tapZoneActions);
+    await ReaderSettingsStore.savePreloadEnabled(context, settings.preloadEnabled);
+    await ReaderSettingsStore.savePreloadChapterCount(context, settings.preloadChapterCount);
+    await ReaderSettingsStore.saveFontSettings(
+      context,
+      settings.fontFamily,
+      settings.fontFilePath,
+      settings.fontSourceName,
+      settings.fontMode,
+      settings.systemFontFamily,
+      settings.customFontsRaw
+    );
+    await ReaderSettingsStore.saveReaderFontStyleSettings(context, settings);
+    await ReaderSettingsStore.saveLayoutElementSettings(
+      context,
+      settings.useTtsQuickAction,
+      settings.useChapterQuickJump
+    );
+    ReaderSettingsStore.applyToStorage(settings);
+  }
+
   static applyToStorage(settings: ReaderSettings): void {
     const normalized = ReaderSettingsStore.clone(settings);
     ReaderSettingsStore.cachedSettings = normalized;
@@ -766,6 +820,7 @@ export class ReaderSettingsStore {
     settings: ReaderSettings): Promise<void> {
     await ReaderSettingsStore.persistThemeProfile(store, ReaderSettingsStore.activeThemeId(), settings);
     ReaderSettingsStore.cachedThemeId = ReaderSettingsStore.activeThemeId();
+    CloudSyncChangeTracker.markPreferenceChanged();
   }
 
   private static async persistThemeProfile(store: preferences.Preferences, themeId: string,

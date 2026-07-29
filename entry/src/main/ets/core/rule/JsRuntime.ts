@@ -17,6 +17,11 @@ export class JsRuntime {
     }
   }
 
+  getStringList(path: string, content: string): string[] {
+    this.setJsonContext(content);
+    return this.readJsonValues(path).map(value => this.jsonValueToString(value));
+  }
+
   evaluate(expression: string, result: string = ''): string {
     this.vars['result'] = result;
     this.setJsonContext(result);
@@ -61,14 +66,21 @@ export class JsRuntime {
       expr = this.replaceFunctionCalls(expr, 'java.base64Encode', (v: string) => this.base64(this.evalStr(this.splitArgs(v)[0] || v)));
       expr = this.replaceFunctionCalls(expr, 'java.base64EncodeToString', (v: string) => this.base64(this.evalStr(this.splitArgs(v)[0] || v)));
       expr = this.replaceFunctionCalls(expr, 'java.base64Decode', (v: string) => this.base64Decode(this.evalStr(this.splitArgs(v)[0] || v)));
+      expr = this.replaceFunctionCalls(expr, 'java.base64DecodeToString', (v: string) => this.base64Decode(this.evalStr(this.splitArgs(v)[0] || v)));
+      expr = this.replaceFunctionCalls(expr, 'java.base64UrlEncode', (v: string) => this.base64UrlEncode(this.evalStr(this.splitArgs(v)[0] || v)));
+      expr = this.replaceFunctionCalls(expr, 'java.base64UrlDecode', (v: string) => this.base64UrlDecode(this.evalStr(this.splitArgs(v)[0] || v)));
       expr = this.replaceFunctionCalls(expr, 'java.hexDecodeToString', (v: string) => this.hexDecodeToString(this.evalStr(this.splitArgs(v)[0] || v)));
       expr = this.replaceFunctionCalls(expr, 'java.hexEncodeToString', (v: string) => this.hexEncodeToString(this.evalStr(this.splitArgs(v)[0] || v)));
       expr = this.replaceFunctionCalls(expr, 'java.md5Encode16', (v: string) => this.md5(this.evalStr(v)).substring(8, 24));
+      expr = this.replaceFunctionCalls(expr, 'java.md5Encode32', (v: string) => this.md5(this.evalStr(v)));
       expr = this.replaceFunctionCalls(expr, 'java.md5Encode', (v: string) => this.digest('MD5', this.evalStr(v)));
       expr = this.replaceFunctionCalls(expr, 'java.sha1Encode', (v: string) => this.digest('SHA1', this.evalStr(v)));
       expr = this.replaceFunctionCalls(expr, 'java.sha256Encode', (v: string) => this.digest('SHA256', this.evalStr(v)));
+      expr = this.replaceFunctionCalls(expr, 'java.sha512Encode', (v: string) => this.digest('SHA512', this.evalStr(v)));
       expr = this.replaceFunctionCalls(expr, 'java.urlEncode', (v: string) => encodeURIComponent(this.evalStr(this.splitArgs(v)[0] || v)));
       expr = this.replaceFunctionCalls(expr, 'java.urlDecode', (v: string) => this.urlDecode(this.evalStr(this.splitArgs(v)[0] || v)));
+      expr = this.replaceFunctionCalls(expr, 'java.htmlEncode', (v: string) => this.htmlEncode(this.evalStr(v)));
+      expr = this.replaceFunctionCalls(expr, 'java.htmlDecode', (v: string) => this.htmlDecode(this.evalStr(v)));
       expr = this.replaceFunctionCalls(expr, 'java.getCookie', (v: string) => this.cookieValue(v));
       expr = this.replaceFunctionCalls(expr, 'java.put', (v: string) => this.putVar(v));
       expr = this.replaceFunctionCalls(expr, 'java.get', (v: string) => this.getVarCall(v));
@@ -435,6 +447,35 @@ export class JsRuntime {
 
   private splitStatements(expr: string): string[] {
     return this.splitTopLevel(expr, [';']);
+  }
+
+  private base64UrlEncode(input: string): string {
+    return this.base64(input).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  }
+
+  private base64UrlDecode(input: string): string {
+    let value = (input || '').replace(/-/g, '+').replace(/_/g, '/');
+    while (value.length % 4 !== 0) value += '=';
+    return this.base64Decode(value);
+  }
+
+  private htmlEncode(input: string): string {
+    return (input || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  private htmlDecode(input: string): string {
+    return (input || '')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;|&apos;/gi, "'")
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&');
   }
 
   private splitTopLevel(expr: string, separators: string[]): string[] {

@@ -23,8 +23,18 @@ export interface HttpResponse {
   error?: string;
 }
 
+export interface HttpBinaryResponse {
+  url: string;
+  statusCode: number;
+  headers: Record<string, string>;
+  data: Uint8Array;
+  success: boolean;
+  error?: string;
+}
+
 export class HttpClient {
   private timeout: number;
+  private activeClients: Set<http.HttpRequest> = new Set<http.HttpRequest>();
   private defaultHeaders: Record<string, string> = {
     'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Accept': '*/*',
@@ -41,6 +51,7 @@ export class HttpClient {
       return { url: '', statusCode: 0, headers: {}, body: '', success: false, error: 'empty url' };
     }
     const client = http.createHttp();
+    this.activeClients.add(client);
     let responseTooLarge = false;
     try {
       const method = this.resolveMethod(req.method);
@@ -121,11 +132,82 @@ export class HttpClient {
         body: '',
         success: false,
         error: responseTooLarge ? `response too large: >${req.maxResponseBytes}` :
-          (e instanceof Error ? e.message : String(e))
+          this.describeError(e as Object)
       };
     } finally {
+      this.activeClients.delete(client);
       client.destroy();
     }
+  }
+
+  async executeBinary(req: HttpRequest, maxResponseBytes: number = 20 * 1024 * 1024):
+    Promise<HttpBinaryResponse> {
+    if (!req.url || req.url.trim() === '') {
+      return { url: '', statusCode: 0, headers: {}, data: new Uint8Array(), success: false, error: 'empty url' };
+    }
+    const client = http.createHttp();
+    this.activeClients.add(client);
+    try {
+      const headers: Record<string, string> = { ...this.defaultHeaders, ...req.headers };
+      const cookie = CookieStore.getCookie(req.url);
+      if (cookie && !headers['Cookie']) headers['Cookie'] = cookie;
+      const resp = await client.request(req.url, {
+        method: this.resolveMethod(req.method),
+        header: headers,
+        extraData: req.body,
+        connectTimeout: req.connectTimeout || this.timeout,
+        readTimeout: req.readTimeout || this.timeout,
+        expectDataType: http.HttpDataType.ARRAY_BUFFER
+      });
+      const responseHeaders = (resp.header || {}) as Record<string, string>;
+      const setCookie = this.findHeader(responseHeaders, 'set-cookie');
+      if (setCookie) {
+        CookieStore.setCookies(req.url, setCookie);
+        CookieStore.saveAsync();
+      }
+      const data = resp.result instanceof ArrayBuffer ?
+        new Uint8Array(resp.result as ArrayBuffer) :
+        new util.TextEncoder().encodeInto(String(resp.result || ''));
+      if (data.byteLength > maxResponseBytes) {
+        return {
+          url: req.url,
+          statusCode: resp.responseCode,
+          headers: responseHeaders,
+          data: new Uint8Array(),
+          success: false,
+          error: `response too large: >${maxResponseBytes}`
+        };
+      }
+      return {
+        url: req.url,
+        statusCode: resp.responseCode,
+        headers: responseHeaders,
+        data: data,
+        success: resp.responseCode >= 200 && resp.responseCode < 300
+      };
+    } catch (e) {
+      return {
+        url: req.url,
+        statusCode: 0,
+        headers: {},
+        data: new Uint8Array(),
+        success: false,
+        error: this.describeError(e as Object)
+      };
+    } finally {
+      this.activeClients.delete(client);
+      client.destroy();
+    }
+  }
+
+  cancelAll(): void {
+    this.activeClients.forEach((client: http.HttpRequest) => {
+      try {
+        client.destroy();
+      } catch (e) {
+      }
+    });
+    this.activeClients.clear();
   }
 
   private resolveMethod(method: string): http.RequestMethod {
@@ -217,5 +299,33 @@ export class HttpClient {
     const value = charset.toLowerCase().replace(/["']/g, '').trim();
     if (value === 'gb2312' || value === 'gbk') return 'gb18030';
     return value || 'utf-8';
+  }
+
+  private describeError(error: Object): string {
+    if (error instanceof Error && this.isReadableErrorText(error.message)) return error.message;
+    if (typeof error === 'string' && this.isReadableErrorText(error as string)) return error as string;
+    if (error && typeof error === 'object') {
+      const record = error as Record<string, Object>;
+      const rawMessage = record['message'] || record['msg'] || record['reason'];
+      let message = typeof rawMessage === 'string' ? (rawMessage as string).trim() : '';
+      if (!this.isReadableErrorText(message) && rawMessage && typeof rawMessage === 'object') {
+        const nested = rawMessage as Record<string, Object>;
+        message = String(nested['message'] || nested['msg'] || nested['reason'] || '').trim();
+      }
+      const code = String(record['code'] || record['errorCode'] || '').trim();
+      if (this.isReadableErrorText(message)) return code ? `${message} (${code})` : message;
+      try {
+        const json = JSON.stringify(error);
+        if (json && json !== '{}') return json;
+      } catch (_) {
+      }
+    }
+    const fallback = String(error || '').trim();
+    return this.isReadableErrorText(fallback) ? fallback : '未知网络错误';
+  }
+
+  private isReadableErrorText(value: string): boolean {
+    const text = (value || '').trim().toLowerCase();
+    return !!text && !text.includes('[object object]') && text !== 'object object' && text !== '{}';
   }
 }

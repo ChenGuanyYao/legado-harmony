@@ -1,4 +1,6 @@
 import { textToSpeech } from '@kit.CoreSpeechKit';
+import { connection } from '@kit.NetworkKit';
+import deviceInfo from '@ohos.deviceInfo';
 import { CloudTtsAudio, CloudTtsClient, CloudTtsTiming } from '../account/CloudTtsClient';
 import { HttpTTS } from '../model/data/Book';
 import { HttpTtsAudio, HttpTtsReader } from './HttpTtsReader';
@@ -22,6 +24,7 @@ export interface TtsReadOptions {
   speed?: number;
   cloudVoiceId?: string;
   cloudVoiceName?: string;
+  cloudVoiceTier?: string;
   focusBreakOffsets?: number[];
 }
 
@@ -79,7 +82,11 @@ export class SystemTtsReader {
   private static readonly LEGACY_ONLINE_MODE: number = 0;
   private static readonly OFFLINE_MODE: number = 1;
   private static readonly CUSTOM_TTS_PREFETCH_WINDOW: number = 3;
-  private static readonly CLOUD_TTS_PREFETCH_WINDOW: number = 2;
+  private static readonly CLOUD_TTS_WIFI_PREFETCH_WINDOW: number = 2;
+  private static readonly CLOUD_TTS_MOBILE_PREFETCH_WINDOW: number = 1;
+  private static readonly CLOUD_TTS_FOCUS_CHUNK_LENGTH: number = 10;
+  private static readonly CLOUD_TTS_STANDARD_FIRST_CHUNK_LENGTH: number = 100;
+  private static readonly CLOUD_TTS_PREMIUM_FIRST_CHUNK_LENGTH: number = 50;
   private static readonly SYSTEM_TTS_START_BUFFER_SEGMENTS: number = 2;
   private static readonly SYSTEM_TTS_MAX_BUFFERED_SEGMENTS: number = 3;
   private engine: textToSpeech.TextToSpeechEngine | null = null;
@@ -100,6 +107,9 @@ export class SystemTtsReader {
   private currentSpeakMinDuration: number = 0;
   private completionPending: boolean = false;
   private currentAudioSampleRate: number = 16000;
+  private currentAudioSampleBit: number = 16;
+  private currentAudioChannel: number = 1;
+  private currentAudioType: string = 'pcm';
   private chunkFocusChain: Promise<void> = Promise.resolve();
   private currentFocusChunk: TtsChunk | null = null;
   private currentFocusChunkIndex: number = -1;
@@ -123,8 +133,10 @@ export class SystemTtsReader {
   private optionSpeed: number | null = null;
   private optionCloudVoiceId: string = '';
   private optionCloudVoiceName: string = '';
+  private optionCloudVoiceTier: string = 'STANDARD';
   private optionFocusBreakOffsets: number[] = [];
   private systemCurrentPcmBuffers: ArrayBuffer[] = [];
+  private systemCurrentPcmSequences: number[] = [];
   private systemCurrentPcmBytes: number = 0;
   private systemReadySegments: SystemPcmSegment[] = [];
   private systemPlaybackStarted: boolean = false;
@@ -144,13 +156,22 @@ export class SystemTtsReader {
         voices = SystemTtsReader.knownVoiceOptions().concat(voices);
       }
       const parsed = SystemTtsReader.dedupeVoices(voices);
-      return parsed.length > 0 ? parsed : SystemTtsReader.defaultVoices();
+      return SystemTtsReader.applyVoiceFeatureAvailability(
+        parsed.length > 0 ? parsed : SystemTtsReader.defaultVoices());
     } catch (_) {
-      return SystemTtsReader.dedupeVoices(SystemTtsReader.knownVoiceOptions());
+      return SystemTtsReader.applyVoiceFeatureAvailability(
+        SystemTtsReader.dedupeVoices(SystemTtsReader.knownVoiceOptions()));
     }
   }
 
+  static supportsVoiceDownload(): boolean {
+    return deviceInfo.sdkApiVersion >= 19;
+  }
+
   static async downloadVoice(voice: TtsVoiceOption, callbacks?: TtsVoiceDownloadCallbacks): Promise<void> {
+    if (!SystemTtsReader.supportsVoiceDownload()) {
+      throw new Error('当前系统版本不支持下载系统音色，请升级至 API 19 或更高版本');
+    }
     const variants = SystemTtsReader.createVoiceDownloadVariants(voice);
     let lastError: Error | undefined = undefined;
     for (const params of variants) {
@@ -297,6 +318,9 @@ export class SystemTtsReader {
   }
 
   private static async listModuleVoices(online: number): Promise<TtsVoiceOption[]> {
+    if (deviceInfo.sdkApiVersion < 19) {
+      return SystemTtsReader.listLegacyEngineVoices(online);
+    }
     try {
       const voices = await textToSpeech.listVoices({
         requestId: `module_voices_${online}_${Date.now()}`,
@@ -364,6 +388,8 @@ export class SystemTtsReader {
     this.optionSpeed = options?.speed ?? null;
     this.optionCloudVoiceId = options?.cloudVoiceId || '';
     this.optionCloudVoiceName = options?.cloudVoiceName || '';
+    this.optionCloudVoiceTier = (options?.cloudVoiceTier || '').toUpperCase() === 'PREMIUM' ?
+      'PREMIUM' : 'STANDARD';
     this.optionFocusBreakOffsets = this.normalizeFocusBreakOffsets(options?.focusBreakOffsets, cleanText.length);
     const customVoice = this.getCurrentCustomVoice();
     this.chunks = this.optionCloudVoiceId ? this.splitCloudText(cleanText) :
@@ -421,7 +447,12 @@ export class SystemTtsReader {
           return;
         }
         this.currentAudioSampleRate = response && response.sampleRate ? response.sampleRate : 16000;
-        console.info(`[TTS] speak start: audioType=${response ? response.audioType || '' : ''},sampleRate=${this.currentAudioSampleRate},${this.pcmPlayer.debugState()}`);
+        this.currentAudioSampleBit = response && response.sampleBit ? response.sampleBit : 16;
+        this.currentAudioChannel = response && response.audioChannel ? response.audioChannel : 1;
+        this.currentAudioType = response && response.audioType ? response.audioType : 'pcm';
+        console.info(`[TTS] speak start: audioType=${this.currentAudioType},` +
+          `sampleRate=${this.currentAudioSampleRate},sampleBit=${this.currentAudioSampleBit},` +
+          `channels=${this.currentAudioChannel},${this.pcmPlayer.debugState()}`);
         if (this.ttsPcmPlayType !== 0) {
           this.emitCurrentSystemChunkFocus(generation);
           this.notifyAudioStarted();
@@ -474,6 +505,8 @@ export class SystemTtsReader {
         }
         this.currentFocusAudioReceived = true;
         this.systemCurrentPcmBuffers.push(audioData.slice(0));
+        this.systemCurrentPcmSequences.push(response && response.sequence ? response.sequence :
+          this.systemCurrentPcmSequences.length + 1);
         this.systemCurrentPcmBytes += audioData.byteLength;
         this.armSpeakWatchdog(generation, this.currentFocusChunkIndex);
         console.info(`[TTS] pcm data buffered: sequence=${response ? response.sequence : -1},` +
@@ -497,6 +530,7 @@ export class SystemTtsReader {
     this.optionSpeed = null;
     this.optionCloudVoiceId = '';
     this.optionCloudVoiceName = '';
+    this.optionCloudVoiceTier = 'STANDARD';
     this.optionFocusBreakOffsets = [];
     this.currentRequestId = '';
     this.currentSpeakStartedAt = 0;
@@ -605,7 +639,10 @@ export class SystemTtsReader {
     extraParams['languageContext'] = this.getTtsLanguage() as Object;
     extraParams['audioType'] = 'pcm' as Object;
     extraParams['isBackStage'] = true as Object;
-    extraParams['soundChannel'] = 3 as Object;
+    // The Core Speech Kit PCM-stream example uses channel 1 for playType=0.
+    // Channel 3 is the voice-assistant playback stream and is appropriate when
+    // the SDK performs playback itself (playType=1).
+    extraParams['soundChannel'] = (this.ttsPcmPlayType === 0 ? 1 : 3) as Object;
     extraParams['playType'] = this.ttsPcmPlayType as Object;
     try {
       const requestId = this.createRequestId();
@@ -621,7 +658,11 @@ export class SystemTtsReader {
       this.currentFocusAudioWritten = false;
       this.currentAudioWritePromise = Promise.resolve();
       this.currentAudioSampleRate = 16000;
+      this.currentAudioSampleBit = 16;
+      this.currentAudioChannel = 1;
+      this.currentAudioType = 'pcm';
       this.systemCurrentPcmBuffers = [];
+      this.systemCurrentPcmSequences = [];
       this.systemCurrentPcmBytes = 0;
       this.armSpeakWatchdog(generation, index);
       this.engine.speak(speakText, {
@@ -675,6 +716,7 @@ export class SystemTtsReader {
     this.audioStarted = false;
     this.optionCloudVoiceId = '';
     this.optionCloudVoiceName = '';
+    this.optionCloudVoiceTier = 'STANDARD';
     this.optionFocusBreakOffsets = [];
     if (notify && this.onFinished) this.onFinished();
   }
@@ -739,8 +781,9 @@ export class SystemTtsReader {
   }
 
   private fillCloudAudioJobs(generation: number, voiceId: string, jobs: CloudTtsAudioJob[]): void {
+    const prefetchWindow = this.cloudTtsPrefetchWindow();
     while (this.readGeneration === generation && this.active &&
-      jobs.length < SystemTtsReader.CLOUD_TTS_PREFETCH_WINDOW && this.chunkIndex < this.chunks.length) {
+      jobs.length < prefetchWindow && this.chunkIndex < this.chunks.length) {
       const index = this.chunkIndex;
       const chunk = this.chunks[this.chunkIndex++];
       const speakText = this.normalizeChunkForSpeech(chunk.text);
@@ -757,6 +800,18 @@ export class SystemTtsReader {
     }
   }
 
+  private cloudTtsPrefetchWindow(): number {
+    try {
+      const handle = connection.getDefaultNetSync();
+      const capabilities = connection.getNetCapabilitiesSync(handle);
+      if ((capabilities.bearerTypes || []).includes(connection.NetBearType.BEARER_WIFI)) {
+        return SystemTtsReader.CLOUD_TTS_WIFI_PREFETCH_WINDOW;
+      }
+    } catch (_) {
+    }
+    return SystemTtsReader.CLOUD_TTS_MOBILE_PREFETCH_WINDOW;
+  }
+
   private buildCloudPlaybackCues(generation: number, job: CloudTtsAudioJob,
     audio: CloudTtsAudio): PcmPlaybackCue[] {
     const focusChunks = this.splitCloudFocusChunks(job.chunk);
@@ -769,7 +824,7 @@ export class SystemTtsReader {
       const sourceOffset = Math.max(0, focusChunk.start - job.chunk.start);
       const speechOffset = this.cloudSpeechOffset(job.chunk.text, job.text, sourceOffset);
       const startTime = focusIndex === 0 ? 0 :
-        this.cloudTimingAtOffset(audio.timings, speechOffset, durationMs);
+        this.cloudTimingAtOffset(audio.timings, speechOffset, durationMs, job.text.length);
       const frameOffset = Math.max(0, Math.round(startTime * audio.sampleRate / 1000));
       if (frameOffset === lastFrame) {
         continue;
@@ -820,9 +875,10 @@ export class SystemTtsReader {
     return Math.round(safeOffset * speechText.length / Math.max(1, sourceText.length));
   }
 
-  private cloudTimingAtOffset(timings: CloudTtsTiming[], offset: number, durationMs: number): number {
+  private cloudTimingAtOffset(timings: CloudTtsTiming[], offset: number,
+    durationMs: number, textLength: number): number {
     if (!timings || timings.length === 0) {
-      return 0;
+      return durationMs * Math.max(0, Math.min(textLength, offset)) / Math.max(1, textLength);
     }
     for (let index = 0; index < timings.length; index++) {
       const timing = timings[index];
@@ -837,7 +893,14 @@ export class SystemTtsReader {
         return timing.startTime + (timing.endTime - timing.startTime) * progress;
       }
     }
-    return Math.max(0, Math.min(durationMs, timings[timings.length - 1].startTime));
+    const lastTiming = timings[timings.length - 1];
+    if (textLength > lastTiming.endOffset && durationMs > lastTiming.endTime) {
+      const progress = (offset - lastTiming.endOffset) /
+        Math.max(1, textLength - lastTiming.endOffset);
+      return Math.max(0, Math.min(durationMs,
+        lastTiming.endTime + (durationMs - lastTiming.endTime) * progress));
+    }
+    return Math.max(0, Math.min(durationMs, lastTiming.endTime));
   }
 
   private speakCustomNext(generation: number, voice: HttpTTS): void {
@@ -984,9 +1047,14 @@ export class SystemTtsReader {
     }
     this.completionPending = true;
     this.clearSpeakWatchdog();
-    const pcm = this.mergeSystemPcmBuffers(this.systemCurrentPcmBuffers, this.systemCurrentPcmBytes);
-    const trimmedPcm = this.trimSystemPcmSilence(pcm, this.currentAudioSampleRate, this.currentFocusChunk.text);
-    if (trimmedPcm.byteLength === 0) {
+    const pcm = this.mergeSystemPcmBuffers(
+      this.systemCurrentPcmBuffers, this.systemCurrentPcmSequences, this.systemCurrentPcmBytes);
+    const normalizedPcm = this.normalizeSystemPcm(
+      pcm, this.currentAudioSampleBit, this.currentAudioChannel, this.currentAudioType);
+    const trimmedPcm = this.trimSystemPcmSilence(
+      normalizedPcm, this.currentAudioSampleRate, this.currentFocusChunk.text);
+    const playbackPcm = this.fadeSystemPcmEdges(trimmedPcm, this.currentAudioSampleRate);
+    if (playbackPcm.byteLength === 0) {
       this.completionPending = false;
       this.currentFocusAudioReceived = false;
       if (this.retryWithoutPcmData(generation)) {
@@ -998,12 +1066,12 @@ export class SystemTtsReader {
     this.systemReadySegments.push({
       index: this.currentFocusChunkIndex,
       chunk: this.currentFocusChunk,
-      pcm: trimmedPcm,
+      pcm: playbackPcm,
       sampleRate: this.currentAudioSampleRate
     });
     this.systemBufferedSegmentCount++;
     console.info(`[TTS] system pcm segment ready: index=${this.currentFocusChunkIndex},` +
-      `bytes=${trimmedPcm.byteLength},buffered=${this.systemBufferedSegmentCount}`);
+      `bytes=${playbackPcm.byteLength},buffered=${this.systemBufferedSegmentCount}`);
     this.resetCurrentSystemRequestState();
     this.pumpSystemPcmPlayback(generation);
     this.continueSystemPcmSynthesis(generation);
@@ -1030,9 +1098,18 @@ export class SystemTtsReader {
         if (this.onChunkStart) {
           this.onChunkStart(segment.chunk, segment.index);
         }
-        this.systemBufferedSegmentCount = Math.max(0, this.systemBufferedSegmentCount - 1);
         this.notifyAudioStarted();
+      });
+      writePromise.then(() => {
+        if (this.readGeneration !== generation || !this.active || this.ttsPcmPlayType !== 0) {
+          return;
+        }
+        // Audio production must never depend on a UI-focus callback. The PCM
+        // writeData completion provides backpressure independently of UI focus.
+        this.systemBufferedSegmentCount = Math.max(0, this.systemBufferedSegmentCount - 1);
         this.continueSystemPcmSynthesis(generation);
+      }).catch((error: Error) => {
+        console.warn('[TTS] system pcm segment write failed:', error);
       });
       this.systemLastWritePromise = writePromise;
     }
@@ -1084,11 +1161,13 @@ export class SystemTtsReader {
     this.currentFocusAudioWritten = false;
     this.currentAudioWritePromise = Promise.resolve();
     this.systemCurrentPcmBuffers = [];
+    this.systemCurrentPcmSequences = [];
     this.systemCurrentPcmBytes = 0;
   }
 
   private resetSystemPcmPipeline(): void {
     this.systemCurrentPcmBuffers = [];
+    this.systemCurrentPcmSequences = [];
     this.systemCurrentPcmBytes = 0;
     this.systemReadySegments = [];
     this.systemPlaybackStarted = false;
@@ -1098,22 +1177,88 @@ export class SystemTtsReader {
     this.systemBufferedSegmentCount = 0;
   }
 
-  private mergeSystemPcmBuffers(buffers: ArrayBuffer[], totalBytes: number): ArrayBuffer {
+  private mergeSystemPcmBuffers(buffers: ArrayBuffer[], sequences: number[],
+    totalBytes: number): ArrayBuffer {
     if (buffers.length === 0 || totalBytes <= 0) {
       return new ArrayBuffer(0);
     }
     if (buffers.length === 1) {
       return buffers[0].slice(0);
     }
+    const order: number[] = [];
+    for (let index = 0; index < buffers.length; index++) {
+      order.push(index);
+    }
+    order.sort((left: number, right: number) =>
+      (sequences[left] || left + 1) - (sequences[right] || right + 1));
     const merged = new ArrayBuffer(totalBytes);
     const output = new Uint8Array(merged);
     let offset = 0;
-    for (const buffer of buffers) {
+    for (const index of order) {
+      const buffer = buffers[index];
       const bytes = new Uint8Array(buffer);
       output.set(bytes, offset);
       offset += bytes.length;
     }
     return merged;
+  }
+
+  private normalizeSystemPcm(pcm: ArrayBuffer, sampleBit: number,
+    channelCount: number, audioType: string): ArrayBuffer {
+    if (!pcm || pcm.byteLength === 0) {
+      return new ArrayBuffer(0);
+    }
+    const type = (audioType || 'pcm').toLowerCase();
+    if (type !== 'pcm') {
+      console.warn(`[TTS] unexpected system audio type: ${audioType}`);
+    }
+    const safeBits = Math.round(sampleBit || 16);
+    const safeChannels = Math.max(1, Math.round(channelCount || 1));
+    if (safeBits !== 16) {
+      console.warn(`[TTS] unexpected system pcm sample bits: ${safeBits}`);
+      return pcm.byteLength % 2 === 0 ? pcm : pcm.slice(0, pcm.byteLength - 1);
+    }
+    const safeByteLength = pcm.byteLength - pcm.byteLength % (2 * safeChannels);
+    if (safeByteLength <= 0) {
+      return new ArrayBuffer(0);
+    }
+    if (safeChannels === 1) {
+      return safeByteLength === pcm.byteLength ? pcm : pcm.slice(0, safeByteLength);
+    }
+    const input = new DataView(pcm, 0, safeByteLength);
+    const frameCount = Math.floor(safeByteLength / (2 * safeChannels));
+    const output = new ArrayBuffer(frameCount * 2);
+    const outputView = new DataView(output);
+    for (let frame = 0; frame < frameCount; frame++) {
+      let total = 0;
+      for (let channel = 0; channel < safeChannels; channel++) {
+        total += input.getInt16((frame * safeChannels + channel) * 2, true);
+      }
+      outputView.setInt16(frame * 2, Math.max(-32768,
+        Math.min(32767, Math.round(total / safeChannels))), true);
+    }
+    console.info(`[TTS] system pcm downmixed: channels=${safeChannels},frames=${frameCount}`);
+    return output;
+  }
+
+  private fadeSystemPcmEdges(pcm: ArrayBuffer, sampleRate: number): ArrayBuffer {
+    const frameCount = Math.floor(pcm.byteLength / 2);
+    const fadeFrames = Math.min(Math.round(Math.max(8000, sampleRate || 16000) * 0.006),
+      Math.floor(frameCount / 4));
+    if (fadeFrames <= 1) {
+      return pcm;
+    }
+    const result = pcm.slice(0);
+    const view = new DataView(result);
+    for (let index = 0; index < fadeFrames; index++) {
+      const gain = index / fadeFrames;
+      const first = view.getInt16(index * 2, true);
+      const lastIndex = frameCount - index - 1;
+      const last = view.getInt16(lastIndex * 2, true);
+      view.setInt16(index * 2, Math.round(first * gain), true);
+      view.setInt16(lastIndex * 2, Math.round(last * gain), true);
+    }
+    return result;
   }
 
   private trimSystemPcmSilence(pcm: ArrayBuffer, sampleRate: number, text: string): ArrayBuffer {
@@ -1368,7 +1513,8 @@ export class SystemTtsReader {
   }
 
   private splitCloudFocusChunks(chunk: TtsChunk): TtsChunk[] {
-    const sentenceChunks = this.splitText(chunk.text, 28);
+    const sentenceChunks = this.splitText(
+      chunk.text, SystemTtsReader.CLOUD_TTS_FOCUS_CHUNK_LENGTH);
     const result: TtsChunk[] = [];
     for (const sentenceChunk of sentenceChunks) {
       const absoluteStart = chunk.start + sentenceChunk.start;
@@ -1540,6 +1686,44 @@ export class SystemTtsReader {
     } catch (_) {
       return [];
     }
+  }
+
+  private static async listLegacyEngineVoices(online: number): Promise<TtsVoiceOption[]> {
+    let engine: textToSpeech.TextToSpeechEngine | null = null;
+    try {
+      engine = await SystemTtsReader.createEngineWithMode(0, online, '', 'zh-CN');
+      const voices = await engine.listVoices({
+        requestId: `legacy_engine_voices_${online}_${Date.now()}`,
+        online: online
+      });
+      console.info(`[TTS] legacy engine listVoices online=${online}: ` +
+        `${SystemTtsReader.voiceInfosSummary(voices)}`);
+      return SystemTtsReader.parseVoices(voices, online);
+    } catch (error) {
+      console.warn(`[TTS] legacy engine listVoices failed online=${online}: ` +
+        `${SystemTtsReader.formatStaticError(error as Object)}`);
+      return [];
+    } finally {
+      if (engine) {
+        try {
+          engine.shutdown();
+        } catch (_) {
+        }
+      }
+    }
+  }
+
+  private static applyVoiceFeatureAvailability(voices: TtsVoiceOption[]): TtsVoiceOption[] {
+    if (SystemTtsReader.supportsVoiceDownload()) {
+      return voices;
+    }
+    for (const voice of voices) {
+      voice.downloadable = false;
+      if (voice.id === 0) {
+        voice.available = true;
+      }
+    }
+    return voices;
   }
 
   static serializeCustomVoices(voices: HttpTTS[]): string {
@@ -1998,12 +2182,16 @@ export class SystemTtsReader {
 
   private splitCloudText(text: string): TtsChunk[] {
     const chunks: TtsChunk[] = [];
-    const preferredLength = 200;
-    const minimumStrongLength = 80;
-    const minimumWeakLength = 140;
-    const maximumLength = 450;
     let start = 0;
     while (start < text.length) {
+      const firstChunk = chunks.length === 0;
+      const firstChunkLength = this.optionCloudVoiceTier === 'PREMIUM' ?
+        SystemTtsReader.CLOUD_TTS_PREMIUM_FIRST_CHUNK_LENGTH :
+        SystemTtsReader.CLOUD_TTS_STANDARD_FIRST_CHUNK_LENGTH;
+      const preferredLength = firstChunk ? firstChunkLength : 200;
+      const minimumStrongLength = firstChunk ? Math.ceil(firstChunkLength * 0.8) : 80;
+      const minimumWeakLength = firstChunk ? Math.ceil(firstChunkLength * 0.8) : 140;
+      const maximumLength = firstChunk ? firstChunkLength : 450;
       const limit = Math.min(text.length, start + maximumLength);
       const preferredEnd = Math.min(limit, start + preferredLength);
       let end = this.findLastCloudBreak(text, start + minimumStrongLength, preferredEnd, true);

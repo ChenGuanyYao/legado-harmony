@@ -2,6 +2,7 @@ import { Context } from '@kit.AbilityKit';
 import preferences from '@ohos.data.preferences';
 import { ThemeIds } from '../theme/ThemeModels';
 import { AppThemeSettings, AppThemeSettingsStore } from './AppThemeSettingsStore';
+import { CloudSyncChangeTracker } from '../account/CloudSyncChangeTracker';
 
 export class CustomThemeScheme {
   id: string = '';
@@ -180,6 +181,7 @@ export class CustomThemeSchemeStore {
     await store.flush();
     const revision = (AppStorage.get<number>(CustomThemeSchemeStore.STORAGE_REVISION) || 0) + 1;
     AppStorage.setOrCreate(CustomThemeSchemeStore.STORAGE_REVISION, revision);
+    CloudSyncChangeTracker.markApplicationPreferenceChanged();
     return true;
   }
 
@@ -207,6 +209,44 @@ export class CustomThemeSchemeStore {
     await store.flush();
     const revision = (AppStorage.get<number>(CustomThemeSchemeStore.STORAGE_REVISION) || 0) + 1;
     AppStorage.setOrCreate(CustomThemeSchemeStore.STORAGE_REVISION, revision);
+    CloudSyncChangeTracker.markApplicationPreferenceChanged();
+  }
+
+  static async replaceFromSync(
+    context: Context,
+    legacySettings: AppThemeSettings,
+    source: CustomThemeScheme[]
+  ): Promise<void> {
+    const schemes: CustomThemeScheme[] = [];
+    for (const item of source || []) {
+      if (!item || !item.id || schemes.length >= CustomThemeSchemeStore.MAX_SCHEMES) {
+        continue;
+      }
+      schemes.push(CustomThemeSchemeStore.createScheme(
+        item.id,
+        item.name || `自定义主题 ${schemes.length + 1}`,
+        item.settings || new AppThemeSettings(),
+        item.revision || 1
+      ));
+    }
+    if (schemes.length === 0) {
+      return;
+    }
+    const store = await preferences.getPreferences(context, CustomThemeSchemeStore.STORE_NAME);
+    await store.put(CustomThemeSchemeStore.KEY_SCHEMES, CustomThemeSchemeStore.encode(schemes));
+    const activeValue = await store.get(CustomThemeSchemeStore.KEY_ACTIVE_SCHEME_ID, '');
+    const activeId = typeof activeValue === 'string' ? activeValue : '';
+    if (!CustomThemeSchemeStore.find(schemes, activeId)) {
+      await store.put(CustomThemeSchemeStore.KEY_ACTIVE_SCHEME_ID, schemes[0].id);
+      await store.put(CustomThemeSchemeStore.KEY_ACTIVE_SCHEME_REVISION, 0);
+      AppStorage.setOrCreate(CustomThemeSchemeStore.STORAGE_ACTIVE_SCHEME_ID, schemes[0].id);
+      AppStorage.setOrCreate(CustomThemeSchemeStore.STORAGE_ACTIVE_SCHEME_REVISION, 0);
+    }
+    await store.flush();
+    AppStorage.setOrCreate(
+      CustomThemeSchemeStore.STORAGE_REVISION,
+      (AppStorage.get<number>(CustomThemeSchemeStore.STORAGE_REVISION) || 0) + 1
+    );
   }
 
   private static createScheme(

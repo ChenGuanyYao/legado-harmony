@@ -13,6 +13,7 @@ import {
   RechargeProduct
 } from '../account/AccountCommerceModels';
 import { AccountSessionStore } from '../account/AccountSessionStore';
+import { CloudSyncSettingsStore } from '../account/CloudSyncSettingsStore';
 import { HuaweiAccountService } from '../account/HuaweiAccountService';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
@@ -29,6 +30,10 @@ struct AccountCenterPage {
   @StorageLink('accountPaidPoints') paidPoints: number = 0;
   @StorageLink('accountPromoPoints') promoPoints: number = 0;
   @StorageLink('accountEntitlementsRevision') entitlementsRevision: number = 0;
+  @StorageLink('cloudSyncEnabled') cloudSyncEnabled: boolean = false;
+  @StorageLink('cloudSyncLastSuccessAt') cloudSyncLastSuccessAt: number = 0;
+  @StorageLink('cloudSyncPendingCount') cloudSyncPendingCount: number = 0;
+  @StorageLink('cloudSyncStatus') cloudSyncStatus: string = CloudSyncSettingsStore.STATUS_DISABLED;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State loading: boolean = false;
@@ -69,6 +74,7 @@ struct AccountCenterPage {
         Column({ space: 14 }) {
           if (!this.editingProfile) {
             this.accountCard()
+            this.cloudSyncCard()
           }
           if (this.accountLoggedIn) {
             if (this.editingProfile) {
@@ -604,6 +610,40 @@ struct AccountCenterPage {
     .padding(16)
     .borderRadius(16)
     .backgroundColor(this.cardColor())
+  }
+
+  @Builder
+  cloudSyncCard() {
+    Row({ space: 12 }) {
+      SymbolGlyph($r('sys.symbol.arrow_clockwise'))
+        .fontSize(24)
+        .fontColor([this.accentColor()])
+        .width(32)
+
+      Column({ space: 4 }) {
+        Text('数据同步')
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+        Text(CloudSyncSettingsStore.statusSummary(this.accountLoggedIn, this.cloudSyncEnabled,
+          this.cloudSyncStatus, this.cloudSyncPendingCount, this.cloudSyncLastSuccessAt))
+          .fontSize(12)
+          .fontColor(this.subTextColor())
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(18)
+        .fontColor([this.subTextColor()])
+    }
+    .width('100%')
+    .padding(16)
+    .borderRadius(16)
+    .backgroundColor(this.cardColor())
+    .onClick(() => {
+      router.pushUrl({ url: 'pages/DataSync' });
+    })
   }
 
   @Builder

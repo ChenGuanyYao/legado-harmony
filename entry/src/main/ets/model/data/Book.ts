@@ -242,6 +242,7 @@ export class BookSource {
 
   bookSourceUrl: string = '';
   bookSourceName: string = '';
+  bookSourceType: number = 0;
   bookSourceGroup: string = '';
   bookSourceComment: string = '';
   loginUrl: string = '';
@@ -260,6 +261,7 @@ export class BookSource {
   tocRule: TocRule = new TocRule();
   contentRule: ContentRule = new ContentRule();
   variableComment: string = '';
+  variable: string = '';
   lastUpdateTime: number = 0;
   customOrder: number = 0;
   isPinned: boolean = false;
@@ -269,6 +271,7 @@ export class BookSource {
   validationStatus: number = 0;
   weight: number = 0;
   concurrentRate: string = '';
+  enabledCookieJar: boolean = true;
 
   getSearchRule(): SearchRule {
     return this.searchRule;
@@ -357,6 +360,7 @@ export class ContentRule {
   images: string = '';
   nextContentUrl: string = '';
   replaceRegex: string = '';
+  imageDecode: string = '';
   imageStyle: string = '';
   payAction: string = '';
 }

@@ -300,9 +300,11 @@ struct BookSourceEditPage {
     const parts: string[] = [];
     this.appendSnapshotPart(parts, this.source.bookSourceUrl);
     this.appendSnapshotPart(parts, this.source.bookSourceName);
+    this.appendSnapshotPart(parts, String(this.source.bookSourceType));
     this.appendSnapshotPart(parts, this.source.bookSourceGroup);
     this.appendSnapshotPart(parts, this.source.bookSourceComment);
     this.appendSnapshotPart(parts, this.source.loginUrl);
+    this.appendSnapshotPart(parts, this.source.loginUi);
     this.appendSnapshotPart(parts, this.source.loginCheckJs);
     this.appendSnapshotPart(parts, this.source.loginHeader);
     this.appendSnapshotPart(parts, this.source.bookUrlPattern);
@@ -310,6 +312,8 @@ struct BookSourceEditPage {
     this.appendSnapshotPart(parts, this.source.exploreUrl);
     this.appendSnapshotPart(parts, this.source.jsLib);
     this.appendSnapshotPart(parts, this.source.header);
+    this.appendSnapshotPart(parts, this.source.variable);
+    this.appendSnapshotPart(parts, this.source.enabledCookieJar ? '1' : '0');
     this.appendSnapshotPart(parts, this.source.enabled ? '1' : '0');
     this.appendSnapshotPart(parts, this.source.enabledExplore ? '1' : '0');
     this.appendSnapshotPart(parts, String(this.source.weight));
@@ -358,6 +362,7 @@ struct BookSourceEditPage {
     this.appendSnapshotPart(parts, this.source.contentRule.images);
     this.appendSnapshotPart(parts, this.source.contentRule.nextContentUrl);
     this.appendSnapshotPart(parts, this.source.contentRule.replaceRegex);
+    this.appendSnapshotPart(parts, this.source.contentRule.imageDecode);
     this.appendSnapshotPart(parts, this.source.contentRule.imageStyle);
     return parts.join('');
   }
@@ -448,6 +453,11 @@ struct BookSourceEditPage {
         this.source.bookSourceUrl = value;
       })
 
+      this.inputItemBuilder('书源类型', String(this.source.bookSourceType), (value: string) => {
+        const parsed = Number(value);
+        this.source.bookSourceType = Number.isFinite(parsed) ? parsed : 0;
+      })
+
       this.inputItemBuilder('书源分组', this.source.bookSourceGroup, (value: string) => {
         this.source.bookSourceGroup = value;
       })
@@ -458,6 +468,10 @@ struct BookSourceEditPage {
 
       this.inputItemBuilder('登录地址', this.source.loginUrl, (value: string) => {
         this.source.loginUrl = value;
+      })
+
+      this.inputItemBuilder('登录界面', this.source.loginUi, (value: string) => {
+        this.source.loginUi = value;
       })
 
       this.inputItemBuilder('登录检测JS', this.source.loginCheckJs, (value: string) => {
@@ -491,6 +505,25 @@ struct BookSourceEditPage {
       this.inputItemBuilder('请求头', this.source.header, (value: string) => {
         this.source.header = value;
       })
+
+      this.inputItemBuilder('书源变量', this.source.variable, (value: string) => {
+        this.source.variable = value;
+      })
+
+      Row() {
+        Text('启用 Cookie')
+          .fontSize(16)
+          .fontColor(this.primaryTextColor())
+          .layoutWeight(1)
+
+        Toggle({ type: ToggleType.Switch, isOn: this.source.enabledCookieJar })
+          .selectedColor(this.buttonColor())
+          .onChange((isOn: boolean) => {
+            this.source.enabledCookieJar = isOn;
+          })
+      }
+      .width('100%')
+      .padding({ top: 12, bottom: 12 })
 
       Row() {
         Text('启用书源')
@@ -789,6 +822,10 @@ struct BookSourceEditPage {
 
       this.inputItemBuilder('替换净化', this.source.contentRule.replaceRegex, (value: string) => {
         this.source.contentRule.replaceRegex = value;
+      })
+
+      this.inputItemBuilder('图片解密', this.source.contentRule.imageDecode, (value: string) => {
+        this.source.contentRule.imageDecode = value;
       })
 
       this.inputItemBuilder('图片样式', this.source.contentRule.imageStyle, (value: string) => {

@@ -12,6 +12,7 @@ import deviceInfo from '@ohos.deviceInfo';
 import { HdsTabs, hdsMaterial } from '@kit.UIDesignKit';
 import { AccountCommerceApi } from '../account/AccountCommerceApi';
 import { AccountSessionStore } from '../account/AccountSessionStore';
+import { CloudSyncCoordinator } from '../account/CloudSyncCoordinator';
 import { TtsVoiceInfo } from '../account/AccountCommerceModels';
 import { Book, BookChapter, Bookmark, BookSource, SearchBook, HttpTTS } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
@@ -580,7 +581,10 @@ struct ReadBookPage {
     this.stopTtsReading();
     this.ttsReader.shutdown();
     if (!this.readerExitProgressSaved) {
-      this.saveReadingProgress().catch((error: Error) => {
+      this.saveReadingProgress().then(() => {
+        return CloudSyncCoordinator.syncAutomatically(
+          getContext(this), CloudSyncCoordinator.TRIGGER_CHANGE);
+      }).catch((error: Error) => {
         console.error('离开阅读页保存进度失败:', error);
       });
     }
@@ -3490,6 +3494,10 @@ struct ReadBookPage {
 
   readerSourceIndicatesComic(): boolean {
     const source = this.currentReaderSource();
+    if (source && (source.bookSourceType === 2 ||
+      /^(?:full|comic|manga|webtoon)$/i.test(source.contentRule?.imageStyle || ''))) {
+      return true;
+    }
     const bookIdentity = `${this.book?.kind || ''}\n${this.book?.customTag || ''}`;
     const sourceIdentity = source ? `${source.bookSourceGroup || ''}\n${source.bookSourceName || ''}` : '';
     return /漫画|漫話|条漫|條漫|コミック|comic|manga|manhua|webtoon/i.test(
@@ -3514,7 +3522,7 @@ struct ReadBookPage {
     this.book.putVariable('readerComicManualMode', next ? 'comic' : 'text');
     // 继续写入旧字段，兼容已有导入导出数据；实际判定优先读取手动模式字段。
     this.book.putVariable('readerComicMode', next ? '1' : '0');
-    AppDatabase.getInstance().updateBook(this.book).catch((error: Error) => {
+    AppDatabase.getInstance().updateBook(this.book, false).catch((error: Error) => {
       console.warn('保存阅读模式失败:', error);
     });
     this.showReaderActionMenu = false;
@@ -4695,6 +4703,14 @@ struct ReadBookPage {
       const voices = voiceResults[0] as TtsVoiceOption[];
       const catalog = voiceResults[1];
       this.ttsCloudVoices = catalog ? catalog.voices : [];
+      if (catalog && this.ttsCloudVoiceId && !this.findCurrentCloudTtsVoice()) {
+        const previousVoiceId = this.ttsCloudVoiceId;
+        const fallbackVoice = this.ttsCloudVoices.find((voice: TtsVoiceInfo) => voice.id === 'xiaoyan') ||
+          this.ttsCloudVoices[0];
+        this.ttsCloudVoiceId = fallbackVoice ? fallbackVoice.id : '';
+        console.warn(`[TTS] unsupported cloud voice migrated: ${previousVoiceId} -> ${this.ttsCloudVoiceId}`);
+        this.saveTtsSettings();
+      }
       if (!catalog && this.ttsCloudVoiceId) {
         const fallbackCloudVoice = new TtsVoiceInfo();
         fallbackCloudVoice.id = this.ttsCloudVoiceId;
@@ -6245,13 +6261,15 @@ struct ReadBookPage {
     const bookUrl = this.book.bookUrl;
     const chapterTitle = this.book.durChapterTitle;
     const variable = this.book.variable;
+    const syncRelevant = !!this.book.origin && this.book.origin !== 'local';
     const shouldRefreshRecentCard = chapterIndex !== this.lastRecentReadCardChapterIndex;
     this.lastRecentReadCardChapterIndex = chapterIndex;
     const previous = this.readingProgressSaveQueue.catch(() => {
     });
     const next = previous.then(async () => {
       const db = AppDatabase.getInstance();
-      await db.updateBookReadingProgress(bookUrl, chapterTitle, chapterIndex, pageIndex, now, variable);
+      await db.updateBookReadingProgress(
+        bookUrl, chapterTitle, chapterIndex, pageIndex, now, variable, syncRelevant);
       AppStorage.setOrCreate('shelfUpdateTime', Date.now());
       this.reloadRecentReadCardLater(shouldRefreshRecentCard);
     });
@@ -6273,7 +6291,7 @@ struct ReadBookPage {
     this.book.putVariable('lastReadTime', `${now}`);
     try {
       const db = AppDatabase.getInstance();
-      await db.updateBook(this.book);
+      await db.updateBook(this.book, false);
       AppStorage.setOrCreate('shelfUpdateTime', Date.now());
       this.lastRecentReadCardChapterIndex = this.currentChapterIndex;
       this.reloadRecentReadCardLater(true);
@@ -8729,6 +8747,7 @@ struct ReadBookPage {
         },
         cloudVoiceId: cloudVoice?.id || '',
         cloudVoiceName: cloudVoice?.name || '',
+        cloudVoiceTier: cloudVoice?.tier || 'STANDARD',
         person: this.ttsPerson,
         online: this.ttsOnline,
         style: this.ttsStyle,
@@ -11497,7 +11516,10 @@ struct ReadBookPage {
     this.stopTtsReading();
     if (this.openedFromShortcut) {
       this.readerExitProgressSaved = true;
-      this.saveReadingProgress().catch((error: Error) => {
+      this.saveReadingProgress().then(() => {
+        return CloudSyncCoordinator.syncAutomatically(
+          getContext(this), CloudSyncCoordinator.TRIGGER_CHANGE);
+      }).catch((error: Error) => {
         console.error('快捷入口返回时保存进度失败:', error);
       });
       try {
@@ -11514,6 +11536,10 @@ struct ReadBookPage {
     try {
       await this.saveReadingProgress();
       this.readerExitProgressSaved = true;
+      CloudSyncCoordinator.syncAutomatically(
+        getContext(this), CloudSyncCoordinator.TRIGGER_CHANGE).catch((error: Error) => {
+        console.warn('离开阅读页同步进度失败:', error);
+      });
     } catch (e) {
       console.error('返回阅读页时保存进度失败:', e);
     }

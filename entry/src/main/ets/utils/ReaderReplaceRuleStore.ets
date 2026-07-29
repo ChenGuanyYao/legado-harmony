@@ -1,6 +1,7 @@
 import { Context } from '@kit.AbilityKit';
 import preferences from '@ohos.data.preferences';
 import { Book } from '../model/data/Book';
+import { CloudSyncChangeTracker } from '../account/CloudSyncChangeTracker';
 
 export class ReaderReplaceRule {
   id: number = 0;
@@ -52,6 +53,7 @@ export class ReaderReplaceRuleStore {
     await store.put(ReaderReplaceRuleStore.RULES_KEY, JSON.stringify(normalized));
     await store.flush();
     AppStorage.setOrCreate(ReaderReplaceRuleStore.UPDATE_TIME_KEY, Date.now());
+    CloudSyncChangeTracker.markPreferenceChanged();
   }
 
   static newRule(): ReaderReplaceRule {

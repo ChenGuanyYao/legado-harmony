@@ -636,6 +636,14 @@ struct TtsSettingsPage {
       const voices = results[0] as TtsVoiceOption[];
       const catalog = results[1];
       this.cloudVoices = catalog ? catalog.voices : [];
+      if (catalog && this.ttsCloudVoiceId && !this.findCurrentCloudVoice()) {
+        const previousVoiceId = this.ttsCloudVoiceId;
+        const fallbackVoice = this.cloudVoices.find((voice: TtsVoiceInfo) => voice.id === 'xiaoyan') ||
+          this.cloudVoices[0];
+        this.ttsCloudVoiceId = fallbackVoice ? fallbackVoice.id : '';
+        console.warn(`[TTS] unsupported cloud voice migrated: ${previousVoiceId} -> ${this.ttsCloudVoiceId}`);
+        this.saveSettings();
+      }
       if (!catalog && this.ttsCloudVoiceId) {
         const fallbackCloudVoice = new TtsVoiceInfo();
         fallbackCloudVoice.id = this.ttsCloudVoiceId;
@@ -803,6 +811,10 @@ struct TtsSettingsPage {
   }
 
   async downloadAndSelectVoice(voice: TtsVoiceOption): Promise<void> {
+    if (!SystemTtsReader.supportsVoiceDownload()) {
+      promptAction.showToast({ message: '当前系统版本不支持下载系统音色，请升级系统后重试' });
+      return;
+    }
     if (this.downloadingVoiceKey) {
       promptAction.showToast({ message: '正在下载音色，请稍候' });
       return;
@@ -1334,6 +1346,7 @@ struct TtsSettingsPage {
       await this.previewReader.start(this.getPreviewText(), {
         cloudVoiceId: this.findCurrentCloudVoice()?.id || '',
         cloudVoiceName: this.findCurrentCloudVoice()?.name || '',
+        cloudVoiceTier: this.findCurrentCloudVoice()?.tier || 'STANDARD',
         person: this.ttsPerson,
         online: this.ttsOnline,
         style: this.ttsStyle,

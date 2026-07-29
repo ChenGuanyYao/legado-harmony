@@ -4,12 +4,14 @@ import { HttpClient, HttpResponse } from '../http/HttpClient';
 import { AnalyzeUrl } from '../rule/AnalyzeUrl';
 import { AnalyzeRule } from '../rule/AnalyzeRule';
 import { RuleContext } from '../rule/RuleContext';
+import { ScriptCompatibility } from '../rule/ScriptCompatibility';
 import { JsRuntime } from '../rule/JsRuntime';
 import { VerificationSupport } from '../http/VerificationSupport';
 import { EncodedSourceUrl } from './EncodedSourceUrl';
 import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
 import { BookUrlResolver } from './BookUrlResolver';
 import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
+import { BookSourceScriptRunner } from './BookSourceScriptRunner';
 
 export interface SearchProgress {
   done: number;
@@ -69,6 +71,7 @@ export class SearchCoordinator {
 
   cancel(): void {
     this.cancelled = true;
+    this.http.cancelAll();
   }
 
   async search(keyword: string, callback: SearchCallback, options: SearchOptions = {}): Promise<SearchBook[]> {
@@ -426,14 +429,11 @@ export class SearchCoordinator {
       if (rule.length > MAX_VALIDATION_RULE_CHARS) return '搜索规则过大';
     }
     const executable = executableRules.join('\n');
-    const hostCode = [source.jsLib || '', source.bookSourceComment || '', executable].join('\n');
+    const hostCode = [source.jsLib || '', executable].join('\n');
     if (hostCode.length > MAX_VALIDATION_CONFIG_CHARS) return '书源脚本配置过大';
     const usesScript = /(?:@js:|<js>|\bjava\.|\bsource\.|\bcache\.)/i.test(executable);
-    if (usesScript &&
-      /\b(?:JavaImporter|Packages|javax?\.crypto|android\.|org\.mozilla|SecretKeySpec|IvParameterSpec|Cipher)\b/i
-        .test(hostCode)) {
-      return '依赖当前不支持的 Java/Android 脚本能力';
-    }
+    const unsupportedScript = usesScript ? ScriptCompatibility.unsupportedReason(hostCode) : '';
+    if (unsupportedScript) return unsupportedScript;
     if (this.containsRiskyNestedQuantifier(executable)) return '包含高风险嵌套正则';
     return '';
   }
@@ -743,6 +743,13 @@ export class SearchCoordinator {
     const searchUrl = source.searchUrl;
     const baseUrl = source.bookSourceUrl;
     if (!searchUrl) return `${baseUrl}/search?q={{key}}`;
+    if (/^\s*@?js:/i.test(searchUrl)) {
+      const scripted = BookSourceScriptRunner.evaluateUrl(source, searchUrl, keyword, '1');
+      if (scripted.handled && scripted.value) {
+        source.variable = scripted.variable;
+        return scripted.value;
+      }
+    }
     const scriptedFormUrl = await this.tryBuildScriptedFormSearchUrl(source, keyword, maxResponseBytes);
     if (scriptedFormUrl) return scriptedFormUrl;
     const buildRequestUrl = BookSourceDataUrlSupport.buildRequestUrl(source, searchUrl, '1', keyword);
@@ -797,7 +804,7 @@ export class SearchCoordinator {
     ctx.put('bookSourceComment', source.bookSourceComment || '');
     ctx.put('source.jsLib', source.jsLib || '');
     ctx.put('jsLib', source.jsLib || '');
-    if (!ctx.has('source.variable')) ctx.put('source.variable', source.variableComment || '');
+    if (!ctx.has('source.variable')) ctx.put('source.variable', source.variable || '');
   }
 
   private async tryBuildScriptedFormSearchUrl(source: BookSource, keyword: string,

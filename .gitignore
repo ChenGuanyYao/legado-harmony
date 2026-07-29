@@ -35,6 +35,7 @@ build/
 /.hvigor
 /.appanalyzer
 server/
+output/
 *.har
 *.hsp
 

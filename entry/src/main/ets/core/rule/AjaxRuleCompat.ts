@@ -6,12 +6,12 @@ export interface DirectAjaxRulePlan {
 
 export class AjaxRuleCompat {
   static directResultPlan(rule: string): DirectAjaxRulePlan | null {
-    if (!rule || !/java\.ajax(?:All)?\(\s*result\s*\)/.test(rule)) return null;
+    if (!rule || !/java\.(?:ajax(?:All)?|connect)\(\s*result\s*\)/.test(rule)) return null;
     const jsIndex = rule.indexOf('@js:');
     if (jsIndex <= 0) return null;
     const urlRule = rule.substring(0, jsIndex).trim();
     if (!urlRule) return null;
-    const jsCode = rule.substring(jsIndex + 4);
+    const jsCode = this.normalizeResponseCalls(rule.substring(jsIndex + 4));
     return { urlRule: urlRule, jsCode: jsCode, ajaxAll: /java\.ajaxAll\(\s*result\s*\)/.test(jsCode) };
   }
 
@@ -82,5 +82,12 @@ export class AjaxRuleCompat {
 
   private static escapeRegex(value: string): string {
     return (value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private static normalizeResponseCalls(code: string): string {
+    return (code || '')
+      .replace(/java\.connect\(\s*result\s*\)\s*\.body\(\s*\)/g, 'java.ajax(result)')
+      .replace(/java\.connect\(\s*result\s*\)\s*\.body\b/g, 'java.ajax(result)')
+      .replace(/String\(\s*java\.connect\(\s*result\s*\)\s*\)/g, 'String(java.ajax(result))');
   }
 }
