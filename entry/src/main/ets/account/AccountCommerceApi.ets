@@ -36,6 +36,10 @@ export class AccountCommerceApi {
     return AccountCommerceApi.normalizeAccount(JSON.parse(value) as AccountSnapshot);
   }
 
+  static async logout(sessionToken: string): Promise<void> {
+    await AccountCommerceApi.request('/v1/auth/logout', 'POST', '{}', sessionToken);
+  }
+
   static async updateProfile(displayName: string, avatarBase64: string, removeAvatar: boolean,
     sessionToken: string): Promise<AccountSnapshot> {
     const value = await AccountCommerceApi.request('/v1/me/profile', 'POST',
@@ -234,6 +238,7 @@ export class AccountCommerceApi {
     result.points = Math.max(0, Math.floor(Number(account?.points) || 0));
     result.paidPoints = Math.max(0, Math.floor(Number(account?.paidPoints) || 0));
     result.promoPoints = Math.max(0, Math.floor(Number(account?.promoPoints) || 0));
+    result.iapDebtPoints = Math.max(0, Math.floor(Number(account?.iapDebtPoints) || 0));
     result.welcomeGranted = account?.welcomeGranted === true;
     result.entitlements = account?.entitlements || [];
     return result;

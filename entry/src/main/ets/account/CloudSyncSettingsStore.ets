@@ -30,6 +30,7 @@ export class CloudSyncSettingsStore {
   static readonly STORAGE_STATUS: string = 'cloudSyncStatus';
   static readonly STORAGE_ERROR_MESSAGE: string = 'cloudSyncErrorMessage';
   static readonly STORAGE_REVISION: string = 'cloudSyncSettingsRevision';
+  static readonly STORAGE_RUNTIME_ACTIVE: string = 'cloudSyncRuntimeActive';
 
   static readonly STATUS_DISABLED: string = 'disabled';
   static readonly STATUS_NOT_STARTED: string = 'not_started';
@@ -58,6 +59,7 @@ export class CloudSyncSettingsStore {
     AppStorage.setOrCreate(CloudSyncSettingsStore.STORAGE_STATUS, CloudSyncSettingsStore.STATUS_DISABLED);
     AppStorage.setOrCreate(CloudSyncSettingsStore.STORAGE_ERROR_MESSAGE, '');
     AppStorage.setOrCreate(CloudSyncSettingsStore.STORAGE_REVISION, 0);
+    AppStorage.setOrCreate(CloudSyncSettingsStore.STORAGE_RUNTIME_ACTIVE, false);
   }
 
   static async load(context: Context, userId: string): Promise<CloudSyncSettings> {
@@ -69,6 +71,15 @@ export class CloudSyncSettingsStore {
       const store = await preferences.getPreferences(context, CloudSyncSettingsStore.STORE_NAME);
       const raw = await store.get(CloudSyncSettingsStore.preferenceKey(normalizedUserId), '');
       const settings = CloudSyncSettingsStore.parse(typeof raw === 'string' ? raw : '');
+      if (settings.status === CloudSyncSettingsStore.STATUS_SYNCING &&
+        AppStorage.get<boolean>(CloudSyncSettingsStore.STORAGE_RUNTIME_ACTIVE) !== true) {
+        // syncing 会写入偏好存储。进程被终止或同步异常退出后没有内存任务承接它，
+        // 应恢复为可重试状态，避免界面永久禁用“立即同步”。
+        settings.status = CloudSyncSettingsStore.STATUS_NOT_STARTED;
+        settings.errorMessage = '';
+        await store.put(CloudSyncSettingsStore.preferenceKey(normalizedUserId), JSON.stringify(settings));
+        await store.flush();
+      }
       CloudSyncSettingsStore.currentUserId = normalizedUserId;
       CloudSyncSettingsStore.cachedSettings = CloudSyncSettingsStore.clone(settings);
       CloudSyncSettingsStore.applyToStorage(settings);

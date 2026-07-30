@@ -1,0 +1,30 @@
+{
+  "name": "legado-account-commerce-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/tts.test.js dist/sync.test.js dist/ttsRuntime.test.js dist/security.test.js",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@fastify/rate-limit": "^11.2.0",
+    "@huaweicloud/huaweicloud-sdk-core": "3.1.207",
+    "@huaweicloud/huaweicloud-sdk-sis": "3.1.207",
+    "fastify": "^5.4.0",
+    "jose": "^6.0.12",
+    "pg": "^8.16.3",
+    "sharp": "^0.35.3",
+    "uuid": "11.1.1",
+    "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.15",
+    "@types/pg": "^8.15.5",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}

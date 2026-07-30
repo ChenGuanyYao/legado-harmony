@@ -20,7 +20,7 @@ export class AppDatabase {
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
   private readonly DATABASE_NAME = 'legado.db';
-  private readonly SCHEMA_VERSION = 9;
+  private readonly SCHEMA_VERSION = 12;
 
   private constructor() {}
 
@@ -114,6 +114,8 @@ export class AppDatabase {
         loginUi TEXT,
         loginCheckJs TEXT DEFAULT '',
         loginHeader TEXT DEFAULT '',
+        loginInfo TEXT DEFAULT '',
+        rawSourceJson TEXT DEFAULT '',
         bookUrlPattern TEXT DEFAULT '',
         searchUrl TEXT DEFAULT '',
         exploreUrl TEXT DEFAULT '',
@@ -128,7 +130,10 @@ export class AppDatabase {
         variableComment TEXT DEFAULT '',
         variable TEXT DEFAULT '',
         lastUpdateTime INTEGER DEFAULT 0,
+        respondTime INTEGER DEFAULT 180000,
         customOrder INTEGER DEFAULT 0,
+        customButton INTEGER DEFAULT 0,
+        eventListener INTEGER DEFAULT 0,
         isPinned INTEGER DEFAULT 0,
         enabled INTEGER DEFAULT 1,
         enabledExplore INTEGER DEFAULT 1,
@@ -252,6 +257,8 @@ export class AppDatabase {
       await this.store.executeSql(`DELETE FROM schema_meta WHERE key = 'schema_version'`);
       await this.store.executeSql(`INSERT INTO schema_meta (key, value) VALUES ('schema_version', ${version})`);
     } catch (e) {
+      console.error(`保存数据库版本 ${version} 失败`, e);
+      throw e;
     }
   }
 
@@ -294,6 +301,11 @@ export class AppDatabase {
       { table: 'book_sources', column: 'variable', definition: "variable TEXT DEFAULT ''" },
       { table: 'book_sources', column: 'enabledCookieJar', definition: 'enabledCookieJar INTEGER DEFAULT 1' },
       { table: 'book_sources', column: 'loginHeader', definition: "loginHeader TEXT DEFAULT ''" },
+      { table: 'book_sources', column: 'loginInfo', definition: "loginInfo TEXT DEFAULT ''" },
+      { table: 'book_sources', column: 'rawSourceJson', definition: "rawSourceJson TEXT DEFAULT ''" },
+      { table: 'book_sources', column: 'respondTime', definition: 'respondTime INTEGER DEFAULT 180000' },
+      { table: 'book_sources', column: 'customButton', definition: 'customButton INTEGER DEFAULT 0' },
+      { table: 'book_sources', column: 'eventListener', definition: 'eventListener INTEGER DEFAULT 0' },
       { table: 'book_sources', column: 'isLocked', definition: 'isLocked INTEGER DEFAULT 0' },
       { table: 'book_sources', column: 'isPinned', definition: 'isPinned INTEGER DEFAULT 0' },
       { table: 'book_sources', column: 'validationStatus', definition: 'validationStatus INTEGER DEFAULT 0' },
@@ -318,6 +330,8 @@ export class AppDatabase {
       }
       await this.store.executeSql(`ALTER TABLE ${migration.table} ADD COLUMN ${migration.definition}`);
     } catch (e) {
+      console.error(`数据库迁移失败: ${migration.table}.${migration.column}`, e);
+      throw e;
     }
   }
 
@@ -809,8 +823,8 @@ export class AppDatabase {
     return resultSet.getLong(index);
   }
 
-  async insertBookSource(source: BookSource): Promise<void> {
-    if (!this.store) return;
+  async insertBookSource(source: BookSource): Promise<boolean> {
+    if (!this.store) return false;
     const bucket: relationalStore.ValuesBucket = {
       bookSourceUrl: source.bookSourceUrl,
       bookSourceName: source.bookSourceName,
@@ -821,6 +835,8 @@ export class AppDatabase {
       loginUi: source.loginUi,
       loginCheckJs: source.loginCheckJs,
       loginHeader: source.loginHeader,
+      loginInfo: source.loginInfo,
+      rawSourceJson: source.rawSourceJson,
       bookUrlPattern: source.bookUrlPattern,
       searchUrl: source.searchUrl,
       exploreUrl: source.exploreUrl,
@@ -835,7 +851,10 @@ export class AppDatabase {
       variableComment: source.variableComment,
       variable: source.variable,
       lastUpdateTime: source.lastUpdateTime,
+      respondTime: source.respondTime,
       customOrder: source.customOrder,
+      customButton: source.customButton ? 1 : 0,
+      eventListener: source.eventListener ? 1 : 0,
       isPinned: source.isPinned ? 1 : 0,
       enabled: source.enabled ? 1 : 0,
       enabledExplore: source.enabledExplore ? 1 : 0,
@@ -852,13 +871,20 @@ export class AppDatabase {
     if (resultSet.rowCount > 0) {
       resultSet.goToFirstRow();
       if (this.getLongColumn(resultSet, 'isLocked') === 1) {
-        return;
+        return false;
       }
       // 导入更新已有书源时保留用户在管理页设置的顺序。
       bucket['customOrder'] = this.getLongColumn(resultSet, 'customOrder');
       source.customOrder = bucket['customOrder'] as number;
       bucket['isPinned'] = this.getLongColumn(resultSet, 'isPinned');
       source.isPinned = bucket['isPinned'] === 1;
+      // 登录信息、脚本设置和运行时缓存属于用户状态，更新书源定义时不能被覆盖。
+      bucket['variable'] = this.getStringColumn(resultSet, 'variable');
+      source.variable = bucket['variable'] as string;
+      bucket['loginHeader'] = this.getStringColumn(resultSet, 'loginHeader');
+      source.loginHeader = bucket['loginHeader'] as string;
+      bucket['loginInfo'] = this.getStringColumn(resultSet, 'loginInfo');
+      source.loginInfo = bucket['loginInfo'] as string;
       await this.store.update(bucket, predicates);
     } else {
       // 新书源追加到现有顺序末尾，避免默认值 0 把它插到列表顶部。
@@ -872,6 +898,7 @@ export class AppDatabase {
       await this.store.insert('book_sources', bucket);
     }
     CloudSyncChangeTracker.markBookSourceChanged();
+    return true;
   }
 
   async updateBookSource(source: BookSource): Promise<void> {
@@ -886,6 +913,8 @@ export class AppDatabase {
       loginUi: source.loginUi,
       loginCheckJs: source.loginCheckJs,
       loginHeader: source.loginHeader,
+      loginInfo: source.loginInfo,
+      rawSourceJson: source.rawSourceJson,
       bookUrlPattern: source.bookUrlPattern,
       searchUrl: source.searchUrl,
       exploreUrl: source.exploreUrl,
@@ -900,7 +929,10 @@ export class AppDatabase {
       variableComment: source.variableComment,
       variable: source.variable,
       lastUpdateTime: source.lastUpdateTime,
+      respondTime: source.respondTime,
       customOrder: source.customOrder,
+      customButton: source.customButton ? 1 : 0,
+      eventListener: source.eventListener ? 1 : 0,
       isPinned: source.isPinned ? 1 : 0,
       enabled: source.enabled ? 1 : 0,
       enabledExplore: source.enabledExplore ? 1 : 0,
@@ -970,6 +1002,8 @@ export class AppDatabase {
       loginUi: source.loginUi,
       loginCheckJs: source.loginCheckJs,
       loginHeader: source.loginHeader,
+      loginInfo: source.loginInfo,
+      rawSourceJson: source.rawSourceJson,
       bookUrlPattern: source.bookUrlPattern,
       searchUrl: source.searchUrl,
       exploreUrl: source.exploreUrl,
@@ -984,7 +1018,10 @@ export class AppDatabase {
       variableComment: source.variableComment,
       variable: source.variable,
       lastUpdateTime: source.lastUpdateTime,
+      respondTime: source.respondTime,
       customOrder: source.customOrder,
+      customButton: source.customButton ? 1 : 0,
+      eventListener: source.eventListener ? 1 : 0,
       isPinned: source.isPinned ? 1 : 0,
       enabled: source.enabled ? 1 : 0,
       enabledExplore: source.enabledExplore ? 1 : 0,
@@ -1013,7 +1050,7 @@ export class AppDatabase {
     predicates.orderByAsc('customOrder');
     const columns = [
       'bookSourceUrl', 'bookSourceName', 'bookSourceGroup', 'loginUrl', 'loginUi',
-      'loginCheckJs', 'loginHeader', 'exploreUrl', 'customOrder', 'isPinned', 'enabled', 'enabledExplore', 'isLocked',
+      'loginCheckJs', 'loginHeader', 'exploreUrl', 'lastUpdateTime', 'customOrder', 'isPinned', 'enabled', 'enabledExplore', 'isLocked',
       'validationStatus'
     ];
     const resultSet = await this.store.query(predicates, columns);
@@ -1028,6 +1065,7 @@ export class AppDatabase {
       source.loginCheckJs = resultSet.getString(resultSet.getColumnIndex('loginCheckJs'));
       source.loginHeader = resultSet.getString(resultSet.getColumnIndex('loginHeader'));
       source.exploreUrl = resultSet.getString(resultSet.getColumnIndex('exploreUrl'));
+      source.lastUpdateTime = resultSet.getLong(resultSet.getColumnIndex('lastUpdateTime'));
       source.customOrder = resultSet.getLong(resultSet.getColumnIndex('customOrder'));
       source.isPinned = this.getLongColumn(resultSet, 'isPinned') === 1;
       source.enabled = resultSet.getLong(resultSet.getColumnIndex('enabled')) === 1;
@@ -1120,6 +1158,18 @@ export class AppDatabase {
     await this.store.update({ variable: variable || '' }, predicates);
   }
 
+  async updateBookSourceLoginRuntime(bookSourceUrl: string, variable: string, loginHeader: string,
+    loginInfo: string): Promise<void> {
+    if (!this.store || !bookSourceUrl) return;
+    const predicates = new relationalStore.RdbPredicates('book_sources');
+    predicates.equalTo('bookSourceUrl', bookSourceUrl);
+    await this.store.update({
+      variable: variable || '',
+      loginHeader: loginHeader || '',
+      loginInfo: loginInfo || ''
+    }, predicates);
+  }
+
   private normalizeBookSourceValidationStatus(value: number): number {
     if (value === BookSource.VALIDATION_PASSED || value === BookSource.VALIDATION_FAILED ||
       value === BookSource.VALIDATION_NO_RESULTS || value === BookSource.VALIDATION_NEEDS_VERIFICATION ||
@@ -1178,6 +1228,8 @@ export class AppDatabase {
     source.loginCheckJs = resultSet.getString(resultSet.getColumnIndex('loginCheckJs'));
     const loginHeaderIndex = resultSet.getColumnIndex('loginHeader');
     source.loginHeader = loginHeaderIndex >= 0 ? resultSet.getString(loginHeaderIndex) : '';
+    source.loginInfo = this.getStringColumn(resultSet, 'loginInfo');
+    source.rawSourceJson = this.getStringColumn(resultSet, 'rawSourceJson');
     source.bookUrlPattern = resultSet.getString(resultSet.getColumnIndex('bookUrlPattern'));
     const searchUrlIndex = resultSet.getColumnIndex('searchUrl');
     source.searchUrl = searchUrlIndex >= 0 ? resultSet.getString(searchUrlIndex) : '';
@@ -1214,7 +1266,10 @@ export class AppDatabase {
     const variableIndex = resultSet.getColumnIndex('variable');
     source.variable = variableIndex >= 0 ? resultSet.getString(variableIndex) : '';
     source.lastUpdateTime = resultSet.getLong(resultSet.getColumnIndex('lastUpdateTime'));
+    source.respondTime = this.getLongColumn(resultSet, 'respondTime', 180000);
     source.customOrder = resultSet.getLong(resultSet.getColumnIndex('customOrder'));
+    source.customButton = this.getLongColumn(resultSet, 'customButton') === 1;
+    source.eventListener = this.getLongColumn(resultSet, 'eventListener') === 1;
     source.isPinned = this.getLongColumn(resultSet, 'isPinned') === 1;
     source.enabled = resultSet.getLong(resultSet.getColumnIndex('enabled')) === 1;
     source.isLocked = this.getLongColumn(resultSet, 'isLocked') === 1;

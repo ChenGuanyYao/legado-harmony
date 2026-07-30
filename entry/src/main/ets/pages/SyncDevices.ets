@@ -11,6 +11,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 @Component
 struct SyncDevicesPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
+  @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State devices: CloudSyncDevice[] = [];
@@ -201,16 +202,19 @@ struct SyncDevicesPage {
       Image($r('app.media.ic_device_foldable'))
         .width(32)
         .height(32)
+        .fillColor(this.accentColor())
         .opacity(device.revokedAt ? 0.45 : 1)
     } else if (device.deviceKind === 'tablet') {
       Image($r('app.media.ic_device_tablet'))
         .width(32)
         .height(32)
+        .fillColor(this.accentColor())
         .opacity(device.revokedAt ? 0.45 : 1)
     } else {
       Image($r('app.media.ic_device_phone'))
         .width(32)
         .height(32)
+        .fillColor(this.accentColor())
         .opacity(device.revokedAt ? 0.45 : 1)
     }
   }
@@ -293,7 +297,7 @@ struct SyncDevicesPage {
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .backgroundColor(this.appDarkMode ? '#76000000' : '#52000000')
-    .backdropBlur(18)
+    .backdropBlur(ThemeRuntime.topBarBlur())
   }
 
   async confirmRevoke(device: CloudSyncDevice): Promise<void> {
@@ -382,7 +386,7 @@ struct SyncDevicesPage {
     .height(56 + this.statusBarHeight)
     .padding({ top: this.statusBarHeight })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(18)
+    .backdropBlur(ThemeRuntime.topBarBlur())
     .alignItems(VerticalAlign.Center)
   }
 }

@@ -14,11 +14,13 @@ import { ReaderFontBootstrap } from '../utils/ReaderFontBootstrap';
 import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
 import { TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { ThemeIds } from '../theme/ThemeModels';
 import { ThemeTrialManager } from '../utils/ThemeTrialManager';
 import { AccountSessionStore } from '../account/AccountSessionStore';
 import { CloudSyncSettingsStore } from '../account/CloudSyncSettingsStore';
 import { CloudSyncCoordinator } from '../account/CloudSyncCoordinator';
 import { CloudSyncChangeTracker } from '../account/CloudSyncChangeTracker';
+import { StartupCoverTextStore } from '../utils/StartupCoverTextStore';
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
 
@@ -167,6 +169,8 @@ export default class EntryAbility extends UIAbility {
     });
     this.themeBootstrapPromise = AppThemeSettingsStore.load(this.context).then((settings) => {
       AppThemeSettingsStore.applyToStorage(settings);
+      return StartupCoverTextStore.load(this.context);
+    }).then(() => {
       return GlassSettingsStore.load(this.context);
     }).then((settings) => {
       GlassSettingsStore.applyToStorage(settings);
@@ -204,12 +208,25 @@ export default class EntryAbility extends UIAbility {
   }
 
   private loadStartupContent(windowStage: window.WindowStage): void {
-    windowStage.loadContent('pages/Startup', (err) => {
+    const darkMode = AppStorage.get<boolean>('appDarkMode') || false;
+    const activeThemeId = AppStorage.get<string>(AppThemeSettingsStore.KEY_THEME_ID) ||
+      AppThemeSettingsStore.DEFAULT_THEME_ID;
+    const customStartupImage = activeThemeId === ThemeIds.CUSTOM ?
+      (AppStorage.get<string>(darkMode ?
+        AppThemeSettingsStore.KEY_CUSTOM_DARK_STARTUP_IMAGE_PATH :
+        AppThemeSettingsStore.KEY_CUSTOM_LIGHT_STARTUP_IMAGE_PATH) || '') : '';
+    const usesSystemStartup = ThemeRuntime.startupThemeId(darkMode) === ThemeIds.PLAIN_DEFAULT &&
+      !customStartupImage;
+    const hasPendingImport = !!AppStorage.get<string>('pendingBookSourceImportUri') ||
+      !!AppStorage.get<string>('pendingLocalBookImportUri');
+    const initialPage = usesSystemStartup && !hasPendingImport ? 'pages/Index' : 'pages/Startup';
+    windowStage.loadContent(initialPage, (err) => {
       if (err.code) {
         hilog.error(0x0000, 'testTag', 'Failed to load content: %{public}s', JSON.stringify(err));
         return;
       }
-      hilog.info(0x0000, 'testTag', 'StartupTrace Startup content loaded %{public}d', Date.now());
+      hilog.info(0x0000, 'testTag', 'StartupTrace %{public}s content loaded %{public}d',
+        initialPage, Date.now());
       this.syncStartupWindow(windowStage);
     });
   }

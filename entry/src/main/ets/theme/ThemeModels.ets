@@ -14,15 +14,16 @@ export class ThemeIds {
 }
 
 export class ThemeComponentSourceIds {
-  paletteThemeId: string = ThemeIds.CLASSIC_BLUE;
-  readerThemeId: string = ThemeIds.CLASSIC_BLUE;
-  bubbleThemeId: string = ThemeIds.CLASSIC_BLUE;
-  navigationThemeId: string = ThemeIds.CLASSIC_BLUE;
-  bookThemeId: string = ThemeIds.CLASSIC_BLUE;
-  typographyThemeId: string = ThemeIds.CLASSIC_BLUE;
-  layoutThemeId: string = ThemeIds.CLASSIC_BLUE;
-  radiusThemeId: string = ThemeIds.CLASSIC_BLUE;
-  glassThemeId: string = ThemeIds.CLASSIC_BLUE;
+  startupThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  paletteThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  readerThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  bubbleThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  navigationThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  bookThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  typographyThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  layoutThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  radiusThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  glassThemeId: string = ThemeIds.PLAIN_DEFAULT;
 }
 
 export class ThemeRegexEmphasisModes {
@@ -110,6 +111,10 @@ export class ThemeNavigationTokens {
   iconPackId: string = 'classic';
 }
 
+export class ThemeStartupTokens {
+  styleId: string = ThemeIds.CLASSIC_BLUE;
+}
+
 export class ThemeRadiusTokens {
   small: number = 6;
   medium: number = 10;
@@ -170,6 +175,7 @@ export class ThemePack {
   readerLayout: ThemeReaderLayoutTokens = new ThemeReaderLayoutTokens();
   book: ThemeBookTokens = new ThemeBookTokens();
   navigation: ThemeNavigationTokens = new ThemeNavigationTokens();
+  startup: ThemeStartupTokens = new ThemeStartupTokens();
   radius: ThemeRadiusTokens = new ThemeRadiusTokens();
   glass: ThemeGlassTokens = new ThemeGlassTokens();
 }

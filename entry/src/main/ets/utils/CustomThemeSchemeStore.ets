@@ -217,15 +217,23 @@ export class CustomThemeSchemeStore {
     legacySettings: AppThemeSettings,
     source: CustomThemeScheme[]
   ): Promise<void> {
+    const localSchemes = await CustomThemeSchemeStore.load(context, legacySettings);
     const schemes: CustomThemeScheme[] = [];
     for (const item of source || []) {
       if (!item || !item.id || schemes.length >= CustomThemeSchemeStore.MAX_SCHEMES) {
         continue;
       }
+      const incomingSettings = AppThemeSettingsStore.cloneSettings(item.settings || new AppThemeSettings());
+      const localScheme = CustomThemeSchemeStore.find(localSchemes, item.id);
+      // 启动封面图片是设备本地资源，云端只同步方案设置，不覆盖本机文件绑定。
+      incomingSettings.customLightStartupImagePath = localScheme ?
+        localScheme.settings.customLightStartupImagePath : '';
+      incomingSettings.customDarkStartupImagePath = localScheme ?
+        localScheme.settings.customDarkStartupImagePath : '';
       schemes.push(CustomThemeSchemeStore.createScheme(
         item.id,
         item.name || `自定义主题 ${schemes.length + 1}`,
-        item.settings || new AppThemeSettings(),
+        incomingSettings,
         item.revision || 1
       ));
     }

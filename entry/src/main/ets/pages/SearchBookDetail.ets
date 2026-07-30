@@ -16,6 +16,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 @Component
 struct SearchBookDetailPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
+  @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
   @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
@@ -81,23 +82,6 @@ struct SearchBookDetailPage {
   build() {
     Stack() {
       Column() {
-        Row() {
-          ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-            onBack: () => this.handleBack() })
-
-          Text('书籍详情')
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.primaryTextColor())
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .height(56 + this.statusBarHeight)
-        .padding({ right: 16, top: this.statusBarHeight })
-        .alignItems(VerticalAlign.Center)
-        .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-        .backdropBlur(18)
-
         Scroll() {
           Column() {
             Row({ space: 16 }) {
@@ -200,7 +184,7 @@ struct SearchBookDetailPage {
             .margin({ top: 12 })
           }
           .width('100%')
-          .padding({ left: 16, right: 16, top: 16, bottom: 96 })
+          .padding({ left: 16, right: 16, top: 72 + this.statusBarHeight, bottom: 96 })
         }
         .width('100%')
         .layoutWeight(1)
@@ -230,11 +214,14 @@ struct SearchBookDetailPage {
         .width('100%')
         .padding({ left: 16, right: 16, top: 12, bottom: 12 + this.navBarHeight })
         .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+        .backdropBlur(ThemeRuntime.topBarBlur())
       }
       .width('100%')
       .height('100%')
       .backgroundColor(this.pageColor())
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+
+      this.titleBar()
 
       if (this.showAddToShelfOnBackDialog) {
         this.addToShelfOnBackDialog()
@@ -243,6 +230,27 @@ struct SearchBookDetailPage {
     .width('100%')
     .height('100%')
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  titleBar() {
+    Row() {
+      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
+        onBack: () => this.handleBack() })
+
+      Text('书籍详情')
+        .fontSize(20)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryTextColor())
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .height(56 + this.statusBarHeight)
+    .padding({ right: 16, top: this.statusBarHeight })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+    .backdropBlur(ThemeRuntime.topBarBlur())
+    .position({ x: 0, y: 0 })
   }
 
   onBackPress(): boolean {

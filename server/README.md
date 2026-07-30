@@ -1,0 +1,116 @@
+# 华为账号、点数与主题权益服务
+
+该服务是客户端 `entry/src/main/ets/account` 的可信后端。它负责：
+
+- 使用客户端上传的 Authorization Code 向华为换取 Access Token，再从华为账号接口读取 OpenID。
+- 每个 OpenID 仅赠送一次 300 点。
+- 在数据库事务中扣除 60 点，并把主题有效期增加 365 天。
+- 校验 IAP JWS 证书链、调用华为订单状态查询接口，并按订单号幂等充值。
+- 返回账号级余额和主题权益，供多个终端同步。
+
+## 运行
+
+1. 创建 PostgreSQL 数据库并按顺序执行全部迁移：
+
+   ```sh
+   psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/001_account_commerce.sql
+   psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/002_custom_profile.sql
+   psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/003_tts_billing.sql
+   psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/004_tts_usage_allocations.sql
+   psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/005_data_sync.sql
+   psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/006_sync_device_metadata.sql
+   psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/007_sync_performance.sql
+   psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/008_security_hardening.sql
+   ```
+
+2. 根据 `.env.example` 配置运行环境。所有 Client Secret、IAP 私钥和数据库凭据只能放在服务端密钥管理中，不得写入 HarmonyOS 工程。
+
+3. 安装、构建并启动：
+
+   ```sh
+   npm install
+   npm run build
+   npm start
+   ```
+
+4. 将服务部署到带 HTTPS 的华为云函数、云容器或其他可信环境，再把公网地址写入客户端的
+   `AccountCommerceConfig.API_BASE_URL`。
+
+## AppGallery Connect 配置
+
+- 开启 Account Kit，并把 OAuth Client ID 写入 `entry/src/main/module.json5`。
+- 开通华为商户服务与 IAP Kit。
+- 创建以下“消耗型”商品，定价必须保持 1 元 = 10 点：
+
+  | 商品 ID | 价格 | 点数 |
+  | --- | ---: | ---: |
+  | `legado_points_10` | ¥1 | 10 |
+  | `legado_points_60` | ¥6 | 60 |
+  | `legado_points_100` | ¥10 | 100 |
+  | `legado_points_300` | ¥30 | 300 |
+  | `legado_points_500` | ¥50 | 500 |
+  | `legado_points_1000` | ¥100 | 1000 |
+
+- 在 IAP 后台生成 Server API 密钥，配置 Key ID、Issuer ID、App ID 和 `.p8` 私钥。
+- 从华为官方证书页面下载 Huawei CBG Root CA G2，并通过只读密钥挂载提供给服务。
+- 按应用发布站点选择当前 IAP Server API `rootUrl`，不要盲目沿用示例值。
+- 上线前必须用 IAP 沙盒覆盖：支付成功、取消支付、服务端超时、客户端确认失败重试、重复订单和退款/撤销。
+
+## 业务规则
+
+- 每个主题获取时扣 60 点；为避免升级后立即锁定界面，升级前/首次启动时正在使用的主题可继续使用，切换后再次选回仍需有效权益。
+- 已在有效期内再次获取时，从原到期日再延长 365 天。
+- 充值点可以兑换主题和在线朗读字数包；赠送点只能兑换主题。
+- 在线朗读字数包分标准和精品两档，每笔额度有效期 365 天，优先消耗最早到期额度。
+- 华为云按每次请求向上取整计费：标准音色以 100 字为单位，精品音色以 50 字为单位；应用字数余额采用相同规则。
+- 新账号首次打开在线朗读钱包，获得标准音色 5000 字、精品音色 1000 字，30 天有效。
+- 合成请求先预占字数；华为云返回失败时自动退款。相同 `requestId` 不重复扣字数。
+- 成功合成的进程缓存过期后，相同 `requestId` 不会再次调用华为云；客户端必须使用新的请求标识重新计费生成。
+- 服务端不保存朗读正文和音频，只保存输入哈希、计费记录和音频哈希；音频仅在进程内短时缓存。
+- 点数不可转让、不可提现；退款和撤销订单由服务端定期对账并执行冲正。
+- 服务端定期复查 IAP 订单。已退款或撤销的订单会冲正仍可用充值点；不足部分记为账号欠款并暂停兑换和在线朗读，后续充值优先抵扣欠款。
+
+## 华为云 SIS 配置
+
+1. 在 `cn-north-4` 开通语音交互服务 SIS 和语音合成。
+2. 为服务端 IAM 用户配置调用 SIS 所需的最小权限，创建独立 AK/SK。
+3. 在服务器密钥管理中配置：
+
+   - `HUAWEICLOUD_SIS_AK`
+   - `HUAWEICLOUD_SIS_SK`
+   - `HUAWEICLOUD_SIS_PROJECT_ID`
+   - `HUAWEICLOUD_SIS_REGION=cn-north-4`
+   - `HUAWEICLOUD_SIS_ENDPOINT=https://sis-ext.cn-north-4.myhuaweicloud.com`
+   - `HUAWEICLOUD_SIS_DAILY_BILLING_UNIT_LIMIT=25000`
+   - `HUAWEICLOUD_SIS_USER_REQUESTS_PER_MINUTE=30`
+   - `HUAWEICLOUD_SIS_MAX_CONCURRENT=6`
+   - `HUAWEICLOUD_SIS_MAX_CONCURRENT_PER_USER=2`
+   - `HUAWEICLOUD_SIS_QUEUE_LIMIT=20`
+   - `HUAWEICLOUD_SIS_CACHE_MAX_BYTES=134217728`
+
+在线朗读使用 SIS 实时语音合成 RTTS：支持的音色直接返回 `word_level` 时间戳，其他音色
+根据 PCM 静音边界生成分段时间轴。服务器必须允许出站 WSS/443 访问配置的 SIS endpoint。
+旧客户端仍可请求 MP3；携带 `timed: true` 的新版客户端返回 16 kHz PCM 和时间轴。
+新客户端同时携带 `transport: binary-v1`，服务端使用二进制封包返回时间轴和 PCM，避免
+Base64 的约 33% 体积膨胀；未携带该字段的旧客户端继续接收原 JSON，升级顺序不受限制。
+
+默认并发值针对单机 2 核 2GB：全局最多 6 个 SIS 合成、每用户最多 2 个，额外请求最多
+排队 20 个。进程内音频缓存按总量 128MB、单条 8MB、5 分钟 TTL 控制，不再按固定条数
+无限放大内存占用。
+
+## 数据同步性能与清理
+
+- 客户端按最多 100 项且约 400KB 动态分批，书源单项仍不得超过 256KB。
+- 服务端批量读取幂等回执，并用一个 PostgreSQL CTE 完成实体、变更和回执三次写入。
+- 客户端声明支持时，`/v1/sync/*` JSON 响应自动使用 Gzip。
+- 操作回执默认保留 30 天并每 6 小时小批量清理；`sync_changes` 不按时间直接删除，
+  避免长期离线设备丢失增量数据。
+- 服务端同时限制单账号设备数、实体数、存储字节、历史变更数和每日写入数；达到上限时返回明确的配额错误。
+- `007_sync_performance.sql` 记录每台设备已确认的同步游标，为后续安全压缩变更历史做准备。
+
+缺少任一必需值时，账号、主题和充值接口仍可运行，`/v1/tts/synthesize` 返回
+`TTS_NOT_CONFIGURED`。`/health` 的 `sisConfigured` 可用于发布检查，但不会暴露任何凭据。
+每日预算按华为云计费单位统计（标准 100 字或精品 50 字为一个单位），达到上限后暂停新的
+合成请求；建议内测期保持默认值，根据实际付费率、华为云账单和峰值用量逐步上调。
+
+发布、监控和回滚检查见 [OPERATIONS.md](./OPERATIONS.md)。

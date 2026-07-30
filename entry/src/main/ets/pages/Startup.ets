@@ -5,12 +5,22 @@ import { ReaderFontBootstrap } from '../utils/ReaderFontBootstrap';
 import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { LocalBookService } from '../core/book/LocalBookService';
+import { ThemeStartupCover } from '../components/ThemeStartupCover';
+import { ThemeIds } from '../theme/ThemeModels';
+import { AppThemeSettingsStore } from '../utils/AppThemeSettingsStore';
 
 @Entry
 @Component
 struct StartupPage {
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
+  @StorageLink('appThemeId') appThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
+  @StorageLink('appCustomLightStartupImagePath') customLightStartupImagePath: string = '';
+  @StorageLink('appCustomDarkStartupImagePath') customDarkStartupImagePath: string = '';
+  @StorageLink('appCustomLightStartupTitle') customLightStartupTitle: string = '开源轻页';
+  @StorageLink('appCustomDarkStartupTitle') customDarkStartupTitle: string = '开源轻页';
+  @StorageLink('appCustomLightStartupSubtitle') customLightStartupSubtitle: string = '';
+  @StorageLink('appCustomDarkStartupSubtitle') customDarkStartupSubtitle: string = '';
   @StorageLink('pendingLocalBookImportNonce') @Watch('onPendingLocalBookImportChanged')
   pendingLocalBookImportNonce: number = 0;
   private jumpTimer: number = -1;
@@ -24,7 +34,9 @@ struct StartupPage {
     ReaderSystemFontHelper.applyToStorage(this.getUIContext());
     ReaderFontBootstrap.registerFromSettings(getContext(this), this.getUIContext(), 'startup-aboutToAppear');
     const startupDelay = RecentReadShortcut.isPending() || this.hasPendingBookSourceImport() ||
-      this.hasPendingLocalBookImport() ? 0 : 650;
+      this.hasPendingLocalBookImport() || (ThemeRuntime.startupThemeId(this.appDarkMode) === ThemeIds.PLAIN_DEFAULT &&
+        !this.customStartupImage()) ?
+      0 : 720;
     this.jumpTimer = setTimeout(() => {
       this.jumpTimer = -1;
       hilog.info(0x0000, 'testTag', 'StartupTrace replace Index %{public}d', Date.now());
@@ -134,73 +146,39 @@ struct StartupPage {
   }
 
   build() {
-    Column() {
-      Row() {
-        Text('书架')
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor())
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(56)
-      .padding({ left: 16, right: 16 })
-      .alignItems(VerticalAlign.Center)
-
-      Column({ space: 10 }) {
-        this.placeholderCard(0.92)
-        this.placeholderCard(0.78)
-        this.placeholderCard(0.86)
-      }
-      .width('100%')
-      .padding({ left: 16, right: 16, top: 8 })
-      .alignItems(HorizontalAlign.Start)
+    Stack() {
+      ThemeStartupCover({
+        themeId: ThemeRuntime.startupThemeId(this.appDarkMode),
+        darkMode: this.appDarkMode,
+        compact: false,
+        animated: true,
+        customImagePath: this.customStartupImage(),
+        titleOverride: this.customStartupTitle(),
+        subtitleOverride: this.customStartupSubtitle(),
+        explicitText: this.appThemeId === ThemeIds.CUSTOM
+      })
     }
     .width('100%')
     .height('100%')
-    .padding({ top: this.statusBarHeight })
     .backgroundColor(this.pageColor())
-    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
-  }
-
-  @Builder
-  placeholderCard(widthRatio: number) {
-    Row() {
-      Column()
-        .width(56)
-        .height(72)
-        .borderRadius(6)
-        .backgroundColor(this.appDarkMode ? '#24272D' : '#E6E9EE')
-
-      Column({ space: 8 }) {
-        Column()
-          .width(`${Math.floor(widthRatio * 100)}%`)
-          .height(16)
-          .borderRadius(8)
-          .backgroundColor(this.appDarkMode ? '#24272D' : '#E2E5EA')
-        Column()
-          .width('48%')
-          .height(12)
-          .borderRadius(6)
-          .backgroundColor(this.appDarkMode ? '#202329' : '#ECEEF2')
-        Column()
-          .width('34%')
-          .height(12)
-          .borderRadius(6)
-          .backgroundColor(this.appDarkMode ? '#202329' : '#ECEEF2')
-      }
-      .layoutWeight(1)
-      .margin({ left: 12 })
-      .alignItems(HorizontalAlign.Start)
-    }
-    .width('100%')
-    .padding(12)
-    .borderRadius(8)
-    .backgroundColor(this.appDarkMode ? '#191B1F' : '#FFFFFF')
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
   pageColor(): string {
     return ThemeRuntime.pageColor(this.appDarkMode);
+  }
+
+  customStartupImage(): string {
+    if (this.appThemeId !== ThemeIds.CUSTOM) return '';
+    return this.appDarkMode ? this.customDarkStartupImagePath : this.customLightStartupImagePath;
+  }
+
+  customStartupTitle(): string {
+    return this.appDarkMode ? this.customDarkStartupTitle : this.customLightStartupTitle;
+  }
+
+  customStartupSubtitle(): string {
+    return this.appDarkMode ? this.customDarkStartupSubtitle : this.customLightStartupSubtitle;
   }
 
   primaryTextColor(): string {

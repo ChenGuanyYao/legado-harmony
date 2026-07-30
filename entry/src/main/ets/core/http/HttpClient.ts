@@ -87,6 +87,7 @@ export class HttpClient {
         client.on('headersReceive', onHeadersReceive);
         client.on('dataReceive', onDataReceive);
         let responseCode = 0;
+        let streamError = '';
         try {
           responseCode = await client.requestInStream(req.url, {
             method: method,
@@ -95,6 +96,8 @@ export class HttpClient {
             connectTimeout: req.connectTimeout || this.timeout,
             readTimeout: req.readTimeout || this.timeout
           });
+        } catch (error) {
+          streamError = this.describeError(error as Object);
         } finally {
           client.off('headersReceive', onHeadersReceive);
           client.off('dataReceive', onDataReceive);
@@ -110,7 +113,15 @@ export class HttpClient {
           };
         }
         const result = this.mergeArrayBuffers(chunks, receivedBytes);
-        return this.buildResponse(req, responseCode, streamedHeaders, result);
+        const streamedResponse = this.buildResponse(req, responseCode, streamedHeaders, result);
+        if (streamError) {
+          // Some servers finish a chunked response and then close the connection in a way
+          // Network Kit reports as 2300056. Preserve the received body so callers can
+          // validate and use a complete payload instead of losing it with the socket error.
+          streamedResponse.success = false;
+          streamedResponse.error = streamError;
+        }
+        return streamedResponse;
       }
 
       const resp = await client.request(req.url, {

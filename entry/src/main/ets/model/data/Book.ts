@@ -249,6 +249,9 @@ export class BookSource {
   loginUi: string = '';
   loginCheckJs: string = '';
   loginHeader: string = '';
+  loginInfo: string = '';
+  /** Original imported source object. Keeps unknown/future Legado fields losslessly. */
+  rawSourceJson: string = '';
   bookUrlPattern: string = '';
   searchUrl: string = '';
   exploreUrl: string = '';
@@ -263,7 +266,10 @@ export class BookSource {
   variableComment: string = '';
   variable: string = '';
   lastUpdateTime: number = 0;
+  respondTime: number = 180000;
   customOrder: number = 0;
+  customButton: boolean = false;
+  eventListener: boolean = false;
   isPinned: boolean = false;
   enabled: boolean = true;
   enabledExplore: boolean = true;

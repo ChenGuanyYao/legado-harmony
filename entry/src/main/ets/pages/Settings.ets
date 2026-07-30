@@ -27,6 +27,7 @@ class ReaderCustomFontData {
 struct SettingsPage {
   @StorageLink('appThemeMode') appThemeMode: string = 'system';
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
+  @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @StorageLink('readerFontSize') readerFontSize: number = 20;
@@ -1478,7 +1479,7 @@ struct SettingsPage {
     .height(56 + this.statusBarHeight)
     .padding({ top: this.statusBarHeight })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(18)
+    .backdropBlur(ThemeRuntime.topBarBlur())
     .alignItems(VerticalAlign.Center)
   }
 

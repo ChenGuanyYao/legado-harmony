@@ -2735,12 +2735,12 @@ struct ReadBookPage {
         )
       }
       this.readerActionMenuItem(
-        $r('sys.symbol.rectangle_3_group'),
+        this.isReaderComicModeActive() ? $r('sys.symbol.book') : $r('sys.symbol.rectangle_3_group'),
         this.isReaderComicModeActive() ? '切换为普通阅读' : '切换为漫画阅读',
         () => this.toggleReaderComicReadingMode()
       )
       this.readerActionMenuItem(
-        $r('sys.symbol.rectangle_3_group'),
+        $r('sys.symbol.square_grid_2x2'),
         '布局元素设置',
         () => this.openLayoutElementSettings()
       )
@@ -7731,6 +7731,27 @@ struct ReadBookPage {
           this.showTtsVoiceDropdown = true;
         })
 
+      Row() {
+        Text('朗读定时')
+          .fontSize(15)
+          .fontColor(this.getTextColor())
+          .layoutWeight(1)
+        Text(this.ttsSleepTimerMinutes > 0 ?
+          `剩余 ${Math.max(1, Math.ceil(this.ttsSleepTimerRemainingSeconds / 60))} 分钟` : '未设置')
+          .fontSize(12)
+          .fontColor(this.getSubTextColor())
+      }
+      .width('100%')
+
+      Row({ space: 8 }) {
+        this.ttsSleepTimerChip(15)
+        this.ttsSleepTimerChip(30)
+        this.ttsSleepTimerChip(60)
+        this.ttsSleepTimerChip(90)
+        this.ttsSleepTimerChip(120)
+      }
+      .width('100%')
+
       Button(this.isTtsSpeaking ? '停止朗读' : '开始朗读')
         .width('100%')
         .height(40)
@@ -7893,6 +7914,24 @@ struct ReadBookPage {
         (this.isReaderThemeDark() ? '#24272D' : '#EEF0F3'))
       .onClick(() => {
         this.applyTtsSpeed(value);
+      })
+  }
+
+  @Builder
+  ttsSleepTimerChip(minutes: number) {
+    Text(`${minutes}分`)
+      .fontSize(13)
+      .fontColor(this.ttsSleepTimerMinutes === minutes ? '#FFFFFF' : this.getTextColor())
+      .textAlign(TextAlign.Center)
+      .layoutWeight(1)
+      .height(32)
+      .borderRadius(16)
+      .backgroundColor(this.ttsSleepTimerMinutes === minutes ? this.accentColor() :
+        (this.isReaderThemeDark() ? '#24272D' : '#EEF0F3'))
+      .accessibilityText(this.ttsSleepTimerMinutes === minutes ?
+        `关闭 ${minutes} 分钟朗读定时` : `设置 ${minutes} 分钟朗读定时`)
+      .onClick(() => {
+        this.setTtsSleepTimer(this.ttsSleepTimerMinutes === minutes ? 0 : minutes);
       })
   }
 

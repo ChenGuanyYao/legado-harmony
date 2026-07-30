@@ -10,6 +10,7 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 @Component
 struct AppIconSettingsPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
+  @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appIconId') appIconId: string = AppIconSettingsStore.DEFAULT_ICON_ID;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
@@ -166,7 +167,7 @@ struct AppIconSettingsPage {
     .height(56 + this.statusBarHeight)
     .padding({ top: this.statusBarHeight })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(18)
+    .backdropBlur(ThemeRuntime.topBarBlur())
     .alignItems(VerticalAlign.Center)
   }
 

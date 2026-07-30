@@ -481,7 +481,7 @@ struct ReaderFontSettingsPage {
     .height(56 + this.statusBarHeight)
     .padding({ top: this.statusBarHeight })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(18)
+    .backdropBlur(ThemeRuntime.topBarBlur())
     .alignItems(VerticalAlign.Center)
   }
 

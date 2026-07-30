@@ -25,6 +25,7 @@ interface PopupVisibilityEvent {
 @Component
 struct FontSettingsPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
+  @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('readerFontFamily') readerFontFamily: string = '';
   @StorageLink('readerFontFilePath') readerFontFilePath: string = '';
   @StorageLink('readerFontSourceName') readerFontSourceName: string = '系统默认';
@@ -471,7 +472,7 @@ struct FontSettingsPage {
     .height(56 + this.statusBarHeight)
     .padding({ top: this.statusBarHeight })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(18)
+    .backdropBlur(ThemeRuntime.topBarBlur())
     .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
     .alignItems(VerticalAlign.Center)
   }

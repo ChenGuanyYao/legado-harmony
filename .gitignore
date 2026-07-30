@@ -27,6 +27,7 @@ hs_err_pid*
 *.iml
 .gradle/
 build/
+tmp/
 .agents/
 
 # HarmonyOS
@@ -34,7 +35,17 @@ build/
 /oh_modules
 /.hvigor
 /.appanalyzer
-server/
+server/node_modules/
+server/dist/
+server/release/
+server/.env
+server/.env.*
+!server/.env.example
+server/*.p8
+server/*.pem
+server/*.key
+server/*.dump
+server/*.backup
 output/
 *.har
 *.hsp

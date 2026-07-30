@@ -125,6 +125,21 @@ export class ThemeAssetRegistry {
     }
   }
 
+  static startupBackground(themeId: string): ResourceStr {
+    switch ((themeId || '').trim().toLowerCase()) {
+      case ThemeIds.WARM_PAPER: return $r('app.media.theme_startup_warm_paper');
+      case ThemeIds.FOREST_MIST: return $r('app.media.theme_startup_forest_mist');
+      case ThemeIds.INK_WASH: return $r('app.media.theme_startup_ink_wash');
+      case ThemeIds.NEON_NIGHT: return $r('app.media.theme_startup_neon_night');
+      case ThemeIds.STRAWBERRY_CREAM: return $r('app.media.theme_startup_strawberry_cream');
+      case ThemeIds.CRIMSON_ARCHIVE: return $r('app.media.theme_startup_crimson_archive');
+      case ThemeIds.PLUM_TEA: return $r('app.media.theme_startup_plum_tea');
+      case ThemeIds.ROSE_LETTER: return $r('app.media.theme_startup_rose_letter');
+      case ThemeIds.MOON_CRANE: return $r('app.media.theme_startup_moon_crane');
+      default: return $r('app.media.theme_startup_classic_blue');
+    }
+  }
+
   static themeBookCover(assetId: string): ResourceStr {
     const covers = ThemeAssetRegistry.themeBookCovers(assetId);
     return covers.length > 0 ? covers[0] : '';

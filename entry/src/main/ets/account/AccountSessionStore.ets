@@ -149,6 +149,7 @@ export class AccountSessionStore {
     result.points = Math.max(0, Math.floor(Number(source.points) || 0));
     result.paidPoints = Math.max(0, Math.floor(Number(source.paidPoints) || 0));
     result.promoPoints = Math.max(0, Math.floor(Number(source.promoPoints) || 0));
+    result.iapDebtPoints = Math.max(0, Math.floor(Number(source.iapDebtPoints) || 0));
     result.welcomeGranted = source.welcomeGranted === true;
     result.entitlements = [];
     if (source.entitlements) {

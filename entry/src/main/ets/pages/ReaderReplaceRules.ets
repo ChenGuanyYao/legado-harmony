@@ -10,6 +10,7 @@ import { ResponsiveManagerListLayout } from '../utils/ResponsiveManagerListLayou
 @Component
 struct ReaderReplaceRulesPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
+  @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State rules: ReaderReplaceRule[] = [];
@@ -151,7 +152,7 @@ struct ReaderReplaceRulesPage {
     .height(56 + this.statusBarHeight)
     .padding({ top: this.statusBarHeight })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(18)
+    .backdropBlur(ThemeRuntime.topBarBlur())
     .alignItems(VerticalAlign.Center)
   }
 

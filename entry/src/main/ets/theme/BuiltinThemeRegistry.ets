@@ -159,7 +159,6 @@ export class BuiltinThemeRegistry {
     theme.book.shelfFolderAssetId = '';
     theme.radius = BuiltinThemeRegistry.radius(4, 8, 12, 8, 16, 8);
     theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 12, 10, 18, 18, 18, 18);
-    theme.glass.enabled = false;
     return theme;
   }
 
@@ -430,6 +429,7 @@ export class BuiltinThemeRegistry {
     theme.book.coverAssetId = id;
     theme.book.shelfFrameAssetId = id;
     theme.book.shelfFolderAssetId = id;
+    theme.startup.styleId = id;
     return theme;
   }
 
@@ -544,6 +544,7 @@ export class BuiltinThemeRegistry {
     theme.book.shelfFrameAssetId = source.book.shelfFrameAssetId;
     theme.book.shelfFolderAssetId = source.book.shelfFolderAssetId;
     theme.navigation.iconPackId = source.navigation.iconPackId;
+    theme.startup.styleId = source.startup.styleId;
     theme.radius = BuiltinThemeRegistry.radius(source.radius.small, source.radius.medium, source.radius.large,
       source.radius.card, source.radius.button, source.radius.bubble);
     theme.glass = BuiltinThemeRegistry.cloneGlass(source.glass || new ThemeGlassTokens());

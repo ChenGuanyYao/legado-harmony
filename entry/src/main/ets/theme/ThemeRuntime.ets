@@ -134,6 +134,13 @@ export class ThemeRuntime {
     return BuiltinThemeRegistry.normalizeId(stored);
   }
 
+  static startupThemeId(darkMode: boolean = AppStorage.get<boolean>('appDarkMode') || false): string {
+    if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
+      return ThemeRuntime.customSourceTheme('startup', darkMode).startup.styleId;
+    }
+    return ThemeRuntime.currentPack().startup.styleId;
+  }
+
   static themeRevision(): number {
     return AppStorage.get<number>(ThemeRuntime.KEY_THEME_REVISION) ?? 0;
   }
@@ -153,7 +160,11 @@ export class ThemeRuntime {
   static topBarColor(darkMode: boolean): string {
     const fallback = ThemeRuntime.fallbackVariant(darkMode).colors.cardColor;
     const color = ThemeRuntime.normalizeColor(ThemeRuntime.cardColor(darkMode), fallback);
-    return `#D9${color.substring(1)}`;
+    return ThemeRuntime.dropdownPanelColor(darkMode, color, 'overlay');
+  }
+
+  static topBarBlur(): number {
+    return ThemeRuntime.glassBlur('overlay', 18);
   }
 
   static inputColor(darkMode: boolean): string {
@@ -608,7 +619,8 @@ export class ThemeRuntime {
       BuiltinThemeRegistry.DEFAULT_THEME_ID;
     const sources = ThemeRuntime.customSources(darkMode, fallback);
     let themeId = fallback;
-    if (category === 'palette') themeId = sources.paletteThemeId;
+    if (category === 'startup') themeId = sources.startupThemeId;
+    else if (category === 'palette') themeId = sources.paletteThemeId;
     else if (category === 'reader') themeId = sources.readerThemeId;
     else if (category === 'bubble') themeId = sources.bubbleThemeId;
     else if (category === 'navigation') themeId = sources.navigationThemeId;
@@ -633,6 +645,7 @@ export class ThemeRuntime {
       }
     }
     const normalized = new ThemeComponentSourceIds();
+    normalized.startupThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.startupThemeId || fallback);
     normalized.paletteThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.paletteThemeId || fallback);
     normalized.readerThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.readerThemeId || fallback);
     normalized.bubbleThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.bubbleThemeId || fallback);

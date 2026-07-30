@@ -1,4 +1,4 @@
-import { router } from '@kit.ArkUI';
+import { promptAction, router } from '@kit.ArkUI';
 import { syncSystemBars } from '../utils/SystemBars';
 import { AppThemeSettings, AppThemeSettingsStore } from '../utils/AppThemeSettingsStore';
 import { CustomThemeScheme, CustomThemeSchemeStore } from '../utils/CustomThemeSchemeStore';
@@ -9,6 +9,8 @@ import { BuiltinThemeRegistry } from '../theme/BuiltinThemeRegistry';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { AccountSessionStore } from '../account/AccountSessionStore';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { ThemeStartupCover } from '../components/ThemeStartupCover';
+import { StartupCoverImageStore } from '../utils/StartupCoverImageStore';
 
 @Component
 struct ThemeColorOption {
@@ -64,6 +66,7 @@ struct ThemeColorOption {
 @Component
 struct ThemeColorSettingsPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
+  @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appThemeId') appThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
   @StorageLink('accountEntitlementsRevision') accountEntitlementsRevision: number = 0;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
@@ -76,6 +79,12 @@ struct ThemeColorSettingsPage {
   @State customBaseThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
   @State lightSources: ThemeComponentSourceIds = new ThemeComponentSourceIds();
   @State darkSources: ThemeComponentSourceIds = new ThemeComponentSourceIds();
+  @State lightStartupImagePath: string = '';
+  @State darkStartupImagePath: string = '';
+  @State lightStartupTitle: string = '开源轻页';
+  @State darkStartupTitle: string = '开源轻页';
+  @State lightStartupSubtitle: string = '';
+  @State darkStartupSubtitle: string = '';
   @State availableThemes: ThemePack[] = [];
   private schemeId: string = '';
   private schemeName: string = '';
@@ -108,6 +117,8 @@ struct ThemeColorSettingsPage {
           this.modeOptions()
           this.sectionTitle(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式 · 主题部件`)
           this.sourceOptions()
+          this.sectionTitle(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式 · 启动封面`)
+          this.startupCoverOptions()
           this.sectionTitle(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式 · 自定义颜色`)
           Column() {
             this.colorOptions()
@@ -165,6 +176,12 @@ struct ThemeColorSettingsPage {
         settings.customLightSources, settings.customBaseThemeId);
       this.darkSources = AppThemeSettingsStore.cloneSources(
         settings.customDarkSources, settings.customBaseThemeId);
+      this.lightStartupImagePath = settings.customLightStartupImagePath;
+      this.darkStartupImagePath = settings.customDarkStartupImagePath;
+      this.lightStartupTitle = settings.customLightStartupTitle;
+      this.darkStartupTitle = settings.customDarkStartupTitle;
+      this.lightStartupSubtitle = settings.customLightStartupSubtitle;
+      this.darkStartupSubtitle = settings.customDarkStartupSubtitle;
       this.refreshAvailableThemes();
       this.settingsLoaded = true;
     } catch (e) {
@@ -234,7 +251,8 @@ struct ThemeColorSettingsPage {
   }
 
   setSourceValue(sources: ThemeComponentSourceIds, category: string, themeId: string): void {
-    if (category === 'palette') sources.paletteThemeId = themeId;
+    if (category === 'startup') sources.startupThemeId = themeId;
+    else if (category === 'palette') sources.paletteThemeId = themeId;
     else if (category === 'reader') sources.readerThemeId = themeId;
     else if (category === 'bubble') sources.bubbleThemeId = themeId;
     else if (category === 'navigation') sources.navigationThemeId = themeId;
@@ -280,6 +298,7 @@ struct ThemeColorSettingsPage {
 
   sourceThemeId(category: string): string {
     const sources = this.currentSources();
+    if (category === 'startup') return sources.startupThemeId;
     if (category === 'palette') return sources.paletteThemeId;
     if (category === 'reader') return sources.readerThemeId;
     if (category === 'bubble') return sources.bubbleThemeId;
@@ -323,7 +342,65 @@ struct ThemeColorSettingsPage {
     settings.darkAccentColor = this.darkAccentColor;
     settings.lightButtonColor = this.lightButtonColor;
     settings.darkButtonColor = this.darkButtonColor;
+    settings.customLightStartupImagePath = this.lightStartupImagePath;
+    settings.customDarkStartupImagePath = this.darkStartupImagePath;
+    settings.customLightStartupTitle = this.lightStartupTitle;
+    settings.customDarkStartupTitle = this.darkStartupTitle;
+    settings.customLightStartupSubtitle = this.lightStartupSubtitle;
+    settings.customDarkStartupSubtitle = this.darkStartupSubtitle;
     return AppThemeSettingsStore.cloneSettings(settings);
+  }
+
+  currentStartupImagePath(): string {
+    return this.selectedMode === 'dark' ? this.darkStartupImagePath : this.lightStartupImagePath;
+  }
+
+  currentStartupTitle(): string {
+    return this.selectedMode === 'dark' ? this.darkStartupTitle : this.lightStartupTitle;
+  }
+
+  currentStartupSubtitle(): string {
+    return this.selectedMode === 'dark' ? this.darkStartupSubtitle : this.lightStartupSubtitle;
+  }
+
+  setCurrentStartupTitle(value: string): void {
+    if (this.selectedMode === 'dark') this.darkStartupTitle = value;
+    else this.lightStartupTitle = value;
+    this.onSettingChanged();
+  }
+
+  setCurrentStartupSubtitle(value: string): void {
+    if (this.selectedMode === 'dark') this.darkStartupSubtitle = value;
+    else this.lightStartupSubtitle = value;
+    this.onSettingChanged();
+  }
+
+  async chooseStartupImage(): Promise<void> {
+    try {
+      const darkMode = this.selectedMode === 'dark';
+      const oldPath = this.currentStartupImagePath();
+      const imagePath = await StartupCoverImageStore.pickAndSave(getContext(this), this.schemeId, darkMode);
+      if (!imagePath) return;
+      if (darkMode) this.darkStartupImagePath = imagePath;
+      else this.lightStartupImagePath = imagePath;
+      await this.onSettingChanged();
+      if (oldPath && oldPath !== imagePath) StartupCoverImageStore.remove(getContext(this), oldPath);
+      promptAction.showToast({ message: `${darkMode ? '深色' : '浅色'}启动封面已更新` });
+    } catch (e) {
+      console.error('上传自定义启动封面失败:', e);
+      promptAction.showToast({ message: '上传启动封面失败，请重试' });
+    }
+  }
+
+  async resetStartupImage(): Promise<void> {
+    const darkMode = this.selectedMode === 'dark';
+    const oldPath = this.currentStartupImagePath();
+    if (!oldPath) return;
+    if (darkMode) this.darkStartupImagePath = '';
+    else this.lightStartupImagePath = '';
+    await this.onSettingChanged();
+    StartupCoverImageStore.remove(getContext(this), oldPath);
+    promptAction.showToast({ message: '已恢复所选主题的启动封面' });
   }
 
   customPreviewTheme(): ThemePack {
@@ -345,7 +422,7 @@ struct ThemeColorSettingsPage {
     for (const theme of themes) {
       if (BuiltinThemeRegistry.isFree(theme.id) ||
         (theme.id === this.appThemeId && theme.id !== trialThemeId) ||
-        AccountSessionStore.hasValidEntitlement(theme.id) || this.isSourceInUse(theme.id)) {
+        AccountSessionStore.hasValidEntitlement(theme.id)) {
         available.push(theme);
       }
     }
@@ -357,7 +434,8 @@ struct ThemeColorSettingsPage {
   }
 
   sourceUsesTheme(sources: ThemeComponentSourceIds, themeId: string): boolean {
-    return sources.paletteThemeId === themeId || sources.readerThemeId === themeId ||
+    return sources.startupThemeId === themeId || sources.paletteThemeId === themeId ||
+      sources.readerThemeId === themeId ||
       sources.bubbleThemeId === themeId || sources.navigationThemeId === themeId ||
       sources.bookThemeId === themeId || sources.typographyThemeId === themeId ||
       sources.layoutThemeId === themeId || sources.radiusThemeId === themeId ||
@@ -432,7 +510,7 @@ struct ThemeColorSettingsPage {
     .height(56 + this.statusBarHeight)
     .padding({ top: this.statusBarHeight })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(18)
+    .backdropBlur(ThemeRuntime.topBarBlur())
     .alignItems(VerticalAlign.Center)
   }
 
@@ -478,6 +556,7 @@ struct ThemeColorSettingsPage {
   @Builder
   sourceOptions() {
     Column() {
+      this.componentSourceRow('启动封面', 'App 冷启动时展示的主题插画与标识', 'startup')
       this.componentSourceRow('完整配色', '页面、卡片、文字、状态栏图标及基础颜色', 'palette')
       this.componentSourceRow('阅读背景', '阅读背景、正文颜色和背景素材', 'reader')
       this.componentSourceRow('强调气泡', '正文强调方式、气泡样式及气泡配色', 'bubble')
@@ -593,6 +672,73 @@ struct ThemeColorSettingsPage {
   }
 
   @Builder
+  startupCoverOptions() {
+    Column({ space: 12 }) {
+      Row({ space: 10 }) {
+        Button(this.currentStartupImagePath() ? '更换自定义封面' : '上传自定义封面',
+          { type: ButtonType.Normal })
+          .height(38)
+          .fontSize(13)
+          .fontColor('#FFFFFF')
+          .backgroundColor(this.currentButtonColor())
+          .layoutWeight(1)
+          .onClick(() => this.chooseStartupImage())
+        if (this.currentStartupImagePath()) {
+          Button('恢复主题封面', { type: ButtonType.Normal })
+            .height(38)
+            .fontSize(13)
+            .fontColor(this.currentAccentColor())
+            .backgroundColor(this.inputColor())
+            .layoutWeight(1)
+            .onClick(() => this.resetStartupImage())
+        }
+      }
+      .width('100%')
+
+      Column({ space: 6 }) {
+        Text('主标题')
+          .fontSize(12)
+          .fontColor(this.subTextColor())
+          .width('100%')
+        TextInput({ placeholder: '可留空', text: this.currentStartupTitle() })
+          .width('100%')
+          .height(42)
+          .maxLength(24)
+          .fontColor(this.primaryTextColor())
+          .placeholderColor(this.subTextColor())
+          .backgroundColor(this.inputColor())
+          .borderRadius(10)
+          .onChange((value: string) => this.setCurrentStartupTitle(value))
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+
+      Column({ space: 6 }) {
+        Text('副标题')
+          .fontSize(12)
+          .fontColor(this.subTextColor())
+          .width('100%')
+        TextInput({ placeholder: '可留空', text: this.currentStartupSubtitle() })
+          .width('100%')
+          .height(42)
+          .maxLength(48)
+          .fontColor(this.primaryTextColor())
+          .placeholderColor(this.subTextColor())
+          .backgroundColor(this.inputColor())
+          .borderRadius(10)
+          .onChange((value: string) => this.setCurrentStartupSubtitle(value))
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('calc(100% - 24vp)')
+    .padding(14)
+    .margin({ left: 12, right: 12 })
+    .borderRadius(16)
+    .backgroundColor(this.cardColor())
+  }
+
+  @Builder
   previewPanel() {
     Column() {
       Text(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式预览`)
@@ -600,6 +746,22 @@ struct ThemeColorSettingsPage {
         .fontColor(this.subTextColor())
         .width('100%')
         .margin({ bottom: 12 })
+
+      ThemeStartupCover({
+        themeId: this.customPreviewTheme().startup.styleId,
+        darkMode: this.selectedMode === 'dark',
+        compact: true,
+        animated: false,
+        customImagePath: this.currentStartupImagePath(),
+        titleOverride: this.currentStartupTitle(),
+        subtitleOverride: this.currentStartupSubtitle(),
+        explicitText: true
+      })
+      .width('100%')
+      .height(150)
+      .borderRadius(this.customPreviewTheme().radius.medium)
+      .margin({ bottom: 12 })
+      .clip(true)
 
       Row({ space: 10 }) {
         Stack() {

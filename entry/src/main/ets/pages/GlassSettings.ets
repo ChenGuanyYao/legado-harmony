@@ -232,7 +232,7 @@ struct GlassSettingsPage {
     .height(56 + this.statusBarHeight)
     .padding({ right: 12, top: this.statusBarHeight })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(18)
+    .backdropBlur(ThemeRuntime.topBarBlur())
   }
 
   @Builder

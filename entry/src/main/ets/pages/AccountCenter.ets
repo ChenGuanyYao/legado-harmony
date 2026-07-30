@@ -23,6 +23,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 @Component
 struct AccountCenterPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
+  @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('accountLoggedIn') accountLoggedIn: boolean = false;
   @StorageLink('accountDisplayName') displayName: string = '';
   @StorageLink('accountAvatarUrl') avatarUrl: string = '';
@@ -517,7 +518,9 @@ struct AccountCenterPage {
       purchaseOrderId: result.purchaseOrderId
     });
     if (showResult) {
-      promptAction.showToast({ message: `充值成功，已到账 ${result.creditedPoints} 点` });
+      const debtMessage = result.debtOffsetPoints > 0 ?
+        `，其中 ${result.debtOffsetPoints} 点用于抵扣退款欠款` : '';
+      promptAction.showToast({ message: `充值成功，已到账 ${result.creditedPoints} 点${debtMessage}` });
     }
   }
 
@@ -562,7 +565,7 @@ struct AccountCenterPage {
     .padding({ top: this.statusBarHeight })
     .alignItems(VerticalAlign.Center)
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(18)
+    .backdropBlur(ThemeRuntime.topBarBlur())
   }
 
   @Builder
@@ -574,6 +577,12 @@ struct AccountCenterPage {
           .height(56)
           .borderRadius(28)
           .objectFit(ImageFit.Cover)
+      } else if (!this.accountLoggedIn) {
+        SymbolGlyph($r('sys.symbol.person_crop_circle_fill'))
+          .fontSize(56)
+          .fontColor([this.accentColor()])
+          .width(56)
+          .height(56)
       } else {
         Image($r('app.media.ic_default_reader_avatar'))
           .width(56)

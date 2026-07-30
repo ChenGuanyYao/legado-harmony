@@ -1,0 +1,5 @@
+ALTER TABLE sync_devices
+  ADD COLUMN IF NOT EXISTS device_kind TEXT NOT NULL DEFAULT 'unknown';
+
+ALTER TABLE sync_devices
+  ADD COLUMN IF NOT EXISTS name_customized BOOLEAN NOT NULL DEFAULT FALSE;

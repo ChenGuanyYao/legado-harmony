@@ -131,7 +131,10 @@ class BookSourceSyncPayload {
   tocRule: TocRule = new TocRule();
   contentRule: ContentRule = new ContentRule();
   variableComment: string = '';
+  respondTime: number = 180000;
   customOrder: number = 0;
+  customButton: boolean = false;
+  eventListener: boolean = false;
   isPinned: boolean = false;
   enabled: boolean = true;
   enabledExplore: boolean = true;
@@ -185,11 +188,13 @@ export class CloudSyncCoordinator {
   private static readonly FOREGROUND_REFRESH_INTERVAL_MS: number = 30 * 60 * 1000;
   private static readonly MAX_BATCH_OPERATIONS: number = 100;
   private static readonly MAX_BATCH_BYTES: number = 400 * 1024;
+  private static readonly MAX_EXCHANGE_PAGES: number = 1000;
 
   static async syncNow(context: Context, conflictPolicy: string = 'cloud'): Promise<CloudSyncRunResult> {
     if (CloudSyncCoordinator.running) {
       return await CloudSyncCoordinator.running;
     }
+    AppStorage.setOrCreate(CloudSyncSettingsStore.STORAGE_RUNTIME_ACTIVE, true);
     const task = CloudSyncCoordinator.run(context, conflictPolicy === 'local' ? 'local' : 'cloud');
     CloudSyncCoordinator.running = task;
     CloudSyncCoordinator.lastSyncAttemptAt = Date.now();
@@ -199,6 +204,7 @@ export class CloudSyncCoordinator {
       if (CloudSyncCoordinator.running === task) {
         CloudSyncCoordinator.running = null;
       }
+      AppStorage.setOrCreate(CloudSyncSettingsStore.STORAGE_RUNTIME_ACTIVE, false);
     }
   }
 
@@ -314,8 +320,14 @@ export class CloudSyncCoordinator {
 
       let remaining = operations.slice();
       let hasMore = true;
+      let exchangePages = 0;
       while (remaining.length > 0 || hasMore) {
+        exchangePages++;
+        if (exchangePages > CloudSyncCoordinator.MAX_EXCHANGE_PAGES) {
+          throw new Error('同步分页次数异常，请稍后重试');
+        }
         const batch = CloudSyncCoordinator.takeOperationBatch(remaining);
+        const cursorBeforeExchange = state.cursor;
         const request = await CloudSyncCoordinator.exchangeRequest(
           context, deviceId, state.cursor, batch, conflictPolicy);
         const response = await AccountCommerceApi.exchangeSync(request, AccountSessionStore.token());
@@ -332,7 +344,11 @@ export class CloudSyncCoordinator {
         }
         result.uploaded += (response.acknowledgements || []).filter(
           (ack: CloudSyncAcknowledgement) => ack.accepted).length;
-        state.cursor = Math.max(state.cursor, Math.floor(Number(response.nextCursor) || 0));
+        const nextCursor = Math.max(state.cursor, Math.floor(Number(response.nextCursor) || 0));
+        if (response.hasMore === true && batch.length === 0 && nextCursor <= cursorBeforeExchange) {
+          throw new Error('服务端同步游标未推进，请稍后重试');
+        }
+        state.cursor = nextCursor;
         await CloudSyncStateStore.save(context, userId, state);
         hasMore = response.hasMore === true;
         if (batch.length === 0 && !hasMore) {
@@ -501,6 +517,8 @@ export class CloudSyncCoordinator {
     const safeThemeSettings = JSON.parse(JSON.stringify(themeSettings)) as AppThemeSettings;
     safeThemeSettings.customLightReaderBackgroundAssetId = '';
     safeThemeSettings.customDarkReaderBackgroundAssetId = '';
+    safeThemeSettings.customLightStartupImagePath = '';
+    safeThemeSettings.customDarkStartupImagePath = '';
     result.push(CloudSyncCoordinator.entity(
       'theme_settings', 'global', safeThemeSettings, 'global'));
 
@@ -531,6 +549,8 @@ export class CloudSyncCoordinator {
       const safeScheme = JSON.parse(JSON.stringify(scheme)) as CustomThemeScheme;
       safeScheme.settings.customLightReaderBackgroundAssetId = '';
       safeScheme.settings.customDarkReaderBackgroundAssetId = '';
+      safeScheme.settings.customLightStartupImagePath = '';
+      safeScheme.settings.customDarkStartupImagePath = '';
       return safeScheme;
     });
     result.push(CloudSyncCoordinator.entity(
@@ -834,6 +854,9 @@ export class CloudSyncCoordinator {
       entityState.localKey = String(remoteRule.id);
     } else if (entityType === 'theme_settings') {
       const themeSettings = JSON.parse(raw) as AppThemeSettings;
+      const localThemeSettings = await AppThemeSettingsStore.load(context);
+      themeSettings.customLightStartupImagePath = localThemeSettings.customLightStartupImagePath;
+      themeSettings.customDarkStartupImagePath = localThemeSettings.customDarkStartupImagePath;
       await AppThemeSettingsStore.save(context, themeSettings);
       AppThemeSettingsStore.applyToStorage(themeSettings);
       entityState.localKey = 'global';
@@ -1022,7 +1045,10 @@ export class CloudSyncCoordinator {
     payload.tocRule = JSON.parse(JSON.stringify(source.tocRule || {})) as TocRule;
     payload.contentRule = JSON.parse(JSON.stringify(source.contentRule || {})) as ContentRule;
     payload.variableComment = source.variableComment || '';
+    payload.respondTime = Math.max(0, Math.floor(Number(source.respondTime) || 180000));
     payload.customOrder = Math.max(0, Math.floor(Number(source.customOrder) || 0));
+    payload.customButton = source.customButton === true;
+    payload.eventListener = source.eventListener === true;
     payload.isPinned = source.isPinned === true;
     payload.enabled = source.enabled !== false;
     payload.enabledExplore = source.enabledExplore !== false;
@@ -1051,6 +1077,7 @@ export class CloudSyncCoordinator {
     source.loginCheckJs = payload.loginCheckJs || '';
     source.loginHeader = CloudSyncCoordinator.mergeLocalSensitiveHeaders(
       payload.loginHeader || '', existing?.loginHeader || '');
+    source.rawSourceJson = existing?.rawSourceJson || '';
     source.bookUrlPattern = payload.bookUrlPattern || '';
     source.searchUrl = payload.searchUrl || '';
     source.exploreUrl = payload.exploreUrl || '';
@@ -1066,7 +1093,10 @@ export class CloudSyncCoordinator {
     source.variableComment = payload.variableComment || '';
     source.variable = existing?.variable || '';
     source.lastUpdateTime = Date.now();
+    source.respondTime = Math.max(0, Math.floor(Number(payload.respondTime) || 180000));
     source.customOrder = Math.max(0, Math.floor(Number(payload.customOrder) || 0));
+    source.customButton = payload.customButton === true;
+    source.eventListener = payload.eventListener === true;
     source.isPinned = payload.isPinned === true;
     source.enabled = payload.enabled !== false;
     source.enabledExplore = payload.enabledExplore !== false;

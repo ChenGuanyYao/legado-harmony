@@ -19,6 +19,7 @@ struct SearchExploreSettingsPage {
   @StorageLink('searchExploreSearchConcurrency') searchExploreSearchConcurrency: number = 6;
   @StorageLink('searchExploreSelectedSourceGroups') searchExploreSelectedSourceGroups: string = '';
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
+  @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
   @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
@@ -298,7 +299,7 @@ struct SearchExploreSettingsPage {
     .height(56 + this.statusBarHeight)
     .padding({ top: this.statusBarHeight })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(18)
+    .backdropBlur(ThemeRuntime.topBarBlur())
     .alignItems(VerticalAlign.Center)
   }
 

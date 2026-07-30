@@ -1,7 +1,8 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { BookSource, SearchBook, BookListRule, SearchRule, ExploreRule, BookInfoRule, TocRule, ContentRule } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
-import { HttpClient } from '../core/http/HttpClient';
+import { HttpClient, HttpResponse } from '../core/http/HttpClient';
+import { RawHttpTextClient } from '../core/http/RawHttpTextClient';
 import { SearchCoordinator, SearchProgress, SearchSourceResult } from '../core/book/SearchCoordinator';
 import { syncSystemBars } from '../utils/SystemBars';
 import { SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
@@ -22,10 +23,13 @@ import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { notificationManager } from '@kit.NotificationKit';
 import commonEventManager from '@ohos.commonEventManager';
 import { BookSourceLoginItem, BookSourceScriptRunner } from '../core/book/BookSourceScriptRunner';
+import { BookSourceLoginWebRuntime, LoginCookieOperation, LoginRuntimeStep } from '../core/book/BookSourceLoginWebRuntime';
+import { AnalyzeUrl } from '../core/rule/AnalyzeUrl';
 
 const BOOK_SOURCE_IMPORT_FILE_LIMIT_BYTES = 25 * 1024 * 1024;
 const BOOK_SOURCE_IMPORT_TIMEOUT_MS = 20000;
 const BOOK_SOURCE_IMPORT_URL_RETRY_COUNT = 3;
+const BOOK_SOURCE_WEB_IMPORT_RETRY_COUNT = 3;
 const BOOK_SOURCE_CHECK_KEYWORD = '斗破苍穹';
 const BOOK_SOURCE_LIST_BATCH_SIZE = 60;
 const BOOK_SOURCE_CHECK_CANCEL_EVENT: string = 'com.legado.harmony.action.BOOK_SOURCE_CHECK_CANCEL';
@@ -36,6 +40,7 @@ const BOOK_SOURCE_CHECK_NOTIFICATION_ID: number = 2701;
 @Component
 struct BookSourcePage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
+  @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
   @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
@@ -62,6 +67,7 @@ struct BookSourcePage {
   @State sourceExploreEnabledFilter: string = 'all';
   @State sourceLoginFilter: string = 'all';
   @State sourceValidationFilter: string = 'all';
+  @State sourceSortMode: string = 'custom';
   @State showAddDialog: boolean = false;
   @State showImportUrlDialog: boolean = false;
   @State selectionMode: boolean = false;
@@ -72,6 +78,8 @@ struct BookSourcePage {
   @State showSourceActionDialog: boolean = false;
   @State showSourceLoginUiDialog: boolean = false;
   @State sourceLoginItems: BookSourceLoginItem[] = [];
+  @State isExecutingLoginAction: boolean = false;
+  @State loginRuntimeActive: boolean = false;
   @State showSourceDeleteDialog: boolean = false;
   @State showSourceGroupToolsMenu: boolean = false;
   @State showSourceGroupActionMenu: boolean = false;
@@ -114,7 +122,6 @@ struct BookSourcePage {
   @State checkAutoHandledCount: number = 0;
   @State checkBackgroundMode: boolean = false;
   @State webImportActive: boolean = false;
-  @State webImportEntryUrl: string = 'about:blank';
   private sourceListScroller: Scroller = new Scroller();
   private hasShownOnce: boolean = false;
   private checkCoordinator: SearchCoordinator | null = null;
@@ -130,7 +137,21 @@ struct BookSourcePage {
   private webImportResolve: ((value: string) => void) | null = null;
   private webImportReject: ((reason: Error) => void) | null = null;
   private webImportTimeoutId: number = -1;
-  private webImportPollId: number = -1;
+  private webImportDownloadDelegate: webview.WebDownloadDelegate | null = null;
+  private webImportDownloadItem: webview.WebDownloadItem | null = null;
+  private webImportDownloadPath: string = '';
+  private loginRuntimeController: webview.WebviewController = new webview.WebviewController();
+  private loginRuntimeSource: BookSource | null = null;
+  private loginRuntimeAction: string = '';
+  private loginRuntimeResponses: Record<string, string> = {};
+  private loginRuntimeCookies: Record<string, string> = {};
+  private loginRuntimeCookieUrls: string[] = [];
+  private loginRuntimeRequestCount: number = 0;
+  private loginRuntimeStepRunning: boolean = false;
+  private loginRuntimeReady: boolean = false;
+  private loginRuntimeResolve: ((value: LoginRuntimeStep) => void) | null = null;
+  private loginRuntimeReject: ((reason: Error) => void) | null = null;
+  private loginRuntimeTimeoutId: number = -1;
 
   aboutToAppear() {
     this.syncBars();
@@ -141,6 +162,7 @@ struct BookSourcePage {
 
   aboutToDisappear(): void {
     this.finishWebImport('', '网页取数已取消');
+    this.finishLoginRuntime(null, '登录动作已取消');
     if (!this.isCheckingSources) {
       this.releaseBookSourceCheckCancelSubscriber();
     }
@@ -196,148 +218,69 @@ struct BookSourcePage {
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
       Column() {
-        Row() {
-          ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-            buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-            onBack: () => router.back() })
-
-          Text('书源管理')
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.primaryTextColor())
-            .layoutWeight(1)
-
-          if (!this.selectionMode) {
-            Stack({ alignContent: Alignment.Center }) {
-              Column({ space: 3 }) {
-                Row()
-                  .width(20)
-                  .height(2)
-                  .borderRadius(1)
-                  .backgroundColor(this.hasActiveSourceFilters() ? this.accentColor() : this.primaryTextColor())
-                Row()
-                  .width(14)
-                  .height(2)
-                  .borderRadius(1)
-                  .backgroundColor(this.hasActiveSourceFilters() ? this.accentColor() : this.primaryTextColor())
-                Row()
-                  .width(8)
-                  .height(2)
-                  .borderRadius(1)
-                  .backgroundColor(this.hasActiveSourceFilters() ? this.accentColor() : this.primaryTextColor())
-              }
-              .alignItems(HorizontalAlign.Center)
-              if (this.hasActiveSourceFilters()) {
-                Circle()
-                  .width(7)
-                  .height(7)
-                  .fill(this.accentColor())
-                  .position({ x: 27, y: 7 })
-              }
-            }
-            .width(40)
-            .height(40)
-            .accessibilityText(this.hasActiveSourceFilters() ?
-              `筛选，已启用 ${this.activeSourceFilterCount()} 项` : '筛选书源')
-            .onClick(() => {
-              this.showSourceFilterDialog = true;
-            })
-
-            Text('校验')
-              .fontSize(15)
-              .fontColor(this.isCheckingSources ? this.subTextColor() : this.primaryTextColor())
-              .width(44)
-              .height(40)
-              .textAlign(TextAlign.Center)
-              .onClick(() => {
-                this.openCheckOptions();
-              })
-
-          }
-
-          Text(this.selectionMode ? '取消' : '选择')
-            .fontSize(15)
-            .fontColor(this.isBatchOperating ? this.subTextColor() : this.primaryTextColor())
-            .width(44)
-            .height(40)
-            .textAlign(TextAlign.Center)
-            .margin({ left: this.selectionMode ? 0 : 4 })
-            .onClick(() => {
-              if (this.isBatchOperating) {
-                return;
-              }
-              if (this.selectionMode) {
-                this.exitSelectionMode();
-              } else {
-                this.enterSelectionMode();
-              }
-            })
-        }
-        .width('100%')
-        .height(56 + this.statusBarHeight)
-        .padding({ right: 16, top: this.statusBarHeight })
-        .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-        .backdropBlur(18)
-        .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
-        .alignItems(VerticalAlign.Center)
-
-        Row() {
-          TextInput({ placeholder: '搜索书源', text: this.searchText })
-            .layoutWeight(1)
-            .height(40)
-            .borderRadius(20)
-            .backgroundColor(this.glassInputColor())
-            .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
-            .shadow({ radius: ThemeRuntime.glassShadowRadius(), color: this.glassShadowColor(), offsetX: ThemeRuntime.glassShadowOffsetX(), offsetY: ThemeRuntime.glassShadowOffsetY() })
-            .fontColor(this.primaryTextColor())
-            .placeholderColor(this.placeholderTextColor())
-            .padding({ left: 16, right: 16 })
-            .onChange((value: string) => {
-              this.searchText = value;
-              this.searchSources();
-            })
-        }
-        .width('100%')
-        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-
-        if (!this.selectionMode) {
-          this.sourceGroupBar()
-        }
-
-        if (this.selectionMode) {
+        Column() {
           Row() {
-            Text(this.isAllSelected() ? '☑' : '☐')
-              .fontSize(20)
-              .fontColor(this.accentColor())
-              .width(28)
-              .textAlign(TextAlign.Center)
-              .onClick(() => {
-                if (this.isBatchOperating) {
-                  return;
-                }
-                this.toggleAllSources();
-              })
-
-            Text(`已选择 ${this.selectedSourceUrls.length}/${this.allSources.length}`)
-              .fontSize(14)
-              .fontColor(this.secondaryTextColor())
-              .margin({ left: 8 })
+            TextInput({ placeholder: '搜索书源', text: this.searchText })
               .layoutWeight(1)
-
-            Text(this.isAllSelected() ? '取消全选' : '全选')
-              .fontSize(14)
-              .fontColor(this.isBatchOperating ? this.subTextColor() : this.accentColor())
-              .onClick(() => {
-                if (this.isBatchOperating) {
-                  return;
-                }
-                this.toggleAllSources();
+              .height(40)
+              .borderRadius(20)
+              .backgroundColor(this.glassInputColor())
+              .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
+              .shadow({ radius: ThemeRuntime.glassShadowRadius(), color: this.glassShadowColor(), offsetX: ThemeRuntime.glassShadowOffsetX(), offsetY: ThemeRuntime.glassShadowOffsetY() })
+              .fontColor(this.primaryTextColor())
+              .placeholderColor(this.placeholderTextColor())
+              .padding({ left: 16, right: 16 })
+              .onChange((value: string) => {
+                this.searchText = value;
+                this.searchSources();
               })
           }
           .width('100%')
-          .height(42)
-          .padding({ left: 16, right: 16 })
+          .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+
+          if (!this.selectionMode) {
+            this.sourceGroupBar()
+          }
+
+          if (this.selectionMode) {
+            Row() {
+              Text(this.isAllSelected() ? '☑' : '☐')
+                .fontSize(20)
+                .fontColor(this.accentColor())
+                .width(28)
+                .textAlign(TextAlign.Center)
+                .onClick(() => {
+                  if (this.isBatchOperating) {
+                    return;
+                  }
+                  this.toggleAllSources();
+                })
+
+              Text(`已选择 ${this.selectedSourceUrls.length}/${this.allSources.length}`)
+                .fontSize(14)
+                .fontColor(this.secondaryTextColor())
+                .margin({ left: 8 })
+                .layoutWeight(1)
+
+              Text(this.isAllSelected() ? '取消全选' : '全选')
+                .fontSize(14)
+                .fontColor(this.isBatchOperating ? this.subTextColor() : this.accentColor())
+                .onClick(() => {
+                  if (this.isBatchOperating) {
+                    return;
+                  }
+                  this.toggleAllSources();
+                })
+            }
+            .width('100%')
+            .height(42)
+            .padding({ left: 16, right: 16 })
+          }
         }
+        .width('100%')
+        .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+        .backdropBlur(ThemeRuntime.topBarBlur())
+        .zIndex(2)
 
         if (this.isLoading) {
           Column() {
@@ -368,6 +311,12 @@ struct BookSourcePage {
         } else {
           Stack({ alignContent: Alignment.TopEnd }) {
             List({ space: 8, scroller: this.sourceListScroller }) {
+            ListItem() {
+              Row()
+                .height(this.sourceListTopInset())
+                .hitTestBehavior(HitTestMode.None)
+            }
+
             ForEach(this.visibleSources, (source: BookSource) => {
               ListItem() {
                 Row() {
@@ -530,18 +479,19 @@ struct BookSourcePage {
             .scrollBar(BarState.Off)
             .clip(true)
             .onScrollIndex((start: number, end: number) => {
-              this.sourceFirstVisibleIndex = Math.max(0, start);
+              this.sourceFirstVisibleIndex = Math.max(0, start - 1);
               this.sourceVisibleItemCount = Math.max(1, end - start + 1);
             })
             .onReachEnd(() => this.loadMoreVisibleSources())
             .onItemDragStart((_event: ItemDragInfo, itemIndex: number) => {
-              this.draggingSourceUrl = !this.selectionMode && itemIndex >= 0 && itemIndex < this.visibleSources.length ?
-                this.visibleSources[itemIndex].bookSourceUrl : '';
+              const sourceIndex = itemIndex - 1;
+              this.draggingSourceUrl = !this.selectionMode && sourceIndex >= 0 &&
+                sourceIndex < this.visibleSources.length ? this.visibleSources[sourceIndex].bookSourceUrl : '';
               return this.sourceDragPreview;
             })
             .onItemDrop((_event: ItemDragInfo, itemIndex: number, insertIndex: number, isSuccess: boolean) => {
               if (isSuccess && this.draggingSourceUrl) {
-                this.moveVisibleSourceTo(itemIndex, insertIndex);
+                this.moveVisibleSourceTo(itemIndex - 1, Math.max(0, insertIndex - 1));
               }
               this.draggingSourceUrl = '';
             })
@@ -550,6 +500,8 @@ struct BookSourcePage {
           }
           .width('100%')
           .layoutWeight(1)
+          .margin({ top: -this.sourceListTopInset() })
+          .zIndex(0)
           .onAreaChange((_oldValue: Area, newValue: Area) => {
             this.sourceListViewportHeight = Number(newValue.height);
           })
@@ -609,7 +561,10 @@ struct BookSourcePage {
       }
       .width('100%')
       .height('100%')
+      .padding({ top: 56 + this.statusBarHeight })
       .backgroundColor(this.pageColor())
+
+      this.bookSourceTitleBar()
 
       if (!this.selectionMode && !this.showAddDialog && !this.isImporting && !this.isBatchOperating) {
         this.addSourceFloatingButton()
@@ -1052,18 +1007,34 @@ struct BookSourcePage {
       }
 
       if (this.webImportActive) {
-        Web({ src: this.webImportEntryUrl, controller: this.webImportController })
+        Web({ src: 'about:blank', controller: this.webImportController })
           .width(1)
           .height(1)
           .opacity(0.01)
           .javaScriptAccess(true)
           .domStorageAccess(true)
           .mixedMode(MixedMode.All)
-          .userAgent('Mozilla/5.0 (Linux; HarmonyOS; Mobile) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36')
-          .onPageEnd(() => {
-            this.startWebImportFetch();
+          .onControllerAttached(() => {
+            this.startWebImportDownload();
           })
       }
+
+      // Keep one JS runtime mounted for the lifetime of this page. Creating a new
+      // controller for every click can fire onControllerAttached before about:blank
+      // is ready, leaving runJavaScript pending forever on some Harmony devices.
+      Web({ src: 'about:blank', controller: this.loginRuntimeController })
+        .width(1)
+        .height(1)
+        .opacity(0.01)
+        .javaScriptAccess(true)
+        .domStorageAccess(true)
+        .onPageBegin(() => {
+          this.loginRuntimeReady = false;
+        })
+        .onPageEnd(() => {
+          this.loginRuntimeReady = true;
+          this.continueLoginRuntime();
+        })
 
       if (this.isImporting) {
         Column() {
@@ -1142,6 +1113,91 @@ struct BookSourcePage {
     .backgroundColor(this.pageColor())
     .onAreaChange((_oldValue: Area, newValue: Area) => this.updateContextViewport(newValue))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  bookSourceTitleBar() {
+    Row() {
+      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
+        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
+        onBack: () => router.back() })
+
+      Text('书源管理')
+        .fontSize(20)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryTextColor())
+        .layoutWeight(1)
+
+      if (!this.selectionMode) {
+        Stack({ alignContent: Alignment.Center }) {
+          Column({ space: 3 }) {
+            Row()
+              .width(20)
+              .height(2)
+              .borderRadius(1)
+              .backgroundColor(this.hasActiveSourceFilters() ? this.accentColor() : this.primaryTextColor())
+            Row()
+              .width(14)
+              .height(2)
+              .borderRadius(1)
+              .backgroundColor(this.hasActiveSourceFilters() ? this.accentColor() : this.primaryTextColor())
+            Row()
+              .width(8)
+              .height(2)
+              .borderRadius(1)
+              .backgroundColor(this.hasActiveSourceFilters() ? this.accentColor() : this.primaryTextColor())
+          }
+          .alignItems(HorizontalAlign.Center)
+          if (this.hasActiveSourceFilters()) {
+            Circle()
+              .width(7)
+              .height(7)
+              .fill(this.accentColor())
+              .position({ x: 27, y: 7 })
+          }
+        }
+        .width(40)
+        .height(40)
+        .accessibilityText(this.hasActiveSourceFilters() ?
+          `筛选，已启用 ${this.activeSourceFilterCount()} 项` : '筛选书源')
+        .onClick(() => {
+          this.showSourceFilterDialog = true;
+        })
+
+        Text('校验')
+          .fontSize(15)
+          .fontColor(this.isCheckingSources ? this.subTextColor() : this.primaryTextColor())
+          .width(44)
+          .height(40)
+          .textAlign(TextAlign.Center)
+          .onClick(() => {
+            this.openCheckOptions();
+          })
+      }
+
+      Text(this.selectionMode ? '取消' : '选择')
+        .fontSize(15)
+        .fontColor(this.isBatchOperating ? this.subTextColor() : this.primaryTextColor())
+        .width(44)
+        .height(40)
+        .textAlign(TextAlign.Center)
+        .margin({ left: this.selectionMode ? 0 : 4 })
+        .onClick(() => {
+          if (this.isBatchOperating) return;
+          if (this.selectionMode) {
+            this.exitSelectionMode();
+          } else {
+            this.enterSelectionMode();
+          }
+        })
+    }
+    .width('100%')
+    .height(56 + this.statusBarHeight)
+    .padding({ right: 16, top: this.statusBarHeight })
+    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
+    .backdropBlur(ThemeRuntime.topBarBlur())
+    .alignItems(VerticalAlign.Center)
+    .position({ x: 0, y: 0 })
   }
 
   @Builder
@@ -1308,6 +1364,7 @@ struct BookSourcePage {
         .width('100%')
         .alignItems(VerticalAlign.Center)
 
+        this.sourceSortFilterRow()
         this.sourceFilterRow('书源状态', 'enabled', '已启用', '未启用')
         this.sourceValidationFilterRow()
         this.sourceFilterRow('发现页面', 'explorePage', '有发现页', '无发现页')
@@ -1348,6 +1405,42 @@ struct BookSourcePage {
     .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Center)
     .backgroundColor('#80000000')
+  }
+
+  @Builder
+  sourceSortFilterRow() {
+    Row({ space: 10 }) {
+      Text('排序')
+        .fontSize(14)
+        .fontColor(this.primaryTextColor())
+        .width(66)
+      Row({ space: 6 }) {
+        this.sourceSortChoice('custom', '默认')
+        this.sourceSortChoice('latest', '最新在前')
+        this.sourceSortChoice('oldest', '最旧在前')
+        this.sourceSortChoice('name', '名称排序')
+      }
+      .layoutWeight(1)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  sourceSortChoice(value: string, label: string) {
+    Text(label)
+      .fontSize(12)
+      .fontColor(this.sourceSortMode === value ? '#FFFFFF' : this.secondaryTextColor())
+      .layoutWeight(1)
+      .height(34)
+      .textAlign(TextAlign.Center)
+      .maxLines(1)
+      .backgroundColor(this.sourceSortMode === value ? this.accentColor() : this.inputColor())
+      .borderRadius(9)
+      .onClick(() => {
+        this.sourceSortMode = value;
+        this.applySourceFilters();
+      })
   }
 
   @Builder
@@ -1592,18 +1685,43 @@ struct BookSourcePage {
           .margin({ bottom: 12 })
 
         Scroll() {
-          Flex({ wrap: FlexWrap.Wrap }) {
-            ForEach(this.sourceLoginItems, (item: BookSourceLoginItem) => {
-              Button(item.name, { type: ButtonType.Normal })
-                .fontSize(14)
-                .fontColor(item.action ? this.primaryTextColor() : this.subTextColor())
-                .backgroundColor(item.action ? this.inputColor() : this.cardColor())
-                .margin({ right: 8, bottom: 8 })
-                .enabled(!!item.action)
-                .onClick(() => {
-                  this.executeSourceLoginAction(item);
-                })
-            }, (item: BookSourceLoginItem) => `${item.name}_${item.action}`)
+          Column({ space: 8 }) {
+            ForEach(this.sourceLoginItems, (item: BookSourceLoginItem, index: number) => {
+              if (this.isSourceLoginInput(item)) {
+                Column({ space: 4 }) {
+                  Text(item.name)
+                    .fontSize(12)
+                    .fontColor(this.subTextColor())
+                    .width('100%')
+                  TextInput({ text: item.value, placeholder: item.placeholder || item.name })
+                    .type(item.type.toLowerCase() === 'password' ? InputType.Password : InputType.Normal)
+                    .width('100%')
+                    .height(42)
+                    .borderRadius(8)
+                    .backgroundColor(this.inputColor())
+                    .fontColor(this.primaryTextColor())
+                    .placeholderColor(this.placeholderTextColor())
+                    .padding({ left: 12, right: 12 })
+                    .enabled(!this.isExecutingLoginAction)
+                    .onChange((value: string) => {
+                      this.updateSourceLoginInput(index, value);
+                    })
+                }
+                .width('100%')
+              } else {
+                Button(this.isExecutingLoginAction && item.action ? `执行中 · ${item.name}` : item.name,
+                  { type: ButtonType.Normal })
+                  .width('100%')
+                  .height(40)
+                  .fontSize(14)
+                  .fontColor(item.action ? this.primaryTextColor() : this.subTextColor())
+                  .backgroundColor(item.action ? this.inputColor() : this.cardColor())
+                  .enabled(!!item.action && !this.isExecutingLoginAction)
+                  .onClick(() => {
+                    this.executeSourceLoginAction(item);
+                  })
+              }
+            }, (item: BookSourceLoginItem, index: number) => `${index}_${item.name}_${item.action}`)
           }
           .width('100%')
         }
@@ -1618,6 +1736,7 @@ struct BookSourcePage {
           .backgroundColor(this.buttonColor())
           .fontColor('#FFFFFF')
           .onClick(() => {
+            this.saveSourceLoginInputs();
             this.showSourceLoginUiDialog = false;
             this.sourceLoginItems = [];
             this.actionSourceUrl = '';
@@ -1902,6 +2021,10 @@ struct BookSourcePage {
       this.sourceFirstVisibleIndex, this.sourceVisibleItemCount);
   }
 
+  sourceListTopInset(): number {
+    return 56 + this.statusBarHeight + 98;
+  }
+
   @Builder
   sourceGroupBar() {
     Scroll() {
@@ -1947,6 +2070,7 @@ struct BookSourcePage {
     .width('100%')
     .scrollable(ScrollDirection.Horizontal)
     .scrollBar(BarState.Off)
+    .zIndex(2)
   }
 
   @Builder
@@ -2807,6 +2931,7 @@ struct BookSourcePage {
   }
 
   resetSourceFilters(): void {
+    this.sourceSortMode = 'custom';
     this.sourceEnabledFilter = 'all';
     this.sourceExplorePageFilter = 'all';
     this.sourceExploreEnabledFilter = 'all';
@@ -2817,6 +2942,7 @@ struct BookSourcePage {
 
   activeSourceFilterCount(): number {
     let count = 0;
+    if (this.sourceSortMode !== 'custom') count++;
     if (this.sourceEnabledFilter !== 'all') count++;
     if (this.sourceExplorePageFilter !== 'all') count++;
     if (this.sourceExploreEnabledFilter !== 'all') count++;
@@ -2873,11 +2999,28 @@ struct BookSourcePage {
         return searchable.toLowerCase().includes(keyword);
       });
     }
-    this.sources = filtered.slice();
+    this.sources = this.sortFilteredSources(filtered);
     this.visibleSources = this.sources.slice(0, BOOK_SOURCE_LIST_BATCH_SIZE);
     this.sourceFirstVisibleIndex = 0;
     this.sourceVisibleItemCount = 1;
     this.pruneSelectedSources();
+  }
+
+  sortFilteredSources(filtered: BookSource[]): BookSource[] {
+    if (this.sourceSortMode === 'custom') return filtered.slice();
+    const bottomUrl = this.allSources.length > 0 ?
+      this.allSources[this.allSources.length - 1].bookSourceUrl : '';
+    return filtered.slice().sort((left: BookSource, right: BookSource): number => {
+      if (left.isPinned !== right.isPinned) return left.isPinned ? -1 : 1;
+      if (!left.isPinned && left.bookSourceUrl === bottomUrl) return 1;
+      if (!right.isPinned && right.bookSourceUrl === bottomUrl) return -1;
+      if (this.sourceSortMode === 'name') {
+        return (left.bookSourceName || '').localeCompare(right.bookSourceName || '');
+      }
+      const timeDiff = (left.lastUpdateTime || 0) - (right.lastUpdateTime || 0);
+      if (timeDiff !== 0) return this.sourceSortMode === 'oldest' ? timeDiff : -timeDiff;
+      return left.customOrder - right.customOrder;
+    });
   }
 
   sourceValidationStatusForFilter(value: string): number {
@@ -3172,17 +3315,15 @@ struct BookSourcePage {
     this.showSourceActionDialog = false;
     const loginItems = BookSourceScriptRunner.loginItems(source);
     if (loginItems.some((item: BookSourceLoginItem): boolean => !!item.action)) {
+      const loginInfo = BookSourceLoginWebRuntime.parseRecord(source.loginInfo);
+      for (const item of loginItems) {
+        if (this.isSourceLoginInput(item) && loginInfo[item.name] !== undefined) {
+          item.value = loginInfo[item.name];
+        }
+      }
       this.actionSourceDetail = source;
       this.sourceLoginItems = loginItems;
       this.showSourceLoginUiDialog = true;
-      return;
-    }
-    if (this.sourceUsesEditorLogin(source)) {
-      this.actionSourceUrl = '';
-      router.pushUrl({
-        url: 'pages/BookSourceEdit',
-        params: { bookSourceUrl: source.bookSourceUrl }
-      });
       return;
     }
     const loginEntryUrl = VerificationSupport.resolveBookSourceLoginUrl(source) ||
@@ -3197,28 +3338,278 @@ struct BookSourcePage {
 
   async executeSourceLoginAction(item: BookSourceLoginItem): Promise<void> {
     const source = this.actionSourceDetail;
-    if (!source || !item.action) return;
-    const result = BookSourceScriptRunner.executeAction(source, item.action);
-    if (!result.handled) {
-      promptAction.showToast({ message: `暂不支持登录动作：${item.action}` });
-      return;
-    }
-    if (result.variable !== source.variable) {
+    if (!source || !item.action || this.isExecutingLoginAction) return;
+    this.isExecutingLoginAction = true;
+    this.syncSourceLoginInfo(source);
+    try {
+      const result = await this.runSourceLoginAction(source, item.action);
       source.variable = result.variable;
-      await AppDatabase.getInstance().updateBookSourceVariable(source.bookSourceUrl, source.variable);
+      source.loginHeader = result.loginHeader;
+      source.loginInfo = result.loginInfo;
+      await AppDatabase.getInstance().updateBookSourceLoginRuntime(source.bookSourceUrl,
+        source.variable, source.loginHeader, source.loginInfo);
+      this.markSourceLoginCompleted(item, result);
+      if (result.toastMessage) {
+        promptAction.showToast({ message: result.toastMessage.trim() || '操作成功' });
+      } else if (result.errorMessage) {
+        promptAction.showToast({ message: `登录动作失败：${result.errorMessage}` });
+      }
+      if (result.requestedUrl) {
+        this.showSourceLoginUiDialog = false;
+        this.sourceLoginItems = [];
+        const isLogin = /(?:登录|login)/i.test(item.name) ||
+          /\/login(?:\.html)?(?:[?#]|$)/i.test(result.requestedUrl);
+        this.openSourceLoginBrowser(source, result.requestedUrl,
+          result.requestedTitle || `${source.bookSourceName || '书源'} · ${item.name}`, isLogin);
+        return;
+      }
+      this.actionSourceDetail = source;
+    } catch (error) {
+      promptAction.showToast({ message: `登录动作失败：${this.importErrorMessage(error as Object)}` });
+    } finally {
+      this.isExecutingLoginAction = false;
     }
-    if (result.toastMessage) {
-      promptAction.showToast({ message: result.toastMessage.trim() || '操作成功' });
+  }
+
+  isSourceLoginInput(item: BookSourceLoginItem): boolean {
+    const type = (item.type || '').toLowerCase();
+    return type === 'text' || type === 'password' || type === 'email' || type === 'number';
+  }
+
+  markSourceLoginCompleted(item: BookSourceLoginItem, result: LoginRuntimeStep): void {
+    if (!/(?:登录|login)/i.test(`${item.name}\n${item.action}`)) return;
+    const message = result.toastMessage || '';
+    if (result.errorMessage || /(?:失败|错误|未登录|请先|请输入)/.test(message)) return;
+    const operations = BookSourceLoginWebRuntime.parseCookieOperations(result.cookieOperations);
+    const hasLoginCookie = operations.some((operation: LoginCookieOperation): boolean =>
+      operation.operation === 'set' && operation.value.includes('='));
+    if (!(result.loginHeader || '').trim() && !hasLoginCookie && !/(?:成功|欢迎回来|已登录)/.test(message)) return;
+    AppStorage.setOrCreate('pendingVerificationUrl', '');
+    AppStorage.setOrCreate('pendingVerificationTitle', '');
+    AppStorage.setOrCreate('verificationCompletedAt', Date.now());
+  }
+
+  updateSourceLoginInput(index: number, value: string): void {
+    if (index < 0 || index >= this.sourceLoginItems.length) return;
+    const items = this.sourceLoginItems.slice();
+    const copy = new BookSourceLoginItem();
+    copy.name = items[index].name;
+    copy.type = items[index].type;
+    copy.action = items[index].action;
+    copy.value = items[index].value;
+    copy.placeholder = items[index].placeholder;
+    copy.value = value;
+    items[index] = copy;
+    this.sourceLoginItems = items;
+  }
+
+  syncSourceLoginInfo(source: BookSource): void {
+    const values = BookSourceLoginWebRuntime.parseRecord(source.loginInfo);
+    for (const item of this.sourceLoginItems) {
+      if (this.isSourceLoginInput(item) && item.name) values[item.name] = item.value || '';
     }
-    if (result.requestedUrl) {
-      this.showSourceLoginUiDialog = false;
-      this.sourceLoginItems = [];
-      const isLogin = /(?:登录|login)/i.test(item.name) || /\/login(?:\.html)?(?:[?#]|$)/i.test(result.requestedUrl);
-      this.openSourceLoginBrowser(source, result.requestedUrl,
-        `${source.bookSourceName || '书源'} · ${item.name}`, isLogin);
+    source.loginInfo = BookSourceLoginWebRuntime.mergeRecord(source.loginInfo, values);
+  }
+
+  saveSourceLoginInputs(): void {
+    const source = this.actionSourceDetail;
+    if (!source) return;
+    this.syncSourceLoginInfo(source);
+    AppDatabase.getInstance().updateBookSourceLoginRuntime(source.bookSourceUrl,
+      source.variable, source.loginHeader, source.loginInfo).catch((error: Object): void => {
+      console.warn('保存书源登录输入失败:', error);
+    });
+  }
+
+  runSourceLoginAction(source: BookSource, action: string): Promise<LoginRuntimeStep> {
+    if (this.loginRuntimeResolve || this.loginRuntimeReject) {
+      return Promise.reject(new Error('已有登录动作正在执行'));
+    }
+    this.loginRuntimeSource = source;
+    this.loginRuntimeAction = action;
+    this.loginRuntimeResponses = {};
+    this.loginRuntimeCookies = {};
+    this.loginRuntimeCookieUrls = [];
+    this.loginRuntimeRequestCount = 0;
+    this.loginRuntimeStepRunning = false;
+    return new Promise<LoginRuntimeStep>((resolve, reject) => {
+      this.loginRuntimeResolve = resolve;
+      this.loginRuntimeReject = reject;
+      this.loginRuntimeTimeoutId = setTimeout(() => {
+        const message = this.loginRuntimeReady ? '登录脚本执行超时' : '登录脚本运行环境未就绪';
+        this.finishLoginRuntime(null, message);
+      }, 60000);
+      this.loginRuntimeActive = true;
+      if (this.loginRuntimeReady) this.continueLoginRuntime();
+    });
+  }
+
+  continueLoginRuntime(): void {
+    if (!this.loginRuntimeActive || this.loginRuntimeStepRunning || !this.loginRuntimeSource) return;
+    this.loginRuntimeStepRunning = true;
+    this.executeLoginRuntimeStep().catch((error: Object): void => {
+      this.finishLoginRuntime(null, this.importErrorMessage(error));
+    });
+  }
+
+  async executeLoginRuntimeStep(): Promise<void> {
+    const source = this.loginRuntimeSource;
+    if (!source || !this.loginRuntimeActive) return;
+    const script = BookSourceLoginWebRuntime.buildScript(source, this.loginRuntimeAction,
+      this.loginRuntimeResponses, this.loginRuntimeCookies);
+    const raw = await this.runLoginRuntimeScript(script);
+    const step = BookSourceLoginWebRuntime.parseResult(raw);
+    source.variable = step.variable;
+    source.loginHeader = step.loginHeader;
+    source.loginInfo = step.loginInfo;
+    this.applyLoginCookieOperations(step.cookieOperations);
+    if (step.pendingCookie) {
+      this.loginRuntimeCookies[step.pendingCookie] = CookieStore.getCookie(step.pendingCookie);
+      if (!this.loginRuntimeCookieUrls.includes(step.pendingCookie)) {
+        this.loginRuntimeCookieUrls.push(step.pendingCookie);
+      }
+      this.loginRuntimeStepRunning = false;
+      this.continueLoginRuntime();
       return;
     }
-    this.actionSourceDetail = source;
+    if (step.pendingAjax) {
+      this.loginRuntimeRequestCount++;
+      if (this.loginRuntimeRequestCount > 12) {
+        this.finishLoginRuntime(null, '登录脚本网络请求次数过多');
+        return;
+      }
+      const response = await this.fetchLoginRuntimeRequest(source, step.pendingAjax);
+      if (!response.success && !response.body) {
+        this.finishLoginRuntime(null, response.error || `HTTP ${response.statusCode}`);
+        return;
+      }
+      this.loginRuntimeResponses[step.pendingAjax] = response.body || '';
+      for (const key of this.loginRuntimeCookieUrls) {
+        this.loginRuntimeCookies[key] = CookieStore.getCookie(key);
+      }
+      this.loginRuntimeStepRunning = false;
+      this.continueLoginRuntime();
+      return;
+    }
+    this.finishLoginRuntime(step);
+  }
+
+  runLoginRuntimeScript(script: string): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      let completed = false;
+      const timeoutId = setTimeout(() => {
+        if (completed) return;
+        completed = true;
+        this.loginRuntimeReady = false;
+        try {
+          this.loginRuntimeController.loadUrl('about:blank');
+        } catch (_) {}
+        reject(new Error('登录脚本引擎响应超时'));
+      }, 15000);
+      this.loginRuntimeController.runJavaScript(script)
+        .then((result: string): void => {
+          if (completed) return;
+          completed = true;
+          clearTimeout(timeoutId);
+          resolve(result);
+        })
+        .catch((error: Object): void => {
+          if (completed) return;
+          completed = true;
+          clearTimeout(timeoutId);
+          reject(error);
+        });
+    });
+  }
+
+  fetchLoginRuntimeRequest(source: BookSource, requestUrl: string): Promise<HttpResponse> {
+    const client = new HttpClient(15000);
+    return new Promise<HttpResponse>((resolve) => {
+      let completed = false;
+      const timeoutId = setTimeout(() => {
+        if (completed) return;
+        completed = true;
+        client.cancelAll();
+        resolve({
+          url: requestUrl,
+          statusCode: 0,
+          headers: {},
+          body: '',
+          success: false,
+          error: '登录请求超时，请检查网络或切换书源线路'
+        });
+      }, 20000);
+      new AnalyzeUrl(source, client).fetch(requestUrl)
+        .then((response: HttpResponse): void => {
+          if (completed) return;
+          completed = true;
+          clearTimeout(timeoutId);
+          if ((response.body || '').length > 8 * 1024 * 1024) {
+            resolve({
+              url: response.url,
+              statusCode: response.statusCode,
+              headers: response.headers,
+              body: '',
+              success: false,
+              error: '登录响应过大'
+            });
+            return;
+          }
+          resolve(response);
+        })
+        .catch((error: Object): void => {
+          if (completed) return;
+          completed = true;
+          clearTimeout(timeoutId);
+          resolve({
+            url: requestUrl,
+            statusCode: 0,
+            headers: {},
+            body: '',
+            success: false,
+            error: this.importErrorMessage(error)
+          });
+        });
+    });
+  }
+
+  applyLoginCookieOperations(raw: string): void {
+    const operations: LoginCookieOperation[] = BookSourceLoginWebRuntime.parseCookieOperations(raw);
+    for (const operation of operations) {
+      if (operation.operation === 'set') {
+        CookieStore.setCookies(operation.url, operation.value);
+      } else if (operation.operation === 'remove') {
+        CookieStore.removeCookie(operation.url, operation.name || undefined);
+      }
+      this.loginRuntimeCookies[operation.url] = CookieStore.getCookie(operation.url);
+      if (!this.loginRuntimeCookieUrls.includes(operation.url)) {
+        this.loginRuntimeCookieUrls.push(operation.url);
+      }
+    }
+    if (operations.length > 0) CookieStore.saveAsync();
+  }
+
+  finishLoginRuntime(result: LoginRuntimeStep | null, errorMessage: string = ''): void {
+    if (!this.loginRuntimeResolve && !this.loginRuntimeReject) return;
+    if (this.loginRuntimeTimeoutId >= 0) clearTimeout(this.loginRuntimeTimeoutId);
+    const resolve = this.loginRuntimeResolve;
+    const reject = this.loginRuntimeReject;
+    this.loginRuntimeResolve = null;
+    this.loginRuntimeReject = null;
+    this.loginRuntimeTimeoutId = -1;
+    this.loginRuntimeSource = null;
+    this.loginRuntimeAction = '';
+    this.loginRuntimeResponses = {};
+    this.loginRuntimeCookies = {};
+    this.loginRuntimeCookieUrls = [];
+    this.loginRuntimeRequestCount = 0;
+    this.loginRuntimeStepRunning = false;
+    this.loginRuntimeActive = false;
+    if (errorMessage) {
+      if (reject) reject(new Error(errorMessage));
+    } else if (result && resolve) {
+      resolve(result);
+    }
   }
 
   openSourceLoginBrowser(source: BookSource, url: string, title: string, requireLoginCookie: boolean): void {
@@ -3232,11 +3623,6 @@ struct BookSourcePage {
         requireLoginCookie: requireLoginCookie ? 'true' : 'false'
       }
     });
-  }
-
-  sourceUsesEditorLogin(source: BookSource): boolean {
-    const raw = `${source.bookSourceName || ''}\n${source.bookSourceUrl || ''}\n${source.loginUrl || ''}\n${source.jsLib || ''}`.toLowerCase();
-    return raw.includes('书山') || raw.includes('shushan');
   }
 
   openActionSourceEdit(): void {
@@ -4248,7 +4634,8 @@ struct BookSourcePage {
         const source = await db.getBookSource(summary.bookSourceUrl);
         if (source) selected.push(source);
       }
-      const json = JSON.stringify(selected, null, 2);
+      const exported = selected.map((source: BookSource): Object => this.bookSourceExportObject(source));
+      const json = JSON.stringify(exported, null, 2);
       const bytes = new util.TextEncoder().encodeInto(json);
       file = await fs.open(result[0], fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
       await fs.write(file.fd, bytes.buffer, { offset: 0, length: bytes.byteLength });
@@ -4278,6 +4665,48 @@ struct BookSourcePage {
       `${pad(date.getHours())}${pad(date.getMinutes())}`;
   }
 
+  bookSourceExportObject(source: BookSource): Object {
+    let result: Record<string, Object> = {};
+    try {
+      const parsed = JSON.parse(source.rawSourceJson || '{}') as Object;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        result = parsed as Record<string, Object>;
+      }
+    } catch (_) {}
+    result['bookSourceUrl'] = source.bookSourceUrl;
+    result['bookSourceName'] = source.bookSourceName;
+    result['bookSourceType'] = source.bookSourceType;
+    result['bookSourceGroup'] = source.bookSourceGroup;
+    result['bookSourceComment'] = source.bookSourceComment;
+    result['bookUrlPattern'] = source.bookUrlPattern;
+    result['customOrder'] = source.customOrder;
+    result['enabled'] = source.enabled;
+    result['enabledExplore'] = source.enabledExplore;
+    result['enabledCookieJar'] = source.enabledCookieJar;
+    result['jsLib'] = source.jsLib;
+    result['header'] = source.header;
+    result['loginUrl'] = source.loginUrl;
+    result['loginUi'] = source.loginUi;
+    result['loginCheckJs'] = source.loginCheckJs;
+    result['searchUrl'] = source.searchUrl;
+    result['exploreUrl'] = source.exploreUrl;
+    result['ruleSearch'] = JSON.parse(JSON.stringify(source.searchRule || {})) as Object;
+    result['ruleExplore'] = JSON.parse(JSON.stringify(source.exploreRule || {})) as Object;
+    result['ruleBookInfo'] = JSON.parse(JSON.stringify(source.bookInfoRule || {})) as Object;
+    result['ruleToc'] = JSON.parse(JSON.stringify(source.tocRule || {})) as Object;
+    result['ruleContent'] = JSON.parse(JSON.stringify(source.contentRule || {})) as Object;
+    result['variableComment'] = source.variableComment;
+    result['lastUpdateTime'] = source.lastUpdateTime;
+    result['respondTime'] = source.respondTime;
+    result['weight'] = source.weight;
+    result['concurrentRate'] = source.concurrentRate;
+    result['customButton'] = source.customButton;
+    result['eventListener'] = source.eventListener;
+    if (source.isPinned || result['isPinned'] !== undefined) result['isPinned'] = source.isPinned;
+    if (source.isLocked || result['isLocked'] !== undefined) result['isLocked'] = source.isLocked;
+    return result;
+  }
+
   async readTextFile(filePath: string): Promise<string> {
     let file: fs.File | null = null;
     try {
@@ -4302,6 +4731,7 @@ struct BookSourcePage {
   }
 
   async importFromUrl() {
+    this.hideKeyboard();
     const url = this.importUrl.trim();
     if (!url) {
       promptAction.showToast({ message: '请输入URL' });
@@ -4340,7 +4770,7 @@ struct BookSourcePage {
         readTimeout: BOOK_SOURCE_IMPORT_TIMEOUT_MS,
         maxResponseBytes: BOOK_SOURCE_IMPORT_FILE_LIMIT_BYTES
       });
-      if (response.success && this.looksLikeBookSourceJson(response.body)) {
+      if (this.isValidBookSourceJson(response.body)) {
         return response.body.replace(/^\uFEFF/, '');
       }
       const reason = response.success ? '响应内容不是有效书源JSON' :
@@ -4354,20 +4784,39 @@ struct BookSourcePage {
       }
     }
 
-    const webRequestUrl = candidates.length > 0 ? candidates[candidates.length - 1] : url;
-    try {
-      const body = await this.fetchImportUrlViaWeb(webRequestUrl);
-      if (this.looksLikeBookSourceJson(body)) return body.replace(/^\uFEFF/, '');
-      lastError = `${this.importUrlHost(webRequestUrl)}: 网页响应不是有效书源JSON`;
-    } catch (webError) {
-      webFallbackError = `网页取数失败: ${this.importErrorMessage(webError as Object)}`;
-      lastError = `${this.importUrlHost(webRequestUrl)}: ${webFallbackError}`;
+    const plainHttpUrl = candidates.find((candidate: string) => /^http:\/\//i.test(candidate));
+    if (plainHttpUrl) {
+      try {
+        const body = await RawHttpTextClient.get(plainHttpUrl, BOOK_SOURCE_IMPORT_FILE_LIMIT_BYTES,
+          BOOK_SOURCE_IMPORT_TIMEOUT_MS);
+        if (this.isValidBookSourceJson(body)) return body.replace(/^\uFEFF/, '');
+        lastError = `${this.importUrlHost(plainHttpUrl)}: TCP兜底响应不是有效书源JSON`;
+      } catch (tcpError) {
+        lastError = `${this.importUrlHost(plainHttpUrl)}: ${this.importErrorMessage(tcpError as Object)}`;
+      }
+    }
+
+    const webCandidates = candidates.length > 0 ? candidates : [url];
+    for (let attempt = 0; attempt < BOOK_SOURCE_WEB_IMPORT_RETRY_COUNT; attempt++) {
+      const webRequestUrl = webCandidates[attempt % webCandidates.length];
+      try {
+        const body = await this.fetchImportUrlViaWeb(webRequestUrl);
+        if (this.isValidBookSourceJson(body)) return body.replace(/^\uFEFF/, '');
+        webFallbackError = '网页取数失败: 浏览器下载内容不是有效书源JSON';
+        lastError = `${this.importUrlHost(webRequestUrl)}: ${webFallbackError}`;
+      } catch (webError) {
+        webFallbackError = `网页取数失败: ${this.importErrorMessage(webError as Object)}`;
+        lastError = `${this.importUrlHost(webRequestUrl)}: ${webFallbackError}`;
+      }
+      if (attempt + 1 < BOOK_SOURCE_WEB_IMPORT_RETRY_COUNT) {
+        await new Promise<void>((resolve) => setTimeout(resolve, (attempt + 1) * 350));
+      }
     }
 
     for (const requestUrl of candidates) {
       try {
         const body = await this.fetchImportUrlViaDownload(requestUrl);
-        if (this.looksLikeBookSourceJson(body)) return body.replace(/^\uFEFF/, '');
+        if (this.isValidBookSourceJson(body)) return body.replace(/^\uFEFF/, '');
         lastError = `${this.importUrlHost(requestUrl)}: 下载内容不是有效书源JSON`;
       } catch (downloadError) {
         const downloadMessage = this.importErrorMessage(downloadError as Object);
@@ -4384,109 +4833,99 @@ struct BookSourcePage {
     if (this.webImportResolve || this.webImportReject) {
       return Promise.reject(new Error('已有网页取数任务正在运行'));
     }
+    this.webImportController = new webview.WebviewController();
     this.webImportTargetUrl = url;
     this.webImportStarted = false;
-    this.webImportEntryUrl = `${origin}/`;
-    this.webImportActive = true;
     return new Promise<string>((resolve, reject) => {
       this.webImportResolve = resolve;
       this.webImportReject = reject;
       this.webImportTimeoutId = setTimeout(() => {
-        this.finishWebImport('', '网页取数超时');
+        this.finishWebImport('', '浏览器内核下载超时');
       }, BOOK_SOURCE_IMPORT_TIMEOUT_MS);
+      this.webImportActive = true;
     });
   }
 
-  startWebImportFetch(): void {
+  startWebImportDownload(): void {
     if (!this.webImportActive || this.webImportStarted || !this.webImportTargetUrl) return;
     this.webImportStarted = true;
-    const target = JSON.stringify(this.webImportTargetUrl);
-    const script = `(function(){` +
-      `window.__legadoBookSourceImportResult='';` +
-      `fetch(${target},{method:'GET',cache:'no-store',credentials:'same-origin',` +
-      `headers:{'Accept':'application/json,text/plain,*/*'}})` +
-      `.then(function(r){return r.text().then(function(t){` +
-      `window.__legadoBookSourceImportResult='OK|'+r.status+'|'+encodeURIComponent(t);` +
-      `});})` +
-      `.catch(function(e){window.__legadoBookSourceImportResult='ERR|0|'+` +
-      `encodeURIComponent(String((e&&e.message)||e||'网页请求失败'));});` +
-      `return 'started';})()`;
-    this.webImportController.runJavaScript(script)
-      .then((): void => {
-        this.pollWebImportResult();
-      })
-      .catch((error: Object): void => {
-        this.finishWebImport('', `网页脚本执行失败: ${this.importErrorMessage(error)}`);
-      });
-  }
-
-  pollWebImportResult(): void {
-    if (!this.webImportActive) return;
-    this.webImportController.runJavaScript('window.__legadoBookSourceImportResult || ""')
-      .then((raw: string): void => {
-        if (!this.webImportActive) return;
-        const result = this.cleanWebImportResult(raw);
-        if (!result) {
-          this.webImportPollId = setTimeout(() => this.pollWebImportResult(), 180);
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      const suffix = `${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+      this.webImportDownloadPath = `${context.cacheDir}/book_source_web_import_${suffix}.json`;
+      const delegate = new webview.WebDownloadDelegate();
+      delegate.onBeforeDownload((item: webview.WebDownloadItem): void => {
+        if (!this.webImportActive) {
+          try {
+            item.cancel();
+          } catch (_) {
+          }
           return;
         }
-        const firstSeparator = result.indexOf('|');
-        const secondSeparator = result.indexOf('|', firstSeparator + 1);
-        if (firstSeparator <= 0 || secondSeparator <= firstSeparator) {
-          this.finishWebImport('', '网页取数返回格式异常');
+        this.webImportDownloadItem = item;
+        const totalBytes = item.getTotalBytes();
+        if (totalBytes > BOOK_SOURCE_IMPORT_FILE_LIMIT_BYTES) {
+          this.finishWebImport('', '浏览器下载文件过大，请使用 25MB 以内的书源文件');
           return;
         }
-        const state = result.substring(0, firstSeparator);
-        const status = Number(result.substring(firstSeparator + 1, secondSeparator)) || 0;
-        let payload = result.substring(secondSeparator + 1);
         try {
-          payload = decodeURIComponent(payload);
-        } catch (_) {
-          this.finishWebImport('', '网页取数结果解码失败');
-          return;
+          item.start(this.webImportDownloadPath);
+        } catch (startError) {
+          this.finishWebImport('', `浏览器下载启动失败: ${this.importErrorMessage(startError as Object)}`);
         }
-        if (state !== 'OK') {
-          this.finishWebImport('', payload || '网页请求失败');
-          return;
-        }
-        if (status < 200 || status >= 300) {
-          this.finishWebImport('', `网页请求 HTTP ${status}`);
-          return;
-        }
-        if (payload.length > BOOK_SOURCE_IMPORT_FILE_LIMIT_BYTES) {
-          this.finishWebImport('', '网页响应过大，请使用 25MB 以内的书源文件');
-          return;
-        }
-        this.finishWebImport(payload);
-      })
-      .catch((error: Object): void => {
-        this.finishWebImport('', `读取网页结果失败: ${this.importErrorMessage(error)}`);
       });
-  }
-
-  cleanWebImportResult(value: string): string {
-    let result = (value || '').trim();
-    if ((result.startsWith('"') && result.endsWith('"')) ||
-      (result.startsWith("'") && result.endsWith("'"))) {
-      result = result.substring(1, result.length - 1);
+      delegate.onDownloadFinish((item: webview.WebDownloadItem): void => {
+        if (!this.webImportActive) return;
+        const filePath = item.getFullPath() || this.webImportDownloadPath;
+        this.readTextFile(filePath)
+          .then((body: string): void => {
+            this.finishWebImport(body);
+          })
+          .catch((readError: Object): void => {
+            this.finishWebImport('', `读取浏览器下载文件失败: ${this.importErrorMessage(readError)}`);
+          });
+      });
+      delegate.onDownloadFailed((item: webview.WebDownloadItem): void => {
+        if (!this.webImportActive) return;
+        this.finishWebImport('', `浏览器内核下载失败 (${item.getLastErrorCode()})`);
+      });
+      this.webImportDownloadDelegate = delegate;
+      this.webImportController.setDownloadDelegate(delegate);
+      // Navigate like a normal browser address-bar request. The server's attachment
+      // response then naturally enters WebDownloadDelegate.
+      this.webImportController.loadUrl(this.webImportTargetUrl);
+    } catch (error) {
+      this.finishWebImport('', `浏览器内核下载启动失败: ${this.importErrorMessage(error as Object)}`);
     }
-    return result.trim();
   }
 
   finishWebImport(body: string = '', errorMessage: string = ''): void {
     if (!this.webImportResolve && !this.webImportReject) return;
     if (this.webImportTimeoutId >= 0) clearTimeout(this.webImportTimeoutId);
-    if (this.webImportPollId >= 0) clearTimeout(this.webImportPollId);
+    if (errorMessage && this.webImportDownloadItem) {
+      try {
+        this.webImportDownloadItem.cancel();
+      } catch (_) {
+      }
+    }
     const resolve = this.webImportResolve;
     const reject = this.webImportReject;
+    const downloadPath = this.webImportDownloadPath;
     this.webImportResolve = null;
     this.webImportReject = null;
     this.webImportTimeoutId = -1;
-    this.webImportPollId = -1;
     this.webImportStarted = false;
     this.webImportTargetUrl = '';
+    this.webImportDownloadDelegate = null;
+    this.webImportDownloadItem = null;
+    this.webImportDownloadPath = '';
     this.webImportActive = false;
-    this.webImportEntryUrl = 'about:blank';
+    if (downloadPath) {
+      try {
+        fs.unlinkSync(downloadPath);
+      } catch (_) {
+      }
+    }
     if (errorMessage) {
       if (reject) reject(new Error(errorMessage));
     } else if (resolve) {
@@ -4593,6 +5032,23 @@ struct BookSourcePage {
     return text.startsWith('[') || text.startsWith('{');
   }
 
+  isValidBookSourceJson(body: string): boolean {
+    if (!this.looksLikeBookSourceJson(body)) return false;
+    try {
+      const parsed = JSON.parse((body || '').replace(/^\uFEFF/, '')) as Object;
+      return Array.isArray(parsed) || (!!parsed && typeof parsed === 'object');
+    } catch (_) {
+      return false;
+    }
+  }
+
+  hideKeyboard(): void {
+    try {
+      this.getUIContext().getFocusController().clearFocus();
+    } catch (_) {
+    }
+  }
+
   importErrorMessage(error: Object): string {
     if (error instanceof Error && this.isReadableErrorText(error.message)) return error.message;
     if (typeof error === 'string' && this.isReadableErrorText(error as string)) return error as string;
@@ -4662,12 +5118,20 @@ struct BookSourcePage {
       await db.initWithContext(getContext(this));
       let importCount = 0;
       let failedCount = 0;
+      let lockedCount = 0;
       let lastInsertError = '';
       for (const source of sources) {
         if (source.bookSourceUrl && source.bookSourceName) {
           try {
-            await db.insertBookSource(source);
-            importCount++;
+            const stored = await db.insertBookSource(source);
+            if (stored) {
+              if (!await this.verifyImportedBookSource(db, source)) {
+                throw new Error('写入后校验失败，书源内容未完整保存');
+              }
+              importCount++;
+            } else {
+              lockedCount++;
+            }
           } catch (insertErr) {
             failedCount++;
             lastInsertError = this.importErrorMessage(insertErr as Object);
@@ -4677,13 +5141,20 @@ struct BookSourcePage {
       }
 
       if (importCount === 0) {
+        if (lockedCount > 0 && failedCount === 0) {
+          promptAction.showToast({ message: `未导入：${lockedCount} 个同地址书源已锁定，请先解锁后重试` });
+          return;
+        }
         throw new Error(lastInsertError || '书源未能写入本地数据库');
       }
 
       const loginCount = sources.filter((source: BookSource) => this.sourceNeedsLogin(source)).length;
       const loginMessage = loginCount > 0 ? `，其中 ${loginCount} 个需要登录` : '';
       const failedMessage = failedCount > 0 ? `，${failedCount} 个失败` : '';
-      promptAction.showToast({ message: `成功导入 ${importCount} 个书源${failedMessage}${loginMessage}` });
+      const lockedMessage = lockedCount > 0 ? `，${lockedCount} 个已锁定未覆盖` : '';
+      promptAction.showToast({
+        message: `成功导入 ${importCount} 个书源${failedMessage}${lockedMessage}${loginMessage}`
+      });
       await this.loadSources();
     } catch (e) {
       console.error('解析书源失败:', e);
@@ -4703,6 +5174,8 @@ struct BookSourcePage {
     source.loginUi = obj['loginUi'] as string || '';
     source.loginCheckJs = obj['loginCheckJs'] as string || '';
     source.loginHeader = obj['loginHeader'] as string || '';
+    source.loginInfo = String(obj['loginInfo'] || '');
+    source.rawSourceJson = JSON.stringify(obj);
     source.bookUrlPattern = obj['bookUrlPattern'] as string || '';
     source.searchUrl = obj['searchUrl'] as string || '';
     source.exploreUrl = obj['exploreUrl'] as string || '';
@@ -4717,7 +5190,13 @@ struct BookSourcePage {
     source.isLocked = obj['isLocked'] === true || obj['locked'] === true;
     source.weight = (obj['weight'] as number) || 0;
     source.concurrentRate = obj['concurrentRate'] as string || '';
-    source.lastUpdateTime = Date.now();
+    source.lastUpdateTime = Number(obj['lastUpdateTime'] || Date.now());
+    if (!Number.isFinite(source.lastUpdateTime)) source.lastUpdateTime = Date.now();
+    source.respondTime = Number(obj['respondTime'] || 180000);
+    if (!Number.isFinite(source.respondTime)) source.respondTime = 180000;
+    source.customOrder = Math.floor(Number(obj['customOrder'] || 0));
+    source.customButton = obj['customButton'] === true;
+    source.eventListener = obj['eventListener'] === true;
 
     // 解析 searchRule (ruleSearch)
     const ruleSearch = obj['ruleSearch'];
@@ -4785,6 +5264,35 @@ struct BookSourcePage {
     }
 
     return source;
+  }
+
+  async verifyImportedBookSource(db: AppDatabase, expected: BookSource): Promise<boolean> {
+    const actual = await db.getBookSource(expected.bookSourceUrl);
+    if (!actual) return false;
+    return actual.rawSourceJson === expected.rawSourceJson &&
+      actual.jsLib === expected.jsLib &&
+      actual.loginUrl === expected.loginUrl &&
+      actual.loginUi === expected.loginUi &&
+      actual.header === expected.header &&
+      actual.searchUrl === expected.searchUrl &&
+      actual.exploreUrl === expected.exploreUrl &&
+      this.ruleContainsImportedFields(actual.searchRule, expected.searchRule) &&
+      this.ruleContainsImportedFields(actual.exploreRule, expected.exploreRule) &&
+      this.ruleContainsImportedFields(actual.bookInfoRule, expected.bookInfoRule) &&
+      this.ruleContainsImportedFields(actual.tocRule, expected.tocRule) &&
+      this.ruleContainsImportedFields(actual.contentRule, expected.contentRule) &&
+      actual.respondTime === expected.respondTime &&
+      actual.customButton === expected.customButton &&
+      actual.eventListener === expected.eventListener;
+  }
+
+  ruleContainsImportedFields(actual: Object, expected: Object): boolean {
+    const actualRecord = actual as Record<string, Object>;
+    const expectedRecord = expected as Record<string, Object>;
+    for (const key of Object.keys(expectedRecord)) {
+      if (JSON.stringify(actualRecord[key]) !== JSON.stringify(expectedRecord[key])) return false;
+    }
+    return true;
   }
 
   parseCompactRule(ruleStr: string): Record<string, string> {

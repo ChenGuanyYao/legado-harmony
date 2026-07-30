@@ -7,6 +7,8 @@ export class BookSourceLoginItem {
   name: string = '';
   type: string = '';
   action: string = '';
+  value: string = '';
+  placeholder: string = '';
 }
 
 export class BookSourceScriptResult {
@@ -54,23 +56,37 @@ export class BookSourceScriptRunner {
   static loginItems(source: BookSource): BookSourceLoginItem[] {
     const raw = (source.loginUi || '').trim();
     if (!raw) return [];
+    let parsed: Object;
     try {
-      const parsed = JSON.parse(raw) as Object[];
-      if (!Array.isArray(parsed)) return [];
-      const items: BookSourceLoginItem[] = [];
-      for (const value of parsed) {
-        if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-        const record = value as Record<string, Object>;
-        const item = new BookSourceLoginItem();
-        item.name = String(record['name'] || '').trim();
-        item.type = String(record['type'] || '').trim();
-        item.action = String(record['action'] || '').trim();
-        if (item.name) items.push(item);
-      }
-      return items;
+      parsed = JSON.parse(raw) as Object;
     } catch (_) {
-      return [];
+      try {
+        parsed = JSON.parse(this.normalizeLoginUiJson(raw)) as Object;
+      } catch (_) {
+        return [];
+      }
     }
+    if (!Array.isArray(parsed)) return [];
+    const items: BookSourceLoginItem[] = [];
+    for (const value of parsed) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      const record = value as Record<string, Object>;
+      const item = new BookSourceLoginItem();
+      item.name = String(record['name'] || '').trim();
+      item.type = String(record['type'] || '').trim();
+      item.action = String(record['action'] || '').trim();
+      item.value = String(record['value'] || '').trim();
+      item.placeholder = String(record['placeholder'] || '').trim();
+      if (item.name) items.push(item);
+    }
+    return items;
+  }
+
+  private static normalizeLoginUiJson(raw: string): string {
+    return (raw || '')
+      .replace(/([{,]\s*)'([^'\\]*(?:\\.[^'\\]*)*)'\s*:/g, '$1"$2":')
+      .replace(/:\s*'([^'\\]*(?:\\.[^'\\]*)*)'(\s*[,}])/g, ':"$1"$2')
+      .replace(/,\s*([}\]])/g, '$1');
   }
 
   static selectedBaseUrl(source: BookSource): string {

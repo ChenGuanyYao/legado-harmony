@@ -10,6 +10,7 @@ export class AccountSnapshot {
   points: number = 0;
   paidPoints: number = 0;
   promoPoints: number = 0;
+  iapDebtPoints: number = 0;
   welcomeGranted: boolean = false;
   entitlements: ThemeEntitlement[] = [];
 }
@@ -25,6 +26,7 @@ export class IapCreditResponse {
   purchaseToken: string = '';
   productType: number = 0;
   creditedPoints: number = 0;
+  debtOffsetPoints: number = 0;
 }
 
 export class RechargeProduct {

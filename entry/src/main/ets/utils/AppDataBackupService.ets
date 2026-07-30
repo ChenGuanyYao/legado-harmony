@@ -103,12 +103,14 @@ export class AppDataBackupService {
     'reader_replace_rules',
     'reader_settings',
     'search_explore_settings',
+    'startup_cover_texts',
     'tts_settings'
   ];
 
   private static readonly ASSET_DIRS: string[] = [
     'reader_fonts',
     'reader_backgrounds',
+    'theme_startups',
     'cover_albums',
     'covers'
   ];
@@ -546,8 +548,29 @@ export class AppDataBackupService {
   }
 
   private static sanitizeBookSource(source: BookSource): BookSource {
-    const value = JSON.parse(JSON.stringify(source)) as Object;
-    return AppDataBackupService.sanitizeValue(value) as BookSource;
+    const value = JSON.parse(JSON.stringify(source)) as BookSource;
+    // Source definitions contain legitimate script identifiers such as `${token}` and URL
+    // parameters named token/password. Generic text redaction corrupts those programs. Only
+    // remove user-specific runtime credentials; keep imported definitions and unknown fields.
+    value.loginHeader = '';
+    value.loginInfo = '';
+    value.rawSourceJson = AppDataBackupService.sanitizeRawBookSourceJson(value.rawSourceJson || '');
+    return value;
+  }
+
+  private static sanitizeRawBookSourceJson(raw: string): string {
+    if (!(raw || '').trim()) return '';
+    try {
+      const parsed = JSON.parse(raw) as Record<string, Object>;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return raw;
+      const clean: Record<string, Object> = {};
+      for (const key of Object.keys(parsed)) {
+        if (key !== 'loginHeader' && key !== 'loginInfo') clean[key] = parsed[key];
+      }
+      return JSON.stringify(clean);
+    } catch (_) {
+      return raw;
+    }
   }
 
   private static sanitizeBook(source: Book): Book {

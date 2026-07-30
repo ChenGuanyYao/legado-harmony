@@ -78,6 +78,14 @@ export class HuaweiAccountService {
   }
 
   static async logout(context: Context): Promise<void> {
+    const sessionToken = AccountSessionStore.token();
+    if (sessionToken) {
+      try {
+        await AccountCommerceApi.logout(sessionToken);
+      } catch {
+        // Local logout must still succeed when the network is unavailable.
+      }
+    }
     await AccountSessionStore.clear(context);
     await CloudSyncSettingsStore.load(context, '');
   }

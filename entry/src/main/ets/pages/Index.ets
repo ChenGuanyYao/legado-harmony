@@ -26,6 +26,7 @@ import { SearchBookShelfHelper } from '../utils/SearchBookShelfHelper';
 import { SearchExplorePendingBook } from '../utils/SearchExplorePendingBook';
 import { BookshelfSortHelper } from '../utils/BookshelfSortHelper';
 import { SearchExploreSettings, SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
+import { ExploreCacheHit, ExploreResultCache } from '../utils/ExploreResultCache';
 import { AppThemeSettingsStore } from '../utils/AppThemeSettingsStore';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
@@ -1191,7 +1192,7 @@ struct BookshelfPage {
         .position({ x: 0, y: 0 })
         .zIndex(4)
         .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-        .backdropBlur(18)
+        .backdropBlur(ThemeRuntime.topBarBlur())
 
         if (this.isLoading) {
           Column() {
@@ -5364,9 +5365,14 @@ struct ExplorePage {
   @State selectedSourceName: string = '';
   @State selectedIndex: number = 0;
   @State showExploreSourcePicker: boolean = false;
+  @State showExploreSourceActionMenu: boolean = false;
+  @State actionExploreSourceUrl: string = '';
+  @State exploreContextMenuX: number = 16;
+  @State exploreContextMenuY: number = 96;
   @State exploreSourceFilterInput: string = '';
   @State exploreSourceFilterKeyword: string = '';
   @State exploreViewportWidth: number = 360;
+  @State exploreViewportHeight: number = 720;
   @State books: SearchBook[] = [];
   @State shelfBookKeys: string[] = [];
   @State addingShelfBookKeys: string[] = [];
@@ -5394,6 +5400,7 @@ struct ExplorePage {
   private hasRestoredExploreSelection: boolean = false;
   private shelfStatusVersion: number = 0;
   private exploreLoadVersion: number = 0;
+  private exploreContentLoadedAt: number = 0;
 
   aboutToAppear() {
     if (this.isActive) {
@@ -5404,14 +5411,17 @@ struct ExplorePage {
   onActiveChanged(): void {
     if (this.isActive) {
       this.ensureLoaded();
-    } else if (this.showExploreSourcePicker) {
-      this.showExploreSourcePicker = false;
-      this.clearExploreSourceFilter();
+    } else {
+      if (this.showExploreSourcePicker) {
+        this.showExploreSourcePicker = false;
+        this.clearExploreSourceFilter();
+      }
+      this.closeExploreSourceActions();
     }
   }
 
   ensureLoaded(): void {
-    if (!this.hasLoaded && !this.isLoading) {
+    if ((!this.hasLoaded || !ExploreResultCache.isFresh(this.exploreContentLoadedAt)) && !this.isLoading) {
       this.loadEntries();
     }
   }
@@ -5426,9 +5436,10 @@ struct ExplorePage {
     }
   }
 
-  async loadEntries(platformOverride: string = '') {
+  async loadEntries(platformOverride: string = '', forceRefresh: boolean = false) {
     const loadVersion = this.beginExploreLoad();
     this.hasLoaded = true;
+    this.exploreContentLoadedAt = 0;
     this.status = '正在加载发现分类...';
     this.verificationUrl = '';
     this.verificationTitle = '';
@@ -5469,7 +5480,7 @@ struct ExplorePage {
       this.entries = entries;
       if (this.entries.length > 0) {
         this.selectedIndex = 0;
-        await this.loadBooks(loadVersion);
+        await this.loadBooks(loadVersion, forceRefresh);
       } else {
         this.books = [];
         this.status = `${this.getSelectedSiteLabel()} 暂无可用发现分类`;
@@ -5483,8 +5494,9 @@ struct ExplorePage {
     }
   }
 
-  async loadBooks(loadVersion?: number) {
+  async loadBooks(loadVersion?: number, forceRefresh: boolean = false) {
     const currentLoadVersion = loadVersion ?? this.beginExploreLoad();
+    this.exploreContentLoadedAt = 0;
     const activeEntries = this.getActiveEntries();
     if (activeEntries.length === 0) {
       this.finishExploreLoad(currentLoadVersion);
@@ -5495,21 +5507,33 @@ struct ExplorePage {
     this.verificationTitle = '';
     try {
       const entry = activeEntries[Math.min(this.selectedIndex, activeEntries.length - 1)];
+      if (!forceRefresh) {
+        try {
+          const cached: ExploreCacheHit | null = await ExploreResultCache.load(
+            getContext(this), entry.sourceUrl, this.selectedPlatform, entry.title, entry.url);
+          if (!this.isCurrentExploreLoad(currentLoadVersion)) return;
+          if (cached) {
+            this.exploreContentLoadedAt = cached.updatedAt;
+            await this.applyExploreBooks(cached.books, entry, currentLoadVersion, true);
+            return;
+          }
+        } catch (cacheError) {
+          console.warn('读取发现内容缓存失败，改用网络加载:', cacheError);
+        }
+      }
       const books = await this.coordinator.explore(entry, 1);
       if (!this.isCurrentExploreLoad(currentLoadVersion)) return;
-      this.books = books;
-      const shelfStatusVersion = this.shelfStatusVersion;
-      const shelfKeys = await this.loadExploreShelfKeys(books);
+      await this.applyExploreBooks(books, entry, currentLoadVersion, false);
       if (!this.isCurrentExploreLoad(currentLoadVersion)) return;
-      if (shelfStatusVersion === this.shelfStatusVersion) {
-        this.shelfBookKeys = shelfKeys;
+      if (books.length > 0) {
+        this.exploreContentLoadedAt = Date.now();
+        try {
+          await ExploreResultCache.save(getContext(this), entry.sourceUrl, this.selectedPlatform,
+            entry.title, entry.url, books);
+        } catch (cacheError) {
+          console.warn('保存发现内容缓存失败:', cacheError);
+        }
       }
-      this.verificationUrl = AppStorage.get<string>('pendingVerificationUrl') || '';
-      this.verificationTitle = AppStorage.get<string>('pendingVerificationTitle') || '网页验证';
-      this.status = this.books.length > 0 ?
-        `${this.getSelectedSiteLabel()} · ${entry.sourceName} · ${entry.title} · ${this.books.length} 本` :
-        (this.verificationUrl ? `${entry.sourceName} 可能需要网页验证` :
-          `${this.getSelectedSiteLabel()} 当前分类暂无结果`);
     } catch (e) {
       if (!this.isCurrentExploreLoad(currentLoadVersion)) return;
       console.error('获取发现内容失败:', e);
@@ -5517,6 +5541,28 @@ struct ExplorePage {
     } finally {
       this.finishExploreLoad(currentLoadVersion);
     }
+  }
+
+  async applyExploreBooks(books: SearchBook[], entry: ExploreEntry, loadVersion: number,
+    fromCache: boolean): Promise<void> {
+    this.books = books;
+    const shelfStatusVersion = this.shelfStatusVersion;
+    const shelfKeys = await this.loadExploreShelfKeys(books);
+    if (!this.isCurrentExploreLoad(loadVersion)) return;
+    if (shelfStatusVersion === this.shelfStatusVersion) {
+      this.shelfBookKeys = shelfKeys;
+    }
+    if (fromCache) {
+      this.verificationUrl = '';
+      this.verificationTitle = '';
+    } else {
+      this.verificationUrl = AppStorage.get<string>('pendingVerificationUrl') || '';
+      this.verificationTitle = AppStorage.get<string>('pendingVerificationTitle') || '网页验证';
+    }
+    this.status = this.books.length > 0 ?
+      `${this.getSelectedSiteLabel()} · ${entry.sourceName} · ${entry.title} · ${this.books.length} 本${fromCache ? ' · 缓存' : ''}` :
+      (this.verificationUrl ? `${entry.sourceName} 可能需要网页验证` :
+        `${this.getSelectedSiteLabel()} 当前分类暂无结果`);
   }
 
   build() {
@@ -5602,7 +5648,7 @@ struct ExplorePage {
           materialScale: 0.83,
           accessibilityLabel: '刷新发现内容',
           onBack: () => {
-            this.loadEntries();
+            this.loadEntries('', true);
           }
         })
           .margin({ left: 8, right: -24 })
@@ -5692,7 +5738,7 @@ struct ExplorePage {
         .position({ x: 0, y: 0 })
         .zIndex(4)
         .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-        .backdropBlur(18)
+        .backdropBlur(ThemeRuntime.topBarBlur())
 
       if (this.isLoading) {
         Column() {
@@ -5784,6 +5830,10 @@ struct ExplorePage {
 
         this.exploreSourceDropdown()
       }
+
+      if (this.showExploreSourceActionMenu) {
+        this.exploreSourceActionMenu()
+      }
     }
     .width('100%')
     .height('100%')
@@ -5792,6 +5842,10 @@ struct ExplorePage {
       const width = typeof newValue.width === 'number' ? newValue.width : Number.parseFloat(`${newValue.width}`);
       if (Number.isFinite(width) && width > 0) {
         this.exploreViewportWidth = width;
+      }
+      const height = typeof newValue.height === 'number' ? newValue.height : Number.parseFloat(`${newValue.height}`);
+      if (Number.isFinite(height) && height > 0) {
+        this.exploreViewportHeight = height;
       }
     })
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
@@ -5872,10 +5926,17 @@ struct ExplorePage {
               .backgroundColor(option.sourceUrl === this.selectedSourceUrl ? this.exploreSelectedBackgroundColor() : '#00000000')
               .alignItems(VerticalAlign.Center)
               .onClick(() => {
+                if (this.showExploreSourceActionMenu) return;
                 this.showExploreSourcePicker = false;
                 this.clearExploreSourceFilter();
                 this.switchExploreSource(option);
               })
+              .gesture(
+                LongPressGesture({ repeat: false })
+                  .onAction((event: GestureEvent) => {
+                    this.openExploreSourceActions(option, event);
+                  })
+              )
             })
           }
         }
@@ -5901,6 +5962,49 @@ struct ExplorePage {
           this.switchExploreSourceGroupBySwipe(event.offsetX);
         })
     )
+  }
+
+  @Builder
+  exploreSourceActionMenu() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.appDarkMode ? '#52000000' : '#26FFFFFF')
+        .backdropBlur(ThemeRuntime.glassBlur('popover', 18))
+        .onClick(() => this.closeExploreSourceActions())
+
+      Column() {
+        Row() {
+          SymbolGlyph($r('sys.symbol.square_and_pencil'))
+            .fontSize(19)
+            .fontColor([this.primaryTextColor()])
+            .width(34)
+          Text('编辑')
+            .fontSize(15)
+            .fontColor(this.primaryTextColor())
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(44)
+        .padding({ left: 10, right: 10 })
+        .onClick(() => this.editActionExploreSource())
+      }
+      .width(132)
+      .padding({ top: 6, bottom: 6 })
+      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+      .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({ width: ThemeRuntime.glassBorderWidth('panel'),
+        color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'),
+        color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'),
+        offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
+      .position({ x: this.exploreContextMenuLeft(132), y: this.exploreContextMenuTop(56) })
+    }
+    .width('100%')
+    .height('100%')
+    .zIndex(12)
   }
 
   @Builder
@@ -5986,6 +6090,44 @@ struct ExplorePage {
   clearExploreSourceFilter(): void {
     this.exploreSourceFilterInput = '';
     this.exploreSourceFilterKeyword = '';
+  }
+
+  openExploreSourceActions(option: ExploreSourceOption, event?: GestureEvent): void {
+    const finger = event && event.fingerList.length > 0 ? event.fingerList[0] : undefined;
+    if (finger) {
+      this.exploreContextMenuX = finger.globalX;
+      this.exploreContextMenuY = finger.globalY;
+    }
+    this.actionExploreSourceUrl = option.sourceUrl;
+    this.showExploreSourcePicker = false;
+    this.clearExploreSourceFilter();
+    this.showExploreSourceActionMenu = true;
+  }
+
+  closeExploreSourceActions(): void {
+    this.showExploreSourceActionMenu = false;
+    this.actionExploreSourceUrl = '';
+  }
+
+  editActionExploreSource(): void {
+    const sourceUrl = this.actionExploreSourceUrl;
+    if (!sourceUrl) return;
+    this.closeExploreSourceActions();
+    router.pushUrl({
+      url: 'pages/BookSourceEdit',
+      params: { bookSourceUrl: sourceUrl }
+    });
+  }
+
+  exploreContextMenuLeft(menuWidth: number): number {
+    return Math.max(12, Math.min(this.exploreContextMenuX - 18,
+      this.exploreViewportWidth - menuWidth - 12));
+  }
+
+  exploreContextMenuTop(menuHeight: number): number {
+    const below = this.exploreContextMenuY + 12;
+    if (below + menuHeight <= this.exploreViewportHeight - 12) return below;
+    return Math.max(this.statusBarHeight + 8, this.exploreContextMenuY - menuHeight - 12);
   }
 
   getFilteredExploreSourceOptions(): ExploreSourceOption[] {
@@ -6555,7 +6697,7 @@ struct SearchPage {
         .position({ x: 0, y: 0 })
         .zIndex(4)
         .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-        .backdropBlur(18)
+        .backdropBlur(ThemeRuntime.topBarBlur())
 
         if (this.showResult && this.searchResults.length > 0) {
           SearchBookResultList({
@@ -7623,7 +7765,7 @@ struct SettingsPage {
       .alignItems(VerticalAlign.Center)
       .padding({ left: 16, top: this.statusBarHeight })
       .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-      .backdropBlur(18)
+      .backdropBlur(ThemeRuntime.topBarBlur())
     }
     .width('100%')
     .height('100%')
