@@ -87,6 +87,8 @@ struct Index {
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
   @StorageLink('launchShortcutNonce') @Watch('onLaunchShortcutChanged') launchShortcutNonce: number = 0;
   @StorageLink('singleSourceSearchNonce') @Watch('onSingleSourceSearchRequested') singleSourceSearchNonce: number = 0;
+  @StorageLink('bookSourceExploreRefreshNonce') @Watch('onBookSourceExploreRefreshRequested')
+  bookSourceExploreRefreshNonce: number = 0;
   @StorageLink('cloudSyncDataChangeRevision') @Watch('onCloudSyncDataChanged')
   cloudSyncDataRevision: number = 0;
   @StorageLink('cloudSyncPreferenceChangeRevision') @Watch('onCloudSyncDataChanged')
@@ -131,6 +133,13 @@ struct Index {
     }
     this.bookshelfMultiSelectActive = false;
     this.currentIndex = 2;
+    this.syncHomeSystemBars();
+  }
+
+  onBookSourceExploreRefreshRequested(): void {
+    if (this.bookSourceExploreRefreshNonce <= 0) return;
+    this.bookshelfMultiSelectActive = false;
+    this.currentIndex = 1;
     this.syncHomeSystemBars();
   }
 
@@ -6561,6 +6570,14 @@ struct SearchPage {
       const keywords = await db.getSearchKeywords();
       this.searchHistory = keywords.map(k => k.keyword);
       await this.loadSourceGroups(db);
+      const pendingKeyword = AppStorage.get<string>('singleSourceSearchKeyword') || '';
+      if (pendingKeyword && this.singleSourceSearchUrl) {
+        AppStorage.setOrCreate('singleSourceSearchKeyword', '');
+        this.keyword = pendingKeyword;
+        setTimeout((): void => {
+          this.doSearch();
+        }, 0);
+      }
     } catch (e) {
       console.error('初始化搜索页失败:', e);
     }

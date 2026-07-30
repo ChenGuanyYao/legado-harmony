@@ -148,14 +148,14 @@ struct SettingsPage {
           Column() {
           this.readerThemePanel()
 
-          this.selectItem('翻页方式', '选择滚动、滑动、点击或上下连续滑动',
+          this.selectItem('翻页方式', '选择滚动、横向滑动或上下连续滑动',
             this.pageTurnModeOptions(), this.pageTurnModeSelectedIndex(), (index: number) => {
-              this.setReaderPageTurnMode(index);
+              this.setReaderPageTurnMode(this.pageTurnModeByIndex(index));
             })
           if (this.readerPageTurnMode === 2) {
             this.tapZoneSettingItem()
           }
-          this.selectItem('翻页动画', '选择滑动或点击翻页时使用的页面切换效果',
+          this.selectItem('翻页动画', '选择翻页时使用的页面切换效果',
             this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
               this.setReaderPageTurnAnimationType(index);
             })
@@ -795,8 +795,7 @@ struct SettingsPage {
   }
 
   pageTurnModeText(): string {
-    if (this.readerPageTurnMode === 1) return '滑动翻页';
-    if (this.readerPageTurnMode === 2) return '点击翻页';
+    if (this.readerPageTurnMode === 2) return '横向滑动';
     if (this.readerPageTurnMode === 3) return '上下滑动';
     return '滚动阅读';
   }
@@ -804,14 +803,23 @@ struct SettingsPage {
   pageTurnModeOptions(): SelectOption[] {
     return [
       { value: '滚动阅读' },
-      { value: '滑动翻页' },
-      { value: '点击翻页' },
+      { value: '横向滑动' },
       { value: '上下滑动' }
     ];
   }
 
+  pageTurnModeTypes(): number[] {
+    return [0, 2, 3];
+  }
+
+  pageTurnModeByIndex(index: number): number {
+    const types = this.pageTurnModeTypes();
+    return index >= 0 && index < types.length ? types[index] : 2;
+  }
+
   pageTurnModeSelectedIndex(): number {
-    return this.readerPageTurnMode >= 0 && this.readerPageTurnMode <= 3 ? this.readerPageTurnMode : 0;
+    const index = this.pageTurnModeTypes().indexOf(this.readerPageTurnMode);
+    return index >= 0 ? index : 1;
   }
 
   readerTapZoneActionsList(): number[] {

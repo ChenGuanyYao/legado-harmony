@@ -24,7 +24,15 @@ import { notificationManager } from '@kit.NotificationKit';
 import commonEventManager from '@ohos.commonEventManager';
 import { BookSourceLoginItem, BookSourceScriptRunner } from '../core/book/BookSourceScriptRunner';
 import { BookSourceLoginWebRuntime, LoginCookieOperation, LoginRuntimeStep } from '../core/book/BookSourceLoginWebRuntime';
+import { BookSourceLoginCrypto } from '../core/book/BookSourceLoginCrypto';
+import { BookSourceExecutionJournal } from '../core/book/BookSourceExecutionJournal';
+import {
+  BookSourceRuntimeRouter,
+  SourceRuntimeDecision,
+  SourceRuntimeStage
+} from '../core/book/BookSourceRuntimeRouter';
 import { AnalyzeUrl } from '../core/rule/AnalyzeUrl';
+import { ExploreResultCache } from '../utils/ExploreResultCache';
 
 const BOOK_SOURCE_IMPORT_FILE_LIMIT_BYTES = 25 * 1024 * 1024;
 const BOOK_SOURCE_IMPORT_TIMEOUT_MS = 20000;
@@ -131,6 +139,8 @@ struct BookSourcePage {
   private checkCancelAgent: WantAgent | null = null;
   private checkCancelSubscriber: commonEventManager.CommonEventSubscriber | null = null;
   private pageVisible: boolean = true;
+  private selectedSourceUrlsSnapshot: string[] = [];
+  private selectedSourceUrlLookup: Set<string> = new Set<string>();
   private webImportController: webview.WebviewController = new webview.WebviewController();
   private webImportTargetUrl: string = '';
   private webImportStarted: boolean = false;
@@ -142,11 +152,19 @@ struct BookSourcePage {
   private webImportDownloadPath: string = '';
   private loginRuntimeController: webview.WebviewController = new webview.WebviewController();
   private loginRuntimeSource: BookSource | null = null;
+  private loginRuntimeBaseSource: BookSource | null = null;
   private loginRuntimeAction: string = '';
-  private loginRuntimeResponses: Record<string, string> = {};
+  private loginRuntimeJournal: BookSourceExecutionJournal = new BookSourceExecutionJournal();
+  private loginRuntimeDecision: SourceRuntimeDecision | null = null;
   private loginRuntimeCookies: Record<string, string> = {};
   private loginRuntimeCookieUrls: string[] = [];
   private loginRuntimeRequestCount: number = 0;
+  private loginRuntimeFixedNow: number = 0;
+  private loginRuntimeRandomSeed: number = 1;
+  private loginRuntimeCookieSnapshots: Record<string, string> = {};
+  private loginRuntimeAwaitingBrowser: boolean = false;
+  private loginRuntimeBrowserToken: string = '';
+  private loginRuntimeBrowserUrl: string = '';
   private loginRuntimeStepRunning: boolean = false;
   private loginRuntimeReady: boolean = false;
   private loginRuntimeResolve: ((value: LoginRuntimeStep) => void) | null = null;
@@ -158,11 +176,14 @@ struct BookSourcePage {
     this.loadSources();
     this.handlePendingBookSourceImport();
     this.ensureBookSourceCheckCancelSubscriber();
+    this.resumeLoginRuntimeBrowserAwait();
   }
 
   aboutToDisappear(): void {
     this.finishWebImport('', '网页取数已取消');
-    this.finishLoginRuntime(null, '登录动作已取消');
+    if (!this.loginRuntimeAwaitingBrowser) {
+      this.finishLoginRuntime(null, '登录动作已取消');
+    }
     if (!this.isCheckingSources) {
       this.releaseBookSourceCheckCancelSubscriber();
     }
@@ -3339,33 +3360,52 @@ struct BookSourcePage {
   async executeSourceLoginAction(item: BookSourceLoginItem): Promise<void> {
     const source = this.actionSourceDetail;
     if (!source || !item.action || this.isExecutingLoginAction) return;
+    if (BookSourceRuntimeRouter.isDirectUrlAction(item.action)) {
+      this.showSourceLoginUiDialog = false;
+      this.sourceLoginItems = [];
+      this.openSourceLoginBrowser(source, item.action.trim(),
+        `${source.bookSourceName || '书源'} · ${item.name}`, /(?:登录|login)/i.test(item.name));
+      return;
+    }
     this.isExecutingLoginAction = true;
     this.syncSourceLoginInfo(source);
     try {
       const result = await this.runSourceLoginAction(source, item.action);
+      if (result.errorMessage) throw new Error(result.errorMessage);
       source.variable = result.variable;
       source.loginHeader = result.loginHeader;
       source.loginInfo = result.loginInfo;
       await AppDatabase.getInstance().updateBookSourceLoginRuntime(source.bookSourceUrl,
         source.variable, source.loginHeader, source.loginInfo);
+      if (result.refreshLoginRequested) this.refreshSourceLoginItemsFromRuntime(source);
       this.markSourceLoginCompleted(item, result);
       if (result.toastMessage) {
         promptAction.showToast({ message: result.toastMessage.trim() || '操作成功' });
-      } else if (result.errorMessage) {
-        promptAction.showToast({ message: `登录动作失败：${result.errorMessage}` });
       }
-      if (result.requestedUrl) {
+      if (result.requestedSearchKeyword) {
+        this.openRuntimeSourceSearch(source, result.requestedSearchKeyword);
+        return;
+      }
+      if (result.refreshExploreRequested) {
+        await this.refreshRuntimeExplore(source);
+        return;
+      }
+      if (result.requestedUrl || result.requestedHtml) {
         this.showSourceLoginUiDialog = false;
         this.sourceLoginItems = [];
         const isLogin = /(?:登录|login)/i.test(item.name) ||
           /\/login(?:\.html)?(?:[?#]|$)/i.test(result.requestedUrl);
-        this.openSourceLoginBrowser(source, result.requestedUrl,
-          result.requestedTitle || `${source.bookSourceName || '书源'} · ${item.name}`, isLogin);
+        this.openSourceLoginBrowser(source, result.requestedUrl || 'about:blank',
+          result.requestedTitle || `${source.bookSourceName || '书源'} · ${item.name}`, isLogin,
+          '', result.requestedHtml, result.requestedInjectJs);
         return;
       }
       this.actionSourceDetail = source;
     } catch (error) {
-      promptAction.showToast({ message: `登录动作失败：${this.importErrorMessage(error as Object)}` });
+      const missing = BookSourceRuntimeRouter.missingCapabilityMessage(this.loginRuntimeDecision);
+      promptAction.showToast({
+        message: `登录动作失败：${this.importErrorMessage(error as Object)}${missing ? `\n${missing}` : ''}`
+      });
     } finally {
       this.isExecutingLoginAction = false;
     }
@@ -3411,6 +3451,51 @@ struct BookSourcePage {
     source.loginInfo = BookSourceLoginWebRuntime.mergeRecord(source.loginInfo, values);
   }
 
+  refreshSourceLoginItemsFromRuntime(source: BookSource): void {
+    const values = BookSourceLoginWebRuntime.parseRecord(source.loginInfo);
+    const items = this.sourceLoginItems.slice();
+    for (let index = 0; index < items.length; index++) {
+      const item = items[index];
+      if (!this.isSourceLoginInput(item) || values[item.name] === undefined) continue;
+      const copy = new BookSourceLoginItem();
+      copy.name = item.name;
+      copy.type = item.type;
+      copy.action = item.action;
+      copy.placeholder = item.placeholder;
+      copy.value = values[item.name];
+      items[index] = copy;
+    }
+    this.sourceLoginItems = items;
+  }
+
+  openRuntimeSourceSearch(source: BookSource, keyword: string): void {
+    const value = (keyword || '').trim();
+    if (!value) return;
+    const nonce = AppStorage.get<number>('singleSourceSearchNonce') || 0;
+    AppStorage.setOrCreate('singleSourceSearchUrl', source.bookSourceUrl);
+    AppStorage.setOrCreate('singleSourceSearchName', source.bookSourceName || source.bookSourceUrl);
+    AppStorage.setOrCreate('singleSourceSearchKeyword', value);
+    AppStorage.setOrCreate('singleSourceSearchNonce', nonce + 1);
+    this.showSourceLoginUiDialog = false;
+    this.sourceLoginItems = [];
+    router.back();
+  }
+
+  async refreshRuntimeExplore(source: BookSource): Promise<void> {
+    try {
+      await ExploreResultCache.clearSource(getContext(this), source.bookSourceUrl);
+    } catch (error) {
+      console.warn('清理发现缓存失败，将继续请求刷新:', error);
+    }
+    const nonce = AppStorage.get<number>('bookSourceExploreRefreshNonce') || 0;
+    AppStorage.setOrCreate('bookSourceExploreRefreshSourceUrl', source.bookSourceUrl);
+    AppStorage.setOrCreate('exploreSourceUrl', source.bookSourceUrl);
+    AppStorage.setOrCreate('bookSourceExploreRefreshNonce', nonce + 1);
+    this.showSourceLoginUiDialog = false;
+    this.sourceLoginItems = [];
+    router.back();
+  }
+
   saveSourceLoginInputs(): void {
     const source = this.actionSourceDetail;
     if (!source) return;
@@ -3425,23 +3510,41 @@ struct BookSourcePage {
     if (this.loginRuntimeResolve || this.loginRuntimeReject) {
       return Promise.reject(new Error('已有登录动作正在执行'));
     }
+    const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.LOGIN,
+      `${source.jsLib || ''}\n${source.loginUrl || ''}\n${action || ''}`);
+    this.loginRuntimeDecision = decision;
+    if (decision.capabilities.usesUnmanagedNetwork) {
+      return Promise.reject(new Error('登录脚本包含未受执行日志保护的浏览器网络请求，请改用 java.ajax'));
+    }
     this.loginRuntimeSource = source;
+    this.loginRuntimeBaseSource = this.copyBookSourceRuntime(source);
     this.loginRuntimeAction = action;
-    this.loginRuntimeResponses = {};
+    this.loginRuntimeJournal.reset();
     this.loginRuntimeCookies = {};
     this.loginRuntimeCookieUrls = [];
     this.loginRuntimeRequestCount = 0;
+    this.loginRuntimeFixedNow = Date.now();
+    this.loginRuntimeRandomSeed = Math.max(1, Math.floor(Math.random() * 0x7fffffff));
+    this.loginRuntimeCookieSnapshots = {};
+    this.loginRuntimeAwaitingBrowser = false;
+    this.loginRuntimeBrowserToken = '';
+    this.loginRuntimeBrowserUrl = '';
     this.loginRuntimeStepRunning = false;
     return new Promise<LoginRuntimeStep>((resolve, reject) => {
       this.loginRuntimeResolve = resolve;
       this.loginRuntimeReject = reject;
-      this.loginRuntimeTimeoutId = setTimeout(() => {
-        const message = this.loginRuntimeReady ? '登录脚本执行超时' : '登录脚本运行环境未就绪';
-        this.finishLoginRuntime(null, message);
-      }, 60000);
       this.loginRuntimeActive = true;
+      this.armLoginRuntimeTimeout();
       if (this.loginRuntimeReady) this.continueLoginRuntime();
     });
+  }
+
+  armLoginRuntimeTimeout(): void {
+    if (this.loginRuntimeTimeoutId >= 0) clearTimeout(this.loginRuntimeTimeoutId);
+    this.loginRuntimeTimeoutId = setTimeout(() => {
+      const message = this.loginRuntimeReady ? '登录脚本执行超时' : '登录脚本运行环境未就绪';
+      this.finishLoginRuntime(null, message);
+    }, 60000);
   }
 
   continueLoginRuntime(): void {
@@ -3454,16 +3557,27 @@ struct BookSourcePage {
 
   async executeLoginRuntimeStep(): Promise<void> {
     const source = this.loginRuntimeSource;
-    if (!source || !this.loginRuntimeActive) return;
-    const script = BookSourceLoginWebRuntime.buildScript(source, this.loginRuntimeAction,
-      this.loginRuntimeResponses, this.loginRuntimeCookies);
+    const baseSource = this.loginRuntimeBaseSource;
+    if (!source || !baseSource || !this.loginRuntimeActive) return;
+    const script = BookSourceLoginWebRuntime.buildScript(baseSource, this.loginRuntimeAction,
+      this.loginRuntimeJournal.responses, this.loginRuntimeCookies,
+      this.loginRuntimeFixedNow, this.loginRuntimeRandomSeed);
     const raw = await this.runLoginRuntimeScript(script);
     const step = BookSourceLoginWebRuntime.parseResult(raw);
-    source.variable = step.variable;
-    source.loginHeader = step.loginHeader;
-    source.loginInfo = step.loginInfo;
     this.applyLoginCookieOperations(step.cookieOperations);
+    if (step.pendingCrypto) {
+      const responseKey = `crypto:${step.pendingCrypto}`;
+      if (!this.loginRuntimeJournal.hasResponse(responseKey)) {
+        const response = await BookSourceLoginCrypto.execute(step.pendingCrypto);
+        if (!this.loginRuntimeActive) return;
+        this.loginRuntimeJournal.recordResponse(responseKey, response);
+      }
+      this.loginRuntimeStepRunning = false;
+      this.continueLoginRuntime();
+      return;
+    }
     if (step.pendingCookie) {
+      this.snapshotLoginRuntimeCookie(step.pendingCookie);
       this.loginRuntimeCookies[step.pendingCookie] = CookieStore.getCookie(step.pendingCookie);
       if (!this.loginRuntimeCookieUrls.includes(step.pendingCookie)) {
         this.loginRuntimeCookieUrls.push(step.pendingCookie);
@@ -3473,17 +3587,32 @@ struct BookSourcePage {
       return;
     }
     if (step.pendingAjax) {
+      if (this.loginRuntimeJournal.hasResponse(step.pendingAjax)) {
+        this.loginRuntimeStepRunning = false;
+        this.continueLoginRuntime();
+        return;
+      }
       this.loginRuntimeRequestCount++;
       if (this.loginRuntimeRequestCount > 12) {
         this.finishLoginRuntime(null, '登录脚本网络请求次数过多');
         return;
       }
-      const response = await this.fetchLoginRuntimeRequest(source, step.pendingAjax);
+      if (!this.loginRuntimeJournal.markRequestStarted(step.pendingAjax)) {
+        this.finishLoginRuntime(null, '登录脚本重复请求未完成，已停止以避免重复提交');
+        return;
+      }
+      const requestSource = this.copyBookSourceRuntime(baseSource);
+      requestSource.variable = step.variable;
+      requestSource.loginHeader = step.loginHeader;
+      requestSource.loginInfo = step.loginInfo;
+      this.snapshotLoginRuntimeRequestCookie(step.pendingAjax);
+      const response = await this.fetchLoginRuntimeRequest(requestSource, step.pendingAjax);
+      if (!this.loginRuntimeActive) return;
       if (!response.success && !response.body) {
         this.finishLoginRuntime(null, response.error || `HTTP ${response.statusCode}`);
         return;
       }
-      this.loginRuntimeResponses[step.pendingAjax] = response.body || '';
+      this.loginRuntimeJournal.recordResponse(step.pendingAjax, response.body || '');
       for (const key of this.loginRuntimeCookieUrls) {
         this.loginRuntimeCookies[key] = CookieStore.getCookie(key);
       }
@@ -3491,7 +3620,57 @@ struct BookSourcePage {
       this.continueLoginRuntime();
       return;
     }
+    if (step.pendingBrowserAwait) {
+      this.suspendLoginRuntimeForBrowser(step);
+      return;
+    }
+    if (step.errorMessage) {
+      this.finishLoginRuntime(step, step.errorMessage);
+      return;
+    }
     this.finishLoginRuntime(step);
+  }
+
+  copyBookSourceRuntime(source: BookSource): BookSource {
+    const copy = new BookSource();
+    copy.bookSourceUrl = source.bookSourceUrl;
+    copy.bookSourceName = source.bookSourceName;
+    copy.bookSourceType = source.bookSourceType;
+    copy.bookSourceGroup = source.bookSourceGroup;
+    copy.bookSourceComment = source.bookSourceComment;
+    copy.loginUrl = source.loginUrl;
+    copy.loginUi = source.loginUi;
+    copy.loginCheckJs = source.loginCheckJs;
+    copy.loginHeader = source.loginHeader;
+    copy.loginInfo = source.loginInfo;
+    copy.rawSourceJson = source.rawSourceJson;
+    copy.bookUrlPattern = source.bookUrlPattern;
+    copy.searchUrl = source.searchUrl;
+    copy.exploreUrl = source.exploreUrl;
+    copy.jsLib = source.jsLib;
+    copy.header = source.header;
+    copy.bookListRule = source.bookListRule;
+    copy.searchRule = source.searchRule;
+    copy.exploreRule = source.exploreRule;
+    copy.bookInfoRule = source.bookInfoRule;
+    copy.tocRule = source.tocRule;
+    copy.contentRule = source.contentRule;
+    copy.variableComment = source.variableComment;
+    copy.variable = source.variable;
+    copy.lastUpdateTime = source.lastUpdateTime;
+    copy.respondTime = source.respondTime;
+    copy.customOrder = source.customOrder;
+    copy.customButton = source.customButton;
+    copy.eventListener = source.eventListener;
+    copy.isPinned = source.isPinned;
+    copy.enabled = source.enabled;
+    copy.enabledExplore = source.enabledExplore;
+    copy.isLocked = source.isLocked;
+    copy.validationStatus = source.validationStatus;
+    copy.weight = source.weight;
+    copy.concurrentRate = source.concurrentRate;
+    copy.enabledCookieJar = source.enabledCookieJar;
+    return copy;
   }
 
   runLoginRuntimeScript(script: string): Promise<string> {
@@ -3576,6 +3755,9 @@ struct BookSourcePage {
   applyLoginCookieOperations(raw: string): void {
     const operations: LoginCookieOperation[] = BookSourceLoginWebRuntime.parseCookieOperations(raw);
     for (const operation of operations) {
+      const payload = `${operation.operation}\n${operation.url}\n${operation.name}\n${operation.value}`;
+      if (!this.loginRuntimeJournal.markOperationApplied('cookie', payload)) continue;
+      this.snapshotLoginRuntimeCookie(operation.url);
       if (operation.operation === 'set') {
         CookieStore.setCookies(operation.url, operation.value);
       } else if (operation.operation === 'remove') {
@@ -3589,8 +3771,75 @@ struct BookSourcePage {
     if (operations.length > 0) CookieStore.saveAsync();
   }
 
+  snapshotLoginRuntimeCookie(url: string): void {
+    const key = (url || '').trim();
+    if (!key || this.loginRuntimeCookieSnapshots[key] !== undefined) return;
+    this.loginRuntimeCookieSnapshots[key] = CookieStore.getCookie(key);
+  }
+
+  snapshotLoginRuntimeRequestCookie(requestUrl: string): void {
+    const match = (requestUrl || '').match(/^https?:\/\/[^\s,]+/i);
+    if (match && match[0]) this.snapshotLoginRuntimeCookie(match[0]);
+  }
+
+  rollbackLoginRuntimeCookies(): void {
+    const urls = Object.keys(this.loginRuntimeCookieSnapshots);
+    for (const url of urls) {
+      CookieStore.removeCookie(url);
+      const snapshot = this.loginRuntimeCookieSnapshots[url] || '';
+      if (snapshot) CookieStore.setCookies(url, snapshot);
+    }
+    CookieStore.saveSync();
+  }
+
+  suspendLoginRuntimeForBrowser(step: LoginRuntimeStep): void {
+    const source = this.loginRuntimeSource;
+    if (!source || !step.pendingBrowserAwait) {
+      this.finishLoginRuntime(null, '浏览器等待参数无效');
+      return;
+    }
+    if (this.loginRuntimeTimeoutId >= 0) clearTimeout(this.loginRuntimeTimeoutId);
+    this.loginRuntimeTimeoutId = -1;
+    const token = `${Date.now()}_${Math.floor(Math.random() * 1000000000)}`;
+    this.loginRuntimeAwaitingBrowser = true;
+    this.loginRuntimeBrowserToken = token;
+    this.loginRuntimeBrowserUrl = step.pendingBrowserAwait;
+    this.loginRuntimeStepRunning = false;
+    AppStorage.setOrCreate('bookSourceBrowserAwaitResultToken', '');
+    AppStorage.setOrCreate('bookSourceBrowserAwaitResultBody', '');
+    AppStorage.setOrCreate('bookSourceBrowserAwaitResultError', '');
+    this.showSourceLoginUiDialog = false;
+    this.openSourceLoginBrowser(source, step.pendingBrowserAwait,
+      step.pendingBrowserTitle || `${source.bookSourceName || '书源'} 网页操作`, false, token);
+  }
+
+  resumeLoginRuntimeBrowserAwait(): void {
+    if (!this.loginRuntimeAwaitingBrowser || !this.loginRuntimeBrowserToken || !this.loginRuntimeActive) return;
+    const resultToken = AppStorage.get<string>('bookSourceBrowserAwaitResultToken') || '';
+    if (resultToken !== this.loginRuntimeBrowserToken) return;
+    const body = AppStorage.get<string>('bookSourceBrowserAwaitResultBody') || '';
+    const error = AppStorage.get<string>('bookSourceBrowserAwaitResultError') || '';
+    AppStorage.setOrCreate('bookSourceBrowserAwaitResultToken', '');
+    AppStorage.setOrCreate('bookSourceBrowserAwaitResultBody', '');
+    AppStorage.setOrCreate('bookSourceBrowserAwaitResultError', '');
+    const browserUrl = this.loginRuntimeBrowserUrl;
+    this.loginRuntimeAwaitingBrowser = false;
+    this.loginRuntimeBrowserToken = '';
+    this.loginRuntimeBrowserUrl = '';
+    if (error) {
+      this.finishLoginRuntime(null, error);
+      return;
+    }
+    this.loginRuntimeJournal.recordResponse(`browser:${browserUrl}`, body);
+    this.loginRuntimeStepRunning = false;
+    this.armLoginRuntimeTimeout();
+    this.continueLoginRuntime();
+  }
+
   finishLoginRuntime(result: LoginRuntimeStep | null, errorMessage: string = ''): void {
     if (!this.loginRuntimeResolve && !this.loginRuntimeReject) return;
+    const failed = !!errorMessage || !!result?.errorMessage;
+    if (failed) this.rollbackLoginRuntimeCookies();
     if (this.loginRuntimeTimeoutId >= 0) clearTimeout(this.loginRuntimeTimeoutId);
     const resolve = this.loginRuntimeResolve;
     const reject = this.loginRuntimeReject;
@@ -3598,29 +3847,47 @@ struct BookSourcePage {
     this.loginRuntimeReject = null;
     this.loginRuntimeTimeoutId = -1;
     this.loginRuntimeSource = null;
+    this.loginRuntimeBaseSource = null;
     this.loginRuntimeAction = '';
-    this.loginRuntimeResponses = {};
     this.loginRuntimeCookies = {};
     this.loginRuntimeCookieUrls = [];
     this.loginRuntimeRequestCount = 0;
+    this.loginRuntimeFixedNow = 0;
+    this.loginRuntimeRandomSeed = 1;
+    this.loginRuntimeCookieSnapshots = {};
+    this.loginRuntimeAwaitingBrowser = false;
+    this.loginRuntimeBrowserToken = '';
+    this.loginRuntimeBrowserUrl = '';
     this.loginRuntimeStepRunning = false;
     this.loginRuntimeActive = false;
-    if (errorMessage) {
-      if (reject) reject(new Error(errorMessage));
+    this.loginRuntimeJournal.reset();
+    if (errorMessage || result?.errorMessage) {
+      if (reject) reject(new Error(errorMessage || result?.errorMessage || '登录动作失败'));
     } else if (result && resolve) {
       resolve(result);
     }
   }
 
-  openSourceLoginBrowser(source: BookSource, url: string, title: string, requireLoginCookie: boolean): void {
-    VerificationSupport.requestVerification(url, title, source);
+  openSourceLoginBrowser(source: BookSource, url: string, title: string, requireLoginCookie: boolean,
+    awaitToken: string = '', html: string = '', injectJs: string = ''): void {
+    if (/^https?:\/\//i.test(url || '')) VerificationSupport.requestVerification(url, title, source);
+    let payloadToken = '';
+    if (html) {
+      payloadToken = `${Date.now()}_${Math.floor(Math.random() * 1000000000)}`;
+      AppStorage.setOrCreate('bookSourceBrowserPayloadToken', payloadToken);
+      AppStorage.setOrCreate('bookSourceBrowserPayloadHtml', html);
+      AppStorage.setOrCreate('bookSourceBrowserPayloadBaseUrl', url || 'about:blank');
+      AppStorage.setOrCreate('bookSourceBrowserPayloadInjectJs', injectJs || '');
+    }
     this.actionSourceUrl = '';
     router.pushUrl({
       url: 'pages/VerifyWeb',
       params: {
         url: url,
         title: title,
-        requireLoginCookie: requireLoginCookie ? 'true' : 'false'
+        requireLoginCookie: requireLoginCookie ? 'true' : 'false',
+        bookSourceBrowserAwaitToken: awaitToken,
+        bookSourceBrowserPayloadToken: payloadToken
       }
     });
   }
@@ -3744,7 +4011,15 @@ struct BookSourcePage {
   }
 
   isSourceSelected(bookSourceUrl: string): boolean {
-    return this.selectedSourceUrls.includes(bookSourceUrl);
+    return this.getSelectedSourceUrlLookup().has(bookSourceUrl);
+  }
+
+  getSelectedSourceUrlLookup(): Set<string> {
+    if (this.selectedSourceUrlsSnapshot !== this.selectedSourceUrls) {
+      this.selectedSourceUrlsSnapshot = this.selectedSourceUrls;
+      this.selectedSourceUrlLookup = new Set<string>(this.selectedSourceUrls);
+    }
+    return this.selectedSourceUrlLookup;
   }
 
   setSourceSelected(bookSourceUrl: string, selected: boolean): void {
@@ -3762,24 +4037,23 @@ struct BookSourcePage {
   }
 
   isAllSelected(): boolean {
-    return this.sources.length > 0 &&
-      this.sources.every((source: BookSource) => this.isSourceSelected(source.bookSourceUrl));
+    if (this.sources.length === 0) return false;
+    const selected = this.getSelectedSourceUrlLookup();
+    return this.sources.every((source: BookSource) => selected.has(source.bookSourceUrl));
   }
 
   selectAllSources(): void {
-    const selected = this.selectedSourceUrls.slice();
+    const selected = new Set<string>(this.selectedSourceUrls);
     for (const source of this.sources) {
-      if (!selected.includes(source.bookSourceUrl)) {
-        selected.push(source.bookSourceUrl);
-      }
+      selected.add(source.bookSourceUrl);
     }
-    this.selectedSourceUrls = selected;
+    this.selectedSourceUrls = Array.from(selected.values());
   }
 
   toggleAllSources(): void {
     if (this.isAllSelected()) {
-      const filteredUrls = this.sources.map((source: BookSource) => source.bookSourceUrl);
-      this.selectedSourceUrls = this.selectedSourceUrls.filter((url: string) => !filteredUrls.includes(url));
+      const filteredUrls = new Set<string>(this.sources.map((source: BookSource) => source.bookSourceUrl));
+      this.selectedSourceUrls = this.selectedSourceUrls.filter((url: string) => !filteredUrls.has(url));
       return;
     }
     this.selectAllSources();
@@ -3793,12 +4067,13 @@ struct BookSourcePage {
     if (this.selectedSourceUrls.length === 0) {
       return;
     }
-    const existingUrls = this.allSources.map((source: BookSource) => source.bookSourceUrl);
-    this.selectedSourceUrls = this.selectedSourceUrls.filter((url: string) => existingUrls.includes(url));
+    const existingUrls = new Set<string>(this.allSources.map((source: BookSource) => source.bookSourceUrl));
+    this.selectedSourceUrls = this.selectedSourceUrls.filter((url: string) => existingUrls.has(url));
   }
 
   getSelectedSources(): BookSource[] {
-    return this.allSources.filter((source: BookSource) => this.isSourceSelected(source.bookSourceUrl));
+    const selected = this.getSelectedSourceUrlLookup();
+    return this.allSources.filter((source: BookSource) => selected.has(source.bookSourceUrl));
   }
 
   getSelectedMutableSources(): BookSource[] {
@@ -4609,8 +4884,9 @@ struct BookSourcePage {
       promptAction.showToast({ message: '请先选择书源' });
       return;
     }
+    const selectedLookup = this.getSelectedSourceUrlLookup();
     const selectedSummaries = this.sources.filter((source: BookSource) =>
-      this.selectedSourceUrls.includes(source.bookSourceUrl));
+      selectedLookup.has(source.bookSourceUrl));
     if (selectedSummaries.length === 0) {
       promptAction.showToast({ message: '未找到可导出的书源' });
       return;

@@ -9,6 +9,102 @@ import { syncSystemBars } from '../utils/SystemBars';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 
+/**
+ * Restricted bridge used only by HTML passed to java.showBrowser(). Remote pages do not receive
+ * the login runtime object: only navigation, user feedback and same-origin cookie operations are
+ * exposed, so enabling this bridge cannot reach files, processes, reflection or arbitrary hosts.
+ */
+class BookSourceBrowserJavaBridge {
+  private readonly activeProvider: () => boolean;
+  private readonly currentUrlProvider: () => string;
+  private readonly navigate: (url: string, title: string) => void;
+
+  constructor(activeProvider: () => boolean, currentUrlProvider: () => string,
+    navigate: (url: string, title: string) => void) {
+    this.activeProvider = activeProvider;
+    this.currentUrlProvider = currentUrlProvider;
+    this.navigate = navigate;
+  }
+
+  toast(message: string): void {
+    this.showToast(String(message || ''));
+  }
+
+  longToast(message: string): void {
+    this.showToast(String(message || ''));
+  }
+
+  startBrowser(url: string, title: string): void {
+    this.openTarget(url, title);
+  }
+
+  startBrowserDp(url: string, title: string): void {
+    this.openTarget(url, title);
+  }
+
+  open(url: string): void {
+    this.openTarget(url, '');
+  }
+
+  openUrl(url: string): void {
+    this.openTarget(url, '');
+  }
+
+  getCookie(url: string): string {
+    if (!this.activeProvider()) return '';
+    const target = this.sameOriginTarget(url);
+    return target ? CookieStore.getCookie(target) : '';
+  }
+
+  setCookie(url: string, value: string): boolean {
+    if (!this.activeProvider()) return false;
+    const target = this.sameOriginTarget(url);
+    const cookie = String(value || '');
+    if (!target || !cookie || cookie.length > 16 * 1024) return false;
+    CookieStore.setCookies(target, cookie);
+    CookieStore.saveAsync();
+    return true;
+  }
+
+  removeCookie(url: string, name: string): boolean {
+    if (!this.activeProvider()) return false;
+    const target = this.sameOriginTarget(url);
+    if (!target) return false;
+    CookieStore.removeCookie(target, String(name || '') || undefined);
+    return true;
+  }
+
+  private openTarget(url: string, title: string): void {
+    if (!this.activeProvider()) return;
+    const target = String(url || '').trim();
+    if (!/^https?:\/\//i.test(target)) {
+      this.showToast('网页请求打开的地址不受支持');
+      return;
+    }
+    this.navigate(target, String(title || ''));
+  }
+
+  private sameOriginTarget(url: string): string {
+    const current = this.currentUrlProvider() || '';
+    const target = String(url || '').trim() || current;
+    const currentOrigin = this.originOf(current);
+    const targetOrigin = this.originOf(target);
+    return currentOrigin && currentOrigin === targetOrigin ? target : '';
+  }
+
+  private originOf(url: string): string {
+    const match = String(url || '').match(/^(https?:\/\/[^\/:?#]+(?::\d+)?)/i);
+    return match ? String(match[1] || '').toLowerCase() : '';
+  }
+
+  private showToast(message: string): void {
+    if (!this.activeProvider() || !message) return;
+    try {
+      promptAction.showToast({ message: message.substring(0, 4000) });
+    } catch (_) {}
+  }
+}
+
 @Entry
 @Component
 struct VerifyWebPage {
@@ -23,6 +119,18 @@ struct VerifyWebPage {
   @State progress: number = 0;
   @State requireLoginCookie: boolean = false;
   private controller: webview.WebviewController = new webview.WebviewController();
+  private browserAwaitToken: string = '';
+  private browserAwaitCompleted: boolean = false;
+  private browserPayloadToken: string = '';
+  private browserPayloadHtml: string = '';
+  private browserPayloadBaseUrl: string = '';
+  private browserPayloadInjectJs: string = '';
+  private browserPayloadLoaded: boolean = false;
+  private browserPayloadInjected: boolean = false;
+  private readonly browserJavaBridge: BookSourceBrowserJavaBridge = new BookSourceBrowserJavaBridge(
+    (): boolean => !!this.browserPayloadToken,
+    (): string => this.currentUrl || this.browserPayloadBaseUrl || this.url,
+    (url: string, title: string): void => this.openBridgeUrl(url, title));
   private readonly mobileUserAgent: string =
     'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
   private readonly guangYuHosts: string[] = [
@@ -41,6 +149,22 @@ struct VerifyWebPage {
     const initialUrl = params?.['url'] || AppStorage.get<string>('pendingVerificationUrl') || 'https://www.qidian.com';
     this.title = params?.['title'] || AppStorage.get<string>('pendingVerificationTitle') || '网页验证';
     this.requireLoginCookie = params?.['requireLoginCookie'] === 'true';
+    this.browserAwaitToken = params?.['bookSourceBrowserAwaitToken'] || '';
+    this.browserPayloadToken = params?.['bookSourceBrowserPayloadToken'] || '';
+    if (this.browserPayloadToken && this.browserPayloadToken ===
+      (AppStorage.get<string>('bookSourceBrowserPayloadToken') || '')) {
+      this.browserPayloadHtml = AppStorage.get<string>('bookSourceBrowserPayloadHtml') || '';
+      this.browserPayloadBaseUrl = AppStorage.get<string>('bookSourceBrowserPayloadBaseUrl') || initialUrl;
+      this.browserPayloadInjectJs = AppStorage.get<string>('bookSourceBrowserPayloadInjectJs') || '';
+      this.url = 'about:blank';
+      this.currentUrl = this.browserPayloadBaseUrl || initialUrl;
+      return;
+    }
+    if (this.browserAwaitToken) {
+      this.url = initialUrl;
+      this.currentUrl = initialUrl;
+      return;
+    }
     if (VerificationSupport.isBookSourceLoginUrl(initialUrl)) {
       this.url = 'about:blank';
       this.currentUrl = '';
@@ -55,6 +179,18 @@ struct VerifyWebPage {
 
   onPageShow(): void {
     this.syncBars();
+  }
+
+  onBackPress(): boolean {
+    if (!this.browserAwaitToken) return false;
+    this.finishBrowserAwait();
+    return true;
+  }
+
+  aboutToDisappear(): void {
+    if (this.browserAwaitToken && !this.browserAwaitCompleted) {
+      this.publishBrowserAwaitResult('', '网页操作已取消');
+    }
   }
 
   build() {
@@ -111,6 +247,18 @@ struct VerifyWebPage {
         .imageAccess(true)
         .mixedMode(MixedMode.All)
         .userAgent(this.mobileUserAgent)
+        .javaScriptProxy({
+          object: this.browserJavaBridge,
+          name: 'java',
+          methodList: [
+            'toast', 'longToast', 'startBrowser', 'startBrowserDp', 'open', 'openUrl',
+            'getCookie', 'setCookie', 'removeCookie'
+          ],
+          controller: this.controller
+        })
+        .onControllerAttached(() => {
+          this.loadBrowserPayload();
+        })
         .onPageBegin((event?: OnPageBeginEvent) => {
           if (event?.url) this.currentUrl = event.url;
         })
@@ -122,6 +270,7 @@ struct VerifyWebPage {
             this.syncGuangYuDocumentCookies(event.url);
             this.syncGuangYuDeviceCookie(event.url);
           }
+          this.injectBrowserPayloadScript();
         })
         .onProgressChange((event?: OnProgressChangeEvent) => {
           this.progress = event?.newProgress || 0;
@@ -135,6 +284,16 @@ struct VerifyWebPage {
   }
 
   async finishVerify(): Promise<void> {
+    if (this.browserAwaitToken) {
+      await this.finishBrowserAwait();
+      return;
+    }
+    if (this.browserPayloadToken) {
+      this.saveCookies(this.currentUrl || this.browserPayloadBaseUrl);
+      CookieStore.saveSync();
+      this.backSafely();
+      return;
+    }
     const verifyUrl = this.currentUrl || this.url;
     await this.syncDocumentCookiesAwait(verifyUrl);
     this.syncGuangYuDocumentCookies(verifyUrl);
@@ -161,6 +320,79 @@ struct VerifyWebPage {
     } else {
       this.showToastSafely('未检测到有效登录 Cookie，请正常登录后再点完成');
     }
+  }
+
+  loadBrowserPayload(): void {
+    if (this.browserPayloadLoaded || !this.browserPayloadHtml) return;
+    this.browserPayloadLoaded = true;
+    try {
+      const baseUrl = this.browserPayloadBaseUrl && /^https?:\/\//i.test(this.browserPayloadBaseUrl) ?
+        this.browserPayloadBaseUrl : undefined;
+      this.controller.loadData(this.browserPayloadHtml, 'text/html', 'UTF-8', baseUrl, baseUrl);
+    } catch (error) {
+      console.error('加载书源网页内容失败:', error);
+      this.showToastSafely('加载书源网页内容失败');
+    } finally {
+      AppStorage.setOrCreate('bookSourceBrowserPayloadToken', '');
+      AppStorage.setOrCreate('bookSourceBrowserPayloadHtml', '');
+      AppStorage.setOrCreate('bookSourceBrowserPayloadBaseUrl', '');
+      AppStorage.setOrCreate('bookSourceBrowserPayloadInjectJs', '');
+    }
+  }
+
+  injectBrowserPayloadScript(): void {
+    if (this.browserPayloadInjected || !this.browserPayloadInjectJs) return;
+    this.browserPayloadInjected = true;
+    this.controller.runJavaScript(this.browserPayloadInjectJs).catch((error: Object): void => {
+      console.warn('注入书源网页脚本失败:', error);
+    });
+  }
+
+  openBridgeUrl(url: string, title: string): void {
+    if (title) this.title = title;
+    this.currentUrl = url;
+    try {
+      this.controller.loadUrl(url);
+    } catch (error) {
+      console.warn('书源网页桥接打开地址失败:', error);
+      this.showToastSafely('打开网页失败');
+    }
+  }
+
+  async finishBrowserAwait(): Promise<void> {
+    if (!this.browserAwaitToken || this.browserAwaitCompleted) return;
+    this.browserAwaitCompleted = true;
+    try {
+      const raw = await this.controller.runJavaScript(
+        `document.documentElement ? document.documentElement.outerHTML : (document.body ? document.body.innerHTML : '')`);
+      const body = this.normalizeBrowserScriptResult(raw);
+      if (body.length > 2 * 1024 * 1024) {
+        this.publishBrowserAwaitResult('', '网页返回内容超过2MB');
+      } else {
+        this.publishBrowserAwaitResult(body, '');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.publishBrowserAwaitResult('', `读取网页结果失败：${message}`);
+    }
+    this.backSafely();
+  }
+
+  normalizeBrowserScriptResult(raw: string): string {
+    const value = String(raw || '');
+    if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+      try {
+        return String(JSON.parse(value));
+      } catch (_) {}
+    }
+    return value;
+  }
+
+  publishBrowserAwaitResult(body: string, error: string): void {
+    if (!this.browserAwaitToken) return;
+    AppStorage.setOrCreate('bookSourceBrowserAwaitResultBody', body || '');
+    AppStorage.setOrCreate('bookSourceBrowserAwaitResultError', error || '');
+    AppStorage.setOrCreate('bookSourceBrowserAwaitResultToken', this.browserAwaitToken);
   }
 
   hasEffectiveBookSourceLoginCookie(): boolean {

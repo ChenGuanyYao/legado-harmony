@@ -4,12 +4,20 @@ import { util } from '@kit.ArkTS';
 export class LoginRuntimeStep {
   pendingAjax: string = '';
   pendingCookie: string = '';
+  pendingCrypto: string = '';
+  pendingBrowserAwait: string = '';
+  pendingBrowserTitle: string = '';
   cookieOperations: string = '[]';
   variable: string = '';
   loginHeader: string = '';
   loginInfo: string = '{}';
   requestedUrl: string = '';
   requestedTitle: string = '';
+  requestedHtml: string = '';
+  requestedInjectJs: string = '';
+  requestedSearchKeyword: string = '';
+  refreshExploreRequested: boolean = false;
+  refreshLoginRequested: boolean = false;
   toastMessage: string = '';
   errorMessage: string = '';
 }
@@ -33,7 +41,7 @@ export class BookSourceLoginWebRuntime {
   private static readonly RUNTIME_STATE_KEY: string = '__legadoHarmonyRuntime';
 
   static buildScript(source: BookSource, action: string, responses: Record<string, string>,
-    cookies: Record<string, string> = {}): string {
+    cookies: Record<string, string> = {}, fixedNow: number = Date.now(), randomSeed: number = 1): string {
     const state = JSON.stringify({
       variable: source.variable || '',
       loginHeader: source.loginHeader || '',
@@ -43,7 +51,10 @@ export class BookSourceLoginWebRuntime {
       cookies: cookies || {},
       sourceUrl: source.bookSourceUrl || '',
       sourceName: source.bookSourceName || '',
-      loginUi: source.loginUi || ''
+      sourceHeader: source.header || '',
+      loginUi: source.loginUi || '',
+      fixedNow: fixedNow,
+      randomSeed: randomSeed
     });
     const completeLibrary = `${source.jsLib || ''}\n${source.loginUrl || ''}`;
     const actionLibrary = this.shouldIsolateActionScript(completeLibrary) ?
@@ -59,7 +70,19 @@ export class BookSourceLoginWebRuntime {
     return `(function(){` +
       `function decodeUtf8(v){try{return decodeURIComponent(escape(atob(v)));}catch(e){return atob(v);}}` +
       `const S=JSON.parse(decodeUtf8('${stateBase64}'));` +
-      `let pending='',pendingCookie='',url='',title='',toast='',error='';` +
+      `let pending='',pendingCookie='',pendingCrypto='',pendingBrowser='',pendingBrowserTitle='';` +
+      `let url='',title='',html='',injectJs='',searchKeyword='',refreshExplore=false,refreshLogin=false,toast='',error='';` +
+      `const NativeDate=globalThis.Date;const FixedDate=function(){const a=Array.from(arguments);` +
+      `if(new.target)return Reflect.construct(NativeDate,a.length?a:[S.fixedNow]);` +
+      `return new NativeDate(S.fixedNow).toString();};FixedDate.now=function(){return S.fixedNow;};` +
+      `FixedDate.parse=NativeDate.parse;FixedDate.UTC=NativeDate.UTC;FixedDate.prototype=NativeDate.prototype;` +
+      `const Date=FixedDate;let randomState=(Number(S.randomSeed)||1)>>>0;` +
+      `const Math=Object.create(globalThis.Math);Math.random=function(){randomState=(randomState*1664525+1013904223)>>>0;` +
+      `return randomState/4294967296;};` +
+      `const previousNames=Array.isArray(globalThis.__legadoHarmonyExposedNames)?` +
+      `globalThis.__legadoHarmonyExposedNames:[];for(const oldName of previousNames){` +
+      `try{delete globalThis[oldName];}catch(e){globalThis[oldName]=undefined;}}` +
+      `globalThis.__legadoHarmonyExposedNames=[];` +
       `const runtime=S.runtime&&typeof S.runtime==='object'?S.runtime:{};` +
       `const vars=Object.assign({},runtime.java||{});` +
       `const cacheData=Object.assign({},runtime.cache||{});` +
@@ -68,22 +91,57 @@ export class BookSourceLoginWebRuntime {
       `Object.defineProperty(loginMap,'get',{enumerable:false,value:function(k){return this[k]||'';}});` +
       `Object.defineProperty(loginMap,'put',{enumerable:false,value:function(k,v){this[k]=v;return v;}});` +
       `const source={` +
-      `bookSourceUrl:S.sourceUrl,bookSourceName:S.sourceName,loginUi:S.loginUi,` +
-      `getKey:function(){return S.sourceUrl;},` +
+      `bookSourceUrl:S.sourceUrl,bookSourceName:S.sourceName,loginUi:S.loginUi,header:S.sourceHeader,` +
+      `getKey:function(){return S.sourceUrl;},getTag:function(){return S.sourceName;},` +
+      `getSource:function(){return this;},` +
       `getVariable:function(){return S.variable||'';},` +
       `setVariable:function(v){S.variable=String(v??'');return S.variable;},` +
       `getLoginHeader:function(){return S.loginHeader||'';},` +
       `putLoginHeader:function(v){S.loginHeader=String(v??'');return S.loginHeader;},` +
+      `removeLoginHeader:function(){S.loginHeader='';return '';},` +
+      `getHeaderMap:function(){try{return JSON.parse(S.sourceHeader||'{}');}catch(e){return {};}} ,` +
       `getLoginInfoMap:function(){return loginMap;},` +
       `getLoginInfo:function(k){return arguments.length?(k?loginMap[k]||'':''):JSON.stringify(loginMap);},` +
       `putLoginInfo:function(a,b){if(arguments.length>1){loginMap[a]=b;return b;}` +
       `let next=a;if(typeof next==='string'){try{next=JSON.parse(next);}catch(e){return a;}}` +
       `if(next&&typeof next==='object'&&!Array.isArray(next)){Object.keys(loginMap).forEach(function(k){delete loginMap[k];});` +
-      `Object.assign(loginMap,next);}return a;}` +
+      `Object.assign(loginMap,next);}return a;},` +
+      `removeLoginInfo:function(){Object.keys(loginMap).forEach(function(k){delete loginMap[k];});return '';}` +
       `};` +
-      `function b64e(v){try{return btoa(unescape(encodeURIComponent(String(v??''))));}catch(e){return String(v??'');}}` +
-      `function b64d(v){try{return decodeURIComponent(escape(atob(String(v??''))));}catch(e){return String(v??'');}}` +
-      `function open(u,t){url=String(u??'');title=String(t??'');return {body:function(){return '';}};}` +
+      `function byteArray(v){if(v instanceof Uint8Array)return Array.from(v);if(Array.isArray(v))return v.map(function(x){` +
+      `return Number(x)&255;});return Array.from(new TextEncoder().encode(String(v??'')));}` +
+      `function b64e(v){try{const bytes=byteArray(v);let binary='';for(const x of bytes)binary+=String.fromCharCode(x);` +
+      `return btoa(binary);}catch(e){return String(v??'');}}` +
+      `function b64bytes(v){try{const binary=atob(String(v??''));const bytes=[];for(let i=0;i<binary.length;i++)` +
+      `bytes.push(binary.charCodeAt(i)&255);return bytes;}catch(e){return [];}}` +
+      `function b64d(v){try{return new TextDecoder().decode(new Uint8Array(b64bytes(v)));}` +
+      `catch(e){return String(v??'');}}` +
+      `function b64ue(v){return b64e(v).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,'');}` +
+      `function b64ud(v){v=String(v??'').replace(/-/g,'+').replace(/_/g,'/');while(v.length%4)v+='=';return b64d(v);}` +
+      `function hexE(v){try{return Array.from(new TextEncoder().encode(String(v??''))).map(function(x){` +
+      `return x.toString(16).padStart(2,'0');}).join('');}catch(e){return '';}}` +
+      `function hexD(v){try{v=String(v??'').replace(/\\s+/g,'');const a=[];for(let i=0;i<v.length;i+=2)` +
+      `a.push(parseInt(v.substring(i,i+2),16));return new TextDecoder().decode(new Uint8Array(a));}catch(e){return '';}}` +
+      `function strBytes(v){try{return byteArray(v);}catch(e){return [];}}` +
+      `function bytesStr(v){try{return new TextDecoder().decode(new Uint8Array(Array.isArray(v)?v:[]));}` +
+      `catch(e){return String(v??'');}}` +
+      `function uuid(){return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){const r=Math.random()*16|0;` +
+      `return (c==='x'?r:(r&3|8)).toString(16);});}` +
+      `function htmlE(v){const d=document.createElement('div');d.textContent=String(v??'');return d.innerHTML;}` +
+      `function htmlD(v){const d=document.createElement('textarea');d.innerHTML=String(v??'');return d.value;}` +
+      `function open(u,t,wait){const target=String(u??'');const label=String(t??'');` +
+      `if(wait){const key='browser:'+target;if(Object.prototype.hasOwnProperty.call(S.responses,key)){` +
+      `const body=S.responses[key]??'';return {body:function(){return body;}};}if(!pendingBrowser){` +
+      `pendingBrowser=target;pendingBrowserTitle=label;}return {body:function(){return '';}};}` +
+      `url=target;title=label;return {body:function(){return '';}};}` +
+      `function cryptoOp(transformation,key,iv,method,data){const request=JSON.stringify({` +
+      `transformation:String(transformation??''),key:Array.isArray(key)?key:String(key??''),` +
+      `iv:Array.isArray(iv)?iv:String(iv??''),method:method,data:Array.isArray(data)?data:String(data??'')});` +
+      `const responseKey='crypto:'+request;if(Object.prototype.hasOwnProperty.call(S.responses,responseKey)){` +
+      `let response;try{response=JSON.parse(S.responses[responseKey]);}catch(e){throw new Error('加密桥接返回异常');}` +
+      `if(!response||response.success!==true)throw new Error(response&&response.error?response.error:'加密桥接失败');` +
+      `return response.value;}if(!pendingCrypto)pendingCrypto=request;return method.indexOf('Str')>=0||` +
+      `method.indexOf('Base64')>=0||method.indexOf('Hex')>=0?'':[];}` +
       `const cache={get:function(k){return Object.prototype.hasOwnProperty.call(cacheData,k)?cacheData[k]:null;},` +
       `getFromMemory:function(k){return Object.prototype.hasOwnProperty.call(cacheData,k)?cacheData[k]:null;},` +
       `put:function(k,v){cacheData[k]=v;return v;},putMemory:function(k,v){cacheData[k]=v;return v;},` +
@@ -91,7 +149,7 @@ export class BookSourceLoginWebRuntime {
       `const cookie={getCookie:function(k){k=String(k??'');` +
       `if(Object.prototype.hasOwnProperty.call(cookieData,k))return cookieData[k]??'';` +
       `if(!pendingCookie)pendingCookie=k;return '';},getKey:function(k,n){` +
-      `const value=this.getCookie(k);const m=String(value??'').match(new RegExp('(?:^|;\\s*)'+n+'=([^;]*)'));` +
+      `const value=this.getCookie(k);const m=String(value??'').match(new RegExp('(?:^|;\\\\s*)'+n+'=([^;]*)'));` +
       `return m?m[1]:'';},` +
       `setCookie:function(k,v){k=String(k??'');v=String(v??'');cookieData[k]=v;` +
       `cookieOps.push({operation:'set',url:k,value:v,name:''});return v;},` +
@@ -105,18 +163,34 @@ export class BookSourceLoginWebRuntime {
       `put:function(k,v){vars[k]=v;return v;},get:function(k){` +
       `return Object.prototype.hasOwnProperty.call(vars,k)?vars[k]:null;},` +
       `toast:function(v){toast=String(v??'');return toast;},longToast:function(v){toast=String(v??'');return toast;},` +
-      `startBrowser:function(u,t){return open(u,t);},startBrowserAwait:function(u,t){return open(u,t);},` +
-      `startBrowserDp:function(u,t){return open(u,t);},showBrowser:function(u,c,j,o){return open(u,'');},` +
-      `showReadingBrowser:function(u,t){return open(u,t);},open:function(u,t){return open(u,t);},` +
+      `startBrowser:function(u,t){return open(u,t,false);},startBrowserAwait:function(u,t){return open(u,t,true);},` +
+      `startBrowserDp:function(u,t){return open(u,t,false);},showBrowser:function(u,c,j,o){` +
+      `url=String(u??'');title='';html=c===undefined||c===null?'':String(c);injectJs=String(j??'');` +
+      `return {body:function(){return html;}};},` +
+      `showReadingBrowser:function(u,t){return open(u,t,false);},open:function(u,t){return open(u,t,false);},` +
+      `openUrl:function(u){return open(u,'',false);},` +
       `base64Encode:b64e,base64EncodeToString:b64e,base64Decode:b64d,base64DecodeToString:b64d,` +
-      `base64DecodeToByteArray:b64d,androidId:function(){return 'harmony';},deviceID:function(){return 'harmony';},` +
-      `getCookie:function(k){return cookie.getCookie(k);},lang:function(){return 'zh';},reLoginView:function(){return '';},` +
-      `qread:function(){return '0';},log:function(){return '';},refreshExplore:function(){return '';},` +
-      `searchBook:function(){return '';},getWebViewUA:function(){return navigator.userAgent;},` +
+      `base64DecodeToByteArray:b64bytes,base64UrlEncode:b64ue,base64UrlDecode:b64ud,` +
+      `hexEncodeToString:hexE,hexDecodeToString:hexD,strToBytes:strBytes,bytesToStr:bytesStr,` +
+      `urlEncode:function(v){return encodeURIComponent(String(v??''));},` +
+      `urlDecode:function(v){try{return decodeURIComponent(String(v??''));}catch(e){return String(v??'');}},` +
+      `encodeURI:function(v){return encodeURIComponent(String(v??''));},htmlEncode:htmlE,htmlDecode:htmlD,` +
+      `androidId:function(){return 'harmony';},deviceID:function(){return 'harmony';},randomUUID:uuid,` +
+      `getCookie:function(k){return cookie.getCookie(k);},lang:function(){return 'zh';},` +
+      `reLoginView:function(){refreshLogin=true;return true;},` +
+      `qread:function(){return '0';},log:function(){return '';},logType:function(){return '';},` +
+      `refreshExplore:function(){refreshExplore=true;return true;},` +
+      `searchBook:function(k){searchKeyword=String(k??'');return searchKeyword;},getWebViewUA:function(){return navigator.userAgent;},` +
       `timeFormat:function(v){try{return new Date(v).toISOString().replace('T',' ').replace('Z','');}` +
-      `catch(e){return String(v??'');}},createSymmetricCrypto:function(){return {` +
-      `encrypt:function(v){return String(v??'');},encryptStr:function(v){return String(v??'');},` +
-      `decrypt:function(v){return String(v??'');},decryptStr:function(v){return String(v??'');}};}` +
+      `catch(e){return String(v??'');}},timeFormatUTC:function(v){try{return new Date(v).toISOString();}` +
+      `catch(e){return String(v??'');}},evalJS:function(v){return (0,eval)(String(v??''));},` +
+      `createSymmetricCrypto:function(transformation,key,iv){return {` +
+      `encrypt:function(v){return cryptoOp(transformation,key,iv,'encrypt',v);},` +
+      `encryptStr:function(v){return cryptoOp(transformation,key,iv,'encryptStr',v);},` +
+      `encryptBase64:function(v){return cryptoOp(transformation,key,iv,'encryptBase64',v);},` +
+      `encryptHex:function(v){return cryptoOp(transformation,key,iv,'encryptHex',v);},` +
+      `decrypt:function(v){return cryptoOp(transformation,key,iv,'decrypt',v);},` +
+      `decryptStr:function(v){return cryptoOp(transformation,key,iv,'decryptStr',v);}};}` +
       `};` +
       `const TimeoutCancellationException=function(){};` +
       `const Packages={io:{legato:{kazusa:{utils:{TimeoutCancellationException:TimeoutCancellationException}}}},` +
@@ -130,8 +204,11 @@ export class BookSourceLoginWebRuntime {
       `const cleanInfo={};Object.keys(loginMap).forEach(function(k){cleanInfo[k]=String(loginMap[k]??'');});` +
       `cleanInfo['${this.RUNTIME_STATE_KEY}']=JSON.stringify({java:vars,cache:cacheData});` +
       `return encodeURIComponent(JSON.stringify({pendingAjax:pending,pendingCookie:pendingCookie,` +
+      `pendingCrypto:pendingCrypto,pendingBrowserAwait:pendingBrowser,pendingBrowserTitle:pendingBrowserTitle,` +
       `cookieOperations:JSON.stringify(cookieOps),variable:S.variable||'',` +
       `loginHeader:S.loginHeader||'',loginInfo:JSON.stringify(cleanInfo),requestedUrl:url,requestedTitle:title,` +
+      `requestedHtml:html,requestedInjectJs:injectJs,requestedSearchKeyword:searchKeyword,` +
+      `refreshExploreRequested:refreshExplore,refreshLoginRequested:refreshLogin,` +
       `toastMessage:toast,errorMessage:error}));})()`;
   }
 
@@ -429,12 +506,20 @@ export class BookSourceLoginWebRuntime {
       const result = new LoginRuntimeStep();
       result.pendingAjax = String(record['pendingAjax'] || '');
       result.pendingCookie = String(record['pendingCookie'] || '');
+      result.pendingCrypto = String(record['pendingCrypto'] || '');
+      result.pendingBrowserAwait = String(record['pendingBrowserAwait'] || '');
+      result.pendingBrowserTitle = String(record['pendingBrowserTitle'] || '');
       result.cookieOperations = String(record['cookieOperations'] || '[]');
       result.variable = String(record['variable'] || '');
       result.loginHeader = String(record['loginHeader'] || '');
       result.loginInfo = String(record['loginInfo'] || '{}');
       result.requestedUrl = String(record['requestedUrl'] || '');
       result.requestedTitle = String(record['requestedTitle'] || '');
+      result.requestedHtml = String(record['requestedHtml'] || '');
+      result.requestedInjectJs = String(record['requestedInjectJs'] || '');
+      result.requestedSearchKeyword = String(record['requestedSearchKeyword'] || '');
+      result.refreshExploreRequested = record['refreshExploreRequested'] === true;
+      result.refreshLoginRequested = record['refreshLoginRequested'] === true;
       result.toastMessage = String(record['toastMessage'] || '');
       result.errorMessage = String(record['errorMessage'] || '');
       return result;
@@ -517,7 +602,7 @@ export class BookSourceLoginWebRuntime {
       const name = match[1] || '';
       if (name && !names.includes(name)) names.push(name);
     }
-    let code = '';
+    let code = `globalThis.__legadoHarmonyExposedNames=${JSON.stringify(names)};`;
     for (const name of names) {
       code += `if(typeof ${name}==='function')globalThis[${JSON.stringify(name)}]=${name};`;
     }

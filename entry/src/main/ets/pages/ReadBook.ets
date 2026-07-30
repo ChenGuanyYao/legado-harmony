@@ -57,6 +57,10 @@ import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
 
 const TOC_WINDOW_PAGE_SIZE = 72;
 const FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS = 5000;
+const READER_CURRENT_PAGINATION_AHEAD_PAGE_COUNT = 8;
+const READER_ADJACENT_PAGINATION_PREVIEW_PAGE_COUNT = 4;
+const READER_PAGINATION_BATCH_DELAY_MS = 64;
+const READER_PAGINATION_BUSY_RETRY_DELAY_MS = 48;
 
 interface ReadTextSlice {
   text: string;
@@ -7401,16 +7405,16 @@ struct ReadBookPage {
 
       this.readerReplaceRulesEntryItem()
 
-      this.readerSelectSettingItem('翻页方式', '选择滚动、滑动、点击或上下连续滑动',
+      this.readerSelectSettingItem('翻页方式', '选择滚动、横向滑动或上下连续滑动',
         this.pageTurnModeOptions(), this.pageTurnModeSelectedIndex(), (index: number) => {
-          this.switchPageTurnMode(index);
+          this.switchPageTurnMode(this.pageTurnModeByIndex(index));
         })
 
       if (this.readerPageTurnMode === 2) {
         this.readerTapZoneSettingItem()
       }
 
-      this.readerSelectSettingItem('翻页动画', '选择滑动或点击翻页时使用的页面切换效果',
+      this.readerSelectSettingItem('翻页动画', '选择翻页时使用的页面切换效果',
         this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
           this.setReaderPageTurnAnimationType(index);
         })
@@ -7954,14 +7958,23 @@ struct ReadBookPage {
   pageTurnModeOptions(): SelectOption[] {
     return [
       { value: '滚动阅读' },
-      { value: '滑动翻页' },
-      { value: '点击翻页' },
+      { value: '横向滑动' },
       { value: '上下滑动' }
     ];
   }
 
+  pageTurnModeTypes(): number[] {
+    return [0, 2, 3];
+  }
+
+  pageTurnModeByIndex(index: number): number {
+    const types = this.pageTurnModeTypes();
+    return index >= 0 && index < types.length ? types[index] : 2;
+  }
+
   pageTurnModeSelectedIndex(): number {
-    return this.readerPageTurnMode >= 0 && this.readerPageTurnMode <= 3 ? this.readerPageTurnMode : 0;
+    const index = this.pageTurnModeTypes().indexOf(this.readerPageTurnMode);
+    return index >= 0 ? index : 1;
   }
 
   pageTurnAnimationOptions(): SelectOption[] {
@@ -11728,7 +11741,9 @@ struct ReadBookPage {
     const key = this.buildReaderPaginationCacheKey(chapterIndex, source);
     let result = this.readerPaginationCache.get(key);
     const desiredPageCount = chapterIndex === this.currentChapterIndex ?
-      Math.max(4, (this.pendingRestorePageIndex >= 0 ? this.pendingRestorePageIndex : this.currentPageIndex) + 4) : 1;
+      Math.max(READER_CURRENT_PAGINATION_AHEAD_PAGE_COUNT,
+        (this.pendingRestorePageIndex >= 0 ? this.pendingRestorePageIndex : this.currentPageIndex) +
+        READER_CURRENT_PAGINATION_AHEAD_PAGE_COUNT) : READER_ADJACENT_PAGINATION_PREVIEW_PAGE_COUNT;
     if (!result) {
       result = this.createIncrementalReaderPagination(source, chapterIndex, desiredPageCount);
       this.readerPaginationCache.set(key, result);
@@ -11808,22 +11823,36 @@ struct ReadBookPage {
         this.readerPaginationCache.get(key) !== result) {
         return;
       }
-      this.appendReaderPaginationBatch(result, chapterIndex, 2);
-      if (chapterIndex === this.currentChapterIndex && this.pagedContentText === result.source) {
-        this.contentPages = [...result.pages];
-        this.contentPageStarts = [...result.starts];
-        this.contentPageEnds = [...result.ends];
-        if (this.isReaderContinuousScrollSurfaceActive()) {
-          this.syncReaderComicPageDataSource();
-        }
+      if (this.isReaderPaginationInteractionBusy()) {
+        setTimeout(runBatch, READER_PAGINATION_BUSY_RETRY_DELAY_MS);
+        return;
       }
+      // Text measurement and paragraph layout both run on the UI thread. Keep each idle batch small and do not
+      // publish every intermediate array: repeated @State replacements rebuild the reader while a page is moving.
+      this.appendReaderPaginationBatch(result, chapterIndex, 1);
       if (result.complete) {
+        this.publishCurrentReaderPagination(result);
         this.persistReaderPagination(chapterIndex, key, result);
         return;
       }
-      setTimeout(runBatch, 32);
+      setTimeout(runBatch, READER_PAGINATION_BATCH_DELAY_MS);
     };
-    setTimeout(runBatch, 32);
+    setTimeout(runBatch, READER_PAGINATION_BATCH_DELAY_MS);
+  }
+
+  isReaderPaginationInteractionBusy(): boolean {
+    return this.isPageTurning || this.readerPanActive || this.readerTouchActive ||
+      this.pageSlideDirection !== 0 || this.pageTurnAnimating;
+  }
+
+  publishCurrentReaderPagination(result: ReaderPaginationResult): void {
+    if (this.currentChapterIndex < 0 || this.pagedContentText !== result.source) return;
+    this.contentPages = [...result.pages];
+    this.contentPageStarts = [...result.starts];
+    this.contentPageEnds = [...result.ends];
+    if (this.isReaderContinuousScrollSurfaceActive()) {
+      this.syncReaderComicPageDataSource();
+    }
   }
 
   persistReaderPagination(chapterIndex: number, key: string, result: ReaderPaginationResult): void {
@@ -11925,9 +11954,11 @@ struct ReadBookPage {
   applyReaderPaginationResult(result: ReaderPaginationResult, fallbackContent: string): void {
     const pages: string[] = result.pages.length > 0 ? result.pages : [fallbackContent];
     this.pagedContentText = result.source;
-    this.contentPages = pages;
-    this.contentPageStarts = result.starts.length > 0 ? result.starts : [0];
-    this.contentPageEnds = result.ends.length > 0 ? result.ends : [this.pagedContentText.length];
+    // Render from a snapshot. Incremental pagination continues in its private cache and is published once complete,
+    // so background layout cannot mutate or replace the visible page collection every few milliseconds.
+    this.contentPages = [...pages];
+    this.contentPageStarts = result.starts.length > 0 ? [...result.starts] : [0];
+    this.contentPageEnds = result.ends.length > 0 ? [...result.ends] : [this.pagedContentText.length];
     this.restorePendingPageIndex();
     if (this.currentPageIndex >= pages.length) {
       this.currentPageIndex = Math.max(0, pages.length - 1);
@@ -12010,15 +12041,13 @@ struct ReadBookPage {
     if (!this.pagedContentText) return;
     const key = this.buildReaderPaginationCacheKey(this.currentChapterIndex, this.pagedContentText);
     const result = this.readerPaginationCache.get(key);
-    if (!result || result.complete || result.pages.length >= requiredPageCount) return;
-    this.appendReaderPaginationBatch(result, this.currentChapterIndex,
-      Math.max(1, requiredPageCount - result.pages.length));
-    this.contentPages = [...result.pages];
-    this.contentPageStarts = [...result.starts];
-    this.contentPageEnds = [...result.ends];
-    if (this.isReaderContinuousScrollSurfaceActive()) {
-      this.syncReaderComicPageDataSource();
+    if (!result) return;
+    if (!result.complete && result.pages.length < requiredPageCount) {
+      // Normally the idle worker stays well ahead. This is only a boundary fallback for exceptionally fast input.
+      this.appendReaderPaginationBatch(result, this.currentChapterIndex,
+        Math.max(1, requiredPageCount - result.pages.length));
     }
+    if (result.pages.length > this.contentPages.length) this.publishCurrentReaderPagination(result);
     if (result.complete) this.persistReaderPagination(this.currentChapterIndex, key, result);
   }
 

@@ -19,7 +19,7 @@ export class ReaderSettings {
   darkCustomThemeBackgroundColor: string = ReaderThemeHelper.DARK_CUSTOM_BACKGROUND_COLOR;
   darkCustomThemeTextColor: string = ReaderThemeHelper.DARK_CUSTOM_TEXT_COLOR;
   customThemesRaw: string = '';
-  pageTurnMode: number = 1;
+  pageTurnMode: number = 2;
   pageTurnAnimationType: number = 1;
   landscapeDoublePage: boolean = false;
   tapZoneActions: string = '3,3,3,3,1,2,2,2,2';
@@ -214,7 +214,7 @@ export class ReaderSettingsStore {
     settings.pageTurnMode = await ReaderSettingsStore.getNumber(
       store,
       ReaderSettingsStore.KEY_PAGE_TURN_MODE,
-      1,
+      2,
       'pageTurnMode'
     );
     const legacyPageTurnAnimation = await ReaderSettingsStore.getBoolean(
@@ -969,7 +969,7 @@ export class ReaderSettingsStore {
 
   private static normalizePageTurnMode(mode: number): number {
     const value = Math.round(mode);
-    return value >= 0 && value <= 3 ? value : 1;
+    return value === 0 || value === 2 || value === 3 ? value : 2;
   }
 
   private static normalizePageTurnAnimationType(type: number): number {
@@ -1135,7 +1135,7 @@ export class ReaderSettingsStore {
     );
     settings.customThemesRaw = AppStorage.get<string>(ReaderSettingsStore.KEY_CUSTOM_THEMES_RAW) || '';
     settings.pageTurnMode = ReaderSettingsStore.normalizePageTurnMode(
-      AppStorage.get<number>(ReaderSettingsStore.KEY_PAGE_TURN_MODE) ?? 1
+      AppStorage.get<number>(ReaderSettingsStore.KEY_PAGE_TURN_MODE) ?? 2
     );
     const legacyPageTurnAnimation = AppStorage.get<boolean>(ReaderSettingsStore.KEY_PAGE_TURN_ANIMATION) ?? true;
     const storagePageTurnAnimationType = ReaderSettingsStore.normalizePageTurnAnimationType(

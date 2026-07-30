@@ -7,6 +7,14 @@ export class ScriptCompatibility {
   static normalize(code: string): string {
     return (code || '')
       .replace(/\bthis\.source\b/g, 'source')
+      // Some aggregated sources probe this Legado fork class only to select a compatible branch.
+      // Harmony uses the same "modified runtime" branch, so a standard Error constructor is a
+      // safe equivalent and does not expose arbitrary Java package access.
+      .replace(/\bnew\s+Packages\.io\.legato\.kazusa\.utils\.TimeoutCancellationException\s*\([^)]*\)/g,
+        'true')
+      // Sleeping the script thread is only used as a short UI/network delay. The Harmony request
+      // pipeline is already asynchronous; retaining a blocking sleep would add no semantics.
+      .replace(/\b(?:Packages\.)?java\.lang\.Thread\.sleep\s*\([^)]*\)/g, "''")
       .replace(/\bPackages\.(?=(?:android\.util\.Base64|java\.(?:net\.(?:URLDecoder|URLEncoder)|lang\.(?:Integer|Long|String|System)|util\.(?:Base64|UUID))))/g, '')
       .replace(/\b(?:android\.util\.Base64|java\.util\.Base64)\.encodeToString\s*\(/g, 'java.base64EncodeToString(')
       .replace(/\bandroid\.util\.Base64\.encode\s*\(/g, 'java.base64Encode(')

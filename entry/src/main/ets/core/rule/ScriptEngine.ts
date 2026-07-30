@@ -125,7 +125,9 @@ class ArkTsJsRunner {
   }
 
   private requiresHostFallback(code: string): boolean {
-    const jsLib = this.env.getJsLib();
+    // Apply the same allow-listed normalization to the library and the active rule. Otherwise a
+    // harmless compatibility probe removed from `code` can still force fallback through raw jsLib.
+    const jsLib = ScriptCompatibility.normalize(this.env.getJsLib());
     return /\bjava\.(?:ajax|ajaxAll|post|connect)|\b(?:JavaImporter|Packages|Cipher|SecretKeySpec|IvParameterSpec|MessageDigest)\b/.test(code) ||
       /\b(?:JavaImporter|Packages|Cipher|SecretKeySpec|IvParameterSpec|MessageDigest|android\.util\.Base64)\b/.test(jsLib);
   }

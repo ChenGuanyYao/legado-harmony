@@ -65,6 +65,18 @@ export class ExploreResultCache {
     await ExploreResultCache.savePayload(context, payload);
   }
 
+  static async clearSource(context: Context, sourceUrl: string): Promise<void> {
+    const normalizedSource = (sourceUrl || '').trim();
+    if (!normalizedSource) return;
+    const payload = await ExploreResultCache.loadPayload(context);
+    const prefix = `${normalizedSource}\n`;
+    const remaining = payload.entries.filter((item: ExploreCacheEntry): boolean =>
+      !item.key.startsWith(prefix));
+    if (remaining.length === payload.entries.length) return;
+    payload.entries = remaining;
+    await ExploreResultCache.savePayload(context, payload);
+  }
+
   private static async loadPayload(context: Context): Promise<ExploreCachePayload> {
     const store = await preferences.getPreferences(context, ExploreResultCache.STORE_NAME);
     const value = await store.get(ExploreResultCache.CACHE_KEY, '');

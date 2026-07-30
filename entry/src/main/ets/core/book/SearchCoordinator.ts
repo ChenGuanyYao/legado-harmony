@@ -41,7 +41,9 @@ const MAX_VALIDATION_RESPONSE_BYTES = 1024 * 1024;
 const MAX_RESULTS_PER_SOURCE = 50;
 const MAX_TOTAL_SEARCH_RESULTS = 1000;
 const MAX_VALIDATION_RULE_CHARS = 32 * 1024;
-const MAX_VALIDATION_CONFIG_CHARS = 128 * 1024;
+// Keep preflight validation aligned with ScriptEngine's executable script ceiling. Aggregated
+// sources commonly share a 100-300 KiB jsLib even when each search rule itself remains small.
+const MAX_VALIDATION_CONFIG_CHARS = 512 * 1024;
 const ENABLE_SEARCH_DEBUG_LOG = false;
 
 export interface SearchOptions {
