@@ -22,6 +22,7 @@ import { BookDisplayHelper } from '../utils/BookDisplayHelper';
 import { BookCoverCache } from '../utils/BookCoverCache';
 import { CoverGallerySettings } from '../utils/CoverGallerySettings';
 import { BookshelfDisplaySettingsStore } from '../utils/BookshelfDisplaySettingsStore';
+import { BookshelfStateStore } from '../utils/BookshelfStateStore';
 import { SearchBookShelfHelper } from '../utils/SearchBookShelfHelper';
 import { SearchExplorePendingBook } from '../utils/SearchExplorePendingBook';
 import { BookshelfSortHelper } from '../utils/BookshelfSortHelper';
@@ -33,6 +34,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { LocalBookService } from '../core/book/LocalBookService';
 import { CloudSyncSettingsStore } from '../account/CloudSyncSettingsStore';
 import { CloudSyncCoordinator } from '../account/CloudSyncCoordinator';
+import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 
 const SHELF_FULL_TEXT_CACHE_CANCEL_EVENT: string = 'com.legado.harmony.action.SHELF_FULL_TEXT_CACHE_CANCEL';
 const SHELF_FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS: number = 5000;
@@ -97,6 +99,28 @@ struct Index {
   cloudSyncApplicationPreferenceRevision: number = 0;
   @StorageLink('cloudSyncBookSourceChangeRevision') @Watch('onCloudSyncDataChanged')
   cloudSyncBookSourceRevision: number = 0;
+  @StorageLink('globalTtsActive') @Watch('onGlobalTtsActiveChanged') globalTtsActive: boolean = false;
+  @StorageLink('globalTtsPaused') globalTtsPaused: boolean = false;
+  @StorageLink('globalTtsBookName') globalTtsBookName: string = '';
+  @StorageLink('globalTtsChapterTitle') globalTtsChapterTitle: string = '';
+  @StorageLink('globalTtsCover') globalTtsCover: ResourceStr = '';
+  @StorageLink('globalTtsCoverFrame') globalTtsCoverFrame: ResourceStr = '';
+  @StorageLink('globalTtsContent') globalTtsContent: string = '';
+  @StorageLink('globalTtsChapterProgress') globalTtsChapterProgress: string = '';
+  @StorageLink('globalTtsSpeed') globalTtsSpeed: number = 1;
+  @StorageLink('globalTtsTimerMinutes') globalTtsTimerMinutes: number = 0;
+  @StorageLink('globalTtsTimerRemainingSeconds') globalTtsTimerRemainingSeconds: number = 0;
+  @StorageLink('globalTtsCanPrevious') globalTtsCanPrevious: boolean = false;
+  @StorageLink('globalTtsCanNext') globalTtsCanNext: boolean = false;
+  @StorageLink('globalTtsRevision') globalTtsRevision: number = 0;
+  @State showGlobalTtsPanel: boolean = false;
+  @State globalTtsOptionsPanel: number = 0;
+  @State globalTtsViewportWidth: number = 360;
+  @State globalTtsViewportHeight: number = 720;
+  @State globalTtsOffsetX: number = 0;
+  @State globalTtsOffsetY: number = 0;
+  private globalTtsDragOriginX: number = 0;
+  private globalTtsDragOriginY: number = 0;
 
   aboutToAppear() {
     this.shortcutRoutingActive = true;
@@ -160,7 +184,18 @@ struct Index {
     }, 15 * 1000);
   }
 
+  onGlobalTtsActiveChanged(): void {
+    if (!this.globalTtsActive) {
+      this.showGlobalTtsPanel = false;
+      this.globalTtsOptionsPanel = 0;
+    }
+  }
+
   onBackPress(): boolean {
+    if (this.showGlobalTtsPanel) {
+      this.closeGlobalTtsPanel();
+      return true;
+    }
     if (this.currentIndex !== 0) {
       this.bookshelfMultiSelectActive = false;
       this.currentIndex = 0;
@@ -172,6 +207,42 @@ struct Index {
       return true;
     }
     return false;
+  }
+
+  openGlobalTtsPanel(): void {
+    this.globalTtsOptionsPanel = 0;
+    animateTo({ duration: 280, curve: Curve.Friction }, () => {
+      this.showGlobalTtsPanel = true;
+    });
+  }
+
+  closeGlobalTtsPanel(): void {
+    this.globalTtsOptionsPanel = 0;
+    animateTo({ duration: 190, curve: Curve.EaseIn }, () => {
+      this.showGlobalTtsPanel = false;
+    });
+  }
+
+  globalTtsCapsuleTransition(): TransitionEffect {
+    const appear = TransitionEffect.scale({ x: 0.84, y: 0.84, centerX: '50%', centerY: '50%' })
+      .combine(TransitionEffect.opacity(0))
+      .animation({ duration: 240, curve: Curve.Friction });
+    const disappear = TransitionEffect.scale({ x: 0.9, y: 0.9, centerX: '50%', centerY: '50%' })
+      .combine(TransitionEffect.opacity(0))
+      .animation({ duration: 170, curve: Curve.EaseIn });
+    return TransitionEffect.asymmetric(appear, disappear);
+  }
+
+  globalTtsPanelTransition(): TransitionEffect {
+    const appear = TransitionEffect.translate({ y: 52 })
+      .combine(TransitionEffect.scale({ x: 0.985, y: 0.985, centerX: '50%', centerY: '100%' }))
+      .combine(TransitionEffect.opacity(0))
+      .animation({ duration: 300, curve: Curve.Friction });
+    const disappear = TransitionEffect.translate({ y: 28 })
+      .combine(TransitionEffect.scale({ x: 0.99, y: 0.99, centerX: '50%', centerY: '100%' }))
+      .combine(TransitionEffect.opacity(0))
+      .animation({ duration: 190, curve: Curve.EaseIn });
+    return TransitionEffect.asymmetric(appear, disappear);
   }
 
   async openPendingShortcut(): Promise<void> {
@@ -186,11 +257,329 @@ struct Index {
   }
 
   build() {
-    if (this.supportsImmersiveTabs()) {
-      this.immersiveTabs()
-    } else {
-      this.compatTabs()
+    Stack() {
+      if (this.supportsImmersiveTabs()) {
+        this.immersiveTabs()
+      } else {
+        this.compatTabs()
+      }
+      if (this.globalTtsActive && !this.showGlobalTtsPanel) {
+        this.globalTtsMiniPlayer()
+      }
+      if (this.globalTtsActive && this.showGlobalTtsPanel) {
+        this.globalTtsPlayerOverlay()
+      }
     }
+    .width('100%')
+    .height('100%')
+    .onAreaChange((_oldValue: Area, newValue: Area) => {
+      const width = typeof newValue.width === 'number' ? newValue.width : Number.parseFloat(`${newValue.width}`);
+      const height = typeof newValue.height === 'number' ? newValue.height : Number.parseFloat(`${newValue.height}`);
+      if (Number.isFinite(width) && width > 0) this.globalTtsViewportWidth = width;
+      if (Number.isFinite(height) && height > 0) this.globalTtsViewportHeight = height;
+    })
+  }
+
+  @Builder
+  globalTtsMiniPlayer() {
+    Row({ space: 7 }) {
+      Row({ space: 7 }) {
+        Stack({ alignContent: Alignment.Center }) {
+          Circle().width(30).height(30).fill(this.tabBarActiveColor())
+          SymbolGlyph($r('sys.symbol.speaker_wave_3'))
+            .fontSize(15)
+            .fontColor(['#FFFFFF'])
+        }
+        Column({ space: 1 }) {
+          Text(this.globalTtsPaused ? '已暂停' : '朗读中')
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
+          Text(this.globalTtsChapterProgress || '后台朗读')
+            .fontSize(9)
+            .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
+        }
+        .alignItems(HorizontalAlign.Start)
+      }
+      .onClick(() => this.openGlobalTtsPanel())
+      SymbolGlyph(this.globalTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
+        .id(`global_tts_capsule_playback_${this.globalTtsRevision}_${this.globalTtsPaused}`)
+        .fontSize(17)
+        .fontColor([ThemeRuntime.primaryTextColor(this.appDarkMode)])
+        .width(28)
+        .height(34)
+        .onClick(() => ReaderTtsFloatingSession.toggle())
+      SymbolGlyph($r('sys.symbol.xmark'))
+        .fontSize(14)
+        .fontColor([ThemeRuntime.subTextColor(this.appDarkMode)])
+        .width(24)
+        .height(34)
+        .onClick(() => {
+          this.closeGlobalTtsPanel();
+          ReaderTtsFloatingSession.stop();
+        })
+    }
+    .width(154)
+    .height(46)
+    .padding({ left: 8, right: 5 })
+    .borderRadius(23)
+    .backgroundColor(ThemeRuntime.cardColor(this.appDarkMode))
+    .border({ width: 0.5, color: this.appDarkMode ? '#30FFFFFF' : '#18000000' })
+    .shadow({ radius: 18, color: this.appDarkMode ? '#50000000' : '#26000000', offsetY: 6 })
+    .position({ x: 16, y: '100%' })
+    .translate({
+      x: this.clampGlobalTtsOffsetX(this.globalTtsOffsetX),
+      y: -(this.navBarHeight + 118) + this.clampGlobalTtsOffsetY(this.globalTtsOffsetY)
+    })
+    .parallelGesture(
+      PanGesture({ direction: PanDirection.All, distance: 4 })
+        .onActionStart(() => {
+          this.globalTtsDragOriginX = this.clampGlobalTtsOffsetX(this.globalTtsOffsetX);
+          this.globalTtsDragOriginY = this.clampGlobalTtsOffsetY(this.globalTtsOffsetY);
+        })
+        .onActionUpdate((event: GestureEvent) => {
+          this.globalTtsOffsetX = this.clampGlobalTtsOffsetX(this.globalTtsDragOriginX + event.offsetX);
+          this.globalTtsOffsetY = this.clampGlobalTtsOffsetY(this.globalTtsDragOriginY + event.offsetY);
+        })
+    )
+    .transition(this.globalTtsCapsuleTransition())
+  }
+
+  clampGlobalTtsOffsetX(offset: number): number {
+    const minLeft = 8;
+    const maxLeft = Math.max(minLeft, this.globalTtsViewportWidth - 154 - 8);
+    return Math.max(minLeft - 16, Math.min(offset, maxLeft - 16));
+  }
+
+  clampGlobalTtsOffsetY(offset: number): number {
+    const baseTop = this.globalTtsViewportHeight - this.navBarHeight - 118;
+    const minTop = this.statusBarHeight + 8;
+    const maxTop = Math.max(minTop, this.globalTtsViewportHeight - this.navBarHeight - 110);
+    return Math.max(minTop - baseTop, Math.min(offset, maxTop - baseTop));
+  }
+
+  @Builder
+  globalTtsPlayerOverlay() {
+    Column({ space: 14 }) {
+      Row({ space: 11 }) {
+        Stack({ alignContent: Alignment.Center }) {
+          Circle().width(38).height(38).fill(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
+          SymbolGlyph($r('sys.symbol.speaker_wave_3'))
+            .fontSize(19)
+            .fontColor([this.tabBarActiveColor()])
+        }
+        Column({ space: 3 }) {
+          Text(this.globalTtsBookName || '快速朗读')
+            .fontSize(18)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Text(this.globalTtsChapterTitle || this.globalTtsChapterProgress)
+            .fontSize(11)
+            .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+        SymbolGlyph($r('sys.symbol.chevron_down'))
+          .fontSize(20)
+          .fontColor([ThemeRuntime.primaryTextColor(this.appDarkMode)])
+          .width(38)
+          .height(38)
+          .onClick(() => this.closeGlobalTtsPanel())
+      }
+      .width('100%')
+
+      Column({ space: 8 }) {
+        this.globalTtsPanelCover()
+        Scroll() {
+          Text(this.globalTtsContent || '正在准备当前朗读内容…')
+            .fontSize(15)
+            .lineHeight(25)
+            .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
+            .width('100%')
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .padding({ left: 4, right: 4 })
+        .scrollBar(BarState.Auto)
+      }
+      .layoutWeight(1)
+      .width('100%')
+      .padding(14)
+      .borderRadius(14)
+      .backgroundColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
+
+      Row() {
+        this.globalTtsControl($r('sys.symbol.timer'), this.globalTtsTimerMinutes > 0 ?
+          `${Math.max(1, Math.ceil(this.globalTtsTimerRemainingSeconds / 60))}分` : '定时', true,
+          () => this.globalTtsOptionsPanel = this.globalTtsOptionsPanel === 1 ? 0 : 1)
+        this.globalTtsControl($r('sys.symbol.arrow_left'), '上一章', this.globalTtsCanPrevious,
+          () => ReaderTtsFloatingSession.previous())
+        this.globalTtsPlaybackControl()
+        this.globalTtsControl($r('sys.symbol.arrow_right'), '下一章', this.globalTtsCanNext,
+          () => ReaderTtsFloatingSession.next())
+        this.globalTtsControl($r('sys.symbol.hourglass'), `${this.globalTtsSpeed.toFixed(1)}x`, true,
+          () => this.globalTtsOptionsPanel = this.globalTtsOptionsPanel === 2 ? 0 : 2)
+      }
+      .width('100%')
+
+      if (this.globalTtsOptionsPanel === 1) {
+        Row({ space: 6 }) {
+          this.globalTtsTimerChip(0, '关闭')
+          this.globalTtsTimerChip(15, '15分')
+          this.globalTtsTimerChip(30, '30分')
+          this.globalTtsTimerChip(60, '60分')
+          this.globalTtsTimerChip(90, '90分')
+          this.globalTtsTimerChip(120, '120分')
+        }
+        .width('100%')
+      } else if (this.globalTtsOptionsPanel === 2) {
+        Row({ space: 8 }) {
+          this.globalTtsSpeedChip(0.8)
+          this.globalTtsSpeedChip(1.0)
+          this.globalTtsSpeedChip(1.2)
+          this.globalTtsSpeedChip(1.5)
+          this.globalTtsSpeedChip(2.0)
+        }
+        .width('100%')
+      }
+
+      Button('停止朗读')
+        .width('100%')
+        .height(42)
+        .borderRadius(12)
+        .fontColor('#FFFFFF')
+        .backgroundColor('#D94841')
+        .onClick(() => {
+          this.closeGlobalTtsPanel();
+          ReaderTtsFloatingSession.stop();
+        })
+    }
+    .width('100%')
+    .height('100%')
+    .padding({ left: 18, right: 18, top: this.statusBarHeight + 16, bottom: this.navBarHeight + 16 })
+    .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+    .backdropBlur(ThemeRuntime.glassBlur('panel', 24))
+    .transition(this.globalTtsPanelTransition())
+  }
+
+  @Builder
+  globalTtsPlaybackControl() {
+    Column({ space: 6 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle()
+          .width(46)
+          .height(46)
+          .fill(this.tabBarActiveColor())
+        SymbolGlyph(this.globalTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
+          .id(`global_tts_panel_playback_${this.globalTtsRevision}_${this.globalTtsPaused}`)
+          .fontSize(23)
+          .fontColor(['#FFFFFF'])
+      }
+      Text(this.globalTtsPaused ? '播放' : '暂停')
+        .fontSize(10)
+        .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
+    }
+    .layoutWeight(1)
+    .height(68)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => ReaderTtsFloatingSession.toggle())
+  }
+
+  @Builder
+  globalTtsPanelCover() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.globalTtsCover) {
+        Image(this.globalTtsCover)
+          .width('100%')
+          .height('100%')
+          .objectFit(ImageFit.Contain)
+        if (this.globalTtsCoverFrame) {
+          Image(this.globalTtsCoverFrame)
+            .width('100%')
+            .height('100%')
+            .objectFit(ImageFit.Contain)
+        }
+      } else {
+        Column() {
+          Text(this.globalTtsBookName ? this.globalTtsBookName.substring(0, 1) : '书')
+            .fontSize(42)
+            .fontColor('#FFFFFF')
+        }
+        .width('58%')
+        .height('88%')
+        .constraintSize({ maxWidth: 260, maxHeight: 360 })
+        .borderRadius(10)
+        .backgroundColor(this.tabBarActiveColor())
+        .justifyContent(FlexAlign.Center)
+      }
+    }
+    .width('100%')
+    .height(Math.min(250, Math.max(130,
+      (this.globalTtsViewportHeight - this.statusBarHeight - this.navBarHeight) * 0.32)))
+    .padding(10)
+    .borderRadius(14)
+    .clip(true)
+  }
+
+  @Builder
+  globalTtsControl(icon: Resource, label: string, enabled: boolean, action: () => void,
+    primary: boolean = false) {
+    Column({ space: 6 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle()
+          .width(primary ? 46 : 38)
+          .height(primary ? 46 : 38)
+          .fill(primary ? this.tabBarActiveColor() : (this.appDarkMode ? '#24FFFFFF' : '#10000000'))
+        SymbolGlyph(icon)
+          .fontSize(primary ? 23 : 19)
+          .fontColor([enabled ? (primary ? '#FFFFFF' : ThemeRuntime.primaryTextColor(this.appDarkMode)) :
+            ThemeRuntime.subTextColor(this.appDarkMode)])
+      }
+      Text(label)
+        .fontSize(10)
+        .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
+    }
+    .layoutWeight(1)
+    .height(68)
+    .justifyContent(FlexAlign.Center)
+    .opacity(enabled ? 1 : 0.45)
+    .onClick(() => { if (enabled) action(); })
+  }
+
+  @Builder
+  globalTtsSpeedChip(value: number) {
+    Text(`${value.toFixed(1)}x`)
+      .fontSize(11)
+      .fontWeight(Math.abs(this.globalTtsSpeed - value) < 0.01 ? FontWeight.Bold : FontWeight.Regular)
+      .fontColor(Math.abs(this.globalTtsSpeed - value) < 0.01 ? '#FFFFFF' :
+        ThemeRuntime.primaryTextColor(this.appDarkMode))
+      .textAlign(TextAlign.Center)
+      .layoutWeight(1)
+      .height(30)
+      .borderRadius(15)
+      .backgroundColor(Math.abs(this.globalTtsSpeed - value) < 0.01 ? this.tabBarActiveColor() :
+        (this.appDarkMode ? '#20FFFFFF' : '#0D000000'))
+      .onClick(() => ReaderTtsFloatingSession.setSpeed(value))
+  }
+
+  @Builder
+  globalTtsTimerChip(minutes: number, label: string) {
+    Text(label)
+      .fontSize(11)
+      .fontWeight(this.globalTtsTimerMinutes === minutes ? FontWeight.Bold : FontWeight.Regular)
+      .fontColor(this.globalTtsTimerMinutes === minutes ? '#FFFFFF' :
+        ThemeRuntime.primaryTextColor(this.appDarkMode))
+      .textAlign(TextAlign.Center)
+      .layoutWeight(1)
+      .height(30)
+      .borderRadius(15)
+      .backgroundColor(this.globalTtsTimerMinutes === minutes ? this.tabBarActiveColor() :
+        (this.appDarkMode ? '#20FFFFFF' : '#0D000000'))
+      .onClick(() => ReaderTtsFloatingSession.setTimer(minutes))
   }
 
   supportsImmersiveTabs(): boolean {
@@ -557,7 +946,7 @@ struct BookshelfPage {
   @StorageLink('appCustomBaseThemeId') appCustomBaseThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
   @State books: Book[] = [];
   @State allBooks: Book[] = [];
-  @State shelfScope: string = 'network';
+  @State shelfScope: string = 'all';
   @State showShelfSortMenu: boolean = false;
   @State showShelfLayoutMenu: boolean = false;
   @State showShelfGroups: boolean = false;
@@ -685,6 +1074,7 @@ struct BookshelfPage {
   private openingBookOriginY: number = 0;
   private networkCoverCoordinator: SearchCoordinator | null = null;
   private networkCoverSearchToken: number = 0;
+  private activeShelfGroupRestored: boolean = false;
 
   aboutToAppear() {
     this.reloadDisplaySettings();
@@ -701,6 +1091,11 @@ struct BookshelfPage {
 
   onActiveShelfGroupChanged(): void {
     this.applyShelfScope();
+    if (this.activeShelfGroupRestored) {
+      BookshelfStateStore.saveActiveGroupId(getContext(this), this.activeShelfGroupId).catch((e: Error) => {
+        console.warn('保存书架分组状态失败:', e);
+      });
+    }
     if (!this.isTileLayout()) {
       return;
     }
@@ -762,6 +1157,14 @@ struct BookshelfPage {
       }
       this.allBooks = loadedBooks;
       this.shelfGroups = await db.getCustomBookGroups();
+      if (!this.activeShelfGroupRestored) {
+        try {
+          this.activeShelfGroupId = await BookshelfStateStore.loadActiveGroupId(getContext(this));
+        } catch (e) {
+          console.warn('恢复书架分组状态失败:', e);
+        }
+        this.activeShelfGroupRestored = true;
+      }
       if (this.activeShelfGroupId > 0 && !this.shelfGroups.some((group: BookGroup) => group.groupId === this.activeShelfGroupId)) {
         this.activeShelfGroupId = 0;
       }
@@ -1234,7 +1637,7 @@ struct BookshelfPage {
             Text('暂无书籍')
               .fontSize(16)
               .fontColor(this.subTextColor())
-            Text(this.shelfScope === 'local' ? '请在书架设置中添加本地书籍' : '搜索并加入喜欢的书籍吧')
+            Text(this.shelfScopeEmptyHint())
               .fontSize(14)
               .fontColor(this.subTextColor())
               .margin({ top: 8 })
@@ -3758,10 +4161,20 @@ struct BookshelfPage {
     }
   }
 
+  shelfScopeEmptyHint(): string {
+    if (this.shelfScope === 'local') {
+      return '请在书架设置中添加本地书籍';
+    }
+    if (this.shelfScope === 'network') {
+      return '搜索并加入喜欢的书籍吧';
+    }
+    return '搜索书籍或添加本地书籍吧';
+  }
+
   booksForShelfScope(scope: string): Book[] {
-    const local = scope === 'local';
     return this.allBooks.filter((book: Book) => {
-      const scopeMatches = local ? LocalBookService.isLocalBook(book) : !LocalBookService.isLocalBook(book);
+      const isLocal = LocalBookService.isLocalBook(book);
+      const scopeMatches = scope === 'all' || (scope === 'local' ? isLocal : !isLocal);
       const groupMatches = this.activeShelfGroupId === 0 ||
         (this.activeShelfGroupId === -1 ? book.group <= 0 : book.group === this.activeShelfGroupId);
       return scopeMatches && groupMatches;
@@ -3769,7 +4182,7 @@ struct BookshelfPage {
   }
 
   setShelfScope(scope: string): void {
-    const next = scope === 'local' ? 'local' : 'network';
+    const next = scope === 'local' ? 'local' : (scope === 'network' ? 'network' : 'all');
     if (this.shelfScope === next) return;
     this.shelfScope = next;
     this.showShelfSortMenu = false;
@@ -3783,11 +4196,13 @@ struct BookshelfPage {
       Math.abs(offsetX) < 56) {
       return;
     }
-    if (offsetX < 0 && this.shelfScope === 'network') {
-      this.animateShelfScopeSwitch('local', -1);
-    } else if (offsetX > 0 && this.shelfScope === 'local') {
-      this.animateShelfScopeSwitch('network', 1);
+    const scopes: string[] = ['all', 'network', 'local'];
+    const currentIndex = scopes.indexOf(this.shelfScope);
+    const nextIndex = offsetX < 0 ? currentIndex + 1 : currentIndex - 1;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= scopes.length) {
+      return;
     }
+    this.animateShelfScopeSwitch(scopes[nextIndex], offsetX < 0 ? -1 : 1);
   }
 
   animateShelfScopeSwitch(scope: string, outgoingDirection: number): void {
@@ -4763,7 +5178,7 @@ struct BookshelfPage {
       const engine = ReadBookEngine.get();
       const shelfBooks = [...this.books];
       for (const shelfBook of shelfBooks) {
-        if (!shelfBook.bookUrl || shelfBook.origin === 'local' || !shelfBook.canUpdate) {
+        if (!shelfBook.bookUrl || LocalBookService.isLocalBook(shelfBook) || !shelfBook.canUpdate) {
           continue;
         }
         if (this.isFinishedBook(shelfBook)) {
@@ -4902,10 +5317,25 @@ struct BookshelfPage {
 
   @Builder
   shelfScopeSegment() {
-    Row({ space: 0 }) {
-      this.scopeSegmentItem('网络', 'network')
-      this.scopeSegmentItem('本地', 'local')
+    Stack({ alignContent: Alignment.TopStart }) {
+      Row()
+        .width(46)
+        .height(26)
+        .borderRadius(13)
+        .backgroundColor(this.accentColor())
+        .shadow({ radius: 5, color: this.appDarkMode ? '#38000000' : '#20000000', offsetY: 1 })
+        .translate({ x: this.shelfScopeIndicatorOffset() })
+        .animation({ duration: 180, curve: Curve.Friction })
+
+      Row({ space: 0 }) {
+        this.scopeSegmentItem('全部', 'all')
+        this.scopeSegmentItem('网络', 'network')
+        this.scopeSegmentItem('本地', 'local')
+      }
+      .width(138)
+      .height(26)
     }
+    .width(144)
     .height(32)
     .padding(3)
     .borderRadius(18)
@@ -4919,16 +5349,25 @@ struct BookshelfPage {
       .fontSize(13)
       .fontWeight(this.shelfScope === scope ? FontWeight.Medium : FontWeight.Regular)
       .fontColor(this.shelfScope === scope ? '#FFFFFF' : this.secondaryTextColor())
+      .width(46)
       .height(26)
-      .padding({ left: 12, right: 12 })
       .textAlign(TextAlign.Center)
-      .borderRadius(13)
-      .backgroundColor(this.shelfScope === scope ? this.accentColor() : '#00000000')
+      .zIndex(1)
       .onClick(() => {
         if (!this.shelfScopeSwitchAnimating) {
           this.setShelfScope(scope);
         }
       })
+  }
+
+  shelfScopeIndicatorOffset(): number {
+    if (this.shelfScope === 'network') {
+      return 46;
+    }
+    if (this.shelfScope === 'local') {
+      return 92;
+    }
+    return 0;
   }
 
   @Builder
@@ -5875,6 +6314,8 @@ struct ExplorePage {
         intro: book.intro,
         latestChapterTitle: book.latestChapterTitle,
         wordCount: book.wordCount,
+        type: String(book.type || 0),
+        variable: book.variable || '',
         promptAddToShelfOnBack: this.searchExplorePromptAddToShelfOnBack ? 'true' : 'false'
       }
     });
@@ -7299,6 +7740,8 @@ struct SearchPage {
         intro: book.intro,
         latestChapterTitle: book.latestChapterTitle,
         wordCount: book.wordCount,
+        type: String(book.type || 0),
+        variable: book.variable || '',
         promptAddToShelfOnBack: this.searchExplorePromptAddToShelfOnBack ? 'true' : 'false'
       }
     });

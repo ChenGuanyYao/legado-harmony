@@ -277,30 +277,8 @@ export class ReaderRegexBubbleStyleResolver {
         rule.customTextColor || context.inheritedTextColor || context.accentColor,
         context.accentColor
       );
-      // A dedicated app-theme bubble owns the complete emphasis appearance
-      // unless the user explicitly enables a custom bubble. Older rules can
-      // carry stale highlight, text-color and bubble-style values; letting
-      // those values win makes the reader differ from the theme-card preview.
-      // Font family and size are resolved separately and remain customizable.
-      const activeThemeBubbleStyle =
-        ReaderRegexFontCodec.normalizeResolvedBubbleStyleId(context.inheritedBubbleStyleId);
-      const themeBubbleOverridesLegacyEmphasis = !rule.customBubbleEnabled &&
-        ReaderRegexFontCodec.normalizeResolvedEmphasisMode(context.inheritedMode) === 'bubble' &&
-        !!ThemeAccessPolicy.requiredThemeForBubbleStyle(activeThemeBubbleStyle);
-      if (themeBubbleOverridesLegacyEmphasis) {
-        result.mode = 'bubble';
-        result.bubbleStyleId = enforceThemeAccess ?
-          ThemeAccessPolicy.accessibleBubbleStyle(activeThemeBubbleStyle, activeThemeBubbleStyle) :
-          activeThemeBubbleStyle;
-        result.emphasisColor = ReaderRegexBubbleStyleResolver.normalizeColor(
-          context.inheritedColor || context.accentColor,
-          context.accentColor
-        );
-        result.backgroundEnabled = true;
-        result.bubbleDecorationEnabled = true;
-        ReaderRegexBubbleStyleResolver.applyBubblePreset(result, context);
-        return result;
-      }
+      // Custom mode is opt-in: when every custom effect is disabled, keep the
+      // matched text visually unchanged instead of falling back to the theme bubble.
       if (rule.customBubbleEnabled) {
         result.emphasisColor = bubbleColor;
         result.backgroundEnabled = true;

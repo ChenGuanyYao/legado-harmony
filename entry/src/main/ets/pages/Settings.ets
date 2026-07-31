@@ -32,7 +32,7 @@ struct SettingsPage {
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @StorageLink('readerFontSize') readerFontSize: number = 20;
   @StorageLink('readerLineHeight') readerLineHeight: number = 12;
-  @StorageLink('readerParagraphSpacing') readerParagraphSpacing: number = 10;
+  @StorageLink('readerParagraphSpacing') readerParagraphSpacing: number = 0;
   @StorageLink('readerMarginLeft') readerMarginLeft: number = 18;
   @StorageLink('readerMarginRight') readerMarginRight: number = 18;
   @StorageLink('readerMarginTop') readerMarginTop: number = 18;

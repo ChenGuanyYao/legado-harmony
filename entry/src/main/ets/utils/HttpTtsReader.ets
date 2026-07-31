@@ -108,6 +108,20 @@ export class HttpTtsReader {
     await this.pcmPlayer.drain();
   }
 
+  async pause(): Promise<void> {
+    await this.pcmPlayer.pause();
+    await this.avPlayer.pause();
+  }
+
+  async resume(): Promise<void> {
+    await this.pcmPlayer.resume();
+    await this.avPlayer.resume();
+  }
+
+  isPaused(): boolean {
+    return this.pcmPlayer.isPaused() || this.avPlayer.isPaused();
+  }
+
   stop(): void {
     this.generation++;
     const clients = this.currentClients.slice();

@@ -24,6 +24,7 @@ const readerThemes = read('entry/src/main/ets/utils/ReaderThemeHelper.ets');
 const regexModel = read('entry/src/main/ets/model/reader/ReaderRegexFontRule.ets');
 const regexSettings = read('entry/src/main/ets/pages/ReaderFontSettings.ets');
 const reader = read('entry/src/main/ets/pages/ReadBook.ets');
+const readerBackgroundComponent = read('entry/src/main/ets/components/ReaderThemeBackground.ets');
 const indexPage = read('entry/src/main/ets/pages/Index.ets');
 const bookModel = read('entry/src/main/ets/model/data/Book.ts');
 const themePage = read('entry/src/main/ets/pages/ThemeSettings.ets');
@@ -77,6 +78,16 @@ for (const fileName of backgroundFiles) {
   assert(!/(<script|<image|<use|href=|url\(|<filter)/i.test(source), `Unsafe SVG feature in ${fileName}`);
 }
 
+const readerDecorationFiles = fs.readdirSync(mediaRoot).filter(fileName => /^reader_decor_.*\.svg$/.test(fileName));
+assert(readerDecorationFiles.length >= 18, 'Every light/dark builtin reader background needs a responsive ornament');
+for (const fileName of readerDecorationFiles) {
+  const source = fs.readFileSync(path.join(mediaRoot, fileName), 'utf8');
+  assert(/viewBox="0 0 480 480"/.test(source), `Invalid reader decoration viewBox: ${fileName}`);
+  assert(/width="480"/.test(source) && /height="480"/.test(source),
+    `Invalid reader decoration dimensions: ${fileName}`);
+  assert(!/(<script|<image|<use|href=|url\(|<filter)/i.test(source), `Unsafe SVG feature in ${fileName}`);
+}
+
 const themedIconFiles = fs.readdirSync(mediaRoot).filter(fileName => /^ic_theme_.*\.svg$/.test(fileName));
 assert(themedIconFiles.length >= 8, 'Rounded and ink icon packs must each contain four icons');
 for (const fileName of themedIconFiles) {
@@ -111,9 +122,13 @@ assert(regexSettings.includes('start >= text.length || regex.lastIndex >= text.l
 
 assert(readerThemes.includes('APP_THEME_INDEX: number = 4'), 'Reader app-theme compatibility index is missing');
 assert(runtime.includes("KEY_THEME_REVISION"), 'Theme runtime revision broadcast is missing');
-assert(reader.includes('ThemeAssetRegistry.readerBackground'), 'Reader background asset resolver is not connected');
-assert(reader.includes('Image(this.getBackgroundImage())') && reader.includes('.objectFit(this.getBackgroundImageFit())'),
-  'Reader root surface does not draw the theme background image');
+assert(readerBackgroundComponent.includes('ThemeAssetRegistry.readerBackgroundDecoration'),
+  'Responsive reader background decoration resolver is not connected');
+assert(reader.includes('ReaderThemeBackground({') && reader.includes('customImageFit: this.getBackgroundImageFit()'),
+  'Reader root surface does not draw the responsive theme background');
+assert(readerBackgroundComponent.includes('.objectFit(ImageFit.Contain)') &&
+  readerBackgroundComponent.includes('readerBackgroundBorderColor'),
+  'Builtin reader backgrounds must preserve ornament proportions and draw a responsive native border');
 assert(indexPage.includes('ThemeRuntime.iconPackId()'), 'Floating tab bar does not resolve the active icon pack');
 for (const tabId of ['bookshelf', 'explore', 'search', 'mine']) {
   assert(indexPage.includes(`this.navigationIcon('${tabId}')`), `Floating tab icon is not themed: ${tabId}`);
@@ -161,8 +176,9 @@ assert(themeStore.includes('loadMigratedReaderAppearance') &&
   themeStore.includes('ReaderThemeHelper.themeAt') &&
   themeStore.includes('persistCustomSnapshot'),
   'Existing reader backgrounds are not migrated into the initial custom theme snapshot');
-assert(themePage.includes('theme.light.reader.backgroundColor = this.customLightReaderBackgroundColor'),
-  'Custom theme preview does not use the migrated reader background');
+assert(themePage.includes('AppThemeSettingsStore.customTheme(scheme.settings, this.appDarkMode)') &&
+  themePage.includes('this.activeVariant(theme).reader.backgroundColor'),
+  'Custom theme preview does not use the persisted reader background');
 assert(!themeColorPage.includes("'pages/AppIconSettings'") &&
   !themeColorPage.includes("'pages/FontSettings'") &&
   !themeStore.includes('updateCustomFont') && !themeStore.includes('updateCustomDesktopIcon'),
@@ -279,7 +295,7 @@ for (const iconName of desktopThemeIcons) {
 
 const requiredFiles = [
   'theme/ThemeModels.ets', 'theme/BuiltinThemeRegistry.ets', 'theme/ThemeRuntime.ets',
-  'theme/ThemeAssetRegistry.ets', 'pages/ThemeSettings.ets'
+  'theme/ThemeAssetRegistry.ets', 'components/ReaderThemeBackground.ets', 'pages/ThemeSettings.ets'
 ];
 for (const relativePath of requiredFiles) {
   assert(fs.existsSync(path.join(etsRoot, relativePath)), `Required theme file is missing: ${relativePath}`);
@@ -294,5 +310,6 @@ for (const fileName of fs.readdirSync(pageRoot).filter(fileName => fileName.ends
 }
 
 console.log(`Theme framework check passed: ${expectedThemes.length} themes, ` +
-  `${backgroundFiles.length} backgrounds, ${themedIconFiles.length} themed icons, ` +
+  `${backgroundFiles.length} legacy backgrounds, ${readerDecorationFiles.length} responsive ornaments, ` +
+  `${themedIconFiles.length} themed icons, ` +
   `${bubbleStyles.length} bubble styles.`);

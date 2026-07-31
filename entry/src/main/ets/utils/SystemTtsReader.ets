@@ -96,6 +96,7 @@ export class SystemTtsReader {
   private chunks: TtsChunk[] = [];
   private chunkIndex: number = 0;
   private active: boolean = false;
+  private paused: boolean = false;
   private onFinished?: () => void;
   private onError?: (message: string) => void;
   private onChunkStart?: (chunk: TtsChunk, index: number) => void;
@@ -374,6 +375,7 @@ export class SystemTtsReader {
       this.clearSpeakWatchdog();
     }
     const generation = ++this.readGeneration;
+    this.paused = false;
     this.onFinished = options?.onFinished;
     this.onError = options?.onError;
     this.onChunkStart = options?.onChunkStart;
@@ -515,9 +517,61 @@ export class SystemTtsReader {
     });
   }
 
+  async pause(): Promise<boolean> {
+    if (!this.active || this.paused) {
+      return this.active && this.paused;
+    }
+    this.paused = true;
+    await this.pcmPlayer.pause();
+    await this.httpReader.pause();
+    if (this.ttsPcmPlayType === 1 && this.engine) {
+      const resumeIndex = this.currentFocusChunkIndex;
+      if (resumeIndex >= 0) {
+        this.chunkIndex = Math.max(0, Math.min(resumeIndex, this.chunks.length));
+      }
+      this.currentRequestId = '';
+      this.currentSpeakStartedAt = 0;
+      this.currentSpeakMinDuration = 0;
+      this.completionPending = false;
+      this.currentFocusChunk = null;
+      this.currentFocusChunkIndex = -1;
+      this.currentFocusDuration = 0;
+      this.currentFocusQueued = false;
+      this.clearSpeakWatchdog();
+      try {
+        this.suppressEngineStopEvent = true;
+        this.engine.stop();
+      } catch (_) {
+      } finally {
+        setTimeout(() => {
+          this.suppressEngineStopEvent = false;
+        }, 500);
+      }
+    }
+    return true;
+  }
+
+  async resume(): Promise<boolean> {
+    if (!this.active || !this.paused) {
+      return this.active && !this.paused;
+    }
+    this.paused = false;
+    await this.pcmPlayer.resume();
+    await this.httpReader.resume();
+    if (this.ttsPcmPlayType === 1 && this.engine && !this.currentRequestId) {
+      this.speakNext(this.readGeneration);
+    }
+    return true;
+  }
+
+  isPaused(): boolean {
+    return this.active && this.paused;
+  }
+
   stop(): void {
     this.readGeneration++;
     this.active = false;
+    this.paused = false;
     this.chunks = [];
     this.chunkIndex = 0;
     this.onChunkStart = undefined;
@@ -692,6 +746,7 @@ export class SystemTtsReader {
   private finish(notify: boolean): void {
     this.readGeneration++;
     this.active = false;
+    this.paused = false;
     this.chunks = [];
     this.chunkIndex = 0;
     this.onChunkStart = undefined;

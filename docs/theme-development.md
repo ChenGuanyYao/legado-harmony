@@ -12,7 +12,8 @@ entry/src/main/ets/theme/
 └── ThemeAssetRegistry.ets      # assetId / iconPackId 到 Resource 的映射
 
 entry/src/main/resources/base/media/
-├── reader_bg_*                 # 阅读背景 SVG
+├── reader_bg_*                 # 旧版 9:16 阅读背景 SVG（兼容资源）
+├── reader_decor_*              # 响应式阅读背景角落装饰 SVG（480 × 480）
 ├── theme_cover_*               # 主题书籍封面底图
 ├── theme_frame_*               # 书架封面装饰边框
 ├── theme_folder_art_*          # 平铺模式分组文件夹插画（450 × 660）
@@ -104,13 +105,14 @@ BuiltinThemeRegistry.register(theme);
 
 ## 阅读背景资源
 
-背景建议使用无外链、无脚本、无滤镜的本地 SVG，基准尺寸为 `1080 × 1920`。图案应保持低对比，正文区域不要放置密集细节。
+内置主题使用“主题底色 + 原生自适应边框 + 角落装饰”的响应式结构。装饰建议使用无外链、无脚本、无滤镜的透明本地 SVG，基准尺寸为 `480 × 480`。图案应保持低对比，正文区域不要放置密集细节。旧版 `1080 × 1920` 的 `reader_bg_*` 仅作为兼容资源保留，不再直接铺满阅读页。
 
-1. 将浅/深资源放入 `entry/src/main/resources/base/media/`。
-2. 在 `ThemeAssetRegistry.readerBackground()` 中增加稳定 `assetId` 映射。
+1. 将浅/深透明装饰资源放入 `entry/src/main/resources/base/media/`，命名为 `reader_decor_<id>_light.svg` 与 `reader_decor_<id>_dark.svg`。
+2. 在 `ThemeAssetRegistry.readerBackgroundDecoration()` 中增加稳定 `assetId` 映射，并在 `readerBackgroundBorderColor()` 中配置边框颜色。
 3. 分别填写 `theme.light.reader.backgroundAssetId` 与 `theme.dark.reader.backgroundAssetId`。
-4. 即使有图片，也必须提供 `backgroundColor` 作为加载、翻页和系统窗口回退色。
+4. 必须提供 `backgroundColor`；它是实际铺满任意分辨率、横竖屏和分屏窗口的阅读底色。
 5. 正确填写 `contentTone`，阅读页据此决定系统栏图标和辅助内容明暗。
+6. 装饰由 `ReaderThemeBackground` 锚定在左上与右下角的正方形区域并使用 `ImageFit.Contain`，不要把内置主题重新改成 `Cover` 全屏壁纸。
 
 ## 主题封面与书架边框
 

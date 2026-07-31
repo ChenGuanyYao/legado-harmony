@@ -12,6 +12,7 @@ import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
 import { BookUrlResolver } from './BookUrlResolver';
 import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
 import { BookSourceScriptRunner } from './BookSourceScriptRunner';
+import { BookTypeSupport } from './BookTypeSupport';
 
 export interface SearchProgress {
   done: number;
@@ -306,6 +307,7 @@ export class SearchCoordinator {
         book.kind = ir.analyzeFirst(searchRule.kind) || '';
         book.latestChapterTitle = ir.analyzeFirst(searchRule.lastChapter) || '';
         book.variable = ir.getContext().toJson();
+        BookTypeSupport.applySearchBookType(book, source);
         // 如果解析后仍含 JSONPath 表达式，直接从 item 提取
         if (!book.bookUrl || book.bookUrl.startsWith('$') || book.bookUrl.includes('$._id') || book.bookUrl.includes('$..')) {
           // 尝试常见字段

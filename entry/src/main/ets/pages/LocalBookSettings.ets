@@ -52,7 +52,8 @@ struct LocalBookSettingsPage {
               .fontColor(this.subTextColor())
           }
           .width('100%')
-          .padding({ top: 22, bottom: 22 })
+          .layoutWeight(1)
+          .justifyContent(FlexAlign.Center)
         } else {
           List({ space: 8 }) {
             ForEach(this.books, (book: Book) => {
@@ -63,6 +64,7 @@ struct LocalBookSettingsPage {
           }
           .width('100%')
           .layoutWeight(1)
+          .clip(true)
         }
 
         Text('选择 TXT 或 EPUB 文件导入书架')
@@ -89,6 +91,7 @@ struct LocalBookSettingsPage {
         }
       }
       .width('100%')
+      .layoutWeight(1)
       .padding({ left: 16, right: 16, top: 24, bottom: 32 + this.navBarHeight })
     }
     .width('100%')
@@ -129,7 +132,7 @@ struct LocalBookSettingsPage {
     try {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
-      this.books = (await db.getAllBooks()).filter((book: Book) => LocalBookService.isLocalBook(book));
+      this.books = (await db.getAllBooks()).filter((book: Book) => LocalBookService.isPhysicalLocalBook(book));
     } catch (e) {
       console.error('加载已添加本地书籍失败:', e);
       this.books = [];

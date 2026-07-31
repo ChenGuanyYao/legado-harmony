@@ -26,6 +26,7 @@ import { util } from '@kit.ArkTS';
 
 export default class EntryAbility extends UIAbility {
   private appliedColorMode: number = -1;
+  private modeDependentThemeKey: string = '';
   private themeBootstrapPromise: Promise<void> = Promise.resolve();
   private mainWindowStage: window.WindowStage | null = null;
 
@@ -305,6 +306,14 @@ export default class EntryAbility extends UIAbility {
   }
 
   private refreshModeDependentTheme(darkMode: boolean): void {
+    // Foregrounding the ability does not imply that the effective theme changed.
+    // Re-publishing an unchanged custom theme increments themeRevision and forces
+    // every visible ArkUI form to rebuild, which can reset native text editors.
+    const themeKey = `${ThemeRuntime.currentThemeId()}:${darkMode ? 'dark' : 'light'}`;
+    if (this.modeDependentThemeKey === themeKey) {
+      return;
+    }
+    this.modeDependentThemeKey = themeKey;
     AppThemeSettingsStore.reapplyCustomForMode(darkMode);
     try {
       this.context.getApplicationContext().setFont(ThemeRuntime.fontFamily());

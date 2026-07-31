@@ -27,6 +27,9 @@ struct OtherSettingsPage {
         Column() {
           this.sectionTitle('数据')
           Column() {
+            this.menuItem('WebDAV', '浏览远程 TXT / EPUB，并管理加密备份', true, () => {
+              router.pushUrl({ url: 'pages/WebDav' });
+            })
             this.menuItem('数据导入', '从备份文件导入书源、书架、进度、本地图书和设置', true, () => {
               router.pushUrl({ url: 'pages/DataBackup', params: { mode: 'import' } });
             })

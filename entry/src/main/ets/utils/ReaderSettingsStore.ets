@@ -6,7 +6,7 @@ import { CloudSyncChangeTracker } from '../account/CloudSyncChangeTracker';
 export class ReaderSettings {
   fontSize: number = 20;
   lineHeight: number = 12;
-  paragraphSpacing: number = 10;
+  paragraphSpacing: number = 0;
   marginLeft: number = 18;
   marginRight: number = 18;
   marginTop: number = 18;
@@ -144,7 +144,7 @@ export class ReaderSettingsStore {
     settings.paragraphSpacing = await ReaderSettingsStore.getNumber(
       store,
       ReaderSettingsStore.KEY_PARAGRAPH_SPACING,
-      10,
+      0,
       'paragraphSpacing'
     );
     settings.marginLeft = await ReaderSettingsStore.getNumber(

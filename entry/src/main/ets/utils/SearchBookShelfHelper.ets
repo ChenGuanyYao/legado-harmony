@@ -10,6 +10,7 @@ import { CoverUrlNormalizer } from './CoverUrlNormalizer';
 import { BookFieldSanitizer } from './BookFieldSanitizer';
 import { SearchExplorePendingBook } from './SearchExplorePendingBook';
 import { AppThemeSettingsStore } from './AppThemeSettingsStore';
+import { BookTypeSupport } from '../core/book/BookTypeSupport';
 
 export class SearchBookShelfChange {
   requestKey: string = '';
@@ -191,7 +192,8 @@ export class SearchBookShelfHelper {
     book.wordCount = BookFieldSanitizer.clean(searchBook.wordCount);
     book.variable = searchBook.variable;
     book.group = -2147483645;
-    book.type = 0;
+    book.type = searchBook.type || 0;
+    BookTypeSupport.applyBookType(book);
     book.canUpdate = true;
     book.lastCheckTime = Date.now();
     book.latestChapterTime = Date.now();

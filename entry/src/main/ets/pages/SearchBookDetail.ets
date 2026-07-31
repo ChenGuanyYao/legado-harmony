@@ -11,6 +11,7 @@ import { CoverGallerySettings } from '../utils/CoverGallerySettings';
 import { BookFieldSanitizer } from '../utils/BookFieldSanitizer';
 import { SearchExplorePendingBook } from '../utils/SearchExplorePendingBook';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { BookTypeSupport } from '../core/book/BookTypeSupport';
 
 @Entry
 @Component
@@ -39,6 +40,8 @@ struct SearchBookDetailPage {
   @State intro: string = '';
   @State latestChapterTitle: string = '';
   @State wordCount: string = '';
+  @State bookType: number = 0;
+  private bookVariable: string = '';
   @State isInShelf: boolean = false;
   @State isSaving: boolean = false;
   @State isLoadingBookInfo: boolean = false;
@@ -64,6 +67,8 @@ struct SearchBookDetailPage {
       this.intro = params['intro'] || '';
       this.latestChapterTitle = params['latestChapterTitle'] || '';
       this.wordCount = params['wordCount'] || '';
+      this.bookType = Number(params['type'] || 0) || 0;
+      this.bookVariable = params['variable'] || '';
       this.promptAddToShelfOnBackFromResult = params['promptAddToShelfOnBack'] === 'true';
       this.checkShelf();
       this.loadBookInfo();
@@ -202,7 +207,7 @@ struct SearchBookDetailPage {
               this.addToShelf();
             })
 
-          Button('开始阅读')
+          Button(BookTypeSupport.isAudio(this.detailTypeProbe()) ? '开始听书' : '开始阅读')
             .height(44)
             .layoutWeight(1)
             .backgroundColor(this.buttonColor())
@@ -334,7 +339,9 @@ struct SearchBookDetailPage {
       book.latestChapterTitle = BookFieldSanitizer.clean(this.latestChapterTitle);
       book.wordCount = BookFieldSanitizer.clean(this.wordCount);
       book.group = -2147483645;
-      book.type = 0;
+      book.type = this.bookType;
+      book.variable = this.bookVariable;
+      BookTypeSupport.applyBookType(book);
       book.canUpdate = true;
       book.lastCheckTime = Date.now();
       book.latestChapterTime = Date.now();
@@ -353,6 +360,7 @@ struct SearchBookDetailPage {
         book.latestChapterTitle = BookFieldSanitizer.prefer(fullBook.latestChapterTitle, book.latestChapterTitle);
         book.wordCount = BookFieldSanitizer.prefer(fullBook.wordCount, book.wordCount);
         book.variable = fullBook.variable || book.variable;
+        book.type = fullBook.type || book.type;
       }
 
       const resolvedExisting = await this.findShelfBookByKey(BookIdentity.keyOfBook(book));
@@ -422,6 +430,9 @@ struct SearchBookDetailPage {
       book.intro = BookFieldSanitizer.clean(this.intro);
       book.latestChapterTitle = BookFieldSanitizer.clean(this.latestChapterTitle);
       book.wordCount = BookFieldSanitizer.clean(this.wordCount);
+      book.type = this.bookType;
+      book.variable = this.bookVariable;
+      BookTypeSupport.applyBookType(book, source);
 
       const fallbackCoverUrl = book.coverUrl;
       const service = new WebBookService();
@@ -435,6 +446,8 @@ struct SearchBookDetailPage {
       this.intro = BookFieldSanitizer.prefer(fullBook.intro, this.intro);
       this.latestChapterTitle = BookFieldSanitizer.prefer(fullBook.latestChapterTitle, this.latestChapterTitle);
       this.wordCount = BookFieldSanitizer.prefer(fullBook.wordCount, this.wordCount);
+      this.bookType = fullBook.type || this.bookType;
+      this.bookVariable = fullBook.variable || this.bookVariable;
     } catch (e) {
       console.warn('加载书籍详情失败:', e);
     } finally {
@@ -535,6 +548,11 @@ struct SearchBookDetailPage {
       const requestKey = BookIdentity.keyOfUrl(this.bookUrl);
       const existing = await db.getBook(this.bookUrl) || await this.findShelfBookByKey(requestKey, true);
       if (existing) {
+        const inferredType = this.bookType || BookTypeSupport.typeFromVariable(this.bookVariable);
+        if (inferredType && existing.type !== inferredType) {
+          existing.type = inferredType;
+          await db.updateBook(existing);
+        }
         const nextCoverUrl = CoverUrlNormalizer.prefer(this.coverUrl, existing.coverUrl);
         if (nextCoverUrl && existing.coverUrl !== nextCoverUrl) {
           existing.coverUrl = nextCoverUrl;
@@ -600,7 +618,9 @@ struct SearchBookDetailPage {
     book.latestChapterTitle = BookFieldSanitizer.clean(this.latestChapterTitle);
     book.wordCount = BookFieldSanitizer.clean(this.wordCount);
     book.group = -2147483645;
-    book.type = 0;
+    book.type = this.bookType;
+    book.variable = this.bookVariable;
+    BookTypeSupport.applyBookType(book);
     book.canUpdate = true;
     book.lastCheckTime = Date.now();
     book.latestChapterTime = Date.now();
@@ -620,6 +640,7 @@ struct SearchBookDetailPage {
       book.latestChapterTitle = BookFieldSanitizer.prefer(fullBook.latestChapterTitle, book.latestChapterTitle);
       book.wordCount = BookFieldSanitizer.prefer(fullBook.wordCount, book.wordCount);
       book.variable = fullBook.variable || book.variable;
+      book.type = fullBook.type || book.type;
     }
     return book;
   }
@@ -707,6 +728,18 @@ struct SearchBookDetailPage {
     this.intro = book.intro || this.intro;
     this.latestChapterTitle = book.latestChapterTitle || this.latestChapterTitle;
     this.wordCount = book.wordCount || this.wordCount;
+    this.bookType = book.type || this.bookType;
+    this.bookVariable = book.variable || this.bookVariable;
+  }
+
+  detailTypeProbe(): Book {
+    const book = new Book();
+    book.origin = this.origin;
+    book.originName = this.originName;
+    book.kind = this.kind;
+    book.type = this.bookType;
+    book.variable = this.bookVariable;
+    return book;
   }
 
   async startRead() {

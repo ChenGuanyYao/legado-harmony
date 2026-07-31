@@ -5,6 +5,15 @@ import { Book } from '../model/data/Book';
 import { ReaderReplaceRule, ReaderReplaceRuleCheck, ReaderReplaceRuleStore } from '../utils/ReaderReplaceRuleStore';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ResponsiveManagerListLayout } from '../utils/ResponsiveManagerListLayout';
+import { FormDraftStore } from '../utils/FormDraftStore';
+
+class ReplaceRuleFormDraft {
+  ruleJson: string = '';
+  timeoutDraft: string = '3000';
+  applyToTitle: boolean = true;
+  applyToContent: boolean = true;
+  isRegex: boolean = true;
+}
 
 @Entry
 @Component
@@ -34,15 +43,35 @@ struct ReaderReplaceRulesPage {
   @State previewTitle: string = '';
   @State previewContent: string = '';
   private previewBook: Book | null = null;
+  private ruleSelectionAreas: Map<number, number[]> = new Map<number, number[]>();
+  private ruleDragVisited: Set<number> = new Set<number>();
+  private ruleDragSelectValue: boolean = true;
+  private ruleListScroller: Scroller = new Scroller();
+  private ruleSelectionDragging: boolean = false;
+  private ruleSelectionLastX: number = 0;
+  private ruleSelectionLastY: number = 0;
+  private ruleSelectionAutoScrollId: number = -1;
+  private ruleSelectionAutoDirection: number = 0;
+  private ruleSelectionViewportTop: number = 0;
+  private ruleSelectionViewportBottom: number = 0;
+  private ruleFirstVisibleIndex: number = 0;
+  private ruleLastVisibleIndex: number = 0;
+  private ruleSelectionSuppressClickUntil: number = 0;
 
   aboutToAppear(): void {
     this.loadPreviewContext();
     this.loadRules();
+    this.restorePersistentRuleFormDraft();
     this.syncBars();
   }
 
   onPageShow(): void {
     this.syncBars();
+  }
+
+  onPageHide(): void {
+    this.stopRuleSelectionAutoScroll();
+    this.persistRuleFormDraftNow();
   }
 
   onBackPress(): boolean {
@@ -193,7 +222,7 @@ struct ReaderReplaceRulesPage {
         .width('100%')
         .justifyContent(FlexAlign.Center)
       } else {
-        List({ space: 10 }) {
+        List({ space: 10, scroller: this.ruleListScroller }) {
           ForEach(this.filteredRules(), (rule: ReaderReplaceRule) => {
             ListItem() {
               this.ruleCard(rule)
@@ -201,6 +230,7 @@ struct ReaderReplaceRulesPage {
             .width('100%')
             .borderRadius(14)
             .clip(true)
+            .onAreaChange((_oldValue: Area, area: Area) => this.rememberRuleSelectionArea(rule.id, area))
             .swipeAction(this.selectionMode ? {} : {
               start: {
                 builder: () => {
@@ -231,6 +261,14 @@ struct ReaderReplaceRulesPage {
         .clip(true)
         .lanes(ResponsiveManagerListLayout.laneCount(this.contextViewportWidth),
           ResponsiveManagerListLayout.gutter(this.contextViewportWidth))
+        .onScrollIndex((start: number, end: number) => {
+          this.ruleFirstVisibleIndex = start;
+          this.ruleLastVisibleIndex = end;
+        })
+        .onAreaChange((_oldValue: Area, area: Area) => {
+          this.ruleSelectionViewportTop = Number(area.globalPosition.y);
+          this.ruleSelectionViewportBottom = this.ruleSelectionViewportTop + Number(area.height);
+        })
       }
 
       if (this.selectionMode) {
@@ -245,10 +283,7 @@ struct ReaderReplaceRulesPage {
   ruleCard(rule: ReaderReplaceRule) {
     Row() {
       if (this.selectionMode) {
-        Toggle({ type: ToggleType.Checkbox, isOn: this.isRuleSelected(rule.id) })
-          .selectedColor(this.buttonColor())
-          .margin({ right: 12 })
-          .onChange((selected: boolean) => this.setRuleSelected(rule.id, selected))
+        this.ruleSelectionSafeArea(rule)
       }
 
       Column({ space: 5 }) {
@@ -297,6 +332,7 @@ struct ReaderReplaceRulesPage {
     )
     .onClick(() => {
       if (this.selectionMode) {
+        if (Date.now() < this.ruleSelectionSuppressClickUntil) return;
         this.toggleRuleSelected(rule.id);
       } else {
         this.openEditRule(rule);
@@ -575,7 +611,10 @@ struct ReaderReplaceRulesPage {
         .placeholderColor(this.subTextColor())
         .backgroundColor(this.inputColor())
         .borderRadius(12)
-        .onChange(onChange)
+        .onChange((nextValue: string) => {
+          onChange(nextValue);
+          this.saveRuleFormDraft();
+        })
     }
     .width('100%')
   }
@@ -593,7 +632,10 @@ struct ReaderReplaceRulesPage {
         .backgroundColor(this.inputColor())
         .borderRadius(12)
         .padding(12)
-        .onChange(onChange)
+        .onChange((nextValue: string) => {
+          onChange(nextValue);
+          this.saveRuleFormDraft();
+        })
     }
     .width('100%')
   }
@@ -618,6 +660,7 @@ struct ReaderReplaceRulesPage {
     .borderRadius(18)
     .onClick(() => {
       this.draftApplyToTitle = !this.draftApplyToTitle;
+      this.saveRuleFormDraft();
     })
   }
 
@@ -641,6 +684,7 @@ struct ReaderReplaceRulesPage {
     .borderRadius(18)
     .onClick(() => {
       this.draftApplyToContent = !this.draftApplyToContent;
+      this.saveRuleFormDraft();
     })
   }
 
@@ -798,6 +842,7 @@ struct ReaderReplaceRulesPage {
   }
 
   exitRuleSelectionMode(): void {
+    this.stopRuleSelectionAutoScroll();
     this.selectionMode = false;
     this.selectedRuleIds = [];
   }
@@ -879,29 +924,78 @@ struct ReaderReplaceRulesPage {
   }
 
   openNewRule(): void {
+    FormDraftStore.removePersistent(getContext(this), 'replace_rule:edit');
     this.draft = ReaderReplaceRuleStore.newRule();
     this.draftApplyToTitle = this.draft.applyToTitle;
     this.draftApplyToContent = this.draft.applyToContent;
     this.draftIsRegex = this.draft.isRegex;
     this.timeoutDraft = '3000';
     this.editing = true;
+    this.saveRuleFormDraft();
   }
 
   openEditRule(rule: ReaderReplaceRule): void {
+    FormDraftStore.removePersistent(getContext(this), 'replace_rule:edit');
     this.draft = ReaderReplaceRuleStore.cloneRule(rule);
     this.draftApplyToTitle = this.draft.applyToTitle;
     this.draftApplyToContent = this.draft.applyToContent;
     this.draftIsRegex = this.draft.isRegex;
     this.timeoutDraft = `${this.draft.timeoutMs}`;
     this.editing = true;
+    this.saveRuleFormDraft();
   }
 
   closeEditor(): void {
     this.editing = false;
+    FormDraftStore.removePersistent(getContext(this), 'replace_rule:edit');
   }
 
   refreshDraft(): void {
     this.draft = ReaderReplaceRuleStore.cloneRule(this.draft);
+    this.saveRuleFormDraft();
+  }
+
+  restoreRuleFormDraft(rawValue: string = ''): void {
+    const raw = rawValue || FormDraftStore.get('replace_rule:edit');
+    if (!raw) return;
+    try {
+      const form = JSON.parse(raw) as ReplaceRuleFormDraft;
+      this.draft = JSON.parse(form.ruleJson) as ReaderReplaceRule;
+      this.timeoutDraft = form.timeoutDraft;
+      this.draftApplyToTitle = form.applyToTitle;
+      this.draftApplyToContent = form.applyToContent;
+      this.draftIsRegex = form.isRegex;
+      this.editing = true;
+    } catch (_) {
+      FormDraftStore.removePersistent(getContext(this), 'replace_rule:edit');
+    }
+  }
+
+  async restorePersistentRuleFormDraft(): Promise<void> {
+    const raw = await FormDraftStore.load(getContext(this), 'replace_rule:edit');
+    this.restoreRuleFormDraft(raw);
+  }
+
+  saveRuleFormDraft(): void {
+    if (!this.editing) return;
+    const form = new ReplaceRuleFormDraft();
+    form.ruleJson = JSON.stringify(this.draft);
+    form.timeoutDraft = this.timeoutDraft;
+    form.applyToTitle = this.draftApplyToTitle;
+    form.applyToContent = this.draftApplyToContent;
+    form.isRegex = this.draftIsRegex;
+    FormDraftStore.persistSoon(getContext(this), 'replace_rule:edit', JSON.stringify(form));
+  }
+
+  persistRuleFormDraftNow(): void {
+    if (!this.editing) return;
+    const form = new ReplaceRuleFormDraft();
+    form.ruleJson = JSON.stringify(this.draft);
+    form.timeoutDraft = this.timeoutDraft;
+    form.applyToTitle = this.draftApplyToTitle;
+    form.applyToContent = this.draftApplyToContent;
+    form.isRegex = this.draftIsRegex;
+    FormDraftStore.persist(getContext(this), 'replace_rule:edit', JSON.stringify(form));
   }
 
   openRuleActions(rule: ReaderReplaceRule, event?: GestureEvent): void {
@@ -912,6 +1006,134 @@ struct ReaderReplaceRulesPage {
     }
     this.actionRuleId = rule.id;
     this.showRuleActionDialog = true;
+  }
+
+  rememberRuleSelectionArea(ruleId: number, area: Area): void {
+    const position = area.globalPosition;
+    this.ruleSelectionAreas.set(ruleId, [Number(position.x), Number(position.y),
+      Number(position.x) + Number(area.width), Number(position.y) + Number(area.height)]);
+  }
+
+  @Builder
+  ruleSelectionSafeArea(rule: ReaderReplaceRule) {
+    Stack({ alignContent: Alignment.Center }) {
+      Toggle({ type: ToggleType.Checkbox, isOn: this.isRuleSelected(rule.id) })
+        .selectedColor(this.buttonColor())
+        .hitTestBehavior(HitTestMode.None)
+    }
+    .width(56)
+    .height(68)
+    .margin({ left: -10, right: 2 })
+    .priorityGesture(
+      GestureGroup(GestureMode.Exclusive,
+        PanGesture({ direction: PanDirection.Vertical, distance: 2 })
+          .onActionStart((event: GestureEvent) => this.beginRuleSlideSelection(event))
+          .onActionUpdate((event: GestureEvent) => this.updateRuleSlideSelection(event))
+          .onActionEnd(() => this.endRuleSlideSelection())
+          .onActionCancel(() => this.endRuleSlideSelection()),
+        TapGesture().onAction(() => {
+          if (!this.isBatchOperating) {
+            this.ruleSelectionSuppressClickUntil = Date.now() + 240;
+            this.toggleRuleSelected(rule.id);
+          }
+        })
+      ),
+      GestureMask.IgnoreInternal
+    )
+  }
+
+  beginRuleSlideSelection(event: GestureEvent): void {
+    if (!this.selectionMode || this.isBatchOperating) return;
+    this.ruleDragVisited.clear();
+    const ruleId = this.ruleAtGesture(event);
+    if (ruleId <= 0) return;
+    this.ruleSelectionDragging = true;
+    this.captureRuleSelectionPoint(event);
+    this.ruleDragSelectValue = !this.isRuleSelected(ruleId);
+    this.applyRuleSlideSelection(ruleId);
+    this.updateRuleSelectionAutoScroll();
+  }
+
+  updateRuleSlideSelection(event: GestureEvent): void {
+    if (!this.selectionMode || this.isBatchOperating) return;
+    this.captureRuleSelectionPoint(event);
+    this.applyRuleSlideSelection(this.ruleAtGesture(event));
+    this.updateRuleSelectionAutoScroll();
+  }
+
+  endRuleSlideSelection(): void {
+    this.ruleSelectionSuppressClickUntil = Date.now() + 240;
+    this.ruleSelectionDragging = false;
+    this.ruleDragVisited.clear();
+    this.stopRuleSelectionAutoScroll();
+  }
+
+  ruleAtGesture(event: GestureEvent): number {
+    const finger = event.fingerList.length > 0 ? event.fingerList[0] : undefined;
+    if (!finger) return 0;
+    return this.ruleAtPoint(finger.globalX, finger.globalY);
+  }
+
+  ruleAtPoint(globalX: number, globalY: number): number {
+    for (const rule of this.filteredRules()) {
+      const area = this.ruleSelectionAreas.get(rule.id);
+      if (area && globalX >= area[0] && globalX <= area[2] &&
+        globalY >= area[1] && globalY <= area[3]) return rule.id;
+    }
+    return 0;
+  }
+
+  applyRuleSlideSelection(ruleId: number): void {
+    if (ruleId <= 0 || this.ruleDragVisited.has(ruleId)) return;
+    this.ruleDragVisited.add(ruleId);
+    this.setRuleSelected(ruleId, this.ruleDragSelectValue);
+  }
+
+  captureRuleSelectionPoint(event: GestureEvent): void {
+    const finger = event.fingerList.length > 0 ? event.fingerList[0] : undefined;
+    if (!finger) return;
+    this.ruleSelectionLastX = finger.globalX;
+    this.ruleSelectionLastY = finger.globalY;
+  }
+
+  updateRuleSelectionAutoScroll(): void {
+    if (!this.ruleSelectionDragging || this.ruleSelectionViewportBottom <= this.ruleSelectionViewportTop) {
+      this.stopRuleSelectionAutoScroll();
+      return;
+    }
+    const edgeSize = 72;
+    let direction = 0;
+    if (this.ruleSelectionLastY <= this.ruleSelectionViewportTop + edgeSize) direction = -1;
+    if (this.ruleSelectionLastY >= this.ruleSelectionViewportBottom - edgeSize) direction = 1;
+    if (direction === this.ruleSelectionAutoDirection && this.ruleSelectionAutoScrollId >= 0) return;
+    this.stopRuleSelectionAutoScroll();
+    if (direction === 0 || this.ruleSelectionReachedBoundary(direction)) return;
+    this.ruleSelectionAutoDirection = direction;
+    this.ruleSelectionAutoScrollId = setInterval(() => {
+      if (!this.ruleSelectionDragging || this.ruleSelectionReachedBoundary(direction)) {
+        this.stopRuleSelectionAutoScroll();
+        return;
+      }
+      this.ruleListScroller.scrollBy(0, direction * 12);
+      setTimeout(() => {
+        if (!this.ruleSelectionDragging) return;
+        this.applyRuleSlideSelection(this.ruleAtPoint(
+          this.ruleSelectionLastX, this.ruleSelectionLastY));
+      }, 0);
+    }, 24);
+  }
+
+  ruleSelectionReachedBoundary(direction: number): boolean {
+    if (direction < 0) return this.ruleFirstVisibleIndex <= 0;
+    return this.ruleLastVisibleIndex >= this.filteredRules().length - 1;
+  }
+
+  stopRuleSelectionAutoScroll(): void {
+    if (this.ruleSelectionAutoScrollId >= 0) {
+      clearInterval(this.ruleSelectionAutoScrollId);
+      this.ruleSelectionAutoScrollId = -1;
+    }
+    this.ruleSelectionAutoDirection = 0;
   }
 
   closeRuleActions(): void {
@@ -976,6 +1198,7 @@ struct ReaderReplaceRulesPage {
     await ReaderReplaceRuleStore.save(getContext(this), next);
     this.rules = await ReaderReplaceRuleStore.load(getContext(this), true);
     this.editing = false;
+    FormDraftStore.removePersistent(getContext(this), 'replace_rule:edit');
     promptAction.showToast({ message: '规则已保存' });
   }
 

@@ -141,6 +141,17 @@ struct BookSourcePage {
   private pageVisible: boolean = true;
   private selectedSourceUrlsSnapshot: string[] = [];
   private selectedSourceUrlLookup: Set<string> = new Set<string>();
+  private sourceSelectionAreas: Map<string, number[]> = new Map<string, number[]>();
+  private sourceDragVisited: Set<string> = new Set<string>();
+  private sourceDragSelectValue: boolean = true;
+  private sourceSelectionDragging: boolean = false;
+  private sourceSelectionLastX: number = 0;
+  private sourceSelectionLastY: number = 0;
+  private sourceSelectionAutoScrollId: number = -1;
+  private sourceSelectionAutoDirection: number = 0;
+  private sourceSelectionViewportTop: number = 0;
+  private sourceSelectionViewportBottom: number = 0;
+  private sourceSelectionSuppressClickUntil: number = 0;
   private webImportController: webview.WebviewController = new webview.WebviewController();
   private webImportTargetUrl: string = '';
   private webImportStarted: boolean = false;
@@ -180,6 +191,7 @@ struct BookSourcePage {
   }
 
   aboutToDisappear(): void {
+    this.stopSourceSelectionAutoScroll();
     this.finishWebImport('', '网页取数已取消');
     if (!this.loginRuntimeAwaitingBrowser) {
       this.finishLoginRuntime(null, '登录动作已取消');
@@ -210,6 +222,7 @@ struct BookSourcePage {
   }
 
   onPageHide(): void {
+    this.stopSourceSelectionAutoScroll();
     this.pageVisible = false;
     if (!this.isCheckingSources) {
       this.releaseBookSourceCheckCancelSubscriber();
@@ -342,16 +355,7 @@ struct BookSourcePage {
               ListItem() {
                 Row() {
                   if (this.selectionMode) {
-                    Toggle({ type: ToggleType.Checkbox, isOn: this.isSourceSelected(source.bookSourceUrl) })
-                      .selectedColor(this.buttonColor())
-                      .enabled(!this.isBatchOperating)
-                      .margin({ right: 12 })
-                      .onChange((isOn: boolean) => {
-                        if (this.isBatchOperating) {
-                          return;
-                        }
-                        this.setSourceSelected(source.bookSourceUrl, isOn);
-                      })
+                    this.sourceSelectionSafeArea(source)
                   }
 
                   if (!this.selectionMode) {
@@ -457,6 +461,7 @@ struct BookSourcePage {
                     return;
                   }
                   if (this.selectionMode) {
+                    if (Date.now() < this.sourceSelectionSuppressClickUntil) return;
                     this.toggleSourceSelected(source.bookSourceUrl);
                   }
                 })
@@ -464,6 +469,9 @@ struct BookSourcePage {
               .width('100%')
               .borderRadius(8)
               .clip(true)
+              .onAreaChange((_oldValue: Area, area: Area) => {
+                this.rememberSourceSelectionArea(source.bookSourceUrl, area);
+              })
               .swipeAction(this.selectionMode || source.isLocked ? {} : {
                 start: {
                   builder: () => {
@@ -525,6 +533,8 @@ struct BookSourcePage {
           .zIndex(0)
           .onAreaChange((_oldValue: Area, newValue: Area) => {
             this.sourceListViewportHeight = Number(newValue.height);
+            this.sourceSelectionViewportTop = Number(newValue.globalPosition.y);
+            this.sourceSelectionViewportBottom = this.sourceSelectionViewportTop + Number(newValue.height);
           })
         }
 
@@ -2586,6 +2596,135 @@ struct BookSourcePage {
     this.applySourceFilters();
   }
 
+  rememberSourceSelectionArea(sourceUrl: string, area: Area): void {
+    const position = area.globalPosition;
+    this.sourceSelectionAreas.set(sourceUrl, [Number(position.x), Number(position.y),
+      Number(position.x) + Number(area.width), Number(position.y) + Number(area.height)]);
+  }
+
+  @Builder
+  sourceSelectionSafeArea(source: BookSource) {
+    Stack({ alignContent: Alignment.Center }) {
+      Toggle({ type: ToggleType.Checkbox, isOn: this.isSourceSelected(source.bookSourceUrl) })
+        .selectedColor(this.buttonColor())
+        .hitTestBehavior(HitTestMode.None)
+    }
+    .width(56)
+    .height(64)
+    .margin({ left: -10, right: 2 })
+    .priorityGesture(
+      GestureGroup(GestureMode.Exclusive,
+        PanGesture({ direction: PanDirection.Vertical, distance: 2 })
+          .onActionStart((event: GestureEvent) => this.beginSourceSlideSelection(event))
+          .onActionUpdate((event: GestureEvent) => this.updateSourceSlideSelection(event))
+          .onActionEnd(() => this.endSourceSlideSelection())
+          .onActionCancel(() => this.endSourceSlideSelection()),
+        TapGesture().onAction(() => {
+          if (!this.isBatchOperating) {
+            this.sourceSelectionSuppressClickUntil = Date.now() + 240;
+            this.toggleSourceSelected(source.bookSourceUrl);
+          }
+        })
+      ),
+      GestureMask.IgnoreInternal
+    )
+  }
+
+  beginSourceSlideSelection(event: GestureEvent): void {
+    if (!this.selectionMode || this.isBatchOperating) return;
+    this.sourceDragVisited.clear();
+    const sourceUrl = this.sourceAtGesture(event);
+    if (!sourceUrl) return;
+    this.sourceSelectionDragging = true;
+    this.captureSourceSelectionPoint(event);
+    this.sourceDragSelectValue = !this.isSourceSelected(sourceUrl);
+    this.applySourceSlideSelection(sourceUrl);
+    this.updateSourceSelectionAutoScroll();
+  }
+
+  updateSourceSlideSelection(event: GestureEvent): void {
+    if (!this.selectionMode || this.isBatchOperating) return;
+    this.captureSourceSelectionPoint(event);
+    this.applySourceSlideSelection(this.sourceAtGesture(event));
+    this.updateSourceSelectionAutoScroll();
+  }
+
+  endSourceSlideSelection(): void {
+    this.sourceSelectionSuppressClickUntil = Date.now() + 240;
+    this.sourceSelectionDragging = false;
+    this.sourceDragVisited.clear();
+    this.stopSourceSelectionAutoScroll();
+  }
+
+  sourceAtGesture(event: GestureEvent): string {
+    const finger = event.fingerList.length > 0 ? event.fingerList[0] : undefined;
+    if (!finger) return '';
+    return this.sourceAtPoint(finger.globalX, finger.globalY);
+  }
+
+  sourceAtPoint(globalX: number, globalY: number): string {
+    for (const source of this.visibleSources) {
+      const area = this.sourceSelectionAreas.get(source.bookSourceUrl);
+      if (area && globalX >= area[0] && globalX <= area[2] &&
+        globalY >= area[1] && globalY <= area[3]) return source.bookSourceUrl;
+    }
+    return '';
+  }
+
+  applySourceSlideSelection(sourceUrl: string): void {
+    if (!sourceUrl || this.sourceDragVisited.has(sourceUrl)) return;
+    this.sourceDragVisited.add(sourceUrl);
+    this.setSourceSelected(sourceUrl, this.sourceDragSelectValue);
+  }
+
+  captureSourceSelectionPoint(event: GestureEvent): void {
+    const finger = event.fingerList.length > 0 ? event.fingerList[0] : undefined;
+    if (!finger) return;
+    this.sourceSelectionLastX = finger.globalX;
+    this.sourceSelectionLastY = finger.globalY;
+  }
+
+  updateSourceSelectionAutoScroll(): void {
+    if (!this.sourceSelectionDragging || this.sourceSelectionViewportBottom <= this.sourceSelectionViewportTop) {
+      this.stopSourceSelectionAutoScroll();
+      return;
+    }
+    const edgeSize = 72;
+    let direction = 0;
+    if (this.sourceSelectionLastY <= this.sourceSelectionViewportTop + edgeSize) direction = -1;
+    if (this.sourceSelectionLastY >= this.sourceSelectionViewportBottom - edgeSize) direction = 1;
+    if (direction === this.sourceSelectionAutoDirection && this.sourceSelectionAutoScrollId >= 0) return;
+    this.stopSourceSelectionAutoScroll();
+    if (direction === 0 || this.sourceSelectionReachedBoundary(direction)) return;
+    this.sourceSelectionAutoDirection = direction;
+    this.sourceSelectionAutoScrollId = setInterval(() => {
+      if (!this.sourceSelectionDragging || this.sourceSelectionReachedBoundary(direction)) {
+        this.stopSourceSelectionAutoScroll();
+        return;
+      }
+      this.sourceListScroller.scrollBy(0, direction * 12);
+      setTimeout(() => {
+        if (!this.sourceSelectionDragging) return;
+        this.applySourceSlideSelection(this.sourceAtPoint(
+          this.sourceSelectionLastX, this.sourceSelectionLastY));
+      }, 0);
+    }, 24);
+  }
+
+  sourceSelectionReachedBoundary(direction: number): boolean {
+    if (direction < 0) return this.sourceFirstVisibleIndex <= 0;
+    return this.visibleSources.length >= this.sources.length &&
+      this.sourceFirstVisibleIndex + this.sourceVisibleItemCount >= this.visibleSources.length;
+  }
+
+  stopSourceSelectionAutoScroll(): void {
+    if (this.sourceSelectionAutoScrollId >= 0) {
+      clearInterval(this.sourceSelectionAutoScrollId);
+      this.sourceSelectionAutoScrollId = -1;
+    }
+    this.sourceSelectionAutoDirection = 0;
+  }
+
   selectSourceGroup(groupKey: string): void {
     if (this.activeSourceGroup === groupKey) {
       return;
@@ -3334,8 +3473,18 @@ struct BookSourcePage {
       return;
     }
     this.showSourceActionDialog = false;
-    const loginItems = BookSourceScriptRunner.loginItems(source);
-    if (loginItems.some((item: BookSourceLoginItem): boolean => !!item.action)) {
+    const dynamicLoginUi = BookSourceScriptRunner.dynamicLoginUiScript(source);
+    let loginItems: BookSourceLoginItem[] = [];
+    try {
+      loginItems = await this.resolveSourceLoginItems(source);
+    } catch (error) {
+      this.actionSourceUrl = '';
+      promptAction.showToast({
+        message: `登录界面脚本执行失败：${this.importErrorMessage(error as Object)}`
+      });
+      return;
+    }
+    if (loginItems.length > 0) {
       const loginInfo = BookSourceLoginWebRuntime.parseRecord(source.loginInfo);
       for (const item of loginItems) {
         if (this.isSourceLoginInput(item) && loginInfo[item.name] !== undefined) {
@@ -3347,6 +3496,11 @@ struct BookSourcePage {
       this.showSourceLoginUiDialog = true;
       return;
     }
+    if (dynamicLoginUi) {
+      this.actionSourceUrl = '';
+      promptAction.showToast({ message: '登录界面脚本未返回有效控件，请检查书源 loginUi 配置' });
+      return;
+    }
     const loginEntryUrl = VerificationSupport.resolveBookSourceLoginUrl(source) ||
       VerificationSupport.pickVerificationUrl(source, source.bookSourceUrl);
     if (!loginEntryUrl || !/^https?:\/\//i.test(loginEntryUrl)) {
@@ -3355,6 +3509,14 @@ struct BookSourcePage {
       return;
     }
     this.openSourceLoginBrowser(source, loginEntryUrl, `${source.bookSourceName || '书源'} 登录`, true);
+  }
+
+  async resolveSourceLoginItems(source: BookSource): Promise<BookSourceLoginItem[]> {
+    const dynamicScript = BookSourceScriptRunner.dynamicLoginUiScript(source);
+    if (!dynamicScript) return BookSourceScriptRunner.loginItems(source);
+    const result = await this.runSourceLoginAction(source, dynamicScript);
+    if (result.errorMessage) throw new Error(result.errorMessage);
+    return BookSourceScriptRunner.parseLoginItems(result.resultValue);
   }
 
   async executeSourceLoginAction(item: BookSourceLoginItem): Promise<void> {
@@ -3377,7 +3539,11 @@ struct BookSourcePage {
       source.loginInfo = result.loginInfo;
       await AppDatabase.getInstance().updateBookSourceLoginRuntime(source.bookSourceUrl,
         source.variable, source.loginHeader, source.loginInfo);
-      if (result.refreshLoginRequested) this.refreshSourceLoginItemsFromRuntime(source);
+      if (result.refreshLoginRequested) {
+        const refreshedItems = await this.resolveSourceLoginItems(source);
+        this.sourceLoginItems = refreshedItems;
+        this.refreshSourceLoginItemsFromRuntime(source);
+      }
       this.markSourceLoginCompleted(item, result);
       if (result.toastMessage) {
         promptAction.showToast({ message: result.toastMessage.trim() || '操作成功' });
@@ -3998,6 +4164,7 @@ struct BookSourcePage {
   }
 
   exitSelectionMode(): void {
+    this.stopSourceSelectionAutoScroll();
     this.selectionMode = false;
     this.selectedSourceUrls = [];
     this.showBatchDeleteDialog = false;

@@ -89,6 +89,14 @@ export class LocalBookService {
     return book.origin === LocalBookService.ORIGIN;
   }
 
+  static isWebDavBook(book: Book | null): boolean {
+    return !!book && book.getVariable('storageKind') === 'webdav';
+  }
+
+  static isPhysicalLocalBook(book: Book): boolean {
+    return LocalBookService.isLocalBook(book) && !LocalBookService.isWebDavBook(book);
+  }
+
   static getTxtCharsetOverride(book: Book | null): string {
     if (!book || !LocalBookService.isLocalBook(book) || book.type !== LocalBookService.TYPE_TXT) return '';
     return LocalBookService.normalizeTxtCharset(book.getVariable(LocalBookService.TXT_CHARSET_OVERRIDE_KEY));
@@ -227,11 +235,27 @@ export class LocalBookService {
     return await LocalBookService.importBook(context, sourceUri, format, sourceName);
   }
 
+  static async importWebDavBook(context: Context, sourcePath: string, connectionId: string,
+    remotePath: string, remoteName: string, format: string, etag: string,
+    lastModified: number, remoteSize: number): Promise<Book> {
+    if (format !== 'txt' && format !== 'epub') throw new Error('仅支持 TXT 和 EPUB 文件');
+    const identity = LocalBookService.webDavBookUrl(connectionId, remotePath);
+    return await LocalBookService.importBook(context, sourcePath, format, remoteName, identity,
+      connectionId, remotePath, etag, lastModified, remoteSize);
+  }
+
+  static webDavBookUrl(connectionId: string, remotePath: string): string {
+    return `webdav://${connectionId}/${LocalBookService.hashText(remotePath)}`;
+  }
+
   private static async importBook(context: Context, sourceUri: string,
-    formatHint: string = '', sourceName: string = ''): Promise<Book> {
+    formatHint: string = '', sourceName: string = '', bookUrlOverride: string = '',
+    webDavConnectionId: string = '', webDavRemotePath: string = '', webDavETag: string = '',
+    webDavLastModified: number = 0, webDavRemoteSize: number = 0): Promise<Book> {
     const extension = formatHint || LocalBookService.extensionOf(sourceUri);
-    const id = LocalBookService.hashText(sourceUri);
-    const bookUrl = `local://${id}`;
+    const sourceId = LocalBookService.hashText(sourceUri);
+    const bookUrl = bookUrlOverride || `local://${sourceId}`;
+    const id = bookUrlOverride ? LocalBookService.hashText(bookUrl) : sourceId;
     const sourceStat = await fs.stat(sourceUri);
     const oldBook = await appDb.getBook(bookUrl);
     const oldChapterCount = oldBook ? await appDb.getBookChapterCount(bookUrl) : 0;
@@ -269,6 +293,16 @@ export class LocalBookService {
     book.putVariable('localSourceMtime', `${sourceStat.mtime}`);
     book.putVariable('localSourceSize', `${sourceStat.size}`);
     book.putVariable('bookAddTime', oldBook?.getVariable('bookAddTime') || `${Date.now()}`);
+    if (webDavConnectionId) {
+      book.originName = 'WebDAV';
+      book.putVariable('storageKind', 'webdav');
+      book.putVariable('webdavConnectionId', webDavConnectionId);
+      book.putVariable('webdavRemotePath', webDavRemotePath);
+      book.putVariable('webdavETag', webDavETag);
+      book.putVariable('webdavLastModified', `${Math.max(0, webDavLastModified)}`);
+      book.putVariable('webdavRemoteSize', `${Math.max(0, webDavRemoteSize)}`);
+      book.putVariable('webdavCachedAt', `${Date.now()}`);
+    }
     const metadataSource = sourceName || sourceUri;
     const fileMetadata = LocalBookService.parseFileNameMetadata(metadataSource);
     const hasCustomMetadata = book.getVariable('localMetadataCustomized') === '1';

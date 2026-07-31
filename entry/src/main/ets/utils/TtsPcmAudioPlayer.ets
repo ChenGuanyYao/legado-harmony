@@ -38,6 +38,8 @@ export class TtsPcmAudioPlayer {
   private rendererWriteCallback: audio.AudioRendererWriteDataCallback | null = null;
   private pendingWrites: PendingPcmWrite[] = [];
   private pendingWriteBytes: number = 0;
+  private paused: boolean = false;
+  private resumeWaiters: Array<() => void> = [];
 
   async play(data: ArrayBuffer, sampleRate: number): Promise<void> {
     await this.write(data, sampleRate);
@@ -133,6 +135,7 @@ export class TtsPcmAudioPlayer {
 
   async drain(): Promise<void> {
     await this.writeChain;
+    await this.waitUntilResumed();
     const renderer = this.renderer;
     const generation = this.playGeneration;
     if (!renderer || generation !== this.playGeneration ||
@@ -147,8 +150,63 @@ export class TtsPcmAudioPlayer {
     }
   }
 
+  async pause(): Promise<void> {
+    if (this.paused) {
+      return;
+    }
+    this.paused = true;
+    const renderer = this.renderer;
+    const generation = this.playGeneration;
+    if (!renderer || renderer.state !== audio.AudioState.STATE_RUNNING) {
+      return;
+    }
+    this.updatePlaybackTimeline(generation);
+    try {
+      await renderer.pause();
+    } catch (error) {
+      console.warn('[TTS] pause pcm renderer failed:', error);
+    }
+    if (generation === this.playGeneration) {
+      this.pausePlaybackTimelineAt(this.lastReachedFrame);
+      this.rendererFrameOrigin = -1;
+      this.rendererLogicalFrameOrigin = this.lastReachedFrame;
+    }
+  }
+
+  async resume(): Promise<void> {
+    if (!this.paused) {
+      return;
+    }
+    this.paused = false;
+    const renderer = this.renderer;
+    const generation = this.playGeneration;
+    if (renderer && renderer.state === audio.AudioState.STATE_PAUSED) {
+      let rendererResumed = false;
+      try {
+        await renderer.start();
+        rendererResumed = true;
+      } catch (error) {
+        console.warn('[TTS] resume pcm renderer failed:', error);
+      }
+      if (generation === this.playGeneration && rendererResumed) {
+        this.rendererFrameOrigin = -1;
+        this.rendererLogicalFrameOrigin = this.lastReachedFrame;
+        this.timelineBaseFrame = this.lastReachedFrame;
+        this.timelineStartedAt = Date.now();
+        this.updatePlaybackTimeline(generation);
+      }
+    }
+    this.resolveResumeWaiters();
+  }
+
+  isPaused(): boolean {
+    return this.paused;
+  }
+
   stop(): void {
     this.playGeneration++;
+    this.paused = false;
+    this.resolveResumeWaiters();
     this.writeChain = Promise.resolve();
     this.rendererStartPromise = null;
     this.resolvePendingWrites();
@@ -169,10 +227,10 @@ export class TtsPcmAudioPlayer {
 
   debugState(): string {
     if (!this.renderer) {
-      return `renderer=none,queuedFrames=${this.queuedFrames},marks=${this.playbackMarks.length},` +
+      return `renderer=none,paused=${this.paused},queuedFrames=${this.queuedFrames},marks=${this.playbackMarks.length},` +
         `pendingBytes=${this.pendingWriteBytes},progress=${this.progressMode}`;
     }
-    return `renderer=${this.audioStateName(this.renderer.state)},sampleRate=${this.currentSampleRate},` +
+    return `renderer=${this.audioStateName(this.renderer.state)},paused=${this.paused},sampleRate=${this.currentSampleRate},` +
       `generation=${this.playGeneration},queuedFrames=${this.queuedFrames},marks=${this.playbackMarks.length},` +
       `pendingBytes=${this.pendingWriteBytes},progress=${this.progressMode}`;
   }
@@ -203,14 +261,32 @@ export class TtsPcmAudioPlayer {
       await this.releaseStaleRenderer(renderer);
       return;
     }
-    if (renderer.state !== audio.AudioState.STATE_RUNNING) {
+    if (!this.paused && renderer.state !== audio.AudioState.STATE_RUNNING) {
       await renderer.start();
     }
     if (generation !== this.playGeneration) {
       await this.releaseStaleRenderer(renderer);
       return;
     }
-    this.ensurePlaybackTimeline(sampleRate, generation);
+    if (!this.paused) {
+      this.ensurePlaybackTimeline(sampleRate, generation);
+    }
+  }
+
+  private waitUntilResumed(): Promise<void> {
+    if (!this.paused) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve: () => void) => {
+      this.resumeWaiters.push(resolve);
+    });
+  }
+
+  private resolveResumeWaiters(): void {
+    const waiters = this.resumeWaiters.splice(0, this.resumeWaiters.length);
+    for (const resolve of waiters) {
+      resolve();
+    }
   }
 
   private async releaseStaleRenderer(renderer: audio.AudioRenderer): Promise<void> {

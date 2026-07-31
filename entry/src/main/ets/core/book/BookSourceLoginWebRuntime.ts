@@ -20,6 +20,7 @@ export class LoginRuntimeStep {
   refreshLoginRequested: boolean = false;
   toastMessage: string = '';
   errorMessage: string = '';
+  resultValue: string = '';
 }
 
 export class LoginCookieOperation {
@@ -85,6 +86,7 @@ export class BookSourceLoginWebRuntime {
       `globalThis.__legadoHarmonyExposedNames=[];` +
       `const runtime=S.runtime&&typeof S.runtime==='object'?S.runtime:{};` +
       `const vars=Object.assign({},runtime.java||{});` +
+      `const sourceData=Object.assign({},runtime.source||{});` +
       `const cacheData=Object.assign({},runtime.cache||{});` +
       `const cookieData=Object.assign({},S.cookies||{});const cookieOps=[];` +
       `const loginMap=Object.assign({},S.loginInfo||{});` +
@@ -96,6 +98,8 @@ export class BookSourceLoginWebRuntime {
       `getSource:function(){return this;},` +
       `getVariable:function(){return S.variable||'';},` +
       `setVariable:function(v){S.variable=String(v??'');return S.variable;},` +
+      `put:function(k,v){sourceData[String(k??'')]=v;return v;},get:function(k){k=String(k??'');` +
+      `return Object.prototype.hasOwnProperty.call(sourceData,k)?sourceData[k]:'';},` +
       `getLoginHeader:function(){return S.loginHeader||'';},` +
       `putLoginHeader:function(v){S.loginHeader=String(v??'');return S.loginHeader;},` +
       `removeLoginHeader:function(){S.loginHeader='';return '';},` +
@@ -157,12 +161,20 @@ export class BookSourceLoginWebRuntime {
       `cookieOps.push({operation:'remove',url:k,value:'',name:n});` +
       `if(!n){cookieData[k]='';}else{cookieData[k]=String(cookieData[k]??'').split(';').filter(function(x){` +
       `return x.trim().split('=')[0]!==n;}).join(';');}return true;}};` +
+      `function javaMap(){const map={};Object.defineProperty(map,'get',{enumerable:false,value:function(k){` +
+      `return Object.prototype.hasOwnProperty.call(this,k)?this[k]:null;}});` +
+      `Object.defineProperty(map,'put',{enumerable:false,value:function(k,v){this[k]=v;return v;}});` +
+      `Object.defineProperty(map,'remove',{enumerable:false,value:function(k){const v=this[k];delete this[k];return v;}});` +
+      `Object.defineProperty(map,'putAll',{enumerable:false,value:function(v){if(v&&typeof v==='object')` +
+      `Object.keys(v).forEach(function(k){map[k]=v[k];});return map;}});return map;}` +
       `const java={` +
       `ajax:function(v){v=String(v??'');if(Object.prototype.hasOwnProperty.call(S.responses,v))return S.responses[v];` +
       `if(!pending)pending=v;return '{"code":599,"message":"pending","data":{}}';},` +
       `put:function(k,v){vars[k]=v;return v;},get:function(k){` +
       `return Object.prototype.hasOwnProperty.call(vars,k)?vars[k]:null;},` +
       `toast:function(v){toast=String(v??'');return toast;},longToast:function(v){toast=String(v??'');return toast;},` +
+      `upLoginData:function(v){if(v&&typeof v==='object')Object.keys(v).forEach(function(k){` +
+      `loginMap[k]=String(v[k]??'');});return true;},` +
       `startBrowser:function(u,t){return open(u,t,false);},startBrowserAwait:function(u,t){return open(u,t,true);},` +
       `startBrowserDp:function(u,t){return open(u,t,false);},showBrowser:function(u,c,j,o){` +
       `url=String(u??'');title='';html=c===undefined||c===null?'':String(c);injectJs=String(j??'');` +
@@ -194,22 +206,26 @@ export class BookSourceLoginWebRuntime {
       `};` +
       `const TimeoutCancellationException=function(){};` +
       `const Packages={io:{legato:{kazusa:{utils:{TimeoutCancellationException:TimeoutCancellationException}}}},` +
-      `java:{lang:{Thread:{sleep:function(){return '';}}}},android:{util:{Base64:{` +
+      `java:{util:{HashMap:javaMap,LinkedHashMap:javaMap},lang:{Thread:{sleep:function(){return '';}}}},` +
+      `android:{util:{Base64:{` +
       `encodeToString:function(v){return b64e(v);}}}}};` +
       `globalThis.source=source;globalThis.java=java;globalThis.cache=cache;globalThis.cookie=cookie;` +
       `globalThis.Packages=Packages;globalThis.result=loginMap;` +
-      `try{(function(){eval(decodeUtf8('${codeBase64}'));}).call(globalThis);}` +
+      `let evaluatedResult;try{evaluatedResult=(function(){return eval(decodeUtf8('${codeBase64}'));}).call(globalThis);}` +
       `catch(e){error=String((e&&e.name?e.name+': ':'')+((e&&e.message)||e||'脚本执行失败')+` +
       `(e&&e.stack?'\\n'+e.stack:''));}` +
+      `function resultText(v){if(typeof v==='string')return v;if(v&&v!==loginMap&&typeof v==='object'){` +
+      `try{return JSON.stringify(v);}catch(e){return '';}}return '';}` +
+      `const resultValue=resultText(globalThis.result)||resultText(evaluatedResult);` +
       `const cleanInfo={};Object.keys(loginMap).forEach(function(k){cleanInfo[k]=String(loginMap[k]??'');});` +
-      `cleanInfo['${this.RUNTIME_STATE_KEY}']=JSON.stringify({java:vars,cache:cacheData});` +
+      `cleanInfo['${this.RUNTIME_STATE_KEY}']=JSON.stringify({java:vars,source:sourceData,cache:cacheData});` +
       `return encodeURIComponent(JSON.stringify({pendingAjax:pending,pendingCookie:pendingCookie,` +
       `pendingCrypto:pendingCrypto,pendingBrowserAwait:pendingBrowser,pendingBrowserTitle:pendingBrowserTitle,` +
       `cookieOperations:JSON.stringify(cookieOps),variable:S.variable||'',` +
       `loginHeader:S.loginHeader||'',loginInfo:JSON.stringify(cleanInfo),requestedUrl:url,requestedTitle:title,` +
       `requestedHtml:html,requestedInjectJs:injectJs,requestedSearchKeyword:searchKeyword,` +
       `refreshExploreRequested:refreshExplore,refreshLoginRequested:refreshLogin,` +
-      `toastMessage:toast,errorMessage:error}));})()`;
+      `toastMessage:toast,errorMessage:error,resultValue:resultValue}));})()`;
   }
 
   private static encodeBase64(value: string): string {
@@ -522,6 +538,7 @@ export class BookSourceLoginWebRuntime {
       result.refreshLoginRequested = record['refreshLoginRequested'] === true;
       result.toastMessage = String(record['toastMessage'] || '');
       result.errorMessage = String(record['errorMessage'] || '');
+      result.resultValue = String(record['resultValue'] || '');
       return result;
     } catch (_) {
       const result = new LoginRuntimeStep();

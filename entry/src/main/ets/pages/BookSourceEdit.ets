@@ -5,6 +5,13 @@ import { promptAction } from '@kit.ArkUI';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { FormDraftStore } from '../utils/FormDraftStore';
+
+class BookSourceEditDraft {
+  sourceJson: string = '';
+  savedSnapshot: string = '';
+  currentTab: number = 0;
+}
 
 @Entry
 @Component
@@ -24,28 +31,42 @@ struct BookSourceEditPage {
   @State sourceLoadedVersion: number = 0;
   @State savedSourceSnapshot: string = '';
   @State showUnsavedDialog: boolean = false;
+  private sourceInitialized: boolean = false;
+  private draftSaveTimerId: number = -1;
 
   aboutToAppear() {
     this.syncBars();
+    if (this.sourceInitialized) return;
+    this.sourceInitialized = true;
     const params = router.getParams() as Record<string, string>;
-    if (params && params['bookSourceUrl']) {
-      this.bookSourceUrl = params['bookSourceUrl'];
-      if (this.bookSourceUrl) {
-        this.loadSource();
-      } else {
-        this.markSourceSaved();
-      }
-    } else {
-      this.markSourceSaved();
-    }
+    this.bookSourceUrl = params && params['bookSourceUrl'] ? params['bookSourceUrl'] : '';
+    this.initializeSourceForm();
   }
 
   onPageShow(): void {
     this.syncBars();
   }
 
-  async loadSource() {
+  onPageHide(): void {
+    this.persistDraftNow();
+  }
+
+  async initializeSourceForm(): Promise<void> {
+    // Keep the editor subtree out of the first render until either the draft or
+    // database value is ready. Otherwise TextInput is created with an empty
+    // value and ArkUI may retain that native editor when the model is replaced.
     this.isLoading = true;
+    try {
+      const restored = await this.restorePersistentDraft();
+      if (restored) return;
+      if (this.bookSourceUrl) await this.loadSource();
+      else this.markSourceSaved();
+    } finally {
+      this.isLoading = false;
+    }
+  }
+
+  async loadSource() {
     try {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
@@ -58,8 +79,6 @@ struct BookSourceEditPage {
       }
     } catch (e) {
       console.error('加载书源失败:', e);
-    } finally {
-      this.isLoading = false;
     }
   }
 
@@ -86,6 +105,7 @@ struct BookSourceEditPage {
       } else {
         await db.insertBookSource(this.source);
       }
+      this.clearDraft();
       this.markSourceSaved();
       promptAction.showToast({ message: '保存成功' });
       router.back();
@@ -249,6 +269,7 @@ struct BookSourceEditPage {
                 this.contentTabBuilder()
               }
             }
+            .id(`book_source_form_${this.currentTab}_${this.sourceLoadedVersion}`)
             .width('100%')
             .padding({ left: 16, right: 16, top: 16, bottom: 16 + this.navBarHeight })
           }
@@ -289,6 +310,66 @@ struct BookSourceEditPage {
 
   markSourceSaved(): void {
     this.savedSourceSnapshot = this.sourceSnapshot();
+  }
+
+  draftKey(): string {
+    return `book_source_edit:${this.bookSourceUrl || '__new__'}`;
+  }
+
+  restoreDraft(rawValue: string = ''): boolean {
+    const raw = rawValue || FormDraftStore.get(this.draftKey());
+    if (!raw) return false;
+    try {
+      const draft = JSON.parse(raw) as BookSourceEditDraft;
+      this.source = JSON.parse(draft.sourceJson) as BookSource;
+      this.savedSourceSnapshot = draft.savedSnapshot || '';
+      this.currentTab = Math.max(0, Math.min(draft.currentTab || 0, 5));
+      this.sourceLoadedVersion++;
+      return true;
+    } catch (_) {
+      FormDraftStore.removePersistent(getContext(this), this.draftKey());
+      return false;
+    }
+  }
+
+  async restorePersistentDraft(): Promise<boolean> {
+    const raw = await FormDraftStore.load(getContext(this), this.draftKey());
+    return this.restoreDraft(raw);
+  }
+
+  scheduleDraftSave(): void {
+    if (this.draftSaveTimerId >= 0) clearTimeout(this.draftSaveTimerId);
+    this.draftSaveTimerId = setTimeout(() => {
+      this.draftSaveTimerId = -1;
+      const draft = new BookSourceEditDraft();
+      draft.sourceJson = JSON.stringify(this.source);
+      draft.savedSnapshot = this.savedSourceSnapshot;
+      draft.currentTab = this.currentTab;
+      const raw = JSON.stringify(draft);
+      FormDraftStore.persistSoon(getContext(this), this.draftKey(), raw);
+    }, 60);
+  }
+
+  persistDraftNow(): void {
+    if (!this.hasUnsavedChanges()) return;
+    if (this.draftSaveTimerId >= 0) {
+      clearTimeout(this.draftSaveTimerId);
+      this.draftSaveTimerId = -1;
+    }
+    const draft = new BookSourceEditDraft();
+    draft.sourceJson = JSON.stringify(this.source);
+    draft.savedSnapshot = this.savedSourceSnapshot;
+    draft.currentTab = this.currentTab;
+    FormDraftStore.persist(getContext(this), this.draftKey(), JSON.stringify(draft));
+  }
+
+  clearDraft(): void {
+    if (this.draftSaveTimerId >= 0) {
+      clearTimeout(this.draftSaveTimerId);
+      this.draftSaveTimerId = -1;
+    }
+    this.savedSourceSnapshot = this.sourceSnapshot();
+    FormDraftStore.removePersistent(getContext(this), this.draftKey());
   }
 
   sourceSnapshot(): string {
@@ -404,6 +485,7 @@ struct BookSourceEditPage {
           .margin({ bottom: 10 })
           .onClick(() => {
             this.showUnsavedDialog = false;
+            this.clearDraft();
             router.back();
           })
 
@@ -511,6 +593,7 @@ struct BookSourceEditPage {
           .selectedColor(this.buttonColor())
           .onChange((isOn: boolean) => {
             this.source.enabledCookieJar = isOn;
+            this.scheduleDraftSave();
           })
       }
       .width('100%')
@@ -526,6 +609,7 @@ struct BookSourceEditPage {
           .selectedColor(this.buttonColor())
           .onChange((isOn: boolean) => {
             this.source.enabled = isOn;
+            this.scheduleDraftSave();
           })
       }
       .width('100%')
@@ -541,6 +625,7 @@ struct BookSourceEditPage {
           .selectedColor(this.buttonColor())
           .onChange((isOn: boolean) => {
             this.source.enabledExplore = isOn;
+            this.scheduleDraftSave();
           })
       }
       .width('100%')
@@ -794,6 +879,7 @@ struct BookSourceEditPage {
         .padding({ left: 12, right: 12 })
         .onChange((val: string) => {
           onChange(val);
+          this.scheduleDraftSave();
         })
     }
     .width('100%')

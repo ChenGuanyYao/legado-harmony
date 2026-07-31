@@ -11,6 +11,7 @@ import { EncodedSourceUrl } from './EncodedSourceUrl';
 import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
 import { BookUrlResolver } from './BookUrlResolver';
 import { BookSourceScriptRunner } from './BookSourceScriptRunner';
+import { BookTypeSupport } from './BookTypeSupport';
 
 export interface ExploreEntry {
   title: string;
@@ -133,6 +134,7 @@ export class ExploreCoordinator {
         book.bookUrl = BookUrlResolver.resolve(ir.analyzeFirst(exploreRule.bookUrl), baseUrl);
         book.origin = source.bookSourceUrl;
         book.originName = source.bookSourceName;
+        BookTypeSupport.applySearchBookType(book, source);
 
         if (book.name && book.bookUrl && !books.some(b => b.bookUrl === book.bookUrl && b.origin === book.origin)) {
           books.push(book);

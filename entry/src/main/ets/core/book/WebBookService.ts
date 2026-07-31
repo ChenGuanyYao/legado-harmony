@@ -282,6 +282,11 @@ export class WebBookService {
     if (BookSourceDataUrlSupport.isEncodedSource(chapter.url)) {
       return await BookSourceDataUrlSupport.getContent(this.http, source, book, chapter);
     }
+    const isAudioContent = source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
+    if (isAudioContent && !source.contentRule.content &&
+      /\.(?:aac|flac|m3u8|m4a|mp3|mp4|ogg|opus|wav)(?:[?#]|$)/i.test(chapter.url)) {
+      return BookUrlResolver.resolve(chapter.url, book.bookUrl || source.bookSourceUrl);
+    }
     const normalizedContentUrl = this.normalizeChaoxingUrl(source, chapter.url);
     if (normalizedContentUrl !== chapter.url) {
       chapter.url = normalizedContentUrl;
@@ -352,6 +357,7 @@ export class WebBookService {
     const data = new ContentPageData();
     const rule = new AnalyzeRule(body, baseUrl, ctx);
     const contentRule = source.contentRule;
+    const isAudioContent = source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
     if (contentRule.nextContentUrl) {
       data.nextUrl = rule.getString(contentRule.nextContentUrl, true);
     }
@@ -361,6 +367,13 @@ export class WebBookService {
     }
     let content = await this.tryGetDirectAjaxRuleContent(source, body, baseUrl, ctx, contentRule.content);
     if (!content) content = rule.getString(contentRule.content);
+    // Audio rules return a media address (or JSON/HTML containing one), not reader text.
+    // Preserve that value so the audio page can resolve relative, escaped and tagged URLs.
+    if (isAudioContent) {
+      if (!content) return data;
+      data.content = this.applyContentReplaceRule(content, contentRule.replaceRegex, ctx, chapter).trim();
+      return data;
+    }
     if (!content || this.isBadExtractedContent(content)) {
       const fallbackContent = this.tryExtractReadableContentFromHtml(body);
       if (fallbackContent) content = fallbackContent;

@@ -839,6 +839,16 @@ export class CloudSyncCoordinator {
       CloudSyncCoordinator.notifyBookSourcesChanged();
     } else if (entityType === 'reader_settings') {
       const readerSettings = JSON.parse(raw) as ReaderSettings;
+      // Font files are device-local and deliberately omitted from uploads. Do
+      // not interpret those empty remote fields as a request to reset the
+      // selected local font when foreground/background auto-sync runs.
+      const localReaderSettings = await ReaderSettingsStore.load(context);
+      readerSettings.fontFamily = localReaderSettings.fontFamily;
+      readerSettings.fontFilePath = localReaderSettings.fontFilePath;
+      readerSettings.fontSourceName = localReaderSettings.fontSourceName;
+      readerSettings.fontMode = localReaderSettings.fontMode;
+      readerSettings.systemFontFamily = localReaderSettings.systemFontFamily;
+      readerSettings.customFontsRaw = localReaderSettings.customFontsRaw;
       await ReaderSettingsStore.saveAll(
         context,
         readerSettings,

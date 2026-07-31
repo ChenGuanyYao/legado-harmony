@@ -6,6 +6,8 @@ export class TtsAvAudioPlayer {
   private player: media.AVPlayer | null = null;
   private sourceFile: fs.File | null = null;
   private playGeneration: number = 0;
+  private paused: boolean = false;
+  private resumeWaiters: Array<() => void> = [];
 
   async play(filePath: string, speed: number = 1,
     onPlaybackStart?: (durationMs: number) => void): Promise<void> {
@@ -55,7 +57,16 @@ export class TtsAvAudioPlayer {
       } catch (_) {
         this.setDiscreteSpeed(player, normalizedSpeed);
       }
-      await player.play();
+      await this.waitUntilResumed();
+      if (generation !== this.playGeneration) {
+        return;
+      }
+      if (player.state !== 'playing') {
+        await player.play();
+      }
+      if (this.paused && player.state === 'playing') {
+        await player.pause();
+      }
       if (onPlaybackStart) {
         try {
           const sourceDuration = player.duration;
@@ -81,6 +92,8 @@ export class TtsAvAudioPlayer {
 
   stop(): void {
     this.playGeneration++;
+    this.paused = false;
+    this.resolveResumeWaiters();
     const player = this.player;
     const sourceFile = this.sourceFile;
     this.player = null;
@@ -98,8 +111,52 @@ export class TtsAvAudioPlayer {
     this.stop();
   }
 
+  async pause(): Promise<void> {
+    if (this.paused) {
+      return;
+    }
+    this.paused = true;
+    const player = this.player;
+    if (player && player.state === 'playing') {
+      await player.pause();
+    }
+  }
+
+  async resume(): Promise<void> {
+    if (!this.paused) {
+      return;
+    }
+    this.paused = false;
+    const player = this.player;
+    if (player && player.state === 'paused') {
+      await player.play();
+    }
+    this.resolveResumeWaiters();
+  }
+
+  isPaused(): boolean {
+    return this.paused;
+  }
+
   debugState(): string {
-    return this.player ? `avPlayer=${this.player.state},generation=${this.playGeneration}` : 'avPlayer=none';
+    return this.player ? `avPlayer=${this.player.state},paused=${this.paused},generation=${this.playGeneration}` :
+      `avPlayer=none,paused=${this.paused}`;
+  }
+
+  private waitUntilResumed(): Promise<void> {
+    if (!this.paused) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve: () => void) => {
+      this.resumeWaiters.push(resolve);
+    });
+  }
+
+  private resolveResumeWaiters(): void {
+    const waiters = this.resumeWaiters.splice(0, this.resumeWaiters.length);
+    for (const resolve of waiters) {
+      resolve();
+    }
   }
 
   private setDiscreteSpeed(player: media.AVPlayer, speed: number): void {

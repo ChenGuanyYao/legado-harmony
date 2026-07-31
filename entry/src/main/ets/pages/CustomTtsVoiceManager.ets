@@ -10,6 +10,22 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { TtsSettings, TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ResponsiveManagerListLayout } from '../utils/ResponsiveManagerListLayout';
+import { FormDraftStore } from '../utils/FormDraftStore';
+
+class VoiceEditFormDraft {
+  editingVoiceId: string = '';
+  name: string = '';
+  url: string = '';
+  contentType: string = '';
+  concurrentRate: string = '';
+  loginUrl: string = '';
+  loginUi: string = '';
+  loginCheckJs: string = '';
+  header: string = '';
+  jsLib: string = '';
+  jsEngine: string = '';
+  enabledCookieJar: boolean = false;
+}
 
 const CUSTOM_TTS_IMPORT_FILE_LIMIT_BYTES: number = 2 * 1024 * 1024;
 
@@ -62,15 +78,35 @@ struct CustomTtsVoiceManagerPage {
   @State contextMenuY: number = 96;
   @State contextViewportWidth: number = 360;
   @State contextViewportHeight: number = 720;
+  private voiceSelectionAreas: Map<string, number[]> = new Map<string, number[]>();
+  private voiceDragVisited: Set<string> = new Set<string>();
+  private voiceDragSelectValue: boolean = true;
+  private voiceListScroller: Scroller = new Scroller();
+  private voiceSelectionDragging: boolean = false;
+  private voiceSelectionLastX: number = 0;
+  private voiceSelectionLastY: number = 0;
+  private voiceSelectionAutoScrollId: number = -1;
+  private voiceSelectionAutoDirection: number = 0;
+  private voiceSelectionViewportTop: number = 0;
+  private voiceSelectionViewportBottom: number = 0;
+  private voiceFirstVisibleIndex: number = 0;
+  private voiceLastVisibleIndex: number = 0;
+  private voiceSelectionSuppressClickUntil: number = 0;
 
   aboutToAppear(): void {
     this.syncBars();
     this.loadSettings();
+    this.restorePersistentVoiceEditDraft();
   }
 
   onPageShow(): void {
     this.syncBars();
     this.loadSettings();
+  }
+
+  onPageHide(): void {
+    this.stopVoiceSelectionAutoScroll();
+    this.persistVoiceEditDraftNow();
   }
 
   build() {
@@ -96,11 +132,12 @@ struct CustomTtsVoiceManagerPage {
           .layoutWeight(1)
           .justifyContent(FlexAlign.Center)
         } else {
-          List({ space: 8 }) {
+          List({ space: 8, scroller: this.voiceListScroller }) {
             ForEach(this.filteredVoices(), (voice: HttpTTS) => {
               ListItem() {
                 this.voiceListItem(voice)
               }
+              .onAreaChange((_oldValue: Area, area: Area) => this.rememberVoiceSelectionArea(voice, area))
               .width('100%')
               .borderRadius(8)
               .clip(true)
@@ -138,6 +175,14 @@ struct CustomTtsVoiceManagerPage {
           .clip(true)
           .lanes(ResponsiveManagerListLayout.laneCount(this.contextViewportWidth),
             ResponsiveManagerListLayout.gutter(this.contextViewportWidth))
+          .onScrollIndex((start: number, end: number) => {
+            this.voiceFirstVisibleIndex = start;
+            this.voiceLastVisibleIndex = end;
+          })
+          .onAreaChange((_oldValue: Area, area: Area) => {
+            this.voiceSelectionViewportTop = Number(area.globalPosition.y);
+            this.voiceSelectionViewportBottom = this.voiceSelectionViewportTop + Number(area.height);
+          })
         }
 
         if (this.selectionMode) {
@@ -279,6 +324,7 @@ struct CustomTtsVoiceManagerPage {
   }
 
   exitSelectionMode(): void {
+    this.stopVoiceSelectionAutoScroll();
     this.selectionMode = false;
     this.selectedVoiceIds = [];
   }
@@ -367,6 +413,7 @@ struct CustomTtsVoiceManagerPage {
   }
 
   openEditDialog(voice: HttpTTS): void {
+    FormDraftStore.removePersistent(getContext(this), 'custom_tts:edit');
     this.editingVoiceId = String(voice.id);
     this.editName = voice.name || '';
     this.editUrl = voice.url || '';
@@ -380,11 +427,77 @@ struct CustomTtsVoiceManagerPage {
     this.editJsEngine = voice.jsEngine || voice.jsLib || '';
     this.editEnabledCookieJar = voice.enabledCookieJar === true;
     this.showEditDialog = true;
+    this.saveVoiceEditDraft();
   }
 
   closeEditDialog(): void {
     this.showEditDialog = false;
     this.editingVoiceId = '';
+    FormDraftStore.removePersistent(getContext(this), 'custom_tts:edit');
+  }
+
+  restoreVoiceEditDraft(rawValue: string = ''): void {
+    const raw = rawValue || FormDraftStore.get('custom_tts:edit');
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw) as VoiceEditFormDraft;
+      this.editingVoiceId = draft.editingVoiceId;
+      this.editName = draft.name;
+      this.editUrl = draft.url;
+      this.editContentType = draft.contentType;
+      this.editConcurrentRate = draft.concurrentRate;
+      this.editLoginUrl = draft.loginUrl;
+      this.editLoginUi = draft.loginUi;
+      this.editLoginCheckJs = draft.loginCheckJs;
+      this.editHeader = draft.header;
+      this.editJsLib = draft.jsLib;
+      this.editJsEngine = draft.jsEngine;
+      this.editEnabledCookieJar = draft.enabledCookieJar;
+      this.showEditDialog = true;
+    } catch (_) {
+      FormDraftStore.removePersistent(getContext(this), 'custom_tts:edit');
+    }
+  }
+
+  async restorePersistentVoiceEditDraft(): Promise<void> {
+    const raw = await FormDraftStore.load(getContext(this), 'custom_tts:edit');
+    this.restoreVoiceEditDraft(raw);
+  }
+
+  saveVoiceEditDraft(): void {
+    if (!this.showEditDialog) return;
+    const draft = new VoiceEditFormDraft();
+    draft.editingVoiceId = this.editingVoiceId;
+    draft.name = this.editName;
+    draft.url = this.editUrl;
+    draft.contentType = this.editContentType;
+    draft.concurrentRate = this.editConcurrentRate;
+    draft.loginUrl = this.editLoginUrl;
+    draft.loginUi = this.editLoginUi;
+    draft.loginCheckJs = this.editLoginCheckJs;
+    draft.header = this.editHeader;
+    draft.jsLib = this.editJsLib;
+    draft.jsEngine = this.editJsEngine;
+    draft.enabledCookieJar = this.editEnabledCookieJar;
+    FormDraftStore.persistSoon(getContext(this), 'custom_tts:edit', JSON.stringify(draft));
+  }
+
+  persistVoiceEditDraftNow(): void {
+    if (!this.showEditDialog) return;
+    const draft = new VoiceEditFormDraft();
+    draft.editingVoiceId = this.editingVoiceId;
+    draft.name = this.editName;
+    draft.url = this.editUrl;
+    draft.contentType = this.editContentType;
+    draft.concurrentRate = this.editConcurrentRate;
+    draft.loginUrl = this.editLoginUrl;
+    draft.loginUi = this.editLoginUi;
+    draft.loginCheckJs = this.editLoginCheckJs;
+    draft.header = this.editHeader;
+    draft.jsLib = this.editJsLib;
+    draft.jsEngine = this.editJsEngine;
+    draft.enabledCookieJar = this.editEnabledCookieJar;
+    FormDraftStore.persist(getContext(this), 'custom_tts:edit', JSON.stringify(draft));
   }
 
   saveEditedVoice(): void {
@@ -546,6 +659,136 @@ struct CustomTtsVoiceManagerPage {
 
   voiceKey(voice: HttpTTS): string {
     return `${voice.id}_${voice.name || ''}_${voice.enabled ? '1' : '0'}_${this.selectionMode ? 'select' : 'normal'}`;
+  }
+
+  rememberVoiceSelectionArea(voice: HttpTTS, area: Area): void {
+    const position = area.globalPosition;
+    this.voiceSelectionAreas.set(String(voice.id), [Number(position.x), Number(position.y),
+      Number(position.x) + Number(area.width), Number(position.y) + Number(area.height)]);
+  }
+
+  @Builder
+  voiceSelectionSafeArea(voice: HttpTTS) {
+    Stack({ alignContent: Alignment.Center }) {
+      Toggle({ type: ToggleType.Checkbox, isOn: this.isVoiceSelected(voice) })
+        .selectedColor(this.buttonColor())
+        .hitTestBehavior(HitTestMode.None)
+    }
+    .width(56)
+    .height(64)
+    .margin({ left: -10, right: 2 })
+    .priorityGesture(
+      GestureGroup(GestureMode.Exclusive,
+        PanGesture({ direction: PanDirection.Vertical, distance: 2 })
+          .onActionStart((event: GestureEvent) => this.beginVoiceSlideSelection(event))
+          .onActionUpdate((event: GestureEvent) => this.updateVoiceSlideSelection(event))
+          .onActionEnd(() => this.endVoiceSlideSelection())
+          .onActionCancel(() => this.endVoiceSlideSelection()),
+        TapGesture().onAction(() => {
+          if (!this.isBatchOperating) {
+            this.voiceSelectionSuppressClickUntil = Date.now() + 240;
+            this.toggleVoiceSelected(voice);
+          }
+        })
+      ),
+      GestureMask.IgnoreInternal
+    )
+  }
+
+  beginVoiceSlideSelection(event: GestureEvent): void {
+    if (!this.selectionMode || this.isBatchOperating) return;
+    this.voiceDragVisited.clear();
+    const voice = this.voiceAtGesture(event);
+    if (!voice) return;
+    this.voiceSelectionDragging = true;
+    this.captureVoiceSelectionPoint(event);
+    this.voiceDragSelectValue = !this.isVoiceSelected(voice);
+    this.applyVoiceSlideSelection(voice);
+    this.updateVoiceSelectionAutoScroll();
+  }
+
+  updateVoiceSlideSelection(event: GestureEvent): void {
+    if (!this.selectionMode || this.isBatchOperating) return;
+    this.captureVoiceSelectionPoint(event);
+    this.applyVoiceSlideSelection(this.voiceAtGesture(event));
+    this.updateVoiceSelectionAutoScroll();
+  }
+
+  endVoiceSlideSelection(): void {
+    this.voiceSelectionSuppressClickUntil = Date.now() + 240;
+    this.voiceSelectionDragging = false;
+    this.voiceDragVisited.clear();
+    this.stopVoiceSelectionAutoScroll();
+  }
+
+  voiceAtGesture(event: GestureEvent): HttpTTS | null {
+    const finger = event.fingerList.length > 0 ? event.fingerList[0] : undefined;
+    if (!finger) return null;
+    return this.voiceAtPoint(finger.globalX, finger.globalY);
+  }
+
+  voiceAtPoint(globalX: number, globalY: number): HttpTTS | null {
+    for (const voice of this.filteredVoices()) {
+      const area = this.voiceSelectionAreas.get(String(voice.id));
+      if (area && globalX >= area[0] && globalX <= area[2] &&
+        globalY >= area[1] && globalY <= area[3]) return voice;
+    }
+    return null;
+  }
+
+  applyVoiceSlideSelection(voice: HttpTTS | null): void {
+    if (!voice) return;
+    const id = String(voice.id);
+    if (this.voiceDragVisited.has(id)) return;
+    this.voiceDragVisited.add(id);
+    this.setVoiceSelected(voice, this.voiceDragSelectValue);
+  }
+
+  captureVoiceSelectionPoint(event: GestureEvent): void {
+    const finger = event.fingerList.length > 0 ? event.fingerList[0] : undefined;
+    if (!finger) return;
+    this.voiceSelectionLastX = finger.globalX;
+    this.voiceSelectionLastY = finger.globalY;
+  }
+
+  updateVoiceSelectionAutoScroll(): void {
+    if (!this.voiceSelectionDragging || this.voiceSelectionViewportBottom <= this.voiceSelectionViewportTop) {
+      this.stopVoiceSelectionAutoScroll();
+      return;
+    }
+    const edgeSize = 72;
+    let direction = 0;
+    if (this.voiceSelectionLastY <= this.voiceSelectionViewportTop + edgeSize) direction = -1;
+    if (this.voiceSelectionLastY >= this.voiceSelectionViewportBottom - edgeSize) direction = 1;
+    if (direction === this.voiceSelectionAutoDirection && this.voiceSelectionAutoScrollId >= 0) return;
+    this.stopVoiceSelectionAutoScroll();
+    if (direction === 0 || this.voiceSelectionReachedBoundary(direction)) return;
+    this.voiceSelectionAutoDirection = direction;
+    this.voiceSelectionAutoScrollId = setInterval(() => {
+      if (!this.voiceSelectionDragging || this.voiceSelectionReachedBoundary(direction)) {
+        this.stopVoiceSelectionAutoScroll();
+        return;
+      }
+      this.voiceListScroller.scrollBy(0, direction * 12);
+      setTimeout(() => {
+        if (!this.voiceSelectionDragging) return;
+        this.applyVoiceSlideSelection(this.voiceAtPoint(
+          this.voiceSelectionLastX, this.voiceSelectionLastY));
+      }, 0);
+    }, 24);
+  }
+
+  voiceSelectionReachedBoundary(direction: number): boolean {
+    if (direction < 0) return this.voiceFirstVisibleIndex <= 0;
+    return this.voiceLastVisibleIndex >= this.filteredVoices().length - 1;
+  }
+
+  stopVoiceSelectionAutoScroll(): void {
+    if (this.voiceSelectionAutoScrollId >= 0) {
+      clearInterval(this.voiceSelectionAutoScrollId);
+      this.voiceSelectionAutoScrollId = -1;
+    }
+    this.voiceSelectionAutoDirection = 0;
   }
 
   openVoiceActions(voice: HttpTTS, event?: GestureEvent): void {
@@ -743,12 +986,7 @@ struct CustomTtsVoiceManagerPage {
   voiceListItem(voice: HttpTTS) {
     Row() {
       if (this.selectionMode) {
-        Toggle({ type: ToggleType.Checkbox, isOn: this.isVoiceSelected(voice) })
-          .selectedColor(this.buttonColor())
-          .margin({ right: 12 })
-          .onChange((isOn: boolean) => {
-            this.setVoiceSelected(voice, isOn);
-          })
+        this.voiceSelectionSafeArea(voice)
       }
 
       Column() {
@@ -787,6 +1025,7 @@ struct CustomTtsVoiceManagerPage {
     )
     .onClick(() => {
       if (this.selectionMode) {
+        if (Date.now() < this.voiceSelectionSuppressClickUntil) return;
         this.toggleVoiceSelected(voice);
       }
     })
@@ -1085,6 +1324,7 @@ struct CustomTtsVoiceManagerPage {
                 .selectedColor(this.buttonColor())
                 .onChange((value: boolean) => {
                   this.editEnabledCookieJar = value;
+                  this.saveVoiceEditDraft();
                 })
             }
             .width('100%')
@@ -1144,7 +1384,10 @@ struct CustomTtsVoiceManagerPage {
         .backgroundColor(this.inputColor())
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
-        .onChange(onChange)
+        .onChange((nextValue: string) => {
+          onChange(nextValue);
+          this.saveVoiceEditDraft();
+        })
     }
     .width('100%')
   }

@@ -7,6 +7,7 @@ import { BookUrlResolver } from './BookUrlResolver';
 import { CoverUrlNormalizer } from '../../utils/CoverUrlNormalizer';
 import { util } from '@kit.ArkTS';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
+import { BookTypeSupport } from './BookTypeSupport';
 
 const SHUSHAN_REQUEST_TIMEOUT_MS = 25000;
 
@@ -207,6 +208,7 @@ export class BookSourceDataUrlSupport {
     book.bookUrl = EncodedSourceUrl.buildDetailUrl(meta.bookId, meta.source, meta.tab, meta.tocUrl, meta.host);
     book.tocUrl = BookSourceDataUrlSupport.catalogUrl(meta);
     book.variable = JSON.stringify(meta);
+    BookTypeSupport.applyBookType(book, source, meta.tab);
     return book;
   }
 
@@ -322,6 +324,7 @@ export class BookSourceDataUrlSupport {
     book.origin = source.bookSourceUrl;
     book.originName = sourceName ? `${source.bookSourceName} · ${sourceName}` : source.bookSourceName;
     book.variable = JSON.stringify({ name: book.name, source: sourceName, tab: tab, url: finalUrl, book_id: bookId, host: host });
+    BookTypeSupport.applyBookType(book, source, tab);
     return book;
   }
 
@@ -333,6 +336,7 @@ export class BookSourceDataUrlSupport {
     let rawUrl = EncodedSourceUrl.str(data['url']) || EncodedSourceUrl.str(data['toc_url']) ||
       EncodedSourceUrl.str(data['book_url']);
     const bookId = EncodedSourceUrl.str(data['book_id']) || EncodedSourceUrl.str(data['bookId']);
+    BookTypeSupport.applyBookType(book, source, EncodedSourceUrl.str(data['tab']));
     if (!rawUrl && BookSourceDataUrlSupport.isShushanFanqieBookId(bookId)) {
       rawUrl = BookSourceDataUrlSupport.shushanFanqieDetailUrl(bookId);
     }
@@ -1023,6 +1027,7 @@ export class BookSourceDataUrlSupport {
       book.bookUrl = BookSourceDataUrlSupport.buildShushanDetailUrl(name, itemSource, tab, bookUrl, bookId, host);
       book.tocUrl = book.bookUrl;
       book.variable = JSON.stringify({ name: name, source: itemSource, tab: tab, url: bookUrl, bookId: bookId, host: host });
+      BookTypeSupport.applySearchBookType(book, source, tab);
       book.origin = source.bookSourceUrl;
       book.originName = `${source.bookSourceName} · ${itemSource}`;
       book.bookSourceComment = source.bookSourceComment;

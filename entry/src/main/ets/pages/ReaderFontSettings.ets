@@ -77,6 +77,7 @@ struct ReaderFontSettingsPage {
   private closingReaderFontSettings: boolean = false;
   private latestReaderFontStyleSave: Promise<void> = Promise.resolve();
   private latestReaderFontStyleSettings: ReaderSettings | null = null;
+  private readerFontStyleSaveTimerId: number = -1;
 
   aboutToAppear(): void {
     this.loadSettings();
@@ -100,6 +101,7 @@ struct ReaderFontSettingsPage {
       return;
     }
     this.closingReaderFontSettings = true;
+    this.flushScheduledSettingsSave();
     // Every editing control saves its own updated snapshot. Re-encoding the component
     // state while the route is being removed can read a stale ForEach item and overwrite
     // the just-persisted regex switches, which is especially visible when this page was
@@ -220,7 +222,31 @@ struct ReaderFontSettingsPage {
     this.readerRegexFontRulesRaw = rulesRaw;
     settings.regexFontRulesRaw = rulesRaw;
     this.latestReaderFontStyleSettings = settings;
-    this.latestReaderFontStyleSave = ReaderSettingsStore.saveReaderFontStyleSettings(getContext(this), settings);
+    this.scheduleSettingsSave();
+  }
+
+  scheduleSettingsSave(): void {
+    if (this.readerFontStyleSaveTimerId >= 0) {
+      clearTimeout(this.readerFontStyleSaveTimerId);
+    }
+    this.readerFontStyleSaveTimerId = setTimeout(() => {
+      this.readerFontStyleSaveTimerId = -1;
+      this.persistLatestSettings();
+    }, 120);
+  }
+
+  flushScheduledSettingsSave(): void {
+    if (this.readerFontStyleSaveTimerId >= 0) {
+      clearTimeout(this.readerFontStyleSaveTimerId);
+      this.readerFontStyleSaveTimerId = -1;
+      this.persistLatestSettings();
+    }
+  }
+
+  persistLatestSettings(): void {
+    if (!this.latestReaderFontStyleSettings) return;
+    this.latestReaderFontStyleSave = ReaderSettingsStore.saveReaderFontStyleSettings(
+      getContext(this), this.latestReaderFontStyleSettings);
     this.latestReaderFontStyleSave.catch((e: Error) => {
       console.warn('保存阅读字体设置失败:', e);
     });

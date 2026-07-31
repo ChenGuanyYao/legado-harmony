@@ -53,7 +53,7 @@ export class BookSourceRuntimeRouter {
     'htmlEncode', 'htmlDecode',
     'androidId', 'deviceID', 'randomUUID', 'getCookie', 'lang', 'log', 'logType',
     'getWebViewUA', 'timeFormat', 'timeFormatUTC', 'strToBytes', 'bytesToStr', 'evalJS',
-    'createSymmetricCrypto', 'reLoginView', 'refreshExplore', 'searchBook'
+    'createSymmetricCrypto', 'reLoginView', 'refreshExplore', 'searchBook', 'upLoginData'
   ];
 
   private static readonly EMULATED_JAVA_METHODS: string[] = [
@@ -63,7 +63,7 @@ export class BookSourceRuntimeRouter {
   private static readonly SOURCE_METHODS: string[] = [
     'getKey', 'getTag', 'getSource', 'getVariable', 'setVariable', 'getLoginHeader',
     'putLoginHeader', 'removeLoginHeader', 'getLoginInfo', 'getLoginInfoMap',
-    'putLoginInfo', 'removeLoginInfo', 'getHeaderMap'
+    'putLoginInfo', 'removeLoginInfo', 'getHeaderMap', 'get', 'put'
   ];
 
   private static readonly CACHE_METHODS: string[] = [

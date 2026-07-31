@@ -77,6 +77,84 @@ export class ThemeAssetRegistry {
     }
   }
 
+  static readerBackgroundDecoration(assetId: string): ResourceStr {
+    switch (ThemeAssetRegistry.normalizeBackgroundAssetId(assetId)) {
+      case ThemeAssetRegistry.BACKGROUND_PAPER_LIGHT:
+        return $r('app.media.reader_decor_paper_light');
+      case ThemeAssetRegistry.BACKGROUND_PAPER_DARK:
+        return $r('app.media.reader_decor_paper_dark');
+      case ThemeAssetRegistry.BACKGROUND_FOREST_LIGHT:
+        return $r('app.media.reader_decor_forest_light');
+      case ThemeAssetRegistry.BACKGROUND_FOREST_DARK:
+        return $r('app.media.reader_decor_forest_dark');
+      case ThemeAssetRegistry.BACKGROUND_INK_LIGHT:
+        return $r('app.media.reader_decor_ink_light');
+      case ThemeAssetRegistry.BACKGROUND_INK_DARK:
+        return $r('app.media.reader_decor_ink_dark');
+      case ThemeAssetRegistry.BACKGROUND_NEON_LIGHT:
+        return $r('app.media.reader_decor_neon_light');
+      case ThemeAssetRegistry.BACKGROUND_NEON_DARK:
+        return $r('app.media.reader_decor_neon_dark');
+      case ThemeAssetRegistry.BACKGROUND_STRAWBERRY_LIGHT:
+        return $r('app.media.reader_decor_strawberry_light');
+      case ThemeAssetRegistry.BACKGROUND_STRAWBERRY_DARK:
+        return $r('app.media.reader_decor_strawberry_dark');
+      case ThemeAssetRegistry.BACKGROUND_CRIMSON_LIGHT:
+        return $r('app.media.reader_decor_crimson_light');
+      case ThemeAssetRegistry.BACKGROUND_CRIMSON_DARK:
+        return $r('app.media.reader_decor_crimson_dark');
+      case ThemeAssetRegistry.BACKGROUND_PLUM_TEA_LIGHT:
+        return $r('app.media.reader_decor_plum_tea_light');
+      case ThemeAssetRegistry.BACKGROUND_PLUM_TEA_DARK:
+        return $r('app.media.reader_decor_plum_tea_dark');
+      case ThemeAssetRegistry.BACKGROUND_ROSE_LETTER_LIGHT:
+        return $r('app.media.reader_decor_rose_letter_light');
+      case ThemeAssetRegistry.BACKGROUND_ROSE_LETTER_DARK:
+        return $r('app.media.reader_decor_rose_letter_dark');
+      case ThemeAssetRegistry.BACKGROUND_MOON_CRANE_LIGHT:
+        return $r('app.media.reader_decor_moon_crane_light');
+      case ThemeAssetRegistry.BACKGROUND_MOON_CRANE_DARK:
+        return $r('app.media.reader_decor_moon_crane_dark');
+      default:
+        return '';
+    }
+  }
+
+  static readerBackgroundBorderColor(assetId: string): string {
+    switch (ThemeAssetRegistry.normalizeBackgroundAssetId(assetId)) {
+      case ThemeAssetRegistry.BACKGROUND_PAPER_LIGHT: return '#269B764B';
+      case ThemeAssetRegistry.BACKGROUND_PAPER_DARK: return '#24D2A068';
+      case ThemeAssetRegistry.BACKGROUND_FOREST_LIGHT: return '#28567B63';
+      case ThemeAssetRegistry.BACKGROUND_FOREST_DARK: return '#24A4C0AA';
+      case ThemeAssetRegistry.BACKGROUND_INK_LIGHT: return '#26343D3B';
+      case ThemeAssetRegistry.BACKGROUND_INK_DARK: return '#22D4DAD6';
+      case ThemeAssetRegistry.BACKGROUND_NEON_LIGHT: return '#3025AFC6';
+      case ThemeAssetRegistry.BACKGROUND_NEON_DARK: return '#4031E5F4';
+      case ThemeAssetRegistry.BACKGROUND_STRAWBERRY_LIGHT: return '#52E9A8AB';
+      case ThemeAssetRegistry.BACKGROUND_STRAWBERRY_DARK: return '#38C07D86';
+      case ThemeAssetRegistry.BACKGROUND_CRIMSON_LIGHT: return '#668D211C';
+      case ThemeAssetRegistry.BACKGROUND_CRIMSON_DARK: return '#55C84F47';
+      case ThemeAssetRegistry.BACKGROUND_PLUM_TEA_LIGHT: return '#576F7D70';
+      case ThemeAssetRegistry.BACKGROUND_PLUM_TEA_DARK: return '#4794AA9A';
+      case ThemeAssetRegistry.BACKGROUND_ROSE_LETTER_LIGHT: return '#6B8F9B8D';
+      case ThemeAssetRegistry.BACKGROUND_ROSE_LETTER_DARK: return '#4D849183';
+      case ThemeAssetRegistry.BACKGROUND_MOON_CRANE_LIGHT: return '#3D7890AD';
+      case ThemeAssetRegistry.BACKGROUND_MOON_CRANE_DARK: return '#478BBEFF';
+      default: return '';
+    }
+  }
+
+  static readerBackgroundBorderWidth(assetId: string): number {
+    const normalized = ThemeAssetRegistry.normalizeBackgroundAssetId(assetId);
+    if (normalized === ThemeAssetRegistry.BACKGROUND_PLUM_TEA_LIGHT ||
+      normalized === ThemeAssetRegistry.BACKGROUND_PLUM_TEA_DARK ||
+      normalized === ThemeAssetRegistry.BACKGROUND_ROSE_LETTER_LIGHT ||
+      normalized === ThemeAssetRegistry.BACKGROUND_ROSE_LETTER_DARK) {
+      return 1.5;
+    }
+    return 1;
+  }
+
   static navigationIcon(iconPackId: string, tabId: string): Resource {
     const normalizedPackId = ThemeAssetRegistry.normalizeIconPackId(iconPackId);
     const normalizedTabId = ThemeAssetRegistry.normalizeTabId(tabId);

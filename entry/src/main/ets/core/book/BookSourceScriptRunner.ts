@@ -54,7 +54,11 @@ export class BookSourceScriptRunner {
   }
 
   static loginItems(source: BookSource): BookSourceLoginItem[] {
-    const raw = (source.loginUi || '').trim();
+    return this.parseLoginItems(source.loginUi || '');
+  }
+
+  static parseLoginItems(value: string): BookSourceLoginItem[] {
+    const raw = (value || '').trim();
     if (!raw) return [];
     let parsed: Object;
     try {
@@ -80,6 +84,15 @@ export class BookSourceScriptRunner {
       if (item.name) items.push(item);
     }
     return items;
+  }
+
+  static dynamicLoginUiScript(source: BookSource): string {
+    const raw = (source.loginUi || '').trim();
+    if (/^@?js:/i.test(raw)) return raw.replace(/^@?js:\s*/i, '');
+    if (/^<js>/i.test(raw) && /<\/js>\s*$/i.test(raw)) {
+      return raw.replace(/^<js>\s*/i, '').replace(/<\/js>\s*$/i, '');
+    }
+    return '';
   }
 
   private static normalizeLoginUiJson(raw: string): string {

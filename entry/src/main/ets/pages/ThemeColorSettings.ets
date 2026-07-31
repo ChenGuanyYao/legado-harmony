@@ -10,6 +10,7 @@ import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { AccountSessionStore } from '../account/AccountSessionStore';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeStartupCover } from '../components/ThemeStartupCover';
+import { ReaderThemeBackground } from '../components/ReaderThemeBackground';
 import { StartupCoverImageStore } from '../utils/StartupCoverImageStore';
 
 @Component
@@ -765,13 +766,11 @@ struct ThemeColorSettingsPage {
 
       Row({ space: 10 }) {
         Stack() {
-          if (this.customPreviewVariant().reader.backgroundAssetId) {
-            Image(ThemeAssetRegistry.readerBackground(
-              this.customPreviewVariant().reader.backgroundAssetId))
-              .width('100%')
-              .height('100%')
-              .objectFit(ImageFit.Cover)
-          }
+          ReaderThemeBackground({
+            surfaceColor: this.customPreviewVariant().reader.backgroundColor,
+            backgroundAssetId: this.customPreviewVariant().reader.backgroundAssetId,
+            compact: true
+          })
           Text('阅读')
             .fontSize(14)
             .fontFamily(this.customPreviewTheme().typography.appFontFamily)
@@ -780,7 +779,7 @@ struct ThemeColorSettingsPage {
         .width(70)
         .height(58)
         .borderRadius(this.customPreviewTheme().radius.medium)
-        .backgroundColor(this.customPreviewVariant().reader.backgroundColor)
+        .clip(true)
 
         Column({ space: 7 }) {
           Row({ space: 6 }) {

@@ -6,9 +6,26 @@ import preferences from '@ohos.data.preferences';
 import { Context } from '@kit.AbilityKit';
 import { statfs } from '@kit.CoreFileKit';
 import { AppDatabase } from '../model/data/AppDatabase';
-import { Book, BookGroup, Bookmark, BookSource, ReadConfig, SearchKeyword } from '../model/data/Book';
+import {
+  Book,
+  BookGroup,
+  Bookmark,
+  BookSource,
+  BookListRule,
+  SearchRule,
+  ExploreRule,
+  BookInfoRule,
+  TocRule,
+  ContentRule,
+  HttpTTS,
+  ReadConfig,
+  SearchKeyword
+} from '../model/data/Book';
 import { LocalBookService } from '../core/book/LocalBookService';
 import { BackupCrypto } from './BackupCrypto';
+import { BookSourceGroupStore } from './BookSourceGroupStore';
+import { ReaderReplaceRule, ReaderReplaceRuleStore } from './ReaderReplaceRuleStore';
+import { TtsSettingsStore } from './TtsSettingsStore';
 
 export class AppDataBackupSelection {
   sources: boolean = true;
@@ -58,33 +75,49 @@ export class AppDataBackupImportSession {
   tempRootPath: string = '';
   rootPath: string = '';
   encrypted: boolean = false;
+  sourceFormat: string = 'legado-harmony';
   manifest: AppDataBackupManifest = new AppDataBackupManifest();
 }
 
 export class AppDataBackupImportResult {
   sources: number = 0;
   books: number = 0;
+  bookGroups: number = 0;
   localBooks: number = 0;
   progress: number = 0;
   bookmarks: number = 0;
   settings: number = 0;
+  httpTts: number = 0;
+  replaceRules: number = 0;
   searchKeywords: number = 0;
+  skippedLocalBooks: number = 0;
 
   summary(): string {
     const parts: string[] = [];
     if (this.sources > 0) parts.push(`书源 ${this.sources}`);
     if (this.books > 0) parts.push(`书架 ${this.books}`);
+    if (this.bookGroups > 0) parts.push(`分组 ${this.bookGroups}`);
     if (this.localBooks > 0) parts.push(`本地图书 ${this.localBooks}`);
     if (this.progress > 0) parts.push(`进度 ${this.progress}`);
     if (this.bookmarks > 0) parts.push(`书签 ${this.bookmarks}`);
     if (this.settings > 0) parts.push(`设置 ${this.settings}`);
+    if (this.httpTts > 0) parts.push(`HTTP TTS ${this.httpTts}`);
+    if (this.replaceRules > 0) parts.push(`替换规则 ${this.replaceRules}`);
     if (this.searchKeywords > 0) parts.push(`搜索记录 ${this.searchKeywords}`);
+    if (this.skippedLocalBooks > 0) parts.push(`跳过本地书 ${this.skippedLocalBooks}`);
     return parts.length > 0 ? parts.join('、') : '没有可导入的数据';
   }
 }
 
+class AndroidBookGroupMapping {
+  legacyIds: number[] = [];
+  localIds: Map<number, number> = new Map<number, number>();
+}
+
 export class AppDataBackupService {
   static readonly PASSWORD_REQUIRED_MESSAGE: string = '备份已加密，请输入密码';
+  static readonly SOURCE_FORMAT_HARMONY: string = 'legado-harmony';
+  static readonly SOURCE_FORMAT_ANDROID: string = 'legado-android';
   static readonly CATEGORY_SOURCES: string = 'sources';
   static readonly CATEGORY_BOOKSHELF: string = 'bookshelf';
   static readonly CATEGORY_PROGRESS: string = 'progress';
@@ -104,7 +137,8 @@ export class AppDataBackupService {
     'reader_settings',
     'search_explore_settings',
     'startup_cover_texts',
-    'tts_settings'
+    'tts_settings',
+    'webdav_settings'
   ];
 
   private static readonly ASSET_DIRS: string[] = [
@@ -121,6 +155,15 @@ export class AppDataBackupService {
     'readProgressChapterIndex',
     'readProgressPageCount'
   ];
+
+  private static readonly ANDROID_SOURCE_FILE: string = 'bookSource.json';
+  private static readonly ANDROID_BOOKSHELF_FILE: string = 'bookshelf.json';
+  private static readonly ANDROID_BOOK_GROUP_FILE: string = 'bookGroup.json';
+  private static readonly ANDROID_HTTP_TTS_FILE: string = 'httpTTS.json';
+  private static readonly ANDROID_REPLACE_RULE_FILE: string = 'replaceRule.json';
+  private static readonly ANDROID_SEARCH_HISTORY_FILE: string = 'searchHistory.json';
+  private static readonly ANDROID_MAX_SOURCE_BYTES: number = 128 * 1024 * 1024;
+  private static readonly ANDROID_MAX_DATA_BYTES: number = 32 * 1024 * 1024;
 
   static async createBackup(context: Context, selection: AppDataBackupSelection,
     password: string, onProgress?: (message: string, percent: number) => void):
@@ -161,7 +204,7 @@ export class AppDataBackupService {
     }
     if (selection.bookshelf) {
       manifest.categories.push(AppDataBackupService.CATEGORY_BOOKSHELF);
-      manifest.books = allBooks.filter((book: Book): boolean => !LocalBookService.isLocalBook(book))
+      manifest.books = allBooks.filter((book: Book): boolean => !LocalBookService.isPhysicalLocalBook(book))
         .map((book: Book): Book => AppDataBackupService.sanitizeBook(book));
       manifest.bookshelfSortMode = AppStorage.get<string>('bookshelfSortMode') || 'recentRead';
     }
@@ -188,7 +231,7 @@ export class AppDataBackupService {
     if (selection.localBooks) {
       AppDataBackupService.reportProgress(onProgress, '正在整理本地图书...', 22);
       manifest.categories.push(AppDataBackupService.CATEGORY_LOCAL_BOOKS);
-      const localSourceBooks = allBooks.filter((book: Book): boolean => LocalBookService.isLocalBook(book));
+      const localSourceBooks = allBooks.filter((book: Book): boolean => LocalBookService.isPhysicalLocalBook(book));
       manifest.localBooks = localSourceBooks
         .map((book: Book): Book => AppDataBackupService.sanitizeBook(book));
       const localRoot = `${payloadRoot}/local_books`;
@@ -342,7 +385,20 @@ export class AppDataBackupService {
       }
       AppDataBackupService.reportProgress(onProgress, '正在读取备份清单...', 96);
       const manifestPath = await AppDataBackupService.findFile(manifestSearchRoot, 'manifest.json');
-      if (!manifestPath) throw new Error('不是有效的 Legado Harmony 备份文件');
+      if (!manifestPath) {
+        const androidManifest = await AppDataBackupService.prepareAndroidManifest(manifestSearchRoot);
+        if (!androidManifest) {
+          throw new Error('不是有效的 Legado Harmony 或 Android 阅读备份文件');
+        }
+        const androidSession = new AppDataBackupImportSession();
+        androidSession.tempRootPath = root;
+        androidSession.rootPath = manifestSearchRoot;
+        androidSession.encrypted = false;
+        androidSession.sourceFormat = AppDataBackupService.SOURCE_FORMAT_ANDROID;
+        androidSession.manifest = androidManifest;
+        AppDataBackupService.reportProgress(onProgress, 'Android 阅读备份识别完成', 100);
+        return androidSession;
+      }
       const raw = await AppDataBackupService.readText(manifestPath);
       const manifest = JSON.parse(raw) as AppDataBackupManifest;
       if (manifest.format !== 'legado-harmony-backup' ||
@@ -353,6 +409,7 @@ export class AppDataBackupService {
       session.tempRootPath = root;
       session.rootPath = AppDataBackupService.parentPath(manifestPath);
       session.encrypted = !!encryptionPath;
+      session.sourceFormat = AppDataBackupService.SOURCE_FORMAT_HARMONY;
       session.manifest = manifest;
       AppDataBackupService.reportProgress(onProgress, '备份文件读取完成', 100);
       return session;
@@ -374,7 +431,11 @@ export class AppDataBackupService {
   }
 
   static async importBackup(context: Context, session: AppDataBackupImportSession,
-    selection: AppDataBackupSelection): Promise<AppDataBackupImportResult> {
+    selection: AppDataBackupSelection, onProgress?: (message: string, percent: number) => void):
+    Promise<AppDataBackupImportResult> {
+    if (session.sourceFormat === AppDataBackupService.SOURCE_FORMAT_ANDROID) {
+      return AppDataBackupService.importAndroidBackup(context, session, selection, onProgress);
+    }
     const db = AppDatabase.getInstance();
     await db.initWithContext(context);
     const manifest = session.manifest;
@@ -383,6 +444,7 @@ export class AppDataBackupService {
     if ((selection.bookshelf || selection.localBooks) && (manifest.bookGroups || []).length > 0) {
       for (const group of manifest.bookGroups) {
         await db.restoreBookGroup(group);
+        result.bookGroups++;
       }
     }
 
@@ -479,8 +541,572 @@ export class AppDataBackupService {
     return result;
   }
 
+  private static async prepareAndroidManifest(root: string): Promise<AppDataBackupManifest | null> {
+    const sourcePath = await AppDataBackupService.findFile(root, AppDataBackupService.ANDROID_SOURCE_FILE);
+    const bookshelfPath = await AppDataBackupService.findFile(root, AppDataBackupService.ANDROID_BOOKSHELF_FILE);
+    const groupPath = await AppDataBackupService.findFile(root, AppDataBackupService.ANDROID_BOOK_GROUP_FILE);
+    const httpTtsPath = await AppDataBackupService.findFile(root, AppDataBackupService.ANDROID_HTTP_TTS_FILE);
+    const replaceRulePath = await AppDataBackupService.findFile(root, AppDataBackupService.ANDROID_REPLACE_RULE_FILE);
+    const searchHistoryPath = await AppDataBackupService.findFile(
+      root, AppDataBackupService.ANDROID_SEARCH_HISTORY_FILE);
+    if (!sourcePath && !bookshelfPath && !groupPath && !httpTtsPath && !replaceRulePath && !searchHistoryPath) {
+      return null;
+    }
+    const manifest = new AppDataBackupManifest();
+    manifest.format = 'legado-android-backup';
+    manifest.version = 1;
+    manifest.createdAt = Date.now();
+    manifest.sensitiveDataExcluded = false;
+    if (sourcePath) manifest.categories.push(AppDataBackupService.CATEGORY_SOURCES);
+    if (bookshelfPath || groupPath) manifest.categories.push(AppDataBackupService.CATEGORY_BOOKSHELF);
+    if (bookshelfPath) manifest.categories.push(AppDataBackupService.CATEGORY_PROGRESS);
+    if (httpTtsPath || replaceRulePath) manifest.categories.push(AppDataBackupService.CATEGORY_SETTINGS);
+    if (searchHistoryPath) manifest.categories.push(AppDataBackupService.CATEGORY_SEARCH_HISTORY);
+    return manifest;
+  }
+
+  private static async importAndroidBackup(context: Context, session: AppDataBackupImportSession,
+    selection: AppDataBackupSelection, onProgress?: (message: string, percent: number) => void):
+    Promise<AppDataBackupImportResult> {
+    const db = AppDatabase.getInstance();
+    await db.initWithContext(context);
+    const result = new AppDataBackupImportResult();
+    let groupMapping = new AndroidBookGroupMapping();
+    AppDataBackupService.reportProgress(onProgress, '正在准备 Android 阅读备份...', 2);
+
+    if (selection.bookshelf &&
+      AppDataBackupService.hasCategory(session.manifest, AppDataBackupService.CATEGORY_BOOKSHELF)) {
+      groupMapping = await AppDataBackupService.importAndroidBookGroups(db, session.rootPath, result);
+    }
+
+    if (selection.sources &&
+      AppDataBackupService.hasCategory(session.manifest, AppDataBackupService.CATEGORY_SOURCES)) {
+      AppDataBackupService.reportProgress(onProgress, '正在导入 Android 书源...', 10);
+      await AppDataBackupService.forEachAndroidJsonArray(session.rootPath,
+        AppDataBackupService.ANDROID_SOURCE_FILE, AppDataBackupService.ANDROID_MAX_SOURCE_BYTES,
+        async (raw: Record<string, Object>, index: number, offset: number, total: number): Promise<void> => {
+          const source = AppDataBackupService.convertAndroidBookSource(raw);
+          if (!source.bookSourceUrl || !source.bookSourceName) return;
+          await db.restoreBookSource(source);
+          result.sources++;
+          if (index % 100 === 0) {
+            AppDataBackupService.reportProgress(onProgress, '正在导入 Android 书源...',
+              10 + Math.floor(offset * 42 / Math.max(1, total)));
+          }
+        });
+      const summaries = await db.getBookSourceSummaries();
+      const sourceGroups: string[] = [];
+      for (const source of summaries) {
+        const group = (source.bookSourceGroup || '').trim();
+        if (group && !sourceGroups.includes(group)) sourceGroups.push(group);
+      }
+      await BookSourceGroupStore.load(context, sourceGroups);
+    }
+
+    if ((selection.bookshelf || selection.progress) &&
+      await AppDataBackupService.findFile(session.rootPath, AppDataBackupService.ANDROID_BOOKSHELF_FILE)) {
+      AppDataBackupService.reportProgress(onProgress, '正在导入网络书架和阅读进度...', 55);
+      await AppDataBackupService.forEachAndroidJsonArray(session.rootPath,
+        AppDataBackupService.ANDROID_BOOKSHELF_FILE, AppDataBackupService.ANDROID_MAX_DATA_BYTES,
+        async (raw: Record<string, Object>, index: number, offset: number, total: number): Promise<void> => {
+          if (AppDataBackupService.isAndroidLocalBook(raw)) {
+            result.skippedLocalBooks++;
+            return;
+          }
+          const book = AppDataBackupService.convertAndroidBook(raw, groupMapping);
+          if (!book.bookUrl) return;
+          if (selection.bookshelf) {
+            await AppDataBackupService.restoreBookWithoutUnexpectedProgress(db, book, selection.progress);
+            result.books++;
+            if (selection.progress) result.progress++;
+          } else if (selection.progress) {
+            const existing = await db.getBook(book.bookUrl);
+            if (existing) {
+              existing.durChapterTitle = book.durChapterTitle;
+              existing.durChapterIndex = book.durChapterIndex;
+              existing.durChapterPos = book.durChapterPos;
+              existing.durChapterTime = book.durChapterTime;
+              AppDataBackupService.applyProgressVariables(existing,
+                AppDataBackupService.progressVariables(book));
+              await db.updateBook(existing);
+              result.progress++;
+            }
+          }
+          if (index % 25 === 0) {
+            AppDataBackupService.reportProgress(onProgress, '正在导入网络书架和阅读进度...',
+              55 + Math.floor(offset * 20 / Math.max(1, total)));
+          }
+        });
+    }
+
+    if (selection.settings &&
+      AppDataBackupService.hasCategory(session.manifest, AppDataBackupService.CATEGORY_SETTINGS)) {
+      AppDataBackupService.reportProgress(onProgress, '正在导入 HTTP TTS 和替换规则...', 78);
+      result.httpTts = await AppDataBackupService.importAndroidHttpTts(context, session.rootPath);
+      result.replaceRules = await AppDataBackupService.importAndroidReplaceRules(context, session.rootPath);
+    }
+
+    if (selection.searchHistory &&
+      AppDataBackupService.hasCategory(session.manifest, AppDataBackupService.CATEGORY_SEARCH_HISTORY)) {
+      AppDataBackupService.reportProgress(onProgress, '正在导入搜索历史...', 92);
+      await AppDataBackupService.forEachAndroidJsonArray(session.rootPath,
+        AppDataBackupService.ANDROID_SEARCH_HISTORY_FILE, AppDataBackupService.ANDROID_MAX_DATA_BYTES,
+        async (raw: Record<string, Object>, _index: number, _offset: number, _total: number): Promise<void> => {
+          const keyword = new SearchKeyword();
+          keyword.keyword = AppDataBackupService.stringValue(raw['word'] || raw['keyword']);
+          keyword.usage = AppDataBackupService.numberValue(raw['usage'], 0);
+          keyword.lastUseTime = AppDataBackupService.numberValue(raw['lastUseTime'], 0);
+          if (!keyword.keyword) return;
+          await db.restoreSearchKeyword(keyword);
+          result.searchKeywords++;
+        });
+    }
+
+    AppStorage.setOrCreate('shelfUpdateTime', Date.now());
+    AppDataBackupService.reportProgress(onProgress, 'Android 阅读备份导入完成', 100);
+    return result;
+  }
+
+  private static async importAndroidBookGroups(db: AppDatabase, root: string,
+    result: AppDataBackupImportResult): Promise<AndroidBookGroupMapping> {
+    const mapping = new AndroidBookGroupMapping();
+    const existing = await db.getCustomBookGroups();
+    await AppDataBackupService.forEachAndroidJsonArray(root,
+      AppDataBackupService.ANDROID_BOOK_GROUP_FILE, AppDataBackupService.ANDROID_MAX_DATA_BYTES,
+      async (raw: Record<string, Object>, _index: number, _offset: number, _total: number): Promise<void> => {
+        const legacyId = AppDataBackupService.numberValue(raw['groupId'], 0);
+        const name = AppDataBackupService.stringValue(raw['groupName']).trim();
+        if (legacyId <= 0 || !name) return;
+        if (!mapping.legacyIds.includes(legacyId)) mapping.legacyIds.push(legacyId);
+        let created = false;
+        let target = existing.find((item: BookGroup): boolean => item.groupName === name) || null;
+        if (!target) {
+          target = await db.addBookGroup(name);
+          if (target) {
+            existing.push(target);
+            created = true;
+          }
+        }
+        if (!target) return;
+        const resolved = target as BookGroup;
+        if (created) {
+          resolved.order = AppDataBackupService.numberValue(raw['order'], resolved.order);
+          resolved.show = raw['show'] !== false;
+          resolved.enableRefresh = raw['enableRefresh'] !== false;
+          await db.restoreBookGroup(resolved);
+        }
+        mapping.localIds.set(legacyId, resolved.groupId);
+        result.bookGroups++;
+      });
+    mapping.legacyIds.sort((left: number, right: number): number => left - right);
+    return mapping;
+  }
+
+  private static async importAndroidHttpTts(context: Context, root: string): Promise<number> {
+    const path = await AppDataBackupService.findFile(root, AppDataBackupService.ANDROID_HTTP_TTS_FILE);
+    if (!path) return 0;
+    const incoming: HttpTTS[] = [];
+    await AppDataBackupService.forEachAndroidJsonArray(root, AppDataBackupService.ANDROID_HTTP_TTS_FILE,
+      AppDataBackupService.ANDROID_MAX_DATA_BYTES,
+      async (raw: Record<string, Object>, _index: number, _offset: number, _total: number): Promise<void> => {
+        const voice = AppDataBackupService.convertAndroidHttpTts(raw);
+        if (voice.name && voice.url) incoming.push(voice);
+      });
+    if (incoming.length === 0) return 0;
+    const settings = await TtsSettingsStore.load(context);
+    const merged = AppDataBackupService.parseHttpTtsArray(settings.customVoices);
+    for (const voice of incoming) {
+      let targetIndex = merged.findIndex((item: HttpTTS): boolean =>
+        (item.id === voice.id && (item.url || '') === (voice.url || '')) ||
+        ((item.name || '') === (voice.name || '') && (item.url || '') === (voice.url || '')));
+      if (targetIndex < 0 && merged.some((item: HttpTTS): boolean => item.id === voice.id)) {
+        let nextId = Math.max(Date.now(), voice.id + 1);
+        while (merged.some((item: HttpTTS): boolean => item.id === nextId)) nextId++;
+        voice.id = nextId;
+      }
+      targetIndex = merged.findIndex((item: HttpTTS): boolean => item.id === voice.id ||
+        ((item.name || '') === (voice.name || '') && (item.url || '') === (voice.url || '')));
+      if (targetIndex >= 0) merged[targetIndex] = voice;
+      else merged.push(voice);
+    }
+    settings.customVoices = JSON.stringify(merged);
+    await TtsSettingsStore.save(context, settings);
+    return incoming.length;
+  }
+
+  private static async importAndroidReplaceRules(context: Context, root: string): Promise<number> {
+    const path = await AppDataBackupService.findFile(root, AppDataBackupService.ANDROID_REPLACE_RULE_FILE);
+    if (!path) return 0;
+    const incoming: ReaderReplaceRule[] = [];
+    await AppDataBackupService.forEachAndroidJsonArray(root, AppDataBackupService.ANDROID_REPLACE_RULE_FILE,
+      AppDataBackupService.ANDROID_MAX_DATA_BYTES,
+      async (raw: Record<string, Object>, index: number, _offset: number, _total: number): Promise<void> => {
+        const rule = AppDataBackupService.convertAndroidReplaceRule(raw, index);
+        if (rule.pattern) incoming.push(rule);
+      });
+    if (incoming.length === 0) return 0;
+    const merged = await ReaderReplaceRuleStore.load(context, true);
+    for (const rule of incoming) {
+      let targetIndex = merged.findIndex((item: ReaderReplaceRule): boolean => item.id === rule.id ||
+        (item.name === rule.name && item.pattern === rule.pattern && item.scope === rule.scope));
+      if (targetIndex >= 0) merged[targetIndex] = rule;
+      else merged.push(rule);
+    }
+    await ReaderReplaceRuleStore.save(context, merged);
+    return incoming.length;
+  }
+
   static hasCategory(manifest: AppDataBackupManifest, category: string): boolean {
     return (manifest.categories || []).includes(category);
+  }
+
+  private static convertAndroidBookSource(raw: Record<string, Object>): BookSource {
+    const source = new BookSource();
+    source.bookSourceUrl = AppDataBackupService.stringValue(raw['bookSourceUrl']);
+    source.bookSourceName = AppDataBackupService.stringValue(raw['bookSourceName']);
+    source.bookSourceType = AppDataBackupService.numberValue(raw['bookSourceType'], 0);
+    source.bookSourceGroup = AppDataBackupService.stringValue(raw['bookSourceGroup']);
+    source.bookSourceComment = AppDataBackupService.stringValue(raw['bookSourceComment']);
+    source.loginUrl = AppDataBackupService.stringValue(raw['loginUrl']);
+    source.loginUi = AppDataBackupService.stringValue(raw['loginUi']);
+    source.loginCheckJs = AppDataBackupService.stringValue(raw['loginCheckJs']);
+    source.loginHeader = AppDataBackupService.stringValue(raw['loginHeader']);
+    source.loginInfo = AppDataBackupService.stringValue(raw['loginInfo']);
+    source.rawSourceJson = JSON.stringify(raw);
+    source.bookUrlPattern = AppDataBackupService.stringValue(raw['bookUrlPattern']);
+    source.searchUrl = AppDataBackupService.stringValue(raw['searchUrl']);
+    source.exploreUrl = AppDataBackupService.stringValue(raw['exploreUrl']);
+    source.jsLib = AppDataBackupService.stringValue(raw['jsLib']);
+    source.header = AppDataBackupService.stringValue(raw['header']);
+    source.variableComment = AppDataBackupService.stringValue(raw['variableComment']);
+    source.variable = AppDataBackupService.stringValue(raw['variable']);
+    source.lastUpdateTime = AppDataBackupService.numberValue(raw['lastUpdateTime'], Date.now());
+    source.respondTime = AppDataBackupService.numberValue(raw['respondTime'], 180000);
+    source.customOrder = AppDataBackupService.numberValue(raw['customOrder'], 0);
+    source.customButton = raw['customButton'] === true;
+    source.eventListener = raw['eventListener'] === true;
+    source.isPinned = raw['isPinned'] === true;
+    source.enabled = raw['enabled'] !== false;
+    source.enabledExplore = raw['enabledExplore'] !== false;
+    source.isLocked = raw['isLocked'] === true || raw['locked'] === true;
+    source.weight = AppDataBackupService.numberValue(raw['weight'], 0);
+    source.concurrentRate = AppDataBackupService.stringValue(raw['concurrentRate']);
+    source.enabledCookieJar = raw['enabledCookieJar'] !== false;
+    source.bookListRule = AppDataBackupService.convertAndroidBookListRule(
+      raw['ruleBookList'] || raw['bookListRule']);
+    source.searchRule = AppDataBackupService.convertAndroidSearchRule(
+      raw['ruleSearch'] || raw['searchRule']);
+    source.exploreRule = AppDataBackupService.convertAndroidExploreRule(
+      raw['ruleExplore'] || raw['exploreRule']);
+    source.bookInfoRule = AppDataBackupService.convertAndroidBookInfoRule(
+      raw['ruleBookInfo'] || raw['bookInfoRule']);
+    source.tocRule = AppDataBackupService.convertAndroidTocRule(raw['ruleToc'] || raw['tocRule']);
+    source.contentRule = AppDataBackupService.convertAndroidContentRule(
+      raw['ruleContent'] || raw['contentRule']);
+    return source;
+  }
+
+  private static convertAndroidBookListRule(value: Object | undefined): BookListRule {
+    const raw = AppDataBackupService.ruleRecord(value);
+    const rule = new BookListRule();
+    if (!raw) return rule;
+    rule.bookList = AppDataBackupService.ruleString(raw, 'bookList');
+    rule.name = AppDataBackupService.ruleString(raw, 'name');
+    rule.author = AppDataBackupService.ruleString(raw, 'author');
+    rule.coverUrl = AppDataBackupService.ruleString(raw, 'coverUrl');
+    rule.intro = AppDataBackupService.ruleString(raw, 'intro', 'desc');
+    rule.kind = AppDataBackupService.ruleString(raw, 'kind');
+    rule.lastChapter = AppDataBackupService.ruleString(raw, 'lastChapter', 'lastchapter');
+    rule.bookUrl = AppDataBackupService.ruleString(raw, 'bookUrl', 'bookurl');
+    rule.wordCount = AppDataBackupService.ruleString(raw, 'wordCount', 'wordcount');
+    return rule;
+  }
+
+  private static convertAndroidSearchRule(value: Object | undefined): SearchRule {
+    const raw = AppDataBackupService.ruleRecord(value);
+    const rule = new SearchRule();
+    if (!raw) return rule;
+    rule.bookList = AppDataBackupService.ruleString(raw, 'bookList');
+    rule.name = AppDataBackupService.ruleString(raw, 'name');
+    rule.author = AppDataBackupService.ruleString(raw, 'author');
+    rule.coverUrl = AppDataBackupService.ruleString(raw, 'coverUrl');
+    rule.intro = AppDataBackupService.ruleString(raw, 'intro', 'desc');
+    rule.kind = AppDataBackupService.ruleString(raw, 'kind');
+    rule.lastChapter = AppDataBackupService.ruleString(raw, 'lastChapter', 'lastchapter');
+    rule.bookUrl = AppDataBackupService.ruleString(raw, 'bookUrl', 'bookurl');
+    rule.wordCount = AppDataBackupService.ruleString(raw, 'wordCount', 'wordcount');
+    return rule;
+  }
+
+  private static convertAndroidExploreRule(value: Object | undefined): ExploreRule {
+    const raw = AppDataBackupService.ruleRecord(value);
+    const rule = new ExploreRule();
+    if (!raw) return rule;
+    rule.bookList = AppDataBackupService.ruleString(raw, 'bookList');
+    rule.name = AppDataBackupService.ruleString(raw, 'name');
+    rule.author = AppDataBackupService.ruleString(raw, 'author');
+    rule.coverUrl = AppDataBackupService.ruleString(raw, 'coverUrl');
+    rule.intro = AppDataBackupService.ruleString(raw, 'intro', 'desc');
+    rule.kind = AppDataBackupService.ruleString(raw, 'kind');
+    rule.lastChapter = AppDataBackupService.ruleString(raw, 'lastChapter', 'lastchapter');
+    rule.bookUrl = AppDataBackupService.ruleString(raw, 'bookUrl', 'bookurl');
+    rule.wordCount = AppDataBackupService.ruleString(raw, 'wordCount', 'wordcount');
+    return rule;
+  }
+
+  private static convertAndroidBookInfoRule(value: Object | undefined): BookInfoRule {
+    const raw = AppDataBackupService.ruleRecord(value);
+    const rule = new BookInfoRule();
+    if (!raw) return rule;
+    rule.init = AppDataBackupService.ruleString(raw, 'init');
+    rule.name = AppDataBackupService.ruleString(raw, 'name');
+    rule.author = AppDataBackupService.ruleString(raw, 'author');
+    rule.coverUrl = AppDataBackupService.ruleString(raw, 'coverUrl');
+    rule.intro = AppDataBackupService.ruleString(raw, 'intro', 'desc');
+    rule.kind = AppDataBackupService.ruleString(raw, 'kind');
+    rule.lastChapter = AppDataBackupService.ruleString(raw, 'lastChapter', 'lastchapter');
+    rule.wordCount = AppDataBackupService.ruleString(raw, 'wordCount', 'wordcount');
+    rule.updateTime = AppDataBackupService.ruleString(raw, 'updateTime', 'updatetime');
+    rule.tocUrl = AppDataBackupService.ruleString(raw, 'tocUrl', 'tocurl');
+    return rule;
+  }
+
+  private static convertAndroidTocRule(value: Object | undefined): TocRule {
+    const raw = AppDataBackupService.ruleRecord(value);
+    const rule = new TocRule();
+    if (!raw) return rule;
+    rule.chapterList = AppDataBackupService.ruleString(raw, 'chapterList', 'chapterlist');
+    rule.chapterName = AppDataBackupService.ruleString(raw, 'chapterName', 'chaptername');
+    rule.chapterUrl = AppDataBackupService.ruleString(raw, 'chapterUrl', 'chapterurl');
+    rule.nextTocUrl = AppDataBackupService.ruleString(raw, 'nextTocUrl', 'nexttocurl');
+    rule.isVip = AppDataBackupService.ruleString(raw, 'isVip', 'isvip');
+    rule.isPay = AppDataBackupService.ruleString(raw, 'isPay', 'ispay');
+    rule.updateTime = AppDataBackupService.ruleString(raw, 'updateTime', 'updatetime');
+    rule.chapterListAddition = AppDataBackupService.ruleString(raw, 'chapterListAddition');
+    return rule;
+  }
+
+  private static convertAndroidContentRule(value: Object | undefined): ContentRule {
+    const raw = AppDataBackupService.ruleRecord(value);
+    const rule = new ContentRule();
+    if (!raw) return rule;
+    rule.content = AppDataBackupService.ruleString(raw, 'content');
+    rule.title = AppDataBackupService.ruleString(raw, 'title');
+    rule.images = AppDataBackupService.ruleString(raw, 'images');
+    rule.nextContentUrl = AppDataBackupService.ruleString(raw, 'nextContentUrl', 'nextcontenturl');
+    rule.replaceRegex = AppDataBackupService.ruleString(raw, 'replaceRegex', 'replaceregex');
+    rule.imageDecode = AppDataBackupService.ruleString(raw, 'imageDecode', 'imagedecode');
+    rule.imageStyle = AppDataBackupService.ruleString(raw, 'imageStyle', 'imagestyle');
+    rule.payAction = AppDataBackupService.ruleString(raw, 'payAction', 'payaction');
+    return rule;
+  }
+
+  private static convertAndroidBook(raw: Record<string, Object>, mapping: AndroidBookGroupMapping): Book {
+    const book = new Book();
+    book.bookUrl = AppDataBackupService.stringValue(raw['bookUrl']);
+    book.tocUrl = AppDataBackupService.stringValue(raw['tocUrl']);
+    book.origin = AppDataBackupService.stringValue(raw['origin']);
+    book.originName = AppDataBackupService.stringValue(raw['originName']);
+    book.name = AppDataBackupService.stringValue(raw['name']);
+    book.author = AppDataBackupService.stringValue(raw['author']);
+    book.kind = AppDataBackupService.stringValue(raw['kind']);
+    book.customTag = AppDataBackupService.stringValue(raw['customTag']);
+    book.coverUrl = AppDataBackupService.stringValue(raw['coverUrl']);
+    book.customCoverUrl = AppDataBackupService.stringValue(raw['customCoverUrl']);
+    book.intro = AppDataBackupService.stringValue(raw['intro']);
+    book.customIntro = AppDataBackupService.stringValue(raw['customIntro']);
+    book.charset = AppDataBackupService.stringValue(raw['charset']);
+    book.type = AppDataBackupService.numberValue(raw['type'], 0);
+    book.group = AppDataBackupService.mapAndroidBookGroup(
+      AppDataBackupService.numberValue(raw['group'], 0), mapping);
+    book.latestChapterTitle = AppDataBackupService.stringValue(raw['latestChapterTitle']);
+    book.latestChapterTime = AppDataBackupService.numberValue(raw['latestChapterTime'], 0);
+    book.lastCheckTime = AppDataBackupService.numberValue(raw['lastCheckTime'], 0);
+    book.lastCheckCount = AppDataBackupService.numberValue(raw['lastCheckCount'], 0);
+    book.totalChapterNum = AppDataBackupService.numberValue(raw['totalChapterNum'], 0);
+    book.durChapterTitle = AppDataBackupService.stringValue(raw['durChapterTitle']);
+    book.durChapterIndex = AppDataBackupService.numberValue(raw['durChapterIndex'], 0);
+    book.durChapterPos = AppDataBackupService.numberValue(raw['durChapterPos'], 0);
+    book.durChapterTime = AppDataBackupService.numberValue(raw['durChapterTime'], 0);
+    book.wordCount = AppDataBackupService.stringValue(raw['wordCount']);
+    book.canUpdate = raw['canUpdate'] !== false;
+    book.order = AppDataBackupService.numberValue(raw['order'], 0);
+    book.originOrder = AppDataBackupService.numberValue(raw['originOrder'], 0);
+    book.replaceVariable(AppDataBackupService.stringValue(raw['variable']) || '{}');
+    const readConfig = raw['readConfig'];
+    if (readConfig && typeof readConfig === 'object' && !Array.isArray(readConfig)) {
+      book.readConfig = JSON.parse(JSON.stringify(readConfig)) as ReadConfig;
+    }
+    book.syncTime = AppDataBackupService.numberValue(raw['syncTime'], 0);
+    return book;
+  }
+
+  private static isAndroidLocalBook(raw: Record<string, Object>): boolean {
+    const origin = AppDataBackupService.stringValue(raw['origin']).trim().toLowerCase();
+    return origin === 'loc_book' || origin === 'local';
+  }
+
+  private static mapAndroidBookGroup(legacyGroup: number, mapping: AndroidBookGroupMapping): number {
+    if (legacyGroup <= 0) return 0;
+    const exact = mapping.localIds.get(legacyGroup);
+    if (exact !== undefined) return exact;
+    for (const legacyId of mapping.legacyIds) {
+      if ((legacyGroup & legacyId) === legacyId) {
+        const localId = mapping.localIds.get(legacyId);
+        if (localId !== undefined) return localId;
+      }
+    }
+    return 0;
+  }
+
+  private static convertAndroidHttpTts(raw: Record<string, Object>): HttpTTS {
+    const voice = new HttpTTS();
+    const rawId = AppDataBackupService.numberValue(raw['id'], 0);
+    voice.id = rawId > 0 ? rawId : Date.now();
+    voice.name = AppDataBackupService.stringValue(raw['name']);
+    voice.url = AppDataBackupService.stringValue(raw['url']);
+    voice.contentType = AppDataBackupService.stringValue(raw['contentType']);
+    voice.concurrentRate = AppDataBackupService.stringValue(raw['concurrentRate']);
+    voice.loginUrl = AppDataBackupService.stringValue(raw['loginUrl']);
+    voice.loginUi = AppDataBackupService.stringValue(raw['loginUi']);
+    voice.loginCheckJs = AppDataBackupService.stringValue(raw['loginCheckJs']);
+    voice.header = AppDataBackupService.stringValue(raw['header']);
+    voice.jsLib = AppDataBackupService.stringValue(raw['jsLib']);
+    voice.jsEngine = AppDataBackupService.stringValue(raw['jsEngine']) || voice.jsLib;
+    voice.enabledCookieJar = raw['enabledCookieJar'] === true ||
+      AppDataBackupService.stringValue(raw['enabledCookieJar']) === 'true';
+    voice.customOrder = AppDataBackupService.numberValue(raw['customOrder'], 0);
+    voice.lastUpdateTime = AppDataBackupService.numberValue(raw['lastUpdateTime'], 0);
+    voice.enabled = raw['enabled'] !== false && AppDataBackupService.stringValue(raw['enabled']) !== 'false';
+    return voice;
+  }
+
+  private static parseHttpTtsArray(raw: string): HttpTTS[] {
+    const result: HttpTTS[] = [];
+    if (!(raw || '').trim()) return result;
+    try {
+      const parsed = JSON.parse(raw) as Object;
+      const values = Array.isArray(parsed) ? parsed as Object[] : [parsed];
+      for (const value of values) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+        const voice = AppDataBackupService.convertAndroidHttpTts(value as Record<string, Object>);
+        if (voice.name && voice.url) result.push(voice);
+      }
+    } catch (_) {}
+    return result;
+  }
+
+  private static convertAndroidReplaceRule(raw: Record<string, Object>, index: number): ReaderReplaceRule {
+    const rule = new ReaderReplaceRule();
+    const rawId = AppDataBackupService.numberValue(raw['id'], 0);
+    rule.id = rawId > 0 ? rawId : Date.now() + index;
+    rule.name = AppDataBackupService.stringValue(raw['name']);
+    rule.group = AppDataBackupService.stringValue(raw['group']) || '默认';
+    rule.pattern = AppDataBackupService.stringValue(raw['pattern']);
+    rule.replacement = AppDataBackupService.stringValue(raw['replacement']);
+    rule.applyToTitle = raw['scopeTitle'] === undefined ? true : raw['scopeTitle'] === true;
+    rule.applyToContent = raw['scopeContent'] === undefined ? true : raw['scopeContent'] === true;
+    rule.isRegex = raw['isRegex'] !== false;
+    rule.scope = AppDataBackupService.stringValue(raw['scope']);
+    rule.excludeScope = AppDataBackupService.stringValue(raw['excludeScope']);
+    rule.timeoutMs = AppDataBackupService.numberValue(
+      raw['timeoutMillisecond'] || raw['timeoutMs'], 3000);
+    rule.enabled = raw['isEnabled'] !== false && raw['enabled'] !== false;
+    return rule;
+  }
+
+  private static ruleRecord(value: Object | undefined): Record<string, Object> | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    return value as Record<string, Object>;
+  }
+
+  private static ruleString(raw: Record<string, Object>, key: string, fallbackKey: string = ''): string {
+    const value = raw[key] === undefined && fallbackKey ? raw[fallbackKey] : raw[key];
+    return AppDataBackupService.stringValue(value);
+  }
+
+  private static stringValue(value: Object | undefined): string {
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    try { return JSON.stringify(value); } catch (_) { return ''; }
+  }
+
+  private static numberValue(value: Object | undefined, fallback: number): number {
+    if (typeof value === 'number') return Number.isFinite(value) ? Math.round(value) : fallback;
+    const parsed = Number(AppDataBackupService.stringValue(value));
+    return Number.isNaN(parsed) ? fallback : Math.round(parsed);
+  }
+
+  private static async forEachAndroidJsonArray(root: string, fileName: string, maxBytes: number,
+    handler: (item: Record<string, Object>, index: number, offset: number, total: number) => Promise<void>):
+    Promise<number> {
+    const path = await AppDataBackupService.findFile(root, fileName);
+    if (!path) return 0;
+    const stat = await fs.stat(path);
+    if (stat.size <= 0) return 0;
+    if (stat.size > maxBytes) throw new Error(`${fileName} 过大，无法安全导入`);
+    const raw = await AppDataBackupService.readText(path);
+    let first = 0;
+    while (first < raw.length && (raw[first].trim() === '' || raw.charCodeAt(first) === 0xFEFF)) first++;
+    if (first >= raw.length) return 0;
+    if (raw[first] === '{') {
+      const parsed = JSON.parse(raw.substring(first)) as Object;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        await handler(parsed as Record<string, Object>, 0, raw.length, raw.length);
+        return 1;
+      }
+      return 0;
+    }
+    if (raw[first] !== '[') throw new Error(`${fileName} 不是有效的 JSON 数组`);
+    let itemStart = -1;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let count = 0;
+    for (let i = first + 1; i < raw.length; i++) {
+      const ch = raw[i];
+      if (itemStart < 0) {
+        if (ch === ']') return count;
+        if (ch === ',' || ch.trim() === '') continue;
+        itemStart = i;
+      }
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+      if (ch === '{' || ch === '[') {
+        depth++;
+        continue;
+      }
+      if (ch === '}' && depth > 0) {
+        depth--;
+        continue;
+      }
+      if (ch === ']' && depth > 0) {
+        depth--;
+        continue;
+      }
+      if ((ch === ',' || ch === ']') && depth === 0) {
+        const itemRaw = raw.substring(itemStart, i).trim();
+        if (itemRaw) {
+          const parsed = JSON.parse(itemRaw) as Object;
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            await handler(parsed as Record<string, Object>, count, i, raw.length);
+            count++;
+          }
+        }
+        itemStart = -1;
+        if (ch === ']') return count;
+      }
+    }
+    throw new Error(`${fileName} JSON 数组未完整结束`);
   }
 
   private static async restoreBookWithoutUnexpectedProgress(db: AppDatabase, book: Book,

@@ -158,7 +158,7 @@ export class BuiltinThemeRegistry {
     theme.book.shelfFrameAssetId = '';
     theme.book.shelfFolderAssetId = '';
     theme.radius = BuiltinThemeRegistry.radius(4, 8, 12, 8, 16, 8);
-    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 12, 10, 18, 18, 18, 18);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 12, 0, 18, 18, 18, 18);
     return theme;
   }
 
@@ -183,7 +183,7 @@ export class BuiltinThemeRegistry {
       BuiltinThemeRegistry.regex(ThemeBubbleStyles.CLASSIC_GLASS, '#4E9BFF', '#DCEBFF')
     );
     theme.radius = BuiltinThemeRegistry.radius(6, 10, 16, 10, 20, 6);
-    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 12, 10, 18, 18, 18, 18);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 12, 0, 18, 18, 18, 18);
     return theme;
   }
 
@@ -208,7 +208,7 @@ export class BuiltinThemeRegistry {
       BuiltinThemeRegistry.regex(ThemeBubbleStyles.WARM_SCROLL, '#D8955B', '#FFE9CE')
     );
     theme.radius = BuiltinThemeRegistry.radius(8, 12, 18, 14, 20, 8);
-    theme.readerLayout = BuiltinThemeRegistry.readerLayout(21, 14, 12, 22, 22, 22, 22);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(21, 14, 0, 22, 22, 22, 22);
     return theme;
   }
 
@@ -233,7 +233,7 @@ export class BuiltinThemeRegistry {
       BuiltinThemeRegistry.regex(ThemeBubbleStyles.FOREST_DEW, '#69AD84', '#DDF5E5')
     );
     theme.radius = BuiltinThemeRegistry.radius(10, 14, 22, 16, 22, 14);
-    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 14, 11, 22, 22, 22, 22);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 14, 0, 22, 22, 22, 22);
     return theme;
   }
 
@@ -258,7 +258,7 @@ export class BuiltinThemeRegistry {
       BuiltinThemeRegistry.regex(ThemeBubbleStyles.INK_BRUSH, '#9AA8B5', '#F1F3F4')
     );
     theme.radius = BuiltinThemeRegistry.radius(4, 8, 12, 8, 18, 4);
-    theme.readerLayout = BuiltinThemeRegistry.readerLayout(21, 15, 13, 24, 24, 22, 24);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(21, 15, 0, 24, 24, 22, 24);
     return theme;
   }
 
@@ -283,7 +283,7 @@ export class BuiltinThemeRegistry {
       BuiltinThemeRegistry.regex(ThemeBubbleStyles.NEON_PULSE, '#00D5FF', '#A9F7FF')
     );
     theme.radius = BuiltinThemeRegistry.radius(6, 10, 14, 10, 18, 8);
-    theme.readerLayout = BuiltinThemeRegistry.readerLayout(19, 13, 10, 20, 20, 20, 20);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(19, 13, 0, 20, 20, 20, 20);
     return theme;
   }
 
@@ -308,7 +308,7 @@ export class BuiltinThemeRegistry {
       BuiltinThemeRegistry.regex(ThemeBubbleStyles.STRAWBERRY_RIBBON, '#6D9BB8', '#D8EEFC')
     );
     theme.radius = BuiltinThemeRegistry.radius(10, 16, 24, 18, 24, 16);
-    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 13, 11, 20, 20, 22, 22);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 13, 0, 20, 20, 22, 22);
     theme.glass = BuiltinThemeRegistry.glass(20, 18, 88, 74, 58, 24, 16, 4);
     return theme;
   }
@@ -334,7 +334,7 @@ export class BuiltinThemeRegistry {
       BuiltinThemeRegistry.regex(ThemeBubbleStyles.CRIMSON_STAMP, '#C74F47', '#FFEAE4')
     );
     theme.radius = BuiltinThemeRegistry.radius(2, 5, 9, 5, 8, 3);
-    theme.readerLayout = BuiltinThemeRegistry.readerLayout(19, 14, 12, 22, 22, 20, 22);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(19, 14, 0, 22, 22, 20, 22);
     theme.glass = BuiltinThemeRegistry.glass(10, 7, 94, 86, 42, 18, 10, 2);
     return theme;
   }
@@ -360,7 +360,7 @@ export class BuiltinThemeRegistry {
       BuiltinThemeRegistry.regex(ThemeBubbleStyles.CELADON_SLIP, '#73927F', '#E6F0E8')
     );
     theme.radius = BuiltinThemeRegistry.radius(5, 9, 15, 9, 16, 4);
-    theme.readerLayout = BuiltinThemeRegistry.readerLayout(21, 14, 12, 26, 26, 24, 24);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(21, 14, 0, 26, 26, 24, 24);
     theme.glass = BuiltinThemeRegistry.glass(18, 14, 90, 78, 52, 22, 14, 4);
     return theme;
   }
@@ -386,7 +386,7 @@ export class BuiltinThemeRegistry {
       BuiltinThemeRegistry.regex(ThemeBubbleStyles.ROSE_FRAME, '#B9606A', '#FFE8E6')
     );
     theme.radius = BuiltinThemeRegistry.radius(8, 14, 22, 16, 22, 14);
-    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 13, 12, 24, 24, 22, 22);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 13, 0, 24, 24, 22, 22);
     theme.glass = BuiltinThemeRegistry.glass(24, 20, 84, 72, 62, 28, 20, 5);
     return theme;
   }
@@ -412,7 +412,7 @@ export class BuiltinThemeRegistry {
       BuiltinThemeRegistry.regex(ThemeBubbleStyles.MOON_HALO, '#78B9F3', '#D5EEFF')
     );
     theme.radius = BuiltinThemeRegistry.radius(8, 13, 20, 14, 22, 11);
-    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 15, 12, 24, 24, 22, 24);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 15, 0, 24, 24, 22, 24);
     theme.glass = BuiltinThemeRegistry.glass(30, 22, 70, 58, 58, 28, 24, 3);
     return theme;
   }

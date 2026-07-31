@@ -17,13 +17,16 @@ import { TtsVoiceInfo } from '../account/AccountCommerceModels';
 import { Book, BookChapter, Bookmark, BookSource, SearchBook, HttpTTS } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { ReadBookEngine } from '../core/book/ReadBookEngine';
+import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { LocalBookService } from '../core/book/LocalBookService';
+import { WebDavBookService } from '../webdav/WebDavBookService';
 import { SearchCoordinator, SearchProgress } from '../core/book/SearchCoordinator';
 import { WebBookService } from '../core/book/WebBookService';
 import { VerificationSupport } from '../core/http/VerificationSupport';
 import { RecentReadShortcut } from '../utils/RecentReadShortcut';
 import { RecentReadCardUpdater } from '../utils/RecentReadCardUpdater';
 import { SystemTtsReader, TtsChunk, TtsVoiceOption } from '../utils/SystemTtsReader';
+import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import { ReaderSettings, ReaderSettingsStore } from '../utils/ReaderSettingsStore';
 import { ReaderReplaceRule, ReaderReplaceRuleStore } from '../utils/ReaderReplaceRuleStore';
 import { ReaderThemeHelper, ReaderThemeItem } from '../utils/ReaderThemeHelper';
@@ -31,6 +34,7 @@ import { ReaderCustomThemeData, ReaderCustomThemeHelper, ReaderCustomThemeScheme
 import { ReaderBackgroundImageStore } from '../utils/ReaderBackgroundImageStore';
 import { ColorCodePicker } from '../components/ColorCodePicker';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { ReaderThemeBackground } from '../components/ReaderThemeBackground';
 import { TtsSettings, TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ReaderFontHelper, ReaderFontItem } from '../utils/ReaderFontHelper';
 import { ReaderFontBootstrap } from '../utils/ReaderFontBootstrap';
@@ -252,8 +256,13 @@ struct ReadBookPage {
   @State statusBarSafeHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State isTtsSpeaking: boolean = false;
+  @State isTtsPaused: boolean = false;
   @State ttsPagedScrollOverride: boolean = false;
   @State ttsMediaControlsExpanded: boolean = false;
+  @State showTtsQuickPlayer: boolean = false;
+  @State ttsQuickOptionsPanel: number = 0;
+  @State ttsMiniPlayerOffsetX: number = 0;
+  @State ttsMiniPlayerOffsetY: number = 0;
   @State ttsMediaImage: string = '';
   @State ttsDisplayText: string = '';
   @State ttsHighlightStart: number = -1;
@@ -261,6 +270,25 @@ struct ReadBookPage {
   @State ttsHighlightRenderVersion: number = 0;
   @State ttsSleepTimerMinutes: number = 0;
   @State ttsSleepTimerRemainingSeconds: number = 0;
+  @StorageLink('globalTtsActive') @Watch('onGlobalTtsActiveChanged') globalTtsActive: boolean = false;
+  @StorageLink('globalTtsPaused') globalTtsPaused: boolean = false;
+  @StorageLink('globalTtsBookName') globalTtsBookName: string = '';
+  @StorageLink('globalTtsChapterTitle') globalTtsChapterTitle: string = '';
+  @StorageLink('globalTtsCover') globalTtsCover: ResourceStr = '';
+  @StorageLink('globalTtsCoverFrame') globalTtsCoverFrame: ResourceStr = '';
+  @StorageLink('globalTtsContent') globalTtsContent: string = '';
+  @StorageLink('globalTtsChapterProgress') globalTtsChapterProgress: string = '';
+  @StorageLink('globalTtsSpeed') globalTtsSpeed: number = 1;
+  @StorageLink('globalTtsTimerMinutes') globalTtsTimerMinutes: number = 0;
+  @StorageLink('globalTtsTimerRemainingSeconds') globalTtsTimerRemainingSeconds: number = 0;
+  @StorageLink('globalTtsCanPrevious') globalTtsCanPrevious: boolean = false;
+  @StorageLink('globalTtsCanNext') globalTtsCanNext: boolean = false;
+  @StorageLink('globalTtsRevision') globalTtsRevision: number = 0;
+  @State showGlobalTtsQuickPlayer: boolean = false;
+  @State globalTtsOptionsPanel: number = 0;
+  private ttsFloatingSessionOwnerId: string = `reader_${Date.now()}_${Math.random()}`;
+  private ttsMiniPlayerDragOriginX: number = 0;
+  private ttsMiniPlayerDragOriginY: number = 0;
   private pendingRestorePageIndex: number = -1;
   private tocScroller: Scroller = new Scroller();
   private tocLoadingPreviousPage: boolean = false;
@@ -349,7 +377,7 @@ struct ReadBookPage {
   private slideResetSerial: number = 0;
   @StorageLink('readerFontSize') @Watch('onReadLayoutChanged') readerFontSize: number = 20;
   @StorageLink('readerLineHeight') @Watch('onReadLayoutChanged') readerLineHeight: number = 12;
-  @StorageLink('readerParagraphSpacing') @Watch('onReadLayoutChanged') readerParagraphSpacing: number = 10;
+  @StorageLink('readerParagraphSpacing') @Watch('onReadLayoutChanged') readerParagraphSpacing: number = 0;
   @StorageLink('readerMarginLeft') @Watch('onReadLayoutChanged') readerMarginLeft: number = 18;
   @StorageLink('readerMarginRight') @Watch('onReadLayoutChanged') readerMarginRight: number = 18;
   @StorageLink('readerMarginTop') @Watch('onReadLayoutChanged') readerMarginTop: number = 18;
@@ -397,6 +425,7 @@ struct ReadBookPage {
   @State readerFontRenderReady: boolean = false;
   @StorageLink('appDarkMode') @Watch('onReaderColorModeChanged') appDarkMode: boolean = false;
   @StorageLink('appThemeMode') appThemeMode: string = 'system';
+  @StorageLink('appThemeBookCoverEnabled') themeBookCoverEnabled: boolean = false;
   @StorageLink('themeRevision') @Watch('onReaderThemeChanged') themeRevision: number = 0;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
@@ -514,7 +543,18 @@ struct ReadBookPage {
     this.syncTtsFocusAfterResumeLater(180);
   }
 
+  onGlobalTtsActiveChanged(): void {
+    if (!this.globalTtsActive) {
+      this.showGlobalTtsQuickPlayer = false;
+      this.globalTtsOptionsPanel = 0;
+    }
+  }
+
   onBackPress(): boolean {
+    if (this.showGlobalTtsQuickPlayer) {
+      this.closeGlobalTtsQuickPlayer();
+      return true;
+    }
     if (this.showTtsVoiceDropdown) {
       this.showTtsVoiceDropdown = false;
       return true;
@@ -582,8 +622,10 @@ struct ReadBookPage {
     }
     this.flushPendingTtsSpeedSettings();
     this.clearReaderComicProgressSaveTimer();
-    this.stopTtsReading();
-    this.ttsReader.shutdown();
+    if (!ReaderTtsFloatingSession.isOwner(this.ttsFloatingSessionOwnerId)) {
+      this.stopTtsReading();
+      this.ttsReader.shutdown();
+    }
     if (!this.readerExitProgressSaved) {
       this.saveReadingProgress().then(() => {
         return CloudSyncCoordinator.syncAutomatically(
@@ -685,6 +727,29 @@ struct ReadBookPage {
         this.setReaderContent('书籍不存在，请先从搜索结果加入书架。');
         this.isLoading = false;
         return;
+      }
+      const sourceForType = this.book.origin && this.book.origin !== 'local' ?
+        await db.getBookSource(this.book.origin) : null;
+      BookTypeSupport.applyBookType(this.book, sourceForType);
+      if (BookTypeSupport.isAudio(this.book)) {
+        await db.updateBook(this.book, false);
+        await router.replaceUrl({
+          url: 'pages/AudioBook',
+          params: {
+            bookUrl: this.book.bookUrl,
+            shelfBookOpening: this.openedWithShelfAnimation ? 'true' : 'false',
+            shortcutEntry: this.openedFromShortcut ? 'true' : 'false',
+            shortcutReplace: this.shortcutReplacedPreviousPage ? 'true' : 'false'
+          }
+        });
+        return;
+      }
+      if (LocalBookService.isWebDavBook(this.book)) {
+        this.loadStatus = '正在检查 WebDAV 书籍...';
+        this.book = await WebDavBookService.ensureCached(getContext(this), this.book,
+          (message: string): void => {
+            this.loadStatus = message;
+          });
       }
       if (this.book.origin === LocalBookService.ORIGIN) {
         this.loadStatus = '正在优化本地书籍...';
@@ -1303,8 +1368,9 @@ struct ReadBookPage {
             if (this.isReaderImageOnlyPage(page)) {
               Image(this.getReaderEpubImageUri(page))
                 .width('100%')
-                .height(this.getReaderComicImageHeight(index))
-                .objectFit(ImageFit.Contain)
+                .height(this.getReaderComicImageRenderHeight(index))
+                .margin({ top: -this.getReaderComicImageSeamOverlap(index) })
+                .objectFit(this.getReaderComicImageFit(index))
                 .draggable(false)
                 .onComplete((event) => {
                   if (event) {
@@ -1410,14 +1476,14 @@ struct ReadBookPage {
 
   build() {
     Stack() {
-      if (this.hasBackgroundImage()) {
-        Image(this.getBackgroundImage())
-          .width('100%')
-          .height('100%')
-          .objectFit(this.getBackgroundImageFit())
-          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-          .hitTestBehavior(HitTestMode.None)
-      }
+      ReaderThemeBackground({
+        surfaceColor: this.getBackgroundColor(),
+        backgroundAssetId: this.getBackgroundAssetId(),
+        customImage: this.currentReaderTheme().backgroundImageUri,
+        customImageFit: this.getBackgroundImageFit()
+      })
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+        .hitTestBehavior(HitTestMode.None)
       Column() {
         if (!this.shouldRenderPrimaryReaderContent()) {
           this.readerLoadingPanel()
@@ -1519,7 +1585,8 @@ struct ReadBookPage {
         } else {
           this.readerFloatingBottomMenu()
         }
-        if (this.readerUseTtsQuickAction && !this.isReaderComicModeActive() && !this.ttsMediaControlsExpanded) {
+        if (this.readerUseTtsQuickAction && !this.isReaderComicModeActive() && !this.ttsMediaControlsExpanded &&
+          !this.isTtsSpeaking && !this.ttsReader.isSpeaking()) {
           this.readerTtsQuickActionButton()
         }
         if (this.readerUseTtsQuickAction && this.shouldShowTtsMediaControls()) {
@@ -1542,6 +1609,20 @@ struct ReadBookPage {
         if (this.supportsReaderImmersiveMaterial()) {
           this.readerHdsFloatingActionBar(false, true)
         }
+      }
+
+      if (this.readerUseTtsQuickAction && this.shouldShowTtsMiniPlayer()) {
+        this.ttsMiniPlayer()
+      } else if (this.readerUseTtsQuickAction && this.shouldShowGlobalTtsMiniPlayer()) {
+        this.globalTtsMiniPlayer()
+      }
+
+      if (this.showTtsQuickPlayer) {
+        this.ttsQuickPlayerOverlay()
+      }
+
+      if (this.globalTtsActive && this.showGlobalTtsQuickPlayer) {
+        this.globalTtsQuickPlayerOverlay()
       }
 
       if (this.showBookmarkActionMenu && this.pendingBookmarkAction) {
@@ -1799,15 +1880,15 @@ struct ReadBookPage {
         Column()
       }
       .height(56)
-      .tabBar(this.readerHdsMenuItem($r('sys.symbol.textformat'),
+      .tabBar(this.readerHdsMenuItem($r('sys.symbol.gearshape'),
         fromSettings && this.settingsPanelTab === 0, false, !this.isReaderComicModeActive()))
 
       TabContent() {
         Column()
       }
       .height(56)
-      .tabBar(this.readerHdsMenuItem($r('sys.symbol.speaker_wave_3'),
-        this.isTtsSpeaking || (fromSettings && this.settingsPanelTab === 1), false,
+      .tabBar(this.readerHdsMenuItem($r('sys.symbol.textformat'),
+        fromSettings && this.settingsPanelTab === 2, false,
         !this.isReaderComicModeActive()))
 
       TabContent() {
@@ -1907,10 +1988,10 @@ struct ReadBookPage {
       return;
     }
     if (index === 2) {
-      if (fromSettings && this.settingsPanelTab === 1) {
+      if (fromSettings && this.settingsPanelTab === 2) {
         this.closeSettingsPanelKeepMenu();
       } else {
-        this.openTtsSettingsPanel();
+        this.openTypographySettingsPanel();
       }
       return;
     }
@@ -2026,11 +2107,11 @@ struct ReadBookPage {
         this.readerFloatingIconMenuItem($r('sys.symbol.list_bullet'), false, () => {
           this.openTocPanel();
         })
-        this.readerFloatingIconMenuItem($r('sys.symbol.textformat'), false, () => {
+        this.readerFloatingIconMenuItem($r('sys.symbol.gearshape'), false, () => {
           this.openSettingsPanel();
         }, false, !this.isReaderComicModeActive())
-        this.readerFloatingIconMenuItem($r('sys.symbol.speaker_wave_3'), this.isTtsSpeaking, () => {
-          this.openTtsSettingsPanel();
+        this.readerFloatingIconMenuItem($r('sys.symbol.textformat'), false, () => {
+          this.openTypographySettingsPanel();
         }, false, !this.isReaderComicModeActive())
         this.readerFloatingIconMenuItem(this.readerDayNightIcon(), false, () => {
           this.toggleReaderDayNightMode();
@@ -2216,13 +2297,13 @@ struct ReadBookPage {
           this.readerFloatingIconMenuItem($r('sys.symbol.list_bullet'), true, () => {
             this.tocPanelTab = 0;
           })
-          this.readerFloatingIconMenuItem($r('sys.symbol.textformat'), false, () => {
+          this.readerFloatingIconMenuItem($r('sys.symbol.gearshape'), false, () => {
             this.showToc = false;
             this.openSettingsPanel();
           })
-          this.readerFloatingIconMenuItem($r('sys.symbol.speaker_wave_3'), this.isTtsSpeaking, () => {
+          this.readerFloatingIconMenuItem($r('sys.symbol.textformat'), false, () => {
             this.showToc = false;
-            this.openTtsSettingsPanel();
+            this.openTypographySettingsPanel();
           })
           this.readerFloatingIconMenuItem(this.readerDayNightIcon(), false, () => {
             this.toggleReaderDayNightMode();
@@ -2455,12 +2536,9 @@ struct ReadBookPage {
             .border({ width: { bottom: 0.5 }, color: this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000' })
             .onClick(async () => {
               const targetChapterIndex = this.tocGlobalIndex(localIndex);
-              this.currentPageIndex = 0;
-              this.pendingRestorePageIndex = 0;
               this.showToc = false;
               this.showMenu = false;
-              await this.loadContent(false, targetChapterIndex);
-              await this.saveReadingProgress();
+              await this.jumpToReaderPositionKeepingTts(targetChapterIndex, 0);
             })
           }
         }, (chapter: BookChapter, localIndex: number) =>
@@ -2698,8 +2776,8 @@ struct ReadBookPage {
       )
       if (!this.isReaderComicModeActive()) {
         this.readerActionMenuItem(
-          this.isTtsSpeaking ? $r('sys.symbol.pause') : $r('sys.symbol.play'),
-          this.isTtsSpeaking ? '停止朗读' : '开始朗读',
+          this.isTtsSpeaking && !this.isTtsPaused ? $r('sys.symbol.pause') : $r('sys.symbol.play'),
+          this.isTtsSpeaking ? (this.isTtsPaused ? '继续朗读' : '暂停朗读') : '开始朗读',
           () => this.toggleTtsReading()
         )
       }
@@ -2719,7 +2797,7 @@ struct ReadBookPage {
       }
       if (!this.isReaderComicModeActive()) {
         this.readerActionMenuItem(
-          $r('sys.symbol.textformat'),
+          $r('sys.symbol.gearshape'),
           '阅读设置',
           () => this.openSettingsPanel()
         )
@@ -3218,12 +3296,7 @@ struct ReadBookPage {
         compactLayout: true,
         accessibilityLabel: this.isTtsSpeaking ? '展开朗读控制' : '开始朗读',
         onBack: () => {
-          if (this.isTtsSpeaking || this.ttsReader.isSpeaking()) {
-            this.ttsMediaControlsExpanded = !this.ttsMediaControlsExpanded;
-            this.syncTtsSystemMediaControls();
-          } else {
-            this.toggleTtsReading();
-          }
+          this.openTtsQuickPlayer();
         }
       })
 
@@ -3244,6 +3317,789 @@ struct ReadBookPage {
     .translate({
       y: -(this.readerBottomMenuOverlayHeight() + 62)
     })
+  }
+
+  async openTtsQuickPlayer(): Promise<void> {
+    if (this.isReaderComicModeActive()) return;
+    this.showMenu = false;
+    this.showToc = false;
+    this.showSettings = false;
+    this.ttsQuickOptionsPanel = 0;
+    this.ttsMediaControlsExpanded = false;
+    animateTo({ duration: 280, curve: Curve.Friction }, () => {
+      this.showTtsQuickPlayer = true;
+    });
+    this.loadTtsSettingsAndVoices();
+    if (!this.isTtsSpeaking && !this.ttsReader.isSpeaking()) {
+      await this.startTtsReadingFromCurrentPosition(true);
+      this.ttsMediaControlsExpanded = false;
+    }
+  }
+
+  shouldShowTtsMiniPlayer(): boolean {
+    return !this.showTtsQuickPlayer && !this.isReaderComicModeActive() &&
+      (this.isTtsSpeaking || this.ttsReader.isSpeaking()) && !this.shouldBlockReaderInteraction();
+  }
+
+  shouldShowGlobalTtsMiniPlayer(): boolean {
+    return this.globalTtsActive && !this.showGlobalTtsQuickPlayer &&
+      !ReaderTtsFloatingSession.isOwner(this.ttsFloatingSessionOwnerId) &&
+      !this.isReaderComicModeActive() && !this.shouldBlockReaderInteraction();
+  }
+
+  closeTtsQuickPlayer(): void {
+    this.ttsQuickOptionsPanel = 0;
+    animateTo({ duration: 190, curve: Curve.EaseIn }, () => {
+      this.showTtsQuickPlayer = false;
+    });
+  }
+
+  openGlobalTtsQuickPlayer(): void {
+    this.globalTtsOptionsPanel = 0;
+    animateTo({ duration: 280, curve: Curve.Friction }, () => {
+      this.showGlobalTtsQuickPlayer = true;
+    });
+  }
+
+  closeGlobalTtsQuickPlayer(): void {
+    this.globalTtsOptionsPanel = 0;
+    animateTo({ duration: 190, curve: Curve.EaseIn }, () => {
+      this.showGlobalTtsQuickPlayer = false;
+    });
+  }
+
+  toggleTtsQuickOptions(panel: number): void {
+    this.ttsQuickOptionsPanel = this.ttsQuickOptionsPanel === panel ? 0 : panel;
+  }
+
+  clampTtsMiniPlayerOffsetX(offset: number): number {
+    const viewportWidth = this.pageViewWidth > 0 ? this.pageViewWidth : 360;
+    const capsuleWidth = 154;
+    const baseLeft = 16;
+    const edgeInset = 8;
+    const minLeft = edgeInset;
+    const maxLeft = Math.max(minLeft, viewportWidth - capsuleWidth - edgeInset);
+    return Math.max(minLeft - baseLeft, Math.min(offset, maxLeft - baseLeft));
+  }
+
+  clampTtsMiniPlayerOffsetY(offset: number): number {
+    const viewportHeight = this.pageViewHeight > 0 ? this.pageViewHeight : 720;
+    const baseTop = viewportHeight - this.navBarHeight - 68;
+    const minTop = this.getReaderTopSafePadding() + 8;
+    const maxTop = Math.max(minTop, viewportHeight - this.navBarHeight - 54);
+    return Math.max(minTop - baseTop, Math.min(offset, maxTop - baseTop));
+  }
+
+  ttsMiniPlayerTransition(): TransitionEffect {
+    const appear = TransitionEffect.scale({ x: 0.84, y: 0.84, centerX: '50%', centerY: '50%' })
+      .combine(TransitionEffect.opacity(0))
+      .animation({ duration: 240, curve: Curve.Friction });
+    const disappear = TransitionEffect.scale({ x: 0.9, y: 0.9, centerX: '50%', centerY: '50%' })
+      .combine(TransitionEffect.opacity(0))
+      .animation({ duration: 170, curve: Curve.EaseIn });
+    return TransitionEffect.asymmetric(appear, disappear);
+  }
+
+  @Builder
+  ttsMiniPlayer() {
+    Row({ space: 7 }) {
+      Row({ space: 7 }) {
+        Stack({ alignContent: Alignment.Center }) {
+          Circle().width(30).height(30).fill(this.accentColor())
+          SymbolGlyph($r('sys.symbol.speaker_wave_3'))
+            .fontSize(15)
+            .fontColor(['#FFFFFF'])
+        }
+        Column({ space: 1 }) {
+          Text(this.isTtsPaused ? '已暂停' : '朗读中')
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.getTextColor())
+          Text(`${this.currentChapterIndex + 1}/${Math.max(1, this.chapters.length)}章`)
+            .fontSize(9)
+            .fontColor(this.getSubTextColor())
+        }
+        .alignItems(HorizontalAlign.Start)
+      }
+      .onClick(() => this.openTtsQuickPlayer())
+      SymbolGlyph(this.isTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
+        .id(`tts_capsule_playback_${this.isTtsSpeaking}_${this.isTtsPaused}`)
+        .fontSize(17)
+        .fontColor([this.getTextColor()])
+        .width(28)
+        .height(34)
+        .onClick(() => this.toggleTtsReading())
+      SymbolGlyph($r('sys.symbol.xmark'))
+        .fontSize(14)
+        .fontColor([this.getSubTextColor()])
+        .width(24)
+        .height(34)
+        .onClick(() => this.stopTtsReading())
+    }
+    .width(154)
+    .height(46)
+    .padding({ left: 8, right: 5 })
+    .borderRadius(23)
+    .backgroundColor(this.readerGlassPanelColor())
+    .backdropBlur(ThemeRuntime.glassBlur('button', 18))
+    .border({ width: ThemeRuntime.glassBorderWidth('button'), color: this.readerGlassBorderColor() })
+    .shadow({ radius: ThemeRuntime.glassShadowRadius('button'), color: this.readerGlassShadowColor(),
+      offsetX: ThemeRuntime.glassShadowOffsetX('button'), offsetY: ThemeRuntime.glassShadowOffsetY('button') })
+    .position({ x: 16, y: '100%' })
+    .translate({
+      x: this.clampTtsMiniPlayerOffsetX(this.ttsMiniPlayerOffsetX),
+      y: -(this.navBarHeight + 68) + this.clampTtsMiniPlayerOffsetY(this.ttsMiniPlayerOffsetY)
+    })
+    .parallelGesture(
+      PanGesture({ direction: PanDirection.All, distance: 4 })
+        .onActionStart(() => {
+          this.ttsMiniPlayerDragOriginX = this.clampTtsMiniPlayerOffsetX(this.ttsMiniPlayerOffsetX);
+          this.ttsMiniPlayerDragOriginY = this.clampTtsMiniPlayerOffsetY(this.ttsMiniPlayerOffsetY);
+        })
+        .onActionUpdate((event: GestureEvent) => {
+          this.ttsMiniPlayerOffsetX = this.clampTtsMiniPlayerOffsetX(
+            this.ttsMiniPlayerDragOriginX + event.offsetX);
+          this.ttsMiniPlayerOffsetY = this.clampTtsMiniPlayerOffsetY(
+            this.ttsMiniPlayerDragOriginY + event.offsetY);
+        })
+    )
+    .transition(this.ttsMiniPlayerTransition())
+  }
+
+  @Builder
+  globalTtsMiniPlayer() {
+    Row({ space: 7 }) {
+      Row({ space: 7 }) {
+        Stack({ alignContent: Alignment.Center }) {
+          Circle().width(30).height(30).fill(this.accentColor())
+          SymbolGlyph($r('sys.symbol.speaker_wave_3'))
+            .fontSize(15)
+            .fontColor(['#FFFFFF'])
+        }
+        Column({ space: 1 }) {
+          Text(this.globalTtsPaused ? '已暂停' : '朗读中')
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.getTextColor())
+          Text(this.globalTtsChapterProgress || '后台朗读')
+            .fontSize(9)
+            .fontColor(this.getSubTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .alignItems(HorizontalAlign.Start)
+      }
+      .onClick(() => this.openGlobalTtsQuickPlayer())
+      SymbolGlyph(this.globalTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
+        .id(`global_tts_capsule_playback_${this.globalTtsRevision}_${this.globalTtsPaused}`)
+        .fontSize(17)
+        .fontColor([this.getTextColor()])
+        .width(28)
+        .height(34)
+        .onClick(() => ReaderTtsFloatingSession.toggle())
+      SymbolGlyph($r('sys.symbol.xmark'))
+        .fontSize(14)
+        .fontColor([this.getSubTextColor()])
+        .width(24)
+        .height(34)
+        .onClick(() => {
+          this.closeGlobalTtsQuickPlayer();
+          ReaderTtsFloatingSession.stop();
+        })
+    }
+    .width(154)
+    .height(46)
+    .padding({ left: 8, right: 5 })
+    .borderRadius(23)
+    .backgroundColor(this.readerGlassPanelColor())
+    .backdropBlur(ThemeRuntime.glassBlur('button', 18))
+    .border({ width: ThemeRuntime.glassBorderWidth('button'), color: this.readerGlassBorderColor() })
+    .shadow({ radius: ThemeRuntime.glassShadowRadius('button'), color: this.readerGlassShadowColor(),
+      offsetX: ThemeRuntime.glassShadowOffsetX('button'), offsetY: ThemeRuntime.glassShadowOffsetY('button') })
+    .position({ x: 16, y: '100%' })
+    .translate({
+      x: this.clampTtsMiniPlayerOffsetX(this.ttsMiniPlayerOffsetX),
+      y: -(this.navBarHeight + 68) + this.clampTtsMiniPlayerOffsetY(this.ttsMiniPlayerOffsetY)
+    })
+    .parallelGesture(
+      PanGesture({ direction: PanDirection.All, distance: 4 })
+        .onActionStart(() => {
+          this.ttsMiniPlayerDragOriginX = this.clampTtsMiniPlayerOffsetX(this.ttsMiniPlayerOffsetX);
+          this.ttsMiniPlayerDragOriginY = this.clampTtsMiniPlayerOffsetY(this.ttsMiniPlayerOffsetY);
+        })
+        .onActionUpdate((event: GestureEvent) => {
+          this.ttsMiniPlayerOffsetX = this.clampTtsMiniPlayerOffsetX(
+            this.ttsMiniPlayerDragOriginX + event.offsetX);
+          this.ttsMiniPlayerOffsetY = this.clampTtsMiniPlayerOffsetY(
+            this.ttsMiniPlayerDragOriginY + event.offsetY);
+        })
+    )
+    .transition(this.ttsMiniPlayerTransition())
+  }
+
+  @Builder
+  globalTtsQuickPlayerOverlay() {
+    Stack({ alignContent: Alignment.Bottom }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.isReaderThemeDark() ? '#52000000' : '#26000000')
+        .backdropBlur(ThemeRuntime.glassBlur('popover', 10))
+        .onClick(() => this.closeGlobalTtsQuickPlayer())
+
+      Column({ space: 14 }) {
+        Row({ space: 11 }) {
+          Stack({ alignContent: Alignment.Center }) {
+            Circle().width(38).height(38).fill(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
+            SymbolGlyph($r('sys.symbol.speaker_wave_3'))
+              .fontSize(19)
+              .fontColor([this.accentColor()])
+          }
+          Column({ space: 3 }) {
+            Text(this.globalTtsBookName || '快速朗读')
+              .fontSize(18)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.getTextColor())
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+            Text(this.globalTtsChapterTitle || this.globalTtsChapterProgress)
+              .fontSize(11)
+              .fontColor(this.getSubTextColor())
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          ImmersiveBackButton({
+            icon: $r('sys.symbol.chevron_down'), iconOffsetX: 0, iconColor: this.getTextColor(),
+            darkMode: this.isReaderThemeDark(), buttonSize: 38, containerWidth: 38, containerHeight: 38,
+            startInset: 0, compactLayout: true, accessibilityLabel: '收起快速朗读',
+            onBack: () => this.closeGlobalTtsQuickPlayer()
+          })
+        }
+        .width('100%')
+
+        Column({ space: 8 }) {
+          this.globalTtsQuickBookCover()
+          Scroll() {
+            Text(this.globalTtsContent || '正在准备当前朗读内容…')
+              .fontSize(15)
+              .fontColor(this.getTextColor())
+              .lineHeight(25)
+              .width('100%')
+          }
+          .layoutWeight(1)
+          .width('100%')
+          .padding({ left: 4, right: 4 })
+          .scrollBar(BarState.Auto)
+          Row() {
+            Text(this.globalTtsChapterProgress || '后台朗读')
+              .fontSize(10)
+              .fontColor(this.getSubTextColor())
+              .layoutWeight(1)
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .padding(14)
+        .borderRadius(14)
+        .backgroundColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
+
+        Row() {
+          this.ttsQuickControl($r('sys.symbol.timer'), this.globalTtsTimerMinutes > 0 ?
+            `${Math.max(1, Math.ceil(this.globalTtsTimerRemainingSeconds / 60))}分` : '定时', true, false,
+            () => this.globalTtsOptionsPanel = this.globalTtsOptionsPanel === 1 ? 0 : 1)
+          this.ttsQuickControl($r('sys.symbol.arrow_left'), '上一章', this.globalTtsCanPrevious, false,
+            () => ReaderTtsFloatingSession.previous())
+          this.globalTtsQuickPlaybackControl()
+          this.ttsQuickControl($r('sys.symbol.arrow_right'), '下一章', this.globalTtsCanNext, false,
+            () => ReaderTtsFloatingSession.next())
+          this.ttsQuickControl($r('sys.symbol.hourglass'), `${this.globalTtsSpeed.toFixed(1)}x`, true, false,
+            () => this.globalTtsOptionsPanel = this.globalTtsOptionsPanel === 2 ? 0 : 2)
+        }
+        .width('100%')
+
+        if (this.globalTtsOptionsPanel === 1) {
+          Row({ space: 6 }) {
+            this.globalTtsQuickTimerChip(0, '关闭')
+            this.globalTtsQuickTimerChip(15, '15分')
+            this.globalTtsQuickTimerChip(30, '30分')
+            this.globalTtsQuickTimerChip(60, '60分')
+            this.globalTtsQuickTimerChip(90, '90分')
+            this.globalTtsQuickTimerChip(120, '120分')
+          }
+          .width('100%')
+        } else if (this.globalTtsOptionsPanel === 2) {
+          Row({ space: 8 }) {
+            this.globalTtsQuickSpeedChip(0.8)
+            this.globalTtsQuickSpeedChip(1.0)
+            this.globalTtsQuickSpeedChip(1.2)
+            this.globalTtsQuickSpeedChip(1.5)
+            this.globalTtsQuickSpeedChip(2.0)
+          }
+          .width('100%')
+        }
+
+        Button('停止朗读')
+          .width('100%')
+          .height(42)
+          .borderRadius(12)
+          .fontColor('#FFFFFF')
+          .backgroundColor('#D94841')
+          .onClick(() => {
+            this.closeGlobalTtsQuickPlayer();
+            ReaderTtsFloatingSession.stop();
+          })
+      }
+      .width('100%')
+      .height('100%')
+      .padding({ left: 18, right: 18, top: this.statusBarSafeHeight + 16, bottom: this.navBarHeight + 16 })
+      .borderRadius(0)
+      .backgroundColor(this.readerGlassPanelColor())
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 24))
+      .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.readerGlassBorderColor() })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: this.readerGlassShadowColor(),
+        offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
+      .transition(this.readerPanelTransition())
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder
+  globalTtsQuickPlaybackControl() {
+    Column({ space: 6 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle()
+          .width(46)
+          .height(46)
+          .fill(this.accentColor())
+        SymbolGlyph(this.globalTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
+          .id(`global_tts_panel_playback_${this.globalTtsRevision}_${this.globalTtsPaused}`)
+          .fontSize(23)
+          .fontColor(['#FFFFFF'])
+      }
+      Text(this.globalTtsPaused ? '播放' : '暂停')
+        .fontSize(10)
+        .fontColor(this.getSubTextColor())
+    }
+    .layoutWeight(1)
+    .height(68)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => ReaderTtsFloatingSession.toggle())
+  }
+
+  @Builder
+  globalTtsQuickBookCover() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.globalTtsCover) {
+        Image(this.globalTtsCover)
+          .width('100%')
+          .height('100%')
+          .objectFit(ImageFit.Contain)
+        if (this.globalTtsCoverFrame) {
+          Image(this.globalTtsCoverFrame)
+            .width('100%')
+            .height('100%')
+            .objectFit(ImageFit.Contain)
+        }
+      } else {
+        Column() {
+          Text(this.globalTtsBookName ? this.globalTtsBookName.substring(0, 1) : '书')
+            .fontSize(42)
+            .fontColor('#FFFFFF')
+        }
+        .width('58%')
+        .height('88%')
+        .constraintSize({ maxWidth: 260, maxHeight: 360 })
+        .borderRadius(10)
+        .backgroundColor(this.accentColor())
+        .justifyContent(FlexAlign.Center)
+      }
+    }
+    .width('100%')
+    .height(this.ttsQuickCoverHeight())
+    .padding(10)
+    .borderRadius(14)
+    .clip(true)
+  }
+
+  @Builder
+  globalTtsQuickSpeedChip(value: number) {
+    Text(`${value.toFixed(1)}x`)
+      .fontSize(11)
+      .fontWeight(Math.abs(this.globalTtsSpeed - value) < 0.01 ? FontWeight.Bold : FontWeight.Regular)
+      .fontColor(Math.abs(this.globalTtsSpeed - value) < 0.01 ? '#FFFFFF' : this.getTextColor())
+      .textAlign(TextAlign.Center)
+      .layoutWeight(1)
+      .height(30)
+      .borderRadius(15)
+      .backgroundColor(Math.abs(this.globalTtsSpeed - value) < 0.01 ? this.accentColor() :
+        (this.isReaderThemeDark() ? '#20FFFFFF' : '#0D000000'))
+      .onClick(() => ReaderTtsFloatingSession.setSpeed(value))
+  }
+
+  @Builder
+  globalTtsQuickTimerChip(minutes: number, label: string) {
+    Text(label)
+      .fontSize(11)
+      .fontWeight(this.globalTtsTimerMinutes === minutes ? FontWeight.Bold : FontWeight.Regular)
+      .fontColor(this.globalTtsTimerMinutes === minutes ? '#FFFFFF' : this.getTextColor())
+      .textAlign(TextAlign.Center)
+      .layoutWeight(1)
+      .height(30)
+      .borderRadius(15)
+      .backgroundColor(this.globalTtsTimerMinutes === minutes ? this.accentColor() :
+        (this.isReaderThemeDark() ? '#20FFFFFF' : '#0D000000'))
+      .onClick(() => ReaderTtsFloatingSession.setTimer(minutes))
+  }
+
+  @Builder
+  ttsQuickPlayerOverlay() {
+    Stack({ alignContent: Alignment.Bottom }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.isReaderThemeDark() ? '#52000000' : '#26000000')
+        .backdropBlur(ThemeRuntime.glassBlur('popover', 10))
+        .onClick(() => this.closeTtsQuickPlayer())
+
+      Column({ space: 14 }) {
+        Row({ space: 11 }) {
+          Stack({ alignContent: Alignment.Center }) {
+            Circle().width(38).height(38).fill(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
+            SymbolGlyph($r('sys.symbol.speaker_wave_3'))
+              .fontSize(19)
+              .fontColor([this.accentColor()])
+          }
+          Column({ space: 3 }) {
+            Text('快速朗读')
+              .fontSize(18)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.getTextColor())
+            Text(this.getChapterTitle(this.currentChapterIndex))
+              .fontSize(11)
+              .fontColor(this.getSubTextColor())
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          ImmersiveBackButton({
+            icon: $r('sys.symbol.chevron_down'), iconOffsetX: 0, iconColor: this.getTextColor(),
+            darkMode: this.isReaderThemeDark(), buttonSize: 38, containerWidth: 38, containerHeight: 38,
+            startInset: 0, compactLayout: true, accessibilityLabel: '收起快速朗读',
+            onBack: () => this.closeTtsQuickPlayer()
+          })
+        }
+        .width('100%')
+
+        Column({ space: 8 }) {
+          this.ttsQuickBookCover()
+          Scroll() {
+            Text(this.ttsQuickSentencePreview())
+              .fontSize(15)
+              .fontColor(this.getTextColor())
+              .lineHeight(25)
+              .width('100%')
+          }
+          .layoutWeight(1)
+          .width('100%')
+          .padding({ left: 4, right: 4 })
+          .scrollBar(BarState.Auto)
+          Row() {
+            Text(this.ttsQuickProgressLabel())
+              .fontSize(10)
+              .fontColor(this.getSubTextColor())
+              .layoutWeight(1)
+            Text(this.selectedTtsVoiceTitle())
+              .fontSize(10)
+              .fontColor(this.getSubTextColor())
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .constraintSize({ maxWidth: 150 })
+          }
+          .width('100%')
+          Progress({ value: this.ttsQuickProgress(), total: 100, type: ProgressType.Linear })
+            .width('100%')
+            .height(3)
+            .color(this.accentColor())
+            .backgroundColor(this.isReaderThemeDark() ? '#34FFFFFF' : '#18000000')
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .padding(14)
+        .borderRadius(14)
+        .backgroundColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
+
+        Row() {
+          this.ttsQuickControl($r('sys.symbol.timer'), this.ttsSleepTimerMinutes > 0 ?
+            `${Math.max(1, Math.ceil(this.ttsSleepTimerRemainingSeconds / 60))}分` : '定时', true, false,
+            () => this.toggleTtsQuickOptions(1))
+          this.ttsQuickControl($r('sys.symbol.arrow_left'), '上一章', this.canPlayPreviousTtsChapter(), false,
+            () => this.playPreviousChapterFromMediaSession())
+          this.ttsQuickPlaybackControl()
+          this.ttsQuickControl($r('sys.symbol.arrow_right'), '下一章', this.canPlayNextTtsChapter(), false,
+            () => this.playNextChapterFromMediaSession())
+          this.ttsQuickControl($r('sys.symbol.hourglass'), `${this.ttsSpeed.toFixed(1)}x`, true, false,
+            () => this.toggleTtsQuickOptions(2))
+        }
+        .width('100%')
+
+        if (this.ttsQuickOptionsPanel === 1) {
+          Row({ space: 6 }) {
+            this.ttsQuickSleepTimerChip(0, '关闭')
+            this.ttsQuickSleepTimerChip(15, '15分')
+            this.ttsQuickSleepTimerChip(30, '30分')
+            this.ttsQuickSleepTimerChip(60, '60分')
+            this.ttsQuickSleepTimerChip(90, '90分')
+            this.ttsQuickSleepTimerChip(120, '120分')
+          }
+          .width('100%')
+        } else if (this.ttsQuickOptionsPanel === 2) {
+          Row({ space: 8 }) {
+            this.ttsQuickSpeedChip(0.8)
+            this.ttsQuickSpeedChip(1.0)
+            this.ttsQuickSpeedChip(1.2)
+            this.ttsQuickSpeedChip(1.5)
+            this.ttsQuickSpeedChip(2.0)
+          }
+          .width('100%')
+        }
+
+        this.ttsQuickVoiceSelect()
+      }
+      .width('100%')
+      .height('100%')
+      .padding({ left: 18, right: 18, top: this.statusBarSafeHeight + 16, bottom: this.navBarHeight + 16 })
+      .borderRadius(0)
+      .backgroundColor(this.readerGlassPanelColor())
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 24))
+      .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.readerGlassBorderColor() })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: this.readerGlassShadowColor(),
+        offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
+      .transition(this.readerPanelTransition())
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder
+  ttsQuickVoiceSelect() {
+    Row({ space: 8 }) {
+      SymbolGlyph($r('sys.symbol.speaker_wave_3'))
+        .fontSize(17)
+        .fontColor([this.accentColor()])
+        .width(24)
+      Select(this.ttsQuickVoiceOptions())
+        .selected(this.ttsQuickVoiceSelectedIndex())
+        .value(this.selectedTtsVoiceTitle())
+        .font({ size: 13 })
+        .fontColor(this.getTextColor())
+        .layoutWeight(1)
+        .height(40)
+        .padding({ left: 0, right: 0 })
+        .backgroundColor(Color.Transparent)
+        .border({ width: 0 })
+        .borderRadius(0)
+        .optionBgColor(Color.Transparent)
+        .optionFontColor(this.getTextColor())
+        .selectedOptionFontColor(this.accentColor())
+        .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
+        .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
+        .menuBackgroundBlurStyle(BlurStyle.BACKGROUND_THIN)
+        .onSelect((index: number) => this.selectTtsQuickVoice(index))
+    }
+    .width('100%')
+    .height(44)
+    .padding({ left: 12, right: 10 })
+    .borderRadius(12)
+    .backgroundColor(this.isReaderThemeDark() ? '#20FFFFFF' : '#0D000000')
+  }
+
+  @Builder
+  ttsQuickPlaybackControl() {
+    Column({ space: 6 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle()
+          .width(46)
+          .height(46)
+          .fill(this.accentColor())
+        SymbolGlyph(this.isTtsSpeaking && !this.isTtsPaused ?
+          $r('sys.symbol.pause') : $r('sys.symbol.play'))
+          .id(`tts_panel_playback_${this.isTtsSpeaking}_${this.isTtsPaused}`)
+          .fontSize(23)
+          .fontColor(['#FFFFFF'])
+      }
+      Text(this.isTtsSpeaking && !this.isTtsPaused ? '暂停' : '播放')
+        .fontSize(10)
+        .fontColor(this.getSubTextColor())
+    }
+    .layoutWeight(1)
+    .height(68)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => this.toggleTtsReading())
+  }
+
+  @Builder
+  ttsQuickControl(icon: Resource, label: string, enabled: boolean, primary: boolean, action: () => void) {
+    Column({ space: 6 }) {
+      Stack({ alignContent: Alignment.Center }) {
+        Circle()
+          .width(primary ? 46 : 38)
+          .height(primary ? 46 : 38)
+          .fill(primary ? this.accentColor() :
+            (this.isReaderThemeDark() ? '#24FFFFFF' : '#10000000'))
+        SymbolGlyph(icon)
+          .fontSize(primary ? 23 : 19)
+          .fontColor([enabled ? (primary ? '#FFFFFF' : this.getTextColor()) : this.getSubTextColor()])
+      }
+      Text(label)
+        .fontSize(10)
+        .fontColor(enabled ? this.getSubTextColor() : this.getSubTextColor())
+    }
+    .layoutWeight(1)
+    .height(68)
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
+      if (enabled) action();
+    })
+  }
+
+  @Builder
+  ttsQuickSpeedChip(value: number) {
+    Text(`${value.toFixed(1)}x`)
+      .fontSize(11)
+      .fontWeight(Math.abs(this.ttsSpeed - value) < 0.01 ? FontWeight.Bold : FontWeight.Regular)
+      .fontColor(Math.abs(this.ttsSpeed - value) < 0.01 ? '#FFFFFF' : this.getTextColor())
+      .textAlign(TextAlign.Center)
+      .layoutWeight(1)
+      .height(30)
+      .borderRadius(15)
+      .backgroundColor(Math.abs(this.ttsSpeed - value) < 0.01 ? this.accentColor() :
+        (this.isReaderThemeDark() ? '#20FFFFFF' : '#0D000000'))
+      .onClick(() => this.applyTtsSpeed(value))
+  }
+
+  @Builder
+  ttsQuickSleepTimerChip(minutes: number, label: string) {
+    Text(label)
+      .fontSize(11)
+      .fontWeight(this.ttsSleepTimerMinutes === minutes ? FontWeight.Bold : FontWeight.Regular)
+      .fontColor(this.ttsSleepTimerMinutes === minutes ? '#FFFFFF' : this.getTextColor())
+      .textAlign(TextAlign.Center)
+      .layoutWeight(1)
+      .height(30)
+      .borderRadius(15)
+      .backgroundColor(this.ttsSleepTimerMinutes === minutes ? this.accentColor() :
+        (this.isReaderThemeDark() ? '#20FFFFFF' : '#0D000000'))
+      .onClick(() => this.setTtsSleepTimer(minutes))
+  }
+
+  @Builder
+  ttsQuickBookCover() {
+    Stack({ alignContent: Alignment.Center }) {
+      if (this.shouldUseTtsThemeBookCover()) {
+        if (this.activeTtsThemeBookCovers().length === 1) {
+          Image(this.activeTtsThemeBookCovers()[0])
+            .width('100%')
+            .height('100%')
+            .objectFit(ImageFit.Contain)
+        } else {
+          Swiper() {
+            ForEach(this.activeTtsThemeBookCovers(), (cover: ResourceStr, index: number) => {
+              Image(cover)
+                .width('100%')
+                .height('100%')
+                .objectFit(ImageFit.Contain)
+            }, (_cover: ResourceStr, index: number) => `${this.bookUrl}_tts_theme_${index}`)
+          }
+          .width('100%')
+          .height('100%')
+          .autoPlay(true)
+          .interval(this.ttsThemeBookCoverInterval())
+          .indicator(false)
+          .loop(true)
+        }
+        Image(this.activeTtsThemeShelfFrame())
+          .width('100%')
+          .height('100%')
+          .objectFit(ImageFit.Contain)
+      } else if (this.getTtsPanelCoverList().length === 0) {
+        Column() {
+          Text(this.book?.name ? this.book.name.substring(0, 1) : '书')
+            .fontSize(48)
+            .fontWeight(FontWeight.Medium)
+            .fontColor('#FFFFFF')
+        }
+        .width('62%')
+        .height('88%')
+        .constraintSize({ maxWidth: 320, maxHeight: 450 })
+        .borderRadius(10)
+        .backgroundColor(this.getTtsCoverPlaceholderColor())
+        .justifyContent(FlexAlign.Center)
+      } else if (this.getTtsPanelCoverList().length === 1) {
+        Image(this.getTtsPanelCoverList()[0])
+          .width('100%')
+          .height('100%')
+          .objectFit(ImageFit.Contain)
+      } else {
+        Swiper() {
+          ForEach(this.getTtsPanelCoverList(), (cover: string) => {
+            Image(cover)
+              .width('100%')
+              .height('100%')
+              .objectFit(ImageFit.Contain)
+          }, (cover: string) => cover)
+        }
+        .width('100%')
+        .height('100%')
+        .autoPlay(true)
+        .interval(3500)
+        .indicator(false)
+        .loop(true)
+      }
+    }
+    .width('100%')
+    .height(this.ttsQuickCoverHeight())
+    .padding(10)
+    .borderRadius(14)
+    .clip(true)
+  }
+
+  ttsCurrentSentence(): string {
+    if (this.ttsHighlightStart < 0 || this.ttsHighlightEnd <= this.ttsHighlightStart || !this.ttsDisplayText) {
+      return '';
+    }
+    return this.ttsDisplayText.substring(this.ttsHighlightStart, this.ttsHighlightEnd).trim();
+  }
+
+  ttsQuickSentencePreview(): string {
+    const source = (this.ttsDisplayText || this.currentPageText || '').trim();
+    if (source) {
+      return source;
+    }
+    const sentence = this.ttsCurrentSentence();
+    return sentence || this.content.substring(0, 3000) || '正在准备当前页的朗读内容…';
+  }
+
+  ttsQuickCoverHeight(): number {
+    const viewportHeight = this.pageViewHeight > 0 ? this.pageViewHeight : 720;
+    return Math.min(250, Math.max(130,
+      (viewportHeight - this.statusBarSafeHeight - this.navBarHeight) * 0.32));
+  }
+
+  ttsQuickProgressLabel(): string {
+    return `第 ${this.currentChapterIndex + 1}/${Math.max(1, this.chapters.length)} 章 · ` +
+      `第 ${this.currentPageIndex + 1}/${Math.max(1, this.contentPages.length)} 页`;
+  }
+
+  ttsQuickProgress(): number {
+    const chapterCount = Math.max(1, this.chapters.length);
+    const pageCount = Math.max(1, this.contentPages.length);
+    return Math.max(0, Math.min(100,
+      ((this.currentChapterIndex + (this.currentPageIndex + 1) / pageCount) / chapterCount) * 100));
   }
 
   @Builder
@@ -3602,7 +4458,25 @@ struct ReadBookPage {
     const ratio = index >= 0 && index < this.readerComicImageRatios.length ?
       this.readerComicImageRatios[index] : 0;
     if (ratio <= 0 || this.pageViewWidth <= 0) return fallbackHeight;
-    return Math.max(120, Math.min(24000, this.pageViewWidth * ratio));
+    const height = Math.max(120, Math.min(24000, this.pageViewWidth * ratio));
+    // ListItem 会分别把浮点 vp 高度转换为物理像素；先对齐到整数像素，避免相邻项反向取整后露底。
+    return px2vp(Math.max(1, Math.round(vp2px(height))));
+  }
+
+  getReaderComicImageSeamOverlap(index: number): number {
+    return index > 0 && index < this.contentPages.length &&
+      this.isReaderImageOnlyPage(this.contentPages[index - 1]) ? px2vp(1) : 0;
+  }
+
+  getReaderComicImageRenderHeight(index: number): number {
+    return this.getReaderComicImageHeight(index) + this.getReaderComicImageSeamOverlap(index);
+  }
+
+  getReaderComicImageFit(index: number): ImageFit {
+    const ratio = index >= 0 && index < this.readerComicImageRatios.length ?
+      this.readerComicImageRatios[index] : 0;
+    // 原图比例尚未返回时保持 Contain；比例已知后容器已经严格等比，Fill 只消除边缘 letterbox。
+    return ratio > 0 ? ImageFit.Fill : ImageFit.Contain;
   }
 
   updateReaderComicImageRatio(index: number, sourceWidth: number, sourceHeight: number): void {
@@ -3829,21 +4703,6 @@ struct ReadBookPage {
 
   getBackgroundAssetId(): string {
     return this.currentReaderTheme().backgroundAssetId || '';
-  }
-
-  getBackgroundImage(): ResourceStr {
-    return this.currentReaderTheme().backgroundImageUri || ThemeAssetRegistry.readerBackground(this.getBackgroundAssetId());
-  }
-
-  getBackgroundImageSize(): ImageSize {
-    const fit = this.currentReaderTheme().backgroundImageFit;
-    if (fit === 'contain') {
-      return ImageSize.Contain;
-    }
-    if (fit === 'fill') {
-      return ImageSize.FILL;
-    }
-    return ImageSize.Cover;
   }
 
   getBackgroundImageFit(): ImageFit {
@@ -4577,12 +5436,9 @@ struct ReadBookPage {
 
   async jumpToBookmark(bookmark: Bookmark): Promise<void> {
     const targetChapterIndex = this.clampChapterIndex(bookmark.chapterIndex);
-    this.currentPageIndex = Math.max(0, bookmark.pageIndex);
-    this.pendingRestorePageIndex = this.currentPageIndex;
     this.showToc = false;
     this.showMenu = false;
-    await this.loadContent(false, targetChapterIndex);
-    await this.saveReadingProgress();
+    await this.jumpToReaderPositionKeepingTts(targetChapterIndex, Math.max(0, bookmark.pageIndex));
   }
 
   formatBookmarkTime(timestamp: number): string {
@@ -4614,6 +5470,16 @@ struct ReadBookPage {
     this.showSettings = true;
     this.showMenu = false;
     this.loadTtsSettingsAndVoices();
+  }
+
+  openTypographySettingsPanel(): void {
+    if (this.isReaderComicModeActive()) return;
+    this.showReaderActionMenu = false;
+    this.settingsPanelTab = 2;
+    this.showToc = false;
+    this.showTtsVoiceDropdown = false;
+    this.showSettings = true;
+    this.showMenu = false;
   }
 
   closeSettingsPanelKeepMenu(): void {
@@ -4874,6 +5740,7 @@ struct ReadBookPage {
     }
     this.ttsSpeed = nextSpeed;
     this.scheduleTtsSpeedSettingsSave();
+    this.updateTtsFloatingSession();
     if (this.isTtsSpeaking || this.ttsReader.isSpeaking()) {
       this.scheduleTtsSpeedAvSessionUpdate();
     }
@@ -4896,7 +5763,7 @@ struct ReadBookPage {
     this.ttsSpeedAvSessionTimerId = setTimeout(() => {
       this.ttsSpeedAvSessionTimerId = -1;
       if (this.isTtsSpeaking || this.ttsReader.isSpeaking()) {
-        this.updateTtsAvSessionPlaybackState(avSession.PlaybackState.PLAYBACK_STATE_PLAY).catch((e: Error) => {
+        this.updateTtsAvSessionPlaybackState(this.ttsAvPlaybackState()).catch((e: Error) => {
           console.warn('更新朗读倍速媒体状态失败:', e);
         });
       }
@@ -5102,6 +5969,55 @@ struct ReadBookPage {
     }
     const systemVoices = this.selectableSystemTtsVoices();
     return systemVoices.length > 0 ? this.ttsVoiceTitle(systemVoices[0]) : '暂无可用音色';
+  }
+
+  ttsQuickVoiceOptions(): SelectOption[] {
+    const options: SelectOption[] = [];
+    for (const voice of this.ttsCloudVoices) {
+      options.push({ value: this.ttsCloudVoiceTitle(voice) });
+    }
+    for (const voice of this.selectableCustomTtsVoices()) {
+      options.push({ value: this.ttsCustomVoiceTitle(voice) });
+    }
+    for (const voice of this.selectableSystemTtsVoices()) {
+      options.push({ value: this.ttsVoiceTitle(voice) });
+    }
+    if (options.length === 0) {
+      options.push({ value: '暂无可用音色' });
+    }
+    return options;
+  }
+
+  ttsQuickVoiceSelectedIndex(): number {
+    const cloudIndex = this.ttsCloudVoices.findIndex((voice: TtsVoiceInfo) =>
+      this.isCurrentCloudTtsVoice(voice));
+    if (cloudIndex >= 0) return cloudIndex;
+    const customVoices = this.selectableCustomTtsVoices();
+    const customIndex = customVoices.findIndex((voice: HttpTTS) => this.isCurrentCustomTtsVoice(voice));
+    if (customIndex >= 0) return this.ttsCloudVoices.length + customIndex;
+    const systemVoices = this.selectableSystemTtsVoices();
+    const systemIndex = systemVoices.findIndex((voice: TtsVoiceOption) => this.isCurrentTtsVoice(voice));
+    if (systemIndex >= 0) return this.ttsCloudVoices.length + customVoices.length + systemIndex;
+    return 0;
+  }
+
+  selectTtsQuickVoice(index: number): void {
+    if (index < 0) return;
+    if (index < this.ttsCloudVoices.length) {
+      this.applyCloudTtsVoice(this.ttsCloudVoices[index], true);
+      return;
+    }
+    const customVoices = this.selectableCustomTtsVoices();
+    const customIndex = index - this.ttsCloudVoices.length;
+    if (customIndex < customVoices.length) {
+      this.applyCustomTtsVoice(customVoices[customIndex], true);
+      return;
+    }
+    const systemVoices = this.selectableSystemTtsVoices();
+    const systemIndex = customIndex - customVoices.length;
+    if (systemIndex >= 0 && systemIndex < systemVoices.length) {
+      this.applyTtsVoice(systemVoices[systemIndex], true);
+    }
   }
 
   isTocSearchActive(): boolean {
@@ -5607,7 +6523,7 @@ struct ReadBookPage {
     this.refreshTtsMediaImage().then(() => {
       return this.updateTtsAvSessionPlaybackState(
         this.isTtsSpeaking || this.ttsReader.isSpeaking() ?
-          avSession.PlaybackState.PLAYBACK_STATE_PLAY : avSession.PlaybackState.PLAYBACK_STATE_STOP
+          this.ttsAvPlaybackState() : avSession.PlaybackState.PLAYBACK_STATE_STOP
       );
     }).catch((e: Error) => {
       console.warn('同步朗读媒体封面失败:', e);
@@ -5757,11 +6673,8 @@ struct ReadBookPage {
       this.menuChapterTooltipVisible = false;
       return;
     }
-    this.currentPageIndex = 0;
-    this.pendingRestorePageIndex = 0;
     try {
-      await this.loadContent(false, normalizedIndex);
-      await this.saveReadingProgress();
+      await this.jumpToReaderPositionKeepingTts(normalizedIndex, 0);
     } finally {
       this.menuChapterPreviewIndex = this.currentChapterIndex;
       this.menuChapterSliderActive = false;
@@ -6452,7 +7365,9 @@ struct ReadBookPage {
         Column()
       }
       .height(48)
-      .tabBar(this.ttsMediaSymbolControl($r('sys.symbol.pause'), true, '停止朗读'))
+      .tabBar(this.ttsMediaSymbolControl(this.isTtsSpeaking && !this.isTtsPaused ?
+        $r('sys.symbol.pause') : $r('sys.symbol.play'), true,
+        this.isTtsSpeaking && !this.isTtsPaused ? '暂停朗读' : '播放朗读'))
 
       TabContent() {
         Column()
@@ -6600,10 +7515,13 @@ struct ReadBookPage {
     }
     this.ttsSleepTimerMinutes = minutes;
     this.ttsSleepTimerRemainingSeconds = minutes * 60;
+    this.updateTtsFloatingSession();
     this.ttsSleepTimerEndAt = Date.now() + minutes * 60 * 1000;
     this.ttsSleepTimerId = setInterval(() => {
       const remaining = Math.max(0, Math.ceil((this.ttsSleepTimerEndAt - Date.now()) / 1000));
       this.ttsSleepTimerRemainingSeconds = remaining;
+      ReaderTtsFloatingSession.updateTimer(
+        this.ttsFloatingSessionOwnerId, this.ttsSleepTimerMinutes, remaining);
       if (remaining <= 0) {
         this.clearTtsSleepTimer();
         this.stopTtsReading();
@@ -6621,6 +7539,7 @@ struct ReadBookPage {
     this.ttsSleepTimerEndAt = 0;
     this.ttsSleepTimerMinutes = 0;
     this.ttsSleepTimerRemainingSeconds = 0;
+    this.updateTtsFloatingSession();
   }
 
   cycleTtsSpeed(): void {
@@ -6964,6 +7883,21 @@ struct ReadBookPage {
     }
   }
 
+  async jumpToReaderPositionKeepingTts(targetChapterIndex: number, targetPageIndex: number): Promise<void> {
+    const shouldResume = this.isTtsSpeaking || this.ttsReader.isSpeaking();
+    if (shouldResume) {
+      this.stopTtsReaderForChapterSwitch();
+      await this.updateTtsAvSessionPlaybackState(avSession.PlaybackState.PLAYBACK_STATE_BUFFERING);
+    }
+    this.currentPageIndex = Math.max(0, targetPageIndex);
+    this.pendingRestorePageIndex = this.currentPageIndex;
+    await this.loadContent(false, this.clampChapterIndex(targetChapterIndex));
+    await this.saveReadingProgress();
+    if (shouldResume) {
+      await this.startTtsReadingFromCurrentPosition(false);
+    }
+  }
+
   updateReaderMenuAnchorByPoint(x: number): void {
     if (!this.readerUsesSideAnchoredControls()) {
       return;
@@ -7207,7 +8141,7 @@ struct ReadBookPage {
   settingsPanel() {
     Column({ space: 12 }) {
       Row() {
-        Text(this.settingsPanelTab === 0 ? '阅读设置' : '朗读设置')
+        Text(this.settingsPanelTitle())
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.getTextColor())
@@ -7242,9 +8176,15 @@ struct ReadBookPage {
             }
             .width('100%')
             .transition(this.readerSettingsContentTransition(-1))
-          } else {
+          } else if (this.settingsPanelTab === 1) {
             Column() {
               this.ttsQuickSettingsPanel()
+            }
+            .width('100%')
+            .transition(this.readerSettingsContentTransition(1))
+          } else {
+            Column() {
+              this.readerTypographySettingsPanel()
             }
             .width('100%')
             .transition(this.readerSettingsContentTransition(1))
@@ -7270,6 +8210,12 @@ struct ReadBookPage {
     .position({ x: this.readerFloatingBarLeft(), y: '100%' })
     .translate({ y: -(520 + this.readerFloatingPanelBottomInset()) })
     .transition(this.readerPanelTransition())
+  }
+
+  settingsPanelTitle(): string {
+    if (this.settingsPanelTab === 1) return '朗读设置';
+    if (this.settingsPanelTab === 2) return '排版设置';
+    return '阅读设置';
   }
 
   readerSettingsScrollBarRightInset(): number {
@@ -7397,10 +8343,62 @@ struct ReadBookPage {
   }
 
   @Builder
+  readerTypographySettingsPanel() {
+    Column({ space: 4 }) {
+      this.readerTypographySlider('字号', this.readerFontSize, 14, 50, 1,
+        (value: number) => this.applyReaderFontSize(value))
+      this.readerTypographySlider('行距', this.readerLineHeight, 0, 52, 1,
+        (value: number) => this.applyReaderLineHeight(value))
+      this.readerTypographySlider('段距', this.readerParagraphSpacing, 0, 32, 1,
+        (value: number) => this.applyReaderParagraphSpacing(value))
+      this.readerTypographySlider('左边距', this.readerMarginLeft, 0, 80, 1,
+        (value: number) => this.applyReaderMargin(3, value))
+      this.readerTypographySlider('右边距', this.readerMarginRight, 0, 80, 1,
+        (value: number) => this.applyReaderMargin(4, value))
+      this.readerTypographySlider('上边距', this.readerMarginTop, 0, 120, 1,
+        (value: number) => this.applyReaderMargin(5, value))
+      this.readerTypographySlider('下边距', this.readerMarginBottom, 0, 120, 1,
+        (value: number) => this.applyReaderMargin(6, value))
+    }
+    .width('100%')
+  }
+
+  @Builder
+  readerTypographySlider(label: string, value: number, min: number, max: number, step: number,
+    action: (value: number) => void) {
+    Column({ space: 6 }) {
+      Row() {
+        Text(label)
+          .fontSize(14)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.getTextColor())
+        Blank()
+        Text(`${Math.round(value)}`)
+          .fontSize(13)
+          .fontColor(this.accentColor())
+          .textAlign(TextAlign.Center)
+          .constraintSize({ minWidth: 32 })
+      }
+      .width('100%')
+
+      Slider({ value: value, min: min, max: max, step: step })
+        .width('100%')
+        .height(28)
+        .trackThickness(4)
+        .blockSize({ width: 20, height: 20 })
+        .selectedColor(this.accentColor())
+        .trackColor(this.isReaderThemeDark() ? '#2FFFFFFF' : '#16000000')
+        .blockColor(this.readerSolidPanelColor())
+        .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
+        .onChange((nextValue: number) => action(nextValue))
+    }
+    .width('100%')
+    .padding({ top: 5, bottom: 5 })
+  }
+
+  @Builder
   readerQuickSettingsPanel() {
     Column({ space: 14 }) {
-      this.readerQuickTypographyStepper()
-
       this.readerFontEntryItem()
 
       this.readerReplaceRulesEntryItem()
@@ -8711,14 +9709,88 @@ struct ReadBookPage {
     this.saveReadConfig();
   }
 
+  publishTtsFloatingSession(): void {
+    ReaderTtsFloatingSession.attach(
+      this.ttsFloatingSessionOwnerId,
+      this.bookUrl,
+      this.book?.name || '正在朗读',
+      this.getChapterTitle(),
+      this.isTtsPaused,
+      () => this.toggleTtsReading(),
+      () => this.isTtsPaused || this.ttsReader.isPaused(),
+      () => this.stopTtsFloatingSession()
+    );
+    ReaderTtsFloatingSession.configureControls(
+      this.ttsFloatingSessionOwnerId,
+      () => { this.playPreviousChapterFromMediaSession(); },
+      () => { this.playNextChapterFromMediaSession(); },
+      (value: number) => this.applyTtsSpeed(value),
+      (minutes: number) => this.setTtsSleepTimer(minutes)
+    );
+    this.updateTtsFloatingSession();
+  }
+
+  updateTtsFloatingSession(): void {
+    ReaderTtsFloatingSession.update(
+      this.ttsFloatingSessionOwnerId,
+      this.book?.name || '正在朗读',
+      this.getChapterTitle(),
+      this.isTtsPaused
+    );
+    ReaderTtsFloatingSession.updateDetails(
+      this.ttsFloatingSessionOwnerId,
+      this.ttsQuickSentencePreview(),
+      this.getTtsFloatingCover(),
+      this.shouldUseTtsThemeBookCover() ? this.activeTtsThemeShelfFrame() : '',
+      `${this.currentChapterIndex + 1}/${Math.max(1, this.chapters.length)}章`,
+      this.ttsSpeed,
+      this.ttsSleepTimerMinutes,
+      this.ttsSleepTimerRemainingSeconds,
+      this.canPlayPreviousTtsChapter(),
+      this.canPlayNextTtsChapter()
+    );
+  }
+
+  stopTtsFloatingSession(): void {
+    this.stopTtsReading();
+    if (!this.readerPageVisible) {
+      this.ttsReader.shutdown();
+    }
+  }
+
   async toggleTtsReading(): Promise<void> {
     if (this.isReaderComicModeActive()) return;
-    if (this.isTtsSpeaking) {
-      this.stopTtsReading();
-      promptAction.showToast({ message: '已停止朗读' });
+    if (this.isTtsSpeaking || this.ttsReader.isSpeaking()) {
+      try {
+        if (this.isTtsPaused || this.ttsReader.isPaused()) {
+          this.isTtsPaused = false;
+          if (await this.ttsReader.resume()) {
+            this.isTtsSpeaking = true;
+            this.updateTtsFloatingSession();
+            await this.updateTtsAvSessionPlaybackState(avSession.PlaybackState.PLAYBACK_STATE_PLAY);
+            promptAction.showToast({ message: '继续朗读' });
+          } else {
+            this.isTtsPaused = true;
+          }
+        } else {
+          this.isTtsPaused = true;
+          if (await this.ttsReader.pause()) {
+            this.updateTtsFloatingSession();
+            await this.updateTtsAvSessionPlaybackState(avSession.PlaybackState.PLAYBACK_STATE_PAUSE);
+            promptAction.showToast({ message: '已暂停朗读' });
+          } else {
+            this.isTtsPaused = false;
+          }
+        }
+      } catch (error) {
+        this.isTtsPaused = this.ttsReader.isPaused();
+        this.updateTtsFloatingSession();
+        console.warn('切换朗读暂停状态失败:', error);
+        promptAction.showToast({ message: '切换朗读状态失败' });
+      }
       return;
     }
-    this.ttsMediaControlsExpanded = true;
+    this.ttsMediaControlsExpanded = false;
     await this.startTtsReadingFromCurrentPosition(true);
   }
 
@@ -8741,6 +9813,7 @@ struct ReadBookPage {
       this.finishTtsReading();
       return;
     }
+    this.ttsMediaControlsExpanded = false;
     this.setTtsPagedScrollOverride(true);
     const text = this.getTtsReadingText();
     if (!text) {
@@ -8751,7 +9824,9 @@ struct ReadBookPage {
       return;
     }
     const token = ++this.ttsReadToken;
+    await ReaderTtsFloatingSession.stopOther(this.ttsFloatingSessionOwnerId);
     this.ttsAutoContinue = true;
+    this.isTtsPaused = false;
     this.ttsDisplayText = this.currentPageText;
     this.ttsHighlightStart = -1;
     this.ttsHighlightEnd = -1;
@@ -8768,6 +9843,7 @@ struct ReadBookPage {
         this.stopTtsReading(false);
         return;
       }
+      this.publishTtsFloatingSession();
       const cloudVoice = this.findCurrentCloudTtsVoice();
       await this.ttsReader.start(text, {
         onFinished: () => {
@@ -8822,6 +9898,8 @@ struct ReadBookPage {
 
   stopTtsReading(userCancelled: boolean = true): void {
     this.clearTtsSleepTimer();
+    this.isTtsPaused = false;
+    ReaderTtsFloatingSession.clear(this.ttsFloatingSessionOwnerId);
     if (userCancelled) {
       this.ttsAutoContinue = false;
       this.ttsReadToken++;
@@ -8850,6 +9928,7 @@ struct ReadBookPage {
 
   stopTtsReaderForChapterSwitch(): void {
     this.ttsAutoContinue = false;
+    this.isTtsPaused = false;
     this.ttsReadToken++;
     this.ttsAutoTurningPage = false;
     this.ttsPendingTargetPageIndex = -1;
@@ -8890,6 +9969,7 @@ struct ReadBookPage {
     this.pendingRestorePageIndex = 0;
     await this.loadContent(true, this.currentChapterIndex + 1);
     await this.saveReadingProgress();
+    this.updateTtsFloatingSession();
     await this.updateTtsAvSessionPlaybackState(avSession.PlaybackState.PLAYBACK_STATE_PLAY);
     return true;
   }
@@ -8909,6 +9989,8 @@ struct ReadBookPage {
     this.clearTtsSleepTimer();
     this.ttsAutoContinue = false;
     this.isTtsSpeaking = false;
+    this.isTtsPaused = false;
+    ReaderTtsFloatingSession.clear(this.ttsFloatingSessionOwnerId);
     this.ttsMediaControlsExpanded = false;
     this.ttsReader.stop();
     this.stopTtsBackgroundRunning();
@@ -8917,6 +9999,9 @@ struct ReadBookPage {
     this.ttsLastFocusChunk = null;
     this.ttsLastFocusPageIndex = -1;
     this.setTtsPagedScrollOverride(false);
+    if (!this.readerPageVisible) {
+      this.ttsReader.shutdown();
+    }
   }
 
   async loadReaderSettings(): Promise<void> {
@@ -8941,7 +10026,7 @@ struct ReadBookPage {
   async startTtsBackgroundRunning(): Promise<boolean> {
     this.ttsBackgroundDesired = true;
     if (this.ttsBackgroundRunning) {
-      await this.updateTtsAvSessionPlaybackState(avSession.PlaybackState.PLAYBACK_STATE_PLAY);
+      await this.updateTtsAvSessionPlaybackState(this.ttsAvPlaybackState());
       this.startTtsBackgroundHeartbeat();
       return true;
     }
@@ -9071,7 +10156,7 @@ struct ReadBookPage {
         chapterIndex: this.currentChapterIndex,
         chapterTitle: this.getChapterTitle()
       });
-      await this.updateTtsAvSessionPlaybackState(avSession.PlaybackState.PLAYBACK_STATE_PLAY);
+      await this.updateTtsAvSessionPlaybackState(this.ttsAvPlaybackState());
       await this.ttsAvSession.activate();
       await this.syncTtsSystemMediaControls();
       console.info(`[TTS-BG] AVSession activated: ${this.ttsBackgroundDebugState()}`);
@@ -9084,12 +10169,16 @@ struct ReadBookPage {
 
   registerTtsAvSessionCommands(session: avSession.AVSession): void {
     session.on('play', () => {
-      if (!this.isTtsSpeaking && !this.ttsReader.isSpeaking()) {
+      if (this.isTtsPaused || this.ttsReader.isPaused()) {
+        this.toggleTtsReading();
+      } else if (!this.isTtsSpeaking && !this.ttsReader.isSpeaking()) {
         this.startTtsReadingFromCurrentPosition(false);
       }
     });
     session.on('pause', () => {
-      this.stopTtsReading();
+      if (!this.isTtsPaused && (this.isTtsSpeaking || this.ttsReader.isSpeaking())) {
+        this.toggleTtsReading();
+      }
     });
     session.on('stop', () => {
       this.stopTtsReading();
@@ -9180,10 +10269,15 @@ struct ReadBookPage {
         return;
       }
       await this.ttsAvSession.activate();
-      await this.updateTtsAvSessionPlaybackState(avSession.PlaybackState.PLAYBACK_STATE_PLAY);
+      await this.updateTtsAvSessionPlaybackState(this.ttsAvPlaybackState());
     } catch (error) {
       console.warn(`[TTS-BG] sync media controls failed: ${this.formatTtsBackgroundError(error as Object)}; ${this.ttsBackgroundDebugState()}`, error);
     }
+  }
+
+  ttsAvPlaybackState(): avSession.PlaybackState {
+    return this.isTtsPaused || this.ttsReader.isPaused() ?
+      avSession.PlaybackState.PLAYBACK_STATE_PAUSE : avSession.PlaybackState.PLAYBACK_STATE_PLAY;
   }
 
   getTtsAvMetadata(): avSession.AVMetadata {
@@ -9293,6 +10387,88 @@ struct ReadBookPage {
       console.warn('释放朗读媒体封面失败:', e);
     }
     this.ttsMediaPixelMap = null;
+  }
+
+  shouldUseTtsThemeBookCover(): boolean {
+    return this.themeBookCoverEnabled &&
+      ThemeAssetRegistry.themeBookCovers(ThemeRuntime.bookTokens(this.appDarkMode).coverAssetId).length > 0;
+  }
+
+  activeTtsThemeBookCovers(): ResourceStr[] {
+    const covers = ThemeAssetRegistry.themeBookCovers(ThemeRuntime.bookTokens(this.appDarkMode).coverAssetId);
+    if (covers.length <= 1) {
+      return covers;
+    }
+    const result: ResourceStr[] = [];
+    const seed = this.ttsThemeBookCoverSeed();
+    const start = seed % covers.length;
+    const direction = seed % 2 === 0 ? 1 : covers.length - 1;
+    for (let index = 0; index < covers.length; index++) {
+      result.push(covers[(start + index * direction) % covers.length]);
+    }
+    return result;
+  }
+
+  ttsThemeBookCoverSeed(): number {
+    const key = `${this.book?.bookUrl || this.bookUrl}|${this.book?.name || ''}|${this.book?.author || ''}`;
+    let hash = 17;
+    for (let index = 0; index < key.length; index++) {
+      hash = (hash * 31 + key.charCodeAt(index)) & 0x7FFFFFFF;
+    }
+    return hash;
+  }
+
+  ttsThemeBookCoverInterval(): number {
+    return 3200 + this.ttsThemeBookCoverSeed() % 5 * 420;
+  }
+
+  activeTtsThemeShelfFrame(): ResourceStr {
+    return ThemeAssetRegistry.themeShelfFrame(ThemeRuntime.bookTokens(this.appDarkMode).shelfFrameAssetId);
+  }
+
+  getTtsPanelCoverList(): string[] {
+    if (!this.book) {
+      return [];
+    }
+    const covers = CoverGallerySettings.getDisplayCoverList(
+      this.book,
+      this.appDarkMode,
+      this.bookshelfCoverAlbums,
+      this.bookshelfLightCoverAlbumId,
+      this.bookshelfDarkCoverAlbumId,
+      this.bookshelfCoverApplyScope,
+      this.bookshelfCoverTargetBooks,
+      this.bookshelfIgnoreSourceCover,
+      this.bookshelfCoverMode
+    );
+    const displayCovers: string[] = [];
+    const context = getContext(this);
+    for (const raw of covers) {
+      const cached = BookCoverCache.resolveCachedCover(context, raw);
+      displayCovers.push(cached || raw);
+    }
+    return displayCovers;
+  }
+
+  getTtsFloatingCover(): ResourceStr {
+    if (this.shouldUseTtsThemeBookCover()) {
+      const themeCovers = this.activeTtsThemeBookCovers();
+      return themeCovers.length > 0 ? themeCovers[0] : '';
+    }
+    const covers = this.getTtsPanelCoverList();
+    return covers.length > 0 ? covers[0] : '';
+  }
+
+  getTtsCoverPlaceholderColor(): string {
+    const name = this.book?.name || '';
+    if (!name) return '#007DFF';
+    const colors: string[] = ['#007DFF', '#E53935', '#43A047', '#EF6C00',
+      '#8E24AA', '#00ACC1', '#D81B60', '#5E35B1'];
+    let hash = 0;
+    for (let index = 0; index < name.length; index++) {
+      hash = name.charCodeAt(index) + ((hash << 5) - hash);
+    }
+    return colors[Math.abs(hash) % colors.length];
   }
 
   getBookshelfDisplayCoverRaw(): string {
@@ -10070,6 +11246,7 @@ struct ReadBookPage {
         return;
       }
       this.applyTtsChunkFocus(chunk);
+      this.updateTtsFloatingSession();
     }, 0);
   }
 
@@ -10359,18 +11536,13 @@ struct ReadBookPage {
 
   @Builder
   readerIncomingPageBackground() {
-    if (this.hasBackgroundImage()) {
-      Image(this.getBackgroundImage())
-        .width('100%')
-        .height('100%')
-        .objectFit(this.getBackgroundImageFit())
-        .hitTestBehavior(HitTestMode.None)
-    } else {
-      Blank()
-        .width('100%')
-        .height('100%')
-        .backgroundColor(this.getBackgroundColor())
-    }
+    ReaderThemeBackground({
+      surfaceColor: this.getBackgroundColor(),
+      backgroundAssetId: this.getBackgroundAssetId(),
+      customImage: this.currentReaderTheme().backgroundImageUri,
+      customImageFit: this.getBackgroundImageFit()
+    })
+      .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
@@ -11565,7 +12737,6 @@ struct ReadBookPage {
       return;
     }
     this.hideReaderPanels();
-    this.stopTtsReading();
     if (this.openedFromShortcut) {
       this.readerExitProgressSaved = true;
       this.saveReadingProgress().then(() => {
@@ -12757,7 +13928,11 @@ struct ReadBookPage {
       return;
     }
 
-    this.stopTtsReading();
+    const shouldResumeTts = this.isTtsSpeaking || this.ttsReader.isSpeaking();
+    if (shouldResumeTts) {
+      this.stopTtsReaderForChapterSwitch();
+      await this.updateTtsAvSessionPlaybackState(avSession.PlaybackState.PLAYBACK_STATE_BUFFERING);
+    }
     this.finishPageTurnAnimation();
     this.isLoading = true;
     this.loadStatus = '正在切换章节...';
@@ -12782,6 +13957,9 @@ struct ReadBookPage {
       this.loadStatus = '';
     }
     this.saveReadingProgress();
+    if (shouldResumeTts) {
+      await this.startTtsReadingFromCurrentPosition(false);
+    }
   }
 
   async loadNextChapter(showLoading: boolean = false, showBoundaryToast: boolean = false): Promise<void> {

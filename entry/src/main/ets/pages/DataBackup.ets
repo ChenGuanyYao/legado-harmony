@@ -232,7 +232,7 @@ struct DataBackupPage {
         AppDataBackupService.CATEGORY_BOOKMARKS)
       this.selectionRow('本地图书', 'TXT/EPUB 原文件及本地书籍信息', exporting,
         AppDataBackupService.CATEGORY_LOCAL_BOOKS)
-      this.selectionRow('自定义设置与资源', '阅读、主题、字体、封面、TTS 等；敏感字段会清除', exporting,
+      this.selectionRow('自定义设置与资源', '阅读、主题、字体、封面、TTS、替换规则等；敏感字段会清除', exporting,
         AppDataBackupService.CATEGORY_SETTINGS)
       this.selectionRow('搜索历史', '搜索关键词和使用次数', exporting,
         AppDataBackupService.CATEGORY_SEARCH_HISTORY, false)
@@ -503,7 +503,7 @@ struct DataBackupPage {
       await this.awaitTempCleanup();
       const options = new picker.DocumentSelectOptions();
       options.maxSelectNumber = 1;
-      options.fileSuffixFilters = ['应用数据备份|.qingyebak'];
+      options.fileSuffixFilters = ['应用数据备份|.qingyebak', 'Android 阅读备份|.zip'];
       const result = await new picker.DocumentViewPicker(getContext(this)).select(options);
       if (!result || result.length === 0) return;
       await AppDataBackupService.discardImport(this.importSession);
@@ -543,12 +543,18 @@ struct DataBackupPage {
       this.importLocalBooks = AppDataBackupService.hasCategory(manifest, AppDataBackupService.CATEGORY_LOCAL_BOOKS);
       this.importSettings = AppDataBackupService.hasCategory(manifest, AppDataBackupService.CATEGORY_SETTINGS);
       this.importSearchHistory = AppDataBackupService.hasCategory(manifest, AppDataBackupService.CATEGORY_SEARCH_HISTORY);
-      const security = this.importSession.encrypted && manifest.version >= 2 && manifest.sensitiveDataExcluded ?
-        '已加密，且不含登录凭据等敏感字段' :
-        (this.importSession.encrypted ? '已加密，但旧版数据可能包含敏感字段' :
-          '旧版未加密备份，可能包含敏感字段');
-      this.importDescription = `备份时间：${new Date(manifest.createdAt).toLocaleString()}；${security}；` +
-        '可按需取消不想导入的项目。';
+      if (this.importSession.sourceFormat === AppDataBackupService.SOURCE_FORMAT_ANDROID) {
+        this.importDescription = '已识别 Android 阅读 ZIP 备份；可转换导入书源、HTTP TTS、网络书架、' +
+          '阅读进度、自定义分组、替换规则和搜索历史。本地书及其他不兼容数据会跳过；' +
+          '原备份未加密，可能包含敏感配置。';
+      } else {
+        const security = this.importSession.encrypted && manifest.version >= 2 && manifest.sensitiveDataExcluded ?
+          '已加密，且不含登录凭据等敏感字段' :
+          (this.importSession.encrypted ? '已加密，但旧版数据可能包含敏感字段' :
+            '旧版未加密备份，可能包含敏感字段');
+        this.importDescription = `备份时间：${new Date(manifest.createdAt).toLocaleString()}；${security}；` +
+          '可按需取消不想导入的项目。';
+      }
     } catch (e) {
       console.error('读取应用备份失败:', e);
       const message = e instanceof Error ? e.message : String(e);
@@ -591,7 +597,10 @@ struct DataBackupPage {
     this.busyProgress = 0;
     try {
       const result = await AppDataBackupService.importBackup(getContext(this), this.importSession,
-        this.selection(false));
+        this.selection(false), (message: string, percent: number): void => {
+          this.busyText = message;
+          this.busyProgress = percent;
+        });
       promptAction.showToast({ message: `导入完成：${result.summary()}` });
       this.importDescription = `导入完成：${result.summary()}。设置项重启应用后完全生效。`;
       await AppDataBackupService.discardImport(this.importSession);
