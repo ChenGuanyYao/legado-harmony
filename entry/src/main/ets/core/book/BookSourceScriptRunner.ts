@@ -97,6 +97,7 @@ export class BookSourceScriptRunner {
 
   private static normalizeLoginUiJson(raw: string): string {
     return (raw || '')
+      .replace(/([{,]\s*)([A-Za-z_$][A-Za-z0-9_$]*)\s*:/g, '$1"$2":')
       .replace(/([{,]\s*)'([^'\\]*(?:\\.[^'\\]*)*)'\s*:/g, '$1"$2":')
       .replace(/:\s*'([^'\\]*(?:\\.[^'\\]*)*)'(\s*[,}])/g, ':"$1"$2')
       .replace(/,\s*([}\]])/g, '$1');
