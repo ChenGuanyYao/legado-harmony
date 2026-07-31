@@ -20,7 +20,7 @@ export class AppDatabase {
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
   private readonly DATABASE_NAME = 'legado.db';
-  private readonly SCHEMA_VERSION = 13;
+  private readonly SCHEMA_VERSION = 14;
 
   private constructor() {}
 
@@ -233,6 +233,9 @@ export class AppDatabase {
       if (schemaVersion < 9) {
         await this.resetLegacyBookSourceValidationFailures();
       }
+      if (schemaVersion < 14) {
+        await this.repairOversizedImportedBookData();
+      }
       await this.setSchemaVersion(this.SCHEMA_VERSION);
     }
     await this.createIndexes();
@@ -361,6 +364,31 @@ export class AppDatabase {
       );
     } catch (e) {
       console.warn('重置旧版书源校验失败状态失败:', e);
+    }
+  }
+
+  private async repairOversizedImportedBookData(): Promise<void> {
+    if (!this.store) return;
+    try {
+      // Android 阅读的 variable 可能包含正文/目录等运行时缓存。旧版导入器曾将其整段写入，
+      // 书架启动时读取所有图书会因此长时间占用主线程。章节和页码进度已有独立列，清掉
+      // 超大扩展字段不会丢失主要阅读位置；只处理网络书，避免影响本地图书路径元数据。
+      await this.store.executeSql(
+        `UPDATE books SET variable = '{}' ` +
+        `WHERE origin NOT IN ('local', 'loc_book') AND LENGTH(COALESCE(variable, '')) > 65536`
+      );
+      await this.store.executeSql(
+        `UPDATE books SET readConfig = NULL WHERE LENGTH(COALESCE(readConfig, '')) > 65536`
+      );
+      await this.store.executeSql(
+        `UPDATE books SET intro = SUBSTR(intro, 1, 65536) WHERE LENGTH(COALESCE(intro, '')) > 65536`
+      );
+      await this.store.executeSql(
+        `UPDATE books SET customIntro = SUBSTR(customIntro, 1, 65536) ` +
+        `WHERE LENGTH(COALESCE(customIntro, '')) > 65536`
+      );
+    } catch (e) {
+      console.warn('修复历史导入的超大书籍数据失败:', e);
     }
   }
 

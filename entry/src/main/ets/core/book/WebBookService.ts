@@ -15,6 +15,10 @@ import { ReaderImageMarker } from './ReaderImageMarker';
 import { JsRuntime } from '../rule/JsRuntime';
 import { ScriptEngine, ScriptEngineContext } from '../rule/ScriptEngine';
 import { ComicImagePipeline } from './ComicImagePipeline';
+import { BookSourceRuntimeRouter, SourceRuntimeStage } from './BookSourceRuntimeRouter';
+import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceStageWebRuntime';
+import { ReaderActionMarker } from './ReaderActionMarker';
+import { BookSourceInteractionPostProcessor } from './BookSourceInteractionPostProcessor';
 
 class ContentPageData {
   content: string = '';
@@ -51,9 +55,13 @@ export class WebBookService {
     let content = resp.body;
     const infoRule = source.bookInfoRule;
     if (infoRule.init) {
-      const ir = new AnalyzeRule(content, baseUrl, ctx);
-      this.seedSourceVariables(ctx, source);
-      const initResult = ir.getString(infoRule.init);
+      let initResult = await this.runStageRule(source, book, infoRule.init, content, baseUrl,
+        SourceRuntimeStage.BOOK_INFO);
+      if (!initResult) {
+        const ir = new AnalyzeRule(content, baseUrl, ctx);
+        this.seedSourceVariables(ctx, source);
+        initResult = ir.getString(infoRule.init);
+      }
       if (initResult) content = initResult;
     }
 
@@ -199,6 +207,14 @@ export class WebBookService {
       if (page === 0) {
         firstBody = currentResp.body;
         firstBaseUrl = baseUrl;
+        const runtimeList = await this.runStageRule(source, book, tocRule.chapterList,
+          currentResp.body, baseUrl, SourceRuntimeStage.TOC);
+        if (runtimeList) {
+          const runtimeChapters = this.parseStageChapterList(source, book, runtimeList, baseUrl);
+          if (runtimeChapters.length > 0) {
+            return runtimeChapters;
+          }
+        }
         const specialChapters = await this.tryBuildSpecialChapterList(source, book, currentResp.body);
         if (specialChapters.length > 0) {
           book.variable = ctx.toJson();
@@ -280,12 +296,31 @@ export class WebBookService {
 
   async getContent(source: BookSource, book: Book, chapter: BookChapter): Promise<string> {
     if (BookSourceDataUrlSupport.isEncodedSource(chapter.url)) {
-      return await BookSourceDataUrlSupport.getContent(this.http, source, book, chapter);
+      const shortcutContent = await BookSourceDataUrlSupport.getContent(this.http, source, book, chapter);
+      const shortcutAudio = source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
+      if (!shortcutContent || shortcutAudio) return shortcutContent.trim();
+      const interactiveContent = await BookSourceInteractionPostProcessor.process(source, book, chapter,
+        shortcutContent);
+      const shortcutContext = new RuleContext();
+      shortcutContext.loadFromJson(book.variable);
+      this.seedBookVariables(shortcutContext, book.bookUrl);
+      this.seedSourceVariables(shortcutContext, source);
+      this.seedChapterVariables(shortcutContext, chapter);
+      return await this.normalizeReaderContent(source,
+        this.applyContentReplaceRule(interactiveContent, source.contentRule.replaceRegex, shortcutContext, chapter),
+        chapter.url || book.bookUrl || source.bookSourceUrl);
     }
     const isAudioContent = source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
     if (isAudioContent && !source.contentRule.content &&
       /\.(?:aac|flac|m3u8|m4a|mp3|mp4|ogg|opus|wav)(?:[?#]|$)/i.test(chapter.url)) {
       return BookUrlResolver.resolve(chapter.url, book.bookUrl || source.bookSourceUrl);
+    }
+    const stageContent = await this.tryGetStageContent(source, book, chapter);
+    if (stageContent) {
+      if (isAudioContent) return stageContent.trim();
+      return await this.normalizeReaderContent(source,
+        this.applyContentReplaceRule(stageContent, source.contentRule.replaceRegex,
+          new RuleContext(), chapter), chapter.url);
     }
     const normalizedContentUrl = this.normalizeChaoxingUrl(source, chapter.url);
     if (normalizedContentUrl !== chapter.url) {
@@ -901,6 +936,7 @@ export class WebBookService {
     }
 
     let value = content || '';
+    value = this.convertReaderNativeActions(value);
     value = value.replace(/<(?:img|image)\b[^>]*>/gi, (tag: string): string => {
       const images = this.collectReaderImageUrls([tag], baseUrl, false);
       return images.length > 0 ? `\n\n${ReaderImageMarker.create(images[0])}\n\n` : ' ';
@@ -932,6 +968,48 @@ export class WebBookService {
       .replace(/\n{3,}/g, '\n\n')
       .trim();
     return await this.materializeReaderImageMarkers(source, normalized);
+  }
+
+  private convertReaderNativeActions(content: string): string {
+    if (!content) return content;
+    let value = content.replace(/<p\b[^>]*>\s*<img\b([^>]*\bident\s*=\s*["'][^"']+["'][^>]*)\/?\s*>\s*<\/p>/gi,
+      (_all: string, attrs: string): string => {
+        const identMatch = /\bident\s*=\s*["']([^"']+)["']/i.exec(attrs || '');
+        const url = this.decodeHtmlEntities(identMatch && identMatch[1] ? identMatch[1] : '');
+        const marker = ReaderActionMarker.create('神评论', url, '神评论');
+        return marker ? `${marker}\n` : '';
+      });
+    value = value.replace(/<p\b[^>]*>([\s\S]*?)<comment\b([^>]*)\/?>([\s\S]*?)<\/p>/gi,
+      (_all: string, before: string, attrs: string, after: string): string => {
+        const text = this.decodeHtmlEntities(`${before || ''}${after || ''}`.replace(/<[^>]+>/g, '')).trim();
+        const marker = this.readerActionMarkerFromCommentAttributes(attrs || '');
+        return `${text}${marker}\n`;
+      });
+    if (!/<div\b[^>]*\brs-native\b/i.test(value)) return value;
+    return value.replace(/<div\b[^>]*\brs-native\b[^>]*>([\s\S]*?)<\/div>/gi,
+      (_all: string, inner: string): string => {
+        const comment = /<comment\b([^>]*)>/i.exec(inner || '');
+        const text = this.decodeHtmlEntities((inner || '').replace(/<comment\b[^>]*>/gi, '')
+          .replace(/<[^>]+>/g, '')).trim();
+        if (!comment) return text ? `${text}\n` : '';
+        const marker = this.readerActionMarkerFromCommentAttributes(comment[1] || '');
+        return `${text}${marker}\n`;
+      });
+  }
+
+  private readerActionMarkerFromCommentAttributes(attrs: string): string {
+    const countMatch = /\bcount\s*=\s*["']([^"']*)["']/i.exec(attrs || '');
+    const identMatch = /\bident\s*=\s*["']([^"']*)["']/i.exec(attrs || '');
+    const pressMatch = /\bonPress\s*=\s*(["'])([\s\S]*?)\1/i.exec(attrs || '');
+    const actionMatch = pressMatch ?
+      /java\.(?:showReadingBrowser|startBrowserDp|startBrowser|showBrowser)\(\s*(["'])([\s\S]*?)\1\s*,\s*(["'])([\s\S]*?)\3/i.exec(pressMatch[2]) : null;
+    const url = this.decodeHtmlEntities(actionMatch && actionMatch[2] ? actionMatch[2] :
+      (identMatch && identMatch[1] ? identMatch[1] : ''));
+    if (!url) return '';
+    const title = this.decodeHtmlEntities(actionMatch && actionMatch[4] ? actionMatch[4] : '段评');
+    const count = this.decodeHtmlEntities(countMatch && countMatch[1] ? countMatch[1] : '');
+    const label = count ? `${title} ${count}` : title;
+    return ReaderActionMarker.create(label, url, title);
   }
 
   private async materializeReaderImageMarkers(source: BookSource, content: string): Promise<string> {
@@ -1120,6 +1198,98 @@ export class WebBookService {
     return (value || '').replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_: string, key: string) => {
       return ctx.get(key.trim());
     });
+  }
+
+  private async runStageRule(source: BookSource, book: Book, rawRule: string, content: string,
+    baseUrl: string, stage: string): Promise<string> {
+    const code = this.stageRuleCode(rawRule);
+    if (!code) return '';
+    const decision = BookSourceRuntimeRouter.decide(stage, `${source.jsLib || ''}\n${code}`);
+    if (decision.runtime !== 'arkweb' || !BookSourceStageWebRuntime.get().isAvailable()) return '';
+    const request = new StageWebRuntimeRequest();
+    request.source = source;
+    request.book = book;
+    request.code = code;
+    request.content = content || '';
+    request.baseUrl = baseUrl || book.bookUrl || source.bookSourceUrl;
+    try {
+      const result = await BookSourceStageWebRuntime.get().execute(request);
+      return result.value || '';
+    } catch (error) {
+      console.warn('[WS] stage runtime failed, fallback legacy:', source.bookSourceName, stage, error);
+      return '';
+    }
+  }
+
+  private stageRuleCode(rawRule: string): string {
+    const raw = (rawRule || '').trim();
+    if (/^@?js:/i.test(raw)) return raw.replace(/^@?js:\s*/i, '');
+    if (/^<js>/i.test(raw) && /<\/js>\s*$/i.test(raw)) {
+      return raw.replace(/^<js>\s*/i, '').replace(/<\/js>\s*$/i, '');
+    }
+    return '';
+  }
+
+  private parseStageChapterList(source: BookSource, book: Book, raw: string, baseUrl: string): BookChapter[] {
+    let values: Object[] = [];
+    try {
+      const parsed = JSON.parse(raw || '[]') as Object;
+      if (Array.isArray(parsed)) values = parsed;
+    } catch (_) {
+      return [];
+    }
+    const chapters: BookChapter[] = [];
+    const tocRule = source.tocRule;
+    for (const value of values) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      const item = JSON.stringify(value);
+      const rule = new AnalyzeRule(item, baseUrl);
+      const record = value as Record<string, Object>;
+      const isVolume = record['isVolume'] === true || String(record['isVolume'] || '') === 'true';
+      const title = this.cleanChapterTitle(rule.getString(tocRule.chapterName) || String(record['title'] || ''));
+      let url = rule.getString(tocRule.chapterUrl) || String(record['url'] || '');
+      if (!title || isVolume || !url) continue;
+      if (!url.startsWith('data:')) url = BookUrlResolver.resolve(url, baseUrl);
+      const chapter = new BookChapter();
+      chapter.title = title;
+      chapter.url = url;
+      chapter.bookUrl = book.bookUrl;
+      chapter.index = chapters.length;
+      chapter.isVip = rule.getString(tocRule.isVip) === 'true' || record['v'] === true;
+      chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'baseUrl', baseUrl);
+      const updateTime = rule.getString(tocRule.updateTime) || String(record['t'] || '');
+      if (updateTime) chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'updateTime', updateTime);
+      chapters.push(chapter);
+    }
+    return chapters;
+  }
+
+  private async tryGetStageContent(source: BookSource, book: Book, chapter: BookChapter): Promise<string> {
+    const rawRule = source.contentRule.content || '';
+    const code = this.stageRuleCode(rawRule);
+    if (!code) return '';
+    const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.CONTENT,
+      `${source.jsLib || ''}\n${code}`);
+    if (decision.runtime !== 'arkweb' || !BookSourceStageWebRuntime.get().isAvailable()) return '';
+    let content = '';
+    let baseUrl = chapter.url || book.bookUrl || source.bookSourceUrl;
+    const payload = EncodedSourceUrl.decode(chapter.url);
+    if (payload && payload.type === 'qtqd') {
+      content = this.textToHex(payload.text);
+    } else {
+      const response = await new AnalyzeUrl(source, this.http).fetch(chapter.url);
+      if (!response.success || !response.body) return '';
+      content = response.body;
+      baseUrl = BookUrlResolver.effectiveBase(response, chapter.url, book.bookUrl || source.bookSourceUrl);
+    }
+    return await this.runStageRule(source, book, rawRule, content, baseUrl, SourceRuntimeStage.CONTENT);
+  }
+
+  private textToHex(value: string): string {
+    const bytes = new util.TextEncoder().encodeInto(value || '');
+    let result = '';
+    for (const byte of bytes) result += Number(byte).toString(16).padStart(2, '0');
+    return result;
   }
 
   private resolveVars(url: string, ctx: RuleContext): string {

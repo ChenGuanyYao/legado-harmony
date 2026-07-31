@@ -7,6 +7,7 @@ export class LoginRuntimeStep {
   pendingCrypto: string = '';
   pendingBrowserAwait: string = '';
   pendingBrowserTitle: string = '';
+  pendingWebView: string = '';
   cookieOperations: string = '[]';
   variable: string = '';
   loginHeader: string = '';
@@ -66,12 +67,13 @@ export class BookSourceLoginWebRuntime {
     // nested templates/HTML. Keep both payloads ASCII-only while crossing that boundary, then
     // restore their UTF-8 text inside the Web runtime before parsing or evaluating them.
     const stateBase64 = this.encodeBase64(state);
-    const codeBase64 = this.encodeBase64(`${library}\n${exposeFunctions}\n${action || ''}` +
+    const initializeVariable = `if(!source.getVariable()&&typeof csh==='function'){try{csh();}catch(e){}}`;
+    const codeBase64 = this.encodeBase64(`${library}\n${exposeFunctions}\n${initializeVariable}\n${action || ''}` +
       '\n//# sourceURL=book-source-login.js');
     return `(function(){` +
       `function decodeUtf8(v){try{return decodeURIComponent(escape(atob(v)));}catch(e){return atob(v);}}` +
       `const S=JSON.parse(decodeUtf8('${stateBase64}'));` +
-      `let pending='',pendingCookie='',pendingCrypto='',pendingBrowser='',pendingBrowserTitle='';` +
+      `let pending='',pendingCookie='',pendingCrypto='',pendingBrowser='',pendingBrowserTitle='',pendingWebView='';` +
       `let url='',title='',html='',injectJs='',searchKeyword='',refreshExplore=false,refreshLogin=false,toast='',error='';` +
       `const NativeDate=globalThis.Date;const FixedDate=function(){const a=Array.from(arguments);` +
       `if(new.target)return Reflect.construct(NativeDate,a.length?a:[S.fixedNow]);` +
@@ -138,6 +140,9 @@ export class BookSourceLoginWebRuntime {
       `const body=S.responses[key]??'';return {body:function(){return body;}};}if(!pendingBrowser){` +
       `pendingBrowser=target;pendingBrowserTitle=label;}return {body:function(){return '';}};}` +
       `url=target;title=label;return {body:function(){return '';}};}` +
+      `function webView(u,j){const request=JSON.stringify({url:String(u??''),script:String(j??'')});` +
+      `const key='webview:'+request;if(Object.prototype.hasOwnProperty.call(S.responses,key))return S.responses[key]??'';` +
+      `if(!pendingWebView)pendingWebView=request;return '';}` +
       `function cryptoOp(transformation,key,iv,method,data){const request=JSON.stringify({` +
       `transformation:String(transformation??''),key:Array.isArray(key)?key:String(key??''),` +
       `iv:Array.isArray(iv)?iv:String(iv??''),method:method,data:Array.isArray(data)?data:String(data??'')});` +
@@ -157,6 +162,8 @@ export class BookSourceLoginWebRuntime {
       `return m?m[1]:'';},` +
       `setCookie:function(k,v){k=String(k??'');v=String(v??'');cookieData[k]=v;` +
       `cookieOps.push({operation:'set',url:k,value:v,name:''});return v;},` +
+      `replaceCookie:function(k,v){k=String(k??'');v=String(v??'');cookieData[k]=v;` +
+      `cookieOps.push({operation:'replace',url:k,value:v,name:''});return v;},` +
       `removeCookie:function(k,n){k=String(k??'');n=String(n??'');` +
       `cookieOps.push({operation:'remove',url:k,value:'',name:n});` +
       `if(!n){cookieData[k]='';}else{cookieData[k]=String(cookieData[k]??'').split(';').filter(function(x){` +
@@ -181,6 +188,7 @@ export class BookSourceLoginWebRuntime {
       `return {body:function(){return html;}};},` +
       `showReadingBrowser:function(u,t){return open(u,t,false);},open:function(u,t){return open(u,t,false);},` +
       `openUrl:function(u){return open(u,'',false);},` +
+      `webView:function(_html,u,j){return webView(u,j);},` +
       `base64Encode:b64e,base64EncodeToString:b64e,base64Decode:b64d,base64DecodeToString:b64d,` +
       `base64DecodeToByteArray:b64bytes,base64UrlEncode:b64ue,base64UrlDecode:b64ud,` +
       `hexEncodeToString:hexE,hexDecodeToString:hexD,strToBytes:strBytes,bytesToStr:bytesStr,` +
@@ -220,7 +228,7 @@ export class BookSourceLoginWebRuntime {
       `const cleanInfo={};Object.keys(loginMap).forEach(function(k){cleanInfo[k]=String(loginMap[k]??'');});` +
       `cleanInfo['${this.RUNTIME_STATE_KEY}']=JSON.stringify({java:vars,source:sourceData,cache:cacheData});` +
       `return encodeURIComponent(JSON.stringify({pendingAjax:pending,pendingCookie:pendingCookie,` +
-      `pendingCrypto:pendingCrypto,pendingBrowserAwait:pendingBrowser,pendingBrowserTitle:pendingBrowserTitle,` +
+      `pendingCrypto:pendingCrypto,pendingBrowserAwait:pendingBrowser,pendingBrowserTitle:pendingBrowserTitle,pendingWebView:pendingWebView,` +
       `cookieOperations:JSON.stringify(cookieOps),variable:S.variable||'',` +
       `loginHeader:S.loginHeader||'',loginInfo:JSON.stringify(cleanInfo),requestedUrl:url,requestedTitle:title,` +
       `requestedHtml:html,requestedInjectJs:injectJs,requestedSearchKeyword:searchKeyword,` +
@@ -525,6 +533,7 @@ export class BookSourceLoginWebRuntime {
       result.pendingCrypto = String(record['pendingCrypto'] || '');
       result.pendingBrowserAwait = String(record['pendingBrowserAwait'] || '');
       result.pendingBrowserTitle = String(record['pendingBrowserTitle'] || '');
+      result.pendingWebView = String(record['pendingWebView'] || '');
       result.cookieOperations = String(record['cookieOperations'] || '[]');
       result.variable = String(record['variable'] || '');
       result.loginHeader = String(record['loginHeader'] || '');

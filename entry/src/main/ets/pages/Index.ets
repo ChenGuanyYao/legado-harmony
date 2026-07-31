@@ -4,6 +4,7 @@ import { common, WantAgent, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { notificationManager } from '@kit.NotificationKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { webview } from '@kit.ArkWeb';
 import deviceInfo from '@ohos.deviceInfo';
 import image from '@ohos.multimedia.image';
 import fs from '@ohos.file.fs';
@@ -13,6 +14,7 @@ import { Book, BookChapter, BookGroup, BookSource, SearchBook } from '../model/d
 import { AppDatabase } from '../model/data/AppDatabase';
 import { SearchCoordinator, SearchCallback, SearchProgress } from '../core/book/SearchCoordinator';
 import { ExploreCoordinator, ExploreEntry, ExploreSourceOption } from '../core/book/ExploreCoordinator';
+import { BookSourceStageWebRuntime } from '../core/book/BookSourceStageWebRuntime';
 import { ReadBookEngine } from '../core/book/ReadBookEngine';
 import { SearchBookResultList } from '../components/book/SearchBookResultList';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
@@ -128,6 +130,7 @@ class ShelfTileEntryDataSource implements IDataSource {
 @Entry
 @Component
 struct Index {
+  private stageRuntimeController: webview.WebviewController = new webview.WebviewController();
   private shortcutRoutingActive: boolean = false;
   private cloudSyncDebounceTimer: number = -1;
   @State currentIndex: number = 0;
@@ -169,8 +172,8 @@ struct Index {
   @State globalTtsOptionsPanel: number = 0;
   @State globalTtsViewportWidth: number = 360;
   @State globalTtsViewportHeight: number = 720;
-  @State globalTtsOffsetX: number = 0;
-  @State globalTtsOffsetY: number = 0;
+  @StorageLink('globalTtsCapsulePositionX') globalTtsCapsulePositionX: number = 16;
+  @StorageLink('globalTtsCapsulePositionY') globalTtsCapsulePositionY: number = -1;
   private globalTtsDragOriginX: number = 0;
   private globalTtsDragOriginY: number = 0;
 
@@ -321,6 +324,22 @@ struct Index {
       if (this.globalTtsActive && this.showGlobalTtsPanel) {
         this.globalTtsPlayerOverlay()
       }
+      Web({ src: 'about:blank', controller: this.stageRuntimeController })
+        .width(1)
+        .height(1)
+        .opacity(0.01)
+        .javaScriptAccess(true)
+        .domStorageAccess(true)
+        .mixedMode(MixedMode.All)
+        .onControllerAttached(() => {
+          BookSourceStageWebRuntime.get().attach(this.stageRuntimeController);
+        })
+        .onPageBegin(() => {
+          BookSourceStageWebRuntime.get().setReady(false);
+        })
+        .onPageEnd(() => {
+          BookSourceStageWebRuntime.get().setReady(true);
+        })
     }
     .width('100%')
     .height('100%')
@@ -378,36 +397,47 @@ struct Index {
     .backgroundColor(ThemeRuntime.cardColor(this.appDarkMode))
     .border({ width: 0.5, color: this.appDarkMode ? '#30FFFFFF' : '#18000000' })
     .shadow({ radius: 18, color: this.appDarkMode ? '#50000000' : '#26000000', offsetY: 6 })
-    .position({ x: 16, y: '100%' })
+    .position({ x: 0, y: 0 })
     .translate({
-      x: this.clampGlobalTtsOffsetX(this.globalTtsOffsetX),
-      y: -(this.navBarHeight + 118) + this.clampGlobalTtsOffsetY(this.globalTtsOffsetY)
+      x: this.globalTtsCapsuleLeft(),
+      y: this.globalTtsCapsuleTop()
     })
     .parallelGesture(
       PanGesture({ direction: PanDirection.All, distance: 4 })
         .onActionStart(() => {
-          this.globalTtsDragOriginX = this.clampGlobalTtsOffsetX(this.globalTtsOffsetX);
-          this.globalTtsDragOriginY = this.clampGlobalTtsOffsetY(this.globalTtsOffsetY);
+          this.globalTtsDragOriginX = this.globalTtsCapsuleLeft();
+          this.globalTtsDragOriginY = this.globalTtsCapsuleTop();
         })
         .onActionUpdate((event: GestureEvent) => {
-          this.globalTtsOffsetX = this.clampGlobalTtsOffsetX(this.globalTtsDragOriginX + event.offsetX);
-          this.globalTtsOffsetY = this.clampGlobalTtsOffsetY(this.globalTtsDragOriginY + event.offsetY);
+          this.globalTtsCapsulePositionX = this.clampGlobalTtsPositionX(
+            this.globalTtsDragOriginX + event.offsetX);
+          this.globalTtsCapsulePositionY = this.clampGlobalTtsPositionY(
+            this.globalTtsDragOriginY + event.offsetY);
         })
     )
     .transition(this.globalTtsCapsuleTransition())
   }
 
-  clampGlobalTtsOffsetX(offset: number): number {
-    const minLeft = 8;
-    const maxLeft = Math.max(minLeft, this.globalTtsViewportWidth - 154 - 8);
-    return Math.max(minLeft - 16, Math.min(offset, maxLeft - 16));
+  globalTtsCapsuleLeft(): number {
+    return this.clampGlobalTtsPositionX(this.globalTtsCapsulePositionX);
   }
 
-  clampGlobalTtsOffsetY(offset: number): number {
-    const baseTop = this.globalTtsViewportHeight - this.navBarHeight - 118;
+  globalTtsCapsuleTop(): number {
+    const defaultTop = this.globalTtsViewportHeight - this.navBarHeight - 118;
+    return this.clampGlobalTtsPositionY(this.globalTtsCapsulePositionY < 0 ?
+      defaultTop : this.globalTtsCapsulePositionY);
+  }
+
+  clampGlobalTtsPositionX(position: number): number {
+    const minLeft = 8;
+    const maxLeft = Math.max(minLeft, this.globalTtsViewportWidth - 154 - 8);
+    return Math.max(minLeft, Math.min(position, maxLeft));
+  }
+
+  clampGlobalTtsPositionY(position: number): number {
     const minTop = this.statusBarHeight + 8;
     const maxTop = Math.max(minTop, this.globalTtsViewportHeight - this.navBarHeight - 110);
-    return Math.max(minTop - baseTop, Math.min(offset, maxTop - baseTop));
+    return Math.max(minTop, Math.min(position, maxTop));
   }
 
   @Builder

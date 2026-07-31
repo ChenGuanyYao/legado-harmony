@@ -93,6 +93,17 @@ export class EncodedSourceUrl {
     return await EncodedSourceUrl.requestJsonForPayload(http, payload, preferredHost, maxResponseBytes);
   }
 
+  static async requestContentJsonForDataUrl(http: HttpClient, url: string, preferredHost: string,
+    includeParagraphReviews: boolean, includeGodComments: boolean = false): Promise<EncodedJsonMap | null> {
+    const payload = EncodedSourceUrl.decode(url);
+    if (!payload) return null;
+    const req = EncodedSourceUrl.buildRequest(payload);
+    if (!req.path) return null;
+    const path = includeParagraphReviews && req.path === '/content' ? '/content?review=1' : req.path;
+    const body = includeGodComments && req.body ? `${req.body}&god=true` : req.body;
+    return await EncodedSourceUrl.requestJson(http, path, req.method, body, preferredHost || req.host);
+  }
+
   static async requestJsonForPayload(http: HttpClient, payload: EncodedSourcePayload, preferredHost?: string,
     maxResponseBytes?: number):
     Promise<EncodedJsonMap | null> {

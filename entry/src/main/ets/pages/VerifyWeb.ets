@@ -118,6 +118,7 @@ struct VerifyWebPage {
   @State currentUrl: string = '';
   @State progress: number = 0;
   @State requireLoginCookie: boolean = false;
+  private readerCommentMode: boolean = false;
   private controller: webview.WebviewController = new webview.WebviewController();
   private browserAwaitToken: string = '';
   private browserAwaitCompleted: boolean = false;
@@ -149,6 +150,7 @@ struct VerifyWebPage {
     const initialUrl = params?.['url'] || AppStorage.get<string>('pendingVerificationUrl') || 'https://www.qidian.com';
     this.title = params?.['title'] || AppStorage.get<string>('pendingVerificationTitle') || '网页验证';
     this.requireLoginCookie = params?.['requireLoginCookie'] === 'true';
+    this.readerCommentMode = params?.['readerCommentMode'] === 'true';
     this.browserAwaitToken = params?.['bookSourceBrowserAwaitToken'] || '';
     this.browserPayloadToken = params?.['bookSourceBrowserPayloadToken'] || '';
     if (this.browserPayloadToken && this.browserPayloadToken ===
@@ -265,12 +267,14 @@ struct VerifyWebPage {
         .onPageEnd((event?: OnPageEndEvent) => {
           if (event?.url) {
             this.currentUrl = event.url;
-            this.saveCookies(event.url);
-            this.syncDocumentCookies(event.url);
-            this.syncGuangYuDocumentCookies(event.url);
-            this.syncGuangYuDeviceCookie(event.url);
+            if (!this.readerCommentMode) {
+              this.saveCookies(event.url);
+              this.syncDocumentCookies(event.url);
+              this.syncGuangYuDocumentCookies(event.url);
+              this.syncGuangYuDeviceCookie(event.url);
+            }
           }
-          this.injectBrowserPayloadScript();
+          if (!this.readerCommentMode) this.injectBrowserPayloadScript();
         })
         .onProgressChange((event?: OnProgressChangeEvent) => {
           this.progress = event?.newProgress || 0;
@@ -284,6 +288,10 @@ struct VerifyWebPage {
   }
 
   async finishVerify(): Promise<void> {
+    if (this.readerCommentMode) {
+      this.backSafely();
+      return;
+    }
     if (this.browserAwaitToken) {
       await this.finishBrowserAwait();
       return;
@@ -363,6 +371,15 @@ struct VerifyWebPage {
     if (!this.browserAwaitToken || this.browserAwaitCompleted) return;
     this.browserAwaitCompleted = true;
     try {
+      const verifyUrl = this.currentUrl || this.url;
+      await this.syncDocumentCookiesAwait(verifyUrl);
+      this.saveCookies(verifyUrl);
+      if (this.url && verifyUrl !== this.url) {
+        this.saveCookies(this.url);
+        CookieStore.copyCookies(verifyUrl, this.url);
+      }
+      this.syncBookSourceLoginCookies();
+      CookieStore.saveSync();
       const raw = await this.controller.runJavaScript(
         `document.documentElement ? document.documentElement.outerHTML : (document.body ? document.body.innerHTML : '')`);
       const body = this.normalizeBrowserScriptResult(raw);

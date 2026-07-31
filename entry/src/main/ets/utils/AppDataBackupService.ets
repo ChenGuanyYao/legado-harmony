@@ -903,19 +903,19 @@ export class AppDataBackupService {
 
   private static convertAndroidBook(raw: Record<string, Object>, mapping: AndroidBookGroupMapping): Book {
     const book = new Book();
-    book.bookUrl = AppDataBackupService.stringValue(raw['bookUrl']);
-    book.tocUrl = AppDataBackupService.stringValue(raw['tocUrl']);
-    book.origin = AppDataBackupService.stringValue(raw['origin']);
-    book.originName = AppDataBackupService.stringValue(raw['originName']);
-    book.name = AppDataBackupService.stringValue(raw['name']);
-    book.author = AppDataBackupService.stringValue(raw['author']);
-    book.kind = AppDataBackupService.stringValue(raw['kind']);
-    book.customTag = AppDataBackupService.stringValue(raw['customTag']);
-    book.coverUrl = AppDataBackupService.stringValue(raw['coverUrl']);
-    book.customCoverUrl = AppDataBackupService.stringValue(raw['customCoverUrl']);
-    book.intro = AppDataBackupService.stringValue(raw['intro']);
-    book.customIntro = AppDataBackupService.stringValue(raw['customIntro']);
-    book.charset = AppDataBackupService.stringValue(raw['charset']);
+    book.bookUrl = AppDataBackupService.limitedStringValue(raw['bookUrl'], 16384);
+    book.tocUrl = AppDataBackupService.limitedStringValue(raw['tocUrl'], 16384);
+    book.origin = AppDataBackupService.limitedStringValue(raw['origin'], 4096);
+    book.originName = AppDataBackupService.limitedStringValue(raw['originName'], 512);
+    book.name = AppDataBackupService.limitedStringValue(raw['name'], 1024);
+    book.author = AppDataBackupService.limitedStringValue(raw['author'], 1024);
+    book.kind = AppDataBackupService.limitedStringValue(raw['kind'], 4096);
+    book.customTag = AppDataBackupService.limitedStringValue(raw['customTag'], 4096);
+    book.coverUrl = AppDataBackupService.limitedStringValue(raw['coverUrl'], 16384);
+    book.customCoverUrl = AppDataBackupService.limitedStringValue(raw['customCoverUrl'], 16384);
+    book.intro = AppDataBackupService.limitedStringValue(raw['intro'], 65536);
+    book.customIntro = AppDataBackupService.limitedStringValue(raw['customIntro'], 65536);
+    book.charset = AppDataBackupService.limitedStringValue(raw['charset'], 128);
     book.type = AppDataBackupService.numberValue(raw['type'], 0);
     book.group = AppDataBackupService.mapAndroidBookGroup(
       AppDataBackupService.numberValue(raw['group'], 0), mapping);
@@ -932,10 +932,14 @@ export class AppDataBackupService {
     book.canUpdate = raw['canUpdate'] !== false;
     book.order = AppDataBackupService.numberValue(raw['order'], 0);
     book.originOrder = AppDataBackupService.numberValue(raw['originOrder'], 0);
-    book.replaceVariable(AppDataBackupService.stringValue(raw['variable']) || '{}');
+    const androidVariable = AppDataBackupService.stringValue(raw['variable']);
+    book.replaceVariable(androidVariable.length <= 65536 ? (androidVariable || '{}') : '{}');
+    // Android 备份中的 variable 是开放式运行时容器，可能夹带目录或正文缓存；Harmony
+    // 只需要其中少量跨端阅读状态，避免把不兼容的大块缓存带进启动必读的 books 表。
+    book.replaceVariable(AppDataBackupService.progressVariables(book));
     const readConfig = raw['readConfig'];
     if (readConfig && typeof readConfig === 'object' && !Array.isArray(readConfig)) {
-      book.readConfig = JSON.parse(JSON.stringify(readConfig)) as ReadConfig;
+      book.readConfig = AppDataBackupService.convertAndroidReadConfig(readConfig as Record<string, Object>);
     }
     book.syncTime = AppDataBackupService.numberValue(raw['syncTime'], 0);
     return book;
@@ -944,6 +948,23 @@ export class AppDataBackupService {
   private static isAndroidLocalBook(raw: Record<string, Object>): boolean {
     const origin = AppDataBackupService.stringValue(raw['origin']).trim().toLowerCase();
     return origin === 'loc_book' || origin === 'local';
+  }
+
+  private static convertAndroidReadConfig(raw: Record<string, Object>): ReadConfig {
+    const config = new ReadConfig();
+    config.reverseToc = raw['reverseToc'] === true;
+    config.pageAnim = AppDataBackupService.numberValue(raw['pageAnim'], 0);
+    config.reSegment = raw['reSegment'] === true;
+    config.imageStyle = AppDataBackupService.limitedStringValue(raw['imageStyle'], 64) || 'DEFAULT';
+    config.useReplaceRule = raw['useReplaceRule'] !== false;
+    config.delTag = AppDataBackupService.numberValue(raw['delTag'], 0);
+    config.ttsEngine = AppDataBackupService.limitedStringValue(raw['ttsEngine'], 256);
+    config.splitLongChapter = raw['splitLongChapter'] !== false;
+    config.readSimulating = raw['readSimulating'] === true;
+    config.startDate = AppDataBackupService.limitedStringValue(raw['startDate'], 64);
+    config.startChapter = AppDataBackupService.numberValue(raw['startChapter'], 0);
+    config.dailyChapters = AppDataBackupService.numberValue(raw['dailyChapters'], 3);
+    return config;
   }
 
   private static mapAndroidBookGroup(legacyGroup: number, mapping: AndroidBookGroupMapping): number {
@@ -1030,6 +1051,11 @@ export class AppDataBackupService {
     if (typeof value === 'string') return value;
     if (typeof value === 'number' || typeof value === 'boolean') return String(value);
     try { return JSON.stringify(value); } catch (_) { return ''; }
+  }
+
+  private static limitedStringValue(value: Object | undefined, maxLength: number): string {
+    const text = AppDataBackupService.stringValue(value);
+    return text.length <= maxLength ? text : text.substring(0, maxLength);
   }
 
   private static numberValue(value: Object | undefined, fallback: number): number {

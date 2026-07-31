@@ -181,10 +181,20 @@ struct BookSourcePage {
   private loginRuntimeResolve: ((value: LoginRuntimeStep) => void) | null = null;
   private loginRuntimeReject: ((reason: Error) => void) | null = null;
   private loginRuntimeTimeoutId: number = -1;
+  private loginRuntimeWebViewPageResolve: (() => void) | null = null;
+  private pendingOpenLoginSourceUrl: string = '';
+  private pendingOpenLoginHandled: boolean = false;
 
   aboutToAppear() {
     this.syncBars();
-    this.loadSources();
+    const params = router.getParams() as Record<string, string>;
+    this.pendingOpenLoginSourceUrl = params ? String(params['openLoginSourceUrl'] || '').trim() : '';
+    this.pendingOpenLoginHandled = false;
+    this.loadSources().then(() => {
+      return this.openPendingReaderSourceLogin();
+    }).catch((error: Error) => {
+      console.warn('从阅读页打开书源登录失败:', error);
+    });
     this.handlePendingBookSourceImport();
     this.ensureBookSourceCheckCancelSubscriber();
     this.resumeLoginRuntimeBrowserAwait();
@@ -214,6 +224,7 @@ struct BookSourcePage {
   onPageShow(): void {
     this.pageVisible = true;
     this.syncBars();
+    this.resumeLoginRuntimeBrowserAwait();
     if (!this.hasShownOnce) {
       this.hasShownOnce = true;
       return;
@@ -247,6 +258,21 @@ struct BookSourcePage {
     } finally {
       this.isLoading = false;
     }
+  }
+
+  async openPendingReaderSourceLogin(): Promise<void> {
+    if (this.pendingOpenLoginHandled || !this.pendingOpenLoginSourceUrl) return;
+    this.pendingOpenLoginHandled = true;
+    const sourceUrl = this.pendingOpenLoginSourceUrl;
+    this.pendingOpenLoginSourceUrl = '';
+    const source = await AppDatabase.getInstance().getBookSource(sourceUrl);
+    if (!source || !this.sourceNeedsLogin(source)) {
+      promptAction.showToast({ message: '未找到可用的书源登录配置' });
+      return;
+    }
+    this.actionSourceUrl = source.bookSourceUrl;
+    this.actionSourceDetail = source;
+    await this.openActionSourceLogin();
   }
 
   build() {
@@ -1064,6 +1090,9 @@ struct BookSourcePage {
         })
         .onPageEnd(() => {
           this.loginRuntimeReady = true;
+          const pageResolve = this.loginRuntimeWebViewPageResolve;
+          this.loginRuntimeWebViewPageResolve = null;
+          if (pageResolve) pageResolve();
           this.continueLoginRuntime();
         })
 
@@ -3563,6 +3592,10 @@ struct BookSourcePage {
         return;
       }
       this.actionSourceDetail = source;
+      if (this.sourceLoginItems.length > 0) {
+        this.refreshSourceLoginItemsFromRuntime(source);
+        this.showSourceLoginUiDialog = true;
+      }
     } catch (error) {
       const missing = BookSourceRuntimeRouter.missingCapabilityMessage(this.loginRuntimeDecision);
       promptAction.showToast({
@@ -3748,6 +3781,20 @@ struct BookSourcePage {
       this.continueLoginRuntime();
       return;
     }
+    if (step.pendingWebView) {
+      const responseKey = `webview:${step.pendingWebView}`;
+      if (!this.loginRuntimeJournal.hasResponse(responseKey)) {
+        const response = await this.evaluateLoginRuntimeWebView(step.pendingWebView);
+        if (!this.loginRuntimeActive) return;
+        this.loginRuntimeJournal.recordResponse(responseKey, response);
+      }
+      this.loginRuntimeReady = false;
+      try {
+        this.loginRuntimeController.loadUrl('about:blank');
+      } catch (_) {}
+      this.loginRuntimeStepRunning = false;
+      return;
+    }
     if (step.pendingAjax) {
       if (this.loginRuntimeJournal.hasResponse(step.pendingAjax)) {
         this.loginRuntimeStepRunning = false;
@@ -3863,6 +3910,49 @@ struct BookSourcePage {
     });
   }
 
+  async evaluateLoginRuntimeWebView(rawRequest: string): Promise<string> {
+    let url = '';
+    let script = '';
+    try {
+      const request = JSON.parse(rawRequest || '{}') as Record<string, Object>;
+      url = String(request['url'] || '');
+      script = String(request['script'] || '');
+    } catch (_) {}
+    if (!/^https?:\/\//i.test(url)) throw new Error('java.webView 地址无效');
+    await new Promise<void>((resolve, reject) => {
+      let completed = false;
+      const timer = setTimeout(() => {
+        if (completed) return;
+        completed = true;
+        this.loginRuntimeWebViewPageResolve = null;
+        reject(new Error('java.webView 页面加载超时'));
+      }, 20000);
+      this.loginRuntimeWebViewPageResolve = (): void => {
+        if (completed) return;
+        completed = true;
+        clearTimeout(timer);
+        resolve();
+      };
+      this.loginRuntimeReady = false;
+      try {
+        this.loginRuntimeController.loadUrl(url);
+      } catch (error) {
+        completed = true;
+        clearTimeout(timer);
+        this.loginRuntimeWebViewPageResolve = null;
+        reject(error as Error);
+      }
+    });
+    const raw = await this.loginRuntimeController.runJavaScript(script || 'document.documentElement.outerHTML');
+    const value = String(raw || '');
+    if (value.startsWith('"') && value.endsWith('"')) {
+      try {
+        return String(JSON.parse(value) || '');
+      } catch (_) {}
+    }
+    return value;
+  }
+
   fetchLoginRuntimeRequest(source: BookSource, requestUrl: string): Promise<HttpResponse> {
     const client = new HttpClient(15000);
     return new Promise<HttpResponse>((resolve) => {
@@ -3922,6 +4012,8 @@ struct BookSourcePage {
       this.snapshotLoginRuntimeCookie(operation.url);
       if (operation.operation === 'set') {
         CookieStore.setCookies(operation.url, operation.value);
+      } else if (operation.operation === 'replace') {
+        CookieStore.replaceCookies(operation.url, operation.value);
       } else if (operation.operation === 'remove') {
         CookieStore.removeCookie(operation.url, operation.name || undefined);
       }

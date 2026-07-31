@@ -13,6 +13,9 @@ import { BookUrlResolver } from './BookUrlResolver';
 import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
 import { BookSourceScriptRunner } from './BookSourceScriptRunner';
 import { BookTypeSupport } from './BookTypeSupport';
+import { BookSourceRuntimeRouter, SourceRuntimeStage } from './BookSourceRuntimeRouter';
+import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceStageWebRuntime';
+import { BookSourceStageRuleSupport } from './BookSourceStageRuleSupport';
 
 export interface SearchProgress {
   done: number;
@@ -267,7 +270,9 @@ export class SearchCoordinator {
       rule.setJsVar('keyword', encodeURIComponent(keyword));
       rule.setJsVar('page', '1');
       const searchRule = source.searchRule;
-      const items = rule.getElements(searchRule.bookList || '');
+      const stageItems = await BookSourceStageRuleSupport.getElements(source, resp.body, baseUrl,
+        searchRule.bookList || '', SourceRuntimeStage.SEARCH);
+      const items = stageItems === null ? rule.getElements(searchRule.bookList || '') : stageItems;
       if (this.cancelled) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
       }
@@ -436,7 +441,8 @@ export class SearchCoordinator {
     const hostCode = [source.jsLib || '', executable].join('\n');
     if (hostCode.length > MAX_VALIDATION_CONFIG_CHARS) return '书源脚本配置过大';
     const usesScript = /(?:@js:|<js>|\bjava\.|\bsource\.|\bcache\.)/i.test(executable);
-    const unsupportedScript = usesScript ? ScriptCompatibility.unsupportedReason(hostCode) : '';
+    const routed = BookSourceRuntimeRouter.decide(SourceRuntimeStage.SEARCH, hostCode);
+    const unsupportedScript = usesScript && routed.runtime !== 'arkweb' ? ScriptCompatibility.unsupportedReason(hostCode) : '';
     if (unsupportedScript) return unsupportedScript;
     if (this.containsRiskyNestedQuantifier(executable)) return '包含高风险嵌套正则';
     return '';
@@ -747,6 +753,8 @@ export class SearchCoordinator {
     const searchUrl = source.searchUrl;
     const baseUrl = source.bookSourceUrl;
     if (!searchUrl) return `${baseUrl}/search?q={{key}}`;
+    const stageUrl = await this.tryBuildStageRuntimeSearchUrl(source, keyword);
+    if (stageUrl) return stageUrl;
     if (/^\s*@?js:/i.test(searchUrl)) {
       const scripted = BookSourceScriptRunner.evaluateUrl(source, searchUrl, keyword, '1');
       if (scripted.handled && scripted.value) {
@@ -788,6 +796,33 @@ export class SearchCoordinator {
     // 清理残留模板
     url = url.replace(/\{\{[^}]+\}\}/g, '');
     return url;
+  }
+
+  private async tryBuildStageRuntimeSearchUrl(source: BookSource, keyword: string): Promise<string> {
+    const hostCode = `${source.jsLib || ''}\n${source.searchUrl || ''}`;
+    const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.SEARCH, hostCode);
+    if (decision.runtime !== 'arkweb' || !BookSourceStageWebRuntime.get().isAvailable()) return '';
+    const request = new StageWebRuntimeRequest();
+    request.source = source;
+    request.baseUrl = source.bookSourceUrl;
+    request.variables = {
+      key: encodeURIComponent(keyword),
+      searchKey: encodeURIComponent(keyword),
+      keyword: encodeURIComponent(keyword),
+      searchKeyRaw: keyword,
+      page: '1',
+      pageIndex: '1'
+    };
+    const template = JSON.stringify(source.searchUrl || '');
+    request.code = `const __searchTemplate=${template};result=__searchTemplate.replace(/\\{\\{([\\s\\S]*?)\\}\\}/g,` +
+      `function(_,expr){try{return String(eval(expr));}catch(e){return '';}});result;`;
+    try {
+      const result = await BookSourceStageWebRuntime.get().execute(request);
+      return result.value || '';
+    } catch (error) {
+      console.warn('[SC] stage runtime search URL failed, fallback legacy:', source.bookSourceName, error);
+      return '';
+    }
   }
 
   private applySourceTemplate(url: string, source: BookSource): string {

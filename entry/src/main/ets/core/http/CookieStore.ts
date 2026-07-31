@@ -3,23 +3,28 @@ import { webview } from '@kit.ArkWeb';
 export class CookieStore {
   static getCookie(url: string): string {
     if (!url) return '';
-    try {
-      return webview.WebCookieManager.fetchCookieSync(url) || '';
-    } catch (_) {
-      return '';
+    for (const target of this.targetUrls(url)) {
+      try {
+        const value = webview.WebCookieManager.fetchCookieSync(target) || '';
+        if (value) return value;
+      } catch (_) {
+      }
     }
+    return '';
   }
 
   static setCookies(url: string, cookies: string): void {
     if (!url || !cookies) return;
     const values = this.splitSetCookie(cookies);
-    for (const value of values) {
-      try {
-        webview.WebCookieManager.configCookieSync(url, value, false, true);
-      } catch (_) {
+    for (const target of this.targetUrls(url)) {
+      for (const value of values) {
         try {
-          webview.WebCookieManager.configCookieSync(url, value);
-        } catch (_) {}
+          webview.WebCookieManager.configCookieSync(target, value, false, true);
+        } catch (_) {
+          try {
+            webview.WebCookieManager.configCookieSync(target, value);
+          } catch (_) {}
+        }
       }
     }
   }
@@ -33,6 +38,13 @@ export class CookieStore {
       if (!pair || !pair.includes('=')) continue;
       this.setCookies(toUrl, pair);
     }
+    this.saveAsync();
+  }
+
+  static replaceCookies(url: string, cookies: string): void {
+    if (!url) return;
+    this.removeCookie(url);
+    if (cookies) this.setCookies(url, cookies);
     this.saveAsync();
   }
 
@@ -98,5 +110,15 @@ export class CookieStore {
     }
     values.push(cookies.substring(start).trim());
     return values.filter(v => v.length > 0);
+  }
+
+  private static targetUrls(url: string): string[] {
+    const value = (url || '').trim();
+    if (!value) return [];
+    const result: string[] = [value];
+    if (!/^https?:\/\//i.test(value) && /^[A-Za-z0-9.-]+(?::\d+)?(?:\/.*)?$/.test(value) && value.includes('.')) {
+      result.push(`https://${value}`);
+    }
+    return result;
   }
 }

@@ -12,6 +12,9 @@ import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
 import { BookUrlResolver } from './BookUrlResolver';
 import { BookSourceScriptRunner } from './BookSourceScriptRunner';
 import { BookTypeSupport } from './BookTypeSupport';
+import { BookSourceRuntimeRouter, SourceRuntimeStage } from './BookSourceRuntimeRouter';
+import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceStageWebRuntime';
+import { BookSourceStageRuleSupport } from './BookSourceStageRuleSupport';
 
 export interface ExploreEntry {
   title: string;
@@ -75,7 +78,7 @@ export class ExploreCoordinator {
         console.warn('[ExploreCoordinator] skip source without explore rules:', source.bookSourceName);
         continue;
       }
-      const parsed = this.parseExploreUrl(source);
+      const parsed = await this.parseExploreUrl(source);
       entries.push(...parsed);
     }
     return entries;
@@ -90,7 +93,7 @@ export class ExploreCoordinator {
         return await BookSourceDataUrlSupport.explore(this.http, source, entry.url, page);
       }
       const au = new AnalyzeUrl(source, this.http);
-      const reqUrl = this.buildUrl(source, entry.url, page);
+      const reqUrl = await this.buildUrl(source, entry.url, page);
       console.info('[ExploreCoordinator] explore:', `${entry.sourceName}/${entry.title}`, reqUrl);
       const resp = EncodedSourceUrl.canHandle(reqUrl) ?
         await this.fetchEncodedDataUrl(reqUrl, source) : await au.fetch(reqUrl);
@@ -110,7 +113,9 @@ export class ExploreCoordinator {
       const rule = new AnalyzeRule(resp.body, baseUrl);
       this.seedSourceVariables(rule.getContext(), source);
       const exploreRule = this.effectiveExploreRule(source);
-      const items = rule.getElements(exploreRule.bookList || '');
+      const stageItems = await BookSourceStageRuleSupport.getElements(source, resp.body, baseUrl,
+        exploreRule.bookList || '', SourceRuntimeStage.EXPLORE);
+      const items = stageItems === null ? rule.getElements(exploreRule.bookList || '') : stageItems;
       console.info('[ExploreCoordinator] parsed list:', source.bookSourceName, 'rule:', exploreRule.bookList, 'count:', items.length);
       const books: SearchBook[] = [];
       const sourceBackendHost = BookSourceDataUrlSupport.sourceBackendHost(source);
@@ -154,13 +159,13 @@ export class ExploreCoordinator {
     }
   }
 
-  private parseExploreUrl(source: BookSource): ExploreEntry[] {
+  private async parseExploreUrl(source: BookSource): Promise<ExploreEntry[]> {
     const entries: ExploreEntry[] = [];
     const raw = source.exploreUrl.trim();
     if (!raw) return entries;
 
     if (raw.startsWith('@js:') || raw.startsWith('js:')) {
-      const scriptItems = this.evaluateExploreScript(raw, source);
+      const scriptItems = await this.evaluateExploreScript(raw, source);
       if (scriptItems.length > 0) {
         this.appendExploreItems(entries, scriptItems, source);
         return entries;
@@ -215,8 +220,24 @@ export class ExploreCoordinator {
     return source.searchRule as ExploreRule;
   }
 
-  private evaluateExploreScript(raw: string, source: BookSource): ExploreUrlItem[] {
+  private async evaluateExploreScript(raw: string, source: BookSource): Promise<ExploreUrlItem[]> {
     const code = raw.replace(/^\s*@?js:\s*/, '');
+    const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.EXPLORE,
+      `${source.jsLib || ''}\n${code}`);
+    if (decision.runtime === 'arkweb' && BookSourceStageWebRuntime.get().isAvailable()) {
+      const request = new StageWebRuntimeRequest();
+      request.source = source;
+      request.code = code;
+      request.baseUrl = source.bookSourceUrl;
+      request.variables = { page: '1', pageIndex: '1' };
+      try {
+        const runtimeResult = await BookSourceStageWebRuntime.get().execute(request);
+        const parsed = JSON.parse(runtimeResult.value || '[]') as ExploreUrlItem[];
+        if (Array.isArray(parsed)) return parsed;
+      } catch (error) {
+        console.warn('[ExploreCoordinator] stage runtime menu failed, fallback legacy:', source.bookSourceName, error);
+      }
+    }
     const env = new ScriptEngineContext();
     env.baseUrl = source.bookSourceUrl;
     this.seedSourceVariables(env.ctx, source);
@@ -367,7 +388,24 @@ export class ExploreCoordinator {
       value.includes('/login');
   }
 
-  private buildUrl(source: BookSource, url: string, page: number): string {
+  private async buildUrl(source: BookSource, url: string, page: number): Promise<string> {
+    const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.URL,
+      `${source.jsLib || ''}\n${url || ''}`);
+    if (decision.runtime === 'arkweb' && BookSourceStageWebRuntime.get().isAvailable() && url.includes('{{')) {
+      const request = new StageWebRuntimeRequest();
+      request.source = source;
+      request.baseUrl = source.bookSourceUrl;
+      request.variables = { page: String(page), pageIndex: String(page) };
+      const template = JSON.stringify(url || '');
+      request.code = `const __exploreTemplate=${template};result=__exploreTemplate.replace(/\\{\\{([\\s\\S]*?)\\}\\}/g,` +
+        `function(_,expr){try{return String(eval(expr));}catch(e){return '';}});result;`;
+      try {
+        const result = await BookSourceStageWebRuntime.get().execute(request);
+        if (result.value) return result.value;
+      } catch (error) {
+        console.warn('[ExploreCoordinator] stage runtime URL failed, fallback legacy:', source.bookSourceName, error);
+      }
+    }
     if (/^\s*@?js:/i.test(url || '')) {
       const scripted = BookSourceScriptRunner.evaluateUrl(source, url, '', String(page));
       if (scripted.handled && scripted.value) {

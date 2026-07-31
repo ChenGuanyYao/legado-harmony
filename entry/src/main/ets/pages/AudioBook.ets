@@ -77,6 +77,8 @@ struct AudioBookPage {
   @State speed: number = 1;
   @State statusText: string = '正在加载听书信息...';
   @State showChapterList: boolean = false;
+  @State showVoiceDialog: boolean = false;
+  @State voiceCodeInput: string = '';
   @State sleepMinutes: number = 0;
   @State sleepRemainingSeconds: number = 0;
   private bookUrl: string = '';
@@ -167,6 +169,16 @@ struct AudioBookPage {
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
+        Text('音色')
+          .fontSize(15)
+          .fontColor(this.accentColor())
+          .width(56)
+          .height(48)
+          .textAlign(TextAlign.Center)
+          .onClick(() => {
+            this.voiceCodeInput = this.book?.getVariable('custom') || '6001';
+            this.showVoiceDialog = true;
+          })
         Text('目录')
           .fontSize(15)
           .fontColor(this.accentColor())
@@ -187,11 +199,67 @@ struct AudioBookPage {
       if (this.showChapterList) {
         this.chapterListOverlay()
       }
+      if (this.showVoiceDialog) {
+        this.voiceCodeDialog()
+      }
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  voiceCodeDialog() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#80000000')
+        .onClick(() => {
+          this.showVoiceDialog = false;
+        })
+      Column({ space: 14 }) {
+        Text('听书音色代码')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+        Text('填写书源详情中列出的数字音色代码，例如 6001')
+          .fontSize(13)
+          .fontColor(this.subTextColor())
+        TextInput({ text: this.voiceCodeInput, placeholder: '6001' })
+          .type(InputType.Number)
+          .height(44)
+          .width('100%')
+          .backgroundColor(this.inputColor())
+          .fontColor(this.primaryTextColor())
+          .onChange((value: string) => {
+            this.voiceCodeInput = value;
+          })
+        Row({ space: 10 }) {
+          Button('取消')
+            .layoutWeight(1)
+            .backgroundColor(this.inputColor())
+            .fontColor(this.primaryTextColor())
+            .onClick(() => {
+              this.showVoiceDialog = false;
+            })
+          Button('保存并重新加载')
+            .layoutWeight(1)
+            .backgroundColor(this.accentColor())
+            .fontColor('#FFFFFF')
+            .onClick(() => this.saveVoiceCode())
+        }
+        .width('100%')
+      }
+      .width('86%')
+      .padding(20)
+      .borderRadius(16)
+      .backgroundColor(this.cardColor())
+    }
+    .width('100%')
+    .height('100%')
+    .zIndex(30)
   }
 
   @Builder
@@ -480,6 +548,18 @@ struct AudioBookPage {
       this.statusText = `打开听书失败：${this.errorMessage(error)}`;
       console.error('打开听书失败:', error);
     }
+  }
+
+  async saveVoiceCode(): Promise<void> {
+    const book = this.book;
+    if (!book) return;
+    const value = (this.voiceCodeInput || '').trim() || '6001';
+    book.putVariable('custom', value);
+    this.book = book;
+    await AppDatabase.getInstance().updateBook(book, false);
+    this.showVoiceDialog = false;
+    this.statusText = `正在切换音色 ${value}...`;
+    await this.playCurrentChapter(0, true);
   }
 
   async playCurrentChapter(startPositionMs: number = 0, forceRefresh: boolean = false): Promise<void> {

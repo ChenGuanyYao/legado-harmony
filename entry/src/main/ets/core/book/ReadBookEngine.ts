@@ -3,6 +3,7 @@ import { appDb } from '../../model/data/AppDatabase';
 import { WebBookService } from './WebBookService';
 import { CoverUrlNormalizer } from '../../utils/CoverUrlNormalizer';
 import { LocalChapterContentLoader } from './LocalChapterContentLoader';
+import { ReaderActionMarker } from './ReaderActionMarker';
 
 export class ReadBookEngine {
   private static inst: ReadBookEngine | null = null;
@@ -260,7 +261,7 @@ export class ReadBookEngine {
 
   private isInvalidChapterContent(text: string): boolean {
     if (!text) return false;
-    return text.includes('免登录访问次数已达上限') || text.includes('继续阅读请登录') ||
+    return ReaderActionMarker.hasLegacy(text) || text.includes('免登录访问次数已达上限') || text.includes('继续阅读请登录') ||
       text.includes('请登录后刷新') || text.includes('今日免登录访问次数') ||
       text.includes('当前书源需要登录') || text.includes('该书源需要先完成网页验证') ||
       text.includes('登录信息已失效') || text.includes('账号信息异常') ||

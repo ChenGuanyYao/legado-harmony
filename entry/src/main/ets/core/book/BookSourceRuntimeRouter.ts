@@ -21,6 +21,7 @@ export class SourceRuntimeCapabilityReport {
   usesDynamicEval: boolean = false;
   usesUnmanagedNetwork: boolean = false;
   hasSideEffects: boolean = false;
+  requiresFullJs: boolean = false;
 
   fullySupported(): boolean {
     return this.missingMethods.length === 0 && !this.usesUnmanagedNetwork;
@@ -53,7 +54,7 @@ export class BookSourceRuntimeRouter {
     'htmlEncode', 'htmlDecode',
     'androidId', 'deviceID', 'randomUUID', 'getCookie', 'lang', 'log', 'logType',
     'getWebViewUA', 'timeFormat', 'timeFormatUTC', 'strToBytes', 'bytesToStr', 'evalJS',
-    'createSymmetricCrypto', 'reLoginView', 'refreshExplore', 'searchBook', 'upLoginData'
+    'createSymmetricCrypto', 'reLoginView', 'refreshExplore', 'searchBook', 'upLoginData', 'webView'
   ];
 
   private static readonly EMULATED_JAVA_METHODS: string[] = [
@@ -71,12 +72,12 @@ export class BookSourceRuntimeRouter {
   ];
 
   private static readonly COOKIE_METHODS: string[] = [
-    'getCookie', 'getKey', 'setCookie', 'removeCookie'
+    'getCookie', 'getKey', 'setCookie', 'replaceCookie', 'removeCookie'
   ];
 
   private static readonly SIDE_EFFECT_METHODS: string[] = [
     'ajax', 'connect', 'get', 'post', 'head', 'put', 'setVariable', 'putLoginHeader',
-    'removeLoginHeader', 'putLoginInfo', 'removeLoginInfo', 'setCookie', 'removeCookie',
+    'removeLoginHeader', 'putLoginInfo', 'removeLoginInfo', 'setCookie', 'replaceCookie', 'removeCookie',
     'startBrowser', 'startBrowserAwait',
     'open', 'openUrl', 'showBrowser', 'showReadingBrowser'
   ];
@@ -95,8 +96,13 @@ export class BookSourceRuntimeRouter {
         '登录动作由已启用的ArkWeb兼容层执行' : '保持现有ArkWeb登录路径并报告缺少的桥接能力';
       return decision;
     }
+    if (decision.capabilities.requiresFullJs) {
+      decision.runtime = 'arkweb';
+      decision.reason = '规则使用完整JavaScript语义，路由到分阶段ArkWeb兼容层';
+      return decision;
+    }
     decision.runtime = 'legacy';
-    decision.reason = '阅读阶段保持现有规则引擎，等待该阶段影子执行验证通过';
+    decision.reason = '规则可由现有轻量规则引擎执行';
     return decision;
   }
 
@@ -111,7 +117,11 @@ export class BookSourceRuntimeRouter {
     report.needsDom = /\b(?:document|window|location|navigator)\b|querySelector|createElement/.test(executable);
     report.usesPackages = /\b(?:Packages|JavaImporter|JavaAdapter)\b/.test(executable);
     report.usesDynamicEval = /\b(?:eval|Function)\s*\(/.test(executable);
-    report.usesUnmanagedNetwork = /\b(?:fetch|XMLHttpRequest|WebSocket)\s*\(?/.test(executable);
+    // Require the complete browser API token. Prefixes such as fetchTabCount() are ordinary
+    // source helper functions and must not be classified as unmanaged browser networking.
+    report.usesUnmanagedNetwork = /\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b/.test(executable);
+    report.requiresFullJs = /=>|\bnew\s+(?:Set|Map)\s*\(|\.(?:map|find|filter|reduce|forEach)\s*\(|`[^`]*\$\{|\btry\s*\{|\b(?:const|let|var)\s*\{/.test(executable) ||
+      executable.length > 24 * 1024;
     for (const method of report.requiredJavaMethods) {
       if (this.EMULATED_JAVA_METHODS.includes(method)) {
         this.pushUnique(report.emulatedMethods, `java.${method}`);

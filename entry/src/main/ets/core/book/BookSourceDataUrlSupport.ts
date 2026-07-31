@@ -8,6 +8,7 @@ import { CoverUrlNormalizer } from '../../utils/CoverUrlNormalizer';
 import { util } from '@kit.ArkTS';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { BookTypeSupport } from './BookTypeSupport';
+import { BookSourceInteractionPostProcessor } from './BookSourceInteractionPostProcessor';
 
 const SHUSHAN_REQUEST_TIMEOUT_MS = 25000;
 
@@ -272,12 +273,19 @@ export class BookSourceDataUrlSupport {
       return await BookSourceDataUrlSupport.getMyBxContent(http, source, book, chapter, payload);
     }
     const info = BookSourceDataUrlSupport.getChapterInfo(chapter, source);
-    const root = await EncodedSourceUrl.requestJsonForDataUrl(http, chapter.url, info['host']);
+    const root = await EncodedSourceUrl.requestContentJsonForDataUrl(http, chapter.url, info['host'],
+      BookSourceInteractionPostProcessor.shouldRequestParagraphComments(source, chapter),
+      BookSourceInteractionPostProcessor.shouldRequestGodComments(source, chapter));
     if (!root) return '';
     const content = BookSourceDataUrlSupport.readContent(root);
     if (BookSourceDataUrlSupport.needsLogin(root, content)) {
       VerificationSupport.requestVerification(BookSourceDataUrlSupport.loginUrlForContent(info), '登录', source);
       return '';
+    }
+    if ((BookSourceInteractionPostProcessor.shouldRequestParagraphComments(source, chapter) ||
+      BookSourceInteractionPostProcessor.shouldRequestGodComments(source, chapter)) &&
+      /<(?:comment|img)\b[^>]*\bident\s*=/i.test(content)) {
+      return content;
     }
     return BookSourceDataUrlSupport.cleanContentText(content);
   }
@@ -360,13 +368,18 @@ export class BookSourceDataUrlSupport {
       if (!title || EncodedSourceUrl.str(rec['isVolume']) === 'true') continue;
       const cid = EncodedSourceUrl.str(rec['cid']);
       const itemUrl = EncodedSourceUrl.str(rec['url']);
+      const itemId = BookSourceDataUrlSupport.extractQueryValue(itemUrl, 'item_id') ||
+        BookSourceDataUrlSupport.extractQueryValue(itemUrl, 'itemId') || cid;
+      const resolvedBookId = bookId || BookSourceDataUrlSupport.extractQueryValue(itemUrl, 'book_id') ||
+        BookSourceDataUrlSupport.extractQueryValue(rawUrl, 'book_id');
       const chapter = new BookChapter();
       chapter.title = BookSourceDataUrlSupport.cleanChapterTitle(title);
       chapter.url = EncodedSourceUrl.encode({
         cid: cid,
+        item_id: itemId,
         url: itemUrl,
         catalogUrl: rawUrl,
-        book_id: bookId,
+        book_id: resolvedBookId,
         source: sourceName,
         tab: EncodedSourceUrl.str(data['tab']) || 'novel',
         host: host
@@ -447,7 +460,13 @@ export class BookSourceDataUrlSupport {
       VerificationSupport.requestVerification(BookSourceDataUrlSupport.shushanLoginUrl(source, host), '书山聚合 登录', source);
       return '';
     }
-    return BookSourceDataUrlSupport.cleanContentText(decoded || content);
+    const responseData = EncodedSourceUrl.asMap(root['data']);
+    const mediaType = EncodedSourceUrl.str(root['type']) || EncodedSourceUrl.str(responseData['type']);
+    const videoUrl = EncodedSourceUrl.str(root['videoUrl']) || EncodedSourceUrl.str(root['video_url']) ||
+      EncodedSourceUrl.str(responseData['videoUrl']) || EncodedSourceUrl.str(responseData['video_url']);
+    if (mediaType) chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'shortcutMediaType', mediaType);
+    if (videoUrl) chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'shortcutVideoUrl', videoUrl);
+    return decoded || content;
   }
 
   private static async getMyBxBookInfo(http: HttpClient, source: BookSource, book: Book,
