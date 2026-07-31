@@ -267,7 +267,7 @@ export class BookSourceDataUrlSupport {
   static async getContent(http: HttpClient, source: BookSource, book: Book, chapter: BookChapter): Promise<string> {
     const payload = EncodedSourceUrl.decode(chapter.url);
     if (payload?.type === 'shushanContent') {
-      return await BookSourceDataUrlSupport.getShushanContent(http, source, chapter, payload);
+      return await BookSourceDataUrlSupport.getShushanContent(http, source, book, chapter, payload);
     }
     if (payload?.type === 'mybxc') {
       return await BookSourceDataUrlSupport.getMyBxContent(http, source, book, chapter, payload);
@@ -392,8 +392,8 @@ export class BookSourceDataUrlSupport {
     return chapters;
   }
 
-  private static async getShushanContent(http: HttpClient, source: BookSource, chapter: BookChapter,
-    payload: EncodedSourcePayload): Promise<string> {
+  private static async getShushanContent(http: HttpClient, source: BookSource, book: Book,
+    chapter: BookChapter, payload: EncodedSourcePayload): Promise<string> {
     const data = payload.data;
     const host = EncodedSourceUrl.str(data['host']) || BookSourceDataUrlSupport.shushanHost(source);
     const sourceName = EncodedSourceUrl.str(data['source']) || EncodedSourceUrl.str(data['sources']);
@@ -417,7 +417,8 @@ export class BookSourceDataUrlSupport {
         if (BookSourceDataUrlSupport.isShushanFanqieListenSource(sourceName)) {
           const toneId = EncodedSourceUrl.str(data['tone_id']) ||
             BookSourceDataUrlSupport.extractQueryValue(rawUrl, 'tone_id') ||
-            BookSourceDataUrlSupport.extractQueryValue(catalogUrl, 'tone_id') || '1';
+            BookSourceDataUrlSupport.extractQueryValue(catalogUrl, 'tone_id') ||
+            book.getVariable('custom') || '6001';
           path += `&tone_id=${encodeURIComponent(toneId)}`;
         }
       } else if (catalogUrl) {
@@ -438,11 +439,16 @@ export class BookSourceDataUrlSupport {
     const secretKey = BookSourceDataUrlSupport.shushanSecretKey(source);
     if (!secretKey) {
       VerificationSupport.requestVerification(BookSourceDataUrlSupport.shushanLoginUrl(source, host), '书山聚合 登录', source);
-      return '';
+      throw new Error('书山聚合登录信息缺失，请重新登录后再试');
     }
     const root = await BookSourceDataUrlSupport.requestShushanJson(http, host,
       `${path}${path.includes('?') ? '&' : '?'}key=${encodeURIComponent(secretKey)}&version=11`);
-    if (!root) return '';
+    if (!root) {
+      if (BookSourceDataUrlSupport.isShushanFanqieListenSource(sourceName)) {
+        throw new Error('书山聚合音频接口请求失败，请稍后重试');
+      }
+      return '';
+    }
     const content = EncodedSourceUrl.str(root['content']) || EncodedSourceUrl.str(EncodedSourceUrl.asMap(root['data'])['content']) ||
       EncodedSourceUrl.str(root['data']);
     if (BookSourceDataUrlSupport.needsLogin(root, content) || BookSourceDataUrlSupport.needsLogin(root, JSON.stringify(root))) {
@@ -450,15 +456,11 @@ export class BookSourceDataUrlSupport {
       if (BookSourceDataUrlSupport.isShushanFanqieSource(sourceName) &&
         BookSourceDataUrlSupport.needsFanqieWebLogin(loginText)) {
         VerificationSupport.requestVerification(BookSourceDataUrlSupport.shushanFanqieWebLoginUrl(), '番茄网页登录', source);
+        throw new Error('番茄登录已过期，请完成网页验证后重试');
       } else {
         VerificationSupport.requestVerification(BookSourceDataUrlSupport.shushanLoginUrl(source, host), '书山聚合 登录', source);
+        throw new Error('书山聚合登录已过期，请重新登录后再试');
       }
-      return '';
-    }
-    const decoded = BookSourceDataUrlSupport.decodeShushanContent(content);
-    if (!decoded && BookSourceDataUrlSupport.looksLikeBase64Text(content)) {
-      VerificationSupport.requestVerification(BookSourceDataUrlSupport.shushanLoginUrl(source, host), '书山聚合 登录', source);
-      return '';
     }
     const responseData = EncodedSourceUrl.asMap(root['data']);
     const mediaType = EncodedSourceUrl.str(root['type']) || EncodedSourceUrl.str(responseData['type']);
@@ -466,6 +468,18 @@ export class BookSourceDataUrlSupport {
       EncodedSourceUrl.str(responseData['videoUrl']) || EncodedSourceUrl.str(responseData['video_url']);
     if (mediaType) chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'shortcutMediaType', mediaType);
     if (videoUrl) chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'shortcutVideoUrl', videoUrl);
+    if (BookSourceDataUrlSupport.isShushanFanqieListenSource(sourceName)) {
+      // 音频响应的字段结构会随后端版本变化。保留完整 JSON，交给 AudioBook 的
+      // 统一媒体解析器处理 audio_url/play_url/url_list 等字段，避免在书山层复制播放逻辑。
+      const decodedAudioContent = BookSourceDataUrlSupport.decodeShushanContent(content);
+      if (decodedAudioContent) root['decodedContent'] = decodedAudioContent;
+      return JSON.stringify(root);
+    }
+    const decoded = BookSourceDataUrlSupport.decodeShushanContent(content);
+    if (!decoded && BookSourceDataUrlSupport.looksLikeBase64Text(content)) {
+      VerificationSupport.requestVerification(BookSourceDataUrlSupport.shushanLoginUrl(source, host), '书山聚合 登录', source);
+      return '';
+    }
     return decoded || content;
   }
 

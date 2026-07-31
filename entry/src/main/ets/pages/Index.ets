@@ -161,13 +161,16 @@ struct Index {
   @StorageLink('globalTtsCover') globalTtsCover: ResourceStr = '';
   @StorageLink('globalTtsCoverFrame') globalTtsCoverFrame: ResourceStr = '';
   @StorageLink('globalTtsContent') globalTtsContent: string = '';
+  @StorageLink('globalTtsTextBefore') globalTtsTextBefore: string = '';
+  @StorageLink('globalTtsCurrentText') globalTtsCurrentText: string = '';
+  @StorageLink('globalTtsTextAfter') globalTtsTextAfter: string = '';
   @StorageLink('globalTtsChapterProgress') globalTtsChapterProgress: string = '';
   @StorageLink('globalTtsSpeed') globalTtsSpeed: number = 1;
   @StorageLink('globalTtsTimerMinutes') globalTtsTimerMinutes: number = 0;
   @StorageLink('globalTtsTimerRemainingSeconds') globalTtsTimerRemainingSeconds: number = 0;
   @StorageLink('globalTtsCanPrevious') globalTtsCanPrevious: boolean = false;
   @StorageLink('globalTtsCanNext') globalTtsCanNext: boolean = false;
-  @StorageLink('globalTtsRevision') globalTtsRevision: number = 0;
+  @StorageLink('globalTtsRevision') @Watch('onGlobalTtsRevisionChanged') globalTtsRevision: number = 0;
   @State showGlobalTtsPanel: boolean = false;
   @State globalTtsOptionsPanel: number = 0;
   @State globalTtsViewportWidth: number = 360;
@@ -176,6 +179,7 @@ struct Index {
   @StorageLink('globalTtsCapsulePositionY') globalTtsCapsulePositionY: number = -1;
   private globalTtsDragOriginX: number = 0;
   private globalTtsDragOriginY: number = 0;
+  private globalTtsTextScroller: ListScroller = new ListScroller();
 
   aboutToAppear() {
     this.shortcutRoutingActive = true;
@@ -246,6 +250,10 @@ struct Index {
     }
   }
 
+  onGlobalTtsRevisionChanged(): void {
+    this.scrollGlobalTtsTextToCurrent();
+  }
+
   onBackPress(): boolean {
     if (this.showGlobalTtsPanel) {
       this.closeGlobalTtsPanel();
@@ -269,6 +277,16 @@ struct Index {
     animateTo({ duration: 280, curve: Curve.Friction }, () => {
       this.showGlobalTtsPanel = true;
     });
+    this.scrollGlobalTtsTextToCurrent(false);
+  }
+
+  scrollGlobalTtsTextToCurrent(smooth: boolean = true): void {
+    setTimeout(() => {
+      if (!this.showGlobalTtsPanel) return;
+      try {
+        this.globalTtsTextScroller.scrollToIndex(1, smooth, ScrollAlign.CENTER);
+      } catch (_) {}
+    }, 0);
   }
 
   closeGlobalTtsPanel(): void {
@@ -476,12 +494,32 @@ struct Index {
 
       Column({ space: 8 }) {
         this.globalTtsPanelCover()
-        Scroll() {
-          Text(this.globalTtsContent || '正在准备当前朗读内容…')
-            .fontSize(15)
-            .lineHeight(25)
-            .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
-            .width('100%')
+        List({ scroller: this.globalTtsTextScroller, space: 8 }) {
+          ListItem() {
+            Text(this.globalTtsTextBefore)
+              .fontSize(15)
+              .lineHeight(25)
+              .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
+              .width('100%')
+          }
+          ListItem() {
+            Text(this.globalTtsCurrentText || '正在准备当前朗读内容…')
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .lineHeight(26)
+              .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
+              .width('100%')
+              .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+              .borderRadius(8)
+              .backgroundColor(this.appDarkMode ? '#24FFFFFF' : '#12000000')
+          }
+          ListItem() {
+            Text(this.globalTtsTextAfter)
+              .fontSize(15)
+              .lineHeight(25)
+              .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
+              .width('100%')
+          }
         }
         .layoutWeight(1)
         .width('100%')

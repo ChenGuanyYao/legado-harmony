@@ -45,6 +45,9 @@ export default class EntryAbility extends UIAbility {
     AppStorage.setOrCreate('pendingLocalBookImportName', '');
     AppStorage.setOrCreate('globalTtsCapsulePositionX', 16);
     AppStorage.setOrCreate('globalTtsCapsulePositionY', -1);
+    AppStorage.setOrCreate('globalTtsTextBefore', '');
+    AppStorage.setOrCreate('globalTtsCurrentText', '');
+    AppStorage.setOrCreate('globalTtsTextAfter', '');
     AccountSessionStore.initializeStorage();
     CloudSyncSettingsStore.initializeStorage();
     CloudSyncChangeTracker.initializeStorage();

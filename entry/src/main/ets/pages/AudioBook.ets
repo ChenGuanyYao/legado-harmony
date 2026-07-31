@@ -575,7 +575,7 @@ struct AudioBookPage {
       const content = forceRefresh ? await engine.reloadContent(this.chapterIndex) : await engine.loadContent(this.chapterIndex);
       if (serial !== this.loadingSerial) return;
       const url = this.resolveAudioUrl(content, chapter.url || book.bookUrl || this.source?.bookSourceUrl || '');
-      if (!url) throw new Error('正文规则没有返回有效音频地址');
+      if (!url) throw new Error(this.invalidAudioAddressMessage(content));
       const headers = this.audioHeaders(url, this.source);
       await this.playback.play(book.bookUrl, this.chapterIndex, url, headers, startPositionMs, this.speed);
       if (serial !== this.loadingSerial) return;
@@ -787,8 +787,10 @@ struct AudioBookPage {
   }
 
   audioUrlFromObject(value: Record<string, Object>, baseUrl: string): string {
-    const keys = ['audio_url', 'audioUrl', 'play_url', 'playUrl', 'playurl', 'listenUrl', 'downloadUrl',
-      'streamUrl', 'mediaUrl', 'src', 'file', 'path', 'url', 'content', 'data', 'audio', 'media'];
+    const keys = ['audio_url', 'audioUrl', 'play_url', 'playUrl', 'playurl', 'main_url', 'mainUrl',
+      'listenUrl', 'downloadUrl', 'streamUrl', 'mediaUrl', 'backup_url', 'backupUrl', 'src', 'file', 'path',
+      'url', 'url_list', 'urlList', 'backup_urls', 'backupUrls', 'audio_list', 'audioList', 'play_info',
+      'playInfo', 'decodedContent', 'content', 'data', 'result', 'payload', 'audio', 'media'];
     for (const key of keys) {
       const item = value[key];
       if (typeof item === 'string') {
@@ -811,6 +813,24 @@ struct AudioBookPage {
       }
     }
     return '';
+  }
+
+  invalidAudioAddressMessage(raw: string): string {
+    try {
+      const root = JSON.parse(raw || '{}') as Record<string, Object>;
+      let data: Record<string, Object> = root;
+      if (root['data'] && typeof root['data'] === 'object' && !Array.isArray(root['data'])) {
+        data = root['data'] as Record<string, Object>;
+      }
+      const message = String(root['error'] || root['message'] || root['msg'] ||
+        data['error'] || data['message'] || data['msg'] || '').trim();
+      if (message) return `音频接口未返回可播放地址：${message}`;
+    } catch (_) {}
+    if ((this.book?.originName || '').includes('番茄听书') ||
+      (this.book?.originName || '').includes('番茄畅听')) {
+      return '书山聚合未返回可播放音频，请检查登录状态或更换音色后重试';
+    }
+    return '正文规则没有返回有效音频地址';
   }
 
   decodeAudioRuleValue(raw: string): string {

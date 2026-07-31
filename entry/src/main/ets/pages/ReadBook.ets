@@ -4119,28 +4119,58 @@ struct ReadBookPage {
     if (this.ttsHighlightStart < 0 || this.ttsHighlightEnd <= this.ttsHighlightStart || !this.ttsDisplayText) {
       return '';
     }
-    return this.ttsDisplayText.substring(this.ttsHighlightStart, this.ttsHighlightEnd).trim();
+    const source = this.ttsPanelOffsetSource();
+    return this.cleanTtsPanelSlice(source.substring(this.ttsHighlightStart, this.ttsHighlightEnd));
   }
 
   ttsQuickSentencePreview(): string {
-    const source = (this.ttsDisplayText || this.currentPageText || '').trim();
+    const source = this.cleanTtsPanelSlice(this.ttsPanelOffsetSource());
     if (source) {
       return source;
     }
     const sentence = this.ttsCurrentSentence();
-    return sentence || this.content.substring(0, 3000) || '正在准备当前页的朗读内容…';
+    const fallback = this.cleanTtsPanelSlice(this.ttsOffsetSanitizedText(this.content)).substring(0, 3000);
+    return sentence || fallback || '正在准备当前页的朗读内容…';
   }
 
   ttsPanelTextBefore(): string {
-    const source = this.ttsDisplayText || this.currentPageText || '';
+    const source = this.ttsPanelOffsetSource();
     if (this.ttsHighlightStart <= 0) return '';
-    return source.substring(Math.max(0, this.ttsHighlightStart - 600), this.ttsHighlightStart).trim();
+    return this.cleanTtsPanelSlice(
+      source.substring(Math.max(0, this.ttsHighlightStart - 600), this.ttsHighlightStart));
   }
 
   ttsPanelTextAfter(): string {
-    const source = this.ttsDisplayText || this.currentPageText || '';
+    const source = this.ttsPanelOffsetSource();
     const start = this.ttsHighlightEnd > this.ttsHighlightStart ? this.ttsHighlightEnd : 0;
-    return source.substring(start, Math.min(source.length, start + 900)).trim();
+    return this.cleanTtsPanelSlice(source.substring(start, Math.min(source.length, start + 900)));
+  }
+
+  ttsPanelOffsetSource(): string {
+    return this.ttsOffsetSanitizedText(this.ttsDisplayText || this.currentPageText || '');
+  }
+
+  ttsOffsetSanitizedText(text: string): string {
+    let source = ReaderActionMarker.strip(LocalBookService.stripEpubImageMarkers(text || '', true), true);
+    for (const prefix of [ReaderActionMarker.PREFIX, ReaderActionMarker.LEGACY_PREFIX,
+      ReaderActionMarker.ORIGINAL_PREFIX]) {
+      let start = source.indexOf(prefix);
+      while (start >= 0) {
+        const lineEnd = source.indexOf('\n', start);
+        const end = lineEnd >= 0 ? lineEnd : source.length;
+        source = `${source.substring(0, start)}${' '.repeat(end - start)}${source.substring(end)}`;
+        start = source.indexOf(prefix, end);
+      }
+    }
+    return source;
+  }
+
+  cleanTtsPanelSlice(text: string): string {
+    return (text || '')
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/[ \t]*\n[ \t]*/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   ttsPanelFollowingText(): string {
@@ -9593,6 +9623,9 @@ struct ReadBookPage {
     ReaderTtsFloatingSession.updateDetails(
       this.ttsFloatingSessionOwnerId,
       this.ttsPanelFollowingText() || this.ttsQuickSentencePreview(),
+      this.ttsPanelTextBefore(),
+      this.ttsCurrentSentence(),
+      this.ttsPanelTextAfter(),
       this.getTtsFloatingCover(),
       this.shouldUseTtsThemeBookCover() ? this.activeTtsThemeShelfFrame() : '',
       `${this.currentChapterIndex + 1}/${Math.max(1, this.chapters.length)}章`,

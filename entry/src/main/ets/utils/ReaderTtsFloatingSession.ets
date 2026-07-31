@@ -45,7 +45,8 @@ export class ReaderTtsFloatingSession {
     ReaderTtsFloatingSession.timerAction = timerAction;
   }
 
-  static updateDetails(ownerId: string, content: string, cover: ResourceStr, coverFrame: ResourceStr,
+  static updateDetails(ownerId: string, content: string, textBefore: string, currentText: string,
+    textAfter: string, cover: ResourceStr, coverFrame: ResourceStr,
     chapterProgress: string, speed: number, timerMinutes: number, timerRemainingSeconds: number,
     canPrevious: boolean, canNext: boolean): void {
     if (!ReaderTtsFloatingSession.isOwner(ownerId)) {
@@ -54,6 +55,9 @@ export class ReaderTtsFloatingSession {
     AppStorage.setOrCreate<ResourceStr>('globalTtsCover', cover);
     AppStorage.setOrCreate<ResourceStr>('globalTtsCoverFrame', coverFrame);
     AppStorage.setOrCreate('globalTtsContent', content);
+    AppStorage.setOrCreate('globalTtsTextBefore', textBefore);
+    AppStorage.setOrCreate('globalTtsCurrentText', currentText);
+    AppStorage.setOrCreate('globalTtsTextAfter', textAfter);
     AppStorage.setOrCreate('globalTtsChapterProgress', chapterProgress);
     AppStorage.setOrCreate('globalTtsSpeed', speed);
     AppStorage.setOrCreate('globalTtsTimerMinutes', timerMinutes);
@@ -155,6 +159,9 @@ export class ReaderTtsFloatingSession {
     AppStorage.setOrCreate<ResourceStr>('globalTtsCover', '');
     AppStorage.setOrCreate<ResourceStr>('globalTtsCoverFrame', '');
     AppStorage.setOrCreate('globalTtsContent', '');
+    AppStorage.setOrCreate('globalTtsTextBefore', '');
+    AppStorage.setOrCreate('globalTtsCurrentText', '');
+    AppStorage.setOrCreate('globalTtsTextAfter', '');
     AppStorage.setOrCreate('globalTtsChapterProgress', '');
     AppStorage.setOrCreate('globalTtsSpeed', 1);
     AppStorage.setOrCreate('globalTtsTimerMinutes', 0);
