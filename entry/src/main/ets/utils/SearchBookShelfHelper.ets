@@ -23,6 +23,10 @@ export class SearchBookShelfChange {
 }
 
 export class SearchBookShelfHelper {
+  private static shelfLookupVersion: number = -1;
+  private static shelfLookupLoaded: boolean = false;
+  private static shelfLookup: Map<string, Book[]> = new Map();
+
   static keyOf(book: SearchBook): string {
     return BookIdentity.keyOfSearchBook(book);
   }
@@ -69,7 +73,9 @@ export class SearchBookShelfHelper {
   static async syncShelfKeys(context: Context, books: SearchBook[]): Promise<string[]> {
     const db = AppDatabase.getInstance();
     await db.initWithContext(context);
-    const shelfBooks = SearchExplorePendingBook.filterShelfBooks(await db.getAllBooks());
+    const allBooks = await db.getAllBooks();
+    SearchBookShelfHelper.cacheShelfBooks(allBooks);
+    const shelfBooks = SearchExplorePendingBook.filterShelfBooks(allBooks);
     const shelfKeySet = new Set<string>();
     for (const book of shelfBooks) {
       const key = BookIdentity.keyOfBook(book);
@@ -108,7 +114,7 @@ export class SearchBookShelfHelper {
       existing.wordCount = BookFieldSanitizer.prefer(searchBook.wordCount, existing.wordCount);
       SearchExplorePendingBook.clearPendingAddToShelf(existing);
       await db.updateBook(existing);
-      AppStorage.setOrCreate('shelfUpdateTime', Date.now());
+      SearchBookShelfHelper.markShelfChanged();
       promptAction.showToast({ message: '已在书架' });
       return new SearchBookShelfChange(searchKey, searchKey);
     }
@@ -145,7 +151,7 @@ export class SearchBookShelfHelper {
         resolvedExisting.wordCount = BookFieldSanitizer.prefer(book.wordCount, resolvedExisting.wordCount);
         SearchExplorePendingBook.clearPendingAddToShelf(resolvedExisting);
         await db.updateBook(resolvedExisting);
-        AppStorage.setOrCreate('shelfUpdateTime', Date.now());
+        SearchBookShelfHelper.markShelfChanged();
         promptAction.showToast({ message: '已在书架' });
         return new SearchBookShelfChange(searchKey, resolvedKey);
       }
@@ -153,7 +159,7 @@ export class SearchBookShelfHelper {
 
     await db.insertBook(book);
     const shelfKey = resolvedKey || searchKey;
-    AppStorage.setOrCreate('shelfUpdateTime', Date.now());
+    SearchBookShelfHelper.markShelfChanged();
     promptAction.showToast({ message: '已加入书架' });
     return new SearchBookShelfChange(searchKey, shelfKey);
   }
@@ -172,7 +178,7 @@ export class SearchBookShelfHelper {
       SearchBookShelfHelper.deleteBookCoverCache(context, existing);
     }
     await db.deleteBook(existing?.bookUrl || searchBook.bookUrl);
-    AppStorage.setOrCreate('shelfUpdateTime', Date.now());
+    SearchBookShelfHelper.markShelfChanged();
     promptAction.showToast({ message: '已移出书架' });
     return new SearchBookShelfChange(key, key);
   }
@@ -200,19 +206,47 @@ export class SearchBookShelfHelper {
     return book;
   }
 
-  private static async findShelfBookByKey(bookKey: string, includePending: boolean = false): Promise<Book | null> {
+  static async findShelfBookByKey(bookKey: string, includePending: boolean = false): Promise<Book | null> {
     if (!bookKey) {
       return null;
     }
-    const db = AppDatabase.getInstance();
-    const books = await db.getAllBooks();
+    const lookup = await SearchBookShelfHelper.getShelfLookup();
+    const books = lookup.get(bookKey) || [];
     for (const book of books) {
-      if (BookIdentity.keyOfBook(book) === bookKey &&
-        (includePending || !SearchExplorePendingBook.isPendingAddToShelf(book))) {
+      if (includePending || !SearchExplorePendingBook.isPendingAddToShelf(book)) {
         return book;
       }
     }
     return null;
+  }
+
+  private static async getShelfLookup(): Promise<Map<string, Book[]>> {
+    const version = AppStorage.get<number>('shelfUpdateTime') || 0;
+    if (SearchBookShelfHelper.shelfLookupLoaded && version === SearchBookShelfHelper.shelfLookupVersion) {
+      return SearchBookShelfHelper.shelfLookup;
+    }
+    const books = await AppDatabase.getInstance().getAllBooks();
+    SearchBookShelfHelper.cacheShelfBooks(books, version);
+    return SearchBookShelfHelper.shelfLookup;
+  }
+
+  private static cacheShelfBooks(books: Book[], version: number = AppStorage.get<number>('shelfUpdateTime') || 0): void {
+    const lookup: Map<string, Book[]> = new Map();
+    for (const book of books) {
+      const key = BookIdentity.keyOfBook(book);
+      if (!key) continue;
+      const matches = lookup.get(key) || [];
+      matches.push(book);
+      lookup.set(key, matches);
+    }
+    SearchBookShelfHelper.shelfLookup = lookup;
+    SearchBookShelfHelper.shelfLookupVersion = version;
+    SearchBookShelfHelper.shelfLookupLoaded = true;
+  }
+
+  private static markShelfChanged(): void {
+    SearchBookShelfHelper.shelfLookupLoaded = false;
+    AppStorage.setOrCreate('shelfUpdateTime', Date.now());
   }
 
   private static deleteBookCoverCache(context: Context, book: Book): void {

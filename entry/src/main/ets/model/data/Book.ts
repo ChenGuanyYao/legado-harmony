@@ -436,56 +436,6 @@ export class SearchKeyword {
   lastUseTime: number = 0;
 }
 
-export class Cookie {
-  url: string = '';
-  cookie: string = '';
-}
-
-export class RssSource {
-  sourceUrl: string = '';
-  sourceName: string = '';
-  sourceGroup: string = '';
-  sourceComment: string = '';
-  sourceIcon: string = '';
-  enabled: boolean = true;
-  customOrder: number = 0;
-  lastUpdateTime: number = 0;
-}
-
-export class RssArticle {
-  origin: string = '';
-  title: string = '';
-  content: string = '';
-  description: string = '';
-  link: string = '';
-  image: string = '';
-  pubDate: string = '';
-  author: string = '';
-  categories: string = '';
-  read: boolean = false;
-  star: boolean = false;
-}
-
-export class RssStar {
-  origin: string = '';
-  title: string = '';
-  content: string = '';
-  description: string = '';
-  link: string = '';
-  image: string = '';
-  pubDate: string = '';
-  author: string = '';
-  categories: string = '';
-  starTime: number = 0;
-}
-
-export class ReadRecord {
-  bookName: string = '';
-  readTime: number = 0;
-  dailyReadTime: number = 0;
-  lastReadTime: number = 0;
-}
-
 export class HttpTTS {
   id: number = 0;
   name: string = '';
@@ -502,52 +452,4 @@ export class HttpTTS {
   customOrder: number = 0;
   lastUpdateTime: number = 0;
   enabled: boolean = true;
-}
-
-export class Cache {
-  bookUrl: string = '';
-  chapterIndex: number = 0;
-  chapterName: string = '';
-  cacheDate: number = 0;
-}
-
-export class RuleSub {
-  id: number = 0;
-  name: string = '';
-  url: string = '';
-  type: number = 0;
-  autoRefresh: boolean = false;
-  customOrder: number = 0;
-  lastUpdateTime: number = 0;
-}
-
-export class DictRule {
-  id: number = 0;
-  name: string = '';
-  url: string = '';
-  js: string = '';
-  body: string = '';
-  formatUrl: string = '';
-  formatBody: string = '';
-  bookSourceUrl: string = '';
-  enabled: boolean = true;
-  customOrder: number = 0;
-}
-
-export class KeyboardAssist {
-  id: number = 0;
-  type: number = 0;
-  key: string = '';
-  value: string = '';
-  serialNo: number = 0;
-}
-
-export class Server {
-  id: number = 0;
-  type: number = 0;
-  name: string = '';
-  url: string = '';
-  token: string = '';
-  enabled: boolean = true;
-  customOrder: number = 0;
 }

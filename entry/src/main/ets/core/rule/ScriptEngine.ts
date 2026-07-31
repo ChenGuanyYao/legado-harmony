@@ -176,19 +176,6 @@ class ArkTsJsRunner {
     return result;
   }
 
-  private isInsideQuote(text: string, index: number): boolean {
-    let quote = '';
-    for (let i = 0; i < index; i++) {
-      const ch = text.charAt(i);
-      if (quote) {
-        if (ch === quote && text.charAt(i - 1) !== '\\') quote = '';
-      } else if (ch === '"' || ch === "'" || ch === '`') {
-        quote = ch;
-      }
-    }
-    return quote.length > 0;
-  }
-
   private collectFunctions(code: string): string {
     let text = code || '';
     let index = 0;

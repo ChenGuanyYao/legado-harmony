@@ -37,6 +37,28 @@ class AudioBookPlaybackListener implements RemoteAudioPlaybackListener {
   onPlaybackError(message: string): void { this.errorCallback(message); }
 }
 
+class AudioChapterDataSource implements IDataSource {
+  private chapters: BookChapter[] = [];
+  private listeners: DataChangeListener[] = [];
+
+  totalCount(): number { return this.chapters.length; }
+  getData(index: number): BookChapter { return this.chapters[index]; }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (!this.listeners.includes(listener)) this.listeners.push(listener);
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    const index = this.listeners.indexOf(listener);
+    if (index >= 0) this.listeners.splice(index, 1);
+  }
+
+  replace(chapters: BookChapter[]): void {
+    this.chapters = [...chapters];
+    for (const listener of this.listeners) listener.onDataReloaded();
+  }
+}
+
 @Entry
 @Component
 struct AudioBookPage {
@@ -71,6 +93,7 @@ struct AudioBookPage {
   private progressSaveTimerId: number = -1;
   private sleepTimerId: number = -1;
   private playbackRetryCount: number = 0;
+  private chapterDataSource: AudioChapterDataSource = new AudioChapterDataSource();
   private loadingSerial: number = 0;
   private audioBackgroundRunning: boolean = false;
   private audioBackgroundStarting: boolean = false;
@@ -381,7 +404,7 @@ struct AudioBookPage {
         .padding({ left: 18, right: 18 })
         .alignItems(VerticalAlign.Center)
         List() {
-          ForEach(this.chapters, (chapter: BookChapter, index: number) => {
+          LazyForEach(this.chapterDataSource, (chapter: BookChapter, index: number) => {
             ListItem() {
               Text(chapter.title)
                 .fontSize(15)
@@ -437,6 +460,7 @@ struct AudioBookPage {
         this.book.type |= BookTypeSupport.AUDIO;
       }
       this.chapters = engine.chapters;
+      this.chapterDataSource.replace(this.chapters);
       this.chapterIndex = this.clampChapterIndex(this.book.durChapterIndex);
       await db.updateBook(this.book, false);
       if (this.chapters.length === 0) {

@@ -272,10 +272,6 @@ struct ReaderFontSettingsPage {
     return ReaderRegexFontCodec.decode(settings.regexFontRulesRaw || this.readerRegexFontRulesRaw, legacy);
   }
 
-  cleanRegexRules(source: ReaderRegexFontRule[]): ReaderRegexFontRule[] {
-    return ReaderRegexFontCodec.cleanRules(source);
-  }
-
   encodeRegexRules(rules: ReaderRegexFontRule[]): string {
     return ReaderRegexFontCodec.encode(rules);
   }
@@ -552,42 +548,6 @@ struct ReaderFontSettingsPage {
     .padding({ left: 16, right: 16, top: 12, bottom: 12 })
     .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
-  fontSizeSlider(title: string, value: number, min: number, max: number, onChange: (value: number) => void) {
-    Column() {
-      Row() {
-        Text(title)
-          .fontSize(16)
-          .fontColor(this.primaryTextColor())
-          .layoutWeight(1)
-        Text(`${Math.round(value)}sp`)
-          .fontSize(14)
-          .fontColor(this.subTextColor())
-      }
-      .width('100%')
-      Row({ space: 10 }) {
-        this.fontSizeStepButton($r('sys.symbol.minus'), '减小字体', value > min, () => {
-          onChange(Math.max(min, Math.round(value) - 1));
-        })
-        Slider({ value: value, min: min, max: max, step: 1 })
-          .layoutWeight(1)
-          .selectedColor(this.accentColor())
-          .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
-          .onChange((sliderValue: number) => {
-            onChange(sliderValue);
-          })
-        this.fontSizeStepButton($r('sys.symbol.plus'), '增大字体', value !== max, () => {
-          onChange(Math.min(max, Math.round(value) + 1));
-        })
-      }
-      .width('100%')
-      .margin({ top: 8 })
-    }
-    .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-    .backgroundColor(this.cardColor())
   }
 
   @Builder
@@ -1426,40 +1386,6 @@ struct ReaderFontSettingsPage {
   }
 
   @Builder
-  compactFontSizeSlider(title: string, value: number, onChange: (value: number) => void) {
-    Column() {
-      Row() {
-        Text(title)
-          .fontSize(15)
-          .fontColor(this.primaryTextColor())
-          .layoutWeight(1)
-        Text(`${Math.round(value)}sp`)
-          .fontSize(13)
-          .fontColor(this.subTextColor())
-      }
-      .width('100%')
-      Row({ space: 10 }) {
-        this.fontSizeStepButton($r('sys.symbol.minus'), '减小字体', value > 14, () => {
-          onChange(Math.max(14, Math.round(value) - 1));
-        })
-        Slider({ value: value, min: 14, max: 50, step: 1 })
-          .layoutWeight(1)
-          .selectedColor(this.accentColor())
-          .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
-          .onChange((sliderValue: number) => {
-            onChange(sliderValue);
-          })
-        this.fontSizeStepButton($r('sys.symbol.plus'), '增大字体', value !== 50, () => {
-          onChange(Math.min(50, Math.round(value) + 1));
-        })
-      }
-      .width('100%')
-      .margin({ top: 6 })
-    }
-    .width('100%')
-  }
-
-  @Builder
   regexFontSizeSlider(index: number, refreshKey: number) {
     Column() {
       Row() {
@@ -1554,26 +1480,4 @@ struct ReaderFontSettingsPage {
     .alignItems(VerticalAlign.Center)
   }
 
-  @Builder
-  inputItem(title: string, value: string, placeholder: string, onChange: (value: string) => void) {
-    Column() {
-      Text(title)
-        .fontSize(16)
-        .fontColor(this.primaryTextColor())
-        .width('100%')
-      TextInput({ text: value, placeholder: placeholder })
-        .fontSize(14)
-        .fontColor(this.primaryTextColor())
-        .placeholderColor(this.subTextColor())
-        .backgroundColor(this.inputColor())
-        .borderRadius(8)
-        .margin({ top: 8 })
-        .onChange((inputValue: string) => {
-          onChange(inputValue);
-        })
-    }
-    .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-    .backgroundColor(this.cardColor())
-  }
 }

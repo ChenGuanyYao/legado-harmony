@@ -183,8 +183,8 @@ assert(!themeColorPage.includes("'pages/AppIconSettings'") &&
   !themeColorPage.includes("'pages/FontSettings'") &&
   !themeStore.includes('updateCustomFont') && !themeStore.includes('updateCustomDesktopIcon'),
   'Theme and appearance must remain independent from fonts and desktop icons');
-assert(themePage.includes("this.sectionTitle('自定义主题')") &&
-  themePage.includes("router.pushUrl({ url: 'pages/ThemeColorSettings' })"),
+assert(themePage.includes('this.customThemeSectionTitle()') &&
+  themePage.includes("url: 'pages/ThemeColorSettings'"),
   'Theme page does not expose the custom theme before builtin themes');
 assert(themeColorPage.includes('settings.themeId = ThemeIds.CUSTOM') &&
   themeColorPage.includes('settings.customLightAccentColor = this.lightAccentColor'),
@@ -193,14 +193,14 @@ assert(!otherSettingsPage.includes("router.pushUrl({ url: 'pages/ThemeColorSetti
   'Other settings still exposes the removed legacy theme-color entry');
 assert(themePage.includes('ReaderThemeHelper.APP_THEME_INDEX'), 'Theme selection does not enable the app reader theme');
 assert(themePage.includes('settings.fontFilePath'), 'Custom font override is not protected during theme selection');
-assert(themePage.includes('ThemeAssetRegistry.themeLogo(this.activeTheme().id)') &&
+assert(themePage.includes('ThemeAssetRegistry.themeLogo(theme.id)') &&
   !themePage.includes("Text('Aa')") &&
   !themePage.includes('颜色、阅读背景、正则气泡与悬浮底栏已统一'),
   'Current theme summary must use the theme logo without the legacy description');
 assert(runtime.includes('static accentSurfaceColor(darkMode: boolean)'),
   'Theme runtime does not expose a themed selected-surface color');
-assert(ttsSettingsPage.includes('ThemeRuntime.accentSurfaceColor(this.appDarkMode)') &&
-  ttsSettingsPage.includes(': this.inputColor()'),
+assert(ttsSettingsPage.includes('? this.accentColor() : this.inputColor()') &&
+  ttsSettingsPage.includes('.backgroundColor(this.inputColor())'),
   'TTS voice or speed controls are not connected to theme surfaces');
 assert(!readerSettingsPage.includes("this.appDarkMode ? '#24272D' : '#F0F2F5'"),
   'Reader settings still contains legacy fixed control backgrounds');
@@ -229,11 +229,11 @@ assert(reader.includes('const safeBest = Math.max(start + 1, Math.min(best, sour
 assert(reader.includes('buildReaderMeasureTextStyle(this.readerFontSize, this.getBodyReaderFontFamily())') &&
   reader.includes('fontFamily: this.getBodyReaderFontFamily()'),
   'Reader pagination measurement must use the same body font as rendering');
-assert(reader.includes('this.readerQuickTypographyStepper()') &&
-  reader.includes('quickTypographySettingOptions') &&
-  reader.includes('adjustQuickTypographySetting') &&
+assert(reader.includes('this.readerTypographySettingsPanel()') &&
+  reader.includes("this.readerTypographySlider('左边距'") &&
+  reader.includes("this.readerTypographySlider('右边距'") &&
   reader.includes('applyReaderMargin'),
-  'In-reader settings do not provide the shared typography dropdown/stepper');
+  'In-reader settings do not provide the shared typography controls');
 assert(bookModel.includes('static hasStartedReading(book: Book | null)') &&
   bookModel.includes("book.getVariable('readStarted')"),
   'Book model must provide a shared started-reading check');

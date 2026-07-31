@@ -227,9 +227,6 @@ struct ReadBookPage {
   @State showSettings: boolean = false;
   @State showTapZoneSettings: boolean = false;
   @State settingsPanelTab: number = 0;
-  @State quickTypographySettingIndex: number = 0;
-  @State showQuickTypographyValueInput: boolean = false;
-  @State quickTypographyValueDraft: string = '';
   @State loadStatus: string = '正在加载...';
   @State verificationUrl: string = '';
   @State verificationTitle: string = '网页验证';
@@ -338,6 +335,7 @@ struct ReadBookPage {
   private cachedDocumentRegexSource: string = '';
   private cachedDocumentRegexRulesKey: string = '';
   private cachedDocumentRegexSlices: ReadTextSlice[] = [];
+  private regexFrameStyleCache: Map<string, string> = new Map();
   private adjacentPaginationPreloadSerial: number = 0;
   private readerPaginationWorkSerial: number = 0;
   private pageTurnPreviewKey: string = '';
@@ -5485,7 +5483,6 @@ struct ReadBookPage {
   closeSettingsPanelKeepMenu(): void {
     this.showTtsVoiceDropdown = false;
     this.showSettings = false;
-    this.showQuickTypographyValueInput = false;
     this.showMenu = true;
   }
 
@@ -7294,58 +7291,6 @@ struct ReadBookPage {
   }
 
   @Builder
-  ttsMediaControlsBar() {
-    if (this.ttsMediaControlsExpanded) {
-      this.ttsExpandedMediaControlsBar()
-    } else {
-      this.ttsCollapsedMediaControlButton()
-    }
-  }
-
-  @Builder
-  ttsCollapsedMediaControlButton() {
-    Row() {
-      SymbolGlyph($r('sys.symbol.speaker_wave_3'))
-        .fontSize(17)
-        .fontColor(['#FFFFFF'])
-
-      Text('朗读')
-        .fontSize(13)
-        .fontWeight(FontWeight.Bold)
-        .fontColor('#FFFFFF')
-        .textAlign(TextAlign.Center)
-
-      if (this.isTtsSpeaking || this.ttsReader.isSpeaking()) {
-        Text(this.ttsSpeed.toFixed(1) + 'x')
-          .fontSize(11)
-          .fontColor('#EAF2FF')
-          .margin({ left: 4 })
-      }
-    }
-    .height(44)
-    .padding({ left: 12, right: 12 })
-    .borderRadius(22)
-    .backgroundColor(this.accentColor())
-    .alignItems(VerticalAlign.Center)
-    .shadow({
-      radius: 10,
-      color: this.isReaderThemeDark() ? '#66000000' : '#26000000',
-      offsetX: 0,
-      offsetY: 3
-    })
-    .position({ x: '100%', y: '100%' })
-    .translate({ x: -104, y: -96 })
-    .onClick(() => {
-      if (this.isTtsSpeaking || this.ttsReader.isSpeaking()) {
-        this.ttsMediaControlsExpanded = true;
-        this.syncTtsSystemMediaControls();
-      } else {
-        this.toggleTtsReading();
-      }
-    })
-  }
-
-  @Builder
   ttsExpandedMediaControlsBar() {
     HdsTabs({ barPosition: BarPosition.End, index: 0 }) {
       TabContent() {
@@ -8228,123 +8173,10 @@ struct ReadBookPage {
   }
 
   @Builder
-  settingsTabToggle() {
-    Row() {
-      Text('阅读')
-        .fontSize(14)
-        .fontWeight(this.settingsPanelTab === 0 ? FontWeight.Bold : FontWeight.Regular)
-        .fontColor(this.settingsPanelTab === 0 ? '#FFFFFF' : this.getTextColor())
-        .textAlign(TextAlign.Center)
-        .layoutWeight(1)
-        .height(34)
-        .borderRadius(17)
-        .backgroundColor(this.settingsPanelTab === 0 ? this.accentColor() : Color.Transparent)
-        .onClick(() => {
-          this.settingsPanelTab = 0;
-        })
-      Text('朗读')
-        .fontSize(14)
-        .fontWeight(this.settingsPanelTab === 1 ? FontWeight.Bold : FontWeight.Regular)
-        .fontColor(this.settingsPanelTab === 1 ? '#FFFFFF' : this.getTextColor())
-        .textAlign(TextAlign.Center)
-        .layoutWeight(1)
-        .height(34)
-        .borderRadius(17)
-        .backgroundColor(this.settingsPanelTab === 1 ? this.accentColor() : Color.Transparent)
-        .onClick(() => {
-          this.settingsPanelTab = 1;
-          this.loadTtsSettingsAndVoices();
-        })
-    }
-    .width(156)
-    .padding(2)
-    .borderRadius(19)
-    .backgroundColor(this.isReaderThemeDark() ? '#24272D' : '#EEF0F3')
-  }
-
-  @Builder
-  readerQuickTypographyStepper() {
-    Row({ space: 8 }) {
-      Select(this.quickTypographySettingOptions())
-        .selected(this.quickTypographySettingIndex)
-        .value(this.quickTypographySettingTitle())
-        .font({ size: 15 })
-        .fontColor(this.getSubTextColor())
-        .backgroundColor(Color.Transparent)
-        .arrowPosition(ArrowPosition.START)
-        .padding({ left: 0, right: 0 })
-        .borderRadius(0)
-        .border({ width: 0 })
-        .optionBgColor(Color.Transparent)
-        .optionFontColor(this.getTextColor())
-        .selectedOptionFontColor(this.accentColor())
-        .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
-        .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
-        .menuBackgroundBlurStyle(BlurStyle.BACKGROUND_THIN)
-        .onSelect((index: number) => {
-          this.showQuickTypographyValueInput = false;
-          this.quickTypographySettingIndex = Math.max(0,
-            Math.min(index, this.quickTypographySettingOptions().length - 1));
-        })
-      Blank()
-        .layoutWeight(1)
-      Button('-')
-        .width(44)
-        .height(36)
-        .backgroundColor(this.buttonColor())
-        .fontColor('#FFFFFF')
-        .onClick(() => {
-          this.adjustQuickTypographySetting(-1);
-        })
-      if (this.showQuickTypographyValueInput) {
-        TextInput({ text: this.quickTypographyValueDraft,
-          placeholder: `${this.currentQuickTypographySettingValue()}` })
-          .type(InputType.Number)
-          .defaultFocus(true)
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-          .width(52)
-          .height(36)
-          .padding(0)
-          .textAlign(TextAlign.Center)
-          .backgroundColor(this.isReaderThemeDark() ? '#24272D' : '#EEF0F3')
-          .borderRadius(6)
-          .onChange((value: string) => {
-            this.quickTypographyValueDraft = value.replace(/[^0-9]/g, '').substring(0, 3);
-          })
-          .onSubmit(() => {
-            this.applyQuickTypographyValueInput();
-          })
-          .onBlur(() => {
-            this.applyQuickTypographyValueInput();
-          })
-      } else {
-        Text(`${this.currentQuickTypographySettingValue()}`)
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-          .width(52)
-          .height(36)
-          .textAlign(TextAlign.Center)
-          .onClick(() => {
-            this.openQuickTypographyValueInput();
-          })
-      }
-      Button('+')
-        .width(44)
-        .height(36)
-        .backgroundColor(this.buttonColor())
-        .fontColor('#FFFFFF')
-        .onClick(() => {
-          this.adjustQuickTypographySetting(1);
-        })
-    }
-    .width('100%')
-    .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
   readerTypographySettingsPanel() {
     Column({ space: 4 }) {
+      this.readerFontEntryItem()
+
       this.readerTypographySlider('字号', this.readerFontSize, 14, 50, 1,
         (value: number) => this.applyReaderFontSize(value))
       this.readerTypographySlider('行距', this.readerLineHeight, 0, 52, 1,
@@ -8399,8 +8231,6 @@ struct ReadBookPage {
   @Builder
   readerQuickSettingsPanel() {
     Column({ space: 14 }) {
-      this.readerFontEntryItem()
-
       this.readerReplaceRulesEntryItem()
 
       this.readerSelectSettingItem('翻页方式', '选择滚动、横向滑动或上下连续滑动',
@@ -9366,96 +9196,6 @@ struct ReadBookPage {
     ReaderSettingsStore.saveLandscapeDoublePage(getContext(this), enabled).catch((e: Error) => {
       console.error('保存双翻页设置失败:', e);
     });
-  }
-
-  quickTypographySettingOptions(): SelectOption[] {
-    return [
-      { value: '字号' },
-      { value: '行距' },
-      { value: '段落间距' },
-      { value: '左边距' },
-      { value: '右边距' },
-      { value: '上边距' },
-      { value: '下边距' }
-    ];
-  }
-
-  quickTypographySettingTitle(): string {
-    const titles: string[] = ['字号', '行距', '段落间距', '左边距', '右边距', '上边距', '下边距'];
-    const index = Math.max(0, Math.min(this.quickTypographySettingIndex, titles.length - 1));
-    return titles[index];
-  }
-
-  currentQuickTypographySettingValue(): number {
-    switch (this.quickTypographySettingIndex) {
-      case 1:
-        return this.readerLineHeight;
-      case 2:
-        return this.readerParagraphSpacing;
-      case 3:
-        return this.readerMarginLeft;
-      case 4:
-        return this.readerMarginRight;
-      case 5:
-        return this.readerMarginTop;
-      case 6:
-        return this.readerMarginBottom;
-      default:
-        return this.readerFontSize;
-    }
-  }
-
-  adjustQuickTypographySetting(delta: number): void {
-    const next = this.currentQuickTypographySettingValue() + delta;
-    switch (this.quickTypographySettingIndex) {
-      case 1:
-        this.applyReaderLineHeight(next);
-        return;
-      case 2:
-        this.applyReaderParagraphSpacing(next);
-        return;
-      case 3:
-      case 4:
-      case 5:
-      case 6:
-        this.applyReaderMargin(this.quickTypographySettingIndex, next);
-        return;
-      default:
-        this.applyReaderFontSize(next);
-    }
-  }
-
-  openQuickTypographyValueInput(): void {
-    this.quickTypographyValueDraft = '';
-    this.showQuickTypographyValueInput = true;
-  }
-
-  applyQuickTypographyValueInput(): void {
-    if (!this.showQuickTypographyValueInput) {
-      return;
-    }
-    const value = Number(this.quickTypographyValueDraft);
-    if (!this.quickTypographyValueDraft.trim() || !Number.isFinite(value)) {
-      this.showQuickTypographyValueInput = false;
-      return;
-    }
-    switch (this.quickTypographySettingIndex) {
-      case 1:
-        this.applyReaderLineHeight(value);
-        break;
-      case 2:
-        this.applyReaderParagraphSpacing(value);
-        break;
-      case 3:
-      case 4:
-      case 5:
-      case 6:
-        this.applyReaderMargin(this.quickTypographySettingIndex, value);
-        break;
-      default:
-        this.applyReaderFontSize(value);
-    }
-    this.showQuickTypographyValueInput = false;
   }
 
   applyReaderMargin(settingIndex: number, margin: number): void {
@@ -11680,31 +11420,6 @@ struct ReadBookPage {
   }
 
   @Builder
-  readingText(text: string, bottomPadding: number) {
-    Column() {
-      ForEach(this.getReaderTextParagraphs(this.getReadingRenderText(text)), (paragraph: ReaderTextParagraph) => {
-        this.styledReaderParagraph(
-          paragraph,
-          this.currentChapterIndex,
-          this.hasActiveTtsHighlight(text),
-          this.ttsHighlightRenderVersion,
-          this.pageRenderVersion,
-          '',
-          -1
-        )
-        this.readerParagraphGap(paragraph)
-      }, (paragraph: ReaderTextParagraph) => paragraph.key)
-    }
-    .width('100%')
-    .padding({
-      left: this.readerMarginLeft,
-      right: this.readerMarginRight,
-      top: this.readerMarginTop,
-      bottom: bottomPadding
-    })
-  }
-
-  @Builder
   styledCurrentReaderText(text: string, bottomPadding: number, chapterIndex: number = this.currentChapterIndex,
     ttsRenderVersion: number = this.ttsHighlightRenderVersion, contentRenderVersion: number = this.pageRenderVersion,
     pageRenderIdentity: string = this.currentReaderPageRenderIdentity(contentRenderVersion, ttsRenderVersion),
@@ -11988,12 +11703,22 @@ struct ReadBookPage {
   }
 
   getRegexParagraphFrameStyleId(paragraph: ReaderTextParagraph, pageStart: number = -1): string {
-    if (!this.readerRegexFontEnabled || !paragraph.text.trim()) {
-      return '';
+    this.getRegexRules();
+    const cacheKey = `${this.readerRegexFontEnabled ? '1' : '0'}_${this.cachedRegexRulesKey}_` +
+      `${this.pageRenderVersion}_${pageStart}_${paragraph.key}`;
+    if (this.regexFrameStyleCache.has(cacheKey)) {
+      return this.regexFrameStyleCache.get(cacheKey) || '';
     }
-    const absoluteStart = pageStart < 0 ? -1 : pageStart + paragraph.start;
-    const slices = this.getRegexTextSlicesAt(paragraph.text, absoluteStart);
-    return this.getRegexFrameStyleIdFromSlices(slices);
+    let styleId = '';
+    if (this.readerRegexFontEnabled && paragraph.text.trim()) {
+      const absoluteStart = pageStart < 0 ? -1 : pageStart + paragraph.start;
+      styleId = this.getRegexFrameStyleIdFromSlices(this.getRegexTextSlicesAt(paragraph.text, absoluteStart));
+    }
+    if (this.regexFrameStyleCache.size >= 512) {
+      this.regexFrameStyleCache.clear();
+    }
+    this.regexFrameStyleCache.set(cacheKey, styleId);
+    return styleId;
   }
 
   getRegexParagraphFrameStyleIdForText(text: string): string {
@@ -12495,8 +12220,18 @@ struct ReadBookPage {
     }
     const absoluteEnd = Math.min(source.length, absoluteStart + displayText.length);
     const result: ReadTextSlice[] = [];
-    for (const slice of this.cachedDocumentRegexSlices) {
-      if (slice.end <= absoluteStart) continue;
+    let low = 0;
+    let high = this.cachedDocumentRegexSlices.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (this.cachedDocumentRegexSlices[middle].end <= absoluteStart) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    for (let index = low; index < this.cachedDocumentRegexSlices.length; index++) {
+      const slice = this.cachedDocumentRegexSlices[index];
       if (slice.start >= absoluteEnd) break;
       const overlapStart = Math.max(slice.start, absoluteStart);
       const overlapEnd = Math.min(slice.end, absoluteEnd);
@@ -12729,7 +12464,6 @@ struct ReadBookPage {
     this.showMenu = false;
     this.showTtsVoiceDropdown = false;
     this.showSettings = false;
-    this.showQuickTypographyValueInput = false;
   }
 
   async exitReaderPage(): Promise<void> {

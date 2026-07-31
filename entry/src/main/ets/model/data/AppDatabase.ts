@@ -20,7 +20,7 @@ export class AppDatabase {
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
   private readonly DATABASE_NAME = 'legado.db';
-  private readonly SCHEMA_VERSION = 12;
+  private readonly SCHEMA_VERSION = 13;
 
   private constructor() {}
 
@@ -235,6 +235,15 @@ export class AppDatabase {
       }
       await this.setSchemaVersion(this.SCHEMA_VERSION);
     }
+    await this.createIndexes();
+  }
+
+  private async createIndexes(): Promise<void> {
+    if (!this.store) return;
+    await this.store.executeSql(
+      'CREATE INDEX IF NOT EXISTS idx_book_chapters_book_order ON book_chapters(bookUrl, chapterIndex)');
+    await this.store.executeSql(
+      'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_time ON bookmarks(bookUrl, createTime DESC)');
   }
 
   private async getSchemaVersion(): Promise<number> {
@@ -242,8 +251,12 @@ export class AppDatabase {
 
     try {
       const resultSet = await this.store.querySql(`SELECT value FROM schema_meta WHERE key = 'schema_version'`);
-      if (resultSet.goToFirstRow()) {
-        return resultSet.getLong(resultSet.getColumnIndex('value'));
+      try {
+        if (resultSet.goToFirstRow()) {
+          return resultSet.getLong(resultSet.getColumnIndex('value'));
+        }
+      } finally {
+        resultSet.close();
       }
     } catch (e) {
     }
@@ -322,11 +335,15 @@ export class AppDatabase {
 
     try {
       const resultSet = await this.store.querySql(`PRAGMA table_info(${migration.table})`);
-      const nameIndex = resultSet.getColumnIndex('name');
-      while (resultSet.goToNextRow()) {
-        if (resultSet.getString(nameIndex) === migration.column) {
-          return;
+      try {
+        const nameIndex = resultSet.getColumnIndex('name');
+        while (resultSet.goToNextRow()) {
+          if (resultSet.getString(nameIndex) === migration.column) {
+            return;
+          }
         }
+      } finally {
+        resultSet.close();
       }
       await this.store.executeSql(`ALTER TABLE ${migration.table} ADD COLUMN ${migration.definition}`);
     } catch (e) {
@@ -351,7 +368,15 @@ export class AppDatabase {
     if (!this.store) return;
 
     const resultSet = await this.store.querySql(`SELECT COUNT(*) as count FROM book_groups`);
-    if (resultSet.rowCount === 0) {
+    let shouldInsertDefaults = true;
+    try {
+      if (resultSet.goToFirstRow()) {
+        shouldInsertDefaults = resultSet.getLong(resultSet.getColumnIndex('count')) === 0;
+      }
+    } finally {
+      resultSet.close();
+    }
+    if (shouldInsertDefaults) {
       await this.store.executeSql(`
         INSERT INTO book_groups (groupId, groupName, groupOrder, show) 
         VALUES (${BookGroup.ID_ALL}, '全部', -10, 1)
@@ -523,8 +548,12 @@ export class AppDatabase {
     predicates.equalTo('bookUrl', bookUrl);
     predicates.orderByDesc('createTime');
     const resultSet = await this.store.query(predicates, []);
-    while (resultSet.goToNextRow()) {
-      bookmarks.push(this.resultSetToBookmark(resultSet));
+    try {
+      while (resultSet.goToNextRow()) {
+        bookmarks.push(this.resultSetToBookmark(resultSet));
+      }
+    } finally {
+      resultSet.close();
     }
     return bookmarks;
   }
@@ -535,8 +564,12 @@ export class AppDatabase {
     const predicates = new relationalStore.RdbPredicates('bookmarks');
     predicates.orderByDesc('createTime');
     const resultSet = await this.store.query(predicates, []);
-    while (resultSet.goToNextRow()) {
-      bookmarks.push(this.resultSetToBookmark(resultSet));
+    try {
+      while (resultSet.goToNextRow()) {
+        bookmarks.push(this.resultSetToBookmark(resultSet));
+      }
+    } finally {
+      resultSet.close();
     }
     return bookmarks;
   }
@@ -570,8 +603,12 @@ export class AppDatabase {
     predicates.equalTo('chapterIndex', chapterIndex);
     predicates.equalTo('pageIndex', pageIndex);
     const resultSet = await this.store.query(predicates, []);
-    if (!resultSet.goToFirstRow()) return null;
-    return this.resultSetToBookmark(resultSet);
+    try {
+      if (!resultSet.goToFirstRow()) return null;
+      return this.resultSetToBookmark(resultSet);
+    } finally {
+      resultSet.close();
+    }
   }
 
   async deleteBookmark(id: number): Promise<void> {
@@ -584,12 +621,11 @@ export class AppDatabase {
 
   async deleteBookmarks(ids: number[]): Promise<void> {
     if (!this.store || ids.length === 0) return;
-    for (const id of ids) {
-      if (id <= 0) continue;
-      const predicates = new relationalStore.RdbPredicates('bookmarks');
-      predicates.equalTo('id', id);
-      await this.store.delete(predicates);
-    }
+    const validIds = ids.filter((id: number) => id > 0);
+    if (validIds.length === 0) return;
+    const predicates = new relationalStore.RdbPredicates('bookmarks');
+    predicates.in('id', validIds);
+    await this.store.delete(predicates);
     CloudSyncChangeTracker.markDataChanged();
   }
 
@@ -644,10 +680,12 @@ export class AppDatabase {
     const predicates = new relationalStore.RdbPredicates('books');
     predicates.equalTo('bookUrl', bookUrl);
     const resultSet = await this.store.query(predicates, []);
-    if (resultSet.rowCount === 0) return null;
-
-    resultSet.goToFirstRow();
-    return this.resultSetToBook(resultSet);
+    try {
+      if (!resultSet.goToFirstRow()) return null;
+      return this.resultSetToBook(resultSet);
+    } finally {
+      resultSet.close();
+    }
   }
 
   async getAllBooks(): Promise<Book[]> {
@@ -656,8 +694,12 @@ export class AppDatabase {
     predicates.orderByDesc('durChapterTime');
     const resultSet = await this.store.query(predicates, []);
     const books: Book[] = [];
-    while (resultSet.goToNextRow()) {
-      books.push(this.resultSetToBook(resultSet));
+    try {
+      while (resultSet.goToNextRow()) {
+        books.push(this.resultSetToBook(resultSet));
+      }
+    } finally {
+      resultSet.close();
     }
     return books;
   }
@@ -678,14 +720,18 @@ export class AppDatabase {
     const resultSet = await this.store.querySql(
       'SELECT groupId, groupName, groupOrder, show, enableRefresh FROM book_groups WHERE groupId > 0 ORDER BY groupOrder, groupId'
     );
-    while (resultSet.goToNextRow()) {
-      const group = new BookGroup();
-      group.groupId = resultSet.getLong(resultSet.getColumnIndex('groupId'));
-      group.groupName = resultSet.getString(resultSet.getColumnIndex('groupName'));
-      group.order = resultSet.getLong(resultSet.getColumnIndex('groupOrder'));
-      group.show = resultSet.getLong(resultSet.getColumnIndex('show')) === 1;
-      group.enableRefresh = resultSet.getLong(resultSet.getColumnIndex('enableRefresh')) === 1;
-      groups.push(group);
+    try {
+      while (resultSet.goToNextRow()) {
+        const group = new BookGroup();
+        group.groupId = resultSet.getLong(resultSet.getColumnIndex('groupId'));
+        group.groupName = resultSet.getString(resultSet.getColumnIndex('groupName'));
+        group.order = resultSet.getLong(resultSet.getColumnIndex('groupOrder'));
+        group.show = resultSet.getLong(resultSet.getColumnIndex('show')) === 1;
+        group.enableRefresh = resultSet.getLong(resultSet.getColumnIndex('enableRefresh')) === 1;
+        groups.push(group);
+      }
+    } finally {
+      resultSet.close();
     }
     return groups;
   }
@@ -702,7 +748,9 @@ export class AppDatabase {
       show: group.show ? 1 : 0,
       enableRefresh: group.enableRefresh ? 1 : 0
     };
-    if (resultSet.rowCount > 0) {
+    const exists = resultSet.rowCount > 0;
+    resultSet.close();
+    if (exists) {
       await this.store.update(bucket, predicates);
     } else {
       await this.store.insert('book_groups', bucket);
@@ -714,10 +762,18 @@ export class AppDatabase {
     if (!this.store || !groupName.trim()) return null;
     const name = groupName.trim();
     const duplicate = await this.store.querySql('SELECT groupId FROM book_groups WHERE groupName = ?', [name]);
-    if (duplicate.rowCount > 0) return null;
+    const duplicateExists = duplicate.rowCount > 0;
+    duplicate.close();
+    if (duplicateExists) return null;
     const maxResult = await this.store.querySql('SELECT MAX(groupId) AS maxId FROM book_groups WHERE groupId > 0');
-    maxResult.goToFirstRow();
-    const maxId = maxResult.getLong(maxResult.getColumnIndex('maxId'));
+    let maxId = 0;
+    try {
+      if (maxResult.goToFirstRow()) {
+        maxId = maxResult.getLong(maxResult.getColumnIndex('maxId'));
+      }
+    } finally {
+      maxResult.close();
+    }
     const group = new BookGroup();
     group.groupId = Math.max(0, maxId) + 1;
     group.groupName = name;
@@ -735,7 +791,9 @@ export class AppDatabase {
     const duplicate = await this.store.querySql(
       'SELECT groupId FROM book_groups WHERE groupName = ? AND groupId != ?', [name, groupId]
     );
-    if (duplicate.rowCount > 0) return false;
+    const duplicateExists = duplicate.rowCount > 0;
+    duplicate.close();
+    if (duplicateExists) return false;
     const predicates = new relationalStore.RdbPredicates('book_groups');
     predicates.equalTo('groupId', groupId);
     await this.store.update({ groupName: name }, predicates);
@@ -744,12 +802,10 @@ export class AppDatabase {
   }
 
   async updateBooksGroup(bookUrls: string[], groupId: number): Promise<void> {
-    if (!this.store) return;
-    for (const bookUrl of bookUrls) {
-      const predicates = new relationalStore.RdbPredicates('books');
-      predicates.equalTo('bookUrl', bookUrl);
-      await this.store.update({ groupId: groupId }, predicates);
-    }
+    if (!this.store || bookUrls.length === 0) return;
+    const predicates = new relationalStore.RdbPredicates('books');
+    predicates.in('bookUrl', bookUrls);
+    await this.store.update({ groupId: groupId }, predicates);
     CloudSyncChangeTracker.markDataChanged();
   }
 
@@ -868,30 +924,41 @@ export class AppDatabase {
     const predicates = new relationalStore.RdbPredicates('book_sources');
     predicates.equalTo('bookSourceUrl', source.bookSourceUrl);
     const resultSet = await this.store.query(predicates, []);
-    if (resultSet.rowCount > 0) {
-      resultSet.goToFirstRow();
-      if (this.getLongColumn(resultSet, 'isLocked') === 1) {
-        return false;
+    const exists = resultSet.goToFirstRow();
+    if (exists) {
+      let locked = false;
+      try {
+        locked = this.getLongColumn(resultSet, 'isLocked') === 1;
+        if (!locked) {
+          // 导入更新已有书源时保留用户在管理页设置的顺序。
+          bucket['customOrder'] = this.getLongColumn(resultSet, 'customOrder');
+          source.customOrder = bucket['customOrder'] as number;
+          bucket['isPinned'] = this.getLongColumn(resultSet, 'isPinned');
+          source.isPinned = bucket['isPinned'] === 1;
+          // 登录信息、脚本设置和运行时缓存属于用户状态，更新书源定义时不能被覆盖。
+          bucket['variable'] = this.getStringColumn(resultSet, 'variable');
+          source.variable = bucket['variable'] as string;
+          bucket['loginHeader'] = this.getStringColumn(resultSet, 'loginHeader');
+          source.loginHeader = bucket['loginHeader'] as string;
+          bucket['loginInfo'] = this.getStringColumn(resultSet, 'loginInfo');
+          source.loginInfo = bucket['loginInfo'] as string;
+        }
+      } finally {
+        resultSet.close();
       }
-      // 导入更新已有书源时保留用户在管理页设置的顺序。
-      bucket['customOrder'] = this.getLongColumn(resultSet, 'customOrder');
-      source.customOrder = bucket['customOrder'] as number;
-      bucket['isPinned'] = this.getLongColumn(resultSet, 'isPinned');
-      source.isPinned = bucket['isPinned'] === 1;
-      // 登录信息、脚本设置和运行时缓存属于用户状态，更新书源定义时不能被覆盖。
-      bucket['variable'] = this.getStringColumn(resultSet, 'variable');
-      source.variable = bucket['variable'] as string;
-      bucket['loginHeader'] = this.getStringColumn(resultSet, 'loginHeader');
-      source.loginHeader = bucket['loginHeader'] as string;
-      bucket['loginInfo'] = this.getStringColumn(resultSet, 'loginInfo');
-      source.loginInfo = bucket['loginInfo'] as string;
+      if (locked) return false;
       await this.store.update(bucket, predicates);
     } else {
+      resultSet.close();
       // 新书源追加到现有顺序末尾，避免默认值 0 把它插到列表顶部。
       const maxOrderResult = await this.store.querySql('SELECT MAX(customOrder) AS maxOrder FROM book_sources');
       let maxOrder = -1;
-      if (maxOrderResult.goToFirstRow()) {
-        maxOrder = this.getLongColumn(maxOrderResult, 'maxOrder', -1);
+      try {
+        if (maxOrderResult.goToFirstRow()) {
+          maxOrder = this.getLongColumn(maxOrderResult, 'maxOrder', -1);
+        }
+      } finally {
+        maxOrderResult.close();
       }
       source.customOrder = Math.max(0, maxOrder + 1);
       bucket['customOrder'] = source.customOrder;
@@ -971,10 +1038,12 @@ export class AppDatabase {
     const predicates = new relationalStore.RdbPredicates('book_sources');
     predicates.equalTo('bookSourceUrl', bookSourceUrl);
     const resultSet = await this.store.query(predicates, []);
-    if (resultSet.rowCount === 0) return null;
-
-    resultSet.goToFirstRow();
-    return this.resultSetToBookSource(resultSet);
+    try {
+      if (!resultSet.goToFirstRow()) return null;
+      return this.resultSetToBookSource(resultSet);
+    } finally {
+      resultSet.close();
+    }
   }
 
   async getAllBookSources(): Promise<BookSource[]> {
@@ -984,8 +1053,12 @@ export class AppDatabase {
     predicates.orderByAsc('customOrder');
     const resultSet = await this.store.query(predicates, []);
     const sources: BookSource[] = [];
-    while (resultSet.goToNextRow()) {
-      sources.push(this.resultSetToBookSource(resultSet));
+    try {
+      while (resultSet.goToNextRow()) {
+        sources.push(this.resultSetToBookSource(resultSet));
+      }
+    } finally {
+      resultSet.close();
     }
     return sources;
   }
@@ -1034,7 +1107,9 @@ export class AppDatabase {
     const predicates = new relationalStore.RdbPredicates('book_sources');
     predicates.equalTo('bookSourceUrl', source.bookSourceUrl);
     const resultSet = await this.store.query(predicates, []);
-    if (resultSet.rowCount > 0) {
+    const exists = resultSet.rowCount > 0;
+    resultSet.close();
+    if (exists) {
       await this.store.update(bucket, predicates);
     } else {
       await this.store.insert('book_sources', bucket);
@@ -1055,25 +1130,29 @@ export class AppDatabase {
     ];
     const resultSet = await this.store.query(predicates, columns);
     const sources: BookSource[] = [];
-    while (resultSet.goToNextRow()) {
-      const source = new BookSource();
-      source.bookSourceUrl = resultSet.getString(resultSet.getColumnIndex('bookSourceUrl'));
-      source.bookSourceName = resultSet.getString(resultSet.getColumnIndex('bookSourceName'));
-      source.bookSourceGroup = resultSet.getString(resultSet.getColumnIndex('bookSourceGroup'));
-      source.loginUrl = resultSet.getString(resultSet.getColumnIndex('loginUrl'));
-      source.loginUi = resultSet.getString(resultSet.getColumnIndex('loginUi'));
-      source.loginCheckJs = resultSet.getString(resultSet.getColumnIndex('loginCheckJs'));
-      source.loginHeader = resultSet.getString(resultSet.getColumnIndex('loginHeader'));
-      source.exploreUrl = resultSet.getString(resultSet.getColumnIndex('exploreUrl'));
-      source.lastUpdateTime = resultSet.getLong(resultSet.getColumnIndex('lastUpdateTime'));
-      source.customOrder = resultSet.getLong(resultSet.getColumnIndex('customOrder'));
-      source.isPinned = this.getLongColumn(resultSet, 'isPinned') === 1;
-      source.enabled = resultSet.getLong(resultSet.getColumnIndex('enabled')) === 1;
-      source.enabledExplore = resultSet.getLong(resultSet.getColumnIndex('enabledExplore')) === 1;
-      source.isLocked = this.getLongColumn(resultSet, 'isLocked') === 1;
-      source.validationStatus = this.normalizeBookSourceValidationStatus(
-        this.getLongColumn(resultSet, 'validationStatus'));
-      sources.push(source);
+    try {
+      while (resultSet.goToNextRow()) {
+        const source = new BookSource();
+        source.bookSourceUrl = resultSet.getString(resultSet.getColumnIndex('bookSourceUrl'));
+        source.bookSourceName = resultSet.getString(resultSet.getColumnIndex('bookSourceName'));
+        source.bookSourceGroup = resultSet.getString(resultSet.getColumnIndex('bookSourceGroup'));
+        source.loginUrl = resultSet.getString(resultSet.getColumnIndex('loginUrl'));
+        source.loginUi = resultSet.getString(resultSet.getColumnIndex('loginUi'));
+        source.loginCheckJs = resultSet.getString(resultSet.getColumnIndex('loginCheckJs'));
+        source.loginHeader = resultSet.getString(resultSet.getColumnIndex('loginHeader'));
+        source.exploreUrl = resultSet.getString(resultSet.getColumnIndex('exploreUrl'));
+        source.lastUpdateTime = resultSet.getLong(resultSet.getColumnIndex('lastUpdateTime'));
+        source.customOrder = resultSet.getLong(resultSet.getColumnIndex('customOrder'));
+        source.isPinned = this.getLongColumn(resultSet, 'isPinned') === 1;
+        source.enabled = resultSet.getLong(resultSet.getColumnIndex('enabled')) === 1;
+        source.enabledExplore = resultSet.getLong(resultSet.getColumnIndex('enabledExplore')) === 1;
+        source.isLocked = this.getLongColumn(resultSet, 'isLocked') === 1;
+        source.validationStatus = this.normalizeBookSourceValidationStatus(
+          this.getLongColumn(resultSet, 'validationStatus'));
+        sources.push(source);
+      }
+    } finally {
+      resultSet.close();
     }
     return sources;
   }
@@ -1103,13 +1182,20 @@ export class AppDatabase {
 
   /** 书源排序属于列表管理信息，不受书源内容锁定状态影响。 */
   async updateBookSourceOrders(bookSourceUrls: string[]): Promise<void> {
-    if (!this.store) return;
-    for (let index = 0; index < bookSourceUrls.length; index++) {
-      const bookSourceUrl = bookSourceUrls[index];
-      if (!bookSourceUrl) continue;
-      const predicates = new relationalStore.RdbPredicates('book_sources');
-      predicates.equalTo('bookSourceUrl', bookSourceUrl);
-      await this.store.update({ customOrder: index }, predicates);
+    if (!this.store || bookSourceUrls.length === 0) return;
+    const transaction = await this.store.createTransaction();
+    try {
+      for (let index = 0; index < bookSourceUrls.length; index++) {
+        const bookSourceUrl = bookSourceUrls[index];
+        if (!bookSourceUrl) continue;
+        const predicates = new relationalStore.RdbPredicates('book_sources');
+        predicates.equalTo('bookSourceUrl', bookSourceUrl);
+        await transaction.update({ customOrder: index }, predicates);
+      }
+      await transaction.commit();
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
     }
     CloudSyncChangeTracker.markBookSourceChanged();
   }
@@ -1184,8 +1270,12 @@ export class AppDatabase {
     const predicates = new relationalStore.RdbPredicates('book_sources');
     predicates.equalTo('bookSourceUrl', bookSourceUrl);
     const resultSet = await this.store.query(predicates, ['isLocked']);
-    if (!resultSet.goToFirstRow()) return false;
-    return this.getLongColumn(resultSet, 'isLocked') === 1;
+    try {
+      if (!resultSet.goToFirstRow()) return false;
+      return this.getLongColumn(resultSet, 'isLocked') === 1;
+    } finally {
+      resultSet.close();
+    }
   }
 
   async getEnabledBookSources(): Promise<BookSource[]> {
@@ -1196,8 +1286,12 @@ export class AppDatabase {
     predicates.orderByAsc('customOrder');
     const resultSet = await this.store.query(predicates, []);
     const sources: BookSource[] = [];
-    while (resultSet.goToNextRow()) {
-      sources.push(this.resultSetToBookSource(resultSet));
+    try {
+      while (resultSet.goToNextRow()) {
+        sources.push(this.resultSetToBookSource(resultSet));
+      }
+    } finally {
+      resultSet.close();
     }
     return sources;
   }
@@ -1210,8 +1304,12 @@ export class AppDatabase {
     predicates.orderByAsc('customOrder');
     const resultSet = await this.store.query(predicates, []);
     const sources: BookSource[] = [];
-    while (resultSet.goToNextRow()) {
-      sources.push(this.resultSetToBookSource(resultSet));
+    try {
+      while (resultSet.goToNextRow()) {
+        sources.push(this.resultSetToBookSource(resultSet));
+      }
+    } finally {
+      resultSet.close();
     }
     return sources;
   }
@@ -1352,8 +1450,15 @@ export class AppDatabase {
       });
       chapter.cacheDate = cacheDate;
     }
-    await this.store.batchInsert('book_chapters', chapterBuckets);
-    await this.store.batchInsert('book_contents', contentBuckets);
+    const transaction = await this.store.createTransaction();
+    try {
+      await transaction.batchInsert('book_chapters', chapterBuckets);
+      await transaction.batchInsert('book_contents', contentBuckets);
+      await transaction.commit();
+    } catch (e) {
+      await transaction.rollback();
+      throw e;
+    }
   }
 
   async deleteBookChapters(bookUrl: string): Promise<void> {
@@ -1371,8 +1476,12 @@ export class AppDatabase {
     predicates.orderByAsc('chapterIndex');
     const resultSet = await this.store.query(predicates, []);
     const chapters: BookChapter[] = [];
-    while (resultSet.goToNextRow()) {
-      chapters.push(this.resultSetToBookChapter(resultSet));
+    try {
+      while (resultSet.goToNextRow()) {
+        chapters.push(this.resultSetToBookChapter(resultSet));
+      }
+    } finally {
+      resultSet.close();
     }
     const cacheDates = await this.getBookChapterCacheDateMap(bookUrl);
     for (const chapter of chapters) {
@@ -1389,8 +1498,12 @@ export class AppDatabase {
     predicates.orderByAsc('chapterIndex');
     const resultSet = await this.store.query(predicates, []);
     const chapters: BookChapter[] = [];
-    while (resultSet.goToNextRow()) {
-      chapters.push(this.resultSetToBookChapter(resultSet));
+    try {
+      while (resultSet.goToNextRow()) {
+        chapters.push(this.resultSetToBookChapter(resultSet));
+      }
+    } finally {
+      resultSet.close();
     }
     const cacheDates = await this.getBookChapterCacheDateMap(bookUrl);
     for (const chapter of chapters) {
@@ -1404,7 +1517,11 @@ export class AppDatabase {
     const predicates = new relationalStore.RdbPredicates('book_chapters');
     predicates.equalTo('bookUrl', bookUrl);
     const resultSet = await this.store.query(predicates, []);
-    return resultSet.rowCount;
+    try {
+      return resultSet.rowCount;
+    } finally {
+      resultSet.close();
+    }
   }
 
   async getCachedChapterContent(bookUrl: string, chapterIndex: number): Promise<string> {
@@ -1413,9 +1530,12 @@ export class AppDatabase {
     predicates.equalTo('bookUrl', bookUrl);
     predicates.equalTo('chapterIndex', chapterIndex);
     const resultSet = await this.store.query(predicates, ['content']);
-    if (resultSet.rowCount === 0) return '';
-    resultSet.goToFirstRow();
-    return resultSet.getString(resultSet.getColumnIndex('content')) || '';
+    try {
+      if (!resultSet.goToFirstRow()) return '';
+      return resultSet.getString(resultSet.getColumnIndex('content')) || '';
+    } finally {
+      resultSet.close();
+    }
   }
 
   async saveCachedChapterContent(bookUrl: string, chapter: BookChapter, content: string): Promise<void> {
@@ -1433,7 +1553,9 @@ export class AppDatabase {
     predicates.equalTo('bookUrl', bookUrl);
     predicates.equalTo('chapterIndex', chapter.index);
     const resultSet = await this.store.query(predicates, []);
-    if (resultSet.rowCount > 0) {
+    const exists = resultSet.rowCount > 0;
+    resultSet.close();
+    if (exists) {
       await this.store.update(bucket, predicates);
     } else {
       await this.store.insert('book_contents', bucket);
@@ -1466,8 +1588,8 @@ export class AppDatabase {
     predicates.equalTo('chapterIndex', chapterIndex);
     predicates.equalTo('layoutKey', layoutKey);
     const resultSet = await this.store.query(predicates, ['starts', 'ends']);
-    if (!resultSet.goToFirstRow()) return null;
     try {
+      if (!resultSet.goToFirstRow()) return null;
       const starts = JSON.parse(resultSet.getString(resultSet.getColumnIndex('starts'))) as number[];
       const ends = JSON.parse(resultSet.getString(resultSet.getColumnIndex('ends'))) as number[];
       if (!Array.isArray(starts) || !Array.isArray(ends) || starts.length === 0 || starts.length !== ends.length) {
@@ -1479,6 +1601,8 @@ export class AppDatabase {
       return record;
     } catch (_) {
       return null;
+    } finally {
+      resultSet.close();
     }
   }
 
@@ -1511,11 +1635,15 @@ export class AppDatabase {
     const predicates = new relationalStore.RdbPredicates('book_contents');
     predicates.equalTo('bookUrl', bookUrl);
     const resultSet = await this.store.query(predicates, ['chapterIndex', 'cacheDate']);
-    while (resultSet.goToNextRow()) {
-      cacheDates.set(
-        resultSet.getLong(resultSet.getColumnIndex('chapterIndex')),
-        resultSet.getLong(resultSet.getColumnIndex('cacheDate'))
-      );
+    try {
+      while (resultSet.goToNextRow()) {
+        cacheDates.set(
+          resultSet.getLong(resultSet.getColumnIndex('chapterIndex')),
+          resultSet.getLong(resultSet.getColumnIndex('cacheDate'))
+        );
+      }
+    } finally {
+      resultSet.close();
     }
     return cacheDates;
   }
@@ -1551,12 +1679,16 @@ export class AppDatabase {
     predicates.orderByDesc('lastUseTime');
     const resultSet = await this.store.query(predicates, []);
     const keywords: SearchKeyword[] = [];
-    while (resultSet.goToNextRow()) {
-      const keyword = new SearchKeyword();
-      keyword.keyword = resultSet.getString(resultSet.getColumnIndex('keyword'));
-      keyword.usage = resultSet.getLong(resultSet.getColumnIndex('usage'));
-      keyword.lastUseTime = resultSet.getLong(resultSet.getColumnIndex('lastUseTime'));
-      keywords.push(keyword);
+    try {
+      while (resultSet.goToNextRow()) {
+        const keyword = new SearchKeyword();
+        keyword.keyword = resultSet.getString(resultSet.getColumnIndex('keyword'));
+        keyword.usage = resultSet.getLong(resultSet.getColumnIndex('usage'));
+        keyword.lastUseTime = resultSet.getLong(resultSet.getColumnIndex('lastUseTime'));
+        keywords.push(keyword);
+      }
+    } finally {
+      resultSet.close();
     }
     return keywords;
   }
@@ -1567,10 +1699,15 @@ export class AppDatabase {
     const predicates = new relationalStore.RdbPredicates('search_keywords');
     predicates.equalTo('keyword', keyword);
     const resultSet = await this.store.query(predicates, []);
-
-    if (resultSet.rowCount > 0) {
-      resultSet.goToFirstRow();
-      const usage = resultSet.getLong(resultSet.getColumnIndex('usage')) + 1;
+    let usage = 0;
+    try {
+      if (resultSet.goToFirstRow()) {
+        usage = resultSet.getLong(resultSet.getColumnIndex('usage')) + 1;
+      }
+    } finally {
+      resultSet.close();
+    }
+    if (usage > 0) {
       const bucket: relationalStore.ValuesBucket = {
         usage: usage,
         lastUseTime: Date.now()
@@ -1601,7 +1738,9 @@ export class AppDatabase {
       usage: keyword.usage,
       lastUseTime: keyword.lastUseTime
     };
-    if (resultSet.rowCount > 0) {
+    const exists = resultSet.rowCount > 0;
+    resultSet.close();
+    if (exists) {
       await this.store.update(bucket, predicates);
     } else {
       await this.store.insert('search_keywords', bucket);

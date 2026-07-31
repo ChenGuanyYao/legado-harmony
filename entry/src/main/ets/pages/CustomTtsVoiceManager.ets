@@ -284,14 +284,6 @@ struct CustomTtsVoiceManagerPage {
     this.saveSettings();
   }
 
-  disableVoice(voice: HttpTTS): void {
-    if (!voice.enabled) {
-      return;
-    }
-    this.toggleVoiceEnabled(voice, false);
-    promptAction.showToast({ message: '音色已禁用' });
-  }
-
   toggleVoiceState(voice: HttpTTS): void {
     const enabled = !voice.enabled;
     this.toggleVoiceEnabled(voice, enabled);

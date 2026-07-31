@@ -2997,11 +2997,11 @@ struct BookSourcePage {
     const moved = reordered.splice(sourceIndex, 1)[0];
     reordered.splice(targetIndex, 0, moved);
 
-    const filteredUrls = this.sources.map((source: BookSource) => source.bookSourceUrl);
+    const filteredUrls = new Set<string>(this.sources.map((source: BookSource) => source.bookSourceUrl));
     const nextAllSources = this.allSources.slice();
     let orderedIndex = 0;
     for (let index = 0; index < nextAllSources.length; index++) {
-      if (filteredUrls.includes(nextAllSources[index].bookSourceUrl)) {
+      if (filteredUrls.has(nextAllSources[index].bookSourceUrl)) {
         nextAllSources[index] = reordered[orderedIndex++];
       }
     }
@@ -3210,10 +3210,6 @@ struct BookSourcePage {
     if (!this.getSourceGroups().includes(this.activeSourceGroup)) {
       this.activeSourceGroup = '__all__';
     }
-  }
-
-  hasUngroupedSources(): boolean {
-    return this.allSources.some((source: BookSource) => !(source.bookSourceGroup || '').trim());
   }
 
   emptySourceTitle(): string {
@@ -4224,10 +4220,6 @@ struct BookSourcePage {
       return;
     }
     this.selectAllSources();
-  }
-
-  clearSelection(): void {
-    this.selectedSourceUrls = [];
   }
 
   pruneSelectedSources(): void {

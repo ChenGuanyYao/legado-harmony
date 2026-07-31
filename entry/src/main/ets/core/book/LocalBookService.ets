@@ -1074,13 +1074,6 @@ export class LocalBookService {
     return LocalBookService.decodeEntities(html.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
   }
 
-  private static extractHtmlTitle(html: string): string {
-    const heading = html.match(/<h[1-3]\b[^>]*>([\s\S]*?)<\/h[1-3]>/i);
-    if (heading) return LocalBookService.htmlToInlineText(heading[1]);
-    const title = html.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i);
-    return title ? LocalBookService.htmlToInlineText(title[1]) : '';
-  }
-
   private static decodeEntities(value: string): string {
     const named: Record<string, string> = {};
     named['amp'] = '&';
@@ -1174,11 +1167,6 @@ export class LocalBookService {
     return '';
   }
 
-  private static isSupportedBookFile(path: string): boolean {
-    const ext = LocalBookService.extensionOf(path);
-    return ext === 'txt' || ext === 'epub';
-  }
-
   private static parseFileNameMetadata(path: string): LocalBookMetadata {
     const result = new LocalBookMetadata();
     const stem = LocalBookService.fileStem(path).replace(/\s+/g, ' ').trim();
@@ -1264,11 +1252,6 @@ export class LocalBookService {
     const clean = decodeURIComponent(LocalBookService.withoutFragment(path).replace(/\/+$/, ''));
     const index = clean.lastIndexOf('/');
     return index >= 0 ? clean.substring(index + 1) : clean;
-  }
-
-  private static childPath(parent: string, child: string): string {
-    if (child.startsWith('file://') || child.startsWith('datashare://') || child.startsWith('/')) return child;
-    return `${parent.replace(/\/+$/, '')}/${child}`;
   }
 
   private static resolveBookPath(baseDir: string, relative: string): string {

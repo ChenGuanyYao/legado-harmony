@@ -511,12 +511,6 @@ export class ReaderRegexBubbleStyleResolver {
     result.textShadows.push({ radius: radius, color: color, offsetX: offsetX, offsetY: offsetY });
   }
 
-  private static setDecoration(result: ReaderResolvedRegexEmphasis, styleId: string, color: string): void {
-    result.decorationEnabled = true;
-    result.decorationStyleId = styleId;
-    result.decorationColor = color;
-  }
-
   private static setRadii(result: ReaderResolvedRegexEmphasis, topLeft: number, topRight: number,
     bottomLeft: number, bottomRight: number): void {
     result.radiusTopLeft = topLeft;

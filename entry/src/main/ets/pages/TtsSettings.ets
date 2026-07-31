@@ -994,26 +994,6 @@ struct TtsSettingsPage {
     return this.customVoices.length > 0 ? `已导入 ${this.customVoices.length} 个自定义音色` : '暂无自定义音色';
   }
 
-  deleteCustomVoice(voice: HttpTTS): void {
-    const selected = this.isCustomVoiceSelected(voice);
-    this.customVoices = this.customVoices.filter((item: HttpTTS) => String(item.id) !== String(voice.id));
-    this.ttsCustomVoices = SystemTtsReader.serializeCustomVoices(this.customVoices);
-    if (selected) {
-      if (this.isPreviewing) {
-        this.previewReader.stop();
-        this.isPreviewing = false;
-      }
-      this.ttsCustomVoiceId = '';
-      this.ttsPerson = 0;
-      this.ttsOnline = 1;
-      this.ttsStyle = '';
-      this.ttsLanguage = 'zh-CN';
-      this.selectedVoiceKey = this.currentVoiceKey();
-    }
-    this.saveSettings();
-    promptAction.showToast({ message: `已删除 ${voice.name || '自定义音色'}` });
-  }
-
   async importCustomVoicesFromUrl(): Promise<void> {
     const url = this.customVoiceImportUrl.trim();
     if (!url) {
@@ -1376,35 +1356,6 @@ struct TtsSettingsPage {
   }
 
   @Builder
-  voiceRow(voice: TtsVoiceOption) {
-    Column() {
-      Row() {
-        Text(this.voiceTitle(voice))
-          .fontSize(16)
-          .fontColor((voice.available || this.isVoiceDownloading(voice)) ? this.primaryTextColor() : this.subTextColor())
-          .layoutWeight(1)
-
-        Text(this.voiceTrailingText(voice))
-          .fontSize(this.voiceTrailingFontSize(voice))
-          .fontColor(this.accentColor())
-          .width(48)
-          .textAlign(TextAlign.Center)
-      }
-      .width('100%')
-      .padding({ left: 12, right: 12, top: 12, bottom: 12 })
-
-      Divider()
-        .width('calc(100% - 24vp)')
-        .strokeWidth(0.5)
-        .color(this.voiceDividerColor())
-    }
-    .width('100%')
-    .onClick(() => {
-      this.selectVoice(voice);
-    })
-  }
-
-  @Builder
   speedChip(value: number) {
     Stack({ alignContent: Alignment.Center }) {
       Text(`${value.toFixed(1)}x`)
@@ -1436,84 +1387,6 @@ struct TtsSettingsPage {
     .onClick(action)
   }
 
-  @Builder
-  customVoiceRow(voice: HttpTTS) {
-    Column() {
-      Row() {
-        Text(this.customVoiceTitle(voice))
-          .fontSize(16)
-          .fontColor(this.primaryTextColor())
-          .layoutWeight(1)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .onClick(() => {
-            this.applyCustomVoice(voice);
-          })
-
-        Text(this.isCustomVoiceSelected(voice) ? '✓' : '')
-          .fontSize(18)
-          .fontColor(this.accentColor())
-          .width(36)
-          .textAlign(TextAlign.Center)
-          .onClick(() => {
-            this.applyCustomVoice(voice);
-          })
-
-        Text('删除')
-          .fontSize(14)
-          .fontColor('#E53935')
-          .width(46)
-          .textAlign(TextAlign.Center)
-          .onClick(() => {
-            this.deleteCustomVoice(voice);
-          })
-      }
-      .width('100%')
-      .padding({ left: 12, right: 12, top: 12, bottom: 12 })
-
-      Divider()
-        .width('calc(100% - 24vp)')
-        .strokeWidth(0.5)
-        .color(this.voiceDividerColor())
-    }
-    .width('100%')
-  }
-
-  @Builder
-  customVoiceSelectRow(voice: HttpTTS) {
-    Column() {
-      Row() {
-        Text(this.customVoiceTitle(voice))
-          .fontSize(16)
-          .fontColor(voice.enabled === false ? this.subTextColor() : this.primaryTextColor())
-          .layoutWeight(1)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-        Text(this.isCustomVoiceSelected(voice) ? '✓' : '')
-          .fontSize(18)
-          .fontColor(this.accentColor())
-          .width(48)
-          .textAlign(TextAlign.Center)
-      }
-      .width('100%')
-      .padding({ left: 12, right: 12, top: 12, bottom: 12 })
-
-      Divider()
-        .width('calc(100% - 24vp)')
-        .strokeWidth(0.5)
-        .color(this.voiceDividerColor())
-    }
-    .width('100%')
-    .onClick(() => {
-      this.applyCustomVoice(voice);
-    })
-  }
-
-  voiceDividerColor(): string {
-    return this.appDarkMode ? '#3DFFFFFF' : '#1F000000';
-  }
-
   applySpeed(value: number): void {
     const nextSpeed = Math.max(0.5, Math.min(2, Math.round(value * 10) / 10));
     if (Math.abs(this.ttsSpeed - nextSpeed) < 0.01) {
@@ -1541,17 +1414,4 @@ struct TtsSettingsPage {
     }
   }
 
-  voiceTrailingText(voice: TtsVoiceOption): string {
-    if (this.isVoiceDownloading(voice)) {
-      return '...';
-    }
-    if (!voice.available && voice.downloadable) {
-      return '下载';
-    }
-    return this.isVoiceSelected(voice) ? '✓' : '';
-  }
-
-  voiceTrailingFontSize(voice: TtsVoiceOption): number {
-    return (!voice.available && voice.downloadable) ? 14 : 18;
-  }
 }

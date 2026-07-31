@@ -73,6 +73,58 @@ class ShelfTileSortEntry {
   originalOrder: number = 0;
 }
 
+class ShelfBookDataSource implements IDataSource {
+  private books: Book[] = [];
+  private listeners: DataChangeListener[] = [];
+
+  totalCount(): number { return this.books.length; }
+  getData(index: number): Book { return this.books[index]; }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (!this.listeners.includes(listener)) this.listeners.push(listener);
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    const index = this.listeners.indexOf(listener);
+    if (index >= 0) this.listeners.splice(index, 1);
+  }
+
+  replace(books: Book[]): void {
+    if (this.books.length === books.length && this.books.every((book: Book, index: number) => book === books[index])) {
+      return;
+    }
+    this.books = [...books];
+    for (const listener of this.listeners) listener.onDataReloaded();
+  }
+}
+
+class ShelfTileEntryDataSource implements IDataSource {
+  private entries: ShelfTileSortEntry[] = [];
+  private listeners: DataChangeListener[] = [];
+
+  totalCount(): number { return this.entries.length; }
+  getData(index: number): ShelfTileSortEntry { return this.entries[index]; }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (!this.listeners.includes(listener)) this.listeners.push(listener);
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    const index = this.listeners.indexOf(listener);
+    if (index >= 0) this.listeners.splice(index, 1);
+  }
+
+  replace(entries: ShelfTileSortEntry[]): void {
+    if (this.entries.length === entries.length &&
+      this.entries.every((entry: ShelfTileSortEntry, index: number) => entry.key === entries[index].key &&
+        entry.book === entries[index].book && entry.group === entries[index].group)) {
+      return;
+    }
+    this.entries = [...entries];
+    for (const listener of this.listeners) listener.onDataReloaded();
+  }
+}
+
 @Entry
 @Component
 struct Index {
@@ -946,7 +998,13 @@ struct BookshelfPage {
   @StorageLink('appCustomBaseThemeId') appCustomBaseThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
   @State books: Book[] = [];
   @State allBooks: Book[] = [];
+  private shelfListBooksSource: ShelfBookDataSource = new ShelfBookDataSource();
+  private shelfTileBooksSource: ShelfBookDataSource = new ShelfBookDataSource();
+  private shelfTileEntriesSource: ShelfTileEntryDataSource = new ShelfTileEntryDataSource();
+  private shelfTileEntriesCacheKey: string = '';
+  private shelfTileEntriesCache: ShelfTileSortEntry[] = [];
   @State shelfScope: string = 'all';
+  @State showShelfScopeOptions: boolean = false;
   @State showShelfSortMenu: boolean = false;
   @State showShelfLayoutMenu: boolean = false;
   @State showShelfGroups: boolean = false;
@@ -1057,11 +1115,6 @@ struct BookshelfPage {
   private fullTextCacheTotal: number = 0;
   private fullTextCacheStatus: string = '';
   private fullTextCacheBookName: string = '';
-  private fullTextCacheTaskKey: string = '';
-  private fullTextCacheBookUrl: string = '';
-  private fullTextCacheCoverPixelMap: image.PixelMap | null = null;
-  private fullTextCacheContinuousNotificationId: number = 0;
-  private fullTextCacheContinuousSlotType: notificationManager.SlotType = notificationManager.SlotType.SERVICE_INFORMATION;
   private fullTextCacheNotificationSlotReady: boolean = false;
   private fullTextCacheNotificationFailureHintShown: boolean = false;
   private openingBookGrowTimer: number = -1;
@@ -1070,6 +1123,9 @@ struct BookshelfPage {
   private shelfScopeSwapTimer: number = -1;
   private shelfScopeFinishTimer: number = -1;
   private shelfScopeSwitchAnimating: boolean = false;
+  private suppressShelfBookClickUntil: number = 0;
+  private pendingShelfSortTimer: number = -1;
+  private pendingShelfSortMode: string = '';
   private openingBookOriginX: number = 0;
   private openingBookOriginY: number = 0;
   private networkCoverCoordinator: SearchCoordinator | null = null;
@@ -1087,6 +1143,11 @@ struct BookshelfPage {
     this.cancelShelfBookOpening();
     this.cancelNetworkCoverSearch();
     this.clearShelfScopeTransition();
+    if (this.pendingShelfSortTimer >= 0) {
+      clearTimeout(this.pendingShelfSortTimer);
+      this.pendingShelfSortTimer = -1;
+    }
+    this.pendingShelfSortMode = '';
   }
 
   onActiveShelfGroupChanged(): void {
@@ -1576,7 +1637,11 @@ struct BookshelfPage {
               .height(36)
               .alignItems(VerticalAlign.Center)
               .onClick(() => {
-                this.showShelfGroups = !this.showShelfGroups;
+                const next = !this.showShelfGroups;
+                animateTo({ duration: 190, curve: Curve.Friction }, () => {
+                  this.showShelfGroups = next;
+                });
+                this.showShelfScopeOptions = false;
                 this.showShelfSortMenu = false;
                 this.showShelfLayoutMenu = false;
               })
@@ -1623,8 +1688,14 @@ struct BookshelfPage {
           .translate({ x: this.shelfScopeTransitionX })
           .scale({ x: this.shelfScopeTransitionScale, y: this.shelfScopeTransitionScale })
           .opacity(this.shelfScopeTransitionOpacity)
-          .parallelGesture(
+          .priorityGesture(
             PanGesture({ direction: PanDirection.Horizontal, distance: 24 })
+              .onActionStart(() => {
+                this.markShelfScopePanGesture(500);
+              })
+              .onActionUpdate(() => {
+                this.markShelfScopePanGesture(240);
+              })
               .onActionEnd((event: GestureEvent) => {
                 this.switchShelfScopeBySwipe(event.offsetX);
               })
@@ -1649,8 +1720,14 @@ struct BookshelfPage {
           .translate({ x: this.shelfScopeTransitionX })
           .scale({ x: this.shelfScopeTransitionScale, y: this.shelfScopeTransitionScale })
           .opacity(this.shelfScopeTransitionOpacity)
-          .parallelGesture(
+          .priorityGesture(
             PanGesture({ direction: PanDirection.Horizontal, distance: 24 })
+              .onActionStart(() => {
+                this.markShelfScopePanGesture(500);
+              })
+              .onActionUpdate(() => {
+                this.markShelfScopePanGesture(240);
+              })
               .onActionEnd((event: GestureEvent) => {
                 this.switchShelfScopeBySwipe(event.offsetX);
               })
@@ -1666,7 +1743,7 @@ struct BookshelfPage {
                   .height(this.bookshelfTopOverlayHeight())
               }
 
-              ForEach(this.books, (book: Book) => {
+              LazyForEach(this.shelfListBookDataSource(), (book: Book) => {
                 ListItem() {
                   Row() {
                     if (this.isBookMultiSelect) {
@@ -1699,6 +1776,9 @@ struct BookshelfPage {
                         })
                     )
                     .onClick((event: ClickEvent) => {
+                      if (this.consumeShelfSwipeClick()) {
+                        return;
+                      }
                       if (this.isBookMultiSelect) {
                         this.toggleSelectedBook(book.bookUrl);
                         return;
@@ -1735,8 +1815,14 @@ struct BookshelfPage {
           .translate({ x: this.shelfScopeTransitionX })
           .scale({ x: this.shelfScopeTransitionScale, y: this.shelfScopeTransitionScale })
           .opacity(this.shelfScopeTransitionOpacity)
-          .parallelGesture(
+          .priorityGesture(
             PanGesture({ direction: PanDirection.Horizontal, distance: 24 })
+              .onActionStart(() => {
+                this.markShelfScopePanGesture(500);
+              })
+              .onActionUpdate(() => {
+                this.markShelfScopePanGesture(240);
+              })
               .onActionEnd((event: GestureEvent) => {
                 this.switchShelfScopeBySwipe(event.offsetX);
               })
@@ -1754,6 +1840,10 @@ struct BookshelfPage {
 
       if (this.showShelfLayoutMenu && !this.isBookMultiSelect && !this.isTileGroupPage()) {
         this.shelfLayoutFloatingMenu()
+      }
+
+      if (this.showShelfScopeOptions && !this.isBookMultiSelect && !this.isTileGroupPage()) {
+        this.shelfScopeFloatingMenu()
       }
 
       if (this.showActionDialog && this.pendingActionBook) {
@@ -2481,6 +2571,17 @@ struct BookshelfPage {
     .width('100%')
     .scrollable(ScrollDirection.Horizontal)
     .scrollBar(BarState.Off)
+    .transition(this.shelfGroupBarTransition())
+  }
+
+  shelfGroupBarTransition(): TransitionEffect {
+    const appear = TransitionEffect.translate({ y: -8 })
+      .combine(TransitionEffect.opacity(0))
+      .animation({ duration: 210, curve: Curve.Friction });
+    const disappear = TransitionEffect.translate({ y: -5 })
+      .combine(TransitionEffect.opacity(0))
+      .animation({ duration: 140, curve: Curve.EaseIn });
+    return TransitionEffect.asymmetric(appear, disappear);
   }
 
   @Builder
@@ -2762,7 +2863,30 @@ struct BookshelfPage {
       this.applyShelfScope();
       return;
     }
-    this.activeShelfGroupId = groupId;
+    if (this.shelfScopeSwitchAnimating) {
+      return;
+    }
+    if (this.isTileLayout()) {
+      this.activeShelfGroupId = groupId;
+      return;
+    }
+    const currentIndex = this.shelfGroupOrderIndex(this.activeShelfGroupId);
+    const nextIndex = this.shelfGroupOrderIndex(groupId);
+    const outgoingX = nextIndex >= currentIndex ? -36 : 36;
+    this.animateShelfContentUpdate(() => {
+      this.activeShelfGroupId = groupId;
+    }, outgoingX);
+  }
+
+  shelfGroupOrderIndex(groupId: number): number {
+    if (groupId === 0) {
+      return 0;
+    }
+    if (groupId === -1) {
+      return this.shelfGroups.length + 1;
+    }
+    const index = this.shelfGroups.findIndex((group: BookGroup) => group.groupId === groupId);
+    return index >= 0 ? index + 1 : 0;
   }
 
   isTileGroupPage(): boolean {
@@ -2775,6 +2899,7 @@ struct BookshelfPage {
   }
 
   enterTileGroupPage(groupId: number): void {
+    this.showShelfScopeOptions = false;
     this.showShelfGroups = false;
     this.showShelfSortMenu = false;
     this.showShelfLayoutMenu = false;
@@ -2782,6 +2907,7 @@ struct BookshelfPage {
   }
 
   exitTileGroupPage(): void {
+    this.showShelfScopeOptions = false;
     this.showShelfGroups = false;
     this.showShelfSortMenu = false;
     this.selectShelfGroup(0);
@@ -2789,6 +2915,7 @@ struct BookshelfPage {
 
   enterBookMultiSelect(initialBookUrl: string): void {
     this.isBookMultiSelect = true;
+    this.showShelfScopeOptions = false;
     this.selectedBookUrls = initialBookUrl ? [initialBookUrl] : [];
     this.showShelfSortMenu = false;
     this.showShelfLayoutMenu = false;
@@ -3028,9 +3155,17 @@ struct BookshelfPage {
       this.books.some((book: Book) => book.group === group.groupId));
   }
 
-  getSortedTileRootEntries(): ShelfTileSortEntry[] {
+  getSortedTileRootEntries(books: Book[] = this.books, mode: string = this.sortMode): ShelfTileSortEntry[] {
+    const cacheKey = `${mode}_${this.shelfScope}_${this.activeShelfGroupId}_${this.isBookMultiSelect ? '1' : '0'}_` +
+      `${books.map((book: Book) => `${book.bookUrl}:${book.name}:${this.getBookReadTime(book)}:${this.getBookAddTime(book)}:` +
+        `${book.group}`).join('|')}_` +
+      `${this.shelfGroups.map((group: BookGroup) => `${group.groupId}:${group.groupName}`).join('|')}`;
+    if (cacheKey === this.shelfTileEntriesCacheKey) {
+      return this.shelfTileEntriesCache;
+    }
     const entries: ShelfTileSortEntry[] = [];
-    const ungroupedBooks = this.getTileBooksWithoutLatest(this.getUngroupedTileBooks());
+    const ungroupedBooks = this.getTileBooksWithoutLatest(books.filter((book: Book) => book.group <= 0 ||
+      !this.shelfGroups.some((group: BookGroup) => group.groupId === book.group)));
     ungroupedBooks.forEach((book: Book, index: number) => {
       const entry = new ShelfTileSortEntry();
       entry.kind = 'book';
@@ -3044,8 +3179,9 @@ struct BookshelfPage {
     });
 
     const bookOffset = ungroupedBooks.length;
-    this.getTileFolderGroups().forEach((group: BookGroup, index: number) => {
-      const groupBooks = this.getTileGroupBooks(group.groupId);
+    this.shelfGroups.filter((group: BookGroup) =>
+      books.some((book: Book) => book.group === group.groupId)).forEach((group: BookGroup, index: number) => {
+      const groupBooks = books.filter((book: Book) => book.group === group.groupId);
       const entry = new ShelfTileSortEntry();
       entry.kind = 'group';
       entry.key = `group_${group.groupId}`;
@@ -3057,8 +3193,25 @@ struct BookshelfPage {
       entries.push(entry);
     });
 
-    entries.sort((a: ShelfTileSortEntry, b: ShelfTileSortEntry) => this.compareTileRootEntry(a, b));
+    entries.sort((a: ShelfTileSortEntry, b: ShelfTileSortEntry) => this.compareTileRootEntry(a, b, mode));
+    this.shelfTileEntriesCacheKey = cacheKey;
+    this.shelfTileEntriesCache = entries;
     return entries;
+  }
+
+  shelfListBookDataSource(): ShelfBookDataSource {
+    this.shelfListBooksSource.replace(this.books);
+    return this.shelfListBooksSource;
+  }
+
+  shelfTileBookDataSource(): ShelfBookDataSource {
+    this.shelfTileBooksSource.replace(this.getTileBooksWithoutLatest(this.books));
+    return this.shelfTileBooksSource;
+  }
+
+  shelfTileEntryDataSource(): ShelfTileEntryDataSource {
+    this.shelfTileEntriesSource.replace(this.getSortedTileRootEntries());
+    return this.shelfTileEntriesSource;
   }
 
   latestTileGroupReadTime(books: Book[]): number {
@@ -3077,12 +3230,12 @@ struct BookshelfPage {
     return latest;
   }
 
-  compareTileRootEntry(a: ShelfTileSortEntry, b: ShelfTileSortEntry): number {
-    if (this.sortMode === 'name') {
+  compareTileRootEntry(a: ShelfTileSortEntry, b: ShelfTileSortEntry, mode: string = this.sortMode): number {
+    if (mode === 'name') {
       const nameDiff = a.name.localeCompare(b.name, 'zh-Hans-CN-u-co-pinyin');
       return nameDiff !== 0 ? nameDiff : a.originalOrder - b.originalOrder;
     }
-    const timeDiff = this.sortMode === 'recentAdd' ? b.addTime - a.addTime : b.readTime - a.readTime;
+    const timeDiff = mode === 'recentAdd' ? b.addTime - a.addTime : b.readTime - a.readTime;
     if (timeDiff !== 0) {
       return timeDiff;
     }
@@ -3166,7 +3319,7 @@ struct BookshelfPage {
       }
 
       if (this.shouldUseTileGroupFolders()) {
-        ForEach(this.getSortedTileRootEntries(), (entry: ShelfTileSortEntry) => {
+        LazyForEach(this.shelfTileEntryDataSource(), (entry: ShelfTileSortEntry) => {
           GridItem() {
             if (entry.kind === 'group' && entry.group) {
               this.shelfTileGroupFolder(entry.group)
@@ -3177,7 +3330,7 @@ struct BookshelfPage {
         }, (entry: ShelfTileSortEntry) => entry.book ?
           this.shelfBookRenderKey(entry.book, entry.key) : entry.key)
       } else {
-        ForEach(this.getTileBooksWithoutLatest(this.books), (book: Book) => {
+        LazyForEach(this.shelfTileBookDataSource(), (book: Book) => {
           GridItem() {
             this.shelfTileBook(book)
           }
@@ -3331,6 +3484,9 @@ struct BookshelfPage {
           }),
         TapGesture()
           .onAction((event: GestureEvent) => {
+            if (this.consumeShelfSwipeClick()) {
+              return;
+            }
             if (this.isBookMultiSelect) {
               this.toggleSelectedBook(book.bookUrl);
               return;
@@ -3509,6 +3665,9 @@ struct BookshelfPage {
           }),
         TapGesture()
           .onAction((event: GestureEvent) => {
+            if (this.consumeShelfSwipeClick()) {
+              return;
+            }
             if (this.isBookMultiSelect) {
               this.toggleSelectedBook(book.bookUrl);
               return;
@@ -4183,6 +4342,7 @@ struct BookshelfPage {
 
   setShelfScope(scope: string): void {
     const next = scope === 'local' ? 'local' : (scope === 'network' ? 'network' : 'all');
+    this.showShelfScopeOptions = false;
     if (this.shelfScope === next) return;
     this.shelfScope = next;
     this.showShelfSortMenu = false;
@@ -4192,6 +4352,7 @@ struct BookshelfPage {
   }
 
   switchShelfScopeBySwipe(offsetX: number): void {
+    this.markShelfScopePanGesture(160);
     if (this.isBookMultiSelect || this.isTileGroupPage() || this.shelfScopeSwitchAnimating ||
       Math.abs(offsetX) < 56) {
       return;
@@ -4203,6 +4364,33 @@ struct BookshelfPage {
       return;
     }
     this.animateShelfScopeSwitch(scopes[nextIndex], offsetX < 0 ? -1 : 1);
+  }
+
+  markShelfScopePanGesture(durationMs: number): void {
+    this.suppressShelfBookClickUntil = Date.now() + durationMs;
+  }
+
+  consumeShelfSwipeClick(): boolean {
+    if (Date.now() > this.suppressShelfBookClickUntil) {
+      this.suppressShelfBookClickUntil = 0;
+      return false;
+    }
+    this.suppressShelfBookClickUntil = 0;
+    return true;
+  }
+
+  switchShelfScopeBySelection(scope: string): void {
+    if (this.shelfScopeSwitchAnimating) {
+      return;
+    }
+    const scopes: string[] = ['all', 'network', 'local'];
+    const currentIndex = scopes.indexOf(this.shelfScope);
+    const nextIndex = scopes.indexOf(scope);
+    this.showShelfScopeOptions = false;
+    if (currentIndex < 0 || nextIndex < 0 || currentIndex === nextIndex) {
+      return;
+    }
+    this.animateShelfScopeSwitch(scope, nextIndex > currentIndex ? -1 : 1);
   }
 
   animateShelfScopeSwitch(scope: string, outgoingDirection: number): void {
@@ -4229,6 +4417,32 @@ struct BookshelfPage {
         this.shelfScopeSwitchAnimating = false;
       }, 250);
     }, 135);
+  }
+
+  animateShelfContentUpdate(update: () => void, outgoingX: number): void {
+    this.clearShelfScopeTransition(false);
+    this.shelfScopeSwitchAnimating = true;
+    animateTo({ duration: 110, curve: Curve.EaseIn }, () => {
+      this.shelfScopeTransitionX = outgoingX;
+      this.shelfScopeTransitionScale = 0.988;
+      this.shelfScopeTransitionOpacity = 0.16;
+    });
+    this.shelfScopeSwapTimer = setTimeout(() => {
+      this.shelfScopeSwapTimer = -1;
+      update();
+      this.shelfScopeTransitionX = -outgoingX;
+      this.shelfScopeTransitionScale = 0.988;
+      this.shelfScopeTransitionOpacity = 0.16;
+      animateTo({ duration: 210, curve: Curve.Friction }, () => {
+        this.shelfScopeTransitionX = 0;
+        this.shelfScopeTransitionScale = 1;
+        this.shelfScopeTransitionOpacity = 1;
+      });
+      this.shelfScopeFinishTimer = setTimeout(() => {
+        this.shelfScopeFinishTimer = -1;
+        this.shelfScopeSwitchAnimating = false;
+      }, 230);
+    }, 115);
   }
 
   clearShelfScopeTransition(resetVisuals: boolean = true): void {
@@ -4670,15 +4884,6 @@ struct BookshelfPage {
     return `已缓存 ${done}/${total} 章（${percent}%）`;
   }
 
-  shelfFullTextCachePercent(task: ShelfFullTextCacheTask): number {
-    const total = Math.max(task.total, 0);
-    if (total === 0) {
-      return 0;
-    }
-    const done = Math.max(0, Math.min(task.done, total));
-    return Math.floor((done / total) * 100);
-  }
-
   shelfFullTextCacheNotificationTitle(task: ShelfFullTextCacheTask): string {
     return `缓存全文：${task.bookName || '书籍'}`;
   }
@@ -5032,20 +5237,6 @@ struct BookshelfPage {
     return 260100 + (this.fullTextCacheHash(bookUrl || this.fullTextCacheBookName || 'book') % 100000);
   }
 
-  currentFullTextCacheNotificationId(ongoing: boolean): number {
-    if (ongoing && this.fullTextCacheContinuousNotificationId > 0) {
-      return this.fullTextCacheContinuousNotificationId;
-    }
-    return this.fullTextCacheNotificationId(this.fullTextCacheBookUrl);
-  }
-
-  currentFullTextCacheNotificationSlotType(ongoing: boolean): notificationManager.SlotType {
-    if (ongoing && this.fullTextCacheContinuousNotificationId > 0) {
-      return this.fullTextCacheContinuousSlotType;
-    }
-    return notificationManager.SlotType.SERVICE_INFORMATION;
-  }
-
   fullTextCacheCancelRequestCode(bookUrl: string): number {
     return 360100 + (this.fullTextCacheHash(bookUrl || this.fullTextCacheBookName || 'book') % 100000);
   }
@@ -5317,6 +5508,56 @@ struct BookshelfPage {
 
   @Builder
   shelfScopeSegment() {
+    Row({ space: 5 }) {
+      Text(this.shelfScopeLabel())
+        .fontSize(13)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.accentColor())
+      SymbolGlyph(this.showShelfScopeOptions ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+        .fontSize(12)
+        .fontColor([this.secondaryTextColor()])
+    }
+    .width(72)
+    .height(32)
+    .borderRadius(18)
+    .backgroundColor(this.showShelfScopeOptions ? this.selectedSoftBackgroundColor() : this.glassCardColor())
+    .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      this.showShelfScopeOptions = !this.showShelfScopeOptions;
+      this.showShelfGroups = false;
+      this.showShelfSortMenu = false;
+      this.showShelfLayoutMenu = false;
+    })
+  }
+
+  @Builder
+  shelfScopeFloatingMenu() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .onClick(() => {
+          this.showShelfScopeOptions = false;
+        })
+
+      Column() {
+        this.expandedShelfScopeSegment()
+      }
+      .width(144)
+      .height(32)
+      .position({ x: 60, y: this.statusBarHeight + 52 })
+      .onClick(() => {
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .zIndex(12)
+  }
+
+  @Builder
+  expandedShelfScopeSegment() {
     Stack({ alignContent: Alignment.TopStart }) {
       Row()
         .width(46)
@@ -5339,8 +5580,10 @@ struct BookshelfPage {
     .height(32)
     .padding(3)
     .borderRadius(18)
-    .backgroundColor(this.glassCardColor())
-    .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
+    .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
+    .backdropBlur(ThemeRuntime.glassBlur('overlay', 24))
+    .border({ width: ThemeRuntime.glassBorderWidth('overlay'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'overlay') })
+    .shadow({ radius: ThemeRuntime.glassShadowRadius('overlay'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'overlay'), offsetX: ThemeRuntime.glassShadowOffsetX('overlay'), offsetY: ThemeRuntime.glassShadowOffsetY('overlay') })
   }
 
   @Builder
@@ -5354,9 +5597,7 @@ struct BookshelfPage {
       .textAlign(TextAlign.Center)
       .zIndex(1)
       .onClick(() => {
-        if (!this.shelfScopeSwitchAnimating) {
-          this.setShelfScope(scope);
-        }
+        this.switchShelfScopeBySelection(scope);
       })
   }
 
@@ -5368,6 +5609,16 @@ struct BookshelfPage {
       return 92;
     }
     return 0;
+  }
+
+  shelfScopeLabel(): string {
+    if (this.shelfScope === 'network') {
+      return '网络';
+    }
+    if (this.shelfScope === 'local') {
+      return '本地';
+    }
+    return '全部';
   }
 
   @Builder
@@ -5386,6 +5637,7 @@ struct BookshelfPage {
     .accessibilityText('布局切换')
     .onClick(() => {
       this.showShelfLayoutMenu = !this.showShelfLayoutMenu;
+      this.showShelfScopeOptions = false;
       this.showShelfSortMenu = false;
       this.showShelfGroups = false;
     })
@@ -5482,6 +5734,7 @@ struct BookshelfPage {
     .margin({ right: 10 })
     .onClick(() => {
       this.showShelfSortMenu = !this.showShelfSortMenu;
+      this.showShelfScopeOptions = false;
       this.showShelfLayoutMenu = false;
     })
   }
@@ -5496,6 +5749,19 @@ struct BookshelfPage {
     .padding({ right: 56 })
     .position({ x: 0, y: this.statusBarHeight + 52 })
     .zIndex(10)
+    .transition(this.shelfSortMenuTransition())
+  }
+
+  shelfSortMenuTransition(): TransitionEffect {
+    const appear = TransitionEffect.translate({ y: -7 })
+      .combine(TransitionEffect.scale({ x: 0.96, y: 0.96, centerX: '100%', centerY: '0%' }))
+      .combine(TransitionEffect.opacity(0))
+      .animation({ duration: 190, curve: Curve.Friction });
+    const disappear = TransitionEffect.translate({ y: -4 })
+      .combine(TransitionEffect.scale({ x: 0.98, y: 0.98, centerX: '100%', centerY: '0%' }))
+      .combine(TransitionEffect.opacity(0))
+      .animation({ duration: 125, curve: Curve.EaseIn });
+    return TransitionEffect.asymmetric(appear, disappear);
   }
 
   @Builder
@@ -5557,17 +5823,52 @@ struct BookshelfPage {
 
   applyShelfSortMode(mode: string): void {
     const next = mode === 'recentAdd' || mode === 'name' ? mode : 'recentRead';
-    this.sortMode = next;
-    this.books = this.sortBooks(this.books);
     this.showShelfSortMenu = false;
+    if (this.sortMode === next) {
+      if (this.pendingShelfSortTimer >= 0) {
+        clearTimeout(this.pendingShelfSortTimer);
+        this.pendingShelfSortTimer = -1;
+      }
+      this.pendingShelfSortMode = '';
+      return;
+    }
+    if (this.shelfScopeSwitchAnimating) {
+      this.pendingShelfSortMode = next;
+      if (this.pendingShelfSortTimer >= 0) {
+        clearTimeout(this.pendingShelfSortTimer);
+      }
+      this.pendingShelfSortTimer = setTimeout(() => {
+        this.pendingShelfSortTimer = -1;
+        const pending = this.pendingShelfSortMode;
+        this.pendingShelfSortMode = '';
+        if (pending) {
+          this.applyShelfSortMode(pending);
+        }
+      }, 280);
+      return;
+    }
+    if (this.pendingShelfSortTimer >= 0) {
+      clearTimeout(this.pendingShelfSortTimer);
+      this.pendingShelfSortTimer = -1;
+    }
+    this.pendingShelfSortMode = '';
+    this.animateShelfContentUpdate(() => {
+      this.sortMode = next;
+      const sorted = this.sortBooks(this.books, next);
+      this.books = sorted;
+      this.shelfListBooksSource.replace(sorted);
+      this.shelfTileBooksSource.replace(this.getTileBooksWithoutLatest(sorted));
+      this.shelfTileEntriesCacheKey = '';
+      this.shelfTileEntriesSource.replace(this.getSortedTileRootEntries(sorted, next));
+    }, 0);
   }
 
-  sortBooks(books: Book[]): Book[] {
-    if (this.sortMode === 'recentRead') {
+  sortBooks(books: Book[], mode: string = this.sortMode): Book[] {
+    if (mode === 'recentRead') {
       return BookshelfSortHelper.sortByRecentRead(books);
     }
     const sorted = [...books];
-    if (this.sortMode === 'name') {
+    if (mode === 'name') {
       sorted.sort((a: Book, b: Book) => this.compareBookName(a, b));
     } else {
       sorted.sort((a: Book, b: Book) => this.getBookAddTime(b) - this.getBookAddTime(a));
@@ -6784,36 +7085,6 @@ struct ExplorePage {
     }
   }
 
-  buildSourceNames(): string[] {
-    const names: string[] = [];
-    for (const entry of this.entries) {
-      if (entry.sourceName && !names.includes(entry.sourceName)) {
-        names.push(entry.sourceName);
-      }
-    }
-    return names;
-  }
-
-  exploreSourceSelectOptions(): SelectOption[] {
-    const options: SelectOption[] = [];
-    if (this.sourceNames.length === 0) {
-      const option: SelectOption = { value: '发现' };
-      options.push(option);
-      return options;
-    }
-    for (const name of this.sourceNames) {
-      const option: SelectOption = { value: name };
-      options.push(option);
-    }
-    return options;
-  }
-
-  selectedExploreSourceIndex(): number {
-    const index = this.sourceOptions.findIndex((option: ExploreSourceOption) =>
-      option.sourceUrl === this.selectedSourceUrl);
-    return index >= 0 ? index : 0;
-  }
-
   shouldShowExploreStatus(): boolean {
     if (!this.status) {
       return false;
@@ -7336,108 +7607,6 @@ struct SearchPage {
       y: this.statusBarHeight + (this.singleSourceSearchUrl ? 92 : 52)
     })
     .zIndex(10)
-  }
-
-  @Builder
-  searchHistorySection() {
-    Column() {
-      Row() {
-        Text('搜索历史')
-          .fontSize(16)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor())
-          .layoutWeight(1)
-
-        if (this.searchHistoryEditing) {
-          Text('全部删除')
-            .fontSize(14)
-            .fontColor('#E53935')
-            .padding({ left: 8, right: 8, top: 6, bottom: 6 })
-            .onClick(() => {
-              this.clearSearchHistory();
-            })
-          Text('完成')
-            .fontSize(14)
-            .fontColor(this.buttonColor())
-            .padding({ left: 8, top: 6, bottom: 6 })
-            .onClick(() => {
-              this.searchHistoryEditing = false;
-            })
-        } else {
-          SymbolGlyph($r('sys.symbol.ohos_trash'))
-            .fontSize(20)
-            .fontColor([this.secondaryTextColor()])
-            .width(36)
-            .height(32)
-            .onClick(() => {
-              this.searchHistoryExpanded = true;
-              this.searchHistoryEditing = true;
-            })
-        }
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-
-      Flex({ wrap: FlexWrap.Wrap }) {
-        ForEach(this.visibleSearchHistory(), (keyword: string) => {
-          Row() {
-            Text(keyword)
-              .fontSize(14)
-              .fontColor(this.secondaryTextColor())
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-
-            if (this.searchHistoryEditing) {
-              Text('×')
-                .fontSize(16)
-                .fontColor(this.subTextColor())
-                .margin({ left: 6 })
-            }
-          }
-          .constraintSize({ maxWidth: '72%' })
-          .height(32)
-          .padding({ left: 12, right: 12 })
-          .backgroundColor(this.buttonBackgroundColor())
-          .borderRadius(16)
-          .margin({ right: 8, bottom: 8 })
-          .alignItems(VerticalAlign.Center)
-          .onClick(() => {
-            if (this.searchHistoryEditing) {
-              this.deleteSearchHistoryItem(keyword);
-            } else {
-              this.searchFromHistory(keyword);
-            }
-          })
-        }, (keyword: string) => keyword)
-
-        if (!this.searchHistoryEditing && this.searchHistory.length > 5) {
-          SymbolGlyph(this.searchHistoryExpanded ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
-            .fontSize(18)
-            .fontColor([this.secondaryTextColor()])
-            .width(36)
-            .height(32)
-            .borderRadius(16)
-            .margin({ right: 8, bottom: 8 })
-            .onClick(() => {
-              this.searchHistoryExpanded = !this.searchHistoryExpanded;
-            })
-        }
-      }
-      .width('100%')
-      .margin({ top: 12 })
-    }
-    .width('100%')
-    .padding(16)
-    .backgroundColor(this.cardColor())
-    .borderRadius(8)
-    .margin({ left: 16, right: 16, top: 16 })
-  }
-
-  visibleSearchHistory(): string[] {
-    if (this.searchHistoryExpanded || this.searchHistoryEditing) {
-      return this.searchHistory;
-    }
-    return this.searchHistory.slice(0, 5);
   }
 
   searchFromHistory(keyword: string): void {

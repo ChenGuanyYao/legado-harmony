@@ -29,8 +29,6 @@ class ReaderGraphicsFontRecord {
 
 export class ReaderFontHelper {
   private static registeredGraphicsFonts: ReaderGraphicsFontRecord[] = [];
-  private static readonly ACTIVE_READER_FONT_FAMILY: string = 'ReaderCustomFontActive';
-
   static normalizeFontFamily(filePath: string): string {
     return ReaderFontHelper.stableFontFamily(filePath);
   }

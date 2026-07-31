@@ -12,6 +12,7 @@ import { BookFieldSanitizer } from '../utils/BookFieldSanitizer';
 import { SearchExplorePendingBook } from '../utils/SearchExplorePendingBook';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { BookTypeSupport } from '../core/book/BookTypeSupport';
+import { SearchBookShelfHelper } from '../utils/SearchBookShelfHelper';
 
 @Entry
 @Component
@@ -702,18 +703,7 @@ struct SearchBookDetailPage {
   }
 
   async findShelfBookByKey(bookKey: string, includePending: boolean = false): Promise<Book | null> {
-    if (!bookKey) {
-      return null;
-    }
-    const db = AppDatabase.getInstance();
-    const books = await db.getAllBooks();
-    for (const book of books) {
-      if (BookIdentity.keyOfBook(book) === bookKey &&
-        (includePending || !SearchExplorePendingBook.isPendingAddToShelf(book))) {
-        return book;
-      }
-    }
-    return null;
+    return SearchBookShelfHelper.findShelfBookByKey(bookKey, includePending);
   }
 
   syncStateFromBook(book: Book): void {

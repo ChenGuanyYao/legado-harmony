@@ -125,15 +125,6 @@ export class JsRuntime {
     }
   }
 
-  private evalSimple(expr: string): string {
-    expr = this.replaceDateExpressions(expr);
-    for (const k in this.vars) expr = expr.replace(new RegExp('\\b' + k + '\\b', 'g'), this.vars[k]);
-    try {
-      if (/^[\d\s+\-*/%.()]+$/.test(expr)) return String(this.evalNumber(expr));
-      return expr;
-    } catch (e) { return expr; }
-  }
-
   private evalStr(s: string): string {
     let v = s.trim();
     v = this.replaceDateExpressions(v);

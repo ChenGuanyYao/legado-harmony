@@ -533,26 +533,9 @@ struct CoverGalleryManagerPage {
     return album ? [...album.covers] : [];
   }
 
-  totalCoverCount(): number {
-    let count = 0;
-    for (const album of this.albums) {
-      count += album.covers.length;
-    }
-    return count;
-  }
-
   selectedAlbumName(): string {
     const album = this.getSelectedAlbum();
     return album ? album.name : '未选择';
-  }
-
-  selectedAlbumCoverCount(): number {
-    const album = this.getSelectedAlbum();
-    return album ? album.covers.length : 0;
-  }
-
-  currentAlbumCount(): number {
-    return this.albums.length;
   }
 
   refreshAlbumStats(albums: CoverAlbum[] = this.albums, selectedAlbumId: string = this.selectedAlbumId): void {
@@ -692,24 +675,6 @@ struct CoverGalleryManagerPage {
     .width('100%')
     .padding({ left: 16, right: 16, top: 18, bottom: 18 })
     .backgroundColor(this.cardColor())
-  }
-
-  @Builder
-  statBlock(label: string, value: string) {
-    Column() {
-      Text(value)
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-      Text(label)
-        .fontSize(12)
-        .fontColor(this.subTextColor())
-        .margin({ top: 3 })
-    }
-    .layoutWeight(1)
-    .padding({ top: 12, bottom: 12 })
-    .borderRadius(8)
-    .backgroundColor(this.inputColor())
   }
 
   @Builder
