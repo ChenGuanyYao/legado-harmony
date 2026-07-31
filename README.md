@@ -1,8 +1,8 @@
 # 开源轻页
 
-开源轻页是一个面向 HarmonyOS NEXT 的本地阅读应用实验项目，使用 ArkTS / ArkUI 开发，目标是在移动端提供书架、搜索、发现、书源管理、阅读排版、朗读和个性化设置等完整阅读器体验。
+开源轻页是一个面向 HarmonyOS NEXT 的本地阅读应用实验项目，使用 ArkTS / ArkUI 开发，目标是在手机、平板与 PC/2in1 上提供书架、搜索、发现、书源管理、阅读排版、朗读和个性化设置等完整阅读器体验。
 
-当前版本：`2.6.709`。项目包名为 `io.legado.read`，支持 phone 和 tablet，当前以用户自行导入、且具备合法使用权限的书源规则为数据入口。
+当前版本：`2.6.709`。项目包名为 `io.legado.read`，支持 phone、tablet 和 PC/2in1，当前以用户自行导入、且具备合法使用权限的书源规则为数据入口。
 
 ## 合规说明
 
@@ -137,7 +137,7 @@ entry/src/main/ets
 - `versionCode` / `buildVersion`：`260707`
 - `minAPIVersion`：`12`
 - `targetAPIVersion`：`23`
-- 支持设备：`phone`、`tablet`
+- 支持设备：`phone`、`tablet`、`2in1`（PC/2in1）
 - 权限：`ohos.permission.INTERNET`、`ohos.permission.KEEP_BACKGROUND_RUNNING`
 - 开源协议：`GPL-3.0`
 

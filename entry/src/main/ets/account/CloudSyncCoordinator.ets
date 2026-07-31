@@ -651,6 +651,9 @@ export class CloudSyncCoordinator {
     }
     try {
       const type = (deviceInfo.deviceType || '').toLowerCase();
+      if (type.includes('2in1') || type.includes('2-in-1') || type.includes('pc')) {
+        return '2in1';
+      }
       if (type.includes('tablet')) {
         return 'tablet';
       }

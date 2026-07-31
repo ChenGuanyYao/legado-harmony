@@ -83,7 +83,7 @@ const ALLOWED_ENTITY_TYPES = new Set([
   'custom_theme_schemes',
   'book_source'
 ]);
-const DEVICE_KINDS = new Set(['phone', 'tablet', 'foldable', 'unknown']);
+const DEVICE_KINDS = new Set(['phone', 'tablet', '2in1', 'foldable', 'unknown']);
 const MAX_OPERATIONS = 100;
 const MAX_PAYLOAD_BYTES = 64 * 1024;
 const MAX_BOOK_SOURCE_PAYLOAD_BYTES = 256 * 1024;

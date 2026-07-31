@@ -204,6 +204,12 @@ struct SyncDevicesPage {
         .height(32)
         .fillColor(this.accentColor())
         .opacity(device.revokedAt ? 0.45 : 1)
+    } else if (device.deviceKind === '2in1') {
+      Image($r('app.media.ic_device_2in1'))
+        .width(32)
+        .height(32)
+        .fillColor(this.accentColor())
+        .opacity(device.revokedAt ? 0.45 : 1)
     } else if (device.deviceKind === 'tablet') {
       Image($r('app.media.ic_device_tablet'))
         .width(32)
