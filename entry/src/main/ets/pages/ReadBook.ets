@@ -209,6 +209,7 @@ struct ReadBookPage {
   @State readerReplaceRules: ReaderReplaceRule[] = [];
   @State isLoading: boolean = true;
   @State showMenu: boolean = false;
+  @State hdsMaterialRenderBranch: boolean = false;
   // 展开屏上记住用户本次唤起菜单的手指侧：-1 左侧，1 右侧。
   @State readerMenuAnchorSide: number = 1;
   @State showReaderActionMenu: boolean = false;
@@ -381,6 +382,7 @@ struct ReadBookPage {
   private readerTapLayerGlobalX: number = 0;
   private readerTapLayerGlobalY: number = 0;
   private readerTapSlop: number = 12;
+  private readerPageTurnCommitDistance: number = 36;
   private readerPanActive: boolean = false;
   private slideResetSerial: number = 0;
   @StorageLink('readerFontSize') @Watch('onReadLayoutChanged') readerFontSize: number = 20;
@@ -478,6 +480,17 @@ struct ReadBookPage {
   private volumeDownCallback?: (event: KeyEvent) => void;
   private lastLoggedReaderFontFamily: string = '';
   private readerFontChangeSerial: number = 0;
+  private readerLayoutApplyTimerId: number = -1;
+  private readerLayoutCommitInProgress: boolean = false;
+  private readerTypographyDraftPending: boolean = false;
+  @State readerTypographyValueRevision: number = 0;
+  @State readerTypographyFontSize: number = 20;
+  @State readerTypographyLineHeight: number = 12;
+  @State readerTypographyParagraphSpacing: number = 0;
+  @State readerTypographyMarginLeft: number = 18;
+  @State readerTypographyMarginRight: number = 18;
+  @State readerTypographyMarginTop: number = 18;
+  @State readerTypographyMarginBottom: number = 18;
   private readingProgressSaveQueue: Promise<void> = Promise.resolve();
   private readerExitProgressSaved: boolean = false;
   private openedFromShortcut: boolean = false;
@@ -634,6 +647,7 @@ struct ReadBookPage {
   aboutToDisappear() {
     const transientCommentPage = this.readerCommentPageActive;
     this.readerPageVisible = false;
+    this.flushPendingReaderLayoutChange(false);
     this.releaseReaderScreenTimeout();
     this.shortcutRoutingActive = false;
     if (this.shelfOpeningEntryTimer >= 0) {
@@ -1603,7 +1617,11 @@ struct ReadBookPage {
 
       if (this.showMenu && !this.showToc && !this.showSettings && this.chapters.length > 0) {
         if (this.supportsReaderImmersiveMaterial()) {
-          this.readerHdsFloatingBottomMenu()
+          if (this.hdsMaterialRenderBranch) {
+            this.readerHdsFloatingBottomMenu()
+          } else {
+            this.readerHdsFloatingBottomMenu()
+          }
         } else {
           this.readerFloatingBottomMenu()
         }
@@ -1612,14 +1630,22 @@ struct ReadBookPage {
           this.readerTtsQuickActionButton()
         }
         if (this.readerUseTtsQuickAction && this.shouldShowTtsMediaControls()) {
-          this.ttsExpandedMediaControlsBar()
+          if (this.hdsMaterialRenderBranch) {
+            this.ttsExpandedMediaControlsBar()
+          } else {
+            this.ttsExpandedMediaControlsBar()
+          }
         }
       }
 
       if (this.showToc) {
         this.readerFloatingTocPanel()
         if (this.supportsReaderImmersiveMaterial()) {
-          this.readerHdsFloatingActionBar(true)
+          if (this.hdsMaterialRenderBranch) {
+            this.readerHdsFloatingActionBar(true)
+          } else {
+            this.readerHdsFloatingActionBar(true)
+          }
         }
       }
 
@@ -1629,7 +1655,11 @@ struct ReadBookPage {
           this.ttsVoiceDropdownPanel()
         }
         if (this.supportsReaderImmersiveMaterial()) {
-          this.readerHdsFloatingActionBar(false, true)
+          if (this.hdsMaterialRenderBranch) {
+            this.readerHdsFloatingActionBar(false, true)
+          } else {
+            this.readerHdsFloatingActionBar(false, true)
+          }
         }
       }
 
@@ -1765,6 +1795,8 @@ struct ReadBookPage {
         .height(56)
         .tabBar(this.readerHdsChapterBarContent())
       }
+      .key(`reader_hds_chapter_bar_${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`)
+      .barBackgroundColor(this.readerGlassPanelColor())
       .barMode(BarMode.Fixed)
       .barHeight(48)
       .barOverlap(true)
@@ -1919,6 +1951,8 @@ struct ReadBookPage {
       .height(56)
       .tabBar(this.readerHdsMenuItem(this.readerDayNightIcon(), false))
     }
+    .key(`reader_hds_action_bar_${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`)
+    .barBackgroundColor(this.readerGlassPanelColor())
     .barMode(BarMode.Fixed)
     .barHeight(48)
     .barOverlap(true)
@@ -5580,6 +5614,7 @@ struct ReadBookPage {
 
   openTypographySettingsPanel(): void {
     if (this.isReaderComicModeActive()) return;
+    if (!this.readerTypographyDraftPending) this.syncReaderTypographyDraft();
     this.showReaderActionMenu = false;
     this.settingsPanelTab = 2;
     this.showToc = false;
@@ -6551,9 +6586,53 @@ struct ReadBookPage {
   }
 
   onReadLayoutChanged(): void {
+    if (this.readerEntryInitializing || this.readerLayoutCommitInProgress) return;
+    this.scheduleReaderLayoutChange();
+  }
+
+  scheduleReaderLayoutChange(): void {
+    if (this.readerLayoutApplyTimerId >= 0) {
+      clearTimeout(this.readerLayoutApplyTimerId);
+    }
+    this.readerLayoutApplyTimerId = setTimeout(() => {
+      this.readerLayoutApplyTimerId = -1;
+      this.applyPendingReaderLayoutChange();
+    }, 1000);
+  }
+
+  scheduleReaderTypographyChange(): void {
+    if (this.readerLayoutApplyTimerId >= 0) {
+      clearTimeout(this.readerLayoutApplyTimerId);
+    }
+    this.readerLayoutApplyTimerId = setTimeout(() => {
+      this.readerLayoutApplyTimerId = -1;
+      this.commitReaderTypographyDraft();
+      this.applyPendingReaderLayoutChange();
+    }, 1000);
+  }
+
+  applyPendingReaderLayoutChange(): void {
+    this.readerPaginationCache.clear();
+    this.pageTurnPreviewKey = '';
+    this.refreshReaderTextRender();
     this.paginateContent(this.content);
     this.preloadNextChapterPaginationLater();
+    this.saveReaderLayoutSettings();
+    this.saveReadConfig();
     this.saveReadingProgress();
+  }
+
+  flushPendingReaderLayoutChange(repaginate: boolean = true): void {
+    if (this.readerLayoutApplyTimerId < 0 && !this.readerTypographyDraftPending) return;
+    if (this.readerLayoutApplyTimerId >= 0) clearTimeout(this.readerLayoutApplyTimerId);
+    this.readerLayoutApplyTimerId = -1;
+    this.commitReaderTypographyDraft();
+    if (repaginate && this.readerPageVisible) {
+      this.applyPendingReaderLayoutChange();
+      return;
+    }
+    this.saveReaderLayoutSettings();
+    this.saveReadConfig();
   }
 
   refreshReaderTextRender(): void {
@@ -6601,6 +6680,7 @@ struct ReadBookPage {
   }
 
   onReaderThemeChanged(): void {
+    this.hdsMaterialRenderBranch = !this.hdsMaterialRenderBranch;
     this.enterReaderImmersive();
     this.readerPaginationCache.clear();
     this.pageTurnPreviewKey = '';
@@ -6613,6 +6693,7 @@ struct ReadBookPage {
   onReaderColorModeChanged(): void {
     // 明暗切换只改变配色和背景，不重新执行整章文本测量与分页。
     // 自定义主题若同时改变字体或排版，会通过 themeRevision / 阅读设置的监听单独触发重排。
+    this.hdsMaterialRenderBranch = !this.hdsMaterialRenderBranch;
     this.enterReaderImmersive();
     this.refreshReaderTextRender();
     this.onTtsCoverSettingsChanged();
@@ -7441,6 +7522,8 @@ struct ReadBookPage {
       .height(48)
       .tabBar(this.ttsMediaSymbolControl($r('sys.symbol.xmark'), true, '关闭朗读控制'))
     }
+    .key(`reader_tts_controls_bar_${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`)
+    .barBackgroundColor(this.readerGlassPanelColor())
     .barMode(BarMode.Fixed)
     .barHeight(48)
     .barOverlap(true)
@@ -8183,9 +8266,11 @@ struct ReadBookPage {
 
   isReaderPageTurnCommitGesture(offsetX: number, offsetY: number): boolean {
     if (this.isVerticalPageTurnAnimation()) {
-      return Math.abs(offsetY) >= 48 && Math.abs(offsetY) > Math.abs(offsetX) * 1.2;
+      return Math.abs(offsetY) >= this.readerPageTurnCommitDistance &&
+        Math.abs(offsetY) > Math.abs(offsetX) * 1.2;
     }
-    return Math.abs(offsetX) >= 48 && Math.abs(offsetX) > Math.abs(offsetY) * 1.2;
+    return Math.abs(offsetX) >= this.readerPageTurnCommitDistance &&
+      Math.abs(offsetX) > Math.abs(offsetY) * 1.2;
   }
 
   commitReaderMove(offsetX: number, offsetY: number): void {
@@ -8201,9 +8286,9 @@ struct ReadBookPage {
       this.chapters.length === 0) {
       return;
     }
-    if (offsetY < -48) {
+    if (offsetY <= -this.readerPageTurnCommitDistance) {
       this.runPageTurnAnimation(1, 'gesture');
-    } else if (offsetY > 48) {
+    } else if (offsetY >= this.readerPageTurnCommitDistance) {
       this.runPageTurnAnimation(-1, 'gesture');
     } else {
       this.resetSlidePageEffect();
@@ -8216,9 +8301,9 @@ struct ReadBookPage {
       this.chapters.length === 0) {
       return;
     }
-    if (offsetX < -48) {
+    if (offsetX <= -this.readerPageTurnCommitDistance) {
       this.runPageTurnAnimation(1, 'gesture');
-    } else if (offsetX > 48) {
+    } else if (offsetX >= this.readerPageTurnCommitDistance) {
       this.runPageTurnAnimation(-1, 'gesture');
     } else {
       this.resetSlidePageEffect();
@@ -8320,27 +8405,19 @@ struct ReadBookPage {
     Column({ space: 4 }) {
       this.readerFontEntryItem()
 
-      this.readerTypographySlider('字号', this.readerFontSize, 14, 50, 1,
-        (value: number) => this.applyReaderFontSize(value))
-      this.readerTypographySlider('行距', this.readerLineHeight, 0, 52, 1,
-        (value: number) => this.applyReaderLineHeight(value))
-      this.readerTypographySlider('段距', this.readerParagraphSpacing, 0, 32, 1,
-        (value: number) => this.applyReaderParagraphSpacing(value))
-      this.readerTypographySlider('左边距', this.readerMarginLeft, 0, 80, 1,
-        (value: number) => this.applyReaderMargin(3, value))
-      this.readerTypographySlider('右边距', this.readerMarginRight, 0, 80, 1,
-        (value: number) => this.applyReaderMargin(4, value))
-      this.readerTypographySlider('上边距', this.readerMarginTop, 0, 120, 1,
-        (value: number) => this.applyReaderMargin(5, value))
-      this.readerTypographySlider('下边距', this.readerMarginBottom, 0, 120, 1,
-        (value: number) => this.applyReaderMargin(6, value))
+      this.readerTypographySlider('字号', 0, 14, 50, 1)
+      this.readerTypographySlider('行距', 1, 0, 52, 1)
+      this.readerTypographySlider('段距', 2, 0, 32, 1)
+      this.readerTypographySlider('左边距', 3, 0, 80, 1)
+      this.readerTypographySlider('右边距', 4, 0, 80, 1)
+      this.readerTypographySlider('上边距', 5, 0, 120, 1)
+      this.readerTypographySlider('下边距', 6, 0, 120, 1)
     }
     .width('100%')
   }
 
   @Builder
-  readerTypographySlider(label: string, value: number, min: number, max: number, step: number,
-    action: (value: number) => void) {
+  readerTypographySlider(label: string, settingIndex: number, min: number, max: number, step: number) {
     Column({ space: 6 }) {
       Row() {
         Text(label)
@@ -8348,7 +8425,9 @@ struct ReadBookPage {
           .fontWeight(FontWeight.Medium)
           .fontColor(this.getTextColor())
         Blank()
-        Text(`${Math.round(value)}`)
+        Text(`${Math.round(this.readerTypographyValue(settingIndex))}`)
+          .id(`reader_typography_value_${settingIndex}_${this.readerTypographyValueRevision}_` +
+            `${Math.round(this.readerTypographyValue(settingIndex))}`)
           .fontSize(13)
           .fontColor(this.accentColor())
           .textAlign(TextAlign.Center)
@@ -8356,19 +8435,110 @@ struct ReadBookPage {
       }
       .width('100%')
 
-      Slider({ value: value, min: min, max: max, step: step })
-        .width('100%')
-        .height(28)
-        .trackThickness(4)
-        .blockSize({ width: 20, height: 20 })
-        .selectedColor(this.accentColor())
-        .trackColor(this.isReaderThemeDark() ? '#2FFFFFFF' : '#16000000')
-        .blockColor(this.readerSolidPanelColor())
-        .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
-        .onChange((nextValue: number) => action(nextValue))
+      Row({ space: 8 }) {
+        Button({ type: ButtonType.Circle, stateEffect: true }) {
+          SymbolGlyph($r('sys.symbol.minus'))
+            .fontSize(16)
+            .fontColor([this.readerTypographyValue(settingIndex) > min ?
+              this.getTextColor() : this.getSubTextColor()])
+        }
+        .width(34)
+        .height(34)
+        .padding(0)
+        .enabled(this.readerTypographyValue(settingIndex) > min)
+        .backgroundColor(this.isReaderThemeDark() ? '#24272D' : '#EEF0F3')
+        .accessibilityText(`减少${label}`)
+        .onClick(() => this.stepReaderTypographyValue(settingIndex, -step))
+        Slider({ value: this.readerTypographyValue(settingIndex), min: min, max: max, step: step })
+          .layoutWeight(1)
+          .height(28)
+          .trackThickness(4)
+          .blockSize({ width: 20, height: 20 })
+          .selectedColor(this.accentColor())
+          .trackColor(this.isReaderThemeDark() ? '#2FFFFFFF' : '#16000000')
+          .blockColor(this.readerSolidPanelColor())
+          .sliderInteractionMode(SliderInteraction.SLIDE_ONLY)
+          .onChange((nextValue: number) => this.applyReaderTypographyValue(settingIndex, nextValue))
+        Button({ type: ButtonType.Circle, stateEffect: true }) {
+          SymbolGlyph($r('sys.symbol.plus'))
+            .fontSize(16)
+            .fontColor([this.readerTypographyValue(settingIndex) < max ?
+              this.getTextColor() : this.getSubTextColor()])
+        }
+        .width(34)
+        .height(34)
+        .padding(0)
+        .enabled(this.readerTypographyValue(settingIndex) < max)
+        .backgroundColor(this.isReaderThemeDark() ? '#24272D' : '#EEF0F3')
+        .accessibilityText(`增加${label}`)
+        .onClick(() => this.stepReaderTypographyValue(settingIndex, step))
+      }
+      .width('100%')
     }
     .width('100%')
     .padding({ top: 5, bottom: 5 })
+  }
+
+  readerTypographyValue(settingIndex: number): number {
+    if (settingIndex === 0) return this.readerTypographyFontSize;
+    if (settingIndex === 1) return this.readerTypographyLineHeight;
+    if (settingIndex === 2) return this.readerTypographyParagraphSpacing;
+    if (settingIndex === 3) return this.readerTypographyMarginLeft;
+    if (settingIndex === 4) return this.readerTypographyMarginRight;
+    if (settingIndex === 5) return this.readerTypographyMarginTop;
+    return this.readerTypographyMarginBottom;
+  }
+
+  applyReaderTypographyValue(settingIndex: number, value: number): void {
+    const rounded = Math.round(value);
+    if (settingIndex === 0) {
+      this.readerTypographyFontSize = Math.max(14, Math.min(rounded, 50));
+    } else if (settingIndex === 1) {
+      this.readerTypographyLineHeight = Math.max(0, Math.min(rounded, 52));
+    } else if (settingIndex === 2) {
+      this.readerTypographyParagraphSpacing = Math.max(0, Math.min(rounded, 32));
+    } else if (settingIndex === 3) {
+      this.readerTypographyMarginLeft = Math.max(0, Math.min(rounded, 80));
+    } else if (settingIndex === 4) {
+      this.readerTypographyMarginRight = Math.max(0, Math.min(rounded, 80));
+    } else if (settingIndex === 5) {
+      this.readerTypographyMarginTop = Math.max(0, Math.min(rounded, 120));
+    } else {
+      this.readerTypographyMarginBottom = Math.max(0, Math.min(rounded, 120));
+    }
+    this.readerTypographyDraftPending = true;
+    this.readerTypographyValueRevision++;
+    this.scheduleReaderTypographyChange();
+  }
+
+  stepReaderTypographyValue(settingIndex: number, delta: number): void {
+    const nextValue = this.readerTypographyValue(settingIndex) + delta;
+    this.applyReaderTypographyValue(settingIndex, nextValue);
+  }
+
+  syncReaderTypographyDraft(): void {
+    this.readerTypographyFontSize = this.readerFontSize;
+    this.readerTypographyLineHeight = this.readerLineHeight;
+    this.readerTypographyParagraphSpacing = this.readerParagraphSpacing;
+    this.readerTypographyMarginLeft = this.readerMarginLeft;
+    this.readerTypographyMarginRight = this.readerMarginRight;
+    this.readerTypographyMarginTop = this.readerMarginTop;
+    this.readerTypographyMarginBottom = this.readerMarginBottom;
+    this.readerTypographyValueRevision++;
+  }
+
+  commitReaderTypographyDraft(): void {
+    if (!this.readerTypographyDraftPending) return;
+    this.readerLayoutCommitInProgress = true;
+    this.readerFontSize = this.readerTypographyFontSize;
+    this.readerLineHeight = this.readerTypographyLineHeight;
+    this.readerParagraphSpacing = this.readerTypographyParagraphSpacing;
+    this.readerMarginLeft = this.readerTypographyMarginLeft;
+    this.readerMarginRight = this.readerTypographyMarginRight;
+    this.readerMarginTop = this.readerTypographyMarginTop;
+    this.readerMarginBottom = this.readerTypographyMarginBottom;
+    this.readerLayoutCommitInProgress = false;
+    this.readerTypographyDraftPending = false;
   }
 
   @Builder
@@ -9339,61 +9509,6 @@ struct ReadBookPage {
     ReaderSettingsStore.saveLandscapeDoublePage(getContext(this), enabled).catch((e: Error) => {
       console.error('保存双翻页设置失败:', e);
     });
-  }
-
-  applyReaderMargin(settingIndex: number, margin: number): void {
-    const next = Math.max(0, Math.min(Math.round(margin), 300));
-    if ((settingIndex === 3 && next === this.readerMarginLeft) ||
-      (settingIndex === 4 && next === this.readerMarginRight) ||
-      (settingIndex === 5 && next === this.readerMarginTop) ||
-      (settingIndex === 6 && next === this.readerMarginBottom)) {
-      return;
-    }
-    if (settingIndex === 3) {
-      this.readerMarginLeft = next;
-    } else if (settingIndex === 4) {
-      this.readerMarginRight = next;
-    } else if (settingIndex === 5) {
-      this.readerMarginTop = next;
-    } else {
-      this.readerMarginBottom = next;
-    }
-    this.onReadLayoutChanged();
-    this.saveReaderLayoutSettings();
-    this.saveReadConfig();
-  }
-
-  applyReaderFontSize(fontSize: number): void {
-    const nextFontSize = Math.max(14, Math.min(Math.round(fontSize), 50));
-    if (nextFontSize === this.readerFontSize) {
-      return;
-    }
-    this.readerFontSize = nextFontSize;
-    this.onReadLayoutChanged();
-    this.saveReaderLayoutSettings();
-    this.saveReadConfig();
-  }
-
-  applyReaderLineHeight(lineHeight: number): void {
-    const nextLineHeight = Math.max(0, Math.min(Math.round(lineHeight), 52));
-    if (nextLineHeight === this.readerLineHeight) {
-      return;
-    }
-    this.readerLineHeight = nextLineHeight;
-    this.onReadLayoutChanged();
-    this.saveReaderLayoutSettings();
-    this.saveReadConfig();
-  }
-
-  applyReaderParagraphSpacing(paragraphSpacing: number): void {
-    const nextParagraphSpacing = Math.max(0, Math.min(Math.round(paragraphSpacing), 32));
-    if (nextParagraphSpacing === this.readerParagraphSpacing) {
-      return;
-    }
-    this.readerParagraphSpacing = nextParagraphSpacing;
-    this.onReadLayoutChanged();
-    this.saveReaderLayoutSettings();
-    this.saveReadConfig();
   }
 
   applyReaderThemeIndex(index: number): void {

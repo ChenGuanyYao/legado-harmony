@@ -134,6 +134,7 @@ struct Index {
   private shortcutRoutingActive: boolean = false;
   private cloudSyncDebounceTimer: number = -1;
   @State currentIndex: number = 0;
+  @State hdsMaterialRenderBranch: boolean = false;
   @State bookshelfMultiSelectActive: boolean = false;
   @State bookshelfActiveGroupId: number = 0;
   @StorageLink('themeRevision') @Watch('onThemeRevisionChanged') themeRevision: number = 0;
@@ -195,6 +196,7 @@ struct Index {
   }
 
   onAppDarkModeChanged(): void {
+    this.hdsMaterialRenderBranch = !this.hdsMaterialRenderBranch;
     this.syncHomeSystemBars();
   }
 
@@ -227,6 +229,7 @@ struct Index {
   }
 
   onThemeRevisionChanged(): void {
+    this.hdsMaterialRenderBranch = !this.hdsMaterialRenderBranch;
     this.syncHomeSystemBars();
   }
 
@@ -332,7 +335,11 @@ struct Index {
   build() {
     Stack() {
       if (this.supportsImmersiveTabs()) {
-        this.immersiveTabs()
+        if (this.hdsMaterialRenderBranch) {
+          this.immersiveTabs()
+        } else {
+          this.immersiveTabs()
+        }
       } else {
         this.compatTabs()
       }
@@ -767,6 +774,8 @@ struct Index {
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
       .tabBar(this.bottomTabBar(this.navigationIcon('mine'), '我的'))
     }
+    .key(`home_immersive_tabs_${this.themeRevision}_${this.appDarkMode ? 'dark' : 'light'}`)
+    .barBackgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
     .barMode(BarMode.Fixed)
     .barHeight(this.bookshelfMultiSelectActive ? 0 : 56)
     .barOverlap(true)
