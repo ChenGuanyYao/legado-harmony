@@ -7,11 +7,13 @@ export class TtsAvAudioPlayer {
   private sourceFile: fs.File | null = null;
   private playGeneration: number = 0;
   private paused: boolean = false;
+  private interruptPaused: boolean = false;
   private resumeWaiters: Array<() => void> = [];
 
   async play(filePath: string, speed: number = 1,
     onPlaybackStart?: (durationMs: number) => void): Promise<void> {
     const generation = ++this.playGeneration;
+    this.interruptPaused = false;
     await this.releaseCurrent();
     const player = await media.createAVPlayer();
     this.player = player;
@@ -40,8 +42,10 @@ export class TtsAvAudioPlayer {
             resolve();
             return;
           }
-          if (state === 'completed' || state === 'stopped' || state === 'released') {
+          if (state === 'completed') {
             resolve();
+          } else if (state === 'stopped' || state === 'released') {
+            reject(new Error(`音频播放被中断：${state}`));
           }
         });
         player.on('error', (error: Error) => {
@@ -50,6 +54,9 @@ export class TtsAvAudioPlayer {
           } else {
             resolve();
           }
+        });
+        player.on('audioInterrupt', (event: audio.InterruptEvent): void => {
+          this.handleAudioInterrupt(player, generation, event);
         });
       });
       try {
@@ -93,6 +100,7 @@ export class TtsAvAudioPlayer {
   stop(): void {
     this.playGeneration++;
     this.paused = false;
+    this.interruptPaused = false;
     this.resolveResumeWaiters();
     const player = this.player;
     const sourceFile = this.sourceFile;
@@ -171,6 +179,43 @@ export class TtsAvAudioPlayer {
         player.setSpeed(media.PlaybackSpeed.SPEED_FORWARD_2_00_X);
       }
     } catch (_) {
+    }
+  }
+
+  private handleAudioInterrupt(player: media.AVPlayer, generation: number,
+    event: audio.InterruptEvent): void {
+    if (generation !== this.playGeneration || player !== this.player) return;
+    const hint = event.hintType;
+    if (hint === audio.InterruptHint.INTERRUPT_HINT_DUCK) {
+      if (event.forceType === audio.InterruptForceType.INTERRUPT_SHARE) {
+        try { player.setVolume(0.35); } catch (_) {}
+      }
+      return;
+    }
+    if (hint === audio.InterruptHint.INTERRUPT_HINT_UNDUCK) {
+      try { player.setVolume(1); } catch (_) {}
+      return;
+    }
+    if (hint === audio.InterruptHint.INTERRUPT_HINT_PAUSE) {
+      this.interruptPaused = true;
+      if (event.forceType === audio.InterruptForceType.INTERRUPT_SHARE && player.state === 'playing') {
+        player.pause().catch(() => {});
+      }
+      return;
+    }
+    if (hint === audio.InterruptHint.INTERRUPT_HINT_STOP) {
+      this.interruptPaused = false;
+      return;
+    }
+    if (hint === audio.InterruptHint.INTERRUPT_HINT_RESUME) {
+      try { player.setVolume(1); } catch (_) {}
+      if (this.interruptPaused && !this.paused &&
+        (player.state === 'paused' || player.state === 'prepared')) {
+        this.interruptPaused = false;
+        player.play().catch(() => {});
+      } else {
+        this.interruptPaused = false;
+      }
     }
   }
 

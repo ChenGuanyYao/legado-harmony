@@ -14,6 +14,7 @@ export class RemoteAudioPlayback {
   private player: media.AVPlayer | null = null;
   private listener: RemoteAudioPlaybackListener | null = null;
   private generation: number = 0;
+  private interruptPaused: boolean = false;
   private sleepTimerId: number = -1;
   private sleepEndAt: number = 0;
 
@@ -47,6 +48,7 @@ export class RemoteAudioPlayback {
   async play(bookUrl: string, chapterIndex: number, url: string, headers: Record<string, string>,
     startPositionMs: number, speed: number): Promise<void> {
     const generation = ++this.generation;
+    this.interruptPaused = false;
     await this.releasePlayer();
     this.bookUrl = bookUrl;
     this.chapterIndex = chapterIndex;
@@ -81,6 +83,9 @@ export class RemoteAudioPlayback {
       if (generation !== this.generation) return;
       this.setState('error');
       this.listener?.onPlaybackError(error.message || String(error));
+    });
+    player.on('audioInterrupt', (event: audio.InterruptEvent): void => {
+      this.handleAudioInterrupt(player, generation, event);
     });
 
     try {
@@ -157,6 +162,7 @@ export class RemoteAudioPlayback {
 
   async stop(): Promise<void> {
     this.generation++;
+    this.interruptPaused = false;
     this.clearSleepTimer();
     await this.releasePlayer();
     this.bookUrl = '';
@@ -186,6 +192,42 @@ export class RemoteAudioPlayback {
         else if (speed <= 1.6) player.setSpeed(media.PlaybackSpeed.SPEED_FORWARD_1_25_X);
         else player.setSpeed(media.PlaybackSpeed.SPEED_FORWARD_2_00_X);
       } catch (_) {}
+    }
+  }
+
+  private handleAudioInterrupt(player: media.AVPlayer, generation: number,
+    event: audio.InterruptEvent): void {
+    if (generation !== this.generation || player !== this.player) return;
+    const hint = event.hintType;
+    if (hint === audio.InterruptHint.INTERRUPT_HINT_DUCK) {
+      if (event.forceType === audio.InterruptForceType.INTERRUPT_SHARE) {
+        try { player.setVolume(0.35); } catch (_) {}
+      }
+      return;
+    }
+    if (hint === audio.InterruptHint.INTERRUPT_HINT_UNDUCK) {
+      try { player.setVolume(1); } catch (_) {}
+      return;
+    }
+    if (hint === audio.InterruptHint.INTERRUPT_HINT_PAUSE) {
+      this.interruptPaused = true;
+      if (event.forceType === audio.InterruptForceType.INTERRUPT_SHARE && player.state === 'playing') {
+        player.pause().catch(() => {});
+      }
+      return;
+    }
+    if (hint === audio.InterruptHint.INTERRUPT_HINT_STOP) {
+      this.interruptPaused = false;
+      return;
+    }
+    if (hint === audio.InterruptHint.INTERRUPT_HINT_RESUME) {
+      try { player.setVolume(1); } catch (_) {}
+      if (this.interruptPaused && (player.state === 'paused' || player.state === 'prepared')) {
+        this.interruptPaused = false;
+        player.play().catch(() => {});
+      } else {
+        this.interruptPaused = false;
+      }
     }
   }
 

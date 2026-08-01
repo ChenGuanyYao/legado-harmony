@@ -93,15 +93,19 @@ struct AudioBookPage {
     (): void => this.onPlaybackCompleted(),
     (message: string): void => this.onPlaybackError(message));
   private progressSaveTimerId: number = -1;
+  private progressSaveQueue: Promise<void> = Promise.resolve();
   private sleepTimerId: number = -1;
   private playbackRetryCount: number = 0;
   private chapterDataSource: AudioChapterDataSource = new AudioChapterDataSource();
   private loadingSerial: number = 0;
   private audioBackgroundRunning: boolean = false;
   private audioBackgroundStarting: boolean = false;
+  private audioBackgroundDesired: boolean = false;
   private audioAvSession: avSession.AVSession | null = null;
   private audioAvSessionStarting: boolean = false;
   private lastAvSessionPositionUpdateAt: number = 0;
+  private chapterSwitching: boolean = false;
+  private lastMediaChapterCommandAt: number = 0;
 
   aboutToAppear(): void {
     this.syncBars();
@@ -556,7 +560,7 @@ struct AudioBookPage {
     const value = (this.voiceCodeInput || '').trim() || '6001';
     book.putVariable('custom', value);
     this.book = book;
-    await AppDatabase.getInstance().updateBook(book, false);
+    await this.queueBookStateSave(book);
     this.showVoiceDialog = false;
     this.statusText = `正在切换音色 ${value}...`;
     await this.playCurrentChapter(0, true);
@@ -606,12 +610,27 @@ struct AudioBookPage {
       this.showChapterList = false;
       return;
     }
-    await this.saveProgressNow();
-    this.chapterIndex = index;
-    this.positionMs = 0;
-    this.durationMs = 0;
-    this.showChapterList = false;
-    await this.playCurrentChapter(0);
+    if (this.chapterSwitching) return;
+    this.chapterSwitching = true;
+    try {
+      await this.saveProgressNow();
+      this.chapterIndex = index;
+      this.positionMs = 0;
+      this.durationMs = 0;
+      this.showChapterList = false;
+      await this.playCurrentChapter(0);
+    } finally {
+      this.chapterSwitching = false;
+    }
+  }
+
+  handleMediaChapterCommand(offset: number): void {
+    const now = Date.now();
+    if (this.chapterSwitching || now - this.lastMediaChapterCommandAt < 1000) return;
+    this.lastMediaChapterCommandAt = now;
+    this.changeChapter(offset).catch((error: Error) => {
+      console.warn('处理锁屏切章命令失败:', error);
+    });
   }
 
   onPlaybackStateChanged(state: string): void {
@@ -668,7 +687,9 @@ struct AudioBookPage {
     this.playback.setSpeed(value);
     if (this.book) {
       this.book.putVariable('audioSpeed', String(value));
-      AppDatabase.getInstance().updateBook(this.book, false).catch(() => {});
+      this.queueBookStateSave(this.book).catch((error: Error) => {
+        console.warn('保存听书倍速失败:', error);
+      });
     }
   }
 
@@ -733,18 +754,40 @@ struct AudioBookPage {
     const book = this.book;
     const chapter = this.currentChapter();
     if (!book || !chapter) return;
-    book.durChapterIndex = this.chapterIndex;
-    book.durChapterPos = Math.max(0, Math.floor(this.positionMs));
-    book.durChapterTitle = chapter.title;
-    book.durChapterTime = Date.now();
+    const chapterIndex = this.chapterIndex;
+    const chapterPosition = Math.max(0, Math.floor(this.positionMs));
+    const chapterTitle = chapter.title;
+    const chapterTime = Date.now();
+    book.durChapterIndex = chapterIndex;
+    book.durChapterPos = chapterPosition;
+    book.durChapterTitle = chapterTitle;
+    book.durChapterTime = chapterTime;
     book.putVariable('readStarted', '1');
-    book.putVariable('lastReadTime', String(Date.now()));
-    try {
-      await AppDatabase.getInstance().updateBook(book);
+    book.putVariable('lastReadTime', String(chapterTime));
+    const bookUrl = book.bookUrl;
+    const variable = book.variable;
+    const syncRelevant = !!book.origin && book.origin !== 'local';
+    const previous = this.progressSaveQueue.catch(() => {});
+    const next = previous.then(async () => {
+      await AppDatabase.getInstance().updateBookReadingProgress(
+        bookUrl, chapterTitle, chapterIndex, chapterPosition, chapterTime, variable, syncRelevant);
       AppStorage.setOrCreate('shelfUpdateTime', Date.now());
+    });
+    this.progressSaveQueue = next;
+    try {
+      await next;
     } catch (error) {
       console.warn('保存听书进度失败:', error);
     }
+  }
+
+  queueBookStateSave(book: Book): Promise<void> {
+    const previous = this.progressSaveQueue.catch(() => {});
+    const next = previous.then(async () => {
+      await AppDatabase.getInstance().updateBook(book, false);
+    });
+    this.progressSaveQueue = next;
+    return next;
   }
 
   resolveAudioUrl(raw: string, baseUrl: string = ''): string {
@@ -934,6 +977,7 @@ struct AudioBookPage {
   }
 
   async startAudioBackground(): Promise<void> {
+    this.audioBackgroundDesired = true;
     if (this.audioBackgroundRunning) {
       await this.updateAudioAvSessionState(avSession.PlaybackState.PLAYBACK_STATE_PLAY);
       return;
@@ -944,7 +988,12 @@ struct AudioBookPage {
       const agent = await this.createAudioWantAgent();
       await this.startAudioAvSession(agent);
       await backgroundTaskManager.startBackgroundRunning(getContext(this), ['audioPlayback'], agent);
-      this.audioBackgroundRunning = true;
+      if (this.audioBackgroundDesired) {
+        this.audioBackgroundRunning = true;
+      } else {
+        await this.releaseAudioAvSession();
+        await backgroundTaskManager.stopBackgroundRunning(getContext(this));
+      }
     } catch (error) {
       console.warn('申请听书后台任务失败:', error);
     } finally {
@@ -953,23 +1002,37 @@ struct AudioBookPage {
   }
 
   async stopAudioBackground(): Promise<void> {
-    const session = this.audioAvSession;
-    this.audioAvSession = null;
-    if (session) {
-      try {
-        await session.setAVPlaybackState({ state: avSession.PlaybackState.PLAYBACK_STATE_STOP });
-        await session.deactivate();
-        await session.destroy();
-      } catch (error) {
-        console.warn('关闭听书媒体会话失败:', error);
-      }
-    }
+    this.audioBackgroundDesired = false;
+    await this.releaseAudioAvSession();
     if (!this.audioBackgroundRunning && !this.audioBackgroundStarting) return;
     this.audioBackgroundRunning = false;
     try {
       await backgroundTaskManager.stopBackgroundRunning(getContext(this));
     } catch (error) {
       console.warn('停止听书后台任务失败:', error);
+    }
+  }
+
+  async releaseAudioAvSession(): Promise<void> {
+    const session = this.audioAvSession;
+    this.audioAvSession = null;
+    if (session) {
+      this.unregisterAudioAvSessionCommands(session);
+      try {
+        await session.setAVPlaybackState({ state: avSession.PlaybackState.PLAYBACK_STATE_STOP });
+      } catch (error) {
+        console.warn('标记听书媒体会话停止失败:', error);
+      }
+      try {
+        await session.deactivate();
+      } catch (error) {
+        console.warn('停用听书媒体会话失败:', error);
+      }
+      try {
+        await session.destroy();
+      } catch (error) {
+        console.warn('销毁听书媒体会话失败:', error);
+      }
     }
   }
 
@@ -1007,10 +1070,10 @@ struct AudioBookPage {
       this.playback.stop().then(() => this.stopAudioBackground()).catch(() => {});
     });
     session.on('playNext', (): void => {
-      this.changeChapter(1);
+      this.handleMediaChapterCommand(1);
     });
     session.on('playPrevious', (): void => {
-      this.changeChapter(-1);
+      this.handleMediaChapterCommand(-1);
     });
     session.on('seek', (time: number): void => {
       this.playback.seek(time);
@@ -1018,6 +1081,16 @@ struct AudioBookPage {
     session.on('setSpeed', (speed: number): void => {
       this.changeSpeed(speed);
     });
+  }
+
+  unregisterAudioAvSessionCommands(session: avSession.AVSession): void {
+    try { session.off('play'); } catch (_) {}
+    try { session.off('pause'); } catch (_) {}
+    try { session.off('stop'); } catch (_) {}
+    try { session.off('playNext'); } catch (_) {}
+    try { session.off('playPrevious'); } catch (_) {}
+    try { session.off('seek'); } catch (_) {}
+    try { session.off('setSpeed'); } catch (_) {}
   }
 
   async updateAudioAvSessionState(state: avSession.PlaybackState): Promise<void> {

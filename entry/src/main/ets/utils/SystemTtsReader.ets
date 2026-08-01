@@ -1180,6 +1180,10 @@ export class SystemTtsReader {
       await this.pcmPlayer.drain();
     } catch (error) {
       console.warn('[TTS] drain system pcm playback failed:', error);
+      if (this.readGeneration === generation && this.active) {
+        this.failSystemPcmPlayback(`系统音频播放被中断：${this.formatError(error as Object)}`);
+      }
+      return;
     }
     if (this.readGeneration !== generation || !this.active || this.ttsPcmPlayType !== 0) {
       return;
@@ -1397,6 +1401,10 @@ export class SystemTtsReader {
             await this.pcmPlayer.drain();
           } catch (error) {
             console.warn('[TTS] drain pcm audio failed:', error);
+            if (this.readGeneration === generation && this.active) {
+              this.failSystemPcmPlayback(`系统音频播放被中断：${this.formatError(error as Object)}`);
+            }
+            return;
           }
           this.finishCurrentRead(generation, 0);
           return;

@@ -133,8 +133,8 @@ entry/src/main/ets
 
 - 应用模块：`entry`
 - 入口 Ability：`EntryAbility`
-- 应用版本：`2.6.707`
-- `versionCode` / `buildVersion`：`260707`
+- 应用版本：`3.5.802`
+- `versionCode` / `buildVersion`：`350802`
 - `minAPIVersion`：`12`
 - `targetAPIVersion`：`23`
 - 支持设备：`phone`、`tablet`、`2in1`（PC/2in1）

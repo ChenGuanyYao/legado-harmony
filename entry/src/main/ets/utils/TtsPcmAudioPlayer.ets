@@ -36,10 +36,14 @@ export class TtsPcmAudioPlayer {
   private progressMode: string = 'CLOCK_FALLBACK';
   private rendererStartPromise: Promise<void> | null = null;
   private rendererWriteCallback: audio.AudioRendererWriteDataCallback | null = null;
+  private rendererInterruptCallback: ((event: audio.InterruptEvent) => void) | null = null;
   private pendingWrites: PendingPcmWrite[] = [];
   private pendingWriteBytes: number = 0;
   private paused: boolean = false;
+  private systemInterrupted: boolean = false;
+  private systemDucked: boolean = false;
   private resumeWaiters: Array<() => void> = [];
+  private playbackWaiters: Array<() => void> = [];
 
   async play(data: ArrayBuffer, sampleRate: number): Promise<void> {
     await this.write(data, sampleRate);
@@ -138,15 +142,24 @@ export class TtsPcmAudioPlayer {
     await this.waitUntilResumed();
     const renderer = this.renderer;
     const generation = this.playGeneration;
-    if (!renderer || generation !== this.playGeneration ||
-      renderer.state !== audio.AudioState.STATE_RUNNING) {
+    if (!renderer || generation !== this.playGeneration) {
       return;
     }
-    await renderer.drain();
-    if (generation === this.playGeneration) {
+    while (generation === this.playGeneration && this.renderer === renderer) {
+      if (!await this.waitUntilRendererRunning(renderer, generation)) {
+        return;
+      }
+      await renderer.drain();
+      if (generation !== this.playGeneration || this.renderer !== renderer) {
+        return;
+      }
+      if (this.paused || this.systemInterrupted || renderer.state !== audio.AudioState.STATE_RUNNING) {
+        continue;
+      }
       this.lastReachedFrame = Math.max(this.lastReachedFrame, this.queuedFrames);
       this.dispatchDuePlaybackMarks(generation);
       this.pausePlaybackTimelineAt(this.queuedFrames);
+      return;
     }
   }
 
@@ -178,11 +191,15 @@ export class TtsPcmAudioPlayer {
       return;
     }
     this.paused = false;
+    this.systemInterrupted = false;
+    this.systemDucked = false;
     const renderer = this.renderer;
     const generation = this.playGeneration;
-    if (renderer && renderer.state === audio.AudioState.STATE_PAUSED) {
+    if (renderer && renderer.state !== audio.AudioState.STATE_RUNNING &&
+      renderer.state !== audio.AudioState.STATE_RELEASED) {
       let rendererResumed = false;
       try {
+        await renderer.setVolume(1);
         await renderer.start();
         rendererResumed = true;
       } catch (error) {
@@ -194,9 +211,11 @@ export class TtsPcmAudioPlayer {
         this.timelineBaseFrame = this.lastReachedFrame;
         this.timelineStartedAt = Date.now();
         this.updatePlaybackTimeline(generation);
+        this.resolvePlaybackWaiters();
       }
     }
     this.resolveResumeWaiters();
+    this.resolvePlaybackWaiters();
   }
 
   isPaused(): boolean {
@@ -206,19 +225,24 @@ export class TtsPcmAudioPlayer {
   stop(): void {
     this.playGeneration++;
     this.paused = false;
+    this.systemInterrupted = false;
+    this.systemDucked = false;
     this.resolveResumeWaiters();
+    this.resolvePlaybackWaiters();
     this.writeChain = Promise.resolve();
     this.rendererStartPromise = null;
     this.resolvePendingWrites();
     const renderer = this.renderer;
     const writeCallback = this.rendererWriteCallback;
+    const interruptCallback = this.rendererInterruptCallback;
     this.rendererWriteCallback = null;
+    this.rendererInterruptCallback = null;
     this.clearPlaybackTimeline(renderer);
     this.renderer = null;
     if (!renderer) {
       return;
     }
-    this.releaseRenderer(renderer, writeCallback);
+    this.releaseRenderer(renderer, writeCallback, interruptCallback);
   }
 
   release(): void {
@@ -227,10 +251,12 @@ export class TtsPcmAudioPlayer {
 
   debugState(): string {
     if (!this.renderer) {
-      return `renderer=none,paused=${this.paused},queuedFrames=${this.queuedFrames},marks=${this.playbackMarks.length},` +
+      return `renderer=none,paused=${this.paused},interrupted=${this.systemInterrupted},ducked=${this.systemDucked},` +
+        `queuedFrames=${this.queuedFrames},marks=${this.playbackMarks.length},` +
         `pendingBytes=${this.pendingWriteBytes},progress=${this.progressMode}`;
     }
-    return `renderer=${this.audioStateName(this.renderer.state)},paused=${this.paused},sampleRate=${this.currentSampleRate},` +
+    return `renderer=${this.audioStateName(this.renderer.state)},paused=${this.paused},` +
+      `interrupted=${this.systemInterrupted},ducked=${this.systemDucked},sampleRate=${this.currentSampleRate},` +
       `generation=${this.playGeneration},queuedFrames=${this.queuedFrames},marks=${this.playbackMarks.length},` +
       `pendingBytes=${this.pendingWriteBytes},progress=${this.progressMode}`;
   }
@@ -261,7 +287,7 @@ export class TtsPcmAudioPlayer {
       await this.releaseStaleRenderer(renderer);
       return;
     }
-    if (!this.paused && renderer.state !== audio.AudioState.STATE_RUNNING) {
+    if (!this.paused && !this.systemInterrupted && renderer.state !== audio.AudioState.STATE_RUNNING) {
       await renderer.start();
     }
     if (generation !== this.playGeneration) {
@@ -270,6 +296,37 @@ export class TtsPcmAudioPlayer {
     }
     if (!this.paused) {
       this.ensurePlaybackTimeline(sampleRate, generation);
+      this.resolvePlaybackWaiters();
+    }
+  }
+
+  private waitUntilRendererRunning(renderer: audio.AudioRenderer, generation: number): Promise<boolean> {
+    if (generation !== this.playGeneration || this.renderer !== renderer) {
+      return Promise.resolve(false);
+    }
+    if (!this.paused && !this.systemInterrupted && renderer.state === audio.AudioState.STATE_RUNNING) {
+      return Promise.resolve(true);
+    }
+    return new Promise<boolean>((resolve: (value: boolean) => void) => {
+      const check = (): void => {
+        if (generation !== this.playGeneration || this.renderer !== renderer) {
+          resolve(false);
+          return;
+        }
+        if (!this.paused && !this.systemInterrupted && renderer.state === audio.AudioState.STATE_RUNNING) {
+          resolve(true);
+          return;
+        }
+        this.playbackWaiters.push(check);
+      };
+      this.playbackWaiters.push(check);
+    });
+  }
+
+  private resolvePlaybackWaiters(): void {
+    const waiters = this.playbackWaiters.splice(0, this.playbackWaiters.length);
+    for (const resolve of waiters) {
+      resolve();
     }
   }
 
@@ -291,12 +348,15 @@ export class TtsPcmAudioPlayer {
 
   private async releaseStaleRenderer(renderer: audio.AudioRenderer): Promise<void> {
     let writeCallback: audio.AudioRendererWriteDataCallback | null = null;
+    let interruptCallback: ((event: audio.InterruptEvent) => void) | null = null;
     if (this.renderer === renderer) {
       this.renderer = null;
       writeCallback = this.rendererWriteCallback;
+      interruptCallback = this.rendererInterruptCallback;
       this.rendererWriteCallback = null;
+      this.rendererInterruptCallback = null;
     }
-    await this.releaseRenderer(renderer, writeCallback);
+    await this.releaseRenderer(renderer, writeCallback, interruptCallback);
   }
 
   private ensurePlaybackTimeline(sampleRate: number, generation: number): void {
@@ -334,6 +394,10 @@ export class TtsPcmAudioPlayer {
     const clockFrame = this.timelineBaseFrame + Math.round(elapsedMs * sampleRate / 1000);
     let reachedFrame = clockFrame;
     const renderer = this.renderer;
+    if (!renderer || renderer.state !== audio.AudioState.STATE_RUNNING || this.paused || this.systemInterrupted) {
+      this.pausePlaybackTimelineAt(this.lastReachedFrame);
+      return;
+    }
     if (deviceInfo.sdkApiVersion >= 19 && renderer &&
       renderer.state === audio.AudioState.STATE_RUNNING) {
       try {
@@ -442,10 +506,12 @@ export class TtsPcmAudioPlayer {
     }
     const previousRenderer = this.renderer;
     const previousWriteCallback = this.rendererWriteCallback;
+    const previousInterruptCallback = this.rendererInterruptCallback;
     this.renderer = null;
     this.rendererWriteCallback = null;
+    this.rendererInterruptCallback = null;
     if (previousRenderer) {
-      await this.releaseRenderer(previousRenderer, previousWriteCallback);
+      await this.releaseRenderer(previousRenderer, previousWriteCallback, previousInterruptCallback);
     }
     this.currentSampleRate = nextSampleRate;
     const options: audio.AudioRendererOptions = {
@@ -468,19 +534,32 @@ export class TtsPcmAudioPlayer {
       return this.handleRendererWriteData(data);
     };
     renderer.on('writeData', writeCallback);
+    const interruptCallback = (event: audio.InterruptEvent): void => {
+      this.handleAudioInterrupt(renderer, event);
+    };
+    renderer.on('audioInterrupt', interruptCallback);
     this.rendererWriteCallback = writeCallback;
+    this.rendererInterruptCallback = interruptCallback;
     this.renderer = renderer;
     console.info(`[TTS] audio renderer created: ${this.debugState()}`);
     return renderer;
   }
 
   private async releaseRenderer(renderer: audio.AudioRenderer,
-    writeCallback: audio.AudioRendererWriteDataCallback | null): Promise<void> {
+    writeCallback: audio.AudioRendererWriteDataCallback | null,
+    interruptCallback: ((event: audio.InterruptEvent) => void) | null): Promise<void> {
     if (writeCallback) {
       try {
         renderer.off('writeData', writeCallback);
       } catch (error) {
         console.warn('[TTS] unregister pcm write callback failed:', error);
+      }
+    }
+    if (interruptCallback) {
+      try {
+        renderer.off('audioInterrupt', interruptCallback);
+      } catch (error) {
+        console.warn('[TTS] unregister pcm interrupt callback failed:', error);
       }
     }
     try {
@@ -497,6 +576,68 @@ export class TtsPcmAudioPlayer {
       }
     } catch (error) {
       console.warn('[TTS] release pcm renderer failed:', error);
+    }
+  }
+
+  private handleAudioInterrupt(renderer: audio.AudioRenderer, event: audio.InterruptEvent): void {
+    if (renderer !== this.renderer) {
+      return;
+    }
+    const hint = event.hintType;
+    if (hint === audio.InterruptHint.INTERRUPT_HINT_DUCK) {
+      this.systemDucked = true;
+      if (event.forceType === audio.InterruptForceType.INTERRUPT_SHARE) {
+        renderer.setVolume(0.35).catch((error: Error) => {
+          console.warn('[TTS] duck pcm renderer failed:', error);
+        });
+      }
+      return;
+    }
+    if (hint === audio.InterruptHint.INTERRUPT_HINT_UNDUCK) {
+      this.systemDucked = false;
+      renderer.setVolume(1).catch((error: Error) => {
+        console.warn('[TTS] restore pcm renderer volume failed:', error);
+      });
+      return;
+    }
+    if (hint === audio.InterruptHint.INTERRUPT_HINT_PAUSE ||
+      hint === audio.InterruptHint.INTERRUPT_HINT_STOP) {
+      this.systemInterrupted = true;
+      this.updatePlaybackTimeline(this.playGeneration);
+      if (event.forceType === audio.InterruptForceType.INTERRUPT_SHARE &&
+        renderer.state === audio.AudioState.STATE_RUNNING) {
+        renderer.pause().catch((error: Error) => {
+          console.warn('[TTS] pause interrupted pcm renderer failed:', error);
+        });
+      }
+      return;
+    }
+    if (hint === audio.InterruptHint.INTERRUPT_HINT_RESUME) {
+      this.systemInterrupted = false;
+      this.systemDucked = false;
+      this.resumeRendererAfterInterrupt(renderer);
+    }
+  }
+
+  private async resumeRendererAfterInterrupt(renderer: audio.AudioRenderer): Promise<void> {
+    if (renderer !== this.renderer || this.paused) {
+      return;
+    }
+    try {
+      await renderer.setVolume(1);
+      if (renderer.state !== audio.AudioState.STATE_RUNNING) {
+        await renderer.start();
+      }
+      if (renderer === this.renderer && renderer.state === audio.AudioState.STATE_RUNNING) {
+        this.rendererFrameOrigin = -1;
+        this.rendererLogicalFrameOrigin = this.lastReachedFrame;
+        this.timelineBaseFrame = this.lastReachedFrame;
+        this.timelineStartedAt = Date.now();
+        this.updatePlaybackTimeline(this.playGeneration);
+        this.resolvePlaybackWaiters();
+      }
+    } catch (error) {
+      console.warn('[TTS] resume interrupted pcm renderer failed:', error);
     }
   }
 
