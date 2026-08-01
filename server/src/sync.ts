@@ -64,6 +64,7 @@ export interface SyncQuotaUsage {
   changeCount: number;
   changeBytes: number;
   dailyWrites: number;
+  initialSyncActive?: boolean;
 }
 
 const UUID_PATTERN =
@@ -86,7 +87,7 @@ const ALLOWED_ENTITY_TYPES = new Set([
 const DEVICE_KINDS = new Set(['phone', 'tablet', '2in1', 'foldable', 'unknown']);
 const MAX_OPERATIONS = 100;
 const MAX_PAYLOAD_BYTES = 64 * 1024;
-const MAX_BOOK_SOURCE_PAYLOAD_BYTES = 256 * 1024;
+const MAX_BOOK_SOURCE_PAYLOAD_BYTES = 512 * 1024;
 const PULL_LIMIT = 20;
 
 export async function exchangeSync(userId: string, body: SyncExchangeBody) {
@@ -145,11 +146,21 @@ export async function exchangeSync(userId: string, body: SyncExchangeBody) {
       created_at_ms: string;
     }>(
       `SELECT
-         sequence_id, entity_type, entity_id, revision, operation, payload,
-         device_id, (extract(epoch FROM created_at) * 1000)::bigint AS created_at_ms
-       FROM sync_changes
-       WHERE user_id = $1 AND sequence_id > $2
-       ORDER BY sequence_id
+         marker.sequence_id,
+         entity.entity_type,
+         entity.entity_id,
+         entity.revision,
+         CASE WHEN entity.deleted_at IS NULL THEN 'upsert' ELSE 'delete' END AS operation,
+         entity.payload,
+         entity.updated_by_device AS device_id,
+         (extract(epoch FROM entity.updated_at) * 1000)::bigint AS created_at_ms
+       FROM sync_changes marker
+       JOIN sync_entities entity
+         ON entity.user_id = marker.user_id
+        AND entity.entity_type = marker.entity_type
+        AND entity.entity_id = marker.entity_id
+       WHERE marker.user_id = $1 AND marker.sequence_id > $2
+       ORDER BY marker.sequence_id
        LIMIT $3`,
       [userId, request.cursor, PULL_LIMIT + 1]
     );
@@ -327,7 +338,7 @@ export function normalizeOperation(source: SyncOperationBody): NormalizedOperati
     const maxPayloadBytes = entityType === 'book_source' ?
       MAX_BOOK_SOURCE_PAYLOAD_BYTES : MAX_PAYLOAD_BYTES;
     if (Buffer.byteLength(serialized, 'utf8') > maxPayloadBytes) {
-      const limit = entityType === 'book_source' ? '256KB' : '64KB';
+      const limit = entityType === 'book_source' ? '512KB' : '64KB';
       throw new SyncApiError(413, 'SYNC_PAYLOAD_TOO_LARGE', `单项同步数据不能超过 ${limit}`);
     }
     payload = source.payload;
@@ -481,18 +492,13 @@ async function applyOperation(
   const nextPayloadBytes = operation.payload === null
     ? 0
     : Buffer.byteLength(JSON.stringify(operation.payload), 'utf8');
-  const nextEntityCount = quota.entityCount + (current ? 0 : 1);
-  const nextEntityBytes = quota.entityBytes - currentPayloadBytes + nextPayloadBytes;
-  const nextChangeCount = quota.changeCount + 1;
-  const nextChangeBytes = quota.changeBytes + nextPayloadBytes;
-  const nextDailyWrites = quota.dailyWrites + 1;
-  ensureSyncQuota({
-    entityCount: nextEntityCount,
-    entityBytes: nextEntityBytes,
-    changeCount: nextChangeCount,
-    changeBytes: nextChangeBytes,
-    dailyWrites: nextDailyWrites
-  });
+  const nextQuota = calculateNextSyncQuota(
+    quota,
+    current !== undefined,
+    currentPayloadBytes,
+    nextPayloadBytes
+  );
+  ensureSyncQuota(nextQuota);
 
   const revision = currentRevision + 1;
   const payloadJson = operation.payload === null ? null : JSON.stringify(operation.payload);
@@ -516,10 +522,13 @@ async function applyOperation(
      ),
      change_write AS (
        INSERT INTO sync_changes (
-         user_id, entity_type, entity_id, revision, operation, payload, device_id
+         user_id, entity_type, entity_id
        )
-       SELECT $1, $2, $3, revision, $6, $5::jsonb, $7
+       SELECT $1, $2, $3
        FROM entity_write
+       WHERE TRUE
+       ON CONFLICT (user_id, entity_type, entity_id) DO UPDATE SET
+         sequence_id = EXCLUDED.sequence_id
        RETURNING sequence_id
      ),
      receipt_write AS (
@@ -544,11 +553,11 @@ async function applyOperation(
     ]
   );
   const sequenceId = Number(write.rows[0]!.sequence_id);
-  quota.entityCount = nextEntityCount;
-  quota.entityBytes = nextEntityBytes;
-  quota.changeCount = nextChangeCount;
-  quota.changeBytes = nextChangeBytes;
-  quota.dailyWrites = nextDailyWrites;
+  quota.entityCount = nextQuota.entityCount;
+  quota.entityBytes = nextQuota.entityBytes;
+  quota.changeCount = nextQuota.changeCount;
+  quota.changeBytes = nextQuota.changeBytes;
+  quota.dailyWrites = nextQuota.dailyWrites;
   return {
     opId: operation.opId,
     accepted: true,
@@ -566,8 +575,13 @@ async function loadSyncQuotaUsage(client: PoolClient, userId: string): Promise<S
   );
   await client.query(
     `UPDATE sync_user_usage
-     SET daily_write_date = CURRENT_DATE, daily_writes = 0, updated_at = now()
-     WHERE user_id = $1 AND daily_write_date <> CURRENT_DATE`,
+     SET daily_write_date = CURRENT_DATE,
+         daily_writes = CASE WHEN daily_write_date <> CURRENT_DATE THEN 0 ELSE daily_writes END,
+         initial_sync_started_at = COALESCE(initial_sync_started_at, now()),
+         updated_at = now()
+     WHERE user_id = $1 AND (
+       daily_write_date <> CURRENT_DATE OR initial_sync_started_at IS NULL
+     )`,
     [userId]
   );
   const result = await client.query<{
@@ -576,20 +590,27 @@ async function loadSyncQuotaUsage(client: PoolClient, userId: string): Promise<S
     change_count: string;
     change_bytes: string;
     daily_writes: string;
+    initial_sync_started_at_ms: string | null;
   }>(
-    `SELECT entity_count, entity_bytes, change_count, change_bytes, daily_writes
+    `SELECT entity_count, entity_bytes, change_count, change_bytes, daily_writes,
+            CASE WHEN initial_sync_started_at IS NULL THEN NULL
+              ELSE (extract(epoch FROM initial_sync_started_at) * 1000)::bigint
+            END AS initial_sync_started_at_ms
      FROM sync_user_usage
      WHERE user_id = $1
      FOR UPDATE`,
     [userId]
   );
   const row = result.rows[0]!;
+  const initialSyncStartedAt = Number(row.initial_sync_started_at_ms || 0);
   return {
     entityCount: Number(row.entity_count),
     entityBytes: Number(row.entity_bytes),
     changeCount: Number(row.change_count),
     changeBytes: Number(row.change_bytes),
-    dailyWrites: Number(row.daily_writes)
+    dailyWrites: Number(row.daily_writes),
+    initialSyncActive: initialSyncStartedAt > 0 &&
+      Date.now() - initialSyncStartedAt <= config.sync.initialSyncWindowMs
   };
 }
 
@@ -617,8 +638,12 @@ async function persistSyncQuotaUsage(
 }
 
 export function ensureSyncQuota(usage: SyncQuotaUsage): void {
-  if (usage.dailyWrites > config.sync.maxDailyWritesPerUser) {
-    throw new SyncApiError(429, 'SYNC_DAILY_WRITE_LIMITED', '今日同步写入次数已达到上限');
+  const dailyWriteLimit = usage.initialSyncActive === true ?
+    config.sync.initialMaxDailyWritesPerUser : config.sync.maxDailyWritesPerUser;
+  if (usage.dailyWrites > dailyWriteLimit) {
+    const message = usage.initialSyncActive === true ?
+      '首次同步写入次数已达到上限' : '今日同步写入次数已达到上限';
+    throw new SyncApiError(429, 'SYNC_DAILY_WRITE_LIMITED', message);
   }
   if (
     usage.entityCount > config.sync.maxEntitiesPerUser
@@ -628,6 +653,22 @@ export function ensureSyncQuota(usage: SyncQuotaUsage): void {
   ) {
     throw new SyncApiError(409, 'SYNC_STORAGE_QUOTA_EXCEEDED', '云同步存储空间已达到上限');
   }
+}
+
+export function calculateNextSyncQuota(
+  current: SyncQuotaUsage,
+  entityExists: boolean,
+  currentPayloadBytes: number,
+  nextPayloadBytes: number
+): SyncQuotaUsage {
+  return {
+    entityCount: current.entityCount + (entityExists ? 0 : 1),
+    entityBytes: current.entityBytes - currentPayloadBytes + nextPayloadBytes,
+    changeCount: current.changeCount + (entityExists ? 0 : 1),
+    changeBytes: 0,
+    dailyWrites: current.dailyWrites + 1,
+    initialSyncActive: current.initialSyncActive
+  };
 }
 
 function receiptAck(receipt: ReceiptRow) {

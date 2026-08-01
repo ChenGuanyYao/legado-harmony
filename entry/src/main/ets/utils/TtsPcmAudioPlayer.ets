@@ -1,5 +1,6 @@
 import { audio } from '@kit.AudioKit';
 import deviceInfo from '@ohos.deviceInfo';
+import { TtsAudioSession } from './TtsAudioSession';
 
 interface PcmPlaybackMark {
   frame: number;
@@ -19,6 +20,7 @@ export interface PcmPlaybackCue {
 }
 
 export class TtsPcmAudioPlayer {
+  private readonly audioSessionOwner: string = `tts_pcm_${Date.now()}_${Math.random()}`;
   private renderer: audio.AudioRenderer | null = null;
   private currentSampleRate: audio.AudioSamplingRate = audio.AudioSamplingRate.SAMPLE_RATE_16000;
   private playGeneration: number = 0;
@@ -199,6 +201,7 @@ export class TtsPcmAudioPlayer {
       renderer.state !== audio.AudioState.STATE_RELEASED) {
       let rendererResumed = false;
       try {
+        await TtsAudioSession.acquire(this.audioSessionOwner);
         await renderer.setVolume(1);
         await renderer.start();
         rendererResumed = true;
@@ -229,6 +232,7 @@ export class TtsPcmAudioPlayer {
     this.systemDucked = false;
     this.resolveResumeWaiters();
     this.resolvePlaybackWaiters();
+    TtsAudioSession.release(this.audioSessionOwner);
     this.writeChain = Promise.resolve();
     this.rendererStartPromise = null;
     this.resolvePendingWrites();
@@ -288,6 +292,13 @@ export class TtsPcmAudioPlayer {
       return;
     }
     if (!this.paused && !this.systemInterrupted && renderer.state !== audio.AudioState.STATE_RUNNING) {
+      await TtsAudioSession.acquire(this.audioSessionOwner);
+      if (generation !== this.playGeneration) {
+        TtsAudioSession.release(this.audioSessionOwner);
+        await this.releaseStaleRenderer(renderer);
+        return;
+      }
+      await renderer.setVolume(1);
       await renderer.start();
     }
     if (generation !== this.playGeneration) {
@@ -583,6 +594,8 @@ export class TtsPcmAudioPlayer {
     if (renderer !== this.renderer) {
       return;
     }
+    console.info(`[TTS] pcm audio interrupt: hint=${event.hintType},force=${event.forceType},` +
+      `state=${this.audioStateName(renderer.state)},${this.debugState()}`);
     const hint = event.hintType;
     if (hint === audio.InterruptHint.INTERRUPT_HINT_DUCK) {
       this.systemDucked = true;

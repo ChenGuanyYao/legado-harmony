@@ -93,22 +93,28 @@ export const config = {
     queueTimeoutMs: positiveInt('HUAWEICLOUD_SIS_QUEUE_TIMEOUT_MS', 10_000),
     cacheMaxBytes: positiveInt('HUAWEICLOUD_SIS_CACHE_MAX_BYTES', 128 * 1024 * 1024),
     cacheMaxEntryBytes: positiveInt('HUAWEICLOUD_SIS_CACHE_MAX_ENTRY_BYTES', 8 * 1024 * 1024),
-    cacheTtlMs: positiveInt('HUAWEICLOUD_SIS_CACHE_TTL_MS', 5 * 60 * 1000)
+    cacheTtlMs: positiveInt('HUAWEICLOUD_SIS_CACHE_TTL_MS', 5 * 60 * 1000),
+    usageRetentionDays: positiveInt('TTS_USAGE_RETENTION_DAYS', 30)
   },
   sync: {
     requestBodyLimitBytes: positiveInt('SYNC_REQUEST_BODY_LIMIT_BYTES', 2 * 1024 * 1024),
     responseBodyLimitBytes: positiveInt('SYNC_RESPONSE_BODY_LIMIT_BYTES', 2 * 1024 * 1024),
     maxDevicesPerUser: positiveInt('SYNC_MAX_DEVICES_PER_USER', 20),
-    maxEntitiesPerUser: positiveInt('SYNC_MAX_ENTITIES_PER_USER', 10_000),
-    maxEntityBytesPerUser: positiveInt('SYNC_MAX_ENTITY_BYTES_PER_USER', 64 * 1024 * 1024),
+    maxEntitiesPerUser: positiveInt('SYNC_MAX_ENTITIES_PER_USER', 20_000),
+    maxEntityBytesPerUser: positiveInt('SYNC_MAX_ENTITY_BYTES_PER_USER', 128 * 1024 * 1024),
     maxChangesPerUser: positiveInt('SYNC_MAX_CHANGES_PER_USER', 100_000),
     maxChangeBytesPerUser: positiveInt('SYNC_MAX_CHANGE_BYTES_PER_USER', 256 * 1024 * 1024),
     maxDailyWritesPerUser: positiveInt('SYNC_MAX_DAILY_WRITES_PER_USER', 5_000),
+    initialMaxDailyWritesPerUser: positiveInt(
+      'SYNC_INITIAL_MAX_DAILY_WRITES_PER_USER',
+      20_000
+    ),
+    initialSyncWindowMs: positiveInt('SYNC_INITIAL_WINDOW_MS', 24 * 60 * 60 * 1000),
     responseCompressionThresholdBytes: positiveInt(
       'SYNC_RESPONSE_COMPRESSION_THRESHOLD_BYTES',
       1024
     ),
-    receiptRetentionDays: positiveInt('SYNC_RECEIPT_RETENTION_DAYS', 30),
+    receiptRetentionDays: positiveInt('SYNC_RECEIPT_RETENTION_DAYS', 7),
     maintenanceIntervalMs: positiveInt('SYNC_MAINTENANCE_INTERVAL_MS', 6 * 60 * 60 * 1000)
   }
 };

@@ -66,11 +66,16 @@ export class RemoteAudioPlayback {
     this.player = player;
     player.on('stateChange', (state: string): void => {
       if (generation !== this.generation) return;
-      this.setState(state);
+      // createAVPlayer starts in idle. While a media source is being attached, keep the public
+      // state as loading instead of briefly advertising an idle player that cannot be resumed.
+      this.setState(state === 'idle' && !!this.mediaUrl ? 'loading' : state);
       if (state === 'completed') this.listener?.onPlaybackCompleted();
     });
     player.on('timeUpdate', (position: number): void => {
       if (generation !== this.generation) return;
+      // Some AVPlayer implementations do not fan out multiple stateChange callbacks reliably.
+      // Keep the public state in sync from the player's authoritative state as a fallback.
+      this.syncPlayerState(player, generation);
       this.positionMs = Math.max(0, position || 0);
       this.listener?.onPositionChanged(this.positionMs, this.durationMs);
     });
@@ -92,6 +97,11 @@ export class RemoteAudioPlayback {
       const mediaSource = media.createMediaSourceWithUrl(url, headers);
       await player.setMediaSource(mediaSource);
       if (generation !== this.generation) return;
+      // setMediaSource() completing does not guarantee that AVPlayer has emitted initialized yet.
+      // prepare() is only legal after that transition; calling it while still idle produces
+      // "Prepare operation only supports stopped/initialized" on real devices.
+      await this.waitForInitialized(player, generation);
+      if (generation !== this.generation) return;
       player.audioRendererInfo = {
         content: audio.ContentType.CONTENT_TYPE_SPEECH,
         usage: audio.StreamUsage.STREAM_USAGE_AUDIOBOOK,
@@ -105,6 +115,7 @@ export class RemoteAudioPlayback {
         player.seek(this.positionMs, media.SeekMode.SEEK_CLOSEST);
       }
       await player.play();
+      if (generation === this.generation && player === this.player) this.setState('playing');
     } catch (error) {
       if (generation !== this.generation) return;
       const message = error instanceof Error ? error.message : String(error);
@@ -117,6 +128,7 @@ export class RemoteAudioPlayback {
     const player = this.player;
     if (!player || player.state !== 'playing') return;
     await player.pause();
+    if (player === this.player) this.setState('paused');
   }
 
   async resume(): Promise<void> {
@@ -125,6 +137,7 @@ export class RemoteAudioPlayback {
     if (player.state === 'paused' || player.state === 'prepared' || player.state === 'completed') {
       if (player.state === 'completed') player.seek(0, media.SeekMode.SEEK_CLOSEST);
       await player.play();
+      if (player === this.player) this.setState('playing');
     }
   }
 
@@ -174,8 +187,18 @@ export class RemoteAudioPlayback {
   }
 
   private setState(state: string): void {
+    if (this.state === state) return;
     this.state = state || 'idle';
     this.listener?.onStateChanged(this.state);
+  }
+
+  private syncPlayerState(player: media.AVPlayer, generation: number): void {
+    if (generation !== this.generation || player !== this.player) return;
+    const state = player.state || '';
+    if (state === 'playing' || state === 'paused' || state === 'completed' || state === 'prepared' ||
+      state === 'initialized' || state === 'stopped' || state === 'released' || state === 'error') {
+      this.setState(state);
+    }
   }
 
   private normalizeSpeed(speed: number): number {
@@ -242,6 +265,43 @@ export class RemoteAudioPlayback {
     try {
       await player.release();
     } catch (_) {}
+  }
+
+  private waitForInitialized(player: media.AVPlayer, generation: number): Promise<void> {
+    if (generation !== this.generation || player.state === 'initialized' || player.state === 'stopped') {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const finish = (error?: Error): void => {
+        if (settled) return;
+        settled = true;
+        clearInterval(pollId);
+        clearTimeout(timeoutId);
+        if (error) reject(error);
+        else resolve();
+      };
+      // Do not register a second stateChange/error callback here. On some HarmonyOS devices
+      // AVPlayer keeps only the last callback for an event, which used to replace the public
+      // playback-state listener and leave the UI permanently at "loading" while audio played.
+      const pollId = setInterval((): void => {
+        if (generation !== this.generation || player !== this.player) {
+          finish();
+          return;
+        }
+        const state = player.state || '';
+        if (state === 'initialized' || state === 'stopped') finish();
+        else if (state === 'released' || state === 'error') {
+          finish(new Error(`音频播放器初始化失败：${state}`));
+        }
+      }, 20);
+      const timeoutId = setTimeout((): void => {
+        finish(new Error(`音频播放器初始化超时，当前状态：${player.state || 'unknown'}`));
+      }, 10000);
+      // Close the narrow race where initialized is emitted between the first state check and
+      // polling registration.
+      if (player.state === 'initialized' || player.state === 'stopped') finish();
+    });
   }
 
   private clearSleepTimer(): void {

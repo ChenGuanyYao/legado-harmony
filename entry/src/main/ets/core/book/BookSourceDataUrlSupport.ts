@@ -199,7 +199,12 @@ export class BookSourceDataUrlSupport {
     book.author = EncodedSourceUrl.str(data['author']) || book.author;
     book.coverUrl = BookSourceDataUrlSupport.normalizeCoverUrl(source,
       EncodedSourceUrl.str(data['thumb_url'])) || book.coverUrl;
-    book.intro = EncodedSourceUrl.str(data['abstract']) || book.intro;
+    const abstract = EncodedSourceUrl.str(data['abstract']) || book.intro;
+    const audioVoiceDescription = EncodedSourceUrl.str(data['book_tts']) ||
+      EncodedSourceUrl.str(data['bookTts']);
+    const selectedVoiceCode = book.getVariable('custom') || '4';
+    book.intro = BookSourceDataUrlSupport.buildAudioBookIntro(
+      data, abstract, audioVoiceDescription, selectedVoiceCode, meta);
     book.kind = BookSourceDataUrlSupport.buildKind(data) || book.kind;
     book.latestChapterTitle = EncodedSourceUrl.str(data['last_chapter_title']) || book.latestChapterTitle;
     book.wordCount = EncodedSourceUrl.str(data['word_number']) || book.wordCount;
@@ -208,7 +213,7 @@ export class BookSourceDataUrlSupport {
     meta.tocUrl = EncodedSourceUrl.str(data['toc_url']) || meta.tocUrl;
     book.bookUrl = EncodedSourceUrl.buildDetailUrl(meta.bookId, meta.source, meta.tab, meta.tocUrl, meta.host);
     book.tocUrl = BookSourceDataUrlSupport.catalogUrl(meta);
-    book.variable = JSON.stringify(meta);
+    BookSourceDataUrlSupport.updateBookMetaVariable(book, meta);
     BookTypeSupport.applyBookType(book, source, meta.tab);
     return book;
   }
@@ -273,9 +278,14 @@ export class BookSourceDataUrlSupport {
       return await BookSourceDataUrlSupport.getMyBxContent(http, source, book, chapter, payload);
     }
     const info = BookSourceDataUrlSupport.getChapterInfo(chapter, source);
+    // Explicit user input is authoritative even if an imported source did not mark the
+    // result as audio. Some Guangyu/Qingtian variants only expose that fact in the detail text.
+    const selectedToneId = book.getVariable('custom') || (BookTypeSupport.isAudio(book) ? '4' : '');
+    const sourceVersion = BookSourceDataUrlSupport.guangyuSourceVersion(source);
     const root = await EncodedSourceUrl.requestContentJsonForDataUrl(http, chapter.url, info['host'],
       BookSourceInteractionPostProcessor.shouldRequestParagraphComments(source, chapter),
-      BookSourceInteractionPostProcessor.shouldRequestGodComments(source, chapter));
+      BookSourceInteractionPostProcessor.shouldRequestGodComments(source, chapter),
+      selectedToneId, sourceVersion);
     if (!root) return '';
     const content = BookSourceDataUrlSupport.readContent(root);
     if (BookSourceDataUrlSupport.needsLogin(root, content)) {
@@ -331,7 +341,21 @@ export class BookSourceDataUrlSupport {
     }, 'shushanCatalog');
     book.origin = source.bookSourceUrl;
     book.originName = sourceName ? `${source.bookSourceName} · ${sourceName}` : source.bookSourceName;
-    book.variable = JSON.stringify({ name: book.name, source: sourceName, tab: tab, url: finalUrl, book_id: bookId, host: host });
+    // A detail refresh must not discard reader/search state stored by the caller (especially
+    // searchExplorePendingAddToShelf). Otherwise a temporary reader record becomes a shelf book
+    // before the user answers the add-to-shelf prompt.
+    let variables: Record<string, Object> = {};
+    try {
+      variables = EncodedSourceUrl.asMap(JSON.parse(book.variable || '{}') as Object);
+    } catch (_) {
+    }
+    variables['name'] = book.name;
+    variables['source'] = sourceName;
+    variables['tab'] = tab;
+    variables['url'] = finalUrl;
+    variables['book_id'] = bookId;
+    variables['host'] = host;
+    book.replaceVariable(JSON.stringify(variables));
     BookTypeSupport.applyBookType(book, source, tab);
     return book;
   }
@@ -404,21 +428,25 @@ export class BookSourceDataUrlSupport {
     const cid = EncodedSourceUrl.str(data['cid']) ||
       BookSourceDataUrlSupport.extractQueryValue(rawUrl, 'item_id') ||
       BookSourceDataUrlSupport.extractQueryValue(rawUrl, 'itemId');
+    const isListen = BookSourceDataUrlSupport.isShushanFanqieListenSource(sourceName);
+    const catalogItemId = EncodedSourceUrl.str(data['item_id']) || EncodedSourceUrl.str(data['itemId']) ||
+      BookSourceDataUrlSupport.extractQueryValue(rawUrl, 'item_id') ||
+      BookSourceDataUrlSupport.extractQueryValue(rawUrl, 'itemId');
+    const itemId = catalogItemId || cid;
+    // A manually selected voice must take precedence over the tone embedded in the catalog URL.
+    const toneId = book.getVariable('custom') || EncodedSourceUrl.str(data['tone_id']) ||
+      BookSourceDataUrlSupport.extractQueryValue(rawUrl, 'tone_id') ||
+      BookSourceDataUrlSupport.extractQueryValue(catalogUrl, 'tone_id') ||
+      BookSourceDataUrlSupport.sourceLoginInfoValue(source, '听书AI音色编号') || '1';
     let path = rawUrl && rawUrl.startsWith('chapter?') ? `/${rawUrl}` : '';
     if (!path && cid && sourceName) {
       path = `/chapter?cid=${encodeURIComponent(cid)}&source=${encodeURIComponent(sourceName)}&device=android`;
       if (BookSourceDataUrlSupport.isShushanFanqieSource(sourceName)) {
         const bookId = BookSourceDataUrlSupport.extractQueryValue(rawUrl || catalogUrl, 'book_id') ||
           EncodedSourceUrl.str(data['book_id']) || EncodedSourceUrl.str(data['bookId']);
-        const itemId = BookSourceDataUrlSupport.extractQueryValue(rawUrl, 'item_id') ||
-          BookSourceDataUrlSupport.extractQueryValue(rawUrl, 'itemId') || cid;
         if (bookId) path += `&book_id=${encodeURIComponent(bookId)}`;
         if (itemId) path += `&item_id=${encodeURIComponent(itemId)}`;
-        if (BookSourceDataUrlSupport.isShushanFanqieListenSource(sourceName)) {
-          const toneId = EncodedSourceUrl.str(data['tone_id']) ||
-            BookSourceDataUrlSupport.extractQueryValue(rawUrl, 'tone_id') ||
-            BookSourceDataUrlSupport.extractQueryValue(catalogUrl, 'tone_id') ||
-            book.getVariable('custom') || '6001';
+        if (isListen && toneId) {
           path += `&tone_id=${encodeURIComponent(toneId)}`;
         }
       } else if (catalogUrl) {
@@ -444,7 +472,10 @@ export class BookSourceDataUrlSupport {
     const root = await BookSourceDataUrlSupport.requestShushanJson(http, host,
       `${path}${path.includes('?') ? '&' : '?'}key=${encodeURIComponent(secretKey)}&version=11`);
     if (!root) {
-      if (BookSourceDataUrlSupport.isShushanFanqieListenSource(sourceName)) {
+      if (isListen) {
+        const fallbackUrl = await BookSourceDataUrlSupport.requestShushanFanqieAudioFallback(
+          http, itemId, toneId);
+        if (fallbackUrl) return fallbackUrl;
         throw new Error('书山聚合音频接口请求失败，请稍后重试');
       }
       return '';
@@ -462,18 +493,39 @@ export class BookSourceDataUrlSupport {
         throw new Error('书山聚合登录已过期，请重新登录后再试');
       }
     }
+    const responseDataForAudio = EncodedSourceUrl.asMap(root['data']);
+    const responseAudioList = EncodedSourceUrl.asArray(root['data']);
+    const responseAudioFirst = EncodedSourceUrl.asMap(
+      responseAudioList.length > 0 ? responseAudioList[0] : undefined);
+    const audioItemId = EncodedSourceUrl.str(root['item_id']) || EncodedSourceUrl.str(root['itemId']) ||
+      EncodedSourceUrl.str(responseDataForAudio['item_id']) || EncodedSourceUrl.str(responseDataForAudio['itemId']) ||
+      EncodedSourceUrl.str(responseAudioFirst['item_id']) || EncodedSourceUrl.str(responseAudioFirst['itemId']) ||
+      catalogItemId || itemId;
+    if (isListen && audioItemId && toneId) {
+      // Keep the original source protocol order: /chapter prepares the item and refreshes
+      // its authorization, then /audio returns the generated main_url for the selected voice.
+      const audioRoot = await BookSourceDataUrlSupport.requestShushanJson(http, host,
+        `/audio?tone_id=${encodeURIComponent(toneId)}&item_ids=${encodeURIComponent(audioItemId)}`);
+      const audioUrl = audioRoot ? BookSourceDataUrlSupport.shushanAudioMainUrl(audioRoot) : '';
+      if (audioUrl) return audioUrl;
+    }
     const responseData = EncodedSourceUrl.asMap(root['data']);
     const mediaType = EncodedSourceUrl.str(root['type']) || EncodedSourceUrl.str(responseData['type']);
     const videoUrl = EncodedSourceUrl.str(root['videoUrl']) || EncodedSourceUrl.str(root['video_url']) ||
       EncodedSourceUrl.str(responseData['videoUrl']) || EncodedSourceUrl.str(responseData['video_url']);
     if (mediaType) chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'shortcutMediaType', mediaType);
     if (videoUrl) chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'shortcutVideoUrl', videoUrl);
-    if (BookSourceDataUrlSupport.isShushanFanqieListenSource(sourceName)) {
+    if (isListen) {
       // 音频响应的字段结构会随后端版本变化。保留完整 JSON，交给 AudioBook 的
       // 统一媒体解析器处理 audio_url/play_url/url_list 等字段，避免在书山层复制播放逻辑。
       const decodedAudioContent = BookSourceDataUrlSupport.decodeShushanContent(content);
       if (decodedAudioContent) root['decodedContent'] = decodedAudioContent;
-      return JSON.stringify(root);
+      const fallbackAudioUrl = BookSourceDataUrlSupport.shushanAudioMainUrl(root);
+      if (fallbackAudioUrl) return fallbackAudioUrl;
+      const fanqieFallbackUrl = await BookSourceDataUrlSupport.requestShushanFanqieAudioFallback(
+        http, audioItemId || itemId, toneId);
+      if (fanqieFallbackUrl) return fanqieFallbackUrl;
+      throw new Error('书山聚合音频接口请求失败，请确认登录状态或稍后重试');
     }
     const decoded = BookSourceDataUrlSupport.decodeShushanContent(content);
     if (!decoded && BookSourceDataUrlSupport.looksLikeBase64Text(content)) {
@@ -689,10 +741,19 @@ export class BookSourceDataUrlSupport {
 
   private static extractSourceVariableValue(source: BookSource, key: string): string {
     try {
-      const parsed = JSON.parse(source.variableComment || '[]') as Object;
+      const parsed = JSON.parse(source.variable || source.variableComment || '[]') as Object;
       const data = EncodedSourceUrl.asArray(parsed);
       const first = data.length > 0 ? EncodedSourceUrl.asMap(data[0]) : EncodedSourceUrl.asMap(parsed);
       return EncodedSourceUrl.str(first[key]);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  private static sourceLoginInfoValue(source: BookSource, key: string): string {
+    try {
+      const parsed = EncodedSourceUrl.asMap(JSON.parse(source.loginInfo || '{}') as Object);
+      return EncodedSourceUrl.str(parsed[key]);
     } catch (_) {
       return '';
     }
@@ -1209,6 +1270,96 @@ export class BookSourceDataUrlSupport {
 
   private static catalogUrl(meta: DataUrlMeta): string {
     return BookSourceDataUrlSupport.catalogUrlFromValues(meta.bookId, meta.source, meta.tab, meta.tocUrl, meta.host);
+  }
+
+  private static guangyuSourceVersion(source: BookSource): string {
+    const raw = `${source.jsLib || ''}\n${source.bookSourceComment || ''}\n${source.bookSourceName || ''}`;
+    const declared = raw.match(/\blocalVersion\s*=\s*['"]([^'"]+)['"]/i);
+    if (declared && declared[1]) return declared[1].trim();
+    const named = raw.match(/(?:光遇|晴天)[^\d]*(\d{2}\.\d{1,2}\.\d{1,2})/i);
+    return named && named[1] ? named[1].trim() : '';
+  }
+
+  private static shushanAudioMainUrl(root: EncodedJsonMap): string {
+    const dataMap = EncodedSourceUrl.asMap(root['data']);
+    const dataList = EncodedSourceUrl.asArray(root['data']);
+    const first: EncodedJsonMap = EncodedSourceUrl.asMap(dataList.length > 0 ? dataList[0] : undefined);
+    const resultMap = EncodedSourceUrl.asMap(root['result']);
+    return EncodedSourceUrl.str(root['main_url']) || EncodedSourceUrl.str(root['mainUrl']) ||
+      EncodedSourceUrl.str(root['audio_url']) || EncodedSourceUrl.str(root['play_url']) ||
+      EncodedSourceUrl.str(dataMap['main_url']) || EncodedSourceUrl.str(dataMap['mainUrl']) ||
+      EncodedSourceUrl.str(first['main_url']) || EncodedSourceUrl.str(first['mainUrl']) ||
+      EncodedSourceUrl.str(first['audio_url']) || EncodedSourceUrl.str(first['play_url']) ||
+      EncodedSourceUrl.str(resultMap['main_url']) || EncodedSourceUrl.str(resultMap['mainUrl']);
+  }
+
+  private static async requestShushanFanqieAudioFallback(http: HttpClient, itemId: string,
+    toneId: string): Promise<string> {
+    if (!/^\d+$/.test(itemId || '') || !/^\d+$/.test(toneId || '')) return '';
+    // Shushan's /audio aliases currently share one upstream proxy. Keep its protocol as the
+    // primary path, and use the independent unified endpoint only when that proxy is unavailable.
+    // No account cookie, login header or Shushan secret is sent to this fallback.
+    const url = 'http://101.35.133.34:5000/api/content' +
+      `?tab=${encodeURIComponent('听书')}&item_id=${encodeURIComponent(itemId)}` +
+      `&tone_id=${encodeURIComponent(toneId)}`;
+    const root = await BookSourceDataUrlSupport.requestShushanJson(http, '', url);
+    if (!root) return '';
+    const data = EncodedSourceUrl.asMap(root['data']);
+    const value = EncodedSourceUrl.str(data['content']) || EncodedSourceUrl.str(root['content']) ||
+      BookSourceDataUrlSupport.shushanAudioMainUrl(root);
+    return /^https?:\/\//i.test(value) ? value : '';
+  }
+
+  private static buildAudioBookIntro(data: EncodedJsonMap, abstract: string, voiceDescription: string,
+    selectedVoiceCode: string, meta: DataUrlMeta): string {
+    const intro = (abstract || '').trim();
+    const voices = (voiceDescription || '').trim();
+    if (BookTypeSupport.typeFromTab(meta.tab) !== BookTypeSupport.AUDIO || !voices) return intro;
+    const lines: string[] = [];
+    if (meta.host) lines.push(`📡 当前服务：${meta.host}`);
+    if (meta.source) lines.push(`🏷 数据来源：${meta.source}`);
+    lines.push(`🔄 当前模式：${meta.tab || '听书'}`);
+    lines.push('────────────────');
+    lines.push(`🎵 音色配置：${selectedVoiceCode || '4'}`);
+    lines.push('✨ AI 音色可在听书面板中填写对应编码；真人听书请选择带主播的书籍。');
+    lines.push(voices);
+    BookSourceDataUrlSupport.appendAudioIntroField(lines, data, 'tags', '🌈 书籍分类：');
+    BookSourceDataUrlSupport.appendAudioIntroField(lines, data, 'role', '👑 书籍主角：');
+    BookSourceDataUrlSupport.appendAudioIntroField(lines, data, 'last_chapter_title', '📚 最新章节：');
+    BookSourceDataUrlSupport.appendAudioIntroField(lines, data, 'last_chapter_update_time', '⏳ 更新时间：');
+    BookSourceDataUrlSupport.appendAudioIntroField(lines, data, 'word_number', '📝 书籍字数：');
+    BookSourceDataUrlSupport.appendAudioIntroField(lines, data, 'status', '🚩 书籍状态：');
+    BookSourceDataUrlSupport.appendAudioIntroField(lines, data, 'score', '⭐ 书籍评分：');
+    BookSourceDataUrlSupport.appendAudioIntroField(lines, data, 'read_count', '📃 今日阅读：');
+    BookSourceDataUrlSupport.appendAudioIntroField(lines, data, 'read_count_all', '📈 总阅读数：');
+    if (intro) {
+      lines.push('────────────────');
+      lines.push('📖 书籍简介：');
+      lines.push(intro);
+    }
+    const copyright = EncodedSourceUrl.str(data['copyright_info']).trim();
+    if (copyright) lines.push(`© ${copyright}`);
+    return lines.join('\n');
+  }
+
+  private static appendAudioIntroField(lines: string[], data: EncodedJsonMap,
+    key: string, label: string): void {
+    const value = EncodedSourceUrl.str(data[key]).trim();
+    if (value) lines.push(`${label}${value}`);
+  }
+
+  private static updateBookMetaVariable(book: Book, meta: DataUrlMeta): void {
+    let values: Record<string, Object> = {};
+    try {
+      values = EncodedSourceUrl.asMap(JSON.parse(book.variable || '{}') as Object);
+    } catch (_) {
+    }
+    values['host'] = meta.host;
+    values['bookId'] = meta.bookId;
+    values['source'] = meta.source;
+    values['tab'] = meta.tab;
+    values['tocUrl'] = meta.tocUrl;
+    book.replaceVariable(JSON.stringify(values));
   }
 
   private static catalogUrlFromValues(bookId: string, source: string, tab: string, tocUrl: string, host: string): string {

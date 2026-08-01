@@ -266,6 +266,8 @@ export class ReadBookEngine {
       text.includes('当前书源需要登录') || text.includes('该书源需要先完成网页验证') ||
       text.includes('登录信息已失效') || text.includes('账号信息异常') ||
       text.includes('请重新登录') || text.includes('请重新登陆') ||
+      text.includes('JSON.parse(undefined)') || text.includes('企点正文接口返回异常') ||
+      text.includes('企点正文暂时不可用') || text.includes('请先在企点书源登录面板') ||
       text.includes('访问速度过快') || text.includes('普通用户限制') ||
       text.includes('升级VIP可享受不限速访问');
   }

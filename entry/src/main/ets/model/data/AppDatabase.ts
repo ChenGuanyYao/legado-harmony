@@ -1091,6 +1091,36 @@ export class AppDatabase {
     return sources;
   }
 
+  /**
+   * 云同步只需要可执行的书源字段。排除 Android 备份带来的 rawSourceJson，避免在同步
+   * 大量书源时把仅供回导出的原始副本全部加载到内存。
+   */
+  async getBookSourcesForCloudSync(): Promise<BookSource[]> {
+    if (!this.store) return [];
+    const predicates = new relationalStore.RdbPredicates('book_sources');
+    predicates.orderByDesc('isPinned');
+    predicates.orderByAsc('customOrder');
+    const columns = [
+      'bookSourceUrl', 'bookSourceName', 'bookSourceType', 'bookSourceGroup', 'bookSourceComment',
+      'loginUrl', 'loginUi', 'loginCheckJs', 'loginHeader',
+      'bookUrlPattern', 'searchUrl', 'exploreUrl', 'jsLib', 'header',
+      'bookListRule', 'searchRule', 'exploreRule', 'bookInfoRule', 'tocRule', 'contentRule',
+      'variableComment', 'lastUpdateTime', 'respondTime', 'customOrder', 'customButton',
+      'eventListener', 'isPinned', 'enabled', 'enabledExplore', 'isLocked', 'validationStatus',
+      'weight', 'concurrentRate', 'enabledCookieJar'
+    ];
+    const resultSet = await this.store.query(predicates, columns);
+    const sources: BookSource[] = [];
+    try {
+      while (resultSet.goToNextRow()) {
+        sources.push(this.resultSetToBookSource(resultSet));
+      }
+    } finally {
+      resultSet.close();
+    }
+    return sources;
+  }
+
   async restoreBookSource(source: BookSource): Promise<void> {
     if (!this.store || !source.bookSourceUrl) return;
     const bucket: relationalStore.ValuesBucket = {

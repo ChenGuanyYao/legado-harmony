@@ -585,6 +585,10 @@ export class BookSourceLoginWebRuntime {
     return JSON.stringify(merged);
   }
 
+  static runtimeState(json: string): Record<string, Object> {
+    return this.parseRuntimeState(json);
+  }
+
   static parseCookieOperations(json: string): LoginCookieOperation[] {
     const result: LoginCookieOperation[] = [];
     try {

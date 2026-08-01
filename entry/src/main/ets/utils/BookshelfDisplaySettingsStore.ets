@@ -10,6 +10,7 @@ export class BookshelfDisplaySettings {
   showProgressBar: boolean = false;
   showLastReadTime: boolean = true;
   showLastReadChapter: boolean = false;
+  showTypeBadge: boolean = true;
   layoutMode: string = 'compact';
 }
 
@@ -22,6 +23,7 @@ export class BookshelfDisplaySettingsStore {
   private static readonly KEY_SHOW_PROGRESS_BAR: string = 'bookshelfShowProgressBar';
   private static readonly KEY_SHOW_LAST_READ_TIME: string = 'bookshelfShowLastReadTime';
   private static readonly KEY_SHOW_LAST_READ_CHAPTER: string = 'bookshelfShowLastReadChapter';
+  private static readonly KEY_SHOW_TYPE_BADGE: string = 'bookshelfShowTypeBadge';
   private static readonly KEY_LAYOUT_MODE: string = 'bookshelfLayoutMode';
   private static cachedSettings: BookshelfDisplaySettings | null = null;
 
@@ -45,6 +47,8 @@ export class BookshelfDisplaySettingsStore {
       store, BookshelfDisplaySettingsStore.KEY_SHOW_LAST_READ_TIME, true);
     settings.showLastReadChapter = await BookshelfDisplaySettingsStore.getBoolean(
       store, BookshelfDisplaySettingsStore.KEY_SHOW_LAST_READ_CHAPTER, false);
+    settings.showTypeBadge = await BookshelfDisplaySettingsStore.getBoolean(
+      store, BookshelfDisplaySettingsStore.KEY_SHOW_TYPE_BADGE, true);
     settings.layoutMode = BookshelfDisplaySettingsStore.normalizeLayoutMode(await BookshelfDisplaySettingsStore.getString(
       store, BookshelfDisplaySettingsStore.KEY_LAYOUT_MODE, 'compact'));
     BookshelfDisplaySettingsStore.cachedSettings = BookshelfDisplaySettingsStore.clone(settings);
@@ -61,6 +65,7 @@ export class BookshelfDisplaySettingsStore {
     await store.put(BookshelfDisplaySettingsStore.KEY_SHOW_PROGRESS_BAR, settings.showProgressBar);
     await store.put(BookshelfDisplaySettingsStore.KEY_SHOW_LAST_READ_TIME, settings.showLastReadTime);
     await store.put(BookshelfDisplaySettingsStore.KEY_SHOW_LAST_READ_CHAPTER, settings.showLastReadChapter);
+    await store.put(BookshelfDisplaySettingsStore.KEY_SHOW_TYPE_BADGE, settings.showTypeBadge !== false);
     await store.put(BookshelfDisplaySettingsStore.KEY_LAYOUT_MODE,
       BookshelfDisplaySettingsStore.normalizeLayoutMode(settings.layoutMode));
     await store.flush();
@@ -76,6 +81,7 @@ export class BookshelfDisplaySettingsStore {
     AppStorage.setOrCreate(BookshelfDisplaySettingsStore.KEY_SHOW_PROGRESS_BAR, settings.showProgressBar);
     AppStorage.setOrCreate(BookshelfDisplaySettingsStore.KEY_SHOW_LAST_READ_TIME, settings.showLastReadTime);
     AppStorage.setOrCreate(BookshelfDisplaySettingsStore.KEY_SHOW_LAST_READ_CHAPTER, settings.showLastReadChapter);
+    AppStorage.setOrCreate(BookshelfDisplaySettingsStore.KEY_SHOW_TYPE_BADGE, settings.showTypeBadge !== false);
     AppStorage.setOrCreate(BookshelfDisplaySettingsStore.KEY_LAYOUT_MODE,
       BookshelfDisplaySettingsStore.normalizeLayoutMode(settings.layoutMode));
   }
@@ -89,6 +95,7 @@ export class BookshelfDisplaySettingsStore {
     settings.showProgressBar = AppStorage.get<boolean>(BookshelfDisplaySettingsStore.KEY_SHOW_PROGRESS_BAR) ?? false;
     settings.showLastReadTime = AppStorage.get<boolean>(BookshelfDisplaySettingsStore.KEY_SHOW_LAST_READ_TIME) ?? true;
     settings.showLastReadChapter = AppStorage.get<boolean>(BookshelfDisplaySettingsStore.KEY_SHOW_LAST_READ_CHAPTER) ?? false;
+    settings.showTypeBadge = AppStorage.get<boolean>(BookshelfDisplaySettingsStore.KEY_SHOW_TYPE_BADGE) ?? true;
     settings.layoutMode = BookshelfDisplaySettingsStore.normalizeLayoutMode(
       AppStorage.get<string>(BookshelfDisplaySettingsStore.KEY_LAYOUT_MODE) ?? 'compact');
     return settings;
@@ -128,6 +135,7 @@ export class BookshelfDisplaySettingsStore {
     settings.showProgressBar = source.showProgressBar;
     settings.showLastReadTime = source.showLastReadTime;
     settings.showLastReadChapter = source.showLastReadChapter;
+    settings.showTypeBadge = source.showTypeBadge !== false;
     settings.layoutMode = BookshelfDisplaySettingsStore.normalizeLayoutMode(source.layoutMode);
     return settings;
   }

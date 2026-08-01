@@ -225,6 +225,7 @@ struct BookSourcePage {
     this.pageVisible = true;
     this.syncBars();
     this.resumeLoginRuntimeBrowserAwait();
+    this.handlePendingBookSourceImport();
     if (!this.hasShownOnce) {
       this.hasShownOnce = true;
       return;
@@ -1768,8 +1769,59 @@ struct BookSourcePage {
                     })
                 }
                 .width('100%')
+              } else if (this.isSourceLoginToggle(item)) {
+                Row({ space: 12 }) {
+                  Column({ space: 3 }) {
+                    Text(this.sourceLoginItemDisplayName(item))
+                      .fontSize(14)
+                      .fontColor(this.primaryTextColor())
+                      .width('100%')
+                    Text(this.sourceLoginToggleOn(item) ? '已开启' : '已关闭')
+                      .fontSize(11)
+                      .fontColor(this.sourceLoginToggleOn(item) ? this.accentColor() : this.subTextColor())
+                      .width('100%')
+                  }
+                  .layoutWeight(1)
+                  .alignItems(HorizontalAlign.Start)
+
+                  Toggle({ type: ToggleType.Switch, isOn: this.sourceLoginToggleOn(item) })
+                    .enabled(!this.isExecutingLoginAction)
+                    .selectedColor(this.accentColor())
+                    .onChange((isOn: boolean) => {
+                      this.updateSourceLoginToggle(index, isOn);
+                    })
+                }
+                .width('100%')
+                .height(48)
+                .padding({ left: 12, right: 12 })
+                .borderRadius(8)
+                .backgroundColor(this.inputColor())
+              } else if (this.isSourceLoginSelect(item)) {
+                Row({ space: 12 }) {
+                  Text(this.sourceLoginItemDisplayName(item))
+                    .fontSize(14)
+                    .fontColor(this.primaryTextColor())
+                    .layoutWeight(1)
+                    .maxLines(2)
+                  Select(this.sourceLoginSelectOptions(item))
+                    .selected(this.sourceLoginSelectIndex(item))
+                    .value(this.sourceLoginChoiceValue(item))
+                    .fontColor(this.primaryTextColor())
+                    .selectedOptionFontColor(this.accentColor())
+                    .backgroundColor(this.cardColor())
+                    .enabled(!this.isExecutingLoginAction)
+                    .onSelect((selectedIndex: number) => {
+                      this.updateSourceLoginSelect(index, selectedIndex);
+                    })
+                }
+                .width('100%')
+                .height(48)
+                .padding({ left: 12, right: 8 })
+                .borderRadius(8)
+                .backgroundColor(this.inputColor())
               } else {
-                Button(this.isExecutingLoginAction && item.action ? `执行中 · ${item.name}` : item.name,
+                Button(this.isExecutingLoginAction && item.action ? `执行中 · ${item.name}` :
+                  this.sourceLoginButtonLabel(item),
                   { type: ButtonType.Normal })
                   .width('100%')
                   .height(40)
@@ -3512,10 +3564,14 @@ struct BookSourcePage {
     if (loginItems.length > 0) {
       const loginInfo = BookSourceLoginWebRuntime.parseRecord(source.loginInfo);
       for (const item of loginItems) {
-        if (this.isSourceLoginInput(item) && loginInfo[item.name] !== undefined) {
+        if ((this.isSourceLoginInput(item) || this.isSourceLoginChoice(item)) &&
+          loginInfo[item.name] !== undefined) {
           item.value = loginInfo[item.name];
+        } else if (this.isSourceLoginChoice(item) && !item.value) {
+          item.value = item.defaultValue || (item.chars.length > 0 ? item.chars[0] : '');
         }
       }
+      this.hydrateSourceLoginItemStates(source, loginItems);
       this.actionSourceDetail = source;
       this.sourceLoginItems = loginItems;
       this.showSourceLoginUiDialog = true;
@@ -3569,6 +3625,8 @@ struct BookSourcePage {
         this.sourceLoginItems = refreshedItems;
         this.refreshSourceLoginItemsFromRuntime(source);
       }
+      this.hydrateSourceLoginItemStates(source, this.sourceLoginItems, result.toastMessage, item.name);
+      this.sourceLoginItems = this.sourceLoginItems.slice();
       this.markSourceLoginCompleted(item, result);
       if (result.toastMessage) {
         promptAction.showToast({ message: result.toastMessage.trim() || '操作成功' });
@@ -3608,7 +3666,96 @@ struct BookSourcePage {
 
   isSourceLoginInput(item: BookSourceLoginItem): boolean {
     const type = (item.type || '').toLowerCase();
-    return type === 'text' || type === 'password' || type === 'email' || type === 'number';
+    return type === 'text' || type === 'password' || type === 'email' || type === 'number' || type === 'input';
+  }
+
+  isSourceLoginToggle(item: BookSourceLoginItem): boolean {
+    return (item.type || '').toLowerCase() === 'toggle';
+  }
+
+  isSourceLoginSelect(item: BookSourceLoginItem): boolean {
+    return (item.type || '').toLowerCase() === 'select';
+  }
+
+  isSourceLoginChoice(item: BookSourceLoginItem): boolean {
+    return this.isSourceLoginToggle(item) || this.isSourceLoginSelect(item);
+  }
+
+  sourceLoginItemDisplayName(item: BookSourceLoginItem): string {
+    const viewName = (item.viewName || '').trim().replace(/^(['"])(.*)\1$/, '$2').trim();
+    return viewName || item.name;
+  }
+
+  sourceLoginChoiceValue(item: BookSourceLoginItem): string {
+    return (item.value || item.defaultValue || (item.chars.length > 0 ? item.chars[0] : '')).trim();
+  }
+
+  sourceLoginToggleOn(item: BookSourceLoginItem): boolean {
+    const value = this.sourceLoginChoiceValue(item);
+    if (item.chars.length > 1) return value === item.chars[1];
+    return /^(?:true|1|on|yes|enabled|enable|开启|已开启|✅)$/i.test(value);
+  }
+
+  sourceLoginSelectOptions(item: BookSourceLoginItem): SelectOption[] {
+    const options: SelectOption[] = [];
+    for (const value of item.chars) options.push({ value: value });
+    if (options.length === 0) options.push({ value: this.sourceLoginChoiceValue(item) || '未设置' });
+    return options;
+  }
+
+  sourceLoginSelectIndex(item: BookSourceLoginItem): number {
+    const index = item.chars.indexOf(this.sourceLoginChoiceValue(item));
+    return index >= 0 ? index : 0;
+  }
+
+  sourceLoginButtonLabel(item: BookSourceLoginItem): string {
+    return item.status ? `${item.name} · ${item.status}` : item.name;
+  }
+
+  updateSourceLoginToggle(index: number, isOn: boolean): void {
+    if (index < 0 || index >= this.sourceLoginItems.length) return;
+    const item = this.sourceLoginItems[index];
+    const offValue = item.chars.length > 0 ? item.chars[0] : 'false';
+    const onValue = item.chars.length > 1 ? item.chars[1] : 'true';
+    this.updateSourceLoginChoice(index, isOn ? onValue : offValue);
+  }
+
+  updateSourceLoginSelect(index: number, selectedIndex: number): void {
+    if (index < 0 || index >= this.sourceLoginItems.length) return;
+    const item = this.sourceLoginItems[index];
+    if (selectedIndex < 0 || selectedIndex >= item.chars.length) return;
+    this.updateSourceLoginChoice(index, item.chars[selectedIndex]);
+  }
+
+  updateSourceLoginChoice(index: number, value: string): void {
+    if (index < 0 || index >= this.sourceLoginItems.length) return;
+    const items = this.sourceLoginItems.slice();
+    const copy = this.copySourceLoginItem(items[index]);
+    copy.value = value;
+    items[index] = copy;
+    this.sourceLoginItems = items;
+    const source = this.actionSourceDetail;
+    if (!source) return;
+    this.syncSourceLoginInfo(source);
+    AppDatabase.getInstance().updateBookSourceLoginRuntime(source.bookSourceUrl,
+      source.variable, source.loginHeader, source.loginInfo).catch((error: Object): void => {
+      console.warn('保存书源登录选项失败:', error);
+    });
+    if (copy.action) this.executeSourceLoginAction(copy);
+  }
+
+  copySourceLoginItem(item: BookSourceLoginItem): BookSourceLoginItem {
+    const copy = new BookSourceLoginItem();
+    copy.name = item.name;
+    copy.type = item.type;
+    copy.action = item.action;
+    copy.value = item.value;
+    copy.placeholder = item.placeholder;
+    copy.viewName = item.viewName;
+    copy.chars = item.chars.slice();
+    copy.defaultValue = item.defaultValue;
+    copy.status = item.status;
+    return copy;
   }
 
   markSourceLoginCompleted(item: BookSourceLoginItem, result: LoginRuntimeStep): void {
@@ -3627,12 +3774,7 @@ struct BookSourcePage {
   updateSourceLoginInput(index: number, value: string): void {
     if (index < 0 || index >= this.sourceLoginItems.length) return;
     const items = this.sourceLoginItems.slice();
-    const copy = new BookSourceLoginItem();
-    copy.name = items[index].name;
-    copy.type = items[index].type;
-    copy.action = items[index].action;
-    copy.value = items[index].value;
-    copy.placeholder = items[index].placeholder;
+    const copy = this.copySourceLoginItem(items[index]);
     copy.value = value;
     items[index] = copy;
     this.sourceLoginItems = items;
@@ -3641,7 +3783,9 @@ struct BookSourcePage {
   syncSourceLoginInfo(source: BookSource): void {
     const values = BookSourceLoginWebRuntime.parseRecord(source.loginInfo);
     for (const item of this.sourceLoginItems) {
-      if (this.isSourceLoginInput(item) && item.name) values[item.name] = item.value || '';
+      if ((this.isSourceLoginInput(item) || this.isSourceLoginChoice(item)) && item.name) {
+        values[item.name] = item.value || item.defaultValue || '';
+      }
     }
     source.loginInfo = BookSourceLoginWebRuntime.mergeRecord(source.loginInfo, values);
   }
@@ -3651,16 +3795,129 @@ struct BookSourcePage {
     const items = this.sourceLoginItems.slice();
     for (let index = 0; index < items.length; index++) {
       const item = items[index];
-      if (!this.isSourceLoginInput(item) || values[item.name] === undefined) continue;
-      const copy = new BookSourceLoginItem();
-      copy.name = item.name;
-      copy.type = item.type;
-      copy.action = item.action;
-      copy.placeholder = item.placeholder;
+      if ((!this.isSourceLoginInput(item) && !this.isSourceLoginChoice(item)) ||
+        values[item.name] === undefined) continue;
+      const copy = this.copySourceLoginItem(item);
       copy.value = values[item.name];
       items[index] = copy;
     }
     this.sourceLoginItems = items;
+  }
+
+  hydrateSourceLoginItemStates(source: BookSource, items: BookSourceLoginItem[],
+    toastMessage: string = '', targetName: string = ''): void {
+    const states: Record<string, string> = {};
+    this.appendSourceLoginStateValues(states, BookSourceLoginWebRuntime.parseRecord(source.loginInfo), '', 0);
+    this.appendSourceLoginStateValues(states, BookSourceLoginWebRuntime.runtimeState(source.loginInfo), '', 0);
+    this.appendSourceLoginVariableValues(states, source.variable || '');
+    const toastStatus = this.sourceLoginStatusFromToast(toastMessage);
+    for (const item of items) {
+      if (this.isSourceLoginChoice(item) || this.isSourceLoginInput(item)) continue;
+      item.status = this.sourceLoginStoredButtonStatus(item, states);
+      if (toastStatus && targetName && item.name === targetName) item.status = toastStatus;
+    }
+  }
+
+  appendSourceLoginVariableValues(states: Record<string, string>, raw: string): void {
+    const value = (raw || '').trim();
+    if (!value) return;
+    try {
+      const parsed = JSON.parse(value) as Object;
+      this.appendSourceLoginStateValues(states, parsed, 'variable', 0);
+    } catch (_) {
+      const parts = value.split(/&&|[&;,\n]/);
+      for (const part of parts) {
+        const match = part.match(/^\s*([^=:]+)\s*[=:]\s*(.*?)\s*$/);
+        if (!match) continue;
+        const key = this.normalizeSourceLoginStateKey(match[1]);
+        if (key) states[key] = match[2] || '';
+      }
+    }
+  }
+
+  appendSourceLoginStateValues(states: Record<string, string>, value: Object,
+    parentKey: string, depth: number): void {
+    if (depth > 6 || value === null || value === undefined) return;
+    if (Array.isArray(value)) {
+      const values = value as Object[];
+      for (const item of values) this.appendSourceLoginStateValues(states, item, parentKey, depth + 1);
+      return;
+    }
+    if (typeof value !== 'object') {
+      const normalized = this.normalizeSourceLoginStateKey(parentKey);
+      if (normalized) states[normalized] = String(value);
+      return;
+    }
+    const record = value as Record<string, Object>;
+    const recordKeys = Object.keys(record);
+    for (const key of recordKeys) {
+      const childKey = parentKey ? `${parentKey}.${key}` : key;
+      const child = record[key];
+      if (child !== null && child !== undefined && typeof child === 'object') {
+        this.appendSourceLoginStateValues(states, child, childKey, depth + 1);
+      } else {
+        const normalized = this.normalizeSourceLoginStateKey(childKey);
+        if (normalized) states[normalized] = String(child === null || child === undefined ? '' : child);
+        const shortKey = this.normalizeSourceLoginStateKey(key);
+        if (shortKey) states[shortKey] = String(child === null || child === undefined ? '' : child);
+      }
+    }
+  }
+
+  normalizeSourceLoginStateKey(value: string): string {
+    return (value || '').toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
+  }
+
+  sourceLoginStoredButtonStatus(item: BookSourceLoginItem, states: Record<string, string>): string {
+    const name = this.normalizeSourceLoginStateKey(item.name);
+    const action = (item.action || '').toLowerCase();
+    const switchLike = name.includes('开关') || name.includes('同步') || name.includes('显示') ||
+      name.includes('简介') || name.includes('网络模式') ||
+      /toggle|switch|paracomment|closeimg|set_info|ste\s*\(/i.test(action);
+    if (!switchLike) return '';
+    const aliases: string[] = [];
+    if (name.includes('段评')) aliases.push('段评开关', 'yunpara', 'fqpara', 'paras');
+    if (name.includes('图片')) aliases.push('显示图片', '图片开关', 'closeimg', 'close_img');
+    if (name.includes('简介')) aliases.push('完整简介', '简介开关', 'info');
+    if (name.includes('同步')) aliases.push('同步书架', 'booksync', 'book_sync');
+    if (name.includes('目录')) aliases.push('目录显示来源', '目录显示来源开关');
+    if (name.includes('网络')) aliases.push('网络模式');
+    if (name.includes('下载')) aliases.push('fqdown', 'txt下载开关');
+    aliases.push(item.name.replace(/开关/g, ''), item.name);
+    for (const alias of aliases) {
+      const normalizedAlias = this.normalizeSourceLoginStateKey(alias);
+      if (!normalizedAlias) continue;
+      const stateKeys = Object.keys(states);
+      for (const key of stateKeys) {
+        if (key !== normalizedAlias && !key.endsWith(normalizedAlias) && !normalizedAlias.endsWith(key)) continue;
+        return this.sourceLoginStatusLabel(states[key], key.includes('closeimg'));
+      }
+    }
+    return '';
+  }
+
+  sourceLoginStatusLabel(value: string, inverted: boolean = false): string {
+    const normalized = (value || '').trim().toLowerCase();
+    let enabled = false;
+    let recognized = true;
+    if (/^(?:true|1|on|yes|enabled|enable|开启|已开启|✅)$/.test(normalized)) enabled = true;
+    else if (/^(?:false|0|off|no|disabled|disable|关闭|已关闭|❌)$/.test(normalized)) enabled = false;
+    else recognized = false;
+    if (recognized) {
+      if (inverted) enabled = !enabled;
+      return enabled ? '已开启' : '已关闭';
+    }
+    if (!normalized || normalized === 'undefined' || normalized === 'null') return '';
+    return value.length > 16 ? '' : value;
+  }
+
+  sourceLoginStatusFromToast(message: string): string {
+    const text = (message || '').replace(/\s+/g, '');
+    if (!text) return '';
+    if (/已关闭|❌.*关闭|不显示|已精简|停止同步/.test(text)) return '已关闭';
+    if (/已开启|✅.*开启|显示文中图片|已恢复.*简介|自动同步/.test(text)) return '已开启';
+    const mode = text.match(/(?:切换为|设置[^为]*为)([^，。\n]{1,12})(?:模式)?/);
+    return mode ? mode[1].replace(/模式$/, '') : '';
   }
 
   openRuntimeSourceSearch(source: BookSource, keyword: string): void {
@@ -5108,11 +5365,13 @@ struct BookSourcePage {
   async handlePendingBookSourceImport(): Promise<void> {
     if (this.isImporting) return;
     const uri = AppStorage.get<string>('pendingBookSourceImportUri') || '';
-    if (!uri) return;
+    const onlineUrl = AppStorage.get<string>('pendingBookSourceImportUrl') || '';
+    if (!uri && !onlineUrl) return;
     AppStorage.setOrCreate('pendingBookSourceImportUri', '');
+    AppStorage.setOrCreate('pendingBookSourceImportUrl', '');
     this.isImporting = true;
     try {
-      const content = await this.readTextFile(uri);
+      const content = onlineUrl ? await this.fetchImportUrlBody(onlineUrl) : await this.readTextFile(uri);
       if (!content.trim()) {
         promptAction.showToast({ message: '文件内容为空' });
         return;
@@ -5124,7 +5383,8 @@ struct BookSourcePage {
       promptAction.showToast({ message: `导入失败: ${message}` });
     } finally {
       this.isImporting = false;
-      if (AppStorage.get<string>('pendingBookSourceImportUri')) {
+      if (AppStorage.get<string>('pendingBookSourceImportUri') ||
+        AppStorage.get<string>('pendingBookSourceImportUrl')) {
         this.handlePendingBookSourceImport();
       }
     }

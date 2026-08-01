@@ -4,6 +4,7 @@ import deviceInfo from '@ohos.deviceInfo';
 import { CloudTtsAudio, CloudTtsClient, CloudTtsTiming } from '../account/CloudTtsClient';
 import { HttpTTS } from '../model/data/Book';
 import { HttpTtsAudio, HttpTtsReader } from './HttpTtsReader';
+import { TtsAudioSession } from './TtsAudioSession';
 import { PcmPlaybackCue, TtsPcmAudioPlayer } from './TtsPcmAudioPlayer';
 
 export interface TtsChunk {
@@ -79,6 +80,7 @@ export class TtsVoiceOption {
 }
 
 export class SystemTtsReader {
+  private static audioSessionOwnerSerial: number = 0;
   private static readonly LEGACY_ONLINE_MODE: number = 0;
   private static readonly OFFLINE_MODE: number = 1;
   private static readonly CUSTOM_TTS_PREFETCH_WINDOW: number = 3;
@@ -120,7 +122,7 @@ export class SystemTtsReader {
   private currentFocusAudioWritten: boolean = false;
   private currentAudioWritePromise: Promise<void> = Promise.resolve();
   private currentFocusRetryCount: number = 0;
-  private ttsPcmPlayType: number = 0;
+  private ttsPcmPlayType: number = 1;
   private speakWatchdogId: number = -1;
   private suppressEngineStopEvent: boolean = false;
   private enginePerson: number = -1;
@@ -145,6 +147,7 @@ export class SystemTtsReader {
   private systemDrainScheduled: boolean = false;
   private systemLastWritePromise: Promise<void> = Promise.resolve();
   private systemBufferedSegmentCount: number = 0;
+  private systemAudioSessionOwner: string = '';
 
   static async listAvailableVoices(): Promise<TtsVoiceOption[]> {
     try {
@@ -373,6 +376,7 @@ export class SystemTtsReader {
       this.stop();
     } else {
       this.clearSpeakWatchdog();
+      this.releaseSystemAudioSession();
     }
     const generation = ++this.readGeneration;
     this.paused = false;
@@ -381,7 +385,7 @@ export class SystemTtsReader {
     this.onChunkStart = options?.onChunkStart;
     this.onAudioStart = options?.onAudioStart;
     this.audioStarted = false;
-    this.ttsPcmPlayType = 0;
+    this.ttsPcmPlayType = 1;
     this.chunkFocusChain = Promise.resolve();
     this.optionPerson = options?.person ?? null;
     this.optionOnline = options?.online ?? null;
@@ -436,6 +440,16 @@ export class SystemTtsReader {
       throw new Error(message);
     }
     if (!this.active || this.readGeneration !== generation) {
+      return;
+    }
+    const audioSessionOwner = `system-tts-${++SystemTtsReader.audioSessionOwnerSerial}`;
+    this.systemAudioSessionOwner = audioSessionOwner;
+    await TtsAudioSession.acquire(audioSessionOwner);
+    if (!this.active || this.readGeneration !== generation || this.systemAudioSessionOwner !== audioSessionOwner) {
+      TtsAudioSession.release(audioSessionOwner);
+      if (this.systemAudioSessionOwner === audioSessionOwner) {
+        this.systemAudioSessionOwner = '';
+      }
       return;
     }
     this.bindEngineListener(generation, engine);
@@ -493,6 +507,8 @@ export class SystemTtsReader {
         this.currentRequestId = '';
         this.active = false;
         this.clearSpeakWatchdog();
+        this.pcmPlayer.stop();
+        this.releaseSystemAudioSession();
         const message = `${errorMessage || `系统朗读失败(${errorCode})`}：${this.currentVoiceLabel()}`;
         console.error('[TTS] speak error:', message);
         if (this.onError) this.onError(message);
@@ -598,13 +614,14 @@ export class SystemTtsReader {
     this.currentFocusAudioWritten = false;
     this.currentAudioWritePromise = Promise.resolve();
     this.currentFocusRetryCount = 0;
-    this.ttsPcmPlayType = 0;
+    this.ttsPcmPlayType = 1;
     this.resetSystemPcmPipeline();
     this.clearSpeakWatchdog();
     this.chunkFocusChain = Promise.resolve();
     this.httpReader.stop();
     this.cloudReader.stop();
     this.pcmPlayer.stop();
+    this.releaseSystemAudioSession();
     try {
       this.engine?.stop();
     } catch (_) {
@@ -693,10 +710,9 @@ export class SystemTtsReader {
     extraParams['languageContext'] = this.getTtsLanguage() as Object;
     extraParams['audioType'] = 'pcm' as Object;
     extraParams['isBackStage'] = true as Object;
-    // The Core Speech Kit PCM-stream example uses channel 1 for playType=0.
-    // Channel 3 is the voice-assistant playback stream and is appropriate when
-    // the SDK performs playback itself (playType=1).
-    extraParams['soundChannel'] = (this.ttsPcmPlayType === 0 ? 1 : 3) as Object;
+    // Keep TTS on the media channel so the hardware volume keys adjust the
+    // system media volume instead of a voice-assistant relative volume.
+    extraParams['soundChannel'] = 1 as Object;
     extraParams['playType'] = this.ttsPcmPlayType as Object;
     try {
       const requestId = this.createRequestId();
@@ -737,6 +753,8 @@ export class SystemTtsReader {
       this.currentFocusRetryCount = 0;
       this.clearSpeakWatchdog();
       this.active = false;
+      this.pcmPlayer.stop();
+      this.releaseSystemAudioSession();
       const message = `系统朗读失败：${this.currentVoiceLabel()} ${this.formatError(error)}`;
       console.error('[TTS] speak throw:', message);
       if (this.onError) this.onError(message);
@@ -765,15 +783,22 @@ export class SystemTtsReader {
     this.resetSystemPcmPipeline();
     this.clearSpeakWatchdog();
     this.chunkFocusChain = Promise.resolve();
-    if (!notify) {
-      this.pcmPlayer.stop();
-    }
+    this.pcmPlayer.stop();
+    this.releaseSystemAudioSession();
     this.audioStarted = false;
     this.optionCloudVoiceId = '';
     this.optionCloudVoiceName = '';
     this.optionCloudVoiceTier = 'STANDARD';
     this.optionFocusBreakOffsets = [];
     if (notify && this.onFinished) this.onFinished();
+  }
+
+  private releaseSystemAudioSession(): void {
+    const owner = this.systemAudioSessionOwner;
+    this.systemAudioSessionOwner = '';
+    if (owner) {
+      TtsAudioSession.release(owner);
+    }
   }
 
   private speakCloudNext(generation: number, voiceId: string): void {

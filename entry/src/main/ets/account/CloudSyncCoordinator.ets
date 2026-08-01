@@ -187,7 +187,9 @@ export class CloudSyncCoordinator {
   private static readonly AUTOMATIC_MIN_INTERVAL_MS: number = 15 * 1000;
   private static readonly FOREGROUND_REFRESH_INTERVAL_MS: number = 30 * 60 * 1000;
   private static readonly MAX_BATCH_OPERATIONS: number = 100;
-  private static readonly MAX_BATCH_BYTES: number = 400 * 1024;
+  // A single book-source entity may be up to 512 KiB. Keep enough room for the
+  // operation envelope while staying well below the server's 2 MiB request limit.
+  private static readonly MAX_BATCH_BYTES: number = 768 * 1024;
   private static readonly MAX_EXCHANGE_PAGES: number = 1000;
 
   static async syncNow(context: Context, conflictPolicy: string = 'cloud'): Promise<CloudSyncRunResult> {
@@ -483,7 +485,7 @@ export class CloudSyncCoordinator {
     }
 
     if (settings.bookSourcesEnabled) {
-      const bookSources = await db.getAllBookSources();
+      const bookSources = await db.getBookSourcesForCloudSync();
       for (const source of bookSources) {
         const payload = CloudSyncCoordinator.bookSourcePayload(source);
         result.push(CloudSyncCoordinator.entity(
@@ -1051,12 +1053,14 @@ export class CloudSyncCoordinator {
     payload.exploreUrl = source.exploreUrl || '';
     payload.jsLib = source.jsLib || '';
     payload.header = CloudSyncCoordinator.sanitizeBookSourceHeader(source.header);
-    payload.bookListRule = JSON.parse(JSON.stringify(source.bookListRule || {})) as BookListRule;
-    payload.searchRule = JSON.parse(JSON.stringify(source.searchRule || {})) as SearchRule;
-    payload.exploreRule = JSON.parse(JSON.stringify(source.exploreRule || {})) as ExploreRule;
-    payload.bookInfoRule = JSON.parse(JSON.stringify(source.bookInfoRule || {})) as BookInfoRule;
-    payload.tocRule = JSON.parse(JSON.stringify(source.tocRule || {})) as TocRule;
-    payload.contentRule = JSON.parse(JSON.stringify(source.contentRule || {})) as ContentRule;
+    // entity() 会立即序列化 payload；这里再做一次 JSON 深拷贝只会在大量书源同步时
+    // 额外制造整批规则的临时副本。
+    payload.bookListRule = source.bookListRule || new BookListRule();
+    payload.searchRule = source.searchRule || new SearchRule();
+    payload.exploreRule = source.exploreRule || new ExploreRule();
+    payload.bookInfoRule = source.bookInfoRule || new BookInfoRule();
+    payload.tocRule = source.tocRule || new TocRule();
+    payload.contentRule = source.contentRule || new ContentRule();
     payload.variableComment = source.variableComment || '';
     payload.respondTime = Math.max(0, Math.floor(Number(source.respondTime) || 180000));
     payload.customOrder = Math.max(0, Math.floor(Number(source.customOrder) || 0));

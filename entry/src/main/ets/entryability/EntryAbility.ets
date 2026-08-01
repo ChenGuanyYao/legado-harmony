@@ -36,6 +36,7 @@ export default class EntryAbility extends UIAbility {
     AppStorage.setOrCreate('appCacheDir', this.context.cacheDir);
     AppStorage.setOrCreate('appFilesDir', this.context.filesDir);
     AppStorage.setOrCreate('pendingBookSourceImportUri', '');
+    AppStorage.setOrCreate('pendingBookSourceImportUrl', '');
     AppStorage.setOrCreate('pendingBookSourceImportNonce', 0);
     AppStorage.setOrCreate('bookSourceCheckOpenNonce', 0);
     AppStorage.setOrCreate('shelfUpdateTime', 0);
@@ -258,12 +259,22 @@ export default class EntryAbility extends UIAbility {
     hilog.info(0x0000, 'testTag', 'Ability onNewWant %{public}s', JSON.stringify(launchParam));
     const launchTarget = this.handleLaunchWant(want);
     if (launchTarget && this.mainWindowStage) {
-      const targetUrl = launchTarget === 'bookSource' ? 'pages/BookSource' : 'pages/Startup';
+      const targetUrl = launchTarget === 'bookSource' ? 'pages/BookSource' :
+        (launchTarget === 'audioBook' ? 'pages/AudioBook' : 'pages/Startup');
       this.mainWindowStage.getMainWindow().then((mainWindow: window.Window) => {
         const appRouter = mainWindow.getUIContext().getRouter();
         const state = appRouter.getState();
         if (this.routeMatches(state.name, state.path, targetUrl)) {
           return Promise.resolve();
+        }
+        if (launchTarget === 'audioBook') {
+          return appRouter.pushUrl({
+            url: targetUrl,
+            params: {
+              bookUrl: AppStorage.get<string>('pendingAudioBookUrl') || '',
+              audioPanelAction: ''
+            }
+          });
         }
         return appRouter.pushUrl({ url: targetUrl });
       }).catch((e: Error) => {
@@ -369,6 +380,10 @@ export default class EntryAbility extends UIAbility {
     if (params['bookSourceCheckAction'] === 'open') {
       AppStorage.setOrCreate('bookSourceCheckOpenNonce', Date.now());
       return 'bookSource';
+    }
+    if (params['audioBookAction'] === 'openPanel' && params['bookUrl']) {
+      AppStorage.setOrCreate('pendingAudioBookUrl', params['bookUrl']);
+      return 'audioBook';
     }
     if (params['cacheAction'] === 'cancelFullTextCache') {
       const nonce = Date.now();
@@ -590,6 +605,10 @@ export default class EntryAbility extends UIAbility {
     const bookSourceCheckAction = parameters['bookSourceCheckAction'];
     if (typeof bookSourceCheckAction === 'string') {
       result['bookSourceCheckAction'] = bookSourceCheckAction;
+    }
+    const audioBookAction = parameters['audioBookAction'];
+    if (typeof audioBookAction === 'string') {
+      result['audioBookAction'] = audioBookAction;
     }
 
     const cardParams = parameters['params'];

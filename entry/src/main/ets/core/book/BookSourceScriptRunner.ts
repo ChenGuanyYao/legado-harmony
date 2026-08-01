@@ -9,6 +9,10 @@ export class BookSourceLoginItem {
   action: string = '';
   value: string = '';
   placeholder: string = '';
+  viewName: string = '';
+  chars: string[] = [];
+  defaultValue: string = '';
+  status: string = '';
 }
 
 export class BookSourceScriptResult {
@@ -81,6 +85,16 @@ export class BookSourceScriptRunner {
       item.action = String(record['action'] || '').trim();
       item.value = String(record['value'] || '').trim();
       item.placeholder = String(record['placeholder'] || '').trim();
+      item.viewName = String(record['viewName'] || '').trim();
+      item.defaultValue = String(record['default'] || '').trim();
+      const rawChars = record['chars'];
+      if (Array.isArray(rawChars)) {
+        const chars = rawChars as Object[];
+        for (const char of chars) {
+          const text = String(char || '').trim();
+          if (text) item.chars.push(text);
+        }
+      }
       if (item.name) items.push(item);
     }
     return items;

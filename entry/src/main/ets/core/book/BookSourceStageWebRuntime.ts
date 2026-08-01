@@ -32,6 +32,8 @@ class StageWebRuntimeStep extends StageWebRuntimeResult {
   pendingCookie: string = '';
   cookieOperations: string = '[]';
   cacheState: string = '{}';
+  javaState: string = '{}';
+  sourceState: string = '{}';
 }
 
 class StageWebRuntimeCookieOperation {
@@ -115,6 +117,19 @@ export class BookSourceStageWebRuntime {
   }
 
   private async executeTask(request: StageWebRuntimeRequest): Promise<StageWebRuntimeResult> {
+    // Coordinators may hold a source snapshot while the login/editor page saves a new token.
+    // Refresh missing runtime fields before executing so a stale empty snapshot cannot issue an
+    // unauthenticated request or overwrite the newly saved state when the stage completes.
+    const persistedAtStart = await AppDatabase.getInstance().getBookSource(request.source.bookSourceUrl);
+    if (persistedAtStart) {
+      if (!request.source.variable && persistedAtStart.variable) request.source.variable = persistedAtStart.variable;
+      if (!request.source.loginHeader && persistedAtStart.loginHeader) {
+        request.source.loginHeader = persistedAtStart.loginHeader;
+      }
+      if ((!request.source.loginInfo || request.source.loginInfo === '{}') && persistedAtStart.loginInfo) {
+        request.source.loginInfo = persistedAtStart.loginInfo;
+      }
+    }
     const sourceKey = request.source.bookSourceUrl || request.source.bookSourceName || 'source';
     const responses: Record<string, string> = {};
     const cookies: Record<string, string> = {};
@@ -135,6 +150,8 @@ export class BookSourceStageWebRuntime {
         cacheState = {};
       }
       this.caches[sourceKey] = cacheState;
+      request.source.loginInfo = this.mergeRuntimeState(request.source.loginInfo || '',
+        step.javaState, step.sourceState, cacheState);
       this.applyCookieOperations(step.cookieOperations, appliedOperations);
       if (step.pendingCookie) {
         cookies[step.pendingCookie] = CookieStore.getCookie(step.pendingCookie);
@@ -151,7 +168,18 @@ export class BookSourceStageWebRuntime {
         continue;
       }
       if (step.errorMessage) throw new Error(step.errorMessage);
-      await AppDatabase.getInstance().updateBookSourceVariable(request.source.bookSourceUrl, step.variable);
+      const persistedBeforeSave = await AppDatabase.getInstance().getBookSource(request.source.bookSourceUrl);
+      if (persistedBeforeSave) {
+        // Empty state from a non-login task is never an explicit logout. Preserve a token/header
+        // that another page saved while this asynchronous task was running.
+        request.source.variable = step.variable || persistedBeforeSave.variable || '';
+        request.source.loginHeader = request.source.loginHeader || persistedBeforeSave.loginHeader || '';
+        request.source.loginInfo = this.mergeRuntimeState(
+          persistedBeforeSave.loginInfo || request.source.loginInfo || '',
+          step.javaState, step.sourceState, cacheState);
+      }
+      await AppDatabase.getInstance().updateBookSourceLoginRuntime(request.source.bookSourceUrl,
+        request.source.variable || '', request.source.loginHeader || '', request.source.loginInfo || '');
       return step;
     }
     throw new Error('书源脚本执行步骤过多');
@@ -193,6 +221,7 @@ export class BookSourceStageWebRuntime {
     const bookVariables = this.parseRecord(request.book ? request.book.variable : '');
     const loginInfo = this.parseLoginInfo(request.source.loginInfo || '');
     const javaState = this.parseRuntimeJavaState(request.source.loginInfo || '');
+    const sourceState = this.parseRuntimeObjectState(request.source.loginInfo || '', 'source');
     const state = JSON.stringify({
       sourceUrl: request.source.bookSourceUrl || '',
       sourceName: request.source.bookSourceName || '',
@@ -211,15 +240,19 @@ export class BookSourceStageWebRuntime {
       randomSeed: randomSeed,
       loginInfo: loginInfo,
       javaState: javaState,
+      sourceState: sourceState,
       readerActionMode: request.readerActionMode
     });
-    const code = `${request.source.jsLib || ''}\n${request.code || ''}\n//# sourceURL=book-source-stage.js`;
+    const library = request.source.jsLib || '';
+    const exposeFunctions = this.functionExposeScript(library);
+    const code = `${library}\n${exposeFunctions}\n${request.code || ''}\n//# sourceURL=book-source-stage.js`;
     const stateBase64 = this.encodeBase64(state);
     const codeBase64 = this.encodeBase64(code);
     return `(function(){` +
       `function dec(v){try{return decodeURIComponent(escape(atob(v)));}catch(e){return atob(v);}}` +
       `const S=JSON.parse(dec('${stateBase64}'));let pending='',pendingCookie='',url='',toast='',error='';` +
-      `const cookieOps=[];const sourceData={};const cacheData=Object.assign({},S.cache||{});` +
+      `const cookieOps=[];const sourceData=Object.assign({},S.sourceState||{});` +
+      `const cacheData=Object.assign({},S.cache||{});` +
       `const javaData=Object.assign({},S.javaState||{});const loginMap=Object.assign({},S.loginInfo||{});` +
       `Object.defineProperty(loginMap,'get',{enumerable:false,value:function(k){return this[k]??'';}});` +
       `Object.defineProperty(loginMap,'put',{enumerable:false,value:function(k,v){this[k]=v;return v;}});` +
@@ -230,6 +263,10 @@ export class BookSourceStageWebRuntime {
       `FixedDate.prototype=NativeDate.prototype;const Date=FixedDate;let randomState=(Number(S.randomSeed)||1)>>>0;` +
       `const Math=Object.create(globalThis.Math);Math.random=function(){randomState=(randomState*1664525+1013904223)>>>0;` +
       `return randomState/4294967296;};` +
+      `const previousNames=Array.isArray(globalThis.__legadoHarmonyStageExposedNames)?` +
+      `globalThis.__legadoHarmonyStageExposedNames:[];for(const oldName of previousNames){` +
+      `try{delete globalThis[oldName];}catch(e){globalThis[oldName]=undefined;}}` +
+      `globalThis.__legadoHarmonyStageExposedNames=[];` +
       `function bytes(v){if(v instanceof Uint8Array)return Array.from(v);if(Array.isArray(v))return v;` +
       `return Array.from(new TextEncoder().encode(String(v??'')));}` +
       `function b64e(v){try{let s='';for(const x of bytes(v))s+=String.fromCharCode(Number(x)&255);return btoa(s);}catch(e){return '';}}` +
@@ -293,7 +330,8 @@ export class BookSourceStageWebRuntime {
       `const value=text(evaluated)||text(globalThis.result);` +
       `return encodeURIComponent(JSON.stringify({pendingAjax:pending,pendingCookie:pendingCookie,` +
       `cookieOperations:JSON.stringify(cookieOps),variable:S.variable||'',bookVariable:JSON.stringify(bookData),` +
-      `cacheState:JSON.stringify(cacheData),value:value,requestedUrl:url,toastMessage:toast,errorMessage:error}));})()`;
+      `cacheState:JSON.stringify(cacheData),javaState:JSON.stringify(javaData),sourceState:JSON.stringify(sourceData),` +
+      `value:value,requestedUrl:url,toastMessage:toast,errorMessage:error}));})()`;
   }
 
   private parseStep(raw: string): StageWebRuntimeStep {
@@ -310,6 +348,8 @@ export class BookSourceStageWebRuntime {
       step.variable = String(record['variable'] || '');
       step.bookVariable = String(record['bookVariable'] || '{}');
       step.cacheState = String(record['cacheState'] || '{}');
+      step.javaState = String(record['javaState'] || '{}');
+      step.sourceState = String(record['sourceState'] || '{}');
       step.value = String(record['value'] || '');
       step.requestedUrl = String(record['requestedUrl'] || '');
       step.toastMessage = String(record['toastMessage'] || '');
@@ -320,6 +360,21 @@ export class BookSourceStageWebRuntime {
       step.errorMessage = '书源脚本返回格式异常';
       return step;
     }
+  }
+
+  private functionExposeScript(script: string): string {
+    const names: string[] = [];
+    const regex = /\bfunction\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(script || '')) !== null) {
+      const name = match[1] || '';
+      if (name && !names.includes(name)) names.push(name);
+    }
+    let code = `globalThis.__legadoHarmonyStageExposedNames=${JSON.stringify(names)};`;
+    for (const name of names) {
+      code += `if(typeof ${name}==='function')globalThis[${JSON.stringify(name)}]=${name};`;
+    }
+    return code;
   }
 
   private applyCookieOperations(raw: string, applied: string[]): void {
@@ -371,17 +426,55 @@ export class BookSourceStageWebRuntime {
   }
 
   private parseRuntimeJavaState(raw: string): Record<string, Object> {
+    return this.parseRuntimeObjectState(raw, 'java');
+  }
+
+  private parseRuntimeObjectState(raw: string, stateKey: string): Record<string, Object> {
     try {
       const loginInfo = JSON.parse(raw || '{}') as Record<string, Object>;
       let runtime = loginInfo['__legadoHarmonyRuntime'];
       if (typeof runtime === 'string') runtime = JSON.parse(runtime) as Object;
       if (!runtime || typeof runtime !== 'object' || Array.isArray(runtime)) return {};
-      const javaState = (runtime as Record<string, Object>)['java'];
-      if (!javaState || typeof javaState !== 'object' || Array.isArray(javaState)) return {};
-      return javaState as Record<string, Object>;
+      const state = (runtime as Record<string, Object>)[stateKey];
+      if (!state || typeof state !== 'object' || Array.isArray(state)) return {};
+      return state as Record<string, Object>;
     } catch (_) {
       return {};
     }
+  }
+
+  private mergeRuntimeState(raw: string, javaStateRaw: string, sourceStateRaw: string,
+    cacheState: Record<string, string>): string {
+    let loginInfo: Record<string, Object> = {};
+    try {
+      const parsed = JSON.parse(raw || '{}') as Object;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        loginInfo = parsed as Record<string, Object>;
+      }
+    } catch (_) {}
+    let runtime: Record<string, Object> = {};
+    const existingRuntime = loginInfo['__legadoHarmonyRuntime'];
+    try {
+      const parsedRuntime = typeof existingRuntime === 'string' ? JSON.parse(existingRuntime) as Object : existingRuntime;
+      if (parsedRuntime && typeof parsedRuntime === 'object' && !Array.isArray(parsedRuntime)) {
+        runtime = parsedRuntime as Record<string, Object>;
+      }
+    } catch (_) {}
+    runtime['java'] = this.parseObjectState(javaStateRaw);
+    runtime['source'] = this.parseObjectState(sourceStateRaw);
+    runtime['cache'] = cacheState;
+    loginInfo['__legadoHarmonyRuntime'] = JSON.stringify(runtime);
+    return JSON.stringify(loginInfo);
+  }
+
+  private parseObjectState(raw: string): Record<string, Object> {
+    try {
+      const parsed = JSON.parse(raw || '{}') as Object;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, Object>;
+      }
+    } catch (_) {}
+    return {};
   }
 
   private encodeBase64(value: string): string {

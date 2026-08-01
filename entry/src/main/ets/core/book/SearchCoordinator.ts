@@ -39,7 +39,8 @@ export interface SearchSourceResult {
 
 const MAX_SEARCH_CONCURRENCY = 12;
 const MAX_VALIDATION_CONCURRENCY = 2;
-const SEARCH_PROGRESS_EMIT_INTERVAL_MS = 250;
+// Batch source results so background searching does not continuously interrupt list gestures.
+const SEARCH_PROGRESS_EMIT_INTERVAL_MS = 500;
 const MAX_SEARCH_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_VALIDATION_RESPONSE_BYTES = 1024 * 1024;
 const MAX_RESULTS_PER_SOURCE = 50;
@@ -805,17 +806,25 @@ export class SearchCoordinator {
     const request = new StageWebRuntimeRequest();
     request.source = source;
     request.baseUrl = source.bookSourceUrl;
+    const rawSearchUrl = source.searchUrl || '';
+    const isFullJsUrl = /^\s*@?js:/i.test(rawSearchUrl);
     request.variables = {
-      key: encodeURIComponent(keyword),
-      searchKey: encodeURIComponent(keyword),
-      keyword: encodeURIComponent(keyword),
+      key: isFullJsUrl ? keyword : encodeURIComponent(keyword),
+      searchKey: isFullJsUrl ? keyword : encodeURIComponent(keyword),
+      keyword: isFullJsUrl ? keyword : encodeURIComponent(keyword),
       searchKeyRaw: keyword,
       page: '1',
       pageIndex: '1'
     };
-    const template = JSON.stringify(source.searchUrl || '');
-    request.code = `const __searchTemplate=${template};result=__searchTemplate.replace(/\\{\\{([\\s\\S]*?)\\}\\}/g,` +
-      `function(_,expr){try{return String(eval(expr));}catch(e){return '';}});result;`;
+    if (isFullJsUrl) {
+      // A full-JS URL must run as code. Treating it as a template returns the literal "@js:..."
+      // text, so AnalyzeUrl never sees request options such as an Authorization header.
+      request.code = rawSearchUrl.replace(/^\s*@?js:\s*/i, '');
+    } else {
+      const template = JSON.stringify(rawSearchUrl);
+      request.code = `const __searchTemplate=${template};result=__searchTemplate.replace(/\\{\\{([\\s\\S]*?)\\}\\}/g,` +
+        `function(_,expr){try{return String(eval(expr));}catch(e){return '';}});result;`;
+    }
     try {
       const result = await BookSourceStageWebRuntime.get().execute(request);
       return result.value || '';

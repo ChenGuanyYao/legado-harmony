@@ -55,7 +55,10 @@ import {
   encodeTimedTtsBinary,
   TIMED_TTS_BINARY_CONTENT_TYPE
 } from './ttsTransport.js';
-import { cleanupExpiredSyncReceipts } from './maintenance.js';
+import {
+  cleanupExpiredSyncReceipts,
+  cleanupExpiredTtsUsage
+} from './maintenance.js';
 import { InvalidAvatarError, sanitizeAvatarBase64 } from './imageSecurity.js';
 import { reconcileIapOrders } from './iapReconciliation.js';
 import {
@@ -1301,12 +1304,18 @@ const ttsReservationTimer = setInterval(() => {
 ttsReservationTimer.unref();
 const runSyncMaintenance = async () => {
   try {
-    const deleted = await cleanupExpiredSyncReceipts(config.sync.receiptRetentionDays);
-    if (deleted > 0) {
-      app.log.info({ deleted }, 'deleted expired sync operation receipts');
+    const [deletedReceipts, deletedTtsUsage] = await Promise.all([
+      cleanupExpiredSyncReceipts(config.sync.receiptRetentionDays),
+      cleanupExpiredTtsUsage(config.sis.usageRetentionDays)
+    ]);
+    if (deletedReceipts > 0 || deletedTtsUsage > 0) {
+      app.log.info(
+        { deletedReceipts, deletedTtsUsage },
+        'deleted expired non-essential history'
+      );
     }
   } catch (error) {
-    app.log.error(error, 'failed to clean expired sync operation receipts');
+    app.log.error(error, 'failed to clean expired non-essential history');
   }
 };
 void runSyncMaintenance();

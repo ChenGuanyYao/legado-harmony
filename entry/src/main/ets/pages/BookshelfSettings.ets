@@ -21,6 +21,7 @@ struct BookshelfSettingsPage {
   @StorageLink('bookshelfShowProgressBar') bookshelfShowProgressBar: boolean = false;
   @StorageLink('bookshelfShowLastReadTime') bookshelfShowLastReadTime: boolean = true;
   @StorageLink('bookshelfShowLastReadChapter') bookshelfShowLastReadChapter: boolean = false;
+  @StorageLink('bookshelfShowTypeBadge') bookshelfShowTypeBadge: boolean = true;
   @StorageLink('bookshelfLayoutMode') bookshelfLayoutMode: string = 'compact';
   @StorageLink('bookshelfCoverAlbums') @Watch('onCoverAlbumsChanged') bookshelfCoverAlbums: string = '';
   @StorageLink('bookshelfLightCoverAlbumId') bookshelfLightCoverAlbumId: string = '';
@@ -64,6 +65,11 @@ struct BookshelfSettingsPage {
         Column() {
           this.sectionTitle('书籍信息')
           Column() {
+          this.switchItem('类型标识', '在书名前显示“书／漫／声”，区分普通书、漫画和有声书', this.bookshelfShowTypeBadge, (value: boolean) => {
+            this.bookshelfShowTypeBadge = value;
+            this.onDisplaySettingChanged();
+          })
+          this.itemDivider()
           this.switchItem('书籍标签', '控制书架卡片是否显示书籍标签', this.bookshelfShowTags, (value: boolean) => {
             this.bookshelfShowTags = value;
             this.onDisplaySettingChanged();
@@ -220,6 +226,7 @@ struct BookshelfSettingsPage {
       this.bookshelfShowProgressBar = settings.showProgressBar;
       this.bookshelfShowLastReadTime = settings.showLastReadTime;
       this.bookshelfShowLastReadChapter = settings.showLastReadChapter;
+      this.bookshelfShowTypeBadge = settings.showTypeBadge;
       this.bookshelfLayoutMode = settings.layoutMode;
     } catch (e) {
       console.warn('重新加载书架显示设置失败:', e);
@@ -236,6 +243,7 @@ struct BookshelfSettingsPage {
     settings.showProgressBar = this.bookshelfShowProgressBar;
     settings.showLastReadTime = this.bookshelfShowLastReadTime;
     settings.showLastReadChapter = this.bookshelfShowLastReadChapter;
+    settings.showTypeBadge = this.bookshelfShowTypeBadge;
     settings.layoutMode = this.bookshelfLayoutMode;
     BookshelfDisplaySettingsStore.applyToStorage(settings);
     BookshelfDisplaySettingsStore.save(getContext(this), settings).catch((e: Error) => {

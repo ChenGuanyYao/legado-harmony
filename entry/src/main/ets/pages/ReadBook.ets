@@ -1,4 +1,5 @@
 import { router, window, promptAction, MeasureOptions } from '@kit.ArkUI';
+import { webview } from '@kit.ArkWeb';
 import { common, ConfigurationConstant, WantAgent, wantAgent } from '@kit.AbilityKit';
 import { inputConsumer, KeyCode, Action, KeyEvent } from '@kit.InputKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
@@ -150,6 +151,28 @@ class ReaderComicPageDataSource implements IDataSource {
   }
 }
 
+class ReaderFloatingCatalogDataSource implements IDataSource {
+  private titles: string[] = [];
+  private listeners: DataChangeListener[] = [];
+
+  totalCount(): number { return this.titles.length; }
+  getData(index: number): string { return this.titles[index] || ''; }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (!this.listeners.includes(listener)) this.listeners.push(listener);
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    const index = this.listeners.indexOf(listener);
+    if (index >= 0) this.listeners.splice(index, 1);
+  }
+
+  replace(titles: string[]): void {
+    this.titles = titles.slice();
+    for (const listener of this.listeners) listener.onDataReloaded();
+  }
+}
+
 class ReaderCustomFontItem {
   familyName: string = '';
   filePath: string = '';
@@ -217,6 +240,11 @@ struct ReadBookPage {
   @State showTxtCharsetDialog: boolean = false;
   @State txtCharsetDraft: string = '';
   @State txtCharsetApplying: boolean = false;
+  @State showReaderCommentPanel: boolean = false;
+  @State readerCommentPanelTitle: string = '段评';
+  @State readerCommentPanelUrl: string = '';
+  @State readerCommentPanelProgress: number = 0;
+  @State readerCommentPanelLoading: boolean = false;
   @State showToc: boolean = false;
   @State tocPanelTab: number = 0;
   @State bookmarks: Bookmark[] = [];
@@ -273,6 +301,8 @@ struct ReadBookPage {
   @StorageLink('globalTtsPaused') globalTtsPaused: boolean = false;
   @StorageLink('globalTtsBookName') globalTtsBookName: string = '';
   @StorageLink('globalTtsChapterTitle') globalTtsChapterTitle: string = '';
+  @StorageLink('globalTtsMode') globalTtsMode: string = '';
+  @StorageLink('globalTtsVoiceCode') globalTtsVoiceCode: string = '';
   @StorageLink('globalTtsCover') globalTtsCover: ResourceStr = '';
   @StorageLink('globalTtsCoverFrame') globalTtsCoverFrame: ResourceStr = '';
   @StorageLink('globalTtsContent') globalTtsContent: string = '';
@@ -282,8 +312,13 @@ struct ReadBookPage {
   @StorageLink('globalTtsTimerRemainingSeconds') globalTtsTimerRemainingSeconds: number = 0;
   @StorageLink('globalTtsCanPrevious') globalTtsCanPrevious: boolean = false;
   @StorageLink('globalTtsCanNext') globalTtsCanNext: boolean = false;
-  @StorageLink('globalTtsRevision') globalTtsRevision: number = 0;
+  @StorageLink('globalTtsBookUrl') globalTtsBookUrl: string = '';
+  @StorageLink('globalTtsChapterIndex') globalTtsChapterIndex: number = -1;
+  @StorageLink('globalTtsOffsetStart') globalTtsOffsetStart: number = -1;
+  @StorageLink('globalTtsOffsetEnd') globalTtsOffsetEnd: number = -1;
+  @StorageLink('globalTtsRevision') @Watch('onGlobalTtsRevisionChanged') globalTtsRevision: number = 0;
   @State showGlobalTtsQuickPlayer: boolean = false;
+  @State showGlobalTtsCatalog: boolean = false;
   @State globalTtsOptionsPanel: number = 0;
   private ttsFloatingSessionOwnerId: string = `reader_${Date.now()}_${Math.random()}`;
   private ttsMiniPlayerDragOriginX: number = 0;
@@ -296,6 +331,8 @@ struct ReadBookPage {
   private tocPositionRequestSerial: number = 0;
   private bookmarkScroller: ListScroller = new ListScroller();
   private ttsPanelTextScroller: ListScroller = new ListScroller();
+  private globalTtsCatalogScroller: ListScroller = new ListScroller();
+  private globalTtsCatalogSource: ReaderFloatingCatalogDataSource = new ReaderFloatingCatalogDataSource();
   private readerComicScroller: ListScroller = new ListScroller();
   private readerComicPageDataSource: ReaderComicPageDataSource = new ReaderComicPageDataSource();
   private readerComicScrollRestoreSerial: number = 0;
@@ -313,6 +350,8 @@ struct ReadBookPage {
   private ttsLastFocusChunk: TtsChunk | null = null;
   private ttsLastFocusPageIndex: number = -1;
   private ttsResumeSyncSerial: number = 0;
+  private mirroredTtsFocusSyncSerial: number = 0;
+  @State mirroredTtsFocusActive: boolean = false;
   private ttsProgressSaveTimerId: number = -1;
   private ttsAutoTurningPage: boolean = false;
   private ttsPageTurnSerial: number = 0;
@@ -508,7 +547,11 @@ struct ReadBookPage {
   private readerScreenTimeoutTimerId: number = -1;
   private readerScreenTimeoutSerial: number = 0;
   private readerPageVisible: boolean = false;
-  private readerCommentPageActive: boolean = false;
+  private readerCommentPanelMarker: string = '';
+  private readerCommentPanelAnchorBottom: number = -1;
+  private readerCommentPageAreaTop: number = -1;
+  private readerCommentPageAreaHeight: number = 0;
+  private readerCommentPanelController: webview.WebviewController = new webview.WebviewController();
 
   async aboutToAppear() {
     this.readerPageVisible = true;
@@ -554,12 +597,6 @@ struct ReadBookPage {
     this.readerPageVisible = true;
     this.applyReaderScreenTimeout();
     this.shortcutRoutingActive = true;
-    if (this.readerCommentPageActive) {
-      this.readerCommentPageActive = false;
-      this.enterReaderImmersive();
-      this.updateVolumeKeySubscription();
-      return;
-    }
     if (!this.readerEntryInitializing) {
       this.reloadReaderSettingsAfterPageShow().catch((error: Error) => {
         console.warn('恢复阅读设置失败:', error);
@@ -578,10 +615,25 @@ struct ReadBookPage {
     if (!this.globalTtsActive) {
       this.showGlobalTtsQuickPlayer = false;
       this.globalTtsOptionsPanel = 0;
+      this.clearMirroredTtsFocus();
     }
   }
 
+  onGlobalTtsRevisionChanged(): void {
+    this.syncMirroredTtsFocus().catch((error: Error) => {
+      console.warn('同步后台朗读正文焦点失败:', error);
+    });
+  }
+
   onBackPress(): boolean {
+    if (this.showReaderCommentPanel) {
+      this.closeReaderCommentPanel();
+      return true;
+    }
+    if (this.showGlobalTtsCatalog) {
+      this.closeGlobalTtsCatalog();
+      return true;
+    }
     if (this.showTtsQuickPlayer) {
       this.closeTtsQuickPlayer();
       return true;
@@ -648,7 +700,6 @@ struct ReadBookPage {
   }
 
   aboutToDisappear() {
-    const transientCommentPage = this.readerCommentPageActive;
     this.readerPageVisible = false;
     this.flushPendingReaderLayoutChange(false);
     this.releaseReaderScreenTimeout();
@@ -664,7 +715,7 @@ struct ReadBookPage {
       this.stopTtsReading();
       this.ttsReader.shutdown();
     }
-    if (!transientCommentPage && !this.readerExitProgressSaved) {
+    if (!this.readerExitProgressSaved) {
       this.saveReadingProgress().then(() => {
         return CloudSyncCoordinator.syncAutomatically(
           getContext(this), CloudSyncCoordinator.TRIGGER_CHANGE);
@@ -812,7 +863,8 @@ struct ReadBookPage {
       this.book = engine.book || this.book;
       this.chapters = engine.chapters;
       this.initializeReaderComicMode();
-      const savedChapterIndex = engine.curIdx;
+      const activeTtsChapterIndex = this.activeMirroredTtsChapterIndex();
+      const savedChapterIndex = activeTtsChapterIndex >= 0 ? activeTtsChapterIndex : engine.curIdx;
       this.currentChapterIndex = this.clampChapterIndex(savedChapterIndex);
       const savedPosition = this.currentChapterIndex === savedChapterIndex ? Math.max(0, engine.curPos) : 0;
       this.pendingRestorePageIndex = savedPosition;
@@ -821,6 +873,7 @@ struct ReadBookPage {
 
       if (this.chapters.length > 0) {
         await this.loadContent();
+        await this.syncMirroredTtsFocus();
       } else if (this.book.origin !== 'local' && this.book.origin) {
         this.setReaderContent(`《${this.book.name}》\n\n作者：${this.book.author || '未知'}\n来源：${this.book.originName || this.book.origin}\n\n正在尝试解析目录...`);
         this.loadStatus = '正在获取目录...';
@@ -889,6 +942,10 @@ struct ReadBookPage {
     this.displayPageIndex = 0;
     this.displayPageRenderKey = 0;
     this.chapterJumpRenderGeneration = 0;
+    this.readerCommentPanelMarker = '';
+    this.readerCommentPanelAnchorBottom = -1;
+    this.readerCommentPageAreaTop = -1;
+    this.readerCommentPageAreaHeight = 0;
     this.pageViewWidth = 0;
     this.pageViewHeight = 0;
     this.readerInitialPageReady = false;
@@ -943,6 +1000,7 @@ struct ReadBookPage {
         return;
       }
       this.currentChapterIndex = chapterIndex;
+      this.closeReaderCommentPanel();
       this.readerComicImageRatios = [];
       let loadedContent = this.applyReaderContentRules(body);
       if (body) {
@@ -1445,8 +1503,8 @@ struct ReadBookPage {
       .height('100%')
       .edgeEffect(EdgeEffect.None)
       .scrollBar(BarState.Off)
-      .onScrollIndex((start: number, _end: number) => {
-        this.onReaderComicScrollIndexChanged(start);
+      .onScrollIndex((start: number, end: number) => {
+        this.onReaderComicScrollIndexChanged(start, end);
       })
 
       Column() {
@@ -1681,6 +1739,10 @@ struct ReadBookPage {
         this.globalTtsQuickPlayerOverlay()
       }
 
+      if (this.globalTtsActive && this.showGlobalTtsQuickPlayer && this.showGlobalTtsCatalog) {
+        this.globalTtsCatalogOverlay()
+      }
+
       if (this.showBookmarkActionMenu && this.pendingBookmarkAction) {
         this.bookmarkActionMenu()
       }
@@ -1691,6 +1753,10 @@ struct ReadBookPage {
 
       if (this.showChangeSourceDialog) {
         this.changeSourceDialog()
+      }
+
+      if (this.showReaderCommentPanel) {
+        this.readerCommentPanel()
       }
     }
     .width('100%')
@@ -1704,6 +1770,83 @@ struct ReadBookPage {
         this.refreshReaderScreenTimeout();
       }
     })
+  }
+
+  @Builder
+  readerCommentPanel() {
+    Stack() {
+      Row()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.isReaderThemeDark() ? '#52000000' : '#26000000')
+        .backdropBlur(ThemeRuntime.glassBlur('overlay', 18))
+        .onClick(() => {
+          this.closeReaderCommentPanel();
+        })
+      Column({ space: 10 }) {
+        Row({ space: 10 }) {
+          Text(this.readerCommentPanelTitle)
+            .fontSize(17)
+            .fontColor(this.getTextColor())
+            .fontWeight(FontWeight.Medium)
+            .maxLines(1)
+            .layoutWeight(1)
+          if (this.readerCommentPanelLoading && this.readerCommentPanelProgress < 100 && this.readerCommentPanelProgress > 0) {
+            Progress({ value: this.readerCommentPanelProgress, total: 100, type: ProgressType.Linear })
+              .width(110)
+              .height(3)
+              .color(this.accentColor())
+          }
+          Button({
+            type: ButtonType.Circle,
+            stateEffect: true
+          }) {
+            SymbolGlyph($r('sys.symbol.xmark'))
+              .fontSize(16)
+              .fontColor([this.getSubTextColor()])
+          }
+          .width(36)
+          .height(36)
+          .padding(0)
+          .backgroundColor(this.readerGlassPanelColor())
+          .onClick(() => {
+            this.closeReaderCommentPanel();
+          })
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        Web({ src: this.readerCommentPanelUrl, controller: this.readerCommentPanelController })
+        .width('100%')
+        .height(this.readerCommentPanelContentHeight())
+          .javaScriptAccess(true)
+          .domStorageAccess(true)
+          .onlineImageAccess(true)
+          .imageAccess(true)
+          .onPageBegin(() => {
+            this.readerCommentPanelLoading = true;
+          })
+          .onPageEnd(() => {
+            this.readerCommentPanelLoading = false;
+          })
+      }
+      .width('100%')
+      .padding({ left: 14, right: 10, top: 12, bottom: 10 })
+      .backgroundColor(this.readerGlassPanelColor())
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .borderRadius(ThemeRuntime.glassCornerRadius(28, 'panel'))
+      .clip(true)
+      .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.readerGlassBorderColor() })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: this.readerGlassShadowColor(),
+        offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
+      .width('100%')
+      .height(this.readerCommentPanelHeight())
+      .position({ x: 0, y: '100%' })
+      .translate({ x: 0, y: -this.readerCommentPanelHeight() })
+    }
+    .width('100%')
+    .height('100%')
+    .alignContent(Alignment.Bottom)
   }
 
   @Builder
@@ -3419,9 +3562,40 @@ struct ReadBookPage {
 
   closeGlobalTtsQuickPlayer(): void {
     this.globalTtsOptionsPanel = 0;
+    this.showGlobalTtsCatalog = false;
     animateTo({ duration: 190, curve: Curve.EaseIn }, () => {
       this.showGlobalTtsQuickPlayer = false;
     });
+  }
+
+  openGlobalTtsCatalog(): void {
+    const titles = ReaderTtsFloatingSession.catalogTitles();
+    if (titles.length === 0) {
+      promptAction.showToast({ message: '暂未获取到听书目录' });
+      return;
+    }
+    this.globalTtsCatalogSource.replace(titles);
+    animateTo({ duration: 280, curve: Curve.Friction }, () => {
+      this.showGlobalTtsCatalog = true;
+    });
+    setTimeout(() => {
+      if (!this.showGlobalTtsCatalog) return;
+      try {
+        this.globalTtsCatalogScroller.scrollToIndex(
+          ReaderTtsFloatingSession.catalogIndex(), false, ScrollAlign.CENTER);
+      } catch (_) {}
+    }, 0);
+  }
+
+  closeGlobalTtsCatalog(): void {
+    animateTo({ duration: 210, curve: Curve.EaseIn }, () => {
+      this.showGlobalTtsCatalog = false;
+    });
+  }
+
+  selectGlobalTtsCatalog(index: number): void {
+    this.closeGlobalTtsCatalog();
+    ReaderTtsFloatingSession.selectCatalogIndex(index);
   }
 
   toggleTtsQuickOptions(panel: number): void {
@@ -3441,7 +3615,7 @@ struct ReadBookPage {
 
   clampTtsMiniPlayerPositionX(position: number): number {
     const viewportWidth = this.pageViewWidth > 0 ? this.pageViewWidth : 360;
-    const capsuleWidth = 154;
+    const capsuleWidth = 184;
     const edgeInset = 8;
     const minLeft = edgeInset;
     const maxLeft = Math.max(minLeft, viewportWidth - capsuleWidth - edgeInset);
@@ -3484,8 +3658,10 @@ struct ReadBookPage {
             .fontSize(9)
             .fontColor(this.getSubTextColor())
         }
+        .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
       }
+      .layoutWeight(1)
       .onClick(() => this.openTtsQuickPlayer())
       SymbolGlyph(this.isTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
         .id(`tts_capsule_playback_${this.isTtsSpeaking}_${this.isTtsPaused}`)
@@ -3501,10 +3677,11 @@ struct ReadBookPage {
         .height(34)
         .onClick(() => this.stopTtsReading())
     }
-    .width(154)
+    .width(184)
     .height(46)
     .padding({ left: 8, right: 5 })
     .borderRadius(23)
+    .clip(true)
     .backgroundColor(this.readerGlassPanelColor())
     .backdropBlur(ThemeRuntime.glassBlur('button', 18))
     .border({ width: ThemeRuntime.glassBorderWidth('button'), color: this.readerGlassBorderColor() })
@@ -3542,21 +3719,23 @@ struct ReadBookPage {
             .fontColor(['#FFFFFF'])
         }
         Column({ space: 1 }) {
-          Text(this.globalTtsPaused ? '已暂停' : '朗读中')
+          Text(this.globalTtsPaused ? '已暂停' : (this.globalTtsMode === 'audio' ? '听书中' : '朗读中'))
             .fontSize(12)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.getTextColor())
-          Text(this.globalTtsChapterProgress || '后台朗读')
+          Text(this.globalTtsChapterProgress || (this.globalTtsMode === 'audio' ? '后台听书' : '后台朗读'))
             .fontSize(9)
             .fontColor(this.getSubTextColor())
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
+        .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
       }
+      .layoutWeight(1)
       .onClick(() => this.openGlobalTtsQuickPlayer())
       SymbolGlyph(this.globalTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
-        .id(`global_tts_capsule_playback_${this.globalTtsRevision}_${this.globalTtsPaused}`)
+        .id(`global_tts_capsule_playback_${this.globalTtsPaused}`)
         .fontSize(17)
         .fontColor([this.getTextColor()])
         .width(28)
@@ -3572,10 +3751,11 @@ struct ReadBookPage {
           ReaderTtsFloatingSession.stop();
         })
     }
-    .width(154)
+    .width(184)
     .height(46)
     .padding({ left: 8, right: 5 })
     .borderRadius(23)
+    .clip(true)
     .backgroundColor(this.readerGlassPanelColor())
     .backdropBlur(ThemeRuntime.glassBlur('button', 18))
     .border({ width: ThemeRuntime.glassBorderWidth('button'), color: this.readerGlassBorderColor() })
@@ -3647,7 +3827,7 @@ struct ReadBookPage {
         Column({ space: 8 }) {
           this.globalTtsQuickBookCover()
           Scroll() {
-            Text(this.globalTtsContent || '正在准备当前朗读内容…')
+            Text(this.globalTtsContent || (this.globalTtsMode === 'audio' ? '暂无书籍简介' : '正在准备当前朗读内容…'))
               .fontSize(15)
               .fontColor(this.getTextColor())
               .lineHeight(25)
@@ -3706,7 +3886,25 @@ struct ReadBookPage {
           .width('100%')
         }
 
-        Button('停止朗读')
+        if (this.globalTtsMode === 'audio') {
+          Row({ space: 10 }) {
+            Button(`音色 · ${this.globalTtsVoiceCode || '4'}`)
+              .layoutWeight(1)
+              .height(40)
+              .backgroundColor(ThemeRuntime.inputColor(this.isReaderThemeDark()))
+              .fontColor(this.getTextColor())
+              .onClick(() => ReaderTtsFloatingSession.openVoice())
+            Button('目录跳转')
+              .layoutWeight(1)
+              .height(40)
+              .backgroundColor(ThemeRuntime.inputColor(this.isReaderThemeDark()))
+              .fontColor(this.getTextColor())
+              .onClick(() => this.openGlobalTtsCatalog())
+          }
+          .width('100%')
+        }
+
+        Button(this.globalTtsMode === 'audio' ? '停止听书' : '停止朗读')
           .width('100%')
           .height(42)
           .borderRadius(12)
@@ -3733,6 +3931,86 @@ struct ReadBookPage {
   }
 
   @Builder
+  globalTtsCatalogOverlay() {
+    Stack({ alignContent: Alignment.Bottom }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#78000000')
+        .onClick(() => this.closeGlobalTtsCatalog())
+      Column({ space: 10 }) {
+        Row() {
+          Text('听书目录')
+            .fontSize(19)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.getTextColor())
+          Blank()
+          Text(`${ReaderTtsFloatingSession.catalogIndex() + 1} / ` +
+            `${ReaderTtsFloatingSession.catalogTitles().length}`)
+            .fontSize(12)
+            .fontColor(this.getSubTextColor())
+          SymbolGlyph($r('sys.symbol.xmark'))
+            .fontSize(17)
+            .fontColor([this.getTextColor()])
+            .width(40)
+            .height(40)
+            .margin({ left: 6 })
+            .onClick(() => this.closeGlobalTtsCatalog())
+        }
+        .width('100%')
+        List({ scroller: this.globalTtsCatalogScroller, space: 4 }) {
+          LazyForEach(this.globalTtsCatalogSource, (title: string, index: number) => {
+            ListItem() {
+              Row({ space: 10 }) {
+                Text(`${index + 1}`)
+                  .fontSize(11)
+                  .fontColor(index === ReaderTtsFloatingSession.catalogIndex() ? '#FFFFFF' :
+                    this.getSubTextColor())
+                  .textAlign(TextAlign.Center)
+                  .width(34)
+                  .height(26)
+                  .borderRadius(13)
+                  .backgroundColor(index === ReaderTtsFloatingSession.catalogIndex() ?
+                    this.accentColor() : ThemeRuntime.inputColor(this.isReaderThemeDark()))
+                Text(title || `第${index + 1}章`)
+                  .fontSize(15)
+                  .fontWeight(index === ReaderTtsFloatingSession.catalogIndex() ?
+                    FontWeight.Bold : FontWeight.Regular)
+                  .fontColor(index === ReaderTtsFloatingSession.catalogIndex() ?
+                    this.accentColor() : this.getTextColor())
+                  .maxLines(2)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .layoutWeight(1)
+              }
+              .width('100%')
+              .constraintSize({ minHeight: 50 })
+              .padding({ left: 8, right: 8, top: 7, bottom: 7 })
+              .borderRadius(10)
+              .backgroundColor(index === ReaderTtsFloatingSession.catalogIndex() ?
+                ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()) : Color.Transparent)
+              .onClick(() => this.selectGlobalTtsCatalog(index))
+            }
+          }, (title: string, index: number) => `${index}_${title}`)
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .scrollBar(BarState.Auto)
+      }
+      .width('100%')
+      .height('72%')
+      .padding({ left: 16, right: 16, top: 12, bottom: this.navBarHeight + 12 })
+      .borderRadius({ topLeft: 22, topRight: 22 })
+      .backgroundColor(this.readerGlassPanelColor())
+      .transition(TransitionEffect.translate({ y: 520 })
+        .combine(TransitionEffect.opacity(0))
+        .animation({ duration: 280, curve: Curve.Friction }))
+    }
+    .width('100%')
+    .height('100%')
+    .zIndex(90)
+  }
+
+  @Builder
   globalTtsQuickPlaybackControl() {
     Column({ space: 6 }) {
       Stack({ alignContent: Alignment.Center }) {
@@ -3741,7 +4019,7 @@ struct ReadBookPage {
           .height(46)
           .fill(this.accentColor())
         SymbolGlyph(this.globalTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
-          .id(`global_tts_panel_playback_${this.globalTtsRevision}_${this.globalTtsPaused}`)
+          .id(`global_tts_panel_playback_${this.globalTtsPaused}`)
           .fontSize(23)
           .fontColor(['#FFFFFF'])
       }
@@ -3954,6 +4232,16 @@ struct ReadBookPage {
         }
 
         this.ttsQuickVoiceSelect()
+        Button('停止朗读')
+          .width('100%')
+          .height(42)
+          .borderRadius(12)
+          .fontColor('#FFFFFF')
+          .backgroundColor('#D94841')
+          .onClick(() => {
+            this.closeTtsQuickPlayer();
+            this.stopTtsReading();
+          })
       }
       .width('100%')
       .height('100%')
@@ -4660,7 +4948,7 @@ struct ReadBookPage {
     }, 16);
   }
 
-  onReaderComicScrollIndexChanged(start: number): void {
+  onReaderComicScrollIndexChanged(start: number, end: number): void {
     if (!this.isReaderContinuousScrollSurfaceActive() || this.readerComicScrollRestoring || this.contentPages.length === 0) {
       return;
     }
@@ -4788,6 +5076,9 @@ struct ReadBookPage {
       return;
     }
     const shouldRestoreSavedPage = this.pendingRestorePageIndex >= 0;
+    const globalY: Length = area.globalPosition?.y ?? 0;
+    this.readerCommentPageAreaTop = this.parseAreaDimension(globalY);
+    this.readerCommentPageAreaHeight = height;
     const readingOffset = this.getCurrentPageStartOffset();
     this.pageViewWidth = width;
     this.pageViewHeight = height;
@@ -7365,6 +7656,7 @@ struct ReadBookPage {
     this.book.putVariable('lastReadTime', `${now}`);
     this.book.putVariable('readProgressChapterIndex', `${chapterIndex}`);
     this.book.putVariable('readProgressPageCount', `${this.currentChapterProgressPageCount()}`);
+    this.book.putVariable('lastReadPageText', this.getShelfLastReadPageText(pageIndex));
     engine.curIdx = chapterIndex;
     engine.curPos = pageIndex;
     engine.book = this.book;
@@ -7472,6 +7764,17 @@ struct ReadBookPage {
       }
     }
     return this.contentPages.length;
+  }
+
+  getShelfLastReadPageText(pageIndex: number): string {
+    const pageText = ReaderActionMarker.strip(
+      LocalBookService.stripEpubImageMarkers(this.getPageText(pageIndex) || '', false), false
+    )
+      .replace(/\r\n?/g, '\n')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+    return (pageText || '（图片页）').substring(0, 1600);
   }
 
   onReaderLandscapeDoublePageChanged(): void {
@@ -11473,6 +11776,8 @@ struct ReadBookPage {
     this.book.putVariable('ttsReadChapterIndex', `${this.currentChapterIndex}`);
     this.book.putVariable('ttsReadOffsetStart', `${start}`);
     this.book.putVariable('ttsReadOffsetEnd', `${end}`);
+    ReaderTtsFloatingSession.updatePosition(
+      this.ttsFloatingSessionOwnerId, this.currentChapterIndex, start, end);
     if (this.ttsProgressSaveTimerId >= 0) return;
     this.ttsProgressSaveTimerId = setTimeout(() => {
       this.ttsProgressSaveTimerId = -1;
@@ -11514,6 +11819,69 @@ struct ReadBookPage {
       end: end - this.ttsTextStartOffset
     };
     return true;
+  }
+
+  activeMirroredTtsChapterIndex(): number {
+    if (!this.globalTtsActive || ReaderTtsFloatingSession.isOwner(this.ttsFloatingSessionOwnerId) ||
+      !this.bookUrl || this.globalTtsBookUrl !== this.bookUrl || !Number.isFinite(this.globalTtsChapterIndex)) {
+      return -1;
+    }
+    const chapterIndex = Math.round(this.globalTtsChapterIndex);
+    return chapterIndex >= 0 && chapterIndex < this.chapters.length ? chapterIndex : -1;
+  }
+
+  async syncMirroredTtsFocus(): Promise<void> {
+    const serial = ++this.mirroredTtsFocusSyncSerial;
+    const chapterIndex = this.activeMirroredTtsChapterIndex();
+    if (chapterIndex < 0 || !this.book || this.contentPages.length === 0) {
+      this.clearMirroredTtsFocus();
+      return;
+    }
+    if (chapterIndex !== this.currentChapterIndex) {
+      await this.loadContent(true, chapterIndex);
+      if (serial !== this.mirroredTtsFocusSyncSerial) return;
+    }
+    const source = this.pagedContentText || this.getPagedSourceText();
+    if (!source || !Number.isFinite(this.globalTtsOffsetStart)) {
+      this.clearMirroredTtsFocus();
+      return;
+    }
+    const absoluteStart = Math.max(0, Math.min(Math.round(this.globalTtsOffsetStart), source.length));
+    const absoluteEnd = Math.max(absoluteStart,
+      Math.min(Number.isFinite(this.globalTtsOffsetEnd) ? Math.round(this.globalTtsOffsetEnd) : absoluteStart,
+        source.length));
+    if (absoluteEnd <= absoluteStart) {
+      this.clearMirroredTtsFocus();
+      return;
+    }
+    const pageIndex = this.findPageIndexByOffset(absoluteStart);
+    if (pageIndex < 0 || pageIndex >= this.contentPages.length) {
+      this.clearMirroredTtsFocus();
+      return;
+    }
+    const pageStart = this.getPageStartOffset(pageIndex);
+    const pageEnd = this.getPageEndOffset(pageIndex);
+    const pageText = this.getPageText(pageIndex);
+    this.mirroredTtsFocusActive = true;
+    this.currentPageIndex = this.normalizeReaderSpreadPageIndex(pageIndex);
+    this.syncCurrentPageText();
+    this.ttsDisplayText = pageText;
+    this.ttsHighlightStart = Math.max(0, Math.min(absoluteStart - pageStart, pageText.length));
+    this.ttsHighlightEnd = Math.max(this.ttsHighlightStart,
+      Math.min(absoluteEnd, pageEnd) - pageStart);
+    this.ttsHighlightRenderVersion++;
+    this.chapterJumpRenderGeneration++;
+    this.pageRenderVersion++;
+  }
+
+  clearMirroredTtsFocus(): void {
+    if (!this.mirroredTtsFocusActive) return;
+    this.mirroredTtsFocusActive = false;
+    this.clearTtsHighlight();
+  }
+
+  shouldRenderTtsFocus(): boolean {
+    return this.isTtsSpeaking || this.mirroredTtsFocusActive;
   }
 
   animateTtsToPage(targetPageIndex: number, chunk: TtsChunk): void {
@@ -12425,8 +12793,13 @@ struct ReadBookPage {
     const title = action.title || action.label || '网页内容';
     const commentMode = this.isReaderCommentAction(action);
     if (commentMode) {
-      this.readerCommentPageActive = true;
-    } else if (source) {
+      if (source) {
+        VerificationSupport.requestVerification(action.url, title, source);
+      }
+      this.openReaderCommentPanel(action.url, title, marker);
+      return;
+    }
+    if (source) {
       VerificationSupport.requestVerification(action.url, title, source);
     }
     router.pushUrl({
@@ -12435,13 +12808,12 @@ struct ReadBookPage {
         url: action.url,
         title: title,
         requireLoginCookie: 'false',
-        readerCommentMode: commentMode ? 'true' : 'false'
+        readerCommentMode: 'false'
       }
     }).catch((error: Error) => {
-      this.readerCommentPageActive = false;
       this.readerSourceActionOpenedAt = 0;
-      console.error('打开段评网页失败:', error);
-      promptAction.showToast({ message: `打开段评失败：${error.message || '路由跳转异常'}` });
+      console.error('打开网页失败:', error);
+      promptAction.showToast({ message: `打开失败：${error.message || '路由跳转异常'}` });
     });
   }
 
@@ -12449,6 +12821,54 @@ struct ReadBookPage {
     const metadata = `${action.label || ''}\n${action.title || ''}`;
     if (/段评|评论|本章说/.test(metadata)) return true;
     return /\/(?:get_review|get_para_review|para_idea)(?:[/?#]|$)|[?&](?:review|comment)=/i.test(action.url || '');
+  }
+
+  openReaderCommentPanel(url: string, title: string, marker: string): void {
+    const normalizedUrl = (url || '').trim();
+    if (!/^https?:\/\//i.test(normalizedUrl)) {
+      promptAction.showToast({ message: '评论地址无效' });
+      return;
+    }
+    this.readerSourceActionOpenedAt = Date.now();
+    this.readerCommentPanelTitle = title || '段评';
+    this.readerCommentPanelUrl = normalizedUrl;
+    this.readerCommentPanelMarker = marker;
+    this.readerCommentPanelProgress = 0;
+    this.readerCommentPanelLoading = true;
+    const markerBottom = this.getReaderSourceActionAnchorBottom(marker);
+    this.readerCommentPanelAnchorBottom = markerBottom > 0 ? markerBottom :
+      (this.readerCommentPageAreaTop >= 0 ? (this.readerCommentPageAreaTop + this.readerCommentPageAreaHeight) : -1);
+    this.showReaderCommentPanel = true;
+  }
+
+  closeReaderCommentPanel(): void {
+    this.showReaderCommentPanel = false;
+    this.readerCommentPanelUrl = '';
+    this.readerCommentPanelMarker = '';
+    this.readerCommentPanelAnchorBottom = -1;
+    this.readerCommentPanelProgress = 0;
+    this.readerCommentPanelLoading = false;
+    this.readerCommentPanelController = new webview.WebviewController();
+    this.readerSourceActionOpenedAt = 0;
+  }
+
+  readerCommentPanelHeight(): number {
+    if (this.readerCommentPageAreaHeight <= 0) {
+      return 360;
+    }
+    const almostFullHeight = Math.max(0, this.readerCommentPageAreaHeight - 12);
+    return Math.max(1, almostFullHeight);
+  }
+
+  readerCommentPanelContentHeight(): number {
+    const reservedChrome = 82;
+    return Math.max(80, this.readerCommentPanelHeight() - reservedChrome);
+  }
+
+  getReaderSourceActionAnchorBottom(marker: string): number {
+    const bounds = this.readerSourceActionAreas.get(marker) || [];
+    if (bounds.length < 4) return -1;
+    return bounds[bounds.length - 1];
   }
 
   getReaderEpubImageUri(marker: string): string {
@@ -12832,7 +13252,7 @@ struct ReadBookPage {
     const sliceEnd = segmentOffset + slice.end;
     const localHighlightStart = this.ttsHighlightStart - paragraphStart;
     const localHighlightEnd = this.ttsHighlightEnd - paragraphStart;
-    if (!ttsHighlightActive || !this.isTtsSpeaking || this.ttsHighlightStart < 0 ||
+    if (!ttsHighlightActive || !this.shouldRenderTtsFocus() || this.ttsHighlightStart < 0 ||
       this.ttsHighlightEnd <= this.ttsHighlightStart || localHighlightEnd <= sliceStart ||
       localHighlightStart >= sliceEnd) {
       return [this.cloneStyledSlice(slice, sliceStart, sliceEnd, slice.text, false, 'plain')];
@@ -13196,7 +13616,8 @@ struct ReadBookPage {
     const displayText = this.getReadingRenderText(text);
     const start = this.ttsHighlightStart;
     const end = this.ttsHighlightEnd;
-    if (!this.isTtsSpeaking || !this.ttsDisplayText || start < 0 || end <= start || displayText !== this.ttsDisplayText) {
+    if (!this.shouldRenderTtsFocus() || !this.ttsDisplayText || start < 0 || end <= start ||
+      displayText !== this.ttsDisplayText) {
       return [{
         text: displayText,
         start: 0,
@@ -13244,7 +13665,7 @@ struct ReadBookPage {
 
   getReadingTextSlicesInRange(text: string, start: number, end: number): ReadTextSlice[] {
     const displayText = text || '';
-    if (!this.isTtsSpeaking || start < 0 || end <= start) {
+    if (!this.shouldRenderTtsFocus() || start < 0 || end <= start) {
       return [{
         text: displayText,
         start: 0,
@@ -13293,7 +13714,7 @@ struct ReadBookPage {
 
   hasActiveTtsHighlight(text: string): boolean {
     const displayText = this.getReadingRenderText(text);
-    return this.isTtsSpeaking && !!this.ttsDisplayText &&
+    return this.shouldRenderTtsFocus() && !!this.ttsDisplayText &&
       this.ttsHighlightStart >= 0 && this.ttsHighlightEnd > this.ttsHighlightStart &&
       displayText === this.ttsDisplayText;
   }
@@ -13303,7 +13724,7 @@ struct ReadBookPage {
       .replace(/\r\n/g, '\n')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
-    if (this.isTtsSpeaking && this.ttsDisplayText && normalized === this.ttsDisplayText) {
+    if (this.shouldRenderTtsFocus() && this.ttsDisplayText && normalized === this.ttsDisplayText) {
       return this.ttsDisplayText;
     }
     return text || '';
@@ -13377,6 +13798,9 @@ struct ReadBookPage {
     this.showMenu = false;
     this.showTtsVoiceDropdown = false;
     this.showSettings = false;
+    if (this.showReaderCommentPanel) {
+      this.closeReaderCommentPanel();
+    }
   }
 
   async exitReaderPage(): Promise<void> {

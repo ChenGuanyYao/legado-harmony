@@ -37,7 +37,7 @@ export async function enforceAccountRateLimit(
 
 export async function cleanupExpiredSecurityRows(): Promise<void> {
   await Promise.all([
-    pool.query(`DELETE FROM api_rate_limits WHERE window_start < now() - interval '1 day'`),
-    pool.query(`DELETE FROM auth_sessions WHERE expires_at < now() - interval '30 days'`)
+    pool.query(`DELETE FROM api_rate_limits WHERE window_start < now() - interval '1 hour'`),
+    pool.query(`DELETE FROM auth_sessions WHERE expires_at < now()`)
   ]);
 }

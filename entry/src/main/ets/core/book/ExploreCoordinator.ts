@@ -37,6 +37,11 @@ interface ExploreUrlItem {
 
 export class ExploreCoordinator {
   private http: HttpClient = new HttpClient(10000);
+  private noticeMessage: string = '';
+
+  getNoticeMessage(): string {
+    return this.noticeMessage;
+  }
 
   async getExploreSources(): Promise<ExploreSourceOption[]> {
     const sources = await appDb.getEnabledBookSources();
@@ -56,6 +61,7 @@ export class ExploreCoordinator {
   }
 
   async getEntries(platform: string = '番茄', sourceUrl: string = ''): Promise<ExploreEntry[]> {
+    this.noticeMessage = '';
     const sources = await appDb.getEnabledBookSources();
     const entries: ExploreEntry[] = [];
     for (const source of sources) {
@@ -71,6 +77,12 @@ export class ExploreCoordinator {
             sourceName: source.bookSourceName
           });
         }
+        continue;
+      }
+      if (!source.variable && this.requiresSourceVariable(source)) {
+        const hint = (source.variableComment || '').trim();
+        this.noticeMessage = hint ? `请先在书源编辑中填写书源变量：${hint}` :
+          '请先在书源编辑中填写书源变量（共享 Token）';
         continue;
       }
       const exploreRule = this.effectiveExploreRule(source);
@@ -232,9 +244,12 @@ export class ExploreCoordinator {
       request.variables = { page: '1', pageIndex: '1' };
       try {
         const runtimeResult = await BookSourceStageWebRuntime.get().execute(request);
+        if (runtimeResult.toastMessage) this.noticeMessage = runtimeResult.toastMessage.trim();
         const parsed = JSON.parse(runtimeResult.value || '[]') as ExploreUrlItem[];
         if (Array.isArray(parsed)) return parsed;
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error || '');
+        if (message) this.noticeMessage = `发现脚本执行失败：${message}`;
         console.warn('[ExploreCoordinator] stage runtime menu failed, fallback legacy:', source.bookSourceName, error);
       }
     }
@@ -281,7 +296,11 @@ export class ExploreCoordinator {
       const title = String(item.title || '').trim();
       const url = String(item.url || '').trim();
       if (!url) {
-        groupTitle = this.cleanExploreGroupTitle(title) || groupTitle;
+        if (this.isExploreNotice(title)) {
+          this.noticeMessage = title;
+        } else {
+          groupTitle = this.cleanExploreGroupTitle(title) || groupTitle;
+        }
         continue;
       }
       if (!title || this.isPersonalExploreUrl(title, url)) continue;
@@ -380,6 +399,15 @@ export class ExploreCoordinator {
       .replace(/[༺༻ˇ»«`´ʚɞ]/g, '')
       .replace(/[^\u4e00-\u9fa5A-Za-z0-9]+/g, '')
       .trim();
+  }
+
+  private isExploreNotice(title: string): boolean {
+    return /请先|需要登录|未登录|token|失败|错误|异常|失效|过期|无权限/i.test(title || '');
+  }
+
+  private requiresSourceVariable(source: BookSource): boolean {
+    const script = `${source.jsLib || ''}\n${source.exploreUrl || ''}`;
+    return /authorization[\s\S]{0,160}getVariable\s*\(|Bearer[\s\S]{0,120}getVariable\s*\(/i.test(script);
   }
 
   private isPersonalExploreUrl(title: string, url: string): boolean {

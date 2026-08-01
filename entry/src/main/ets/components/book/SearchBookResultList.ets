@@ -33,11 +33,12 @@ export struct SearchBookResultList {
   @Prop subTextColor: string = '#999999';
   @Prop topPadding: number = 0;
   @Prop bottomPadding: number = 12;
+  scroller: ListScroller = new ListScroller();
   onOpenBook: SearchBookAction = (_book: SearchBook) => {};
   onToggleShelf: SearchBookAction = (_book: SearchBook) => {};
 
   build() {
-    List({ space: 8 }) {
+    List({ scroller: this.scroller, space: 8 }) {
       if (this.topPadding > 0) {
         ListItem() {
           Row()
@@ -128,6 +129,7 @@ export struct SearchBookResultList {
     .layoutWeight(1)
     .padding({ left: 16, right: 16 })
     .backgroundColor(this.pageColor)
+    .scrollBar(BarState.Auto)
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 

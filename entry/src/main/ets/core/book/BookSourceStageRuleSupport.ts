@@ -37,6 +37,10 @@ export class BookSourceStageRuleSupport {
       const result = await runtime.execute(request);
       const parsed = JSON.parse(result.value || '[]') as Object;
       if (!Array.isArray(parsed)) return null;
+      // A stage runtime may complete without throwing while still losing the evaluated expression
+      // (for example when a source library exports top-level helpers through `this`). Let the legacy
+      // analyzer execute the same embedded script before accepting an unexpected empty list.
+      if (parsed.length === 0 && baseItems.length > 0) return null;
       return parsed.map((item: Object): string => typeof item === 'string' ? item : JSON.stringify(item));
     } catch (error) {
       console.warn('[StageRule] list post-process failed, fallback legacy:', source.bookSourceName, error);

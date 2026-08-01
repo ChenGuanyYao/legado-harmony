@@ -128,6 +128,7 @@ struct VerifyWebPage {
   private browserPayloadInjectJs: string = '';
   private browserPayloadLoaded: boolean = false;
   private browserPayloadInjected: boolean = false;
+  private onlineBookSourceImportPending: boolean = false;
   private readonly browserJavaBridge: BookSourceBrowserJavaBridge = new BookSourceBrowserJavaBridge(
     (): boolean => !!this.browserPayloadToken,
     (): string => this.currentUrl || this.browserPayloadBaseUrl || this.url,
@@ -261,6 +262,9 @@ struct VerifyWebPage {
         .onControllerAttached(() => {
           this.loadBrowserPayload();
         })
+        .onLoadIntercept((event?: OnLoadInterceptEvent): boolean => {
+          return this.handleBrowserLoadIntercept(event);
+        })
         .onPageBegin((event?: OnPageBeginEvent) => {
           if (event?.url) this.currentUrl = event.url;
         })
@@ -354,6 +358,72 @@ struct VerifyWebPage {
     this.controller.runJavaScript(this.browserPayloadInjectJs).catch((error: Object): void => {
       console.warn('注入书源网页脚本失败:', error);
     });
+  }
+
+  handleBrowserLoadIntercept(event?: OnLoadInterceptEvent): boolean {
+    let requestUrl = '';
+    try {
+      requestUrl = event?.data.getRequestUrl() || '';
+    } catch (_) {}
+    const importUrl = this.parseOnlineBookSourceImportUrl(requestUrl);
+    if (!importUrl) return false;
+    if (!this.onlineBookSourceImportPending) {
+      this.onlineBookSourceImportPending = true;
+      this.confirmOnlineBookSourceImport(importUrl).catch((error: Object): void => {
+        this.onlineBookSourceImportPending = false;
+        const message = error instanceof Error ? error.message : String(error || '');
+        this.showToastSafely(message ? `打开书源更新失败：${message}` : '打开书源更新失败');
+      });
+    }
+    return true;
+  }
+
+  parseOnlineBookSourceImportUrl(raw: string): string {
+    const value = String(raw || '').trim();
+    const supported = /^yuedu:\/\/booksource\/importonline(?:[/?#]|$)/i.test(value) ||
+      /^legado:\/\/import\/booksource(?:[/?#]|$)/i.test(value);
+    if (!supported || value.length > 32 * 1024) return '';
+    const match = value.match(/[?&]src=([^&#]*)/i);
+    if (!match || !match[1]) return '';
+    let target = match[1].replace(/\+/g, '%20');
+    try {
+      target = decodeURIComponent(target);
+    } catch (_) {
+      return '';
+    }
+    // Some update pages encode an already encoded link once more before constructing the scheme.
+    if (!/^https?:\/\//i.test(target) && /%[0-9a-f]{2}/i.test(target)) {
+      try {
+        target = decodeURIComponent(target);
+      } catch (_) {}
+    }
+    return /^https?:\/\//i.test(target) && target.length <= 16 * 1024 ? target : '';
+  }
+
+  async confirmOnlineBookSourceImport(importUrl: string): Promise<void> {
+    const hostMatch = importUrl.match(/^https?:\/\/([^/?#]+)/i);
+    const host = hostMatch && hostMatch[1] ? hostMatch[1] : '远程服务器';
+    const result = await promptAction.showDialog({
+      title: '更新书源',
+      message: `将从 ${host} 下载并更新书源。现有书源变量、登录状态和本地设置会保留。`,
+      buttons: [
+        { text: '取消', color: this.subTextColor() },
+        { text: '更新', color: this.accentColor() }
+      ]
+    });
+    if (result.index !== 1) {
+      this.onlineBookSourceImportPending = false;
+      return;
+    }
+    AppStorage.setOrCreate('pendingBookSourceImportUrl', importUrl);
+    const nonce = AppStorage.get<number>('pendingBookSourceImportNonce') || 0;
+    AppStorage.setOrCreate('pendingBookSourceImportNonce', nonce + 1);
+    if (this.browserAwaitToken) {
+      this.browserAwaitCompleted = true;
+      this.publishBrowserAwaitResult('', '');
+    }
+    this.showToastSafely('正在下载并更新书源…');
+    this.backSafely();
   }
 
   openBridgeUrl(url: string, title: string): void {

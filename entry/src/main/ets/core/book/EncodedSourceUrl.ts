@@ -94,14 +94,37 @@ export class EncodedSourceUrl {
   }
 
   static async requestContentJsonForDataUrl(http: HttpClient, url: string, preferredHost: string,
-    includeParagraphReviews: boolean, includeGodComments: boolean = false): Promise<EncodedJsonMap | null> {
+    includeParagraphReviews: boolean, includeGodComments: boolean = false,
+    runtimeToneId: string = '', runtimeVersion: string = ''): Promise<EncodedJsonMap | null> {
     const payload = EncodedSourceUrl.decode(url);
     if (!payload) return null;
     const req = EncodedSourceUrl.buildRequest(payload);
     if (!req.path) return null;
     const path = includeParagraphReviews && req.path === '/content' ? '/content?review=1' : req.path;
-    const body = includeGodComments && req.body ? `${req.body}&god=true` : req.body;
+    let body = includeGodComments && req.body ? `${req.body}&god=true` : req.body;
+    if (runtimeToneId && (payload.type === 'gycontent' || payload.type === 'qingtian3')) {
+      const encodedToneId = encodeURIComponent(runtimeToneId);
+      const encodedVariable = encodeURIComponent(JSON.stringify({ custom: runtimeToneId }));
+      body = EncodedSourceUrl.upsertFormField(body, 'tone_id', encodedToneId);
+      body = EncodedSourceUrl.upsertFormField(body, 'variable', encodedVariable);
+    }
+    if (runtimeVersion && (payload.type === 'gycontent' || payload.type === 'qingtian3')) {
+      body = EncodedSourceUrl.upsertFormField(body, 'version', encodeURIComponent(runtimeVersion));
+    }
     return await EncodedSourceUrl.requestJson(http, path, req.method, body, preferredHost || req.host);
+  }
+
+  private static upsertFormField(body: string, key: string, encodedValue: string): string {
+    const fields = (body || '').split('&').filter((field: string) => !!field);
+    const prefix = `${key}=`;
+    let replaced = false;
+    const result = fields.map((field: string) => {
+      if (!field.startsWith(prefix)) return field;
+      replaced = true;
+      return `${prefix}${encodedValue}`;
+    });
+    if (!replaced) result.push(`${prefix}${encodedValue}`);
+    return result.join('&');
   }
 
   static async requestJsonForPayload(http: HttpClient, payload: EncodedSourcePayload, preferredHost?: string,

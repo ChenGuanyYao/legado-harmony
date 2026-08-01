@@ -510,8 +510,14 @@ struct WebDavPage {
     Scroll() {
       Column({ space: 12 }) {
         this.field('连接名称', this.connection.name, '例如：我的云盘', (value: string) => this.connection.name = value)
-        this.field('WebDAV 地址', this.connection.baseUrl, 'https://example.com/dav/',
+        this.field('WebDAV 地址', this.connection.baseUrl, 'https://example.com/dav/ 或 http://192.168.1.2/dav/',
           (value: string) => this.connection.baseUrl = value)
+        if (/^http:\/\//i.test(this.connection.baseUrl.trim())) {
+          Text('HTTP 会明文传输用户名、密码和文件内容，请仅在可信局域网或受保护的 VPN 中使用。')
+            .fontSize(12)
+            .fontColor('#D9485F')
+            .width('calc(100% - 32vp)')
+        }
         this.field('用户名', this.connection.username, 'WebDAV 用户名',
           (value: string) => this.connection.username = value)
         Column({ space: 6 }) {
@@ -560,7 +566,7 @@ struct WebDavPage {
             .backgroundColor(this.cardColor())
             .onClick(() => this.deleteConnection())
         }
-        Text('仅支持 HTTPS。当前可阅读 TXT 和 EPUB；远端原文件不会因移出书架而被删除。')
+        Text('支持 HTTP 和 HTTPS。推荐使用 HTTPS；当前可阅读 TXT 和 EPUB，远端原文件不会因移出书架而被删除。')
           .fontSize(12)
           .fontColor(this.subTextColor())
           .width('calc(100% - 32vp)')
@@ -719,8 +725,8 @@ struct WebDavPage {
   async testAndSave(): Promise<void> {
     if (this.busy) return;
     const baseUrl = WebDavSettingsStore.normalizeBaseUrl(this.connection.baseUrl);
-    if (!/^https:\/\//i.test(baseUrl)) {
-      promptAction.showToast({ message: '为保护密码，仅允许 HTTPS WebDAV 地址' });
+    if (!/^https?:\/\//i.test(baseUrl)) {
+      promptAction.showToast({ message: 'WebDAV 地址必须以 http:// 或 https:// 开头' });
       return;
     }
     if (!this.connection.username || !this.password) {

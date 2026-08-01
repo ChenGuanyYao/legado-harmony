@@ -150,7 +150,7 @@ struct SearchExploreSettingsPage {
     try {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
-      const sources = await db.getAllBookSources();
+      const sources = await db.getBookSourceSummaries();
       const groups: string[] = [];
       for (const source of sources) {
         const group = this.normalizeSourceGroup(source);

@@ -772,7 +772,11 @@ export class AppDataBackupService {
     source.loginCheckJs = AppDataBackupService.stringValue(raw['loginCheckJs']);
     source.loginHeader = AppDataBackupService.stringValue(raw['loginHeader']);
     source.loginInfo = AppDataBackupService.stringValue(raw['loginInfo']);
-    source.rawSourceJson = JSON.stringify(raw);
+    // Android 书源的可运行字段已经逐项转换并存入专用列。保留完整原始对象会让同一份
+    // 规则在数据库中至少保存两次；面对上万书源时，后续列表/同步会产生很高的内存峰值。
+    // rawSourceJson 只用于书源管理页的回导出，那里会从专用列重建已支持的字段，因此不在
+    // 跨端导入时重复保存未知字段。
+    source.rawSourceJson = '';
     source.bookUrlPattern = AppDataBackupService.stringValue(raw['bookUrlPattern']);
     source.searchUrl = AppDataBackupService.stringValue(raw['searchUrl']);
     source.exploreUrl = AppDataBackupService.stringValue(raw['exploreUrl']);

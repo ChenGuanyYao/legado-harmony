@@ -19,10 +19,17 @@ import { BookSourceRuntimeRouter, SourceRuntimeStage } from './BookSourceRuntime
 import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceStageWebRuntime';
 import { ReaderActionMarker } from './ReaderActionMarker';
 import { BookSourceInteractionPostProcessor } from './BookSourceInteractionPostProcessor';
+import { CookieStore } from '../http/CookieStore';
 
 class ContentPageData {
   content: string = '';
   nextUrl: string = '';
+}
+
+class QtqdContentData {
+  handled: boolean = false;
+  audio: boolean = false;
+  content: string = '';
 }
 
 export class WebBookService {
@@ -173,6 +180,8 @@ export class WebBookService {
     if (BookSourceDataUrlSupport.isEncodedSource(book.tocUrl) || BookSourceDataUrlSupport.isEncodedSource(book.bookUrl)) {
       return await BookSourceDataUrlSupport.getChapterList(this.http, source, book);
     }
+    const qtqdChapters = await this.tryBuildQtqdChapterList(source, book);
+    if (qtqdChapters.length > 0) return qtqdChapters;
     console.log('[WS] getChapterList, tocUrl:', book.tocUrl);
     const tocUrl = this.resolveTocUrl(source, book);
     const au = new AnalyzeUrl(source, this.http);
@@ -295,6 +304,20 @@ export class WebBookService {
   }
 
   async getContent(source: BookSource, book: Book, chapter: BookChapter): Promise<string> {
+    const qtqdContent = await this.tryGetQtqdContent(source, book, chapter);
+    if (qtqdContent.handled) {
+      if (qtqdContent.audio) return qtqdContent.content.trim();
+      const interactiveContent = await BookSourceInteractionPostProcessor.process(source, book, chapter,
+        qtqdContent.content);
+      const qtqdContext = new RuleContext();
+      qtqdContext.loadFromJson(book.variable);
+      this.seedBookVariables(qtqdContext, book.bookUrl);
+      this.seedSourceVariables(qtqdContext, source);
+      this.seedChapterVariables(qtqdContext, chapter);
+      return await this.normalizeReaderContent(source,
+        this.applyContentReplaceRule(interactiveContent, source.contentRule.replaceRegex, qtqdContext, chapter),
+        this.getChapterBaseUrl(chapter, book, source));
+    }
     if (BookSourceDataUrlSupport.isEncodedSource(chapter.url)) {
       const shortcutContent = await BookSourceDataUrlSupport.getContent(this.http, source, book, chapter);
       const shortcutAudio = source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
@@ -1429,6 +1452,226 @@ export class WebBookService {
       console.warn('[WS] 特殊目录拼装失败:', e);
       return [];
     }
+  }
+
+  /**
+   * Some Legado sources generate their whole catalog in a JavaScript-only rule and encode each
+   * chapter as a `type: qtqd` data URL. Keep that protocol usable even when the shared ArkWeb
+   * runtime is temporarily unavailable after a page navigation.
+   */
+  private async tryBuildQtqdChapterList(source: BookSource, book: Book): Promise<BookChapter[]> {
+    const tocScript = source.tocRule?.chapterList || '';
+    if (!tocScript.includes('/catalog') || !tocScript.includes('qtqd') || !tocScript.includes('bookId')) return [];
+
+    const location = book.tocUrl || book.bookUrl || '';
+    const bookId = this.extractQueryParam(location, 'bookId') || this.extractQueryParam(location, 'book_id') ||
+      this.extractQueryParam(book.bookUrl || '', 'bookId') || this.extractQueryParam(book.bookUrl || '', 'book_id');
+    const host = this.qtqdBackendHost(source, location || book.bookUrl);
+    if (!bookId || !host) return [];
+
+    const account = this.qtqdSourceSection(source.variable, '账户设置');
+    const settings = this.qtqdSourceSection(source.variable, '书源设置');
+    const key = String(account['key'] || '');
+    const dttoken = String(account['dttoken'] || '');
+    const midpage = String(settings['彩蛋章节'] ?? 'true').toLowerCase() !== 'false';
+    let requestUrl = `${host}/catalog?cached=true&bookId=${encodeURIComponent(bookId)}`;
+    if (tocScript.includes('midpage=')) requestUrl += `&midpage=${midpage ? 'true' : 'false'}`;
+    const safeCatalogUrl = requestUrl;
+    requestUrl += `&key=${encodeURIComponent(key)}&device=harmony&dttoken=${encodeURIComponent(dttoken)}`;
+
+    try {
+      const response = await new AnalyzeUrl(source, this.http).fetch(requestUrl, 8 * 1024 * 1024);
+      if (!response.success || !response.body) return [];
+      const root = JSON.parse(response.body) as Record<string, Object>;
+      const data = root['Data'];
+      if (!data || typeof data !== 'object' || Array.isArray(data)) return [];
+      const recordsValue = (data as Record<string, Object>)['Chapters'];
+      if (!Array.isArray(recordsValue)) return [];
+
+      const cleanLocks = String(settings['净化目录标题'] ?? 'false').toLowerCase() !== 'false';
+      const audio = source.bookSourceType === 1 || (source.contentRule?.content || '').includes('/chapter/tts');
+      const chapters: BookChapter[] = [];
+      const records = recordsValue as Object[];
+      for (const value of records) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+        const record = value as Record<string, Object>;
+        const chapterId = String(record['C'] ?? '');
+        if (!(Number(chapterId) > 0 || chapterId.includes('_'))) continue;
+        let title = String(record['N'] || '');
+        if (cleanLocks) title = title.replace(/🔒|🔑/g, '');
+        title = this.cleanChapterTitle(title || `第${chapters.length + 1}章`);
+        if (!title) continue;
+
+        const payload: Record<string, Object> = {
+          bookId: bookId,
+          timestamp: record['T'] ?? 0,
+          id: record['C'] ?? chapterId,
+          v: Number(record['V'] || 0) === 1,
+          index: record['index'] ?? chapters.length
+        };
+        if (audio) payload['t'] = 1;
+        const chapter = new BookChapter();
+        chapter.title = title;
+        chapter.url = EncodedSourceUrl.encodeRaw(JSON.stringify(payload), 'qtqd');
+        chapter.bookUrl = book.bookUrl;
+        chapter.index = chapters.length;
+        chapter.isVip = Number(record['V'] || 0) === 1;
+        chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'baseUrl', safeCatalogUrl);
+        const updateTime = `${record['cached'] === true ? '🔅 ' : ''}${String(record['T'] || '')}` +
+          `${record['W'] === undefined ? '' : ` ${String(record['W'])}字`}`;
+        if (updateTime.trim()) {
+          chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'updateTime', updateTime.trim());
+        }
+        chapters.push(chapter);
+      }
+      if (chapters.length > 0) {
+        console.info('[WS] qtqd native catalog:', chapters.length, 'from:', book.name || book.bookUrl);
+      }
+      return chapters;
+    } catch (error) {
+      console.warn('[WS] qtqd native catalog failed, keep scripted path:', source.bookSourceName, error);
+      return [];
+    }
+  }
+
+  private async tryGetQtqdContent(source: BookSource, book: Book, chapter: BookChapter): Promise<QtqdContentData> {
+    const result = new QtqdContentData();
+    const payload = EncodedSourceUrl.decode(chapter.url);
+    if (!payload || payload.type !== 'qtqd') return result;
+    result.handled = true;
+
+    const data = payload.data;
+    const bookId = EncodedSourceUrl.str(data['bookId']) || EncodedSourceUrl.str(data['book_id']);
+    const chapterId = EncodedSourceUrl.str(data['id']) || EncodedSourceUrl.str(data['chapterId']);
+    const timestamp = EncodedSourceUrl.str(data['timestamp']);
+    const index = EncodedSourceUrl.str(data['index']);
+    const isVip = String(data['v'] || '').toLowerCase() === 'true' || String(data['v'] || '') === '1';
+    const contentScript = source.contentRule?.content || '';
+    result.audio = String(data['t'] || '') === '1' || source.bookSourceType === 1 ||
+      contentScript.includes('/chapter/tts');
+    const host = this.qtqdBackendHost(source, book.bookUrl || book.tocUrl);
+    if (!bookId || !chapterId || !host) {
+      result.content = result.audio ? '' : '企点章节参数不完整，请刷新目录后重试。';
+      return result;
+    }
+
+    const account = this.qtqdSourceSection(source.variable, '账户设置');
+    const settings = this.qtqdSourceSection(source.variable, '书源设置');
+    const key = this.qtqdCredential(source, host, account, 'key');
+    const dttoken = this.qtqdCredential(source, host, account, 'dttoken');
+    const para = this.qtqdBooleanSetting(settings, '段评开关', true) ? '1' : '0';
+    const god = this.qtqdBooleanSetting(settings, '神评论', true) ? 'true' : 'false';
+    const img = this.qtqdBooleanSetting(settings, '文内配图', true) ? '1' : '0';
+    const chapterComments = this.qtqdBooleanSetting(settings, '本章说', true);
+    const path = result.audio ? '/chapter/tts' : (isVip ? '/chapter/vip' : '/chapter/free');
+    let requestUrl = `${host}${path}?bookId=${encodeURIComponent(bookId)}` +
+      `&chapterId=${encodeURIComponent(chapterId)}&para=${para}&god=${god}&img=${img}` +
+      `&timestamp=${encodeURIComponent(timestamp)}`;
+    if (isVip && index) requestUrl += `&index=${encodeURIComponent(index)}`;
+    if (result.audio) requestUrl += `&type=${encodeURIComponent(book.getVariable('custom') || '6001')}`;
+    requestUrl += `&key=${encodeURIComponent(key)}&device=harmony&dttoken=${encodeURIComponent(dttoken)}`;
+
+    try {
+      const response = await new AnalyzeUrl(source, this.http).fetch(requestUrl, 8 * 1024 * 1024);
+      if (!response.body) {
+        result.handled = false;
+        return result;
+      }
+      const root = JSON.parse(response.body) as Record<string, Object>;
+      if (result.audio) {
+        const audioData = root['data'];
+        if (audioData && typeof audioData === 'object' && !Array.isArray(audioData)) {
+          result.content = String((audioData as Record<string, Object>)['playUrl'] || '');
+        }
+      } else {
+        result.content = String(root['content'] || '');
+      }
+      if (result.content) {
+        if (!result.audio) {
+          result.content = this.normalizeQtqdInteractionUrls(result.content, host);
+          const videoUrl = this.qtqdAbsoluteUrl(host, String(root['videoUrl'] || ''));
+          if (videoUrl) {
+            const videoMarker = ReaderActionMarker.create('播放视频', videoUrl, '视频');
+            if (videoMarker) result.content += `\n${videoMarker}`;
+          }
+          if (chapterComments && !chapterId.includes('_')) {
+            const commentUrl = `${host}/chapterComments?bookId=${encodeURIComponent(bookId)}` +
+              `&chapterId=${encodeURIComponent(chapterId)}`;
+            const commentMarker = ReaderActionMarker.create('本章说', commentUrl, '本章说');
+            if (commentMarker) result.content += `\n${commentMarker}`;
+          }
+        }
+        return result;
+      }
+
+      const message = String(root['message'] || root['Message'] || '');
+      if (!response.success || response.statusCode === 401 || message.includes('登录')) {
+        result.content = result.audio ? '' : '请先在企点书源登录面板填写密钥和口令，然后刷新本章。';
+      } else if (/JSON\.parse\s*\(\s*undefined\s*\)/i.test(message)) {
+        result.content = result.audio ? '' : '企点正文接口返回异常，请刷新本章重试。';
+      } else {
+        result.content = result.audio ? '' : (message || '企点正文暂时不可用，请稍后刷新本章。');
+      }
+      return result;
+    } catch (error) {
+      console.warn('[WS] qtqd native content failed, keep scripted path:', source.bookSourceName, error);
+      result.handled = false;
+      result.content = '';
+      return result;
+    }
+  }
+
+  private qtqdBooleanSetting(settings: Record<string, Object>, key: string, fallback: boolean): boolean {
+    if (settings[key] === undefined || settings[key] === null || String(settings[key]).trim() === '') return fallback;
+    const value = String(settings[key]).trim().toLowerCase();
+    return value !== 'false' && value !== '0' && value !== 'off' && value !== '❌';
+  }
+
+  private qtqdCredential(source: BookSource, host: string, account: Record<string, Object>, key: string): string {
+    const stored = String(account[key] || '');
+    if (stored) return stored;
+    try {
+      const loginInfo = JSON.parse(source.loginInfo || '{}') as Record<string, Object>;
+      const direct = String(loginInfo[key] || '');
+      if (direct) return direct;
+    } catch (_) {}
+    return CookieStore.getCookieValue(host, key);
+  }
+
+  private normalizeQtqdInteractionUrls(content: string, host: string): string {
+    return (content || '').replace(/(\bident\s*=\s*)(["'])([^"']*)\2/gi,
+      (_all: string, prefix: string, quote: string, rawUrl: string): string => {
+        const url = this.qtqdAbsoluteUrl(host, this.decodeHtmlEntities(rawUrl || ''));
+        const escaped = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+        return `${prefix}${quote}${escaped}${quote}`;
+      });
+  }
+
+  private qtqdAbsoluteUrl(host: string, rawUrl: string): string {
+    const url = (rawUrl || '').trim();
+    if (!url) return '';
+    if (/^https?:\/\//i.test(url)) return url;
+    if (url.startsWith('//')) return `${host.startsWith('http://') ? 'http:' : 'https:'}${url}`;
+    return `${host.replace(/\/$/, '')}/${url.replace(/^\/+/, '')}`;
+  }
+
+  private qtqdBackendHost(source: BookSource, location: string): string {
+    const scriptMatch = (source.jsLib || '').match(/\b(?:const|let|var)\s+sb\s*=\s*['"](https?:\/\/[^'"/]+(?:\:\d+)?)['"]/);
+    if (scriptMatch && scriptMatch[1]) return scriptMatch[1].replace(/\/$/, '');
+    const locationMatch = (location || '').match(/^(https?:\/\/[^/]+)/);
+    if (locationMatch && locationMatch[1] && /\/detail(?:[?#]|$)/.test(location || '')) return locationMatch[1];
+    return '';
+  }
+
+  private qtqdSourceSection(raw: string, section: string): Record<string, Object> {
+    try {
+      const value = JSON.parse(raw || '{}') as Record<string, Object>;
+      const nested = value[section];
+      if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+        return nested as Record<string, Object>;
+      }
+    } catch (_) {}
+    return {};
   }
 
   private tryBuildFanqieVolumeChapterList(source: BookSource, book: Book, body: string): BookChapter[] {

@@ -1,8 +1,11 @@
 import { audio } from '@kit.AudioKit';
 import { media } from '@kit.MediaKit';
 import fs from '@ohos.file.fs';
+import { TtsAudioSession } from './TtsAudioSession';
 
 export class TtsAvAudioPlayer {
+  private readonly audioSessionOwnerPrefix: string = `tts_av_${Date.now()}_${Math.random()}`;
+  private activeAudioSessionOwner: string = '';
   private player: media.AVPlayer | null = null;
   private sourceFile: fs.File | null = null;
   private playGeneration: number = 0;
@@ -21,6 +24,7 @@ export class TtsAvAudioPlayer {
     this.sourceFile = sourceFile;
     const normalizedSpeed = Math.max(0.125, Math.min(4, speed || 1));
     const initialized = this.waitForInitialized(player, generation);
+    const audioSessionOwner = `${this.audioSessionOwnerPrefix}_${generation}`;
     try {
       player.fdSrc = { fd: sourceFile.fd };
       await initialized;
@@ -68,6 +72,13 @@ export class TtsAvAudioPlayer {
       if (generation !== this.playGeneration) {
         return;
       }
+      await TtsAudioSession.acquire(audioSessionOwner);
+      if (generation !== this.playGeneration) {
+        TtsAudioSession.release(audioSessionOwner);
+        return;
+      }
+      this.activeAudioSessionOwner = audioSessionOwner;
+      player.setVolume(1);
       if (player.state !== 'playing') {
         await player.play();
       }
@@ -94,6 +105,10 @@ export class TtsAvAudioPlayer {
       }
       await this.releasePlayer(player);
       this.closeFile(sourceFile);
+      TtsAudioSession.release(audioSessionOwner);
+      if (this.activeAudioSessionOwner === audioSessionOwner) {
+        this.activeAudioSessionOwner = '';
+      }
     }
   }
 
@@ -102,6 +117,8 @@ export class TtsAvAudioPlayer {
     this.paused = false;
     this.interruptPaused = false;
     this.resolveResumeWaiters();
+    TtsAudioSession.release(this.activeAudioSessionOwner);
+    this.activeAudioSessionOwner = '';
     const player = this.player;
     const sourceFile = this.sourceFile;
     this.player = null;
@@ -137,6 +154,8 @@ export class TtsAvAudioPlayer {
     this.paused = false;
     const player = this.player;
     if (player && player.state === 'paused') {
+      await TtsAudioSession.acquire(this.activeAudioSessionOwner);
+      player.setVolume(1);
       await player.play();
     }
     this.resolveResumeWaiters();
@@ -185,6 +204,8 @@ export class TtsAvAudioPlayer {
   private handleAudioInterrupt(player: media.AVPlayer, generation: number,
     event: audio.InterruptEvent): void {
     if (generation !== this.playGeneration || player !== this.player) return;
+    console.info(`[TTS] av audio interrupt: hint=${event.hintType},force=${event.forceType},` +
+      `state=${player.state},generation=${generation}`);
     const hint = event.hintType;
     if (hint === audio.InterruptHint.INTERRUPT_HINT_DUCK) {
       if (event.forceType === audio.InterruptForceType.INTERRUPT_SHARE) {

@@ -44,6 +44,13 @@ export class BookTypeSupport {
       this.typeFromIdentity(book.originName, book.kind) === this.AUDIO;
   }
 
+  static isImage(book: Book | SearchBook | null): boolean {
+    if (!book || book.origin === 'local') return false;
+    if ((Number(book.type) & this.IMAGE) !== 0) return true;
+    return this.typeFromVariable(book.variable) === this.IMAGE ||
+      this.typeFromIdentity(book.originName, book.kind) === this.IMAGE;
+  }
+
   static typeFromVariable(variable: string): number {
     if (!variable) return 0;
     try {
@@ -59,6 +66,7 @@ export class BookTypeSupport {
   private static typeFromIdentity(originName: string, kind: string): number {
     const value = `${originName || ''}\n${kind || ''}`;
     if (/听书|有声|音频|audiobook/i.test(value)) return this.AUDIO;
+    if (/漫画|漫改|comic|manga/i.test(value)) return this.IMAGE;
     return 0;
   }
 }

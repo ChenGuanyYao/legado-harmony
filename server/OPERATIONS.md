@@ -2,8 +2,8 @@
 
 ## 首次发布
 
-1. 备份 PostgreSQL，并在预发布库按顺序执行全部迁移；本次至少确认 `005`、`006`、
-    `007`、`008` 已成功执行。`008` 会使旧的无 `jti` 会话失效，发布后用户需要重新登录一次。
+1. 备份 PostgreSQL，并在预发布库按顺序执行全部迁移；至少确认 `005` 至 `010` 已成功
+   执行。`008` 会使旧的无 `jti` 会话失效，发布后用户需要重新登录一次。
 2. 执行 `npm ci && npm test`。
 3. 在服务端密钥管理配置 `.env.example` 中的 SIS 变量。AK/SK 不得进入镜像、日志或客户端。
 4. 2 核 2GB 单机先保持每日 25000 个计费单位、单用户每分钟 30 次、全局并发 6、
@@ -43,6 +43,21 @@
 - PostgreSQL 事务错误率和接口 P95/P99 延迟。
 - IAP `order_status`、`reversed_at`、`debt_points`，以及 `account_debts` 非零账号。
 - `sync_changes`、`sync_entities`、`sync_operation_receipts` 的行数和磁盘占用。
+
+同步标记不变量核对 SQL：
+
+```sql
+SELECT
+  (SELECT count(*) FROM sync_entities) AS entities,
+  (SELECT count(*) FROM sync_changes) AS markers,
+  (SELECT count(*)
+   FROM sync_entities entity
+   LEFT JOIN sync_changes marker
+     USING (user_id, entity_type, entity_id)
+   WHERE marker.sequence_id IS NULL) AS missing_markers;
+```
+
+`010` 迁移完成后，`entities` 应等于 `markers`，`missing_markers` 必须为 0。
 
 日用量核对 SQL：
 
