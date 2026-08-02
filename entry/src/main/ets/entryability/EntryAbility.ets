@@ -28,6 +28,8 @@ export default class EntryAbility extends UIAbility {
   private appliedColorMode: number = -1;
   private modeDependentThemeKey: string = '';
   private themeBootstrapPromise: Promise<void> = Promise.resolve();
+  private readerBootstrapPromise: Promise<void> = Promise.resolve();
+  private deferredStartupScheduled: boolean = false;
   private mainWindowStage: window.WindowStage | null = null;
 
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
@@ -174,18 +176,22 @@ export default class EntryAbility extends UIAbility {
     }).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Load account session failed: %{public}s', JSON.stringify(e));
     });
-    this.themeBootstrapPromise = AppThemeSettingsStore.load(this.context).then((settings) => {
+    const appThemePromise = AppThemeSettingsStore.load(this.context).then((settings) => {
       AppThemeSettingsStore.applyToStorage(settings);
       return StartupCoverTextStore.load(this.context);
-    }).then(() => {
-      return GlassSettingsStore.load(this.context);
-    }).then((settings) => {
-      GlassSettingsStore.applyToStorage(settings);
     }).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Sync app theme settings failed: %{public}s', JSON.stringify(e));
-    }).then(() => {
-      return ReaderSettingsStore.load(this.context);
-    }).then((settings) => {
+    });
+    const glassPromise = GlassSettingsStore.load(this.context).then((settings) => {
+      GlassSettingsStore.applyToStorage(settings);
+    }).catch((e: Error) => {
+      hilog.warn(0x0000, 'testTag', 'Sync glass settings failed: %{public}s', JSON.stringify(e));
+    });
+    // Theme and glass affect the first frame, but they are independent and can be restored in parallel.
+    this.themeBootstrapPromise = Promise.all([appThemePromise, glassPromise]).then(() => {});
+    // Reader preferences and custom font registration are not needed to paint Index/Startup. Keep their I/O warm,
+    // but do not make the first application content wait for them.
+    this.readerBootstrapPromise = ReaderSettingsStore.load(this.context).then((settings) => {
       ReaderSettingsStore.applyToStorage(settings);
     }).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Sync reader settings failed: %{public}s', JSON.stringify(e));
@@ -207,9 +213,7 @@ export default class EntryAbility extends UIAbility {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
     hilog.info(0x0000, 'testTag', 'StartupTrace onWindowStageCreate %{public}d', Date.now());
 
-    this.themeBootstrapPromise.then(() => {
-      return ReaderFontBootstrap.registerFromSettings(this.context, null, 'ability-onWindowStageCreate');
-    }).finally(() => {
+    this.themeBootstrapPromise.finally(() => {
       this.loadStartupContent(windowStage);
     });
   }
@@ -235,7 +239,22 @@ export default class EntryAbility extends UIAbility {
       hilog.info(0x0000, 'testTag', 'StartupTrace %{public}s content loaded %{public}d',
         initialPage, Date.now());
       this.syncStartupWindow(windowStage);
+      this.scheduleDeferredStartupInitialization();
     });
+  }
+
+  private scheduleDeferredStartupInitialization(): void {
+    if (this.deferredStartupScheduled) return;
+    this.deferredStartupScheduled = true;
+    // Let the first frame commit before registering a potentially large custom font file.
+    setTimeout(() => {
+      this.readerBootstrapPromise
+        .then(() => ReaderFontBootstrap.registerFromSettings(
+          this.context, null, 'ability-after-first-content'))
+        .catch((e: Error) => {
+          hilog.warn(0x0000, 'testTag', 'Deferred reader bootstrap failed: %{public}s', JSON.stringify(e));
+        });
+    }, 80);
   }
 
   onWindowStageDestroy(): void {

@@ -11,7 +11,9 @@ class EmbeddedStageRule {
 /** Full-JavaScript post-processing for list rules such as `jsonPath <js>...</js>`. */
 export class BookSourceStageRuleSupport {
   static async getElements(source: BookSource, content: string, baseUrl: string,
-    rawRule: string, stage: string = SourceRuntimeStage.SEARCH): Promise<string[] | null> {
+    rawRule: string, stage: string = SourceRuntimeStage.SEARCH, ownerId: string = '',
+    maxResponseBytes: number = 8 * 1024 * 1024,
+    maxTotalResponseBytes: number = 16 * 1024 * 1024): Promise<string[] | null> {
     const embedded = this.splitEmbeddedRule(rawRule || '');
     if (!embedded || !embedded.baseRule || !embedded.code) return null;
     const decision = BookSourceRuntimeRouter.decide(stage, `${source.jsLib || ''}\n${embedded.code}`);
@@ -33,6 +35,9 @@ export class BookSourceStageRuleSupport {
     request.contextContent = content || '';
     request.baseUrl = baseUrl || source.bookSourceUrl;
     request.code = embedded.code;
+    request.ownerId = ownerId;
+    request.maxResponseBytes = maxResponseBytes;
+    request.maxTotalResponseBytes = maxTotalResponseBytes;
     try {
       const result = await runtime.execute(request);
       const parsed = JSON.parse(result.value || '[]') as Object;

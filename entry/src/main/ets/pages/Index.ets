@@ -41,6 +41,8 @@ import { BookTypeSupport } from '../core/book/BookTypeSupport';
 
 const SHELF_FULL_TEXT_CACHE_CANCEL_EVENT: string = 'com.legado.harmony.action.SHELF_FULL_TEXT_CACHE_CANCEL';
 const SHELF_FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS: number = 5000;
+const SHELF_COVER_INITIAL_PREFETCH_COUNT: number = 16;
+const SHELF_COVER_UPDATE_BATCH_MS: number = 48;
 
 interface FullTextCacheCancelSignal {
   nonce: number;
@@ -1320,7 +1322,11 @@ struct BookshelfPage {
   @State tagInput: string = '';
   @State shelfCoverMap: Map<string, string> = new Map();
   @State shelfCoverRenderVersions: Map<string, number> = new Map();
+  private shelfCoverRawUrls: Map<string, string> = new Map();
   private shelfCoverCacheRevision: number = 0;
+  private shelfCoverBookTasks: Set<string> = new Set();
+  private pendingShelfCoverUpdates: Map<string, string> = new Map();
+  private shelfCoverUpdateTimer: number = -1;
   @StorageLink('shelfUpdateTime') @Watch('onShelfChanged') shelfUpdateTime: number = 0;
   @StorageLink('bookshelfSortMode') sortMode: string = 'recentRead';
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
@@ -1385,18 +1391,33 @@ struct BookshelfPage {
   private networkCoverCoordinator: SearchCoordinator | null = null;
   private networkCoverSearchToken: number = 0;
   private activeShelfGroupRestored: boolean = false;
+  private localBookIntroMigrationQueue: Book[] = [];
+  private localBookIntroMigrationRunning: boolean = false;
+  private localBookIntroMigrationGeneration: number = 0;
+  private shelfComponentActive: boolean = false;
 
   aboutToAppear() {
+    this.shelfComponentActive = true;
     this.reloadDisplaySettings();
     this.scheduleLoadBooks();
     this.ensureShelfFullTextCacheCancelSubscriber();
   }
 
   aboutToDisappear(): void {
+    this.shelfComponentActive = false;
     this.releaseShelfFullTextCacheCancelSubscriber();
     this.cancelShelfBookOpening();
     this.cancelNetworkCoverSearch();
     this.clearShelfScopeTransition();
+    this.shelfCoverCacheRevision++;
+    this.localBookIntroMigrationGeneration++;
+    this.localBookIntroMigrationQueue = [];
+    this.shelfCoverBookTasks.clear();
+    this.pendingShelfCoverUpdates.clear();
+    if (this.shelfCoverUpdateTimer >= 0) {
+      clearTimeout(this.shelfCoverUpdateTimer);
+      this.shelfCoverUpdateTimer = -1;
+    }
     if (this.pendingShelfSortTimer >= 0) {
       clearTimeout(this.pendingShelfSortTimer);
       this.pendingShelfSortTimer = -1;
@@ -1454,6 +1475,7 @@ struct BookshelfPage {
 
   onShelfCoverSettingsChanged(): void {
     this.shelfCoverMap = new Map();
+    this.shelfCoverRawUrls.clear();
     this.refreshShelfCoverCache(this.books);
   }
 
@@ -1463,14 +1485,6 @@ struct BookshelfPage {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
       const loadedBooks = SearchExplorePendingBook.filterShelfBooks(await db.getAllBooks());
-      for (const book of loadedBooks) {
-        if (!LocalBookService.isLocalBook(book)) continue;
-        try {
-          await LocalBookService.ensureContentIntro(book);
-        } catch (e) {
-          console.warn('生成本地书籍简介失败:', book.name, e);
-        }
-      }
       this.allBooks = loadedBooks;
       this.shelfGroups = await db.getCustomBookGroups();
       if (!this.activeShelfGroupRestored) {
@@ -1486,6 +1500,7 @@ struct BookshelfPage {
       }
       this.applyShelfScope();
       this.refreshShelfCoverCache(this.books);
+      this.scheduleLocalBookIntroMigration(loadedBooks);
     } catch (e) {
       console.error('加载书籍失败:', e);
     } finally {
@@ -1527,6 +1542,43 @@ struct BookshelfPage {
     this.captureContextMenuAnchor(event);
     this.pendingActionBook = book;
     this.showActionDialog = true;
+  }
+
+  scheduleLocalBookIntroMigration(books: Book[]): void {
+    this.localBookIntroMigrationQueue = books.filter((book: Book) =>
+      LocalBookService.isLocalBook(book) &&
+      (book.getVariable('localContentIntroVersion') !== '6' || !book.intro.trim()));
+    if (!this.shelfComponentActive || this.localBookIntroMigrationQueue.length === 0 ||
+      this.localBookIntroMigrationRunning) return;
+    const generation = ++this.localBookIntroMigrationGeneration;
+    this.localBookIntroMigrationRunning = true;
+    setTimeout(() => this.runLocalBookIntroMigration(generation), 120);
+  }
+
+  async runLocalBookIntroMigration(generation: number): Promise<void> {
+    try {
+      while (generation === this.localBookIntroMigrationGeneration &&
+        this.localBookIntroMigrationQueue.length > 0) {
+        const book = this.localBookIntroMigrationQueue.shift();
+        if (!book) break;
+        try {
+          const changed = await LocalBookService.ensureContentIntro(book);
+          if (changed && generation === this.localBookIntroMigrationGeneration) {
+            this.allBooks = this.allBooks.map((item: Book) => item.bookUrl === book.bookUrl ? book : item);
+            this.applyShelfScope();
+          }
+        } catch (e) {
+          console.warn('后台生成本地书籍简介失败:', book.name, e);
+        }
+        // Keep migrations behind user input and list animation work.
+        await new Promise<void>((resolve) => setTimeout(resolve, 16));
+      }
+    } finally {
+      this.localBookIntroMigrationRunning = false;
+      if (this.shelfComponentActive && this.localBookIntroMigrationQueue.length > 0) {
+        this.scheduleLocalBookIntroMigration(this.localBookIntroMigrationQueue);
+      }
+    }
   }
 
   closeBookActions(): void {
@@ -1645,6 +1697,7 @@ struct BookshelfPage {
     this.applyShelfScope();
     this.bumpShelfBookCoverRenderVersion(current.bookUrl);
     this.shelfCoverMap = new Map();
+    this.shelfCoverRawUrls.clear();
     this.refreshShelfCoverCache(this.books);
   }
 
@@ -1771,65 +1824,99 @@ struct BookshelfPage {
     const nextMap: Map<string, string> = new Map(this.shelfCoverMap);
     const coverCount = Math.max(1, BookDisplayHelper.getCoverList(book).length);
     for (let i = 0; i < coverCount; i++) {
-      nextMap.delete(this.shelfCoverKey(book, i));
+      const key = this.shelfCoverKey(book, i);
+      nextMap.delete(key);
+      this.shelfCoverRawUrls.delete(key);
     }
     this.shelfCoverMap = nextMap;
   }
 
   async refreshShelfCoverCache(books: Book[]): Promise<void> {
     const revision = ++this.shelfCoverCacheRevision;
+    this.shelfCoverBookTasks.clear();
+    this.pendingShelfCoverUpdates.clear();
+    if (this.shelfCoverUpdateTimer >= 0) {
+      clearTimeout(this.shelfCoverUpdateTimer);
+      this.shelfCoverUpdateTimer = -1;
+    }
+    // Only warm the initial viewport. Remaining covers are scheduled from coverView.onAppear.
+    const initialBooks = books.slice(0, SHELF_COVER_INITIAL_PREFETCH_COUNT);
+    const tasks: Promise<void>[] = initialBooks.map(async (book: Book): Promise<void> => {
+      const taskKey = `${revision}:${book.bookUrl}`;
+      this.shelfCoverBookTasks.add(taskKey);
+      try {
+        const updates = await this.resolveShelfBookCoverUpdates(book, revision);
+        this.queueShelfCoverUpdates(updates, revision);
+      } finally {
+        this.shelfCoverBookTasks.delete(taskKey);
+      }
+    });
+    try {
+      await Promise.all(tasks);
+    } catch (e) {
+      console.warn('预缓存首屏书架封面失败:', e);
+    }
+  }
+
+  ensureShelfBookCoverCache(book: Book): void {
+    const revision = this.shelfCoverCacheRevision;
+    const taskKey = `${revision}:${book.bookUrl}`;
+    if (this.shelfCoverBookTasks.has(taskKey)) return;
+    this.shelfCoverBookTasks.add(taskKey);
+    this.resolveShelfBookCoverUpdates(book, revision)
+      .then((updates: Map<string, string>) => this.queueShelfCoverUpdates(updates, revision))
+      .catch((e: Error) => console.warn('缓存可见书籍封面失败:', e))
+      .finally(() => this.shelfCoverBookTasks.delete(taskKey));
+  }
+
+  async resolveShelfBookCoverUpdates(book: Book, revision: number): Promise<Map<string, string>> {
+    const updates: Map<string, string> = new Map();
+    if (revision !== this.shelfCoverCacheRevision) return updates;
+    const covers = CoverGallerySettings.getDisplayCoverList(
+      book,
+      this.appDarkMode,
+      this.bookshelfCoverAlbums,
+      this.bookshelfLightCoverAlbumId,
+      this.bookshelfDarkCoverAlbumId,
+      this.bookshelfCoverApplyScope,
+      this.bookshelfCoverTargetBooks,
+      this.bookshelfIgnoreSourceCover,
+      this.bookshelfCoverMode
+    );
     const context = getContext(this);
-    const nextMap: Map<string, string> = new Map(this.shelfCoverMap);
-    const pending: Array<[string, string]> = [];
-    let hasCachedChange = false;
-    for (const book of books) {
-      const covers = CoverGallerySettings.getDisplayCoverList(
-        book,
-        this.appDarkMode,
-        this.bookshelfCoverAlbums,
-        this.bookshelfLightCoverAlbumId,
-        this.bookshelfDarkCoverAlbumId,
-        this.bookshelfCoverApplyScope,
-        this.bookshelfCoverTargetBooks,
-        this.bookshelfIgnoreSourceCover,
-        this.bookshelfCoverMode
-      );
-      for (let i = 0; i < covers.length; i++) {
-        const raw = covers[i];
-        if (!raw || (!raw.startsWith('http://') && !raw.startsWith('https://'))) {
-          continue;
+    for (let i = 0; i < covers.length; i++) {
+      if (revision !== this.shelfCoverCacheRevision) return new Map();
+      const raw = covers[i];
+      if (!raw || (!raw.startsWith('http://') && !raw.startsWith('https://'))) continue;
+      const key = this.shelfCoverKey(book, i);
+      if (this.shelfCoverMap.get(key) && this.shelfCoverRawUrls.get(key) === raw) continue;
+      try {
+        const local = await BookCoverCache.resolveCachedCoverAsync(context, raw) ||
+          await BookCoverCache.resolveCover(context, raw);
+        if (revision !== this.shelfCoverCacheRevision) return new Map();
+        if (local && local !== raw) {
+          this.shelfCoverRawUrls.set(key, raw);
+          updates.set(key, local);
         }
-        const key = this.shelfCoverKey(book, i);
-        const cached = BookCoverCache.resolveCachedCover(context, raw);
-        if (cached && nextMap.get(key) !== cached) {
-          nextMap.set(key, cached);
-          hasCachedChange = true;
-          continue;
-        }
-        pending.push([key, raw]);
+      } catch (e) {
+        console.warn('缓存书架封面失败:', e);
       }
     }
-    if (hasCachedChange && revision === this.shelfCoverCacheRevision) {
-      this.shelfCoverMap = new Map(nextMap);
-    }
-    for (const item of pending) {
-      if (revision !== this.shelfCoverCacheRevision) return;
-      const key = item[0];
-      const raw = item[1];
-      if (nextMap.get(key)) {
-        continue;
-      }
-        try {
-          const cached = await BookCoverCache.resolveCover(context, raw);
-          if (cached && cached !== raw && nextMap.get(key) !== cached &&
-            revision === this.shelfCoverCacheRevision) {
-            nextMap.set(key, cached);
-            this.shelfCoverMap = new Map(nextMap);
-          }
-        } catch (e) {
-          console.warn('缓存书架封面失败:', e);
-        }
-    }
+    return updates;
+  }
+
+  queueShelfCoverUpdates(updates: Map<string, string>, revision: number): void {
+    if (revision !== this.shelfCoverCacheRevision || updates.size === 0) return;
+    updates.forEach((value: string, key: string) => this.pendingShelfCoverUpdates.set(key, value));
+    if (this.shelfCoverUpdateTimer >= 0) return;
+    this.shelfCoverUpdateTimer = setTimeout(() => {
+      this.shelfCoverUpdateTimer = -1;
+      if (revision !== this.shelfCoverCacheRevision || this.pendingShelfCoverUpdates.size === 0) return;
+      const nextMap = new Map(this.shelfCoverMap);
+      this.pendingShelfCoverUpdates.forEach((value: string, key: string) => nextMap.set(key, value));
+      this.pendingShelfCoverUpdates.clear();
+      this.shelfCoverMap = nextMap;
+    }, SHELF_COVER_UPDATE_BATCH_MS);
   }
 
   build() {
@@ -4376,6 +4463,7 @@ struct BookshelfPage {
     .borderRadius(6)
     .clip(true)
     .backgroundColor(this.inputColor())
+    .onAppear(() => this.ensureShelfBookCoverCache(book))
   }
 
   @Builder
@@ -4462,10 +4550,10 @@ struct BookshelfPage {
       this.bookshelfCoverMode
     );
     const displayCovers: string[] = [];
-    const context = getContext(this);
     for (let i = 0; i < covers.length; i++) {
       const raw = covers[i];
-      const cached = this.shelfCoverMap.get(this.shelfCoverKey(book, i)) || BookCoverCache.resolveCachedCover(context, raw);
+      const key = this.shelfCoverKey(book, i);
+      const cached = this.shelfCoverRawUrls.get(key) === raw ? (this.shelfCoverMap.get(key) || '') : '';
       displayCovers.push(cached || raw);
     }
     return displayCovers;

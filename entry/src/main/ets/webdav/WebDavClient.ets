@@ -27,6 +27,8 @@ class WebDavXmlNode {
 }
 
 export class WebDavClient {
+  private static readonly MAX_REDIRECTS: number = 5;
+  private static readonly DOWNLOAD_ATTEMPTS: number = 2;
   private readonly connection: WebDavConnection;
   private readonly password: string;
   private readonly timeout: number;
@@ -109,6 +111,22 @@ export class WebDavClient {
 
   async downloadUrl(url: string, targetPath: string,
     onProgress?: (received: number, total: number) => void): Promise<WebDavDownloadResult> {
+    let lastMessage = '下载失败';
+    for (let attempt = 0; attempt < WebDavClient.DOWNLOAD_ATTEMPTS; attempt++) {
+      try {
+        return await this.downloadUrlOnce(url, targetPath, onProgress);
+      } catch (error) {
+        lastMessage = this.errorMessage(error as Object);
+        if (!this.isReceiveFailure(lastMessage) || attempt + 1 >= WebDavClient.DOWNLOAD_ATTEMPTS) {
+          throw new Error(lastMessage);
+        }
+      }
+    }
+    throw new Error(lastMessage);
+  }
+
+  private async downloadUrlOnce(url: string, targetPath: string,
+    onProgress?: (received: number, total: number) => void): Promise<WebDavDownloadResult> {
     if (fs.accessSync(targetPath)) fs.unlinkSync(targetPath);
     this.ensureParent(targetPath);
     const target = fs.openSync(targetPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
@@ -142,7 +160,8 @@ export class WebDavClient {
         header: this.headers({}),
         connectTimeout: this.timeout,
         readTimeout: Math.max(this.timeout, 120000),
-        maxRedirects: 0
+        usingProtocol: http.HttpProtocol.HTTP1_1,
+        maxRedirects: WebDavClient.MAX_REDIRECTS
       });
       if (writeError) throw new Error(writeError);
       if (status < 200 || status >= 300) throw new Error(this.statusMessage(status));
@@ -304,7 +323,8 @@ export class WebDavClient {
         readTimeout: timeout || this.timeout,
         expectDataType: http.HttpDataType.ARRAY_BUFFER,
         maxLimit: maxBytes,
-        maxRedirects: 0
+        usingProtocol: http.HttpProtocol.HTTP1_1,
+        maxRedirects: WebDavClient.MAX_REDIRECTS
       });
       const result = new WebDavHttpResponse();
       result.statusCode = response.responseCode;
@@ -419,7 +439,16 @@ export class WebDavClient {
   }
 
   private errorMessage(error: Object): string {
-    return WebDavError.message(error, '未知网络错误');
+    const message = WebDavError.message(error, '未知网络错误');
+    if (message.includes('2300047')) return '服务器重定向次数过多（错误码 2300047）';
+    if (message.includes('2300056')) return '接收文件时连接被服务器中断（错误码 2300056）';
+    return message;
+  }
+
+  private isReceiveFailure(message: string): boolean {
+    const value = (message || '').toLowerCase();
+    return value.includes('2300056') || value.includes('failed to receive data') ||
+      value.includes('failure when receiving data');
   }
 
   private ensureParent(path: string): void {

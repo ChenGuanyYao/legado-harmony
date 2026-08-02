@@ -247,6 +247,12 @@ export class AppDatabase {
       'CREATE INDEX IF NOT EXISTS idx_book_chapters_book_order ON book_chapters(bookUrl, chapterIndex)');
     await this.store.executeSql(
       'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_time ON bookmarks(bookUrl, createTime DESC)');
+    await this.store.executeSql(
+      'CREATE INDEX IF NOT EXISTS idx_books_read_time ON books(durChapterTime DESC)');
+    await this.store.executeSql(
+      'CREATE INDEX IF NOT EXISTS idx_book_sources_enabled_order ON book_sources(enabled, isPinned DESC, customOrder)');
+    await this.store.executeSql(
+      'CREATE INDEX IF NOT EXISTS idx_book_sources_explore_order ON book_sources(enabled, enabledExplore, isPinned DESC, customOrder)');
   }
 
   private async getSchemaVersion(): Promise<number> {
@@ -1337,16 +1343,29 @@ export class AppDatabase {
   }
 
   async getEnabledBookSources(): Promise<BookSource[]> {
+    return this.getEnabledBookSourcesForRuleScope('all');
+  }
+
+  async getEnabledBookSourcesForSearch(): Promise<BookSource[]> {
+    return this.getEnabledBookSourcesForRuleScope('search');
+  }
+
+  async getEnabledBookSourcesForExplore(): Promise<BookSource[]> {
+    return this.getEnabledBookSourcesForRuleScope('explore');
+  }
+
+  private async getEnabledBookSourcesForRuleScope(ruleScope: string): Promise<BookSource[]> {
     if (!this.store) return [];
     const predicates = new relationalStore.RdbPredicates('book_sources');
     predicates.equalTo('enabled', 1);
+    if (ruleScope === 'explore') predicates.equalTo('enabledExplore', 1);
     predicates.orderByDesc('isPinned');
     predicates.orderByAsc('customOrder');
     const resultSet = await this.store.query(predicates, []);
     const sources: BookSource[] = [];
     try {
       while (resultSet.goToNextRow()) {
-        sources.push(this.resultSetToBookSource(resultSet));
+        sources.push(this.resultSetToBookSource(resultSet, ruleScope));
       }
     } finally {
       resultSet.close();
@@ -1372,7 +1391,7 @@ export class AppDatabase {
     return sources;
   }
 
-  private resultSetToBookSource(resultSet: relationalStore.ResultSet): BookSource {
+  private resultSetToBookSource(resultSet: relationalStore.ResultSet, ruleScope: string = 'all'): BookSource {
     const source = new BookSource();
     source.bookSourceUrl = resultSet.getString(resultSet.getColumnIndex('bookSourceUrl'));
     source.bookSourceName = resultSet.getString(resultSet.getColumnIndex('bookSourceName'));
@@ -1394,30 +1413,38 @@ export class AppDatabase {
     const jsLibIndex = resultSet.getColumnIndex('jsLib');
     source.jsLib = jsLibIndex >= 0 ? resultSet.getString(jsLibIndex) : '';
     source.header = resultSet.getString(resultSet.getColumnIndex('header'));
-    try {
-      source.bookListRule = JSON.parse(resultSet.getString(resultSet.getColumnIndex('bookListRule')));
-    } catch (e) {}
-    try {
-      source.searchRule = JSON.parse(resultSet.getString(resultSet.getColumnIndex('searchRule')));
-    } catch (e) {}
-    try {
-      const parsed = JSON.parse(resultSet.getString(resultSet.getColumnIndex('exploreRule'))) as Object;
-      if (parsed && !Array.isArray(parsed)) source.exploreRule = parsed as ExploreRule;
-    } catch (e) {}
-    try {
-      source.bookInfoRule = JSON.parse(resultSet.getString(resultSet.getColumnIndex('bookInfoRule')));
-    } catch (e) {}
-    try {
-      const parsed = JSON.parse(resultSet.getString(resultSet.getColumnIndex('tocRule'))) as Object;
-      if (parsed && !Array.isArray(parsed)) source.tocRule = parsed as TocRule;
-      source.tocRule.nextTocUrl = source.tocRule.nextTocUrl || '';
-    } catch (e) {}
-    try {
-      const parsed = JSON.parse(resultSet.getString(resultSet.getColumnIndex('contentRule'))) as Object;
-      if (parsed && !Array.isArray(parsed)) source.contentRule = parsed as ContentRule;
-      source.contentRule.nextContentUrl = source.contentRule.nextContentUrl || '';
-      source.contentRule.imageDecode = source.contentRule.imageDecode || '';
-    } catch (e) {}
+    if (ruleScope === 'all') {
+      try {
+        source.bookListRule = JSON.parse(resultSet.getString(resultSet.getColumnIndex('bookListRule')));
+      } catch (e) {}
+    }
+    if (ruleScope === 'all' || ruleScope === 'search' || ruleScope === 'explore') {
+      try {
+        source.searchRule = JSON.parse(resultSet.getString(resultSet.getColumnIndex('searchRule')));
+      } catch (e) {}
+    }
+    if (ruleScope === 'all' || ruleScope === 'explore') {
+      try {
+        const parsed = JSON.parse(resultSet.getString(resultSet.getColumnIndex('exploreRule'))) as Object;
+        if (parsed && !Array.isArray(parsed)) source.exploreRule = parsed as ExploreRule;
+      } catch (e) {}
+    }
+    if (ruleScope === 'all') {
+      try {
+        source.bookInfoRule = JSON.parse(resultSet.getString(resultSet.getColumnIndex('bookInfoRule')));
+      } catch (e) {}
+      try {
+        const parsed = JSON.parse(resultSet.getString(resultSet.getColumnIndex('tocRule'))) as Object;
+        if (parsed && !Array.isArray(parsed)) source.tocRule = parsed as TocRule;
+        source.tocRule.nextTocUrl = source.tocRule.nextTocUrl || '';
+      } catch (e) {}
+      try {
+        const parsed = JSON.parse(resultSet.getString(resultSet.getColumnIndex('contentRule'))) as Object;
+        if (parsed && !Array.isArray(parsed)) source.contentRule = parsed as ContentRule;
+        source.contentRule.nextContentUrl = source.contentRule.nextContentUrl || '';
+        source.contentRule.imageDecode = source.contentRule.imageDecode || '';
+      } catch (e) {}
+    }
     source.variableComment = resultSet.getString(resultSet.getColumnIndex('variableComment'));
     const variableIndex = resultSet.getColumnIndex('variable');
     source.variable = variableIndex >= 0 ? resultSet.getString(variableIndex) : '';

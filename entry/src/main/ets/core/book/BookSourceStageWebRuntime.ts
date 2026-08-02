@@ -16,6 +16,9 @@ export class StageWebRuntimeRequest {
   variables: Record<string, string> = {};
   readerActionMode: boolean = false;
   networkTimeoutMs: number = 20000;
+  maxResponseBytes: number = 8 * 1024 * 1024;
+  maxTotalResponseBytes: number = 16 * 1024 * 1024;
+  ownerId: string = '';
 }
 
 export class StageWebRuntimeResult {
@@ -59,6 +62,9 @@ export class BookSourceStageWebRuntime {
   private ready: boolean = false;
   private tasks: StageWebRuntimeTask[] = [];
   private running: boolean = false;
+  private activeTask: StageWebRuntimeTask | null = null;
+  private activeHttpClient: HttpClient | null = null;
+  private cancelledOwners: Set<string> = new Set<string>();
   private caches: Record<string, Record<string, string>> = {};
 
   static get(): BookSourceStageWebRuntime {
@@ -89,6 +95,10 @@ export class BookSourceStageWebRuntime {
 
   execute(request: StageWebRuntimeRequest): Promise<StageWebRuntimeResult> {
     return new Promise<StageWebRuntimeResult>((resolve, reject) => {
+      if (request.ownerId && this.cancelledOwners.has(request.ownerId)) {
+        reject(new Error('书源脚本任务已取消'));
+        return;
+      }
       const task = new StageWebRuntimeTask();
       task.request = request;
       task.resolve = resolve;
@@ -98,11 +108,33 @@ export class BookSourceStageWebRuntime {
     });
   }
 
+  cancelOwner(ownerId: string): void {
+    if (!ownerId) return;
+    this.cancelledOwners.add(ownerId);
+    const remaining: StageWebRuntimeTask[] = [];
+    for (const task of this.tasks) {
+      if (task.request.ownerId === ownerId) {
+        if (task.reject) task.reject(new Error('书源脚本任务已取消'));
+      } else {
+        remaining.push(task);
+      }
+    }
+    this.tasks = remaining;
+    if (this.activeTask?.request.ownerId === ownerId && this.activeHttpClient) {
+      this.activeHttpClient.cancelAll();
+    }
+  }
+
+  clearOwner(ownerId: string): void {
+    if (ownerId) this.cancelledOwners.delete(ownerId);
+  }
+
   private startNext(): void {
     if (this.running || !this.controller || !this.ready || this.tasks.length === 0) return;
     const task = this.tasks.shift();
     if (!task) return;
     this.running = true;
+    this.activeTask = task;
     this.executeTask(task.request)
       .then((value: StageWebRuntimeResult): void => {
         if (task.resolve) task.resolve(value);
@@ -111,12 +143,15 @@ export class BookSourceStageWebRuntime {
         if (task.reject) task.reject(error);
       })
       .finally((): void => {
+        this.activeTask = null;
+        this.activeHttpClient = null;
         this.running = false;
         this.startNext();
       });
   }
 
   private async executeTask(request: StageWebRuntimeRequest): Promise<StageWebRuntimeResult> {
+    this.ensureNotCancelled(request);
     // Coordinators may hold a source snapshot while the login/editor page saves a new token.
     // Refresh missing runtime fields before executing so a stale empty snapshot cannot issue an
     // unauthenticated request or overwrite the newly saved state when the stage completes.
@@ -138,9 +173,12 @@ export class BookSourceStageWebRuntime {
     const fixedNow = Date.now();
     const randomSeed = Math.max(1, Math.floor(Math.random() * 0x7fffffff));
     let requestCount = 0;
+    let totalResponseBytes = 0;
     for (let stepIndex = 0; stepIndex < 20; stepIndex++) {
+      this.ensureNotCancelled(request);
       const script = this.buildScript(request, responses, cookies, cacheState, fixedNow, randomSeed);
       const raw = await this.runJavaScript(script);
+      this.ensureNotCancelled(request);
       const step = this.parseStep(raw);
       request.source.variable = step.variable;
       if (request.book) request.book.variable = step.bookVariable;
@@ -160,11 +198,21 @@ export class BookSourceStageWebRuntime {
       if (step.pendingAjax) {
         requestCount++;
         if (requestCount > 12) throw new Error('书源脚本网络请求次数过多');
-        const response = await this.fetch(request.source, step.pendingAjax, request.networkTimeoutMs);
+        const response = await this.fetch(request, step.pendingAjax);
+        this.ensureNotCancelled(request);
         if (!response.success && response.statusCode === 0) {
           throw new Error(response.error || '书源脚本网络请求失败');
         }
-        responses[step.pendingAjax] = response.body || '';
+        const responseBody = response.body || '';
+        // ArkTS/ArkWeb exchange response bodies as UTF-16 strings. Count their in-memory
+        // footprint instead of only character count so the cumulative guard remains useful.
+        totalResponseBytes += responseBody.length * 2;
+        const totalLimit = Math.max(request.maxResponseBytes,
+          Math.min(request.maxTotalResponseBytes || 16 * 1024 * 1024, 16 * 1024 * 1024));
+        if (totalResponseBytes > totalLimit) {
+          throw new Error('书源脚本累计响应过大');
+        }
+        responses[step.pendingAjax] = responseBody;
         continue;
       }
       if (step.errorMessage) throw new Error(step.errorMessage);
@@ -185,9 +233,23 @@ export class BookSourceStageWebRuntime {
     throw new Error('书源脚本执行步骤过多');
   }
 
-  private fetch(source: BookSource, requestUrl: string, timeoutMs: number): Promise<HttpResponse> {
-    const timeout = Math.max(3000, Math.min(timeoutMs || 20000, 30000));
-    return new AnalyzeUrl(source, new HttpClient(timeout)).fetch(requestUrl, 8 * 1024 * 1024);
+  private async fetch(request: StageWebRuntimeRequest, requestUrl: string): Promise<HttpResponse> {
+    const timeout = Math.max(3000, Math.min(request.networkTimeoutMs || 20000, 30000));
+    const responseLimit = Math.max(64 * 1024,
+      Math.min(request.maxResponseBytes || 8 * 1024 * 1024, 8 * 1024 * 1024));
+    const client = new HttpClient(timeout);
+    this.activeHttpClient = client;
+    try {
+      return await new AnalyzeUrl(request.source, client).fetch(requestUrl, responseLimit);
+    } finally {
+      if (this.activeHttpClient === client) this.activeHttpClient = null;
+    }
+  }
+
+  private ensureNotCancelled(request: StageWebRuntimeRequest): void {
+    if (request.ownerId && this.cancelledOwners.has(request.ownerId)) {
+      throw new Error('书源脚本任务已取消');
+    }
   }
 
   private runJavaScript(script: string): Promise<string> {

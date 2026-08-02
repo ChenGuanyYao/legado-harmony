@@ -148,17 +148,24 @@ struct SettingsPage {
           Column() {
           this.readerThemePanel()
 
-          this.selectItem('翻页方式', '选择滚动、横向滑动或上下连续滑动',
+          this.selectItem('翻页方式', '选择上下滑动、横向滑动或滚动阅读',
             this.pageTurnModeOptions(), this.pageTurnModeSelectedIndex(), (index: number) => {
               this.setReaderPageTurnMode(this.pageTurnModeByIndex(index));
-            })
+            }, 'settings_page_turn_mode_select')
           if (this.readerPageTurnMode === 2) {
             this.tapZoneSettingItem()
           }
-          this.selectItem('翻页动画', '选择翻页时使用的页面切换效果',
-            this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
-              this.setReaderPageTurnAnimationType(index);
-            })
+          if (this.readerPageTurnMode === 2) {
+            this.selectItem('翻页动画', '选择翻页时使用的页面切换效果',
+              this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
+                this.setReaderPageTurnAnimationType(index);
+              }, 'settings_page_turn_animation_select_horizontal')
+          } else if (this.readerPageTurnMode === 0) {
+            this.selectItem('翻页动画', '选择翻页时使用的页面切换效果',
+              this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
+                this.setReaderPageTurnAnimationType(index);
+              }, 'settings_page_turn_animation_select_vertical')
+          }
           this.switchItem('使用双翻页', '横屏或折叠屏展开等宽屏状态下同时显示左右两页',
             this.readerLandscapeDoublePage, (value: boolean) => {
               this.setReaderLandscapeDoublePage(value);
@@ -169,7 +176,7 @@ struct SettingsPage {
           this.selectItem('亮屏时间设置', '无操作达到所选时长后恢复系统息屏',
             this.screenTimeoutOptions(), this.screenTimeoutSelectedIndex(), (index: number) => {
               this.setReaderScreenTimeoutByIndex(index);
-            })
+            }, 'settings_screen_timeout_select')
           this.switchItem('正文扩展至状态栏', '开启后正文阅读区域会延伸到顶部状态栏安全区', this.readerExtendToStatusBar, (value: boolean) => {
             this.setReaderExtendToStatusBar(value);
           })
@@ -796,15 +803,15 @@ struct SettingsPage {
 
   pageTurnModeText(): string {
     if (this.readerPageTurnMode === 2) return '横向滑动';
-    if (this.readerPageTurnMode === 3) return '上下滑动';
-    return '滚动阅读';
+    if (this.readerPageTurnMode === 3) return '滚动阅读';
+    return '上下滑动';
   }
 
   pageTurnModeOptions(): SelectOption[] {
     return [
-      { value: '滚动阅读' },
+      { value: '上下滑动' },
       { value: '横向滑动' },
-      { value: '上下滑动' }
+      { value: '滚动阅读' }
     ];
   }
 
@@ -887,21 +894,25 @@ struct SettingsPage {
   }
 
   pageTurnAnimationOptions(): SelectOption[] {
-    return [
+    const options: SelectOption[] = [
       { value: '无动画' },
       { value: '平移' },
       { value: '淡入' },
       { value: '叠页' }
     ];
+    if (this.readerPageTurnMode === 2) options.push({ value: '仿真' });
+    return options;
   }
 
   pageTurnAnimationTypes(): number[] {
-    return [
+    const types: number[] = [
       ReaderSettingsStore.PAGE_TURN_ANIMATION_NONE,
       ReaderSettingsStore.PAGE_TURN_ANIMATION_SLIDE,
       ReaderSettingsStore.PAGE_TURN_ANIMATION_FADE,
       ReaderSettingsStore.PAGE_TURN_ANIMATION_STACK
     ];
+    if (this.readerPageTurnMode === 2) types.push(ReaderSettingsStore.PAGE_TURN_ANIMATION_SIMULATION);
+    return types;
   }
 
   pageTurnAnimationSelectedIndex(): number {
@@ -956,27 +967,31 @@ struct SettingsPage {
   }
 
   setReaderMarginLeft(value: number): void {
-    this.readerMarginLeft = this.normalizeReaderMargin(value);
+    this.readerMarginLeft = this.normalizeReaderHorizontalMargin(value);
     this.saveReaderLayoutSettings();
   }
 
   setReaderMarginRight(value: number): void {
-    this.readerMarginRight = this.normalizeReaderMargin(value);
+    this.readerMarginRight = this.normalizeReaderHorizontalMargin(value);
     this.saveReaderLayoutSettings();
   }
 
   setReaderMarginTop(value: number): void {
-    this.readerMarginTop = this.normalizeReaderMargin(value);
+    this.readerMarginTop = this.normalizeReaderVerticalMargin(value);
     this.saveReaderLayoutSettings();
   }
 
   setReaderMarginBottom(value: number): void {
-    this.readerMarginBottom = this.normalizeReaderMargin(value);
+    this.readerMarginBottom = this.normalizeReaderVerticalMargin(value);
     this.saveReaderLayoutSettings();
   }
 
-  normalizeReaderMargin(value: number): number {
-    return Math.max(0, Math.min(Math.round(value), 300));
+  normalizeReaderHorizontalMargin(value: number): number {
+    return Math.max(0, Math.min(Math.round(value), 80));
+  }
+
+  normalizeReaderVerticalMargin(value: number): number {
+    return Math.max(0, Math.min(Math.round(value), 120));
   }
 
   typographySettingOptions(): SelectOption[] {
@@ -1203,6 +1218,14 @@ struct SettingsPage {
 
   setReaderPageTurnMode(mode: number): void {
     this.readerPageTurnMode = mode;
+    if (mode === 0 && Math.round(this.readerPageTurnAnimationType) ===
+      ReaderSettingsStore.PAGE_TURN_ANIMATION_SIMULATION) {
+      this.readerPageTurnAnimationType = ReaderSettingsStore.PAGE_TURN_ANIMATION_STACK;
+      ReaderSettingsStore.savePageTurnAnimationType(getContext(this), this.readerPageTurnAnimationType)
+        .catch((e: Error) => {
+          console.error('降级上下滑动翻页动画失败:', e);
+        });
+    }
     ReaderSettingsStore.savePageTurnMode(getContext(this), mode).catch((e: Error) => {
       console.error('保存翻页方式失败:', e);
     });
@@ -1226,10 +1249,14 @@ struct SettingsPage {
 
   normalizePageTurnAnimationType(type: number): number {
     const value = Math.round(type);
+    if (this.readerPageTurnMode === 0 && value === ReaderSettingsStore.PAGE_TURN_ANIMATION_SIMULATION) {
+      return ReaderSettingsStore.PAGE_TURN_ANIMATION_STACK;
+    }
     if (value === ReaderSettingsStore.PAGE_TURN_ANIMATION_NONE ||
       value === ReaderSettingsStore.PAGE_TURN_ANIMATION_SLIDE ||
       value === ReaderSettingsStore.PAGE_TURN_ANIMATION_FADE ||
-      value === ReaderSettingsStore.PAGE_TURN_ANIMATION_STACK) {
+      value === ReaderSettingsStore.PAGE_TURN_ANIMATION_STACK ||
+      value === ReaderSettingsStore.PAGE_TURN_ANIMATION_SIMULATION) {
       return value;
     }
     return ReaderSettingsStore.PAGE_TURN_ANIMATION_SLIDE;
@@ -2138,7 +2165,8 @@ struct SettingsPage {
   }
 
   @Builder
-  selectItem(title: string, desc: string, options: SelectOption[], selected: number, onSelect: (index: number) => void) {
+  selectItem(title: string, desc: string, options: SelectOption[], selected: number,
+    onSelect: (index: number) => void, controlId: string) {
     Row() {
       Column() {
         Text(title)
@@ -2153,6 +2181,7 @@ struct SettingsPage {
       .alignItems(HorizontalAlign.Start)
 
       Select(options)
+        .id(controlId)
         .selected(selected)
         .value(this.optionValue(options, selected))
         .font({ size: 14 })

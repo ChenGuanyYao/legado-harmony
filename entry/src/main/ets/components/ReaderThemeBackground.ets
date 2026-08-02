@@ -14,6 +14,8 @@ export struct ReaderThemeBackground {
   @Prop customImage: ResourceStr = '';
   @Prop customImageFit: ImageFit = ImageFit.Cover;
   @Prop compact: boolean = false;
+  @Prop viewportWidthHint: number = 0;
+  @Prop viewportHeightHint: number = 0;
   @State viewportWidth: number = 0;
   @State viewportHeight: number = 0;
 
@@ -29,6 +31,7 @@ export struct ReaderThemeBackground {
           .width('100%')
           .height('100%')
           .objectFit(this.customImageFit)
+          .syncLoad(true)
           .draggable(false)
           .hitTestBehavior(HitTestMode.None)
       } else if (this.backgroundAssetId) {
@@ -38,14 +41,15 @@ export struct ReaderThemeBackground {
     .width('100%')
     .height('100%')
     .clip(true)
+    .renderGroup(true)
     .hitTestBehavior(HitTestMode.None)
     .onAreaChange((_oldValue: Area, newValue: Area) => {
       const width = this.areaDimension(newValue.width);
       const height = this.areaDimension(newValue.height);
-      if (width > 0 && Math.abs(width - this.viewportWidth) >= 1) {
+      if (this.viewportWidthHint <= 0 && width > 0 && Math.abs(width - this.viewportWidth) >= 1) {
         this.viewportWidth = width;
       }
-      if (height > 0 && Math.abs(height - this.viewportHeight) >= 1) {
+      if (this.viewportHeightHint <= 0 && height > 0 && Math.abs(height - this.viewportHeight) >= 1) {
         this.viewportHeight = height;
       }
     })
@@ -60,6 +64,7 @@ export struct ReaderThemeBackground {
             .width(this.decorationSize())
             .height(this.decorationSize())
             .objectFit(ImageFit.Contain)
+            .syncLoad(true)
             .draggable(false)
           Blank()
             .layoutWeight(1)
@@ -76,6 +81,7 @@ export struct ReaderThemeBackground {
             .width(this.decorationSize())
             .height(this.decorationSize())
             .objectFit(ImageFit.Contain)
+            .syncLoad(true)
             .rotate({ angle: 180 })
             .draggable(false)
         }
@@ -107,8 +113,10 @@ export struct ReaderThemeBackground {
 
   decorationSize(): number {
     const fallback = this.compact ? 42 : 156;
-    if (this.viewportWidth <= 0 || this.viewportHeight <= 0) return fallback;
-    const shortEdge = Math.min(this.viewportWidth, this.viewportHeight);
+    const width = this.effectiveViewportWidth();
+    const height = this.effectiveViewportHeight();
+    if (width <= 0 || height <= 0) return fallback;
+    const shortEdge = Math.min(width, height);
     if (this.compact) return Math.max(30, Math.min(54, shortEdge * 0.72));
     // Size follows the short edge, so portrait, landscape, tablet and split
     // window layouts preserve the ornament's proportions without device rules.
@@ -126,8 +134,18 @@ export struct ReaderThemeBackground {
   }
 
   shortEdge(): number {
-    if (this.viewportWidth <= 0 || this.viewportHeight <= 0) return this.compact ? 58 : 480;
-    return Math.min(this.viewportWidth, this.viewportHeight);
+    const width = this.effectiveViewportWidth();
+    const height = this.effectiveViewportHeight();
+    if (width <= 0 || height <= 0) return this.compact ? 58 : 480;
+    return Math.min(width, height);
+  }
+
+  effectiveViewportWidth(): number {
+    return this.viewportWidthHint > 0 ? this.viewportWidthHint : this.viewportWidth;
+  }
+
+  effectiveViewportHeight(): number {
+    return this.viewportHeightHint > 0 ? this.viewportHeightHint : this.viewportHeight;
   }
 
   areaDimension(value: Length): number {

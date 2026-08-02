@@ -38,11 +38,13 @@ export interface SearchSourceResult {
 }
 
 const MAX_SEARCH_CONCURRENCY = 12;
-const MAX_VALIDATION_CONCURRENCY = 2;
+const MAX_VALIDATION_CONCURRENCY = 1;
 // Batch source results so background searching does not continuously interrupt list gestures.
 const SEARCH_PROGRESS_EMIT_INTERVAL_MS = 500;
 const MAX_SEARCH_RESPONSE_BYTES = 2 * 1024 * 1024;
-const MAX_VALIDATION_RESPONSE_BYTES = 1024 * 1024;
+const MAX_VALIDATION_RESPONSE_BYTES = 512 * 1024;
+const MAX_VALIDATION_STAGE_RESPONSE_BYTES = 512 * 1024;
+const MAX_VALIDATION_STAGE_TOTAL_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_RESULTS_PER_SOURCE = 50;
 const MAX_TOTAL_SEARCH_RESULTS = 1000;
 const MAX_VALIDATION_RULE_CHARS = 32 * 1024;
@@ -67,9 +69,11 @@ interface ScoredSearchBook {
 }
 
 export class SearchCoordinator {
+  private static stageRuntimeOwnerSerial: number = 0;
   private http: HttpClient;
   private concurrency: number;
   private cancelled: boolean = false;
+  private stageRuntimeOwnerId: string = '';
 
   constructor(concurrency: number = 8) {
     this.http = new HttpClient(8000);
@@ -79,6 +83,9 @@ export class SearchCoordinator {
   cancel(): void {
     this.cancelled = true;
     this.http.cancelAll();
+    if (this.stageRuntimeOwnerId) {
+      BookSourceStageWebRuntime.get().cancelOwner(this.stageRuntimeOwnerId);
+    }
   }
 
   async search(keyword: string, callback: SearchCallback, options: SearchOptions = {}): Promise<SearchBook[]> {
@@ -95,7 +102,7 @@ export class SearchCoordinator {
     if (options.targetSources && options.targetSources.length > 0) {
       enabledSources = options.targetSources.slice();
     } else {
-      enabledSources = await appDb.getEnabledBookSources();
+      enabledSources = await appDb.getEnabledBookSourcesForSearch();
     }
     const selectedGroups = this.normalizeSelectedGroups(options.sourceGroups || []);
     const sources = selectedGroups.length > 0 ?
@@ -105,6 +112,8 @@ export class SearchCoordinator {
       safeCallback({ done: 0, total: 0, results: [], finished: true, status: '没有符合设置的启用书源' });
       return [];
     }
+    const runtimeOwnerId = `search_${Date.now()}_${++SearchCoordinator.stageRuntimeOwnerSerial}`;
+    this.stageRuntimeOwnerId = runtimeOwnerId;
 
     const all: SearchBook[] = [];
     let displayResultCount = 0;
@@ -178,10 +187,14 @@ export class SearchCoordinator {
     for (let i = 0; i < workerCount; i++) {
       workers.push(runWorker());
     }
-    await Promise.all(workers);
-    emitProgress(true);
-
-    return validationOnly ? [] : this.filterAndSortSearchResults(all, keyword, options);
+    try {
+      await Promise.all(workers);
+      emitProgress(true);
+      return validationOnly ? [] : this.filterAndSortSearchResults(all, keyword, options);
+    } finally {
+      BookSourceStageWebRuntime.get().clearOwner(runtimeOwnerId);
+      if (this.stageRuntimeOwnerId === runtimeOwnerId) this.stageRuntimeOwnerId = '';
+    }
   }
 
   private async searchOne(source: BookSource, keyword: string, options: SearchOptions): Promise<SearchSourceResult> {
@@ -229,7 +242,8 @@ export class SearchCoordinator {
       js.setVar('page', '1');
 
       const au = new AnalyzeUrl(source, this.http);
-      let urlTemplate = await this.evalAndBuild(js, source, keyword, responseLimit);
+      let urlTemplate = await this.evalAndBuild(js, source, keyword, responseLimit,
+        options.validationOnly === true);
       if (!urlTemplate && source.searchUrl.includes('gysearch')) {
         urlTemplate = EncodedSourceUrl.buildSearchUrl(keyword);
       }
@@ -272,7 +286,12 @@ export class SearchCoordinator {
       rule.setJsVar('page', '1');
       const searchRule = source.searchRule;
       const stageItems = await BookSourceStageRuleSupport.getElements(source, resp.body, baseUrl,
-        searchRule.bookList || '', SourceRuntimeStage.SEARCH);
+        searchRule.bookList || '', SourceRuntimeStage.SEARCH, this.stageRuntimeOwnerId,
+        options.validationOnly === true ? MAX_VALIDATION_STAGE_RESPONSE_BYTES : 8 * 1024 * 1024,
+        options.validationOnly === true ? MAX_VALIDATION_STAGE_TOTAL_RESPONSE_BYTES : 16 * 1024 * 1024);
+      if (this.cancelled) {
+        return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
+      }
       const items = stageItems === null ? rule.getElements(searchRule.bookList || '') : stageItems;
       if (this.cancelled) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
@@ -750,11 +769,11 @@ export class SearchCoordinator {
   }
 
   private async evalAndBuild(js: JsRuntime, source: BookSource, keyword: string,
-    maxResponseBytes: number): Promise<string> {
+    maxResponseBytes: number, validationOnly: boolean): Promise<string> {
     const searchUrl = source.searchUrl;
     const baseUrl = source.bookSourceUrl;
     if (!searchUrl) return `${baseUrl}/search?q={{key}}`;
-    const stageUrl = await this.tryBuildStageRuntimeSearchUrl(source, keyword);
+    const stageUrl = await this.tryBuildStageRuntimeSearchUrl(source, keyword, validationOnly);
     if (stageUrl) return stageUrl;
     if (/^\s*@?js:/i.test(searchUrl)) {
       const scripted = BookSourceScriptRunner.evaluateUrl(source, searchUrl, keyword, '1');
@@ -799,13 +818,19 @@ export class SearchCoordinator {
     return url;
   }
 
-  private async tryBuildStageRuntimeSearchUrl(source: BookSource, keyword: string): Promise<string> {
+  private async tryBuildStageRuntimeSearchUrl(source: BookSource, keyword: string,
+    validationOnly: boolean): Promise<string> {
     const hostCode = `${source.jsLib || ''}\n${source.searchUrl || ''}`;
     const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.SEARCH, hostCode);
     if (decision.runtime !== 'arkweb' || !BookSourceStageWebRuntime.get().isAvailable()) return '';
     const request = new StageWebRuntimeRequest();
     request.source = source;
     request.baseUrl = source.bookSourceUrl;
+    request.ownerId = this.stageRuntimeOwnerId;
+    if (validationOnly) {
+      request.maxResponseBytes = MAX_VALIDATION_STAGE_RESPONSE_BYTES;
+      request.maxTotalResponseBytes = MAX_VALIDATION_STAGE_TOTAL_RESPONSE_BYTES;
+    }
     const rawSearchUrl = source.searchUrl || '';
     const isFullJsUrl = /^\s*@?js:/i.test(rawSearchUrl);
     request.variables = {

@@ -39,10 +39,39 @@ const BOOK_SOURCE_IMPORT_TIMEOUT_MS = 20000;
 const BOOK_SOURCE_IMPORT_URL_RETRY_COUNT = 3;
 const BOOK_SOURCE_WEB_IMPORT_RETRY_COUNT = 3;
 const BOOK_SOURCE_CHECK_KEYWORD = '斗破苍穹';
-const BOOK_SOURCE_LIST_BATCH_SIZE = 60;
 const BOOK_SOURCE_CHECK_CANCEL_EVENT: string = 'com.legado.harmony.action.BOOK_SOURCE_CHECK_CANCEL';
 const BOOK_SOURCE_CHECK_NOTIFICATION_INTERVAL_MS: number = 1000;
 const BOOK_SOURCE_CHECK_NOTIFICATION_ID: number = 2701;
+
+class BookSourceListDataSource implements IDataSource {
+  private sources: BookSource[] = [];
+  private listeners: DataChangeListener[] = [];
+
+  totalCount(): number { return this.sources.length; }
+  getData(index: number): BookSource { return this.sources[index]; }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (!this.listeners.includes(listener)) this.listeners.push(listener);
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    const index = this.listeners.indexOf(listener);
+    if (index >= 0) this.listeners.splice(index, 1);
+  }
+
+  replace(sources: BookSource[], force: boolean = false): void {
+    if (!force && this.sources.length === sources.length &&
+      this.sources.every((source: BookSource, index: number) => source === sources[index])) return;
+    this.sources = [...sources];
+    for (const listener of this.listeners) listener.onDataReloaded();
+  }
+}
+
+class BookSourceCheckUiUpdate {
+  bookSourceUrl: string = '';
+  validationStatus: number = BookSource.VALIDATION_UNCHECKED;
+  detail: string = '';
+}
 
 @Entry
 @Component
@@ -62,6 +91,7 @@ struct BookSourcePage {
   @State allSources: BookSource[] = [];
   @State sources: BookSource[] = [];
   @State visibleSources: BookSource[] = [];
+  private sourceListDataSource: BookSourceListDataSource = new BookSourceListDataSource();
   @State sourceListViewportHeight: number = 0;
   @State sourceFirstVisibleIndex: number = 0;
   @State sourceVisibleItemCount: number = 1;
@@ -138,6 +168,8 @@ struct BookSourcePage {
   private checkBackgroundRunning: boolean = false;
   private checkCancelAgent: WantAgent | null = null;
   private checkCancelSubscriber: commonEventManager.CommonEventSubscriber | null = null;
+  private checkUiUpdates: BookSourceCheckUiUpdate[] = [];
+  private checkUiFlushTimer: number = -1;
   private pageVisible: boolean = true;
   private selectedSourceUrlsSnapshot: string[] = [];
   private selectedSourceUrlLookup: Set<string> = new Set<string>();
@@ -378,7 +410,7 @@ struct BookSourcePage {
                 .hitTestBehavior(HitTestMode.None)
             }
 
-            ForEach(this.visibleSources, (source: BookSource) => {
+            LazyForEach(this.currentSourceListDataSource(), (source: BookSource) => {
               ListItem() {
                 Row() {
                   if (this.selectionMode) {
@@ -497,7 +529,7 @@ struct BookSourcePage {
               .borderRadius(8)
               .clip(true)
               .onAreaChange((_oldValue: Area, area: Area) => {
-                this.rememberSourceSelectionArea(source.bookSourceUrl, area);
+                if (this.selectionMode) this.rememberSourceSelectionArea(source.bookSourceUrl, area);
               })
               .swipeAction(this.selectionMode || source.isLocked ? {} : {
                 start: {
@@ -533,12 +565,12 @@ struct BookSourcePage {
             .lanes(ResponsiveManagerListLayout.laneCount(this.contextViewportWidth),
               ResponsiveManagerListLayout.gutter(this.contextViewportWidth))
             .scrollBar(BarState.Off)
+            .cachedCount(8)
             .clip(true)
             .onScrollIndex((start: number, end: number) => {
               this.sourceFirstVisibleIndex = Math.max(0, start - 1);
               this.sourceVisibleItemCount = Math.max(1, end - start + 1);
             })
-            .onReachEnd(() => this.loadMoreVisibleSources())
             .onItemDragStart((_event: ItemDragInfo, itemIndex: number) => {
               const sourceIndex = itemIndex - 1;
               this.draggingSourceUrl = !this.selectionMode && sourceIndex >= 0 &&
@@ -3095,7 +3127,6 @@ struct BookSourcePage {
       .concat(nextSources.filter((source: BookSource) => !source.isPinned));
     const restoreFirstIndex = this.sourceFirstVisibleIndex;
     const restoreVisibleCount = this.sourceVisibleItemCount;
-    const restoreLoadedCount = this.visibleSources.length;
     this.isBatchOperating = true;
     this.batchOperationText = '正在保存书源排序...';
     try {
@@ -3106,7 +3137,7 @@ struct BookSourcePage {
         orderedSources.map((source: BookSource) => source.bookSourceUrl));
       this.allSources = orderedSources;
       this.applySourceFilters();
-      this.restoreSourceListViewport(restoreFirstIndex, restoreVisibleCount, restoreLoadedCount);
+      this.restoreSourceListViewport(restoreFirstIndex, restoreVisibleCount);
       const revision = AppStorage.get<number>('bookSourceOrderRevision') || 0;
       AppStorage.setOrCreate('bookSourceOrderRevision', revision + 1);
       if (successMessage) promptAction.showToast({ message: successMessage });
@@ -3119,12 +3150,10 @@ struct BookSourcePage {
     }
   }
 
-  restoreSourceListViewport(firstIndex: number, visibleCount: number, loadedCount: number): void {
+  restoreSourceListViewport(firstIndex: number, visibleCount: number): void {
     if (this.sources.length === 0) return;
     const targetIndex = Math.max(0, Math.min(firstIndex, this.sources.length - 1));
-    const requiredCount = Math.max(BOOK_SOURCE_LIST_BATCH_SIZE,
-      Math.max(loadedCount, targetIndex + Math.max(1, visibleCount)));
-    this.visibleSources = this.sources.slice(0, Math.min(this.sources.length, requiredCount));
+    this.visibleSources = this.sources;
     this.sourceFirstVisibleIndex = targetIndex;
     this.sourceVisibleItemCount = Math.max(1, visibleCount);
     setTimeout(() => {
@@ -3137,9 +3166,8 @@ struct BookSourcePage {
   reapplySourceFiltersPreservingViewport(): void {
     const restoreFirstIndex = this.sourceFirstVisibleIndex;
     const restoreVisibleCount = this.sourceVisibleItemCount;
-    const restoreLoadedCount = this.visibleSources.length;
     this.applySourceFilters();
-    this.restoreSourceListViewport(restoreFirstIndex, restoreVisibleCount, restoreLoadedCount);
+    this.restoreSourceListViewport(restoreFirstIndex, restoreVisibleCount);
   }
 
   sourceFilterValue(filterKey: string): string {
@@ -3241,7 +3269,7 @@ struct BookSourcePage {
       });
     }
     this.sources = this.sortFilteredSources(filtered);
-    this.visibleSources = this.sources.slice(0, BOOK_SOURCE_LIST_BATCH_SIZE);
+    this.visibleSources = this.sources;
     this.sourceFirstVisibleIndex = 0;
     this.sourceVisibleItemCount = 1;
     this.pruneSelectedSources();
@@ -3273,12 +3301,9 @@ struct BookSourcePage {
     return BookSource.VALIDATION_UNCHECKED;
   }
 
-  loadMoreVisibleSources(): void {
-    if (this.visibleSources.length >= this.sources.length) {
-      return;
-    }
-    const nextCount = Math.min(this.sources.length, this.visibleSources.length + BOOK_SOURCE_LIST_BATCH_SIZE);
-    this.visibleSources = this.sources.slice(0, nextCount);
+  currentSourceListDataSource(): BookSourceListDataSource {
+    this.sourceListDataSource.replace(this.visibleSources);
+    return this.sourceListDataSource;
   }
 
   ensureActiveSourceGroup(): void {
@@ -4882,6 +4907,7 @@ struct BookSourcePage {
     this.checkTemporaryErrorCount = 0;
     this.checkBadUrls = [];
     this.checkResultDetails = [];
+    this.resetCheckedSourceUiUpdates();
     this.checkAutoHandledCount = 0;
     this.checkStatus = `准备校验 ${targetSources.length} 个书源`;
     this.checkNotificationLastAt = 0;
@@ -4920,6 +4946,7 @@ struct BookSourcePage {
       if (taskSerial !== this.checkTaskSerial) {
         return;
       }
+      this.flushCheckedSourceUiUpdates();
       this.checkDone = targetSources.length;
       this.checkTotal = targetSources.length;
       this.checkStatus = this.checkResultText();
@@ -4934,6 +4961,7 @@ struct BookSourcePage {
       if (taskSerial !== this.checkTaskSerial) {
         return;
       }
+      this.flushCheckedSourceUiUpdates();
       const finishedInBackground = this.checkBackgroundMode;
       this.checkCoordinator = null;
       this.isCheckingSources = false;
@@ -4961,6 +4989,7 @@ struct BookSourcePage {
       this.checkCoordinator.cancel();
       this.checkCoordinator = null;
     }
+    this.flushCheckedSourceUiUpdates();
     this.isCheckingSources = false;
     this.checkBackgroundMode = false;
     this.checkStatus = `校验已取消（${this.checkDone}/${this.checkTotal}）`;
@@ -5166,8 +5195,14 @@ struct BookSourcePage {
     } catch (e) {
       console.error('保存书源校验状态失败:', source.bookSourceName, e);
     }
-    this.applyCheckedSourceValidationStatus(source.bookSourceUrl, source.validationStatus);
-
+    let detail = '';
+    if (source.validationStatus !== BookSource.VALIDATION_PASSED) {
+      const sourceName = source.bookSourceName || source.bookSourceUrl;
+      detail = result.reason ?
+        `${sourceName}：${this.sourceValidationStatusLabel(source.validationStatus)}（${result.reason}）` :
+        `${sourceName}：${this.sourceValidationStatusLabel(source.validationStatus)}`;
+    }
+    this.queueCheckedSourceUiUpdate(source.bookSourceUrl, source.validationStatus, detail);
     if (source.validationStatus === BookSource.VALIDATION_PASSED) {
       this.checkOkCount++;
       return;
@@ -5181,12 +5216,6 @@ struct BookSourcePage {
     } else if (source.validationStatus === BookSource.VALIDATION_TEMPORARY_ERROR) {
       this.checkTemporaryErrorCount++;
     }
-    const sourceName = source.bookSourceName || source.bookSourceUrl;
-    const detail = result.reason ?
-      `${sourceName}：${this.sourceValidationStatusLabel(source.validationStatus)}（${result.reason}）` :
-      `${sourceName}：${this.sourceValidationStatusLabel(source.validationStatus)}`;
-    this.checkResultDetails = [...this.checkResultDetails, detail];
-
     if (source.validationStatus !== BookSource.VALIDATION_FAILED) {
       return;
     }
@@ -5221,23 +5250,59 @@ struct BookSourcePage {
     }
   }
 
-  applyCheckedSourceValidationStatus(bookSourceUrl: string, validationStatus: number): void {
+  queueCheckedSourceUiUpdate(bookSourceUrl: string, validationStatus: number, detail: string): void {
+    const update = new BookSourceCheckUiUpdate();
+    update.bookSourceUrl = bookSourceUrl;
+    update.validationStatus = validationStatus;
+    update.detail = detail;
+    this.checkUiUpdates.push(update);
+    if (this.checkUiFlushTimer >= 0) return;
+    this.checkUiFlushTimer = setTimeout(() => this.flushCheckedSourceUiUpdates(), 300);
+  }
+
+  resetCheckedSourceUiUpdates(): void {
+    if (this.checkUiFlushTimer >= 0) clearTimeout(this.checkUiFlushTimer);
+    this.checkUiFlushTimer = -1;
+    this.checkUiUpdates = [];
+  }
+
+  flushCheckedSourceUiUpdates(): void {
+    if (this.checkUiFlushTimer >= 0) clearTimeout(this.checkUiFlushTimer);
+    this.checkUiFlushTimer = -1;
+    if (this.checkUiUpdates.length === 0) return;
+    const updates = this.checkUiUpdates;
+    this.checkUiUpdates = [];
+    const statusByUrl = new Map<string, number>();
+    const details: string[] = [];
+    for (const update of updates) {
+      statusByUrl.set(update.bookSourceUrl, update.validationStatus);
+      if (update.detail) details.push(update.detail);
+    }
     this.allSources = this.allSources.map((item: BookSource) => {
-      if (item.bookSourceUrl === bookSourceUrl) item.validationStatus = validationStatus;
+      const status = statusByUrl.get(item.bookSourceUrl);
+      if (status === undefined) return item;
+      item.validationStatus = status;
       return item;
     });
+    if (details.length > 0) {
+      this.checkResultDetails = this.checkResultDetails.concat(details);
+    }
     if (this.sourceValidationFilter !== 'all') {
       this.applySourceFilters();
+      this.sourceListDataSource.replace(this.visibleSources, true);
       return;
     }
     this.sources = this.sources.map((item: BookSource) => {
-      if (item.bookSourceUrl === bookSourceUrl) item.validationStatus = validationStatus;
+      const status = statusByUrl.get(item.bookSourceUrl);
+      if (status !== undefined) item.validationStatus = status;
       return item;
     });
     this.visibleSources = this.visibleSources.map((item: BookSource) => {
-      if (item.bookSourceUrl === bookSourceUrl) item.validationStatus = validationStatus;
+      const status = statusByUrl.get(item.bookSourceUrl);
+      if (status !== undefined) item.validationStatus = status;
       return item;
     });
+    this.sourceListDataSource.replace(this.visibleSources, true);
   }
 
   checkSummaryText(): string {

@@ -58,6 +58,7 @@ export class ReaderSettingsStore {
   static readonly PAGE_TURN_ANIMATION_FADE: number = 3;
   static readonly PAGE_TURN_ANIMATION_STACK: number = 4;
   static readonly PAGE_TURN_ANIMATION_VERTICAL: number = 5;
+  static readonly PAGE_TURN_ANIMATION_SIMULATION: number = 6;
   static readonly SCREEN_TIMEOUT_FOLLOW_SYSTEM: number = 0;
   static readonly SCREEN_TIMEOUT_ALWAYS_ON: number = -1;
   static readonly KEY_FONT_SIZE: string = 'readerFontSize';
@@ -148,13 +149,13 @@ export class ReaderSettingsStore {
       'paragraphSpacing'
     );
     settings.marginLeft = await ReaderSettingsStore.getNumber(
-      store, ReaderSettingsStore.KEY_MARGIN_LEFT, 18, 'margin');
+      store, ReaderSettingsStore.KEY_MARGIN_LEFT, 18, 'horizontalMargin');
     settings.marginRight = await ReaderSettingsStore.getNumber(
-      store, ReaderSettingsStore.KEY_MARGIN_RIGHT, 18, 'margin');
+      store, ReaderSettingsStore.KEY_MARGIN_RIGHT, 18, 'horizontalMargin');
     settings.marginTop = await ReaderSettingsStore.getNumber(
-      store, ReaderSettingsStore.KEY_MARGIN_TOP, 18, 'margin');
+      store, ReaderSettingsStore.KEY_MARGIN_TOP, 18, 'verticalMargin');
     settings.marginBottom = await ReaderSettingsStore.getNumber(
-      store, ReaderSettingsStore.KEY_MARGIN_BOTTOM, 18, 'margin');
+      store, ReaderSettingsStore.KEY_MARGIN_BOTTOM, 18, 'verticalMargin');
     const legacyThemeIndex = await ReaderSettingsStore.getNumber(
       store,
       ReaderSettingsStore.KEY_THEME_INDEX,
@@ -233,6 +234,8 @@ export class ReaderSettingsStore {
     settings.pageTurnAnimationType = legacyPageTurnAnimation ?
       storedPageTurnAnimationType :
       ReaderSettingsStore.PAGE_TURN_ANIMATION_NONE;
+    settings.pageTurnAnimationType = ReaderSettingsStore.normalizePageTurnAnimationForMode(
+      settings.pageTurnMode, settings.pageTurnAnimationType);
     settings.landscapeDoublePage = await ReaderSettingsStore.getBoolean(
       store,
       ReaderSettingsStore.KEY_LANDSCAPE_DOUBLE_PAGE,
@@ -363,10 +366,10 @@ export class ReaderSettingsStore {
     settings.fontSize = ReaderSettingsStore.normalizeFontSize(fontSize);
     settings.lineHeight = ReaderSettingsStore.normalizeLineHeight(lineHeight);
     settings.paragraphSpacing = ReaderSettingsStore.normalizeParagraphSpacing(paragraphSpacing);
-    settings.marginLeft = ReaderSettingsStore.normalizeMargin(marginLeft);
-    settings.marginRight = ReaderSettingsStore.normalizeMargin(marginRight);
-    settings.marginTop = ReaderSettingsStore.normalizeMargin(marginTop);
-    settings.marginBottom = ReaderSettingsStore.normalizeMargin(marginBottom);
+    settings.marginLeft = ReaderSettingsStore.normalizeHorizontalMargin(marginLeft);
+    settings.marginRight = ReaderSettingsStore.normalizeHorizontalMargin(marginRight);
+    settings.marginTop = ReaderSettingsStore.normalizeVerticalMargin(marginTop);
+    settings.marginBottom = ReaderSettingsStore.normalizeVerticalMargin(marginBottom);
     ReaderSettingsStore.cachedSettings = ReaderSettingsStore.clone(settings);
     ReaderSettingsStore.applyLayoutToStorage(settings);
     const store = await preferences.getPreferences(context, ReaderSettingsStore.STORE_NAME);
@@ -903,8 +906,11 @@ export class ReaderSettingsStore {
     if (type === 'paragraphSpacing') {
       return ReaderSettingsStore.normalizeParagraphSpacing(value);
     }
-    if (type === 'margin') {
-      return ReaderSettingsStore.normalizeMargin(value);
+    if (type === 'horizontalMargin') {
+      return ReaderSettingsStore.normalizeHorizontalMargin(value);
+    }
+    if (type === 'verticalMargin') {
+      return ReaderSettingsStore.normalizeVerticalMargin(value);
     }
     if (type === 'themeIndex') {
       return ReaderSettingsStore.normalizeThemeIndex(value);
@@ -951,9 +957,14 @@ export class ReaderSettingsStore {
     return ReaderThemeHelper.normalizeIndex(themeIndex);
   }
 
-  private static normalizeMargin(margin: number): number {
+  private static normalizeHorizontalMargin(margin: number): number {
     const value = Math.round(margin);
-    return Math.max(0, Math.min(value, 300));
+    return Math.max(0, Math.min(value, 80));
+  }
+
+  private static normalizeVerticalMargin(margin: number): number {
+    const value = Math.round(margin);
+    return Math.max(0, Math.min(value, 120));
   }
 
   private static normalizeColor(color: string, fallback: string): string {
@@ -977,10 +988,18 @@ export class ReaderSettingsStore {
     if (value === ReaderSettingsStore.PAGE_TURN_ANIMATION_NONE ||
       value === ReaderSettingsStore.PAGE_TURN_ANIMATION_SLIDE ||
       value === ReaderSettingsStore.PAGE_TURN_ANIMATION_FADE ||
-      value === ReaderSettingsStore.PAGE_TURN_ANIMATION_STACK) {
+      value === ReaderSettingsStore.PAGE_TURN_ANIMATION_STACK ||
+      value === ReaderSettingsStore.PAGE_TURN_ANIMATION_SIMULATION) {
       return value;
     }
     return ReaderSettingsStore.PAGE_TURN_ANIMATION_SLIDE;
+  }
+
+  private static normalizePageTurnAnimationForMode(mode: number, type: number): number {
+    const value = ReaderSettingsStore.normalizePageTurnAnimationType(type);
+    return ReaderSettingsStore.normalizePageTurnMode(mode) === 0 &&
+      value === ReaderSettingsStore.PAGE_TURN_ANIMATION_SIMULATION ?
+      ReaderSettingsStore.PAGE_TURN_ANIMATION_STACK : value;
   }
 
   private static normalizePreloadChapterCount(count: number): number {
@@ -1021,10 +1040,10 @@ export class ReaderSettingsStore {
     settings.fontSize = ReaderSettingsStore.normalizeFontSize(source.fontSize);
     settings.lineHeight = ReaderSettingsStore.normalizeLineHeight(source.lineHeight);
     settings.paragraphSpacing = ReaderSettingsStore.normalizeParagraphSpacing(source.paragraphSpacing);
-    settings.marginLeft = ReaderSettingsStore.normalizeMargin(source.marginLeft);
-    settings.marginRight = ReaderSettingsStore.normalizeMargin(source.marginRight);
-    settings.marginTop = ReaderSettingsStore.normalizeMargin(source.marginTop);
-    settings.marginBottom = ReaderSettingsStore.normalizeMargin(source.marginBottom);
+    settings.marginLeft = ReaderSettingsStore.normalizeHorizontalMargin(source.marginLeft);
+    settings.marginRight = ReaderSettingsStore.normalizeHorizontalMargin(source.marginRight);
+    settings.marginTop = ReaderSettingsStore.normalizeVerticalMargin(source.marginTop);
+    settings.marginBottom = ReaderSettingsStore.normalizeVerticalMargin(source.marginBottom);
     settings.themeIndex = ReaderSettingsStore.normalizeThemeIndex(source.themeIndex);
     settings.lightThemeIndex = ReaderSettingsStore.normalizeThemeIndex(source.lightThemeIndex);
     settings.darkThemeIndex = ReaderSettingsStore.normalizeThemeIndex(source.darkThemeIndex);
@@ -1046,7 +1065,8 @@ export class ReaderSettingsStore {
     );
     settings.customThemesRaw = source.customThemesRaw || '';
     settings.pageTurnMode = ReaderSettingsStore.normalizePageTurnMode(source.pageTurnMode);
-    settings.pageTurnAnimationType = ReaderSettingsStore.normalizePageTurnAnimationType(source.pageTurnAnimationType);
+    settings.pageTurnAnimationType = ReaderSettingsStore.normalizePageTurnAnimationForMode(
+      settings.pageTurnMode, source.pageTurnAnimationType);
     settings.landscapeDoublePage = source.landscapeDoublePage;
     settings.tapZoneActions = ReaderSettingsStore.normalizeTapZoneActions(source.tapZoneActions);
     settings.volumeTurnPage = source.volumeTurnPage;
@@ -1097,15 +1117,15 @@ export class ReaderSettingsStore {
       ReaderSettingsStore.normalizeLineHeight(storageLineHeight) :
       ReaderSettingsStore.normalizeLegacyLineHeight(storageLineHeight, settings.fontSize);
     settings.paragraphSpacing = ReaderSettingsStore.normalizeParagraphSpacing(
-      AppStorage.get<number>(ReaderSettingsStore.KEY_PARAGRAPH_SPACING) ?? 10
+      AppStorage.get<number>(ReaderSettingsStore.KEY_PARAGRAPH_SPACING) ?? 0
     );
-    settings.marginLeft = ReaderSettingsStore.normalizeMargin(
+    settings.marginLeft = ReaderSettingsStore.normalizeHorizontalMargin(
       AppStorage.get<number>(ReaderSettingsStore.KEY_MARGIN_LEFT) ?? 18);
-    settings.marginRight = ReaderSettingsStore.normalizeMargin(
+    settings.marginRight = ReaderSettingsStore.normalizeHorizontalMargin(
       AppStorage.get<number>(ReaderSettingsStore.KEY_MARGIN_RIGHT) ?? 18);
-    settings.marginTop = ReaderSettingsStore.normalizeMargin(
+    settings.marginTop = ReaderSettingsStore.normalizeVerticalMargin(
       AppStorage.get<number>(ReaderSettingsStore.KEY_MARGIN_TOP) ?? 18);
-    settings.marginBottom = ReaderSettingsStore.normalizeMargin(
+    settings.marginBottom = ReaderSettingsStore.normalizeVerticalMargin(
       AppStorage.get<number>(ReaderSettingsStore.KEY_MARGIN_BOTTOM) ?? 18);
     const legacyThemeIndex = ReaderSettingsStore.normalizeThemeIndex(
       AppStorage.get<number>(ReaderSettingsStore.KEY_THEME_INDEX) ?? 0
@@ -1147,6 +1167,8 @@ export class ReaderSettingsStore {
     settings.pageTurnAnimationType = legacyPageTurnAnimation ?
       storagePageTurnAnimationType :
       ReaderSettingsStore.PAGE_TURN_ANIMATION_NONE;
+    settings.pageTurnAnimationType = ReaderSettingsStore.normalizePageTurnAnimationForMode(
+      settings.pageTurnMode, settings.pageTurnAnimationType);
     settings.landscapeDoublePage = AppStorage.get<boolean>(ReaderSettingsStore.KEY_LANDSCAPE_DOUBLE_PAGE) ?? false;
     settings.tapZoneActions = ReaderSettingsStore.normalizeTapZoneActions(
       AppStorage.get<string>(ReaderSettingsStore.KEY_TAP_ZONE_ACTIONS) || ''

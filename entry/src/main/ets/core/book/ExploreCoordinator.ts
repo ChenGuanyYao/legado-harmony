@@ -44,7 +44,7 @@ export class ExploreCoordinator {
   }
 
   async getExploreSources(): Promise<ExploreSourceOption[]> {
-    const sources = await appDb.getEnabledBookSources();
+    const sources = await appDb.getEnabledBookSourcesForExplore();
     const options: ExploreSourceOption[] = [];
     for (const source of sources) {
       if (!source.enabledExplore || !source.exploreUrl) continue;
@@ -62,7 +62,7 @@ export class ExploreCoordinator {
 
   async getEntries(platform: string = '番茄', sourceUrl: string = ''): Promise<ExploreEntry[]> {
     this.noticeMessage = '';
-    const sources = await appDb.getEnabledBookSources();
+    const sources = await appDb.getEnabledBookSourcesForExplore();
     const entries: ExploreEntry[] = [];
     for (const source of sources) {
       if (!source.enabledExplore || !source.exploreUrl) continue;

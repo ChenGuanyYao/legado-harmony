@@ -164,7 +164,10 @@ assert(settingsPageSource.includes('menuItem(icon: Resource, title: string, show
   settingsPageSource.includes('dividerColor()'),
   'Mine page menu items must use official symbols and themed dividers');
 assert(fontBootstrap.includes('ThemeRuntime.fontFamily()'), 'Cold-start font bootstrap ignores the theme font');
-assert(entryAbility.includes('this.themeBootstrapPromise.then'), 'Theme bootstrap must finish before font bootstrap');
+assert(entryAbility.includes('this.themeBootstrapPromise.finally') &&
+  entryAbility.includes('this.scheduleDeferredStartupInitialization()') &&
+  entryAbility.includes("'ability-after-first-content'"),
+  'Theme bootstrap and first content must finish before font bootstrap');
 assert(themeStore.includes('KEY_THEME_ID') && themeStore.includes('createForTheme'),
   'Theme id persistence or theme selection factory is missing');
 assert(models.includes("static readonly CUSTOM: string = 'custom'"), 'Custom theme id is missing');
