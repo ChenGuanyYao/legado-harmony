@@ -210,31 +210,22 @@ export class WebDavClient {
 
   async uploadLibraryFile(context: Context, sourcePath: string, parentPath: string, remoteName: string,
     onProgress?: (sent: number, total: number) => void): Promise<void> {
-    const suffix = `${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-    const tempPath = this.joinPath(parentPath, `.${remoteName}.uploading_${suffix}`);
     const finalPath = this.joinPath(parentPath, remoteName);
-    const tempUrl = this.urlForPath(this.joinPath(this.connection.libraryRoot, tempPath));
     const finalUrl = this.urlForPath(this.joinPath(this.connection.libraryRoot, finalPath));
+    const existing = await this.headUrl(finalUrl);
+    if (existing.exists) throw new Error('同名文件已存在');
     let uploadedSize = 0;
     try {
-      uploadedSize = await this.streamUploadFile(context, sourcePath, tempUrl, remoteName, onProgress);
+      uploadedSize = await this.streamUploadFile(context, sourcePath, finalUrl, remoteName, onProgress);
     } catch (error) {
-      await this.deleteUrl(tempUrl).catch((): void => {});
+      await this.deleteUrl(finalUrl).catch((): void => {});
       throw new Error(this.errorMessage(error as Object));
     }
-    const uploaded = await this.headUrl(tempUrl);
+    const uploaded = await this.headUrl(finalUrl);
     if (!uploaded.exists || uploaded.size !== uploadedSize) {
-      await this.deleteUrl(tempUrl).catch((): void => {});
+      await this.deleteUrl(finalUrl).catch((): void => {});
       throw new Error('远端文件长度校验失败');
     }
-    const moved = await this.request('MOVE', tempUrl, {
-      'Destination': finalUrl,
-      'Overwrite': 'F'
-    }, undefined, 1024);
-    if (moved.statusCode >= 200 && moved.statusCode < 300) return;
-    await this.deleteUrl(tempUrl).catch((): void => {});
-    if (moved.statusCode === 412) throw new Error('同名文件已存在');
-    throw new Error(`提交上传文件失败：${this.statusMessage(moved.statusCode)}`);
   }
 
   async renameLibraryEntry(relativePath: string, newName: string, directory: boolean): Promise<void> {
@@ -247,7 +238,7 @@ export class WebDavClient {
     const sourceUrl = directory ? this.urlForCollection(sourceRelative) : this.urlForPath(sourceRelative);
     const destinationUrl = directory ? this.urlForCollection(destinationRelative) : this.urlForPath(destinationRelative);
     const response = await this.request('MOVE', sourceUrl, {
-      'Destination': destinationUrl,
+      'Destination': this.destinationHeader(destinationUrl),
       'Overwrite': 'F'
     }, undefined, 1024);
     if (response.statusCode >= 200 && response.statusCode < 300) return;
@@ -276,29 +267,21 @@ export class WebDavClient {
   async uploadBackup(context: Context, sourcePath: string, remoteName: string,
     onProgress?: (sent: number, total: number) => void): Promise<void> {
     await this.ensureBackupRoot();
-    const suffix = `${Date.now()}_${Math.floor(Math.random() * 100000)}`;
-    const tempName = `.${remoteName}.uploading_${suffix}`;
-    const tempUrl = this.urlForPath(this.joinPath(this.connection.backupRoot, tempName));
     const finalUrl = this.urlForPath(this.joinPath(this.connection.backupRoot, remoteName));
+    const existing = await this.headUrl(finalUrl);
+    if (existing.exists) throw new Error('同名备份已存在');
     let uploadedSize = 0;
     try {
-      uploadedSize = await this.streamUploadFile(context, sourcePath, tempUrl, remoteName, onProgress);
+      uploadedSize = await this.streamUploadFile(context, sourcePath, finalUrl, remoteName, onProgress);
     } catch (error) {
-      await this.deleteUrl(tempUrl).catch((): void => {});
+      await this.deleteUrl(finalUrl).catch((): void => {});
       throw new Error(this.errorMessage(error as Object));
     }
-    const uploaded = await this.headUrl(tempUrl);
+    const uploaded = await this.headUrl(finalUrl);
     if (!uploaded.exists || uploaded.size !== uploadedSize) {
-      await this.deleteUrl(tempUrl).catch((): void => {});
+      await this.deleteUrl(finalUrl).catch((): void => {});
       throw new Error('远端备份长度校验失败');
     }
-    const moved = await this.request('MOVE', tempUrl, {
-      'Destination': finalUrl,
-      'Overwrite': 'F'
-    }, undefined, 1024);
-    if (moved.statusCode >= 200 && moved.statusCode < 300) return;
-    await this.deleteUrl(tempUrl).catch((): void => {});
-    throw new Error(`提交远端备份失败：${this.statusMessage(moved.statusCode)}`);
   }
 
   async deleteBackup(relativePath: string): Promise<void> {
@@ -398,6 +381,13 @@ export class WebDavClient {
   private urlForCollection(relativePath: string): string {
     const url = this.urlForPath(relativePath);
     return url.endsWith('/') ? url : `${url}/`;
+  }
+
+  private destinationHeader(url: string): string {
+    const scheme = url.indexOf('://');
+    if (scheme < 0) return url.startsWith('/') ? url : `/${url}`;
+    const path = url.indexOf('/', scheme + 3);
+    return path >= 0 ? url.substring(path) : '/';
   }
 
   private joinPath(left: string, right: string): string {

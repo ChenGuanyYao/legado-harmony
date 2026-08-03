@@ -62,6 +62,7 @@ struct LocalBookSettingsPage {
               }
             }, (book: Book) => book.bookUrl)
           }
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .width('100%')
           .layoutWeight(1)
           .clip(true)

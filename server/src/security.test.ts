@@ -36,6 +36,21 @@ test('IAP purchase states fail closed', () => {
   assert.equal(isDeliverablePurchaseState({ purchaseStatus: 'PAID' }), true);
   assert.equal(isDeliverablePurchaseState({}), false);
   assert.equal(isDeliverablePurchaseState({ purchaseStatus: 'UNKNOWN' }), false);
+  assert.equal(isDeliverablePurchaseState({ finishStatus: 0 }), true);
+  assert.equal(isDeliverablePurchaseState({ finishStatus: '0' }), true);
+  assert.equal(isDeliverablePurchaseState({ finishStatus: 2 }), true);
+  assert.equal(isDeliverablePurchaseState({ finishStatus: '2' }), true);
+  assert.equal(isDeliverablePurchaseState({ finishStatus: 1 }), false);
+  assert.equal(isDeliverablePurchaseState({ finishStatus: 3 }), false);
+  assert.equal(isDeliverablePurchaseState({ finishStatus: 0, purchaseState: 1 }), false);
+  assert.equal(isDeliverablePurchaseState({
+    finishStatus: 2,
+    purchaseOrderRevocationReasonCode: 7
+  }), false);
+  assert.equal(isRevokedPurchaseState({
+    finishStatus: 2,
+    purchaseOrderRevocationReasonCode: '7'
+  }), true);
   assert.equal(isRevokedPurchaseState({ purchaseStatus: 2 }), true);
 });
 

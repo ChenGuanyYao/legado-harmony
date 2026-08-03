@@ -1,7 +1,7 @@
 # Legado Harmony 书源开发文档
 
-> 适用范围：`legado-harmony` 当前书源实现（基准提交 `b608cd4`，2026-07-16）。  
-> 本文描述的是本项目**已经实现并实际调用**的规则，而不是 Android「阅读」全部规则的等价清单。导入其他项目的书源时，应特别留意[兼容性与当前限制](#兼容性与当前限制)。
+> 适用范围：`legado-harmony` `3.5.806` 当前书源实现（2026-08-03 工作区）。
+> 本文描述的是本项目**已经实现并实际调用**的规则，而不是 Android「阅读」全部规则的等价清单。导入其他项目的书源时，应特别留意[兼容性与当前限制](#13-兼容性与当前限制)。
 
 ## 1. 书源是什么
 
@@ -27,10 +27,13 @@
   -> chapterList 选出“章节元素”
   -> 在每个元素内解析 chapterName / chapterUrl
   -> 请求 chapterUrl
-  -> content 提取正文
+  -> content / images 提取正文、漫画图片或音频地址
   -> replaceRegex 净化
-  -> HTML 转纯文本
+  -> 交互后处理（可选：段评、本章说、图片、视频/媒体动作）
+  -> 文本阅读 / 漫画阅读 / 有声书播放
 ```
+
+部分聚合源使用 `data:`/Base64 地址承载书籍、章节和请求元数据。这类地址会先由原生快捷通道完成请求、镜像切换、解密或音频地址提取，再回到统一正文交互后处理。普通 HTTP/HTML/JSON 书源不会因此改变原有路径。
 
 这里最重要的概念是“当前元素”：
 
@@ -108,7 +111,7 @@
 
 ## 3. JSON 顶层结构与导入格式
 
-应用支持三种导入外壳：
+应用支持四种常见导入外壳：
 
 ```json
 [{ "bookSourceUrl": "...", "bookSourceName": "..." }]
@@ -122,7 +125,18 @@
 { "bookSourceUrl": "...", "bookSourceName": "..." }
 ```
 
-只有同时具有 `bookSourceUrl` 和 `bookSourceName` 的项目才会被写入数据库。`bookSourceUrl` 也是书源的唯一身份标识；修改它通常会被视为另一个书源。
+以及剪贴板或分享文本中的 HTTP/HTTPS 导入地址。URL 导入不是简单调用一次下载接口，而是按顺序尝试：
+
+1. 应用 HTTP 客户端（含 HTTPS 候选和响应大小限制）；
+2. 明文 HTTP 的受控 TCP 兜底；
+3. ArkWeb 下载回调；
+4. HarmonyOS 系统下载服务。
+
+每一层都会先校验响应确实是 JSON 对象或数组，错误信息会尽量保留 HTTP、网络或下载服务原因，而不是显示 `[object Object]`。导入对话框提交后会主动收起键盘。
+
+只有同时具有 `bookSourceUrl` 和 `bookSourceName` 的项目才会被写入数据库。`bookSourceUrl` 也是书源的唯一身份标识；修改它通常会被视为另一个书源。导入后会重新读取数据库并核对原始 JSON、脚本库、登录配置、各规则组和运行字段，避免“提示成功但复杂字段被截断或漏存”。
+
+应用同时保存导入对象的完整 `rawSourceJson`。已识别字段进入结构化数据库列；尚未映射的未来字段仍保留在原始对象中，导出时再与当前结构化值合并。因此“完整保存”不等于“所有未知字段都已具备执行语义”。
 
 规则组推荐使用 Android 阅读常见的导出键名：
 
@@ -148,17 +162,18 @@
 | --- | --- | --- | --- |
 | `bookSourceName` | 书源名称 | 字符串，必填 | UI 展示名称。 |
 | `bookSourceUrl` | 书源地址 | 字符串，必填 | 书源唯一键，也是相对请求地址的基础地址。建议写协议和主机，不带末尾业务路径。 |
-| `bookSourceType` | 书源类型 | 数字，默认 `0` | `2` 表示漫画源，阅读时优先进入连续全宽图片模式。 |
+| `bookSourceType` | 书源类型 | 数字，默认 `0` | `0` 普通书，`1` 有声书，`2` 漫画，`3` 文本/Web 文件；还会结合书籍 `type`、标签和编码协议推断。 |
 | `bookSourceGroup` | 书源分组 | 字符串 | 搜索筛选和管理分组。 |
 | `bookSourceComment` | 书源备注 | 字符串 | 管理页说明，也会注入规则上下文。 |
 | `loginUrl` | 登录地址 | 字符串 | 网页登录/验证入口。检测到登录或验证页时可打开该地址并同步 Cookie。 |
-| `loginUi` | 登录界面 | JSON 字符串 | 管理页可渲染按钮，并在受限脚本环境中执行接口切换、提示和打开登录页动作。 |
-| `loginCheckJs` | 登录检测JS | 字符串 | 导入、保存及登录能力识别支持；当前不是通用完整 JS 登录框架。 |
+| `loginUi` | 登录界面 | JSON 字符串或动态 JS | 管理页可渲染文本、密码、开关、选择项和按钮；控件值、开关状态与按钮状态可持久化。 |
+| `loginCheckJs` | 登录检测JS | 字符串 | 导入、保存及登录能力识别；登录检查和登录动作复用 ArkWeb JavaScript/受控主机桥。 |
 | `loginHeader` | 登录密钥 | 字符串 | 可用于特定登录源；通用请求头仍应写在 `header`。 |
+| `loginInfo` | 登录运行信息 | JSON 字符串 | 保存登录控件值及受控运行状态。导出公共书源时不应携带账号、Token 或 Cookie。 |
 | `bookUrlPattern` | URL正则 | 字符串 | 保存和导入支持，用于描述书籍 URL；当前主解析链不依赖它。 |
 | `searchUrl` | 搜索地址 | 字符串 | 搜索请求模板。 |
 | `exploreUrl` | 发现地址 | 字符串 | 发现分类及请求模板。 |
-| `jsLib` | JS库 | 字符串 | 搜索、发现和登录 URL 构建共用的受限脚本库；支持用户函数、数组、源变量和常用字符串操作，不提供任意系统访问。 |
+| `jsLib` | JS库 | 字符串 | 搜索、发现、详情、目录、正文和登录动作共用。简单代码走轻量引擎，复杂语义可按阶段路由到 ArkWeb，但只开放受控主机能力。 |
 | `header` | 请求头 | 字符串 | 书源全局 HTTP 请求头。支持 JSON/宽松对象或每行一个 `名称: 值`。 |
 | `variableComment` | 暂无编辑项 | 字符串 | 书源变量的说明文本。 |
 | `variable` | 书源变量 | 字符串 | 作为 `source.variable` 注入上下文并独立持久化，登录按钮可通过 `source.setVariable()` 修改。 |
@@ -166,11 +181,14 @@
 | `enabled` | 启用书源 | 布尔，默认 `true` | 是否参与搜索和书源选择。 |
 | `enabledExplore` | 启用发现 | 布尔，默认 `true` | 是否显示此源的发现入口。 |
 | `weight` | 权重 | 数字，默认 `0` | 搜索相关度相同时，权重较大者优先。 |
-| `customOrder` | 暂无编辑项 | 数字 | 模型和数据库可保存，并作为结果排序的次级依据；当前 JSON 导入器不映射该字段。 |
-| `lastUpdateTime` | 暂无编辑项 | 数字 | 导入时会重置为当前时间。 |
+| `customOrder` | 暂无编辑项 | 数字 | 可导入、保存和导出，并作为结果排序的次级依据。 |
+| `lastUpdateTime` | 暂无编辑项 | 数字 | 可导入、保存和导出；缺失时使用导入时间。 |
+| `respondTime` | 暂无编辑项 | 数字，默认 `180000` | 可导入、保存和导出，作为书源响应时间/超时相关运行字段。 |
 | `concurrentRate` | 暂无编辑项 | 字符串 | 导入并保存；`次数/毫秒窗口`，例如 `20/60000`。普通 HTTP 请求、重试和重定向都会按书源限流。 |
+| `isPinned` / `isLocked` | 置顶/锁定 | 布尔 | 可导入并持久化；锁定源不会被同地址导入直接覆盖。 |
+| `customButton` / `eventListener` | 扩展标记 | 布尔 | 可导入、保存和导出；目前主要用于保留 Android 阅读书源元数据。 |
 
-`respondTime` 等统计字段可以出现在 JSON 中，但不会映射到运行模型。
+原始 JSON 中的其他未知字段会被保留，但只有进入模型、规则组或专用兼容层的字段才会影响执行。
 
 ## 5. URL 与 HTTP 请求规则
 
@@ -486,7 +504,14 @@ $.status@js:result.replace(/1/g, "连载")
 js:表达式
 ```
 
-但这里不是浏览器、Node.js 或完整 JavaScript 引擎，而是面向常见书源表达式的兼容执行器。已覆盖的常用能力包括：
+当前不是“只有一个受限表达式解释器”，而是两层执行体系：
+
+1. **轻量规则引擎**：优先处理模板、简单表达式和常见 Android/Java 别名，启动成本低；
+2. **分阶段 ArkWeb 引擎**：能力路由器发现箭头函数、模板字符串、`try`、数组高阶函数、`Set/Map`、解构或较大脚本时，仅将相应阶段交给 ArkWeb 的真实 JavaScript 引擎。
+
+搜索、发现、详情、目录和正文分别路由，启用某一阶段的 ArkWeb 不会把所有书源或所有阶段一起改道。无副作用的失败可以回退轻量引擎；含网络、Cookie 或持久化写入的动作会避免双重执行。`jsLib` 中声明的顶层函数会暴露给当前阶段规则，并在下一书源执行前清理，防止跨源污染。
+
+轻量层和桥接层合计覆盖的常用能力包括：
 
 - 字符串拼接和简单变量赋值；
 - `result.replace(/正则/g, "文本")` 等常见替换链；
@@ -501,14 +526,35 @@ js:表达式
 - `java.timeFormat`；
 - `java.getCookie`、`cookie.getCookie/setCookie/removeCookie`；
 - `java.randomUUID()`、`java.androidId()`；
-- 部分 `java.put/get` 和 source 变量调用；
+- `java.put/get`、`source.get/put/getVariable/setVariable`、`book.getVariable/putVariable`；
+- `source.getLoginInfo/getLoginInfoMap/putLoginInfo`、`source.getLoginHeader` 和 `cache.get/put/delete`；
 - `android.util.Base64`、`java.util.Base64`、`URLEncoder/URLDecoder`、`System.currentTimeMillis` 等常见 Java/Android 别名；
 - `StringBuilder`、`HashMap`、`ArrayList` 及常用 Java 字符串/集合方法；
 - 使用 `MessageDigest` 或 `Cipher/SecretKeySpec/IvParameterSpec` 封装的常见摘要、AES、DES/3DES 函数。
 
-不要假定支持完整 Android、Rhino、浏览器或 Node.js 环境。同步脚本里的网络请求只覆盖已适配的
-`java.ajax/ajaxAll/connect` 形态；文件、进程、反射、系统组件、WebView 自动化、DOM、Promise、第三方库和复杂
-JavaScript 语义仍不开放。复杂源应先用一个最小表达式实机验证；若规则依赖站点私有流程，仍可能需要代码级适配。
+ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、Node.js 或无限制浏览器环境**。阶段脚本的网络必须经过 `java.ajax` 等受控桥接；`fetch`、`XMLHttpRequest`、`WebSocket` 会被判定为未托管网络。任意 Java 导入、文件、进程、反射、系统组件和第三方原生库不会自动可用。DOM 主要用于登录面板生成的页面；普通搜索/目录/正文规则不应假定目标网页已在可操作 DOM 中。
+
+能力路由会分析 `java`、`source`、`cache` 和 `cookie` 方法，并在登录动作失败时提示缺少的桥接方法。复杂源仍应逐阶段实机验证；某条聚合源能运行不代表其私有主机类已经成为通用 API。
+
+### 6.9 编码 `data:` 地址与统一交互后处理
+
+除普通内联文本外，应用识别 `data:;base64,...,{...}` 一类“正文之外携带请求元数据”的地址。当前通用能力包括：
+
+- 解码书籍/章节 ID、平台、线路、主机、标签和请求选项；
+- 根据元数据构造搜索、详情、目录和正文请求；
+- 在受控候选主机间切换，并按请求主机附加 Cookie；
+- 从聚合响应中提取文本、漫画图片、视频信息或远程音频地址；
+- 对已适配的 DES/AES/自定义编码正文执行原生解密；
+- 将书籍类型标记为普通书、漫画或有声书，并把音色等选项写入书籍变量。
+
+快捷通道只负责“请求、解密、取得原始正文/媒体”。取得正文后仍进入 `BookSourceInteractionPostProcessor`。该层会根据书源变量和章节元数据恢复：
+
+- `<comment ident="..." count="..." />` 段评；
+- `<img ident="..." ... />` 神评论；
+- 本章说/本章讨论入口；
+- 图片、视频或其他媒体动作。
+
+目前可从编码元数据识别番茄、七猫、塔读、QQ/企鹅阅读、晋江/半夏等评论计划；是否实际显示仍取决于书源开关、账号/Cookie、后端返回和章节 ID。后处理失败必须回退可读正文，不应让段评或媒体接口故障导致整章不可读。
 
 ## 7. 各阶段规则字段
 
@@ -528,7 +574,9 @@ JavaScript 语义仍不开放。复杂源应先用一个最小表达式实机验
 | `bookUrl` | 是 | 单个书籍元素 | 详情页；空地址的结果会被丢弃。 |
 | `wordCount` | 否 | 单个书籍元素 | 字段可导入，但当前常规搜索链没有赋值；可在详情规则补全。 |
 
-每个源常规搜索最多保留 100 条有效结果，并按 URL 去重。搜索会清理超长或异常字段；书名约 120 字符、作者约 120、简介约 1200、URL 约 2048 字符。
+每个源常规搜索最多保留 50 条有效结果，总搜索最多保留 1000 条，并按“来源 + URL”去重。搜索并发数最大为 12；后台结果每约 500 ms 合并一次，避免每条回调都打断列表手势，因此搜索未结束时仍可滑动已出现的结果。搜索会清理超长或异常字段；书名约 120 字符、作者约 120、简介约 1200、URL 约 2048 字符。
+
+主页面中的搜索组件在书架、发现、搜索和“我的”之间切换时不会主动清空结果；发起下一次搜索或清除单书源模式时才重置。本行为是页面会话缓存，不是长期数据库搜索快照，应用进程结束后不保证恢复。
 
 ### 7.2 发现规则 `ruleExplore`
 
@@ -564,8 +612,8 @@ JavaScript 语义仍不开放。复杂源应先用一个最小表达式实机验
 | `chapterUrl` | 是 | 正文请求地址；空地址的章节会被丢弃。 |
 | `nextTocUrl` | 否 | 当前目录页的下一页地址；逐页请求、按章节 URL 去重，遇到空地址、重复页或 100 页上限时停止。 |
 | `isVip` | 否 | 只有解析结果严格等于字符串 `true` 时标记 VIP。 |
-| `isPay` | 否 | 可导入和编辑，当前通用目录链未消费。 |
-| `updateTime` | 否 | 可导入和编辑，当前通用目录链未消费。 |
+| `isPay` | 否 | 可导入和编辑；普通目录链目前不写入 `BookChapter.isPay`，专用/编码协议可直接返回付费状态。 |
+| `updateTime` | 否 | 通用目录和 ArkWeb 目录结果会解析，并保存到章节变量 `updateTime`。 |
 | `chapterListAddition` | 否 | 模型字段；当前导入映射和通用目录链未使用。 |
 
 目录规则产生的顺序就是阅读目录顺序。负索引、切片或 CSS 位置规则可用于排除卷名、广告项。章节标题会清理多余空白。
@@ -590,7 +638,16 @@ JavaScript 语义仍不开放。复杂源应先用一个最小表达式实机验
 广告正则##替换文本
 ```
 
-之后应用还会执行基本 HTML 清理：`<br>` 转换为换行、`</p>` 转换为双换行、移除其他标签、解码部分实体、压缩连续空行。正文中的 `img`/SVG `image`、Markdown 图片和独立图片地址会保留为阅读器图片页；配置 `images` 时优先按该规则返回的图片顺序分页。其他复杂 HTML 布局不会保留。
+之后应用还会执行基本 HTML 清理：`<br>` 转换为换行、`</p>` 转换为双换行、移除其他标签、解码部分实体、压缩连续空行。正文中的 `img`/SVG `image`、Markdown 图片和独立图片地址会保留为阅读器图片页；配置 `images` 时优先按该规则返回的图片顺序分页。其他复杂 HTML 布局通常不会原样保留。
+
+在 HTML 清理前，以下交互标记会转换为阅读器内部动作，而不是作为代码显示：
+
+```html
+<p>一段正文<comment ident="https://example.com/comments" count="12" /></p>
+<p><img ident="https://example.com/god-comment" src="data:image/svg+xml;base64,..." /></p>
+```
+
+阅读页会把动作显示为跟随段落的可点击气泡/入口；分页器会保证标记不被切断，TTS 和快速朗读面板会剥离内部动作编码。点击动作会打开内置动作页面或媒体播放器。普通 HTML `onclick`、任意 DOM 事件和任意 JavaScript URL 不会直接执行。
 
 漫画图片支持阅读书源常见的请求参数写法：
 
@@ -684,7 +741,50 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 5. Cookie 同步到书源请求；
 6. 返回后重试原操作。
 
-请求规则中的 `<js>startBrowserAwait(...)`、`getVerificationCode(...)` 等提示可触发兼容验证逻辑，但不是完整 Android WebView JS API。需要账号口令签名、动态参数或复杂验证码的网站，必须实机确认；部分已知站点在项目代码中有专用适配，不能据此推断所有同类源都通用支持。
+### 10.1 `loginUi` 控件
+
+静态 `loginUi` 通常是控件数组，当前识别：
+
+| `type` | 显示/行为 |
+| --- | --- |
+| `text`、`input`、`email`、`number` | 普通输入框。 |
+| `password` | 密码输入框。 |
+| `toggle` | 开关，使用 `chars` 的第 1/2 项作为关闭/开启值。 |
+| `select` | 选择框，候选值来自 `chars`。 |
+| `button` 或其他带 `action` 的项 | 执行登录/接口动作。 |
+
+控件可使用 `name`、`viewName`、`placeholder`、`value`、`default`/`defaultValue`、`chars`、`action` 和 `style`。输入、开关与选择值写入 `source.loginInfo`；重新打开面板会恢复。对于原书源把开关伪装成按钮的情况，应用还会根据名称、动作及脚本持久化状态推断“已开启/已关闭”，但新书源应优先使用明确的 `toggle`/`select`。
+
+`loginUi` 也可以是动态 `@js:`/`<js>` 脚本，返回控件数组 JSON。动态控件生成和按钮动作均有超时、输出大小和网络响应限制。
+
+### 10.2 登录动作 ArkWeb 桥
+
+登录动作使用独立 ArkWeb 运行环境，不会让搜索或正文自动改走登录页面。当前桥接包括：
+
+- `java.ajax` 的受控 HTTP 请求与逐步响应回填；
+- `source.variable`、`loginHeader`、`loginInfo`、`source.get/put` 和 `cache` 状态；
+- Cookie 获取、设置、替换、按名称删除及网页 Cookie 回写；
+- Base64/Base64URL、Hex、URL/HTML 编解码、字节数组和 UUID；
+- `createSymmetricCrypto` 的 AES/DES/3DES 常见变换；
+- `startBrowser`、`startBrowserAwait`、`showBrowser`、`openUrl`；
+- 登录动作中的 `java.webView`（加载指定 URL 并执行脚本后回传结果）；
+- `searchBook`、`refreshExplore`、`reLoginView` 等 UI 动作。
+
+`startBrowserAwait` 会暂停当前脚本，打开网页，用户点击完成后将页面返回值交回同一动作继续执行。浏览器关闭、取消、网络失败或脚本超时会结束执行并恢复按钮状态，不应永久停在“执行中”。用于“书源更新”的按钮可以打开源提供的更新页面；页面是否真正更新配置取决于该脚本是否返回并保存了新数据，不能仅凭打开网页判定更新成功。
+
+请求规则中的 `<js>startBrowserAwait(...)`、`getVerificationCode(...)` 等提示也可触发验证逻辑，但不是完整 Android WebView/Activity API。需要账号口令签名、动态参数或复杂验证码的网站，必须实机确认；部分已知站点在项目代码中有专用适配，不能据此推断所有同类源都通用支持。
+
+### 10.3 有声书登录与音色
+
+有声书源可通过 `bookSourceType: 1`、书籍 `type` 的音频位或编码协议元数据标记。正文规则应最终返回一个可播放的 HTTP/HTTPS 音频地址，或由已适配协议返回包含音频地址的 JSON。播放页支持：
+
+- 播放/暂停、进度、倍速、上一章/下一章和目录跳转；
+- 定时停止；
+- 音色代码输入，留空表示书源默认值；
+- 将音色写入 `book.getVariable('custom')`，刷新当前音频地址；
+- 返回书架或进入后台继续播放，并通过全局胶囊/系统 AVSession 控制。
+
+音色代码只有在书源规则实际读取 `book.getVariable('custom')` 或编码协议把该值带入音频请求时才会生效。若音频接口要求账号、Token、设备 ID 或购买权限，空音色或更换音色不能替代登录；应先确认接口返回的是真实音频而不是 401/JSON 错误页。
 
 不要把账号、密码、长期 Token 直接提交到公共书源 JSON。优先通过登录页获取短期 Cookie，或仅在本机编辑 `loginHeader`。
 
@@ -718,7 +818,9 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 书源可从文件或 URL 导入，也可在“我的 → 书源管理 → 新建书源”逐字段填写。完整验收清单：
 
 - [ ] JSON 可导入，书源名称和地址正确；
+- [ ] 导出后 `jsLib`、`loginUrl`、`loginUi`、五组规则和原始扩展字段没有丢失；
 - [ ] 启用书源后能搜索到结果；
+- [ ] 搜索未结束时可以滑动结果，停止搜索后不会继续追加旧会话结果；
 - [ ] 搜索中文、空格、特殊字符时编码正确；
 - [ ] 书名和详情 URL 不为空；
 - [ ] 相对详情 URL 和封面 URL 能正确补全；
@@ -726,8 +828,14 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 - [ ] 目录 URL 正确，章节数和顺序合理；
 - [ ] 第一章、中间章、最后一章都能加载；
 - [ ] 正文没有导航、广告、脚本或整页错误信息；
+- [ ] 开启段评后气泡跟随正确段落、可点击，翻页没有异常大空行；关闭段评后正文排版恢复；
+- [ ] 朗读文本不包含 `LEGADO_READER_ACTION`、`<comment>` 或其他内部代码；
+- [ ] 漫画源图片顺序、请求头、长图宽度和上一/下一章行为正确；
+- [ ] 有声书源能播放、暂停、切章、目录跳转、切换音色，并在后台/书架胶囊中继续控制；
 - [ ] 发现分类可打开，翻页后内容变化；
 - [ ] 登录/验证后 Cookie 能继续用于后续请求；
+- [ ] 登录面板中的输入、开关、选择项和按钮状态关闭后重开仍保持；
+- [ ] `startBrowserAwait` 完成或取消后按钮不会一直显示“执行中”；
 - [ ] 站点 301/302、HTTP/HTTPS 或镜像变化时行为可接受。
 
 运行应用时，搜索、发现和 WebBook 服务会输出包含 `[SC]`、`[ExploreCoordinator]`、`[WS]` 的日志，可重点查看：最终 URL、状态码、响应长度、列表命中数量和第一条结果。
@@ -737,6 +845,8 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 | 现象 | 优先检查 |
 | --- | --- |
 | 书源完全不参与搜索 | `enabled`，以及 `searchUrl`、`bookList`、`name`、`bookUrl` 是否都非空。 |
+| 浏览器能下载 JSON，但 URL 导入失败 | 确认返回体不是 HTML 跳转页；查看错误来自应用 HTTP、TCP、ArkWeb 下载还是系统下载；必要时改用本地文件导入。 |
+| 导入提示 `[object Object]` | 当前版本会展开 `message/msg/reason/code`；若仍出现，保留完整错误和 URL，检查服务是否返回了非标准对象或空下载错误。 |
 | HTTP 成功但列表为 0 | 响应实际是 JSON 还是 HTML；列表规则是否在完整响应运行；字符集和登录页。 |
 | 列表命中但无结果 | 子规则上下文是否错误；最常见是 `name` 或 `bookUrl` 为空。 |
 | 中文搜索乱码 | 使用 `{{searchKeyRaw}}` 并在 URL 选项中指定 `gb2312`/`gbk`。 |
@@ -745,8 +855,28 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 | 目录有标题但章节被丢弃 | `chapterUrl` 为空或仍含未解析的模板/JSONPath。 |
 | 正文返回整页文字 | `content` 选择器太宽；先缩到正文容器，再用 `replaceRegex`。 |
 | 正文是空字符串 | 请求失败、被验证拦截、提取规则为空，或提取结果被净化正则全部删除。 |
+| 正文显示 `JSON.parse(undefined)` | 检查脚本变量是否由 `data:` 负载、`java.ajax` 或上一条规则提供；不要假定不存在的字段会自动变成 `{}`。 |
+| 开启段评后正文显示内部代码 | 确认返回的是 `<comment ident count>` 或 `<img ident>` 支持格式，并在正文清理前进入统一交互后处理；TTS 必须使用剥离动作标记后的文本。 |
+| 段评气泡存在但无法点击 | `ident` 必须是完整或可补全 URL，并包含正确书籍/章节 ID；同时检查段评开关、登录 Cookie 和后端返回。 |
+| 登录按钮脚本超时 | 检查动作是否等待未完成的网页、反复请求同一 URL、调用未映射的主机方法，或超过网络/脚本限制；错误提示中的“缺少兼容能力”优先处理。 |
+| 登录面板开关没有状态 | 新源使用 `type: "toggle"`/`"select"`、`chars` 和默认值；旧按钮式开关需确保动作把状态写入 `source`、`java` 或 `loginInfo`。 |
+| 有声书有目录但不能播放 | 正文规则必须返回最终音频 URL；检查登录、Token、音色代码是否真的进入请求，以及响应是否为 401/JSON 错误。 |
 | CSS 在小页面可用、大页面失效 | HTML 超过 4 MiB 保护阈值；寻找 JSON API 或减少响应。 |
-| Android 阅读中可用、此处不可用 | 检查是否依赖完整 JS、WebView、复杂 XPath/CSS、未消费字段或 Android 专用 `java.*` API。 |
+| Android 阅读中可用、此处不可用 | 查看该阶段是否路由 ArkWeb、是否调用未映射 `java/source/cache/cookie` 方法、浏览器直连网络、复杂 XPath/CSS 或未消费字段。 |
+
+### 11.5 批量书源校验状态
+
+书源管理中的校验不是简单的“成功/失败”二值：
+
+| 状态 | 含义 |
+| --- | --- |
+| 通过 | 搜索请求成功并解析出至少一条有效书籍。 |
+| 失败 | 缺少必要规则、明确的 4xx 请求错误、规则/选择器语法错误或预检判定不安全。 |
+| 无结果 | 请求和规则执行完成，但测试关键字没有有效书籍。 |
+| 需要验证 | HTTP 401/403，或响应被识别为登录/验证码页面。 |
+| 暂时异常 | 超时、取消、429、5xx、空响应、响应过大或其他暂时网络问题。 |
+
+校验模式使用更保守的限制：并发 1、单响应 512 KiB、单条可执行规则 32 KiB、书源脚本配置 512 KiB，并拒绝高风险嵌套正则。日常搜索允许更大的响应和聚合脚本，因此“校验失败：配置过大”不必然等于日常链路完全不能运行，但仍应缩小测试脚本或按阶段验证。401/403 应归类为“需要验证”，不应批量禁用或删除。
 
 ## 12. 编写质量建议
 
@@ -767,14 +897,15 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 | 状态 | 字段/能力 |
 | --- | --- |
-| 通用链已实际使用 | 搜索/发现的列表、书名、作者、封面、简介、分类、最新章节、详情 URL；`jsLib` URL 构建和持久化源变量；动态登录按钮和镜像切换；详情 `init`、书籍字段、目录 URL；目录列表、章节名、章节 URL、下一页、VIP；正文内容、图片、图片请求头、AES 图片解密、漫画模式、下一页、净化正则和 JS 后处理；书源请求限流。 |
-| 可导入/编辑，但通用链目前未消费 | 详情 `updateTime`；目录 `isPay`、`updateTime`；正文 `title`；`webView`、`webJs` URL 选项。 |
+| 通用链已实际使用 | 搜索/发现的列表、书名、作者、封面、简介、分类、最新章节、详情 URL；`jsLib` URL 构建和持久化源变量；分阶段 ArkWeb；动态登录输入/开关/选择/按钮、Cookie、加密、浏览器等待和镜像切换；详情 `init`、书籍字段、目录 URL；目录列表、章节名、章节 URL、下一页、VIP、更新时间；正文内容、图片、图片请求头、AES 图片解密、漫画模式、下一页、净化正则、JS 和统一交互后处理；普通书/漫画/有声书类型；书源请求限流。 |
+| 专用协议已实际使用 | Base64 `data:` 搜索/详情/目录/正文元数据；聚合后端候选主机；正文解密；番茄/七猫/塔读/QQ 等段评元数据；视频/媒体动作；远程音频、音色和后台播放。专用协议属于兼容实现，不是新书源应依赖的稳定公共格式。 |
+| 可导入/编辑，但通用链目前未消费 | 详情 `updateTime`；目录 `isPay`；正文 `title`；非登录请求的 `webView`、`webJs` URL 选项。 |
 | 模型或紧凑格式存在，但通用导入/UI/执行不完整 | `chapterListAddition`、`payAction`、`bookListRule` 等。 |
-| 不应假定与 Android 版等价 | 任意 JavaScript、完整 XPath/CSS、WebView JS、全部 `java.*` API、付费购买动作及非白名单二进制解码流程。 |
+| 不应假定与 Android 版等价 | 任意 Java/Android 类导入、全部 `java.*` API、浏览器直连网络、任意 WebView DOM 抓取、完整 XPath/CSS、付费购买动作及非白名单二进制解码流程。 |
 
 ### 13.2 实现中的自动兜底
 
-当前项目对部分站点、URL 模式和异常规则具有自动修复或专用兼容，例如从常见字段回退详情 URL、修复个别目录 URL、识别特殊数据 URL、提取可读 HTML 等。这些逻辑可能让某条旧源“碰巧可用”，但新书源不应依赖它们。文档中的推荐写法以通用解析路径为准。
+当前项目对部分 URL 模式和异常规则具有自动修复或专用兼容，例如从常见字段回退详情 URL、修复个别目录 URL、识别特殊数据 URL、聚合后端、封面候选和可读 HTML 等。专用正文快捷通道完成请求后仍回到统一交互后处理，从而减少平台分支对普通书源的影响。这些逻辑可能让某条旧源“碰巧可用”，但新书源不应依赖站点名称或私有后端；文档中的推荐写法以通用解析路径和明确元数据为准。
 
 ### 13.3 与 Android 阅读书源互导
 
@@ -783,10 +914,11 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 1. 保留标准对象形式的 `ruleSearch` 等规则组；
 2. 删除当前不需要的字段，先验证最小链路；
 3. 将复杂 XPath 改为 JSONPath/CSS；
-4. 将任意 JS 改为模板、`##` 或已支持的简单 `@js:`；
-5. 将 WebView 请求改成普通 HTTP 接口，若无法改写则判定为当前不兼容；
+4. 简单 JS 优先改为模板或 `##`；确需完整语义时确认该阶段已路由 ArkWeb，且只调用已桥接主机方法；
+5. 普通搜索/目录/正文的 WebView 抓取仍优先改成 HTTP 接口；登录动作可使用已支持的 `startBrowserAwait`/`java.webView`；
 6. 对登录、Cookie、加密源逐项实机验证；
-7. 不以“导入成功”作为“规则兼容”的证明。
+7. 对普通书、漫画、有声书和段评分别验证正文后处理与播放器；
+8. 不以“导入成功”或“校验通过”作为全链路兼容的证明。
 
 ## 14. 完整模板
 
@@ -797,6 +929,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
   {
     "bookSourceName": "",
     "bookSourceUrl": "https://example.com",
+    "bookSourceType": 0,
     "bookSourceGroup": "",
     "bookSourceComment": "",
     "loginUrl": "",
@@ -811,7 +944,15 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
     "variableComment": "",
     "enabled": true,
     "enabledExplore": true,
+    "enabledCookieJar": true,
+    "isPinned": false,
+    "isLocked": false,
     "weight": 0,
+    "customOrder": 0,
+    "respondTime": 180000,
+    "concurrentRate": "",
+    "customButton": false,
+    "eventListener": false,
     "ruleSearch": {
       "bookList": "",
       "name": "",
@@ -850,16 +991,21 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
       "chapterList": "",
       "chapterName": "",
       "chapterUrl": "",
+      "nextTocUrl": "",
       "isVip": "",
       "isPay": "",
-      "updateTime": ""
+      "updateTime": "",
+      "chapterListAddition": ""
     },
     "ruleContent": {
       "content": "",
       "title": "",
       "images": "",
+      "nextContentUrl": "",
       "replaceRegex": "",
-      "imageStyle": ""
+      "imageDecode": "",
+      "imageStyle": "",
+      "payAction": ""
     }
   }
 ]
@@ -876,6 +1022,15 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 - 通用规则解析：`entry/src/main/ets/core/rule/AnalyzeRule.ts`
 - JSONPath：`entry/src/main/ets/core/rule/JsonPathEvaluator.ts`
 - JS 兼容层：`entry/src/main/ets/core/rule/JsRuntime.ts`
+- 分阶段运行路由：`entry/src/main/ets/core/book/BookSourceRuntimeRouter.ts`
+- 搜索/发现/详情/目录/正文 ArkWeb：`entry/src/main/ets/core/book/BookSourceStageWebRuntime.ts`
+- 阶段规则识别：`entry/src/main/ets/core/book/BookSourceStageRuleSupport.ts`
+- 登录面板 ArkWeb：`entry/src/main/ets/core/book/BookSourceLoginWebRuntime.ts`
 - 搜索流程：`entry/src/main/ets/core/book/SearchCoordinator.ts`
 - 发现流程：`entry/src/main/ets/core/book/ExploreCoordinator.ts`
 - 详情、目录、正文：`entry/src/main/ets/core/book/WebBookService.ts`
+- 编码地址与快捷协议：`entry/src/main/ets/core/book/BookSourceDataUrlSupport.ts`、`entry/src/main/ets/core/book/EncodedSourceUrl.ts`
+- 正文交互后处理：`entry/src/main/ets/core/book/BookSourceInteractionPostProcessor.ts`、`entry/src/main/ets/core/book/ReaderActionMarker.ts`
+- 书籍类型识别：`entry/src/main/ets/core/book/BookTypeSupport.ts`
+- 有声书页面与后台播放：`entry/src/main/ets/pages/AudioBook.ets`、`entry/src/main/ets/utils/RemoteAudioPlayback.ets`、`entry/src/main/ets/utils/ReaderTtsFloatingSession.ets`
+- 数据库存储：`entry/src/main/ets/model/data/AppDatabase.ts`

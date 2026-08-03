@@ -255,6 +255,7 @@ struct ReaderReplaceRulesPage {
             Column().height(84)
           }
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .layoutWeight(1)
         .width('100%')
         .padding({ left: 16, right: 16 })
@@ -588,6 +589,7 @@ struct ReaderReplaceRulesPage {
       .width('100%')
       .padding({ left: 16, right: 16, top: 14 })
     }
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .layoutWeight(1)
     .width('100%')
   }

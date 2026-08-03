@@ -122,7 +122,10 @@ export class SystemTtsReader {
   private currentFocusAudioWritten: boolean = false;
   private currentAudioWritePromise: Promise<void> = Promise.resolve();
   private currentFocusRetryCount: number = 0;
-  private ttsPcmPlayType: number = 1;
+  // Keep playback in this application's AUDIOBOOK AudioRenderer. Letting the
+  // system TTS service play directly moves the audible stream to its process,
+  // so HarmonyOS sees this app's audioPlayback task as idle and freezes it.
+  private ttsPcmPlayType: number = 0;
   private speakWatchdogId: number = -1;
   private suppressEngineStopEvent: boolean = false;
   private enginePerson: number = -1;
@@ -385,7 +388,7 @@ export class SystemTtsReader {
     this.onChunkStart = options?.onChunkStart;
     this.onAudioStart = options?.onAudioStart;
     this.audioStarted = false;
-    this.ttsPcmPlayType = 1;
+    this.ttsPcmPlayType = 0;
     this.chunkFocusChain = Promise.resolve();
     this.optionPerson = options?.person ?? null;
     this.optionOnline = options?.online ?? null;
@@ -479,6 +482,13 @@ export class SystemTtsReader {
           return;
         }
         console.info(`[TTS] speak complete: type=${response ? response.type : -1},request=${utteranceId}`);
+        if (this.ttsPcmPlayType === 1 && (!response || response.type !== 1)) {
+          // HarmonyOS sends type=0 when synthesis is complete and type=1 only
+          // after direct speech playback has actually completed. Advancing on
+          // type=0 truncates the audible chunk and can consume a whole chapter
+          // in seconds.
+          return;
+        }
         if (!this.currentFocusAudioReceived) {
           console.info(`[TTS] speak complete without pcm data: ${this.pcmPlayer.debugState()}`);
           if (this.retryWithoutPcmData(generation)) {
@@ -614,7 +624,7 @@ export class SystemTtsReader {
     this.currentFocusAudioWritten = false;
     this.currentAudioWritePromise = Promise.resolve();
     this.currentFocusRetryCount = 0;
-    this.ttsPcmPlayType = 1;
+    this.ttsPcmPlayType = 0;
     this.resetSystemPcmPipeline();
     this.clearSpeakWatchdog();
     this.chunkFocusChain = Promise.resolve();
@@ -1491,7 +1501,17 @@ export class SystemTtsReader {
     this.clearSpeakWatchdog();
     this.speakWatchdogId = setTimeout(() => {
       this.recoverStalledSpeak(generation, chunkIndex);
-    }, 12000);
+    }, this.speakWatchdogTimeoutMs());
+  }
+
+  private speakWatchdogTimeoutMs(): number {
+    if (this.ttsPcmPlayType === 1 && this.currentSpeakMinDuration > 0) {
+      // Direct playback may legitimately spend more than 12 seconds on a long
+      // chunk. Firing the old fixed watchdog interrupted that audible chunk and
+      // replayed/reordered it.
+      return Math.max(12000, Math.round(this.currentSpeakMinDuration + 3000));
+    }
+    return 12000;
   }
 
   private clearSpeakWatchdog(): void {
@@ -1505,6 +1525,16 @@ export class SystemTtsReader {
   private async recoverStalledSpeak(generation: number, chunkIndex: number): Promise<void> {
     if (this.readGeneration !== generation || !this.active || this.currentFocusAudioWritten ||
       this.completionPending || this.currentFocusChunkIndex !== chunkIndex) {
+      return;
+    }
+    if (this.ttsPcmPlayType === 1 && this.currentFocusQueued && this.currentRequestId) {
+      // onStart proved that direct playback began. If only onComplete is lost,
+      // completing after the estimated duration is safer than stopping the
+      // engine and replaying the same chunk.
+      const requestId = this.currentRequestId;
+      console.warn(`[TTS] direct-play completion recovered after timeout: request=${requestId},` +
+        `chunk=${chunkIndex}`);
+      this.completeCurrentChunk(generation, requestId);
       return;
     }
     if (this.retryWithoutPcmData(generation)) {

@@ -101,6 +101,7 @@ struct AccountCenterPage {
           bottom: 32 + this.navBarHeight
         })
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .height('100%')
       .align(Alignment.TopStart)
@@ -921,6 +922,7 @@ struct AccountCenterPage {
           }
         }, (product: RechargeProduct) => product.productId)
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .columnsTemplate('1fr 1fr')
       .columnsGap(10)
       .rowsGap(10)

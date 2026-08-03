@@ -162,6 +162,7 @@ struct BookSourcePage {
   @State webImportActive: boolean = false;
   private sourceListScroller: Scroller = new Scroller();
   private hasShownOnce: boolean = false;
+  private sourceOrderSaving: boolean = false;
   private checkCoordinator: SearchCoordinator | null = null;
   private checkTaskSerial: number = 0;
   private checkNotificationLastAt: number = 0;
@@ -559,6 +560,7 @@ struct BookSourcePage {
                 .height(Math.max(20, this.navBarHeight + 12))
             }
             }
+            .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
             .width('100%')
             .height('100%')
             .padding({ left: 16, right: 16 })
@@ -834,6 +836,7 @@ struct BookSourcePage {
                 }
                 .width('100%')
               }
+              .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
               .width('100%')
               .constraintSize({ maxHeight: 240 })
               .scrollBar(BarState.Auto)
@@ -1022,6 +1025,7 @@ struct BookSourcePage {
                   .width('100%')
                   .alignItems(HorizontalAlign.Start)
                 }
+                .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
                 .width('100%')
                 .height(Math.min(this.checkResultDetails.length * 40 + 20, 160))
                 .padding(10)
@@ -1865,10 +1869,11 @@ struct BookSourcePage {
                     this.executeSourceLoginAction(item);
                   })
               }
-            }, (item: BookSourceLoginItem, index: number) => `${index}_${item.name}_${item.action}`)
+            }, (item: BookSourceLoginItem, index: number) => this.sourceLoginItemRenderKey(item, index))
           }
           .width('100%')
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .constraintSize({ maxHeight: 430 })
         .scrollBar(BarState.Auto)
@@ -2211,6 +2216,7 @@ struct BookSourcePage {
       .constraintSize({ minWidth: '100%' })
       .justifyContent(FlexAlign.Start)
     }
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
     .scrollable(ScrollDirection.Horizontal)
     .scrollBar(BarState.Off)
@@ -2354,6 +2360,7 @@ struct BookSourcePage {
             }
             .width('100%')
           }
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .width('100%')
           .constraintSize({ maxHeight: 360 })
           .scrollBar(BarState.Auto)
@@ -3097,7 +3104,8 @@ struct BookSourcePage {
   }
 
   async moveVisibleSourceTo(from: number, to: number): Promise<void> {
-    if (this.isBatchOperating || from < 0 || from >= this.visibleSources.length || this.sources.length < 2) {
+    if (this.isBatchOperating || this.sourceOrderSaving || from < 0 ||
+      from >= this.visibleSources.length || this.sources.length < 2) {
       return;
     }
     const draggedUrl = this.draggingSourceUrl || this.visibleSources[from].bookSourceUrl;
@@ -3122,31 +3130,38 @@ struct BookSourcePage {
   }
 
   async applyAndPersistSourceOrder(nextSources: BookSource[], successMessage: string = ''): Promise<void> {
-    if (this.isBatchOperating || nextSources.length === 0) return;
+    if (this.isBatchOperating || this.sourceOrderSaving || nextSources.length === 0) return;
     const orderedSources = nextSources.filter((source: BookSource) => source.isPinned)
       .concat(nextSources.filter((source: BookSource) => !source.isPinned));
+    const previousSources = this.allSources.slice();
     const restoreFirstIndex = this.sourceFirstVisibleIndex;
     const restoreVisibleCount = this.sourceVisibleItemCount;
-    this.isBatchOperating = true;
-    this.batchOperationText = '正在保存书源排序...';
+    for (let index = 0; index < orderedSources.length; index++) {
+      orderedSources[index].customOrder = index;
+    }
+    // Publish the drop result before touching the database. Waiting for the write first leaves LazyForEach on
+    // its old order and makes a successful drag look as if it was ignored.
+    this.allSources = [...orderedSources];
+    this.applySourceFilters();
+    this.restoreSourceListViewport(restoreFirstIndex, restoreVisibleCount);
+    this.sourceOrderSaving = true;
     try {
-      for (let index = 0; index < orderedSources.length; index++) {
-        orderedSources[index].customOrder = index;
-      }
       await AppDatabase.getInstance().updateBookSourceOrders(
         orderedSources.map((source: BookSource) => source.bookSourceUrl));
-      this.allSources = orderedSources;
-      this.applySourceFilters();
-      this.restoreSourceListViewport(restoreFirstIndex, restoreVisibleCount);
       const revision = AppStorage.get<number>('bookSourceOrderRevision') || 0;
       AppStorage.setOrCreate('bookSourceOrderRevision', revision + 1);
       if (successMessage) promptAction.showToast({ message: successMessage });
     } catch (e) {
       console.error('保存书源排序失败:', e);
       promptAction.showToast({ message: '保存排序失败' });
-      await this.loadSources();
+      for (let index = 0; index < previousSources.length; index++) {
+        previousSources[index].customOrder = index;
+      }
+      this.allSources = [...previousSources];
+      this.applySourceFilters();
+      this.restoreSourceListViewport(restoreFirstIndex, restoreVisibleCount);
     } finally {
-      this.isBatchOperating = false;
+      this.sourceOrderSaving = false;
     }
   }
 
@@ -3270,6 +3285,7 @@ struct BookSourcePage {
     }
     this.sources = this.sortFilteredSources(filtered);
     this.visibleSources = this.sources;
+    this.sourceListDataSource.replace(this.visibleSources, true);
     this.sourceFirstVisibleIndex = 0;
     this.sourceVisibleItemCount = 1;
     this.pruneSelectedSources();
@@ -3302,7 +3318,6 @@ struct BookSourcePage {
   }
 
   currentSourceListDataSource(): BookSourceListDataSource {
-    this.sourceListDataSource.replace(this.visibleSources);
     return this.sourceListDataSource;
   }
 
@@ -3735,6 +3750,16 @@ struct BookSourcePage {
 
   sourceLoginButtonLabel(item: BookSourceLoginItem): string {
     return item.status ? `${item.name} · ${item.status}` : item.name;
+  }
+
+  sourceLoginItemRenderKey(item: BookSourceLoginItem, index: number): string {
+    let renderState = '';
+    if (this.isSourceLoginChoice(item)) {
+      renderState = this.sourceLoginChoiceValue(item);
+    } else if (!this.isSourceLoginInput(item)) {
+      renderState = item.status || '';
+    }
+    return `${index}_${item.name}_${item.type}_${item.action}_${renderState}`;
   }
 
   updateSourceLoginToggle(index: number, isOn: boolean): void {

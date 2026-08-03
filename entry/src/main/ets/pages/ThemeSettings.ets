@@ -155,6 +155,7 @@ struct ThemeSettingsPage {
             .height(Math.max(20, this.navBarHeight + 8))
         }
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .height('100%')
       // The list itself must own the system-safe-area expansion. Expanding

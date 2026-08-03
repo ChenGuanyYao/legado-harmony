@@ -227,6 +227,7 @@ struct SettingsPage {
         .width('100%')
         .padding({ top: 56 + this.statusBarHeight, bottom: this.navBarHeight })
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .height('100%')
       .align(Alignment.TopStart)

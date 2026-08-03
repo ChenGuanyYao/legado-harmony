@@ -77,6 +77,7 @@ struct FontSettingsPage {
         .width('100%')
         .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .height('100%')
       .align(Alignment.TopStart)
@@ -578,6 +579,7 @@ struct FontSettingsPage {
       .width('100%')
       .padding(6)
     }
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
     .constraintSize({ maxHeight: 320 })
     .scrollBar(BarState.Auto)

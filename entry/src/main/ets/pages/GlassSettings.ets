@@ -66,6 +66,7 @@ struct GlassSettingsPage {
         .width('100%')
         .padding({ left: 14, right: 14, top: 6, bottom: 32 + this.navBarHeight })
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .layoutWeight(1)
       .align(Alignment.TopStart)
     }
@@ -255,6 +256,7 @@ struct GlassSettingsPage {
         this.overlayPreview()
         this.menuPreview()
       }
+      .effectMode(EdgeEffect.Spring)
       .width('100%')
       .height('100%')
       .index(this.previewIndex)

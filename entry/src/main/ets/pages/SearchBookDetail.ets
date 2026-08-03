@@ -192,6 +192,7 @@ struct SearchBookDetailPage {
           .width('100%')
           .padding({ left: 16, right: 16, top: 72 + this.statusBarHeight, bottom: 96 })
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .layoutWeight(1)
         .backgroundColor(this.pageColor())

@@ -80,6 +80,7 @@ struct AboutPage {
         .padding({ top: 56 + this.statusBarHeight })
         .alignItems(HorizontalAlign.Center)
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .height('100%')
 

@@ -73,6 +73,7 @@ struct CoverGalleryManagerPage {
         .width('100%')
         .padding({ bottom: 32 + this.navBarHeight })
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .height('100%')
       .backgroundColor(this.pageColor())
@@ -1016,6 +1017,7 @@ struct CoverGalleryManagerPage {
             }
             .width('100%')
           }
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .layoutWeight(1)
           .scrollable(ScrollDirection.Vertical)
           .scrollBar(BarState.Auto)

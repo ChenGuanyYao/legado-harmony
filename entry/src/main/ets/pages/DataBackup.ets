@@ -144,6 +144,7 @@ struct DataBackupPage {
         }
         .width('100%')
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .height('100%')
       .align(Alignment.TopStart)

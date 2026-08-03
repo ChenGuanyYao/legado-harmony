@@ -267,6 +267,7 @@ struct AudioBookPage {
           .fontColor(this.primaryTextColor())
           .width('100%')
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .layoutWeight(1)
       .width('100%')
       .scrollBar(BarState.Auto)
@@ -655,6 +656,7 @@ struct AudioBookPage {
             }
           }, (chapter: BookChapter, index: number) => `${index}_${chapter.url}`)
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .layoutWeight(1)
       }

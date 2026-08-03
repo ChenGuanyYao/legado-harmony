@@ -125,6 +125,7 @@ export struct SearchBookResultList {
           .height(this.bottomPadding)
       }
     }
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
     .layoutWeight(1)
     .padding({ left: 16, right: 16 })

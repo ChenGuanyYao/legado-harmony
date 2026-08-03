@@ -583,6 +583,7 @@ struct Index {
               .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
               .width('100%')
           }
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .layoutWeight(1)
           .width('100%')
           .padding({ left: 4, right: 4 })
@@ -615,6 +616,7 @@ struct Index {
                 .width('100%')
             }
           }
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .layoutWeight(1)
           .width('100%')
           .padding({ left: 4, right: 4 })
@@ -761,6 +763,7 @@ struct Index {
             }
           }, (title: string, index: number) => `${index}_${title}`)
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .layoutWeight(1)
         .width('100%')
         .scrollBar(BarState.Auto)
@@ -2139,6 +2142,7 @@ struct BookshelfPage {
                   .height(this.bookshelfListBottomInset())
               }
             }
+            .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
             .width('100%')
             .height('100%')
             .padding({ left: 16, right: 16 })
@@ -2403,6 +2407,7 @@ struct BookshelfPage {
                 .columnStart(0)
                 .columnEnd(this.networkCoverColumnCount() - 1)
               }
+              .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
               .columnsTemplate(this.networkCoverColumnsTemplate())
               .columnsGap(this.networkCoverColumnGap())
               .rowsGap(this.networkCoverRowGap())
@@ -2654,6 +2659,7 @@ struct BookshelfPage {
                 }
               })
             }
+            .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
             .width('100%')
             .height(420)
           }
@@ -2708,6 +2714,7 @@ struct BookshelfPage {
               }
               .width('100%')
             }
+            .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
             .scrollable(ScrollDirection.Vertical)
             .scrollBar(BarState.Auto)
             .width('100%')
@@ -2911,6 +2918,7 @@ struct BookshelfPage {
       }
       .padding({ left: 16, right: 16, bottom: 8 })
     }
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
     .scrollable(ScrollDirection.Horizontal)
     .scrollBar(BarState.Off)
@@ -3031,6 +3039,7 @@ struct BookshelfPage {
           }
           .width('100%')
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .constraintSize({ maxHeight: 260 })
         .scrollBar(BarState.Off)
@@ -3691,6 +3700,7 @@ struct BookshelfPage {
       .columnStart(0)
       .columnEnd(this.shelfTileColumnCount() - 1)
     }
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
     .height('100%')
     .columnsTemplate(this.shelfTileColumnsTemplate())
@@ -3868,6 +3878,7 @@ struct BookshelfPage {
             }
           }, (book: Book) => this.shelfBookRenderKey(book, `group_${group.groupId}`))
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .aspectRatio(0.735)
         .columnsTemplate('1fr 1fr')
@@ -6884,6 +6895,7 @@ struct ExplorePage {
           }
           .padding({ left: 16, right: 16 })
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .height(48)
         .scrollable(ScrollDirection.Horizontal)
@@ -6911,6 +6923,7 @@ struct ExplorePage {
           .constraintSize({ minWidth: '100%' })
           .justifyContent(FlexAlign.Start)
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .height(44)
         .scrollable(ScrollDirection.Horizontal)
@@ -7152,6 +7165,7 @@ struct ExplorePage {
         }
         .width('100%')
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .constraintSize({ maxHeight: 320 })
       .scrollBar(BarState.Auto)
@@ -7229,6 +7243,7 @@ struct ExplorePage {
       .padding({ left: 4, right: 4, bottom: 8 })
       .constraintSize({ minWidth: '100%' })
     }
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
     .scrollable(ScrollDirection.Horizontal)
     .scrollBar(BarState.Off)
@@ -8054,6 +8069,7 @@ struct SearchPage {
         .width('100%')
         .padding({ left: 14, right: 6, top: 12, bottom: 4 })
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .constraintSize({ maxHeight: 260 })
     }
@@ -8581,6 +8597,7 @@ struct SearchPage {
           }
           .width('100%')
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .constraintSize({ maxHeight: 180 })
         .margin({ top: 4 })
@@ -8835,6 +8852,7 @@ struct SettingsPage {
         .margin({ left: 12, right: 12, top: 12 })
         .justifyContent(FlexAlign.Start)
       }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .height('100%')
       .align(Alignment.TopStart)

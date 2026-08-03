@@ -14,11 +14,30 @@ export class ReaderPaginationCacheRecord {
   ends: number[] = [];
 }
 
+class ReaderPaginationCacheWrite {
+  bookUrl: string = '';
+  chapterIndex: number = 0;
+  layoutKey: string = '';
+  starts: number[] = [];
+  ends: number[] = [];
+
+  constructor(bookUrl: string, chapterIndex: number, layoutKey: string, starts: number[], ends: number[]) {
+    this.bookUrl = bookUrl;
+    this.chapterIndex = chapterIndex;
+    this.layoutKey = layoutKey;
+    this.starts = [...starts];
+    this.ends = [...ends];
+  }
+}
+
 export class AppDatabase {
   private static instance: AppDatabase | null = null;
   private store: relationalStore.RdbStore | null = null;
   private initialized: boolean = false;
   private initPromise: Promise<void> | null = null;
+  private readerPaginationPendingWrites: Map<string, ReaderPaginationCacheWrite> =
+    new Map<string, ReaderPaginationCacheWrite>();
+  private readerPaginationWriteTasks: Map<string, Promise<void>> = new Map<string, Promise<void>>();
   private readonly DATABASE_NAME = 'legado.db';
   private readonly SCHEMA_VERSION = 14;
 
@@ -1694,16 +1713,38 @@ export class AppDatabase {
   async saveReaderPaginationCache(bookUrl: string, chapterIndex: number, layoutKey: string,
     starts: number[], ends: number[]): Promise<void> {
     if (!this.store || !bookUrl || !layoutKey || starts.length === 0 || starts.length !== ends.length) return;
-    await this.deleteReaderPaginationCache(bookUrl, chapterIndex);
-    const bucket: relationalStore.ValuesBucket = {
-      bookUrl: bookUrl,
-      chapterIndex: chapterIndex,
-      layoutKey: layoutKey,
-      starts: JSON.stringify(starts),
-      ends: JSON.stringify(ends),
-      updateTime: Date.now()
-    };
-    await this.store.insert('reader_pagination_cache', bucket);
+    const queueKey = `${bookUrl}\n${chapterIndex}`;
+    this.readerPaginationPendingWrites.set(queueKey,
+      new ReaderPaginationCacheWrite(bookUrl, chapterIndex, layoutKey, starts, ends));
+    let task = this.readerPaginationWriteTasks.get(queueKey);
+    if (!task) {
+      task = this.flushReaderPaginationCacheWrites(queueKey);
+      this.readerPaginationWriteTasks.set(queueKey, task);
+    }
+    await task;
+  }
+
+  private async flushReaderPaginationCacheWrites(queueKey: string): Promise<void> {
+    try {
+      while (this.readerPaginationPendingWrites.has(queueKey)) {
+        const write = this.readerPaginationPendingWrites.get(queueKey);
+        this.readerPaginationPendingWrites.delete(queueKey);
+        if (!write || !this.store) continue;
+        await this.deleteReaderPaginationCache(write.bookUrl, write.chapterIndex);
+        const bucket: relationalStore.ValuesBucket = {
+          bookUrl: write.bookUrl,
+          chapterIndex: write.chapterIndex,
+          layoutKey: write.layoutKey,
+          starts: JSON.stringify(write.starts),
+          ends: JSON.stringify(write.ends),
+          updateTime: Date.now()
+        };
+        await this.store.insert('reader_pagination_cache', bucket,
+          relationalStore.ConflictResolution.ON_CONFLICT_REPLACE);
+      }
+    } finally {
+      this.readerPaginationWriteTasks.delete(queueKey);
+    }
   }
 
   async deleteReaderPaginationCache(bookUrl: string, chapterIndex: number = -1): Promise<void> {

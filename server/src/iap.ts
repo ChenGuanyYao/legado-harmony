@@ -28,6 +28,7 @@ export interface PurchaseOrderPayload {
   purchaseStatus?: string | number;
   status?: string | number;
   finishStatus?: string | number;
+  purchaseOrderRevocationReasonCode?: string | number;
   purchaseTime?: number;
 }
 
@@ -196,16 +197,40 @@ export function purchaseState(payload: PurchaseOrderPayload): string {
 }
 
 export function isRevokedPurchaseState(payload: PurchaseOrderPayload): boolean {
-  return config.iap.revocationStatuses.has(purchaseState(payload));
+  const revocationReason = String(payload.purchaseOrderRevocationReasonCode ?? '').trim();
+  return Boolean(revocationReason) || config.iap.revocationStatuses.has(purchaseState(payload));
 }
 
 export function isDeliverablePurchaseState(payload: PurchaseOrderPayload): boolean {
-  const value = purchaseState(payload);
-  return Boolean(value && config.iap.deliverableStatuses.has(value));
+  // Huawei documents an empty purchaseOrderRevocationReasonCode as the
+  // authoritative signal that the purchase succeeded. Any revocation reason
+  // must fail closed before interpreting purchase or delivery state aliases.
+  if (String(payload.purchaseOrderRevocationReasonCode ?? '').trim()) {
+    return false;
+  }
+
+  const explicitState = payload.purchaseState ?? payload.purchaseStatus ?? payload.status;
+  if (explicitState !== undefined && explicitState !== null && String(explicitState).trim()) {
+    const value = String(explicitState).trim().toUpperCase();
+    return config.iap.deliverableStatuses.has(value);
+  }
+
+  // HarmonyOS NEXT order-status responses can omit purchaseState. In those
+  // responses finishStatus 2 is an unfinished purchase awaiting entitlement
+  // delivery; legacy responses use 0 for the same condition. Status 1 is
+  // already finished and must never be delivered again.
+  const finish = String(payload.finishStatus ?? '').trim();
+  return finish === '0' || finish === '2';
 }
 
 function ensureDeliverableState(payload: PurchaseOrderPayload): void {
   if (!isDeliverablePurchaseState(payload)) {
-    throw new Error('Huawei order is not in a deliverable state');
+    const state = purchaseState(payload) || 'missing';
+    const finish = String(payload.finishStatus ?? 'missing');
+    const revoked = String(payload.purchaseOrderRevocationReasonCode ?? '').trim() ? 'present' : 'missing';
+    throw new Error(
+      `Huawei order is not in a deliverable state ` +
+      `(purchaseState=${state}, finishStatus=${finish}, revocationReason=${revoked})`
+    );
   }
 }

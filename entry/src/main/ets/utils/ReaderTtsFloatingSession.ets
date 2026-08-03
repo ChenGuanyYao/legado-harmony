@@ -5,6 +5,7 @@ export class ReaderTtsFloatingSession {
   private static stopAction: (() => Promise<void> | void) | null = null;
   private static previousAction: (() => void) | null = null;
   private static nextAction: (() => void) | null = null;
+  private static positionAction: ((chapterIndex: number, pageIndex: number) => void) | null = null;
   private static speedAction: ((value: number) => void) | null = null;
   private static timerAction: ((minutes: number) => void) | null = null;
   private static voiceAction: (() => void) | null = null;
@@ -56,6 +57,14 @@ export class ReaderTtsFloatingSession {
     ReaderTtsFloatingSession.nextAction = nextAction;
     ReaderTtsFloatingSession.speedAction = speedAction;
     ReaderTtsFloatingSession.timerAction = timerAction;
+  }
+
+  static configurePositionControl(ownerId: string,
+    positionAction: (chapterIndex: number, pageIndex: number) => void): void {
+    if (!ReaderTtsFloatingSession.isOwner(ownerId)) {
+      return;
+    }
+    ReaderTtsFloatingSession.positionAction = positionAction;
   }
 
   static configureAudioControls(ownerId: string, voiceCode: string,
@@ -217,6 +226,11 @@ export class ReaderTtsFloatingSession {
     if (action) action();
   }
 
+  static jumpToPosition(chapterIndex: number, pageIndex: number): void {
+    const action = ReaderTtsFloatingSession.positionAction;
+    if (action) action(chapterIndex, pageIndex);
+  }
+
   static setSpeed(value: number): void {
     const action = ReaderTtsFloatingSession.speedAction;
     if (action) action(value);
@@ -261,6 +275,7 @@ export class ReaderTtsFloatingSession {
     ReaderTtsFloatingSession.stopAction = null;
     ReaderTtsFloatingSession.previousAction = null;
     ReaderTtsFloatingSession.nextAction = null;
+    ReaderTtsFloatingSession.positionAction = null;
     ReaderTtsFloatingSession.speedAction = null;
     ReaderTtsFloatingSession.timerAction = null;
     ReaderTtsFloatingSession.voiceAction = null;

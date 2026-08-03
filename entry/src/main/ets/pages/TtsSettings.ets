@@ -206,6 +206,7 @@ struct TtsSettingsPage {
           .width('100%')
           .padding({ top: 56 + this.statusBarHeight, bottom: this.navBarHeight + 32 })
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .height('100%')
         .align(Alignment.TopStart)
@@ -353,6 +354,7 @@ struct TtsSettingsPage {
           }
           .width('100%')
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .constraintSize({ maxHeight: 420 })
       }

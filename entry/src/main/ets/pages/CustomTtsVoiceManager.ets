@@ -169,6 +169,7 @@ struct CustomTtsVoiceManagerPage {
                 .height(Math.max(20, this.navBarHeight + 12))
             }
           }
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .width('100%')
           .layoutWeight(1)
           .padding({ left: 16, right: 16 })
@@ -1324,6 +1325,7 @@ struct CustomTtsVoiceManagerPage {
           }
           .width('100%')
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .height(420)
 

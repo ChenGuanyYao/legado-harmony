@@ -260,6 +260,7 @@ struct WebDavPage {
             }
           }, (entry: WebDavEntry) => `${entry.relativePath}_${entry.etag}_${entry.lastModified}`)
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .layoutWeight(1)
         .padding({ left: 12, right: 12 })
@@ -499,6 +500,7 @@ struct WebDavPage {
       .width('100%')
       .padding({ top: this.scrollableTopInset() + 12, bottom: Math.max(24, this.navBarHeight) })
     }
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
     .layoutWeight(1)
     .margin({ top: -this.scrollableTopInset() })
@@ -574,6 +576,7 @@ struct WebDavPage {
       .width('100%')
       .padding({ top: this.scrollableTopInset() + 14, bottom: Math.max(28, this.navBarHeight) })
     }
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
     .layoutWeight(1)
     .margin({ top: -this.scrollableTopInset() })
