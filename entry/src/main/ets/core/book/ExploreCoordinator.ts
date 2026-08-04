@@ -106,6 +106,10 @@ export class ExploreCoordinator {
       }
       const au = new AnalyzeUrl(source, this.http);
       const reqUrl = await this.buildUrl(source, entry.url, page);
+      if (!reqUrl || /^\s*@?js:/i.test(reqUrl) || !/^https?:\/\//i.test(reqUrl)) {
+        this.noticeMessage = '发现地址脚本未能生成有效请求地址';
+        return [];
+      }
       console.info('[ExploreCoordinator] explore:', `${entry.sourceName}/${entry.title}`, reqUrl);
       const resp = EncodedSourceUrl.canHandle(reqUrl) ?
         await this.fetchEncodedDataUrl(reqUrl, source) : await au.fetch(reqUrl);
@@ -118,6 +122,9 @@ export class ExploreCoordinator {
       }
       if (!resp.success || !resp.body) {
         console.warn('[ExploreCoordinator] empty response:', resp.statusCode, resp.error || '');
+        this.noticeMessage = !resp.success ? (resp.statusCode > 0 ?
+          `发现接口请求失败（HTTP ${resp.statusCode}）` : `发现接口请求失败：${resp.error || '网络异常'}`) :
+          '发现接口返回空响应';
         return [];
       }
 
@@ -128,11 +135,14 @@ export class ExploreCoordinator {
       const stageItems = await BookSourceStageRuleSupport.getElements(source, resp.body, baseUrl,
         exploreRule.bookList || '', SourceRuntimeStage.EXPLORE);
       const items = stageItems === null ? rule.getElements(exploreRule.bookList || '') : stageItems;
+      if (items.length === 0) this.noticeMessage = '发现接口已有响应，但列表规则未匹配到内容';
       console.info('[ExploreCoordinator] parsed list:', source.bookSourceName, 'rule:', exploreRule.bookList, 'count:', items.length);
       const books: SearchBook[] = [];
       const sourceBackendHost = BookSourceDataUrlSupport.sourceBackendHost(source);
+      const stageBookUrls = await this.analyzeExploreFieldBatch(source, items, baseUrl, exploreRule.bookUrl);
 
-      for (const item of items) {
+      for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+        const item = items[itemIndex];
         const ir = new AnalyzeRule(item, baseUrl);
         this.seedSourceVariables(ir.getContext(), source);
         if (sourceBackendHost) {
@@ -148,7 +158,8 @@ export class ExploreCoordinator {
         book.kind = ir.analyzeFirst(exploreRule.kind) || '';
         book.latestChapterTitle = ir.analyzeFirst(exploreRule.lastChapter) || '';
         book.wordCount = ir.analyzeFirst(exploreRule.wordCount) || '';
-        book.bookUrl = BookUrlResolver.resolve(ir.analyzeFirst(exploreRule.bookUrl), baseUrl);
+        const stageBookUrl = itemIndex < stageBookUrls.length ? stageBookUrls[itemIndex] : '';
+        book.bookUrl = BookUrlResolver.resolve(stageBookUrl || ir.analyzeFirst(exploreRule.bookUrl), baseUrl);
         book.origin = source.bookSourceUrl;
         book.originName = source.bookSourceName;
         BookTypeSupport.applySearchBookType(book, source);
@@ -160,6 +171,7 @@ export class ExploreCoordinator {
       if (books.length > 0) {
         console.info('[ExploreCoordinator] first book:', books[0].name, books[0].bookUrl);
       } else if (items.length > 0) {
+        this.noticeMessage = '发现列表已匹配，但书名或详情地址解析失败';
         console.warn('[ExploreCoordinator] list matched but no valid book:', source.bookSourceName,
           'nameRule:', exploreRule.name, 'urlRule:', exploreRule.bookUrl,
           'firstItem:', items[0].substring(0, Math.min(items[0].length, 240)));
@@ -167,6 +179,8 @@ export class ExploreCoordinator {
       return books;
     } catch (e) {
       console.error('[ExploreCoordinator] explore failed:', e);
+      const message = e instanceof Error ? e.message : String(e || '');
+      this.noticeMessage = message ? `发现解析异常：${message}` : '发现解析异常';
       return [];
     }
   }
@@ -419,14 +433,20 @@ export class ExploreCoordinator {
   private async buildUrl(source: BookSource, url: string, page: number): Promise<string> {
     const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.URL,
       `${source.jsLib || ''}\n${url || ''}`);
-    if (decision.runtime === 'arkweb' && BookSourceStageWebRuntime.get().isAvailable() && url.includes('{{')) {
+    const isFullJsUrl = /^\s*@?js:/i.test(url || '');
+    if (decision.runtime === 'arkweb' && BookSourceStageWebRuntime.get().isAvailable() &&
+      (isFullJsUrl || url.includes('{{'))) {
       const request = new StageWebRuntimeRequest();
       request.source = source;
       request.baseUrl = source.bookSourceUrl;
       request.variables = { page: String(page), pageIndex: String(page) };
-      const template = JSON.stringify(url || '');
-      request.code = `const __exploreTemplate=${template};result=__exploreTemplate.replace(/\\{\\{([\\s\\S]*?)\\}\\}/g,` +
-        `function(_,expr){try{return String(eval(expr));}catch(e){return '';}});result;`;
+      if (isFullJsUrl) {
+        request.code = (url || '').replace(/^\s*@?js:\s*/i, '');
+      } else {
+        const template = JSON.stringify(url || '');
+        request.code = `const __exploreTemplate=${template};result=__exploreTemplate.replace(/\\{\\{([\\s\\S]*?)\\}\\}/g,` +
+          `function(_,expr){try{return String(eval(expr));}catch(e){return '';}});result;`;
+      }
       try {
         const result = await BookSourceStageWebRuntime.get().execute(request);
         if (result.value) return result.value;
@@ -447,6 +467,39 @@ export class ExploreCoordinator {
     js.setVar('page', String(page));
     js.setVar('pageIndex', String(page));
     return js.evalTemplate(this.applySourceTemplate(url, source)).replace(/\{\{[^}]+\}\}/g, String(page));
+  }
+
+  private async analyzeExploreFieldBatch(source: BookSource, items: string[], baseUrl: string,
+    rawRule: string): Promise<string[]> {
+    const rule = (rawRule || '').trim();
+    if (!rule || !/^@?js:/i.test(rule) || items.length === 0) return [];
+    const code = rule.replace(/^@?js:\s*/i, '');
+    const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.EXPLORE,
+      `${source.jsLib || ''}\n${code}`);
+    const runtime = BookSourceStageWebRuntime.get();
+    if (decision.runtime !== 'arkweb' || !runtime.isAvailable()) return [];
+
+    const request = new StageWebRuntimeRequest();
+    request.source = source;
+    request.content = JSON.stringify(items.map((item: string): Object | string => {
+      try { return JSON.parse(item) as Object; } catch (_) { return item; }
+    }));
+    request.contextContent = request.content;
+    request.baseUrl = baseUrl || source.bookSourceUrl;
+    request.code = `const __fieldItems=JSON.parse(result||'[]');const __fieldCode=${JSON.stringify(code)};` +
+      `JSON.stringify(__fieldItems.map(function(__fieldItem){java.__setContextContent(__fieldItem);` +
+      `try{const __fieldValue=eval(__fieldCode);return __fieldValue==null?'':String(__fieldValue);}` +
+      `catch(__fieldError){return '';}}));`;
+    try {
+      const result = await runtime.execute(request);
+      const parsed = JSON.parse(result.value || '[]') as Object;
+      if (!Array.isArray(parsed)) return [];
+      return (parsed as Object[]).map((value: Object): string => String(value || ''));
+    } catch (error) {
+      console.warn('[ExploreCoordinator] stage runtime field batch failed, fallback legacy:',
+        source.bookSourceName, error);
+      return [];
+    }
   }
 
   private applySourceTemplate(url: string, source: BookSource): string {

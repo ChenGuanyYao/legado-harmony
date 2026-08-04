@@ -13,9 +13,9 @@ import { VerificationSupport } from '../core/http/VerificationSupport';
 import { RemoteAudioPlayback, RemoteAudioPlaybackListener } from '../utils/RemoteAudioPlayback';
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
 
 class AudioBookPlaybackListener implements RemoteAudioPlaybackListener {
   private readonly stateCallback: (state: string) => void;
@@ -96,6 +96,7 @@ struct AudioBookPage {
   @State sleepRemainingSeconds: number = 0;
   @State audioOptionsPanel: number = 0;
   @State chapterSwitching: boolean = false;
+  @State viewportHeight: number = 720;
   private bookUrl: string = '';
   private source: BookSource | null = null;
   private openedWithShelfAnimation: boolean = false;
@@ -167,12 +168,23 @@ struct AudioBookPage {
     this.clearSleepTimer();
   }
 
+  audioPanelTransition(): TransitionEffect {
+    const appear = TransitionEffect.translate({ y: 52 })
+      .combine(TransitionEffect.scale({ x: 0.985, y: 0.985, centerX: '50%', centerY: '100%' }))
+      .combine(TransitionEffect.opacity(0))
+      .animation({ duration: 300, curve: Curve.Friction });
+    const disappear = TransitionEffect.translate({ y: 28 })
+      .combine(TransitionEffect.scale({ x: 0.99, y: 0.99, centerX: '50%', centerY: '100%' }))
+      .combine(TransitionEffect.opacity(0))
+      .animation({ duration: 190, curve: Curve.EaseIn });
+    return TransitionEffect.asymmetric(appear, disappear);
+  }
+
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       Column({ space: 14 }) {
         this.audioPlayerHeader()
         this.audioIntroCard()
-        this.progressSection()
         this.audioPanelControls()
         if (this.audioOptionsPanel === 1) {
           this.sleepSection()
@@ -180,11 +192,6 @@ struct AudioBookPage {
           this.speedSection()
         }
         this.audioPanelActions()
-        Text(this.statusText)
-          .fontSize(12)
-          .fontColor(this.subTextColor())
-          .textAlign(TextAlign.Center)
-          .width('100%')
         Button('停止听书')
           .width('100%')
           .height(42)
@@ -198,6 +205,7 @@ struct AudioBookPage {
       .padding({ left: 18, right: 18, top: this.statusBarHeight + 16, bottom: this.navBarHeight + 16 })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 24))
+      .transition(this.audioPanelTransition())
 
       if (this.showChapterList) {
         this.chapterListOverlay()
@@ -205,11 +213,16 @@ struct AudioBookPage {
       if (this.showVoiceDialog) {
         this.voiceCodeDialog()
       }
+      BookSourceStageRuntimeHost()
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .onAreaChange((_oldValue: Area, newValue: Area) => {
+      const height = typeof newValue.height === 'number' ? newValue.height : Number.parseFloat(`${newValue.height}`);
+      if (Number.isFinite(height) && height > 0) this.viewportHeight = height;
+    })
   }
 
   @Builder
@@ -236,10 +249,12 @@ struct AudioBookPage {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
-      ImmersiveBackButton({ icon: $r('sys.symbol.chevron_down'), iconOffsetX: 0,
-        iconColor: this.primaryTextColor(), darkMode: this.appDarkMode, buttonSize: 38,
-        containerWidth: 38, containerHeight: 38, startInset: 0, compactLayout: true,
-        accessibilityLabel: '收起听书面板', onBack: () => this.closePage() })
+      SymbolGlyph($r('sys.symbol.chevron_down'))
+        .fontSize(20)
+        .fontColor([this.primaryTextColor()])
+        .width(38)
+        .height(38)
+        .onClick(() => this.closePage())
     }
     .width('100%')
   }
@@ -254,33 +269,38 @@ struct AudioBookPage {
             .height('100%')
             .objectFit(ImageFit.Contain)
         } else {
-          Text('🎧').fontSize(54)
+          Column() {
+            Text(this.book?.name ? this.book.name.substring(0, 1) : '书')
+              .fontSize(42)
+              .fontColor('#FFFFFF')
+          }
+          .width('58%')
+          .height('88%')
+          .constraintSize({ maxWidth: 260, maxHeight: 360 })
+          .borderRadius(10)
+          .backgroundColor(this.accentColor())
+          .justifyContent(FlexAlign.Center)
         }
       }
       .width('100%')
-      .height('35%')
-      .padding(8)
+      .height(Math.min(250, Math.max(130,
+        (this.viewportHeight - this.statusBarHeight - this.navBarHeight) * 0.32)))
+      .padding(10)
+      .borderRadius(14)
+      .clip(true)
       Scroll() {
         Text(this.displayIntro())
           .fontSize(15)
           .lineHeight(25)
           .fontColor(this.primaryTextColor())
+          .copyOption(CopyOptions.LocalDevice)
           .width('100%')
       }
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .layoutWeight(1)
       .width('100%')
+      .padding({ left: 4, right: 4 })
       .scrollBar(BarState.Auto)
-      Row() {
-        Text(this.chapters.length > 0 ? `${this.chapterIndex + 1}/${this.chapters.length}章` : '-/-章')
-          .fontSize(10)
-          .fontColor(this.subTextColor())
-        Blank()
-        Text(`音色 ${this.currentVoiceCode()}`)
-          .fontSize(10)
-          .fontColor(this.subTextColor())
-      }
-      .width('100%')
     }
     .layoutWeight(1)
     .width('100%')
@@ -292,7 +312,8 @@ struct AudioBookPage {
   @Builder
   audioPanelControls() {
     Row() {
-      this.audioPanelControl($r('sys.symbol.timer'), this.sleepMinutes > 0 ? `${this.sleepMinutes}分` : '定时', true,
+      this.audioPanelControl($r('sys.symbol.timer'), this.sleepMinutes > 0 ?
+        `${Math.max(1, Math.ceil(this.sleepRemainingSeconds / 60))}分` : '定时', true,
         () => this.audioOptionsPanel = this.audioOptionsPanel === 1 ? 0 : 1)
       this.audioChapterControl($r('sys.symbol.arrow_left'), '上一章', -1)
       this.audioPlaybackControl()
@@ -556,65 +577,57 @@ struct AudioBookPage {
 
   @Builder
   speedSection() {
-    Column() {
-      Text(`播放倍速 · ${this.speed.toFixed(2)}x`)
-        .fontSize(14)
-        .fontColor(this.secondaryTextColor())
-        .width('100%')
-      Row() {
-        ForEach([0.75, 1, 1.25, 1.5, 2], (value: number) => {
-          Text(`${value}x`)
-            .fontSize(13)
-            .fontColor(Math.abs(this.speed - value) < 0.01 ? '#FFFFFF' : this.primaryTextColor())
-            .height(34)
-            .layoutWeight(1)
-            .textAlign(TextAlign.Center)
-            .backgroundColor(Math.abs(this.speed - value) < 0.01 ? this.accentColor() : this.inputColor())
-            .borderRadius(17)
-            .margin({ right: value === 2 ? 0 : 6 })
-            .onClick(() => this.changeSpeed(value))
-        })
-      }
-      .width('100%')
-      .margin({ top: 10 })
+    Row({ space: 8 }) {
+      this.audioSpeedChip(0.8)
+      this.audioSpeedChip(1.0)
+      this.audioSpeedChip(1.2)
+      this.audioSpeedChip(1.5)
+      this.audioSpeedChip(2.0)
     }
     .width('100%')
-    .padding(16)
-    .backgroundColor(this.cardColor())
-    .borderRadius(12)
-    .margin({ top: 24 })
   }
 
   @Builder
   sleepSection() {
-    Column() {
-      Text(this.sleepRemainingSeconds > 0 ?
-        `定时停止 · ${this.formatDuration(this.sleepRemainingSeconds * 1000)}` : '定时停止')
-        .fontSize(14)
-        .fontColor(this.secondaryTextColor())
-        .width('100%')
-      Row() {
-        ForEach([0, 15, 30, 60], (minutes: number) => {
-          Text(minutes === 0 ? '关闭' : `${minutes}分钟`)
-            .fontSize(13)
-            .fontColor(this.sleepMinutes === minutes ? '#FFFFFF' : this.primaryTextColor())
-            .height(34)
-            .layoutWeight(1)
-            .textAlign(TextAlign.Center)
-            .backgroundColor(this.sleepMinutes === minutes ? this.accentColor() : this.inputColor())
-            .borderRadius(17)
-            .margin({ right: minutes === 60 ? 0 : 6 })
-            .onClick(() => this.setSleepTimer(minutes))
-        })
-      }
-      .width('100%')
-      .margin({ top: 10 })
+    Row({ space: 6 }) {
+      this.audioTimerChip(0, '关闭')
+      this.audioTimerChip(15, '15分')
+      this.audioTimerChip(30, '30分')
+      this.audioTimerChip(60, '60分')
+      this.audioTimerChip(90, '90分')
+      this.audioTimerChip(120, '120分')
     }
     .width('100%')
-    .padding(16)
-    .backgroundColor(this.cardColor())
-    .borderRadius(12)
-    .margin({ top: 12 })
+  }
+
+  @Builder
+  audioSpeedChip(value: number) {
+    Text(`${value.toFixed(1)}x`)
+      .fontSize(11)
+      .fontWeight(Math.abs(this.speed - value) < 0.01 ? FontWeight.Bold : FontWeight.Regular)
+      .fontColor(Math.abs(this.speed - value) < 0.01 ? '#FFFFFF' : this.primaryTextColor())
+      .textAlign(TextAlign.Center)
+      .layoutWeight(1)
+      .height(30)
+      .borderRadius(15)
+      .backgroundColor(Math.abs(this.speed - value) < 0.01 ? this.accentColor() :
+        (this.appDarkMode ? '#20FFFFFF' : '#0D000000'))
+      .onClick(() => this.changeSpeed(value))
+  }
+
+  @Builder
+  audioTimerChip(minutes: number, label: string) {
+    Text(label)
+      .fontSize(11)
+      .fontWeight(this.sleepMinutes === minutes ? FontWeight.Bold : FontWeight.Regular)
+      .fontColor(this.sleepMinutes === minutes ? '#FFFFFF' : this.primaryTextColor())
+      .textAlign(TextAlign.Center)
+      .layoutWeight(1)
+      .height(30)
+      .borderRadius(15)
+      .backgroundColor(this.sleepMinutes === minutes ? this.accentColor() :
+        (this.appDarkMode ? '#20FFFFFF' : '#0D000000'))
+      .onClick(() => this.setSleepTimer(minutes))
   }
 
   @Builder
@@ -623,36 +636,54 @@ struct AudioBookPage {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor('#80000000')
+        .backgroundColor('#78000000')
         .onClick(() => this.closeChapterList())
-      Column() {
+      Column({ space: 10 }) {
         Row() {
-          Text('章节目录')
-            .fontSize(18)
+          Text('听书目录')
+            .fontSize(19)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
-            .layoutWeight(1)
-          Text('关闭')
-            .fontSize(14)
-            .fontColor(this.accentColor())
+          Blank()
+          Text(`${this.chapterIndex + 1} / ${this.chapters.length}`)
+            .fontSize(12)
+            .fontColor(this.subTextColor())
+          SymbolGlyph($r('sys.symbol.xmark'))
+            .fontSize(17)
+            .fontColor([this.primaryTextColor()])
+            .width(40)
+            .height(40)
+            .margin({ left: 6 })
             .onClick(() => this.closeChapterList())
         }
         .width('100%')
-        .height(52)
-        .padding({ left: 18, right: 18 })
-        .alignItems(VerticalAlign.Center)
-        List() {
+        List({ space: 4 }) {
           LazyForEach(this.chapterDataSource, (chapter: BookChapter, index: number) => {
             ListItem() {
-              Text(chapter.title)
-                .fontSize(15)
-                .fontColor(index === this.chapterIndex ? this.accentColor() : this.primaryTextColor())
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .width('100%')
-                .height(48)
-                .padding({ left: 18, right: 18 })
-                .onClick(() => this.selectChapter(index))
+              Row({ space: 10 }) {
+                Text(`${index + 1}`)
+                  .fontSize(11)
+                  .fontColor(index === this.chapterIndex ? '#FFFFFF' : this.subTextColor())
+                  .textAlign(TextAlign.Center)
+                  .width(34)
+                  .height(26)
+                  .borderRadius(13)
+                  .backgroundColor(index === this.chapterIndex ? this.accentColor() : this.inputColor())
+                Text(chapter.title || `第${index + 1}章`)
+                  .fontSize(15)
+                  .fontWeight(index === this.chapterIndex ? FontWeight.Bold : FontWeight.Regular)
+                  .fontColor(index === this.chapterIndex ? this.accentColor() : this.primaryTextColor())
+                  .maxLines(2)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .layoutWeight(1)
+              }
+              .width('100%')
+              .constraintSize({ minHeight: 50 })
+              .padding({ left: 8, right: 8, top: 7, bottom: 7 })
+              .borderRadius(10)
+              .backgroundColor(index === this.chapterIndex ?
+                ThemeRuntime.accentSurfaceColor(this.appDarkMode) : Color.Transparent)
+              .onClick(() => this.selectChapter(index))
             }
           }, (chapter: BookChapter, index: number) => `${index}_${chapter.url}`)
         }
@@ -662,9 +693,9 @@ struct AudioBookPage {
       }
       .width('100%')
       .height('72%')
-      .padding({ bottom: this.navBarHeight })
-      .backgroundColor(this.pageColor())
-      .borderRadius({ topLeft: 18, topRight: 18 })
+      .padding({ left: 16, right: 16, top: 12, bottom: this.navBarHeight + 12 })
+      .backgroundColor(this.cardColor())
+      .borderRadius({ topLeft: 22, topRight: 22 })
       .transition(TransitionEffect.translate({ y: 520 })
         .combine(TransitionEffect.opacity(0))
         .animation({ duration: 280, curve: Curve.Friction }))

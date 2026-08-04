@@ -499,13 +499,15 @@ export class CloudSyncCoordinator {
 
     const readerSettings = await ReaderSettingsStore.load(context);
     const safeReaderSettings = JSON.parse(JSON.stringify(readerSettings)) as ReaderSettings;
+    // Global font selection and the local font catalog are device-local. Keep
+    // these fields deterministic so changing the global font neither uploads a
+    // new reader-settings revision nor changes another device's selection.
+    safeReaderSettings.fontFamily = '';
     safeReaderSettings.fontFilePath = '';
+    safeReaderSettings.fontSourceName = '系统默认';
+    safeReaderSettings.fontMode = 'system';
+    safeReaderSettings.systemFontFamily = '';
     safeReaderSettings.customFontsRaw = '';
-    if (safeReaderSettings.fontMode === 'custom') {
-      safeReaderSettings.fontMode = 'system';
-      safeReaderSettings.fontFamily = '';
-      safeReaderSettings.fontSourceName = '系统默认';
-    }
     result.push(CloudSyncCoordinator.entity(
       'reader_settings', 'global', safeReaderSettings, 'global'));
 
@@ -844,9 +846,9 @@ export class CloudSyncCoordinator {
       CloudSyncCoordinator.notifyBookSourcesChanged();
     } else if (entityType === 'reader_settings') {
       const readerSettings = JSON.parse(raw) as ReaderSettings;
-      // Font files are device-local and deliberately omitted from uploads. Do
-      // not interpret those empty remote fields as a request to reset the
-      // selected local font when foreground/background auto-sync runs.
+      // Global font settings are device-local and deliberately excluded from
+      // sync. Always restore them from this device before saving the remaining
+      // remote reader preferences.
       const localReaderSettings = await ReaderSettingsStore.load(context);
       readerSettings.fontFamily = localReaderSettings.fontFamily;
       readerSettings.fontFilePath = localReaderSettings.fontFilePath;

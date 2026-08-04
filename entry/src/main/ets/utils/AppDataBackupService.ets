@@ -140,6 +140,8 @@ export class AppDataBackupService {
     'tts_settings',
     'webdav_settings'
   ];
+  private static readonly READER_SETTINGS_STORE: string = 'reader_settings';
+  private static readonly READER_THEME_PROFILE_PREFIX: string = 'readerThemeProfileV1_';
 
   private static readonly ASSET_DIRS: string[] = [
     'reader_fonts',
@@ -1304,13 +1306,67 @@ export class AppDataBackupService {
   private static async restorePreferenceStore(context: Context, storeName: string, raw: string,
     oldRoot: string): Promise<void> {
     const store = await preferences.getPreferences(context, storeName);
+    let localValues: Record<string, preferences.ValueType> = {};
+    if (storeName === AppDataBackupService.READER_SETTINGS_STORE) {
+      localValues = await store.getAll() as Record<string, preferences.ValueType>;
+    }
     const values = JSON.parse(AppDataBackupService.replaceRoot(raw || '{}', oldRoot, context.filesDir)) as
       Record<string, preferences.ValueType>;
+    if (storeName === AppDataBackupService.READER_SETTINGS_STORE) {
+      AppDataBackupService.preserveLocalGlobalFontSettings(values, localValues);
+    }
     await store.clear();
     for (const key of Object.keys(values)) {
       await store.put(key, values[key]);
     }
     await store.flush();
+  }
+
+  private static preserveLocalGlobalFontSettings(
+    incoming: Record<string, preferences.ValueType>,
+    local: Record<string, preferences.ValueType>
+  ): void {
+    const fontFamily = AppDataBackupService.preferenceString(local, 'readerFontFamily', '');
+    const fontFilePath = AppDataBackupService.preferenceString(local, 'readerFontFilePath', '');
+    const fontSourceName = AppDataBackupService.preferenceString(local, 'readerFontSourceName', '系统默认');
+    const fontMode = AppDataBackupService.preferenceString(local, 'readerFontMode', 'system');
+    const systemFontFamily = AppDataBackupService.preferenceString(local, 'readerSystemFontFamily', '');
+    const customFontsRaw = AppDataBackupService.preferenceString(local, 'readerCustomFontsRaw', '');
+
+    incoming['readerFontFamily'] = fontFamily;
+    incoming['readerFontFilePath'] = fontFilePath;
+    incoming['readerFontSourceName'] = fontSourceName;
+    incoming['readerFontMode'] = fontMode;
+    incoming['readerSystemFontFamily'] = systemFontFamily;
+    incoming['readerCustomFontsRaw'] = customFontsRaw;
+
+    for (const key of Object.keys(incoming)) {
+      if (!key.startsWith(AppDataBackupService.READER_THEME_PROFILE_PREFIX) ||
+        typeof incoming[key] !== 'string') {
+        continue;
+      }
+      try {
+        const profile = JSON.parse(incoming[key] as string) as Record<string, Object>;
+        profile['fontFamily'] = fontFamily;
+        profile['fontFilePath'] = fontFilePath;
+        profile['fontSourceName'] = fontSourceName;
+        profile['fontMode'] = fontMode;
+        profile['systemFontFamily'] = systemFontFamily;
+        profile['customFontsRaw'] = customFontsRaw;
+        incoming[key] = JSON.stringify(profile);
+      } catch (_) {
+        // Invalid profiles are ignored by ReaderSettingsStore as well.
+      }
+    }
+  }
+
+  private static preferenceString(
+    values: Record<string, preferences.ValueType>,
+    key: string,
+    fallback: string
+  ): string {
+    const value = values[key];
+    return typeof value === 'string' ? value : fallback;
   }
 
   private static replaceRoot(value: string, oldRoot: string, newRoot: string): string {

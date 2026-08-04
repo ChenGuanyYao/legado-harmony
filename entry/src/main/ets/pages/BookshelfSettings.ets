@@ -23,6 +23,7 @@ struct BookshelfSettingsPage {
   @StorageLink('bookshelfShowLastReadChapter') bookshelfShowLastReadChapter: boolean = false;
   @StorageLink('bookshelfShowTypeBadge') bookshelfShowTypeBadge: boolean = true;
   @StorageLink('bookshelfLayoutMode') bookshelfLayoutMode: string = 'compact';
+  @StorageLink('bookshelfLastReadLeafMode') bookshelfLastReadLeafMode: string = 'adaptive';
   @StorageLink('bookshelfCoverAlbums') @Watch('onCoverAlbumsChanged') bookshelfCoverAlbums: string = '';
   @StorageLink('bookshelfLightCoverAlbumId') bookshelfLightCoverAlbumId: string = '';
   @StorageLink('bookshelfDarkCoverAlbumId') bookshelfDarkCoverAlbumId: string = '';
@@ -114,6 +115,15 @@ struct BookshelfSettingsPage {
               this.bookshelfLayoutMode = index === 2 ? 'tile' : (index === 1 ? 'loose' : 'compact');
               this.onDisplaySettingChanged();
             })
+          if (this.bookshelfLayoutMode === 'tile') {
+            this.itemDivider()
+            this.selectItem('上次阅读扉页设置', '设置最近阅读书籍封面右侧的展示内容',
+              this.lastReadLeafOptions(), this.lastReadLeafSelectedIndex(), (index: number) => {
+                this.bookshelfLastReadLeafMode = index === 0 ? 'bookInfo' :
+                  (index === 1 ? 'contentPreview' : 'adaptive');
+                this.onDisplaySettingChanged();
+              })
+          }
 
           }
           .width('calc(100% - 24vp)')
@@ -229,6 +239,7 @@ struct BookshelfSettingsPage {
       this.bookshelfShowLastReadChapter = settings.showLastReadChapter;
       this.bookshelfShowTypeBadge = settings.showTypeBadge;
       this.bookshelfLayoutMode = settings.layoutMode;
+      this.bookshelfLastReadLeafMode = settings.lastReadLeafMode;
     } catch (e) {
       console.warn('重新加载书架显示设置失败:', e);
     }
@@ -246,6 +257,7 @@ struct BookshelfSettingsPage {
     settings.showLastReadChapter = this.bookshelfShowLastReadChapter;
     settings.showTypeBadge = this.bookshelfShowTypeBadge;
     settings.layoutMode = this.bookshelfLayoutMode;
+    settings.lastReadLeafMode = this.bookshelfLastReadLeafMode;
     BookshelfDisplaySettingsStore.applyToStorage(settings);
     BookshelfDisplaySettingsStore.save(getContext(this), settings).catch((e: Error) => {
       console.warn('保存书架显示设置失败:', e);
@@ -442,6 +454,15 @@ struct BookshelfSettingsPage {
 
   bookshelfLayoutSelectedIndex(): number {
     return this.bookshelfLayoutMode === 'tile' ? 2 : (this.bookshelfLayoutMode === 'loose' ? 1 : 0);
+  }
+
+  lastReadLeafOptions(): SelectOption[] {
+    return [{ value: '书籍信息' }, { value: '内容预览' }, { value: '自适应' }];
+  }
+
+  lastReadLeafSelectedIndex(): number {
+    return this.bookshelfLastReadLeafMode === 'bookInfo' ? 0 :
+      (this.bookshelfLastReadLeafMode === 'contentPreview' ? 1 : 2);
   }
 
   scopeSelectedIndex(): number {

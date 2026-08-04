@@ -59,6 +59,8 @@ class StageWebRuntimeTask {
 export class BookSourceStageWebRuntime {
   private static instance: BookSourceStageWebRuntime | null = null;
   private controller: webview.WebviewController | null = null;
+  private controllers: webview.WebviewController[] = [];
+  private readyControllers: Set<webview.WebviewController> = new Set<webview.WebviewController>();
   private ready: boolean = false;
   private tasks: StageWebRuntimeTask[] = [];
   private running: boolean = false;
@@ -75,18 +77,39 @@ export class BookSourceStageWebRuntime {
   }
 
   attach(controller: webview.WebviewController): void {
+    this.controllers = this.controllers.filter((item: webview.WebviewController): boolean => item !== controller);
+    this.controllers.push(controller);
     this.controller = controller;
+    this.ready = this.readyControllers.has(controller);
   }
 
-  setReady(ready: boolean): void {
+  setReady(ready: boolean, controller: webview.WebviewController | null = null): void {
+    const target = controller || this.controller;
+    if (!target) return;
+    if (ready) this.readyControllers.add(target);
+    else this.readyControllers.delete(target);
+    if (this.controller !== target) return;
     this.ready = ready;
     if (ready) this.startNext();
   }
 
+  async waitUntilAvailable(timeoutMs: number = 3000): Promise<boolean> {
+    if (this.isAvailable()) return true;
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < Math.max(100, timeoutMs)) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      if (this.isAvailable()) return true;
+    }
+    return this.isAvailable();
+  }
+
   detach(controller: webview.WebviewController): void {
+    this.controllers = this.controllers.filter((item: webview.WebviewController): boolean => item !== controller);
+    this.readyControllers.delete(controller);
     if (this.controller !== controller) return;
-    this.controller = null;
-    this.ready = false;
+    this.controller = this.controllers.length > 0 ? this.controllers[this.controllers.length - 1] : null;
+    this.ready = !!this.controller && this.readyControllers.has(this.controller);
+    if (this.ready) this.startNext();
   }
 
   isAvailable(): boolean {
@@ -337,7 +360,7 @@ export class BookSourceStageWebRuntime {
       `function hexD(v){try{v=String(v??'').replace(/\\s+/g,'');const a=[];for(let i=0;i<v.length;i+=2)` +
       `a.push(parseInt(v.substring(i,i+2),16));return new TextDecoder().decode(new Uint8Array(a));}catch(e){return '';}}` +
       `function hexE(v){return bytes(v).map(function(x){return Number(x).toString(16).padStart(2,'0');}).join('');}` +
-      `function pathValue(path){try{let value=typeof S.contextContent==='string'?JSON.parse(S.contextContent):S.contextContent;` +
+      `let contextValue=S.contextContent;function pathValue(path){try{let value=typeof contextValue==='string'?JSON.parse(contextValue):contextValue;` +
       `const parts=String(path??'').replace(/^\\$\\.?/,'').split('.').filter(Boolean);for(const p of parts){` +
       `if(value===null||value===undefined)return '';value=value[p];}return value===null||value===undefined?'':value;}catch(e){return '';}}` +
       `const cookieData=Object.assign({},S.cookies||{});const cookie={getCookie:function(k){k=String(k??'');` +
@@ -362,15 +385,19 @@ export class BookSourceStageWebRuntime {
       `const cache={get:function(k){return cacheData[k]??null;},getFromMemory:function(k){return cacheData[k]??null;},` +
       `put:function(k,v){cacheData[k]=v;return v;},putMemory:function(k,v){cacheData[k]=v;return v;},` +
       `delete:function(k){delete cacheData[k];return true;}};` +
+      `function stableDeviceId(){let value=String(javaData.__legadoHarmonyDeviceId||'').trim();` +
+      `if(!/^[0-9a-f]{16}$/i.test(value)){value='';for(let i=0;i<16;i++)value+=Math.floor(Math.random()*16).toString(16);` +
+      `javaData.__legadoHarmonyDeviceId=value;}return value;}` +
       `const java={ajax:function(v){v=String(v??'');if(Object.prototype.hasOwnProperty.call(S.responses,v))return S.responses[v];` +
       `if(!pending)pending=v;return '{}';},put:function(k,v){javaData[String(k??'')]=v;return v;},` +
       `get:function(k){k=String(k??'');return Object.prototype.hasOwnProperty.call(javaData,k)?javaData[k]:null;},` +
       `log:function(v){return v===undefined?'':v;},logType:function(v){return v===undefined?'':v;},` +
       `toast:function(v){toast=String(v??'');return toast;},longToast:function(v){toast=String(v??'');return toast;},` +
-      `androidId:function(){return 'harmony';},deviceID:function(){if(S.readerActionMode)return 'harmony';` +
+      `androidId:stableDeviceId,deviceID:function(){if(S.readerActionMode)return stableDeviceId();` +
       `throw new Error('deviceID unavailable');},qread:function(){throw new Error('qread unavailable');},` +
       `base64Encode:b64e,base64EncodeToString:b64e,base64Decode:b64d,base64DecodeToString:b64d,` +
       `hexDecodeToString:hexD,hexEncodeToString:hexE,getCookie:function(k){return cookie.getCookie(k);},` +
+      `__setContextContent:function(v){contextValue=v;globalThis.result=typeof v==='string'?v:JSON.stringify(v);return true;},` +
       `getString:function(k){const v=pathValue(k);return typeof v==='string'?v:JSON.stringify(v);},` +
       `timeFormat:function(v){try{return new NativeDate(Number(v)).toISOString().replace('T',' ').replace('Z','');}catch(e){return String(v??'');}},` +
       `timeFormatUTC:function(v){try{return new NativeDate(Number(v)).toISOString();}catch(e){return String(v??'');}},` +

@@ -74,6 +74,11 @@ export class SearchCoordinator {
   private concurrency: number;
   private cancelled: boolean = false;
   private stageRuntimeOwnerId: string = '';
+  private lastFailureReason: string = '';
+
+  getLastFailureReason(): string {
+    return this.lastFailureReason;
+  }
 
   constructor(concurrency: number = 8) {
     this.http = new HttpClient(8000);
@@ -90,6 +95,7 @@ export class SearchCoordinator {
 
   async search(keyword: string, callback: SearchCallback, options: SearchOptions = {}): Promise<SearchBook[]> {
     this.cancelled = false;
+    this.lastFailureReason = '';
     VerificationSupport.clearVerification();
     const safeCallback = (progress: SearchProgress): void => {
       try {
@@ -160,6 +166,9 @@ export class SearchCoordinator {
         AppStorage.setOrCreate('searchLastSource', currentSourceLabel);
         AppStorage.setOrCreate('searchLastSourceIndex', sourceIndex + 1);
         const sourceResult = await this.searchOne(sources[sourceIndex], keyword, options);
+        if (sourceResult.books.length === 0 && sourceResult.reason && sourceResult.reason !== '未搜索到结果') {
+          this.lastFailureReason = `${sources[sourceIndex].bookSourceName || '书源'}：${sourceResult.reason}`;
+        }
         const books = sourceResult.books;
         if (this.cancelled) break;
         if (options.onSourceComplete) {
@@ -278,6 +287,11 @@ export class SearchCoordinator {
       }
 
       const baseUrl = BookUrlResolver.effectiveBase(resp, urlTemplate, source.bookSourceUrl);
+      const sourceApiBooks = this.parseSourceApiSearchResponse(source, resp.body, baseUrl, resultLimit,
+        keyword, options);
+      if (sourceApiBooks.length > 0) {
+        return this.sourceResult(sourceApiBooks, BookSource.VALIDATION_PASSED, '');
+      }
       const rule = new AnalyzeRule(resp.body, baseUrl);
       this.seedSourceVariables(rule.getContext(), source);
       rule.setJsVar('key', encodeURIComponent(keyword));
@@ -304,7 +318,9 @@ export class SearchCoordinator {
       const seenBookKeys = new Set<string>();
       const normalizedKeyword = this.normalizeSearchText(keyword);
       const sourceBackendHost = BookSourceDataUrlSupport.sourceBackendHost(source);
-      for (const item of items) {
+      const stageBookUrls = await this.analyzeSearchFieldBatch(source, items, baseUrl, searchRule.bookUrl);
+      for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+        const item = items[itemIndex];
         if (this.cancelled) {
           return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
         }
@@ -315,9 +331,18 @@ export class SearchCoordinator {
           ir.getContext().put('backend', sourceBackendHost);
         }
         const book = new SearchBook();
-        book.name = ir.analyzeFirst(searchRule.name) || '';
-        book.author = ir.analyzeFirst(searchRule.author) || '';
-        book.bookUrl = BookUrlResolver.resolve(ir.analyzeFirst(searchRule.bookUrl), baseUrl);
+        book.name = await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.name);
+        book.author = await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.author);
+        const sourceApiRecord = this.parseJsonRecord(item);
+        if (sourceApiRecord) {
+          if (!book.name) book.name = String(sourceApiRecord['name'] || sourceApiRecord['bookName'] ||
+            sourceApiRecord['title'] || '');
+          if (!book.author) book.author = String(sourceApiRecord['author'] || sourceApiRecord['writer'] || '');
+        }
+        const stageBookUrl = itemIndex < stageBookUrls.length ? stageBookUrls[itemIndex] : '';
+        const sourceApiBookUrl = this.buildSourceApiBookUrl(source, item, searchRule.bookUrl || '');
+        book.bookUrl = BookUrlResolver.resolve(stageBookUrl || sourceApiBookUrl ||
+          await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.bookUrl, true), baseUrl);
         this.fillSearchFallbackFields(source, ir, book, baseUrl, item);
         if (options.exactMatch) {
           if (!this.matchesExactSearch(this.normalizeSearchText(book.name), this.normalizeSearchText(book.author),
@@ -327,10 +352,25 @@ export class SearchCoordinator {
         }
 
         book.coverUrl = BookSourceDataUrlSupport.normalizeCoverUrlFromItem(source,
-          ir.analyzeFirst(searchRule.coverUrl), item, baseUrl);
-        book.intro = ir.analyzeFirst(searchRule.intro) || '';
-        book.kind = ir.analyzeFirst(searchRule.kind) || '';
-        book.latestChapterTitle = ir.analyzeFirst(searchRule.lastChapter) || '';
+          await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.coverUrl), item, baseUrl);
+        book.intro = await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.intro);
+        book.kind = await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.kind);
+        book.latestChapterTitle = await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.lastChapter);
+        book.wordCount = await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.wordCount);
+        if (sourceApiRecord) {
+          if (!book.coverUrl) book.coverUrl = String(sourceApiRecord['cover'] || sourceApiRecord['coverUrl'] || '');
+          if (!book.intro) book.intro = String(sourceApiRecord['desc'] || sourceApiRecord['intro'] ||
+            sourceApiRecord['description'] || '');
+          if (!book.latestChapterTitle) book.latestChapterTitle = String(sourceApiRecord['lastChapter'] ||
+            sourceApiRecord['latestChapterTitle'] || '');
+          if (!book.wordCount) book.wordCount = String(sourceApiRecord['wordsCount'] ||
+            sourceApiRecord['wordCount'] || '');
+          if (!book.kind) {
+            book.kind = [sourceApiRecord['status'], sourceApiRecord['category'], sourceApiRecord['subCategory']]
+              .map((value: Object): string => String(value || '').trim()).filter((value: string): boolean => !!value)
+              .join(' ');
+          }
+        }
         book.variable = ir.getContext().toJson();
         BookTypeSupport.applySearchBookType(book, source);
         // 如果解析后仍含 JSONPath 表达式，直接从 item 提取
@@ -650,6 +690,198 @@ export class SearchCoordinator {
     if (suffixMatch) return BookUrlResolver.resolve(baseValue + suffixMatch[1], baseUrl);
     if (headMatch) return BookUrlResolver.resolve(headMatch[1] + baseValue, baseUrl);
     return '';
+  }
+
+  /**
+   * Search result fields may themselves be complete JavaScript rules. They must use the same
+   * ArkWeb environment as the search URL so source-library helpers such as getApiUrl() remain
+   * available. Plain selector and lightweight suffix rules keep the existing analyzer path.
+   */
+  private async analyzeSearchField(source: BookSource, ir: AnalyzeRule, item: string,
+    baseUrl: string, rawRule: string, skipStageRuntime: boolean = false): Promise<string> {
+    const rule = (rawRule || '').trim();
+    if (!rule) return '';
+    const suffixIndex = rule.indexOf('@js:');
+    if (suffixIndex > 0) {
+      const baseValue = ir.analyzeFirst(rule.substring(0, suffixIndex).trim()) || '';
+      if (!baseValue || skipStageRuntime) return baseValue;
+      const suffixCode = rule.substring(suffixIndex + 4).trim();
+      const prefixConcat = suffixCode.match(/^(["'])([\s\S]*?)\1\s*\+\s*result\s*;?$/);
+      if (prefixConcat) return this.decodeSimpleJsLiteral(prefixConcat[2]) + baseValue;
+      const suffixConcat = suffixCode.match(/^result\s*\+\s*(["'])([\s\S]*?)\1\s*;?$/);
+      if (suffixConcat) return baseValue + this.decodeSimpleJsLiteral(suffixConcat[2]);
+      const suffixDecision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.SEARCH,
+        `${source.jsLib || ''}\n${suffixCode}`);
+      const suffixRuntime = BookSourceStageWebRuntime.get();
+      if (suffixDecision.runtime !== 'arkweb' || !suffixRuntime.isAvailable()) return baseValue;
+      const suffixRequest = new StageWebRuntimeRequest();
+      suffixRequest.source = source;
+      suffixRequest.code = suffixCode;
+      suffixRequest.content = baseValue;
+      suffixRequest.contextContent = item || '';
+      suffixRequest.baseUrl = baseUrl || source.bookSourceUrl;
+      suffixRequest.ownerId = this.stageRuntimeOwnerId;
+      try {
+        const suffixResult = await suffixRuntime.execute(suffixRequest);
+        return suffixResult.value || baseValue;
+      } catch (_) {
+        return baseValue;
+      }
+    }
+    if (!/^@?js:/i.test(rule)) return ir.analyzeFirst(rawRule) || '';
+
+    if (skipStageRuntime) return ir.analyzeFirst(rawRule) || '';
+    const code = rule.replace(/^@?js:\s*/i, '');
+    const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.SEARCH,
+      `${source.jsLib || ''}\n${code}`);
+    const runtime = BookSourceStageWebRuntime.get();
+    if (decision.runtime !== 'arkweb' || !runtime.isAvailable()) return ir.analyzeFirst(rawRule) || '';
+
+    const request = new StageWebRuntimeRequest();
+    request.source = source;
+    request.code = code;
+    request.content = item || '';
+    request.contextContent = item || '';
+    request.baseUrl = baseUrl || source.bookSourceUrl;
+    request.ownerId = this.stageRuntimeOwnerId;
+    try {
+      const result = await runtime.execute(request);
+      return result.value || ir.analyzeFirst(rawRule) || '';
+    } catch (error) {
+      console.warn('[SC] stage runtime field failed, fallback legacy:', source.bookSourceName, error);
+      return ir.analyzeFirst(rawRule) || '';
+    }
+  }
+
+  private decodeSimpleJsLiteral(value: string): string {
+    return (value || '')
+      .replace(/\\n/g, '\n')
+      .replace(/\\r/g, '\r')
+      .replace(/\\t/g, '\t')
+      .replace(/\\([\\"'])/g, '$1');
+  }
+
+  private buildSourceApiBookUrl(source: BookSource, item: string, rawRule: string): string {
+    if (!/getApiUrl\s*\(/.test(rawRule || '')) return '';
+    const apiMatch = (source.jsLib || '').match(/\b(?:const|let|var)\s+api\s*=\s*['"](https?:\/\/[^'"]+)['"]/);
+    if (!apiMatch) return '';
+    const record = this.parseJsonRecord(item);
+    if (!record) return '';
+    const type = String(record['type'] || 'novel').trim() || 'novel';
+    const id = String(record['id'] || record['novelId'] || record['bookId'] || '').trim();
+    if (!id) return '';
+    const apiBase = String(apiMatch[1] || '').replace(/\/$/, '');
+    // Keep the navigation parameter free of the trailing JSON request options.
+    // Router parameters containing a nested JSON header may be dropped on HarmonyOS.
+    // WebBookService recognizes this API URL and attaches the source token natively.
+    return `${apiBase}/${type}/info?novelId=${encodeURIComponent(id)}`;
+  }
+
+  private parseSourceApiSearchResponse(source: BookSource, body: string, baseUrl: string, limit: number,
+    keyword: string, options: SearchOptions): SearchBook[] {
+    if (!/getApiUrl\s*\(/.test(source.searchRule?.bookUrl || '') ||
+      !/function\s+getApiUrl\s*\(/.test(source.jsLib || '')) return [];
+    let root: Record<string, Object>;
+    try {
+      const parsed = JSON.parse(body || '{}') as Object;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return [];
+      root = parsed as Record<string, Object>;
+    } catch (_) {
+      return [];
+    }
+    const dataValue = root['data'];
+    if (!dataValue || typeof dataValue !== 'object' || Array.isArray(dataValue)) return [];
+    const data = dataValue as Record<string, Object>;
+    const rawBooks = data['books'];
+    if (!Array.isArray(rawBooks)) return [];
+
+    const result: SearchBook[] = [];
+    const normalizedKeyword = this.normalizeSearchText(keyword);
+    for (const value of rawBooks as Object[]) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
+      const record = value as Record<string, Object>;
+      const item = JSON.stringify(record);
+      const book = new SearchBook();
+      book.name = String(record['name'] || record['bookName'] || record['title'] || '');
+      book.author = String(record['author'] || record['writer'] || '');
+      book.bookUrl = BookUrlResolver.resolve(this.buildSourceApiBookUrl(source, item,
+        source.searchRule?.bookUrl || ''), baseUrl);
+      if (!book.name || !book.bookUrl) continue;
+      if (options.exactMatch && !this.matchesExactSearch(this.normalizeSearchText(book.name),
+        this.normalizeSearchText(book.author), normalizedKeyword, options)) continue;
+      book.coverUrl = String(record['cover'] || record['coverUrl'] || '');
+      book.intro = String(record['desc'] || record['intro'] || record['description'] || '');
+      book.kind = [record['status'], record['category'], record['subCategory']]
+        .map((entry: Object): string => String(entry || '').trim()).filter((entry: string): boolean => !!entry)
+        .join(' ');
+      book.latestChapterTitle = String(record['lastChapter'] || record['latestChapterTitle'] || '');
+      book.wordCount = String(record['wordsCount'] || record['wordCount'] || '');
+      book.variable = item;
+      book.origin = source.bookSourceUrl;
+      book.originName = source.bookSourceName;
+      book.bookSourceComment = source.bookSourceComment;
+      book.customOrder = source.customOrder;
+      book.weight = source.weight;
+      BookTypeSupport.applySearchBookType(book, source);
+      this.sanitizeSearchBook(book);
+      result.push(book);
+      if (result.length >= limit) break;
+    }
+    return result;
+  }
+
+  private parseJsonRecord(value: string): Record<string, Object> | null {
+    let current: Object;
+    try {
+      current = JSON.parse(value || '{}') as Object;
+    } catch (_) {
+      return null;
+    }
+    // Some full-JS list runtimes return each JSON object as a quoted JSON string.
+    // Unwrap that representation so ordinary field rules and native API fallbacks
+    // receive the same record shape as Legado's JavaScript runtime.
+    for (let depth = 0; depth < 2 && typeof current === 'string'; depth++) {
+      try {
+        current = JSON.parse(current as string) as Object;
+      } catch (_) {
+        return null;
+      }
+    }
+    if (!current || typeof current !== 'object' || Array.isArray(current)) return null;
+    return current as Record<string, Object>;
+  }
+
+  private async analyzeSearchFieldBatch(source: BookSource, items: string[], baseUrl: string,
+    rawRule: string): Promise<string[]> {
+    const rule = (rawRule || '').trim();
+    if (!rule || !/^@?js:/i.test(rule) || items.length === 0) return [];
+    const code = rule.replace(/^@?js:\s*/i, '');
+    const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.SEARCH,
+      `${source.jsLib || ''}\n${code}`);
+    const runtime = BookSourceStageWebRuntime.get();
+    if (decision.runtime !== 'arkweb' || !runtime.isAvailable()) return [];
+
+    const request = new StageWebRuntimeRequest();
+    request.source = source;
+    request.content = JSON.stringify(items.map((item: string): Object | string => {
+      try { return JSON.parse(item) as Object; } catch (_) { return item; }
+    }));
+    request.contextContent = request.content;
+    request.baseUrl = baseUrl || source.bookSourceUrl;
+    request.ownerId = this.stageRuntimeOwnerId;
+    request.code = `const __fieldItems=JSON.parse(result||'[]');const __fieldCode=${JSON.stringify(code)};` +
+      `JSON.stringify(__fieldItems.map(function(__fieldItem){java.__setContextContent(__fieldItem);` +
+      `try{const __fieldValue=eval(__fieldCode);return __fieldValue==null?'':String(__fieldValue);}` +
+      `catch(__fieldError){return '';}}));`;
+    try {
+      const result = await runtime.execute(request);
+      const parsed = JSON.parse(result.value || '[]') as Object;
+      if (!Array.isArray(parsed)) return [];
+      return (parsed as Object[]).map((value: Object): string => String(value || ''));
+    } catch (error) {
+      console.warn('[SC] stage runtime field batch failed, fallback legacy:', source.bookSourceName, error);
+      return [];
+    }
   }
 
   private searchRelevanceScore(book: SearchBook, normalizedKeyword: string): number {

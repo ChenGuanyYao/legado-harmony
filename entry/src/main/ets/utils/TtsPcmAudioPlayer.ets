@@ -144,6 +144,7 @@ export class TtsPcmAudioPlayer {
     await this.waitUntilResumed();
     const renderer = this.renderer;
     const generation = this.playGeneration;
+    const targetFrame = this.queuedFrames;
     if (!renderer || generation !== this.playGeneration) {
       return;
     }
@@ -158,11 +159,42 @@ export class TtsPcmAudioPlayer {
       if (this.paused || this.systemInterrupted || renderer.state !== audio.AudioState.STATE_RUNNING) {
         continue;
       }
-      this.lastReachedFrame = Math.max(this.lastReachedFrame, this.queuedFrames);
+      // Some devices resolve AudioRenderer.drain() when the final buffers have
+      // been accepted rather than when the speaker has rendered every frame.
+      // Wait for the renderer timeline as well, otherwise the chapter switch
+      // stops the last buffered sentences.
+      if (!await this.waitUntilPlaybackFrameReached(targetFrame, renderer, generation)) {
+        return;
+      }
+      this.lastReachedFrame = Math.max(this.lastReachedFrame, targetFrame);
       this.dispatchDuePlaybackMarks(generation);
-      this.pausePlaybackTimelineAt(this.queuedFrames);
+      this.pausePlaybackTimelineAt(targetFrame);
       return;
     }
+  }
+
+  private async waitUntilPlaybackFrameReached(targetFrame: number, renderer: audio.AudioRenderer,
+    generation: number): Promise<boolean> {
+    while (generation === this.playGeneration && this.renderer === renderer) {
+      if (this.paused || this.systemInterrupted || renderer.state !== audio.AudioState.STATE_RUNNING) {
+        if (!await this.waitUntilRendererRunning(renderer, generation)) {
+          return false;
+        }
+        continue;
+      }
+      this.updatePlaybackTimeline(generation);
+      if (this.lastReachedFrame >= targetFrame) {
+        return true;
+      }
+      await this.delay(40);
+    }
+    return false;
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise<void>((resolve: () => void) => {
+      setTimeout(resolve, ms);
+    });
   }
 
   async pause(): Promise<void> {
@@ -598,31 +630,29 @@ export class TtsPcmAudioPlayer {
       `state=${this.audioStateName(renderer.state)},${this.debugState()}`);
     const hint = event.hintType;
     if (hint === audio.InterruptHint.INTERRUPT_HINT_DUCK) {
-      this.systemDucked = true;
-      if (event.forceType === audio.InterruptForceType.INTERRUPT_SHARE) {
-        renderer.setVolume(0.35).catch((error: Error) => {
-          console.warn('[TTS] duck pcm renderer failed:', error);
-        });
-      }
+      // Keep the application's stream gain invariant. FORCE ducking is
+      // performed/restored by the system mixer; applying another 0.35 gain for
+      // SHARE caused the rare but clearly audible down/up volume step.
+      this.systemDucked = event.forceType === audio.InterruptForceType.INTERRUPT_FORCE;
+      console.info(`[TTS] pcm duck handled by system mixer: forced=${this.systemDucked}`);
       return;
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_UNDUCK) {
       this.systemDucked = false;
-      renderer.setVolume(1).catch((error: Error) => {
-        console.warn('[TTS] restore pcm renderer volume failed:', error);
-      });
+      console.info('[TTS] pcm unduck received; application stream gain remains unchanged');
       return;
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_PAUSE ||
       hint === audio.InterruptHint.INTERRUPT_HINT_STOP) {
+      if (event.forceType === audio.InterruptForceType.INTERRUPT_SHARE) {
+        // STREAM_USAGE_AUDIOBOOK is allowed to continue while the screen is
+        // locked. A shared hint is advisory; pausing here caused the observed
+        // lock-screen pause/unlock resume cycle.
+        console.info('[TTS] ignore shared pause/stop interrupt for audiobook playback');
+        return;
+      }
       this.systemInterrupted = true;
       this.updatePlaybackTimeline(this.playGeneration);
-      if (event.forceType === audio.InterruptForceType.INTERRUPT_SHARE &&
-        renderer.state === audio.AudioState.STATE_RUNNING) {
-        renderer.pause().catch((error: Error) => {
-          console.warn('[TTS] pause interrupted pcm renderer failed:', error);
-        });
-      }
       return;
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_RESUME) {

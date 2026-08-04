@@ -16,7 +16,7 @@ struct DataSyncPage {
   @State cloudSyncEnabled: boolean = false;
   @State autoSyncEnabled: boolean = true;
   @State wifiOnly: boolean = false;
-  @State foregroundSyncEnabled: boolean = true;
+  @State foregroundSyncEnabled: boolean = false;
   @State readingDataEnabled: boolean = true;
   @State bookSourcesEnabled: boolean = true;
   @State readingPreferencesEnabled: boolean = true;

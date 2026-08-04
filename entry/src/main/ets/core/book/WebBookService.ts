@@ -43,6 +43,8 @@ export class WebBookService {
     if (BookSourceDataUrlSupport.isEncodedSource(book.bookUrl)) {
       return await BookSourceDataUrlSupport.getBookInfo(this.http, source, book);
     }
+    const sourceApiBook = await this.tryGetSourceApiBookInfo(source, book);
+    if (sourceApiBook) return sourceApiBook;
     console.log('[WS] getBookInfo, URL:', book.bookUrl);
     const au = new AnalyzeUrl(source, this.http);
     const resp = EncodedSourceUrl.canHandle(book.bookUrl) ?
@@ -74,16 +76,22 @@ export class WebBookService {
 
     const ir = new AnalyzeRule(content, baseUrl, ctx);
     this.seedSourceVariables(ctx, source);
-    book.name = ir.getString(infoRule.name) || book.name;
-    book.author = ir.getString(infoRule.author) || book.author;
-    const infoCoverUrl = BookSourceDataUrlSupport.normalizeCoverUrl(source, ir.getString(infoRule.coverUrl), baseUrl);
+    book.name = await this.getBookInfoFieldValue(source, book, ir, infoRule.name, content, baseUrl) || book.name;
+    book.author = await this.getBookInfoFieldValue(source, book, ir, infoRule.author, content, baseUrl) || book.author;
+    const infoCoverUrl = BookSourceDataUrlSupport.normalizeCoverUrl(source,
+      await this.getBookInfoFieldValue(source, book, ir, infoRule.coverUrl, content, baseUrl), baseUrl);
     book.coverUrl = book.coverUrl || infoCoverUrl;
-    book.intro = BookFieldSanitizer.prefer(ir.getString(infoRule.intro), book.intro);
-    book.kind = BookFieldSanitizer.prefer(ir.getString(infoRule.kind), book.kind);
-    book.latestChapterTitle = BookFieldSanitizer.prefer(ir.getString(infoRule.lastChapter), book.latestChapterTitle);
-    book.wordCount = BookFieldSanitizer.prefer(ir.getString(infoRule.wordCount), book.wordCount);
+    book.intro = BookFieldSanitizer.prefer(
+      await this.getBookInfoFieldValue(source, book, ir, infoRule.intro, content, baseUrl), book.intro);
+    book.kind = BookFieldSanitizer.prefer(
+      await this.getBookInfoFieldValue(source, book, ir, infoRule.kind, content, baseUrl), book.kind);
+    book.latestChapterTitle = BookFieldSanitizer.prefer(
+      await this.getBookInfoFieldValue(source, book, ir, infoRule.lastChapter, content, baseUrl),
+      book.latestChapterTitle);
+    book.wordCount = BookFieldSanitizer.prefer(
+      await this.getBookInfoFieldValue(source, book, ir, infoRule.wordCount, content, baseUrl), book.wordCount);
 
-    const tocUrl = ir.getString(infoRule.tocUrl, true);
+    const tocUrl = await this.getBookInfoFieldValue(source, book, ir, infoRule.tocUrl, content, baseUrl, true);
     if (tocUrl) book.tocUrl = this.repairUrlWithBookId(tocUrl, book.bookUrl);
 
     // 保存变量
@@ -177,11 +185,14 @@ export class WebBookService {
   }
 
   async getChapterList(source: BookSource, book: Book): Promise<BookChapter[]> {
+    AppStorage.setOrCreate('bookSourceStageLastError', '');
     if (BookSourceDataUrlSupport.isEncodedSource(book.tocUrl) || BookSourceDataUrlSupport.isEncodedSource(book.bookUrl)) {
       return await BookSourceDataUrlSupport.getChapterList(this.http, source, book);
     }
     const qtqdChapters = await this.tryBuildQtqdChapterList(source, book);
     if (qtqdChapters.length > 0) return qtqdChapters;
+    const sourceApiChapters = await this.tryBuildSourceApiChapterList(source, book);
+    if (sourceApiChapters.length > 0) return sourceApiChapters;
     console.log('[WS] getChapterList, tocUrl:', book.tocUrl);
     const tocUrl = this.resolveTocUrl(source, book);
     const au = new AnalyzeUrl(source, this.http);
@@ -216,13 +227,19 @@ export class WebBookService {
       if (page === 0) {
         firstBody = currentResp.body;
         firstBaseUrl = baseUrl;
+        const runtimeInput = this.stageDataUrlInput(tocRule.chapterList, currentUrl, currentResp.body);
         const runtimeList = await this.runStageRule(source, book, tocRule.chapterList,
-          currentResp.body, baseUrl, SourceRuntimeStage.TOC);
+          runtimeInput, baseUrl, SourceRuntimeStage.TOC);
         if (runtimeList) {
           const runtimeChapters = this.parseStageChapterList(source, book, runtimeList, baseUrl);
           if (runtimeChapters.length > 0) {
             return runtimeChapters;
           }
+          AppStorage.setOrCreate('bookSourceStageLastError',
+            `目录脚本已返回内容，但没有转换出章节（返回 ${runtimeList.length} 字符）`);
+        } else if (this.stageRuleCode(tocRule.chapterList || '')) {
+          const lastError = AppStorage.get<string>('bookSourceStageLastError') || '';
+          if (!lastError) AppStorage.setOrCreate('bookSourceStageLastError', '目录脚本返回空结果');
         }
         const specialChapters = await this.tryBuildSpecialChapterList(source, book, currentResp.body);
         if (specialChapters.length > 0) {
@@ -317,6 +334,20 @@ export class WebBookService {
       return await this.normalizeReaderContent(source,
         this.applyContentReplaceRule(interactiveContent, source.contentRule.replaceRegex, qtqdContext, chapter),
         this.getChapterBaseUrl(chapter, book, source));
+    }
+    const sourceApiContent = await this.tryGetSourceApiContent(source, book, chapter);
+    if (sourceApiContent.handled) {
+      if (sourceApiContent.audio) return sourceApiContent.content.trim();
+      const interactiveContent = await BookSourceInteractionPostProcessor.process(source, book, chapter,
+        sourceApiContent.content);
+      const sourceApiContext = new RuleContext();
+      sourceApiContext.loadFromJson(book.variable);
+      this.seedBookVariables(sourceApiContext, book.bookUrl);
+      this.seedSourceVariables(sourceApiContext, source);
+      this.seedChapterVariables(sourceApiContext, chapter);
+      return await this.normalizeReaderContent(source,
+        this.applyContentReplaceRule(interactiveContent, source.contentRule.replaceRegex, sourceApiContext, chapter),
+        chapter.url || book.tocUrl || book.bookUrl || source.bookSourceUrl);
     }
     if (BookSourceDataUrlSupport.isEncodedSource(chapter.url)) {
       const shortcutContent = await BookSourceDataUrlSupport.getContent(this.http, source, book, chapter);
@@ -1228,28 +1259,207 @@ export class WebBookService {
     const code = this.stageRuleCode(rawRule);
     if (!code) return '';
     const decision = BookSourceRuntimeRouter.decide(stage, `${source.jsLib || ''}\n${code}`);
-    if (decision.runtime !== 'arkweb' || !BookSourceStageWebRuntime.get().isAvailable()) return '';
+    if (decision.runtime !== 'arkweb') {
+      AppStorage.setOrCreate('bookSourceStageLastError', `${stage} 阶段未路由到完整脚本运行层`);
+      return '';
+    }
+    const runtime = BookSourceStageWebRuntime.get();
+    if (!await runtime.waitUntilAvailable()) {
+      AppStorage.setOrCreate('bookSourceStageLastError', `${stage} 阶段脚本运行环境未就绪`);
+      return '';
+    }
     const request = new StageWebRuntimeRequest();
     request.source = source;
     request.book = book;
     request.code = code;
     request.content = content || '';
+    request.contextContent = content || '';
     request.baseUrl = baseUrl || book.bookUrl || source.bookSourceUrl;
     try {
-      const result = await BookSourceStageWebRuntime.get().execute(request);
+      const result = await runtime.execute(request);
       return result.value || '';
     } catch (error) {
       console.warn('[WS] stage runtime failed, fallback legacy:', source.bookSourceName, stage, error);
+      const message = error instanceof Error ? error.message : String(error || '');
+      AppStorage.setOrCreate('bookSourceStageLastError', `${stage} 阶段：${message || '脚本执行失败'}`);
       return '';
     }
+  }
+
+  private async tryBuildSourceApiChapterList(source: BookSource, book: Book): Promise<BookChapter[]> {
+    const apiBase = this.sourceApiBase(source);
+    const tocScript = source.tocRule?.chapterList || '';
+    if (!apiBase || !tocScript.includes('requestApiUrl') || !tocScript.includes('/catalog')) return [];
+    const payload = EncodedSourceUrl.decode(book.tocUrl || '');
+    if (!payload || !payload.text) return [];
+    const novelId = payload.text.trim();
+    const type = String(payload.options['type'] || 'novel').trim() || 'novel';
+    const catalogValue = await this.fetchSourceApiData(source, apiBase, `/${type}/catalog`, {
+      novelId: novelId
+    });
+    if (!Array.isArray(catalogValue)) return [];
+
+    const cachedIds = new Set<string>();
+    const cacheValue = await this.fetchSourceApiData(source, apiBase, `/${type}/cache`, {
+      novelId: novelId
+    });
+    if (Array.isArray(cacheValue)) {
+      for (const cacheItem of cacheValue as Object[]) {
+        if (!cacheItem || typeof cacheItem !== 'object' || Array.isArray(cacheItem)) continue;
+        const cacheRecord = cacheItem as Record<string, Object>;
+        const cacheId = String(cacheRecord['chapId'] || cacheRecord['chapterId'] || cacheRecord['id'] || '');
+        if (cacheId) cachedIds.add(cacheId);
+      }
+    }
+
+    const chapters: BookChapter[] = [];
+    for (const volumeItem of catalogValue as Object[]) {
+      if (!volumeItem || typeof volumeItem !== 'object' || Array.isArray(volumeItem)) continue;
+      const volume = volumeItem as Record<string, Object>;
+      const rawChapters = volume['chapters'];
+      const chapterValues = Array.isArray(rawChapters) ? rawChapters as Object[] : [volumeItem];
+      for (const chapterItem of chapterValues) {
+        if (!chapterItem || typeof chapterItem !== 'object' || Array.isArray(chapterItem)) continue;
+        const record = chapterItem as Record<string, Object>;
+        const chapterId = String(record['chapId'] || record['chapterId'] || record['id'] || '');
+        const chapterName = String(record['chapName'] || record['chapterName'] || record['name'] || record['title'] || '');
+        if (!chapterId || !chapterName) continue;
+        const isVip = record['isVip'] === true || String(record['isVip'] || '') === 'true';
+        const isBuy = record['isBuy'] === true || record['isPay'] === true ||
+          String(record['isBuy'] || record['isPay'] || '') === 'true';
+        const cached = cachedIds.has(chapterId);
+        const chapter = new BookChapter();
+        chapter.title = this.cleanChapterTitle((isVip ? (isBuy ? ' 🔑 ' : cached ? ' 🍋 ' : '') : '') + chapterName);
+        chapter.url = `data:;base64,${this.base64Encode(chapterId)},{"type":"${type}","novelId":"${novelId}"}`;
+        chapter.bookUrl = book.bookUrl;
+        chapter.index = chapters.length;
+        chapter.isVip = isVip && !cached;
+        chapter.isPay = isBuy;
+        const displayTime = String(record['displayTime'] || record['updateTime'] || '');
+        const charCount = String(record['charCount'] || record['wordCount'] || '');
+        if (displayTime || charCount) {
+          chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'updateTime',
+            `${displayTime}${displayTime && charCount ? ' | ' : ''}${charCount}${charCount ? '字' : ''}`);
+        }
+        chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'baseUrl', chapter.url);
+        chapters.push(chapter);
+      }
+    }
+    if (chapters.length > 0) {
+      if (type === 'novel') book.type = 8;
+      else if (type === 'audio') book.type = 32;
+      else if (type === 'comic') book.type = 64;
+      AppStorage.setOrCreate('bookSourceStageLastError', '');
+    }
+    return chapters;
+  }
+
+  private async tryGetSourceApiBookInfo(source: BookSource, book: Book): Promise<Book | null> {
+    const apiBase = this.sourceApiBase(source);
+    if (!apiBase || !book.bookUrl.startsWith(apiBase)) return null;
+    const pathMatch = book.bookUrl.match(/\/(novel|audio|comic)\/info(?:\?|$)/);
+    if (!pathMatch) return null;
+    const type = String(pathMatch[1] || 'novel');
+    const novelId = this.extractQueryParam(book.bookUrl, 'novelId') ||
+      this.extractQueryParam(book.bookUrl, 'bookId') || this.extractQueryParam(book.bookUrl, 'id');
+    if (!novelId) return null;
+    const value = await this.fetchSourceApiData(source, apiBase, `/${type}/info`, { novelId: novelId });
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const data = value as Record<string, Object>;
+    book.name = String(data['name'] || data['bookName'] || book.name || '');
+    book.author = String(data['author'] || data['writer'] || book.author || '');
+    book.coverUrl = String(data['cover'] || data['coverUrl'] || book.coverUrl || '');
+    book.intro = BookFieldSanitizer.prefer(String(data['desc'] || data['intro'] || ''), book.intro);
+    book.kind = BookFieldSanitizer.prefer([data['status'], data['category'], data['subCategory'], data['tag']]
+      .map((entry: Object): string => String(entry || '').trim()).filter((entry: string): boolean => !!entry)
+      .join(' '), book.kind);
+    book.latestChapterTitle = BookFieldSanitizer.prefer(String(data['lastChapter'] ||
+      data['latestChapterTitle'] || ''), book.latestChapterTitle);
+    book.wordCount = BookFieldSanitizer.prefer(String(data['wordsCount'] || data['wordCount'] || ''), book.wordCount);
+    const resolvedId = String(data['id'] || data['novelId'] || novelId);
+    const resolvedType = String(data['type'] || type);
+    book.tocUrl = `data:;base64,${this.base64Encode(resolvedId)},{"type":"${resolvedType}"}`;
+    if (resolvedType === 'novel') book.type = 8;
+    else if (resolvedType === 'audio') book.type = 32;
+    else if (resolvedType === 'comic') book.type = 64;
+    AppStorage.setOrCreate('bookSourceStageLastError', '');
+    return book;
+  }
+
+  private async tryGetSourceApiContent(source: BookSource, book: Book,
+    chapter: BookChapter): Promise<QtqdContentData> {
+    const result = new QtqdContentData();
+    const apiBase = this.sourceApiBase(source);
+    const contentScript = source.contentRule?.content || '';
+    if (!apiBase || !contentScript.includes('requestApiUrl') || !contentScript.includes('/chap')) return result;
+    const payload = EncodedSourceUrl.decode(chapter.url || '');
+    if (!payload || !payload.text) return result;
+    const type = String(payload.options['type'] || '').trim();
+    const novelId = String(payload.options['novelId'] || '').trim();
+    if (!type || !novelId || type === 'volume') return result;
+    const dataValue = await this.fetchSourceApiData(source, apiBase, `/${type}/chap`, {
+      novelId: novelId,
+      chapId: payload.text.trim()
+    });
+    if (!dataValue || typeof dataValue !== 'object' || Array.isArray(dataValue)) return result;
+    const data = dataValue as Record<string, Object>;
+    result.handled = true;
+    result.audio = type === 'audio';
+    if (type === 'audio') result.content = String(data['url'] || data['audioUrl'] || '');
+    else if (type === 'comic') {
+      const images = data['images'];
+      result.content = Array.isArray(images) ? (images as Object[]).map((value: Object): string =>
+        `<img src="${String(value || '')}">`).join('\n') : '';
+    } else {
+      result.content = String(data['content'] || data['text'] || '');
+    }
+    return result;
+  }
+
+  private sourceApiBase(source: BookSource): string {
+    const library = source.jsLib || '';
+    if (!/function\s+getApiUrl\s*\(|function\s+requestApiUrl\s*\(/.test(library)) return '';
+    const match = library.match(/\b(?:const|let|var)\s+api\s*=\s*['"](https?:\/\/[^'"]+)['"]/);
+    return match ? String(match[1] || '').replace(/\/$/, '') : '';
+  }
+
+  private async fetchSourceApiData(source: BookSource, apiBase: string, path: string,
+    params: Record<string, string>): Promise<Object | null> {
+    const query: string[] = [];
+    for (const key in params) {
+      const value = params[key];
+      if (value !== '') query.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+    }
+    const option = JSON.stringify({
+      method: 'GET',
+      headers: { authorization: `Bearer ${source.variable || ''}` }
+    });
+    const response = await new AnalyzeUrl(source, this.http).fetch(`${apiBase}${path}?${query.join('&')},${option}`);
+    if (!response.success || !response.body) return null;
+    try {
+      const root = JSON.parse(response.body) as Record<string, Object>;
+      const message = String(root['msg'] || root['message'] || '');
+      if (message && message !== 'success') return null;
+      return root['data'] || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  private async getBookInfoFieldValue(source: BookSource, book: Book, rule: AnalyzeRule,
+    rawRule: string, content: string, baseUrl: string, resolveUrl: boolean = false): Promise<string> {
+    if (!rawRule) return '';
+    const stageValue = await this.runStageRule(source, book, rawRule, content, baseUrl,
+      SourceRuntimeStage.BOOK_INFO);
+    if (stageValue) return resolveUrl ? BookUrlResolver.resolve(stageValue, baseUrl) : stageValue;
+    return rule.getString(rawRule, resolveUrl);
   }
 
   private stageRuleCode(rawRule: string): string {
     const raw = (rawRule || '').trim();
     if (/^@?js:/i.test(raw)) return raw.replace(/^@?js:\s*/i, '');
-    if (/^<js>/i.test(raw) && /<\/js>\s*$/i.test(raw)) {
-      return raw.replace(/^<js>\s*/i, '').replace(/<\/js>\s*$/i, '');
-    }
+    const leadingBlock = raw.match(/^<js>\s*([\s\S]*?)<\/js>/i);
+    if (leadingBlock) return leadingBlock[1] || '';
     return '';
   }
 
@@ -1293,11 +1503,13 @@ export class WebBookService {
     if (!code) return '';
     const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.CONTENT,
       `${source.jsLib || ''}\n${code}`);
-    if (decision.runtime !== 'arkweb' || !BookSourceStageWebRuntime.get().isAvailable()) return '';
+    if (decision.runtime !== 'arkweb') return '';
+    const runtime = BookSourceStageWebRuntime.get();
+    if (!await runtime.waitUntilAvailable()) return '';
     let content = '';
     let baseUrl = chapter.url || book.bookUrl || source.bookSourceUrl;
     const payload = EncodedSourceUrl.decode(chapter.url);
-    if (payload && payload.type === 'qtqd') {
+    if (payload && (payload.type === 'qtqd' || this.ruleExpectsHexDataUrlInput(rawRule))) {
       content = this.textToHex(payload.text);
     } else {
       const response = await new AnalyzeUrl(source, this.http).fetch(chapter.url);
@@ -1306,6 +1518,16 @@ export class WebBookService {
       baseUrl = BookUrlResolver.effectiveBase(response, chapter.url, book.bookUrl || source.bookSourceUrl);
     }
     return await this.runStageRule(source, book, rawRule, content, baseUrl, SourceRuntimeStage.CONTENT);
+  }
+
+  private stageDataUrlInput(rawRule: string, url: string, fallback: string): string {
+    if (!this.ruleExpectsHexDataUrlInput(rawRule)) return fallback;
+    const payload = EncodedSourceUrl.decode(url);
+    return payload ? this.textToHex(payload.text) : fallback;
+  }
+
+  private ruleExpectsHexDataUrlInput(rawRule: string): boolean {
+    return /\bjava\s*\.\s*hexDecodeToString\s*\(\s*(?:String\s*\(\s*)?result\b/.test(rawRule || '');
   }
 
   private textToHex(value: string): string {

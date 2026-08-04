@@ -30,6 +30,21 @@ class TtsRequestResult {
 
 class TtsRateBucket {
   active: number = 0;
+  timestamps: number[] = [];
+}
+
+class TtsRateConfig {
+  mode: number = 0;
+  limit: number = 0;
+  windowMs: number = 0;
+  waitMs: number = 0;
+}
+
+class HttpTtsCancelledError extends Error {
+  constructor() {
+    super('自定义音色合成已停止');
+    this.name = 'HttpTtsCancelledError';
+  }
 }
 
 export class HttpTtsAudio {
@@ -65,13 +80,14 @@ export class HttpTtsReader {
     const generation = this.generation;
     const normalizedSpeed = this.normalizeSpeed(speed);
     try {
-      const audio = await this.synthesizeWithRetry(voice, text, normalizedSpeed);
-      if (generation !== this.generation) {
-        throw new Error('自定义音色合成已停止');
-      }
+      const audio = await this.synthesizeWithRetry(voice, text, normalizedSpeed, generation);
+      this.assertGeneration(generation);
       this.consecutiveErrors = 0;
       return audio.filePath ? audio : this.applyLocalSpeed(audio, normalizedSpeed);
     } catch (error) {
+      if (this.isCancelledError(error as Error) || generation !== this.generation) {
+        throw new HttpTtsCancelledError();
+      }
       this.consecutiveErrors++;
       console.warn('[TTS] custom voice synthesize failed:', error);
       if (this.consecutiveErrors >= HttpTtsReader.MAX_RETRY) {
@@ -147,26 +163,36 @@ export class HttpTtsReader {
       `${this.pcmPlayer.debugState()},${this.avPlayer.debugState()}`;
   }
 
-  private async synthesizeWithRetry(voice: HttpTTS, text: string, speed: number): Promise<HttpTtsAudio> {
+  private async synthesizeWithRetry(voice: HttpTTS, text: string, speed: number,
+    generation: number): Promise<HttpTtsAudio> {
+    this.assertGeneration(generation);
     const rule = this.buildRequest(voice, text, speed);
     const maxRetry = Math.max(HttpTtsReader.MAX_RETRY, rule.retry + 1);
     let lastError: Error = new Error('自定义音色请求失败');
     for (let attempt = 0; attempt < maxRetry; attempt++) {
+      this.assertGeneration(generation);
       try {
-        return await this.withRateLimit(voice, () => this.fetchAudio(voice, rule, text, speed));
+        return await this.withRateLimit(voice, generation,
+          () => this.fetchAudio(voice, rule, text, speed, generation));
       } catch (error) {
+        if (this.isCancelledError(error as Error) || generation !== this.generation) {
+          throw new HttpTtsCancelledError();
+        }
         lastError = error as Error;
         if (attempt + 1 < maxRetry) {
-          await this.delay(Math.min(1800, 300 + attempt * 300));
+          await this.delayCancelable(Math.min(1800, 300 + attempt * 300), generation);
         }
       }
     }
     throw lastError;
   }
 
-  private async fetchAudio(voice: HttpTTS, rule: TtsRequestResult, text: string, speed: number): Promise<HttpTtsAudio> {
+  private async fetchAudio(voice: HttpTTS, rule: TtsRequestResult, text: string, speed: number,
+    generation: number): Promise<HttpTtsAudio> {
+    this.assertGeneration(generation);
     const cachePath = this.cachePath(voice, rule, text, speed);
     if (cachePath && this.fileExists(cachePath)) {
+      this.assertGeneration(generation);
       return this.audioFromFile(cachePath, this.contentTypeFromPath(cachePath), speed);
     }
     const client = http.createHttp();
@@ -187,6 +213,7 @@ export class HttpTtsReader {
         readTimeout: 300000,
         expectDataType: http.HttpDataType.ARRAY_BUFFER
       });
+      this.assertGeneration(generation);
       const responseHeaders = (response.header || {}) as Record<string, string>;
       if (this.cookieEnabled(voice)) {
         this.saveResponseCookies(rule.url, responseHeaders);
@@ -196,7 +223,8 @@ export class HttpTtsReader {
       if (response.responseCode < 200 || response.responseCode >= 300) {
         const bodyText = this.decodeText(buffer, rule.charset);
         this.handleLoginCheck(voice, bodyText, rule.url);
-        throw new Error(`HTTP ${response.responseCode}`);
+        const preview = this.errorBodyPreview(bodyText);
+        throw new Error(preview ? `HTTP ${response.responseCode}：${preview}` : `HTTP ${response.responseCode}`);
       }
       if (!buffer || buffer.byteLength <= 0) {
         throw new Error('音频响应为空');
@@ -212,6 +240,7 @@ export class HttpTtsReader {
       if (!cachePath) {
         throw new Error('非 PCM 音频需要应用缓存目录');
       }
+      this.assertGeneration(generation);
       this.writeCacheFile(cachePath, buffer);
       this.pruneCache();
       return this.audioFromFile(cachePath, contentType, speed);
@@ -576,15 +605,35 @@ export class HttpTtsReader {
     return audio;
   }
 
-  private async withRateLimit<T>(voice: HttpTTS, action: () => Promise<T>): Promise<T> {
-    const max = this.parseConcurrentRate(voice.concurrentRate);
-    if (max <= 0) return action();
+  private async withRateLimit<T>(voice: HttpTTS, generation: number,
+    action: () => Promise<T>): Promise<T> {
+    this.assertGeneration(generation);
+    const config = this.parseConcurrentRate(voice.concurrentRate);
+    if (config.mode === 0) return action();
     const key = this.voiceKey(voice);
     const bucket = HttpTtsReader.rateBuckets[key] || new TtsRateBucket();
     HttpTtsReader.rateBuckets[key] = bucket;
-    while (bucket.active >= max) {
-      await this.delay(80);
+
+    if (config.mode === 2) {
+      while (true) {
+        this.assertGeneration(generation);
+        const now = Date.now();
+        bucket.timestamps = bucket.timestamps.filter((timestamp: number): boolean =>
+          now - timestamp < config.windowMs);
+        if (bucket.timestamps.length < config.limit) {
+          bucket.timestamps.push(now);
+          return action();
+        }
+        const waitMs = Math.max(1, bucket.timestamps[0] + config.windowMs - now);
+        await this.delayCancelable(Math.min(250, waitMs), generation);
+      }
     }
+
+    const pollMs = Math.max(20, Math.min(200, config.waitMs));
+    while (bucket.active > 0) {
+      await this.delayCancelable(pollMs, generation);
+    }
+    this.assertGeneration(generation);
     bucket.active++;
     try {
       return await action();
@@ -593,11 +642,22 @@ export class HttpTtsReader {
     }
   }
 
-  private parseConcurrentRate(value: string): number {
+  private parseConcurrentRate(value: string): TtsRateConfig {
+    const config = new TtsRateConfig();
     const raw = (value || '').trim();
-    if (!raw || raw === '0') return 0;
-    const match = raw.match(/^\d+/);
-    return match ? Math.max(1, Number(match[0]) || 1) : 1;
+    if (!raw || raw === '0') return config;
+    const windowMatch = raw.match(/^(\d+)\s*\/\s*(\d+)$/);
+    if (windowMatch) {
+      config.mode = 2;
+      config.limit = Math.min(1000, Math.max(1, Number(windowMatch[1]) || 1));
+      config.windowMs = Math.min(60 * 60 * 1000, Math.max(100, Number(windowMatch[2]) || 100));
+      return config;
+    }
+    if (/^\d+$/.test(raw)) {
+      config.mode = 1;
+      config.waitMs = Math.min(60 * 60 * 1000, Math.max(1, Number(raw) || 1));
+    }
+    return config;
   }
 
   private cachePath(voice: HttpTTS, rule: TtsRequestResult, text: string, speed: number): string {
@@ -855,6 +915,29 @@ export class HttpTtsReader {
       hash = Math.imul(hash, 16777619);
     }
     return (hash >>> 0).toString(16);
+  }
+
+  private errorBodyPreview(value: string): string {
+    return (value || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .substring(0, 160);
+  }
+
+  private assertGeneration(generation: number): void {
+    if (generation !== this.generation) {
+      throw new HttpTtsCancelledError();
+    }
+  }
+
+  private isCancelledError(error: Error): boolean {
+    return error instanceof HttpTtsCancelledError || error.name === 'HttpTtsCancelledError' ||
+      error.message === '自定义音色合成已停止';
+  }
+
+  private async delayCancelable(ms: number, generation: number): Promise<void> {
+    await this.delay(ms);
+    this.assertGeneration(generation);
   }
 
   private delay(ms: number): Promise<void> {

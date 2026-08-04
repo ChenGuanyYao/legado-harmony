@@ -1790,19 +1790,34 @@ struct BookSourcePage {
                     .fontSize(12)
                     .fontColor(this.subTextColor())
                     .width('100%')
-                  TextInput({ text: item.value, placeholder: item.placeholder || item.name })
-                    .type(item.type.toLowerCase() === 'password' ? InputType.Password : InputType.Normal)
-                    .width('100%')
-                    .height(42)
-                    .borderRadius(8)
-                    .backgroundColor(this.inputColor())
-                    .fontColor(this.primaryTextColor())
-                    .placeholderColor(this.placeholderTextColor())
-                    .padding({ left: 12, right: 12 })
-                    .enabled(!this.isExecutingLoginAction)
-                    .onChange((value: string) => {
-                      this.updateSourceLoginInput(index, value);
-                    })
+                  Row({ space: 8 }) {
+                    TextInput({ text: item.value, placeholder: item.placeholder || item.name })
+                      .type(item.type.toLowerCase() === 'password' ? InputType.Password : InputType.Normal)
+                      .layoutWeight(1)
+                      .height(42)
+                      .borderRadius(8)
+                      .backgroundColor(this.inputColor())
+                      .fontColor(this.primaryTextColor())
+                      .placeholderColor(this.placeholderTextColor())
+                      .padding({ left: 12, right: 12 })
+                      .enabled(!this.isExecutingLoginAction)
+                      .onChange((value: string) => {
+                        this.updateSourceLoginInput(index, value);
+                      })
+                    if (item.action) {
+                      Button(this.isExecutingLoginAction ? '执行中' : '执行', { type: ButtonType.Normal })
+                        .width(68)
+                        .height(42)
+                        .fontSize(13)
+                        .fontColor(this.primaryTextColor())
+                        .backgroundColor(this.inputColor())
+                        .enabled(!this.isExecutingLoginAction)
+                        .onClick(() => {
+                          this.executeSourceLoginAction(item);
+                        })
+                    }
+                  }
+                  .width('100%')
                 }
                 .width('100%')
               } else if (this.isSourceLoginToggle(item)) {
@@ -3641,18 +3656,27 @@ struct BookSourcePage {
   }
 
   async executeSourceLoginAction(item: BookSourceLoginItem): Promise<void> {
-    const source = this.actionSourceDetail;
-    if (!source || !item.action || this.isExecutingLoginAction) return;
+    const currentSource = this.actionSourceDetail;
+    if (!currentSource || !item.action || this.isExecutingLoginAction) return;
     if (BookSourceRuntimeRouter.isDirectUrlAction(item.action)) {
       this.showSourceLoginUiDialog = false;
       this.sourceLoginItems = [];
-      this.openSourceLoginBrowser(source, item.action.trim(),
-        `${source.bookSourceName || '书源'} · ${item.name}`, /(?:登录|login)/i.test(item.name));
+      this.openSourceLoginBrowser(currentSource, item.action.trim(),
+        `${currentSource.bookSourceName || '书源'} · ${item.name}`, /(?:登录|login)/i.test(item.name));
       return;
     }
     this.isExecutingLoginAction = true;
-    this.syncSourceLoginInfo(source);
+    this.syncSourceLoginInfo(currentSource);
     try {
+      let source = currentSource;
+      const persistedSource = await AppDatabase.getInstance().getBookSource(currentSource.bookSourceUrl);
+      if (persistedSource) {
+        const inputValues = BookSourceLoginWebRuntime.parseRecord(currentSource.loginInfo);
+        persistedSource.loginInfo = BookSourceLoginWebRuntime.mergeRecord(persistedSource.loginInfo, inputValues);
+        source = persistedSource;
+        this.actionSourceDetail = source;
+      }
+      const previousVariable = source.variable || '';
       const result = await this.runSourceLoginAction(source, item.action);
       if (result.errorMessage) throw new Error(result.errorMessage);
       source.variable = result.variable;
@@ -3670,6 +3694,14 @@ struct BookSourcePage {
       this.markSourceLoginCompleted(item, result);
       if (result.toastMessage) {
         promptAction.showToast({ message: result.toastMessage.trim() || '操作成功' });
+      } else if (result.variable !== previousVariable && result.variable.trim()) {
+        promptAction.showToast({ message: /token/i.test(`${item.name}\n${item.action}`) ?
+          'Token 已获取并保存到书源变量' : '书源变量已更新' });
+      } else if (result.logMessage) {
+        promptAction.showToast({ message: result.logMessage.trim() });
+      } else if (!result.requestedSearchKeyword && !result.refreshExploreRequested &&
+        !result.requestedUrl && !result.requestedHtml) {
+        promptAction.showToast({ message: '操作已执行，书源没有返回提示信息' });
       }
       if (result.requestedSearchKeyword) {
         this.openRuntimeSourceSearch(source, result.requestedSearchKeyword);
@@ -3864,7 +3896,9 @@ struct BookSourcePage {
     for (const item of items) {
       if (this.isSourceLoginChoice(item) || this.isSourceLoginInput(item)) continue;
       item.status = this.sourceLoginStoredButtonStatus(item, states);
-      if (toastStatus && targetName && item.name === targetName) item.status = toastStatus;
+      if (!item.status && source.variable.trim().length > 60 &&
+        /(?:邀请码.*注册|注册.*token)/i.test(item.name)) item.status = '已获取';
+      if (toastStatus && targetName && item.name === targetName && !item.status) item.status = toastStatus;
     }
   }
 
@@ -3921,6 +3955,8 @@ struct BookSourcePage {
   sourceLoginStoredButtonStatus(item: BookSourceLoginItem, states: Record<string, string>): string {
     const name = this.normalizeSourceLoginStateKey(item.name);
     const action = (item.action || '').toLowerCase();
+    const choiceStatus = this.sourceLoginStoredChoiceStatus(action, states);
+    if (choiceStatus) return choiceStatus;
     const switchLike = name.includes('开关') || name.includes('同步') || name.includes('显示') ||
       name.includes('简介') || name.includes('网络模式') ||
       /toggle|switch|paracomment|closeimg|set_info|ste\s*\(/i.test(action);
@@ -3933,6 +3969,8 @@ struct BookSourcePage {
     if (name.includes('目录')) aliases.push('目录显示来源', '目录显示来源开关');
     if (name.includes('网络')) aliases.push('网络模式');
     if (name.includes('下载')) aliases.push('fqdown', 'txt下载开关');
+    const switchArgument = action.match(/\b(?:switchsetting|toggle|switch)\s*\(\s*(['"])(.*?)\1/i);
+    if (switchArgument && switchArgument[2]) aliases.push(switchArgument[2]);
     aliases.push(item.name.replace(/开关/g, ''), item.name);
     for (const alias of aliases) {
       const normalizedAlias = this.normalizeSourceLoginStateKey(alias);
@@ -3944,6 +3982,39 @@ struct BookSourcePage {
       }
     }
     return '';
+  }
+
+  sourceLoginStoredChoiceStatus(action: string, states: Record<string, string>): string {
+    let stateKey = '';
+    let expectedValue = '';
+    let match = action.match(/\bsettype\s*\(\s*(['"])(.*?)\1/i);
+    if (match && match[2] !== undefined) {
+      stateKey = 'type';
+      expectedValue = match[2];
+    } else {
+      match = action.match(/\bsetorder\s*\(\s*(['"]?)([^,'"\s)]+)\1/i);
+      if (match && match[2] !== undefined) {
+        stateKey = 'order';
+        expectedValue = match[2];
+      } else {
+        match = action.match(/\bsetgender\s*\(\s*(['"]?)([^,'"\s)]+)\1/i);
+        if (match && match[2] !== undefined) {
+          stateKey = 'gender';
+          expectedValue = match[2];
+        } else {
+          match = action.match(/\bsource\.put\s*\(\s*(['"])(.*?)\1\s*,\s*(['"]?)([^,'"\s)]+)\3/i);
+          if (match && match[2] !== undefined && match[4] !== undefined) {
+            stateKey = match[2];
+            expectedValue = match[4];
+          }
+        }
+      }
+    }
+    const normalizedKey = this.normalizeSourceLoginStateKey(stateKey);
+    if (!normalizedKey || states[normalizedKey] === undefined) return '';
+    const stored = String(states[normalizedKey] || '').trim().toLowerCase();
+    const expected = String(expectedValue || '').trim().toLowerCase();
+    return stored === expected ? '已选' : '';
   }
 
   sourceLoginStatusLabel(value: string, inverted: boolean = false): string {
@@ -3966,8 +4037,8 @@ struct BookSourcePage {
     if (!text) return '';
     if (/已关闭|❌.*关闭|不显示|已精简|停止同步/.test(text)) return '已关闭';
     if (/已开启|✅.*开启|显示文中图片|已恢复.*简介|自动同步/.test(text)) return '已开启';
-    const mode = text.match(/(?:切换为|设置[^为]*为)([^，。\n]{1,12})(?:模式)?/);
-    return mode ? mode[1].replace(/模式$/, '') : '';
+    const mode = text.match(/(?:切换为|设置[^为]*为)[：:\s]*([^，。\n]{1,12})(?:模式)?/);
+    return mode ? mode[1].replace(/模式$/, '').trim() : '';
   }
 
   openRuntimeSourceSearch(source: BookSource, keyword: string): void {

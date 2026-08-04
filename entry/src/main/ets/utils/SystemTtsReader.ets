@@ -27,6 +27,7 @@ export interface TtsReadOptions {
   cloudVoiceName?: string;
   cloudVoiceTier?: string;
   focusBreakOffsets?: number[];
+  keepAudioOutputOnFinish?: boolean;
 }
 
 export interface TtsVoiceDownloadCallbacks {
@@ -84,6 +85,7 @@ export class SystemTtsReader {
   private static readonly LEGACY_ONLINE_MODE: number = 0;
   private static readonly OFFLINE_MODE: number = 1;
   private static readonly CUSTOM_TTS_PREFETCH_WINDOW: number = 3;
+  private static readonly CUSTOM_TTS_HIDDEN_GAP_LENGTH: number = 8;
   private static readonly CLOUD_TTS_WIFI_PREFETCH_WINDOW: number = 2;
   private static readonly CLOUD_TTS_MOBILE_PREFETCH_WINDOW: number = 1;
   private static readonly CLOUD_TTS_FOCUS_CHUNK_LENGTH: number = 10;
@@ -151,6 +153,8 @@ export class SystemTtsReader {
   private systemLastWritePromise: Promise<void> = Promise.resolve();
   private systemBufferedSegmentCount: number = 0;
   private systemAudioSessionOwner: string = '';
+  private keepAudioOutputOnFinish: boolean = false;
+  private pcmOutputReleaseTimerId: number = -1;
 
   static async listAvailableVoices(): Promise<TtsVoiceOption[]> {
     try {
@@ -371,6 +375,10 @@ export class SystemTtsReader {
   }
 
   async start(text: string, options?: TtsReadOptions): Promise<void> {
+    const reusingPcmOutput = this.cancelPendingPcmOutputRelease();
+    if (reusingPcmOutput) {
+      console.info(`[TTS] reusing pcm output across chapter handoff: ${this.pcmPlayer.debugState()}`);
+    }
     const cleanText = this.normalizeText(text);
     if (!cleanText) {
       throw new Error('朗读内容为空');
@@ -400,9 +408,10 @@ export class SystemTtsReader {
     this.optionCloudVoiceTier = (options?.cloudVoiceTier || '').toUpperCase() === 'PREMIUM' ?
       'PREMIUM' : 'STANDARD';
     this.optionFocusBreakOffsets = this.normalizeFocusBreakOffsets(options?.focusBreakOffsets, cleanText.length);
+    this.keepAudioOutputOnFinish = options?.keepAudioOutputOnFinish === true;
     const customVoice = this.getCurrentCustomVoice();
     this.chunks = this.optionCloudVoiceId ? this.splitCloudText(cleanText) :
-      (customVoice ? this.splitText(cleanText, 64) :
+      (customVoice ? this.splitCustomText(cleanText, 64) :
         this.splitSystemText(cleanText, this.optionFocusBreakOffsets));
     this.chunkIndex = 0;
     this.active = true;
@@ -595,6 +604,7 @@ export class SystemTtsReader {
   }
 
   stop(): void {
+    this.cancelPendingPcmOutputRelease();
     this.readGeneration++;
     this.active = false;
     this.paused = false;
@@ -612,6 +622,7 @@ export class SystemTtsReader {
     this.optionCloudVoiceName = '';
     this.optionCloudVoiceTier = 'STANDARD';
     this.optionFocusBreakOffsets = [];
+    this.keepAudioOutputOnFinish = false;
     this.currentRequestId = '';
     this.currentSpeakStartedAt = 0;
     this.currentSpeakMinDuration = 0;
@@ -772,6 +783,7 @@ export class SystemTtsReader {
   }
 
   private finish(notify: boolean): void {
+    const keepPcmOutput = notify && this.keepAudioOutputOnFinish && this.ttsPcmPlayType === 0;
     this.readGeneration++;
     this.active = false;
     this.paused = false;
@@ -793,14 +805,44 @@ export class SystemTtsReader {
     this.resetSystemPcmPipeline();
     this.clearSpeakWatchdog();
     this.chunkFocusChain = Promise.resolve();
-    this.pcmPlayer.stop();
+    if (keepPcmOutput) {
+      // Continuous reading restarts with the next chapter. Keep the same
+      // AudioRenderer and audio-session owner across that short handoff so the
+      // device does not reselect an audio route or recalculate stream gain at
+      // every (possibly hour-long) chapter boundary.
+      this.schedulePcmOutputRelease();
+    } else {
+      this.pcmPlayer.stop();
+    }
     this.releaseSystemAudioSession();
     this.audioStarted = false;
     this.optionCloudVoiceId = '';
     this.optionCloudVoiceName = '';
     this.optionCloudVoiceTier = 'STANDARD';
     this.optionFocusBreakOffsets = [];
+    this.keepAudioOutputOnFinish = false;
     if (notify && this.onFinished) this.onFinished();
+  }
+
+  private schedulePcmOutputRelease(): void {
+    this.cancelPendingPcmOutputRelease();
+    console.info(`[TTS] keeping pcm output for chapter handoff: ${this.pcmPlayer.debugState()}`);
+    this.pcmOutputReleaseTimerId = setTimeout(() => {
+      this.pcmOutputReleaseTimerId = -1;
+      if (!this.active) {
+        console.info('[TTS] releasing idle pcm output after chapter handoff grace period');
+        this.pcmPlayer.stop();
+      }
+    }, 15000);
+  }
+
+  private cancelPendingPcmOutputRelease(): boolean {
+    if (this.pcmOutputReleaseTimerId < 0) {
+      return false;
+    }
+    clearTimeout(this.pcmOutputReleaseTimerId);
+    this.pcmOutputReleaseTimerId = -1;
+    return true;
   }
 
   private releaseSystemAudioSession(): void {
@@ -1051,8 +1093,9 @@ export class SystemTtsReader {
   }
 
   private fillCustomAudioJobs(generation: number, voice: HttpTTS, jobs: CustomTtsAudioJob[]): void {
+    const prefetchWindow = this.customTtsPrefetchWindow(voice);
     while (this.readGeneration === generation && this.active &&
-      jobs.length < SystemTtsReader.CUSTOM_TTS_PREFETCH_WINDOW && this.chunkIndex < this.chunks.length) {
+      jobs.length < prefetchWindow && this.chunkIndex < this.chunks.length) {
       const index = this.chunkIndex;
       const chunk = this.chunks[this.chunkIndex++];
       const speakText = this.normalizeChunkForSpeech(chunk.text);
@@ -1061,6 +1104,25 @@ export class SystemTtsReader {
       }
       jobs.push(this.createCustomAudioJob(generation, voice, chunk, index, speakText));
     }
+  }
+
+  private customTtsPrefetchWindow(voice: HttpTTS): number {
+    const raw = (voice.concurrentRate || '').trim();
+    if (!raw || raw === '0') {
+      return SystemTtsReader.CUSTOM_TTS_PREFETCH_WINDOW;
+    }
+    if (/^\d+$/.test(raw)) {
+      // A plain Android concurrentRate value is a serialized-access wait, not
+      // a parallelism count. Do not create requests which can only sit behind
+      // the active request and outlive a stop/restart operation.
+      return 1;
+    }
+    const windowMatch = raw.match(/^(\d+)\s*\/\s*(\d+)$/);
+    if (!windowMatch) {
+      return 1;
+    }
+    return Math.max(1, Math.min(SystemTtsReader.CUSTOM_TTS_PREFETCH_WINDOW,
+      Number(windowMatch[1]) || 1));
   }
 
   private createCustomAudioJob(generation: number, voice: HttpTTS, chunk: TtsChunk, index: number,
@@ -2296,6 +2358,43 @@ export class SystemTtsReader {
       start = end;
     }
     return chunks;
+  }
+
+  private splitCustomText(text: string, maxLength: number): TtsChunk[] {
+    const chunks: TtsChunk[] = [];
+    let rangeStart = 0;
+    let cursor = 0;
+    while (cursor < text.length) {
+      if (text.charAt(cursor) !== ' ' && text.charAt(cursor) !== '\t') {
+        cursor++;
+        continue;
+      }
+      const gapStart = cursor;
+      while (cursor < text.length && (text.charAt(cursor) === ' ' || text.charAt(cursor) === '\t')) {
+        cursor++;
+      }
+      if (cursor - gapStart >= SystemTtsReader.CUSTOM_TTS_HIDDEN_GAP_LENGTH) {
+        this.appendCustomTextRange(chunks, text, rangeStart, gapStart, maxLength);
+        rangeStart = cursor;
+      }
+    }
+    this.appendCustomTextRange(chunks, text, rangeStart, text.length, maxLength);
+    return chunks;
+  }
+
+  private appendCustomTextRange(result: TtsChunk[], text: string, rangeStart: number,
+    rangeEnd: number, maxLength: number): void {
+    let start = Math.max(0, Math.min(rangeStart, text.length));
+    const safeRangeEnd = Math.max(start, Math.min(rangeEnd, text.length));
+    while (start < safeRangeEnd) {
+      let end = Math.min(safeRangeEnd, start + maxLength);
+      const sentence = this.findSentenceBreak(text, start, end, maxLength);
+      if (sentence > start && sentence <= safeRangeEnd) {
+        end = sentence;
+      }
+      this.appendAbsoluteTextChunk(result, text, start, end);
+      start = end;
+    }
   }
 
   private splitCloudText(text: string): TtsChunk[] {

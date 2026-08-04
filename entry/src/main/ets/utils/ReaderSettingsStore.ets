@@ -526,7 +526,10 @@ export class ReaderSettingsStore {
     await store.put(ReaderSettingsStore.KEY_FONT_MODE, settings.fontMode);
     await store.put(ReaderSettingsStore.KEY_SYSTEM_FONT_FAMILY, settings.systemFontFamily);
     await store.put(ReaderSettingsStore.KEY_CUSTOM_FONTS_RAW, settings.customFontsRaw);
-    await ReaderSettingsStore.persistActiveThemeProfile(store, settings);
+    // Global font selection is device-local and must not schedule a cloud-sync
+    // pass. Other reader-setting save paths continue to mark preference changes.
+    await ReaderSettingsStore.persistThemeProfile(store, ReaderSettingsStore.activeThemeId(), settings);
+    ReaderSettingsStore.cachedThemeId = ReaderSettingsStore.activeThemeId();
     await store.flush();
   }
 

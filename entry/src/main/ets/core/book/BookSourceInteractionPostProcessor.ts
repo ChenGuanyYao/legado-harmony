@@ -4,6 +4,7 @@ import { EncodedJsonMap, EncodedSourceUrl } from './EncodedSourceUrl';
 import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceStageWebRuntime';
 import { ReaderActionMarker } from './ReaderActionMarker';
 import { CookieStore } from '../http/CookieStore';
+import { HttpClient } from '../http/HttpClient';
 
 class ParagraphCommentPlan {
   sourceType: string = '';
@@ -24,7 +25,10 @@ export class BookSourceInteractionPostProcessor {
     if (!content) return '';
     let result = content;
     const commentsEnabled = this.isParagraphCommentsEnabled(source);
-    const commentPlan = this.buildCommentPlan(chapter);
+    const commentPlan = this.buildCommentPlan(source, chapter);
+    if (commentPlan?.sourceType === 'qd' && this.hasQidianCommentsEnabled(source)) {
+      result = await this.applyQidianComments(source, result, commentPlan);
+    }
     if (commentPlan && /<(?:comment|img)\b[^>]*\bident\s*=/i.test(result)) {
       result = this.normalizeReviewMarkup(source, chapter, result, commentPlan);
     }
@@ -46,13 +50,13 @@ export class BookSourceInteractionPostProcessor {
 
   static shouldRequestParagraphComments(source: BookSource, chapter: BookChapter): boolean {
     if (!this.isParagraphCommentsEnabled(source)) return false;
-    const plan = this.buildCommentPlan(chapter);
+    const plan = this.buildCommentPlan(source, chapter);
     if (!plan) return false;
     return ['fq', 'qm', 'td', 'qq'].includes(plan.sourceType);
   }
 
   static shouldRequestGodComments(source: BookSource, chapter: BookChapter): boolean {
-    const plan = this.buildCommentPlan(chapter);
+    const plan = this.buildCommentPlan(source, chapter);
     return !!plan && plan.sourceType === 'fq' && this.isGodCommentsEnabled(source);
   }
 
@@ -285,10 +289,10 @@ export class BookSourceInteractionPostProcessor {
     return origin && origin[1] ? origin[1] : '';
   }
 
-  private static buildCommentPlan(chapter: BookChapter): ParagraphCommentPlan | null {
+  private static buildCommentPlan(source: BookSource, chapter: BookChapter): ParagraphCommentPlan | null {
     const payload = EncodedSourceUrl.decode(chapter.url);
     if (!payload) return null;
-    const data = payload.data;
+    const data: EncodedJsonMap = { ...payload.data, ...payload.options };
     const sourceName = this.value(data, ['source', 'sources']);
     const normalizedSourceName = sourceName.replace(/^svip_/, '');
     const plan = new ParagraphCommentPlan();
@@ -319,6 +323,11 @@ export class BookSourceInteractionPostProcessor {
         bookid: this.value(data, ['bookid']),
         chapterid: this.value(data, ['chapterid'])
       };
+    } else if (EncodedSourceUrl.str(data['type']) === 'novel' &&
+      /\bfunction\s+qdApi\s*\(|\bfunction\s+getComments\s*\(/.test(source.jsLib || '')) {
+      plan.sourceType = 'qd';
+      plan.bookId = this.value(data, ['novelId', 'novel_id', 'book_id', 'bookId']);
+      plan.chapterId = payload.text || this.value(data, ['chapId', 'chapterId', 'chapter_id', 'cid']);
     } else {
       return null;
     }
@@ -376,6 +385,163 @@ export class BookSourceInteractionPostProcessor {
     if (state !== 0) return state > 0;
     const script = source.contentRule?.content || '';
     return script.includes('/content?review=1') && script.includes('段评开关');
+  }
+
+  static isNamedSettingEnabled(source: BookSource, key: string, fallback: boolean = false): boolean {
+    const state = this.sourceSettingState(source, [key]);
+    return state === 0 ? fallback : state > 0;
+  }
+
+  private static hasQidianCommentsEnabled(source: BookSource): boolean {
+    return this.isParagraphCommentsEnabled(source) ||
+      this.isNamedSettingEnabled(source, '章名段评') ||
+      this.isNamedSettingEnabled(source, '本章讨论') ||
+      this.isNamedSettingEnabled(source, '作者评论') ||
+      this.isNamedSettingEnabled(source, '热门评论');
+  }
+
+  private static async applyQidianComments(source: BookSource, content: string,
+    plan: ParagraphCommentPlan): Promise<string> {
+    const paragraphEnabled = this.isParagraphCommentsEnabled(source);
+    const titleEnabled = this.isNamedSettingEnabled(source, '章名段评');
+    const discussionEnabled = this.isNamedSettingEnabled(source, '本章讨论');
+    const authorEnabled = this.isNamedSettingEnabled(source, '作者评论');
+    const hotEnabled = this.isNamedSettingEnabled(source, '热门评论');
+    let result = content;
+    try {
+      if (paragraphEnabled || titleEnabled || hotEnabled) {
+        const summaryRoot = await this.requestQidianApi('paragraph_summary', plan);
+        const summaryData = this.objectRecord(summaryRoot['data']);
+        const summary = this.objectList(summaryData['summary'] || summaryData['Summary']);
+        const reviews = this.objectList(summaryData['reviews'] || summaryData['Reviews']);
+        result = this.attachQidianParagraphMarkers(result, plan, summary, reviews,
+          paragraphEnabled, titleEnabled, hotEnabled);
+      }
+      if (discussionEnabled) {
+        const chapterRoot = await this.requestQidianApi('chapter_comments', plan, { page: '1', page_size: '20' });
+        const chapterData = this.objectRecord(chapterRoot['data']);
+        const total = Number(chapterData['total'] || chapterData['Total'] ||
+          this.objectList(chapterData['comments'] || chapterData['Comments']).length || 0);
+        if (total > 0) {
+          result += `\n${this.qidianCommentMarkup('本章讨论', this.qidianCommentUrl('chapter_comments', plan, '-1'),
+            String(total))}`;
+        }
+      }
+      if (authorEnabled) {
+        const activityRoot = await this.requestQidianApi('chapter_activity', plan);
+        const authorText = this.qidianAuthorText(activityRoot['data']);
+        if (authorText) result += `\n作者说：${authorText}`;
+      }
+      return result;
+    } catch (error) {
+      console.warn('[InteractionPostProcessor] qidian comments skipped:', source.bookSourceName, error);
+      return content;
+    }
+  }
+
+  private static attachQidianParagraphMarkers(content: string, plan: ParagraphCommentPlan, summary: Object[],
+    reviews: Object[], paragraphEnabled: boolean, titleEnabled: boolean, hotEnabled: boolean): string {
+    const lines = (content || '').replace(/\r\n?/g, '\n').split('\n');
+    const textIndexes: number[] = [];
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index].trim();
+      if (line && !/^<\s*img\b/i.test(line) && !line.includes('data:image/')) textIndexes.push(index);
+    }
+    let titleCount = 0;
+    const paragraphLines = new Map<number, number>();
+    for (const value of summary) {
+      const record = this.objectRecord(value);
+      const paragraphId = Number(record['ParagraphId'] || record['paragraphId'] || record['paragraph_id'] ||
+        record['ParaId'] || record['paraId'] || 0);
+      const count = Number(record['CommentCount'] || record['commentCount'] || record['TextCount'] ||
+        record['textCount'] || record['Count'] || record['count'] || 0);
+      if (paragraphId === -1) {
+        titleCount = Math.max(titleCount, count);
+        continue;
+      }
+      if (!paragraphEnabled || paragraphId <= 0 || count <= 0) continue;
+      const lineIndex = textIndexes[paragraphId - 1];
+      if (lineIndex === undefined || lineIndex < 0 || lineIndex >= lines.length) continue;
+      paragraphLines.set(paragraphId, lineIndex);
+      lines[lineIndex] = this.qidianCommentMarkup(lines[lineIndex],
+        this.qidianCommentUrl('paragraph_comments', plan, String(paragraphId)), String(count));
+    }
+    if (hotEnabled) {
+      const additions = new Map<number, string[]>();
+      for (const value of reviews) {
+        const record = this.objectRecord(value);
+        const paragraphId = Number(record['paragraph_id'] || record['ParagraphId'] || record['paragraphId'] || 0);
+        const lineIndex = paragraphLines.get(paragraphId) ?? textIndexes[paragraphId - 1];
+        if (lineIndex === undefined || lineIndex < 0 || lineIndex >= lines.length) continue;
+        const items = additions.get(lineIndex) || [];
+        items.push(this.qidianCommentMarkup('热门评论',
+          this.qidianCommentUrl('paragraph_comments', plan, String(paragraphId)), '热评'));
+        additions.set(lineIndex, items);
+      }
+      const ordered = Array.from(additions.keys()).sort((a: number, b: number): number => b - a);
+      for (const lineIndex of ordered) lines.splice(lineIndex + 1, 0, ...(additions.get(lineIndex) || []));
+    }
+    if (titleEnabled && titleCount > 0) {
+      lines.unshift(this.qidianCommentMarkup('章名段评',
+        this.qidianCommentUrl('paragraph_comments', plan, '-1'), String(titleCount)));
+    }
+    return lines.join('\n');
+  }
+
+  private static qidianCommentMarkup(text: string, url: string, count: string): string {
+    const safeText = (text || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const safeUrl = this.encodeHtmlAttribute(url);
+    const safeCount = this.encodeHtmlAttribute(count || '');
+    return `<div rs-native>${safeText}<comment ident="${safeUrl}" count="${safeCount}" /></div>`;
+  }
+
+  private static qidianCommentUrl(action: string, plan: ParagraphCommentPlan, paragraphId: string): string {
+    return `https://pl.001122.top/api/qidian_full_api.php?action=${encodeURIComponent(action)}` +
+      `&book_id=${encodeURIComponent(plan.bookId)}&chapter_id=${encodeURIComponent(plan.chapterId)}` +
+      `${action.startsWith('paragraph_') ? `&paragraph_id=${encodeURIComponent(paragraphId)}` : ''}` +
+      '&page=1&page_size=20&legado_reader_comment=1';
+  }
+
+  private static async requestQidianApi(action: string, plan: ParagraphCommentPlan,
+    extra: Record<string, string> = {}): Promise<Record<string, Object>> {
+    let url = this.qidianCommentUrl(action, plan, '');
+    for (const key in extra) {
+      url += `&${encodeURIComponent(key)}=${encodeURIComponent(extra[key])}`;
+    }
+    const response = await new HttpClient(8000).execute({
+      url: url,
+      method: 'GET',
+      headers: {},
+      maxResponseBytes: 2 * 1024 * 1024
+    });
+    if (!response.body) throw new Error(response.error || `起点评论接口请求失败：${response.statusCode}`);
+    const parsed = JSON.parse(response.body.replace(/^\uFEFF/, '')) as Object;
+    const root = this.objectRecord(parsed);
+    if (Number(root['code'] || 0) !== 0) throw new Error(String(root['message'] || '起点评论接口返回异常'));
+    return root;
+  }
+
+  private static objectRecord(value: Object | null | undefined): Record<string, Object> {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return value as Record<string, Object>;
+  }
+
+  private static objectList(value: Object | null | undefined): Object[] {
+    return Array.isArray(value) ? value as Object[] : [];
+  }
+
+  private static qidianAuthorText(value: Object | null | undefined): string {
+    const record = this.objectRecord(value);
+    const candidates: Object[] = [record['author_say'], record['authorSay'], record['AuthorSay'],
+      record['author_comment'], record['authorComment'], record['AuthorComment'], record['ChapterAuthorSay'],
+      record['chapterAuthorSay'], record['authorWords'], record['writerSay']];
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+      const nested = this.objectRecord(candidate);
+      const text = String(nested['Text'] || nested['text'] || nested['Content'] || nested['content'] || '').trim();
+      if (text) return text;
+    }
+    return '';
   }
 
   static isGodCommentsEnabled(source: BookSource): boolean {

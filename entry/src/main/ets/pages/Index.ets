@@ -8,6 +8,7 @@ import { webview } from '@kit.ArkWeb';
 import deviceInfo from '@ohos.deviceInfo';
 import image from '@ohos.multimedia.image';
 import fs from '@ohos.file.fs';
+import fileUri from '@ohos.file.fileuri';
 import commonEventManager from '@ohos.commonEventManager';
 import { HdsTabs, hdsMaterial } from '@kit.UIDesignKit';
 import { Book, BookChapter, BookGroup, BookSource, SearchBook } from '../model/data/Book';
@@ -38,6 +39,10 @@ import { CloudSyncSettingsStore } from '../account/CloudSyncSettingsStore';
 import { CloudSyncCoordinator } from '../account/CloudSyncCoordinator';
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import { BookTypeSupport } from '../core/book/BookTypeSupport';
+import { WebBookService } from '../core/book/WebBookService';
+import { ChangeSourceResultCache } from '../utils/ChangeSourceResultCache';
+import { BookFieldSanitizer } from '../utils/BookFieldSanitizer';
+import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 
 const SHELF_FULL_TEXT_CACHE_CANCEL_EVENT: string = 'com.legado.harmony.action.SHELF_FULL_TEXT_CACHE_CANCEL';
 const SHELF_FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS: number = 5000;
@@ -429,10 +434,10 @@ struct Index {
           BookSourceStageWebRuntime.get().attach(this.stageRuntimeController);
         })
         .onPageBegin(() => {
-          BookSourceStageWebRuntime.get().setReady(false);
+          BookSourceStageWebRuntime.get().setReady(false, this.stageRuntimeController);
         })
         .onPageEnd(() => {
-          BookSourceStageWebRuntime.get().setReady(true);
+          BookSourceStageWebRuntime.get().setReady(true, this.stageRuntimeController);
         })
     }
     .width('100%')
@@ -1308,6 +1313,12 @@ struct BookshelfPage {
   @State networkCoverStatus: string = '';
   @State pendingDeleteBook: Book | null = null;
   @State pendingActionBook: Book | null = null;
+  @State showShelfChangeSourceDialog: boolean = false;
+  @State shelfChangeSourceTarget: Book | null = null;
+  @State shelfChangeSourceResults: SearchBook[] = [];
+  @State shelfChangeSourceStatus: string = '';
+  @State shelfChangeSourceSearching: boolean = false;
+  @State shelfChangeSourceSwitching: boolean = false;
   @State contextMenuX: number = 16;
   @State contextMenuY: number = 96;
   @State contextViewportWidth: number = 360;
@@ -1343,6 +1354,7 @@ struct BookshelfPage {
   @StorageLink('bookshelfShowLastReadChapter') bookshelfShowLastReadChapter: boolean = false;
   @StorageLink('bookshelfShowTypeBadge') bookshelfShowTypeBadge: boolean = true;
   @StorageLink('bookshelfLayoutMode') bookshelfLayoutMode: string = 'compact';
+  @StorageLink('bookshelfLastReadLeafMode') bookshelfLastReadLeafMode: string = 'adaptive';
   @StorageLink('bookshelfCoverAlbums') @Watch('onShelfCoverSettingsChanged') bookshelfCoverAlbums: string = '';
   @StorageLink('bookshelfLightCoverAlbumId') @Watch('onShelfCoverSettingsChanged') bookshelfLightCoverAlbumId: string = '';
   @StorageLink('bookshelfDarkCoverAlbumId') @Watch('onShelfCoverSettingsChanged') bookshelfDarkCoverAlbumId: string = '';
@@ -1368,6 +1380,8 @@ struct BookshelfPage {
   private fullTextCacheCancelSubscriber: commonEventManager.CommonEventSubscriber | null = null;
   private activeCacheBookUrl: string = '';
   private shelfRefreshRunning: boolean = false;
+  private shelfChangeSourceSessionId: number = 0;
+  private activeShelfChangeSourceCoordinator: SearchCoordinator | null = null;
   private fullTextCacheTaskId: number = 0;
   private fullTextCacheCancelRequested: boolean = false;
   private fullTextCacheCancelSeenNonce: number = 0;
@@ -1411,6 +1425,7 @@ struct BookshelfPage {
     this.releaseShelfFullTextCacheCancelSubscriber();
     this.cancelShelfBookOpening();
     this.cancelNetworkCoverSearch();
+    this.cancelShelfChangeSourceSearch();
     this.clearShelfScopeTransition();
     this.shelfCoverCacheRevision++;
     this.localBookIntroMigrationGeneration++;
@@ -1467,6 +1482,7 @@ struct BookshelfPage {
       this.bookshelfShowLastReadChapter = settings.showLastReadChapter;
       this.bookshelfShowTypeBadge = settings.showTypeBadge;
       this.bookshelfLayoutMode = settings.layoutMode;
+      this.bookshelfLastReadLeafMode = settings.lastReadLeafMode;
     } catch (e) {
       console.warn('恢复书架显示设置失败:', e);
     }
@@ -1587,6 +1603,398 @@ struct BookshelfPage {
   closeBookActions(): void {
     this.showActionDialog = false;
     this.pendingActionBook = null;
+  }
+
+  openShelfBookDetail(book: Book): void {
+    router.pushUrl({
+      url: 'pages/SearchBookDetail',
+      params: {
+        bookUrl: book.bookUrl,
+        tocUrl: book.tocUrl,
+        origin: book.origin,
+        originName: book.originName,
+        name: book.name,
+        author: book.author,
+        kind: book.kind,
+        coverUrl: book.customCoverUrl || book.coverUrl,
+        intro: book.customIntro || book.intro,
+        latestChapterTitle: book.latestChapterTitle,
+        wordCount: book.wordCount,
+        type: `${book.type}`,
+        variable: book.variable,
+        promptAddToShelfOnBack: 'false'
+      }
+    });
+  }
+
+  async openShelfChangeSource(book: Book): Promise<void> {
+    if (!book.name.trim() || LocalBookService.isLocalBook(book)) {
+      promptAction.showToast({ message: '当前书籍不支持换源' });
+      return;
+    }
+    this.cancelShelfChangeSourceSearch();
+    const sessionId = ++this.shelfChangeSourceSessionId;
+    this.shelfChangeSourceTarget = book;
+    this.shelfChangeSourceResults = [];
+    this.shelfChangeSourceStatus = '正在读取历史换源结果...';
+    this.shelfChangeSourceSearching = true;
+    this.shelfChangeSourceSwitching = false;
+    this.showShelfChangeSourceDialog = true;
+    try {
+      const cached = await ChangeSourceResultCache.load(getContext(this), book.name);
+      if (!this.isShelfChangeSourceSessionActive(sessionId)) return;
+      this.shelfChangeSourceResults = this.filterShelfChangeSourceResults(cached, book.bookUrl, book.origin);
+      if (this.shelfChangeSourceResults.length > 0) {
+        this.shelfChangeSourceSearching = false;
+        this.shelfChangeSourceStatus = `已显示历史结果，共 ${this.shelfChangeSourceResults.length} 个；点击刷新可重新搜索`;
+        return;
+      }
+    } catch (e) {
+      console.warn('读取书架换源历史失败:', e);
+    }
+    if (this.isShelfChangeSourceSessionActive(sessionId)) {
+      this.searchShelfChangeSource(sessionId);
+    }
+  }
+
+  refreshShelfChangeSource(): void {
+    if (!this.shelfChangeSourceTarget || this.shelfChangeSourceSwitching) return;
+    this.cancelShelfChangeSourceSearch();
+    const sessionId = ++this.shelfChangeSourceSessionId;
+    this.shelfChangeSourceSearching = true;
+    this.shelfChangeSourceStatus = '正在刷新可用书源...';
+    this.searchShelfChangeSource(sessionId);
+  }
+
+  closeShelfChangeSource(): void {
+    this.shelfChangeSourceSessionId++;
+    this.cancelShelfChangeSourceSearch();
+    this.showShelfChangeSourceDialog = false;
+    this.shelfChangeSourceTarget = null;
+    this.shelfChangeSourceResults = [];
+    this.shelfChangeSourceStatus = '';
+    this.shelfChangeSourceSearching = false;
+    this.shelfChangeSourceSwitching = false;
+  }
+
+  async searchShelfChangeSource(sessionId: number): Promise<void> {
+    const target = this.shelfChangeSourceTarget;
+    if (!target) return;
+    const cacheBookName = target.name;
+    const coordinator = new SearchCoordinator(SearchExploreSettingsStore.getSearchConcurrency());
+    this.activeShelfChangeSourceCoordinator = coordinator;
+    this.shelfChangeSourceSearching = true;
+    this.shelfChangeSourceStatus = '正在搜索可用书源...';
+    try {
+      const results = await coordinator.search(target.name, (progress: SearchProgress) => {
+        if (!this.isShelfChangeSourceSessionActive(sessionId)) return;
+        if (progress.finished) {
+          this.shelfChangeSourceResults = this.filterShelfChangeSourceResults(
+            progress.results, target.bookUrl, target.origin);
+        } else if (progress.deltaResults && progress.deltaResults.length > 0) {
+          this.shelfChangeSourceResults = this.filterShelfChangeSourceResults(
+            this.shelfChangeSourceResults.concat(progress.deltaResults), target.bookUrl, target.origin);
+        }
+        this.shelfChangeSourceStatus = progress.status;
+        if (progress.finished) this.shelfChangeSourceSearching = false;
+      }, { exactMatch: true });
+      if (!this.isShelfChangeSourceSessionActive(sessionId)) return;
+      this.shelfChangeSourceResults = this.filterShelfChangeSourceResults(results, target.bookUrl, target.origin);
+      this.shelfChangeSourceStatus = this.shelfChangeSourceResults.length > 0 ?
+        `搜索完成，找到 ${this.shelfChangeSourceResults.length} 个可切换书源` : '搜索完成，未找到可切换书源';
+      try {
+        await ChangeSourceResultCache.save(getContext(this), cacheBookName, results);
+      } catch (e) {
+        console.warn('保存书架换源结果失败:', e);
+      }
+    } catch (e) {
+      if (!this.isShelfChangeSourceSessionActive(sessionId)) return;
+      console.error('书架搜索换源失败:', e);
+      this.shelfChangeSourceStatus = '搜索换源失败';
+    } finally {
+      if (this.activeShelfChangeSourceCoordinator === coordinator) {
+        this.activeShelfChangeSourceCoordinator = null;
+      }
+      if (this.isShelfChangeSourceSessionActive(sessionId)) {
+        this.shelfChangeSourceSearching = false;
+      }
+    }
+  }
+
+  isShelfChangeSourceSessionActive(sessionId: number): boolean {
+    return this.showShelfChangeSourceDialog && sessionId === this.shelfChangeSourceSessionId;
+  }
+
+  cancelShelfChangeSourceSearch(): void {
+    if (this.activeShelfChangeSourceCoordinator) {
+      this.activeShelfChangeSourceCoordinator.cancel();
+      this.activeShelfChangeSourceCoordinator = null;
+    }
+  }
+
+  filterShelfChangeSourceResults(results: SearchBook[], currentBookUrl: string, currentOrigin: string): SearchBook[] {
+    const filtered: SearchBook[] = [];
+    for (const result of results) {
+      if (!result.bookUrl || (result.bookUrl === currentBookUrl && result.origin === currentOrigin)) continue;
+      if (!filtered.some((item: SearchBook) => item.bookUrl === result.bookUrl && item.origin === result.origin)) {
+        filtered.push(result);
+      }
+    }
+    return filtered;
+  }
+
+  async switchShelfBookSource(searchBook: SearchBook): Promise<void> {
+    const target = this.shelfChangeSourceTarget;
+    if (!target || this.shelfChangeSourceSwitching) return;
+    this.cancelShelfChangeSourceSearch();
+    this.shelfChangeSourceSearching = false;
+    const sessionId = ++this.shelfChangeSourceSessionId;
+    this.shelfChangeSourceSwitching = true;
+    this.shelfChangeSourceStatus = '正在切换书源...';
+    const oldBookUrl = target.bookUrl;
+    try {
+      const db = AppDatabase.getInstance();
+      await db.initWithContext(getContext(this));
+      const oldBook = await db.getBook(oldBookUrl) || target;
+      const source = searchBook.origin ? await db.getBookSource(searchBook.origin) : null;
+      if (!source) {
+        promptAction.showToast({ message: '书源不存在或已删除' });
+        return;
+      }
+      if (!this.isShelfChangeSourceSessionActive(sessionId)) return;
+
+      const nextBook = this.buildShelfSourceBook(searchBook, oldBook);
+      const service = new WebBookService();
+      const fullBook = await service.getBookInfo(source, nextBook);
+      if (!this.isShelfChangeSourceSessionActive(sessionId)) return;
+      this.preserveShelfSourceBookState(fullBook, nextBook, oldBook);
+      const chapters = await service.getChapterList(source, fullBook);
+      if (!this.isShelfChangeSourceSessionActive(sessionId)) return;
+      fullBook.totalChapterNum = chapters.length;
+      if (chapters.length > 0) {
+        const safeIndex = Math.max(0, Math.min(oldBook.durChapterIndex, chapters.length - 1));
+        fullBook.durChapterIndex = safeIndex;
+        fullBook.durChapterTitle = chapters[safeIndex].title;
+        fullBook.latestChapterTitle = chapters[chapters.length - 1].title;
+      }
+
+      if (oldBookUrl !== fullBook.bookUrl) {
+        const existing = await db.getBook(fullBook.bookUrl);
+        if (existing) await db.deleteBook(existing.bookUrl);
+        await db.moveBookBookmarks(oldBookUrl, fullBook.bookUrl, fullBook.name, fullBook.author);
+        await db.deleteBook(oldBookUrl);
+        await db.insertBook(fullBook);
+      } else {
+        await db.updateBook(fullBook);
+        await db.deleteBookChapters(fullBook.bookUrl);
+        await db.deleteBookCachedContent(fullBook.bookUrl);
+      }
+      if (chapters.length > 0) await db.insertBookChapters(chapters);
+
+      this.closeShelfChangeSource();
+      AppStorage.setOrCreate('shelfUpdateTime', Date.now());
+      await this.loadBooks();
+      promptAction.showToast({ message: `已切换至 ${fullBook.originName || searchBook.originName}` });
+    } catch (e) {
+      if (!this.isShelfChangeSourceSessionActive(sessionId)) return;
+      console.error('书架切换书源失败:', e);
+      promptAction.showToast({ message: '切换书源失败' });
+    } finally {
+      if (sessionId === this.shelfChangeSourceSessionId) {
+        this.shelfChangeSourceSwitching = false;
+      }
+    }
+  }
+
+  buildShelfSourceBook(searchBook: SearchBook, oldBook: Book): Book {
+    const book = new Book();
+    book.bookUrl = searchBook.bookUrl;
+    book.tocUrl = searchBook.tocUrl;
+    book.origin = searchBook.origin;
+    book.originName = searchBook.originName;
+    book.name = searchBook.name || oldBook.name;
+    book.author = searchBook.author || oldBook.author;
+    book.kind = BookFieldSanitizer.prefer(searchBook.kind, oldBook.kind);
+    book.coverUrl = CoverUrlNormalizer.prefer(searchBook.coverUrl, oldBook.coverUrl);
+    book.customCoverUrl = oldBook.customCoverUrl;
+    book.intro = BookFieldSanitizer.prefer(searchBook.intro, oldBook.intro);
+    book.customIntro = oldBook.customIntro;
+    book.latestChapterTitle = BookFieldSanitizer.prefer(searchBook.latestChapterTitle, oldBook.latestChapterTitle);
+    book.wordCount = BookFieldSanitizer.prefer(searchBook.wordCount, oldBook.wordCount);
+    book.variable = searchBook.variable || '';
+    book.group = oldBook.group;
+    book.order = oldBook.order;
+    book.originOrder = oldBook.originOrder;
+    book.readConfig = oldBook.readConfig;
+    book.canUpdate = oldBook.canUpdate;
+    book.type = oldBook.type;
+    book.durChapterIndex = oldBook.durChapterIndex;
+    book.durChapterPos = oldBook.durChapterPos;
+    book.durChapterTitle = oldBook.durChapterTitle;
+    book.durChapterTime = oldBook.durChapterTime;
+    return book;
+  }
+
+  preserveShelfSourceBookState(target: Book, source: Book, oldBook: Book): void {
+    target.origin = source.origin;
+    target.originName = source.originName;
+    target.coverUrl = CoverUrlNormalizer.prefer(source.coverUrl, target.coverUrl);
+    target.group = oldBook.group;
+    target.order = oldBook.order;
+    target.originOrder = oldBook.originOrder;
+    target.customCoverUrl = oldBook.customCoverUrl;
+    target.customIntro = oldBook.customIntro;
+    target.readConfig = oldBook.readConfig;
+    target.canUpdate = oldBook.canUpdate;
+    target.durChapterIndex = oldBook.durChapterIndex;
+    target.durChapterPos = oldBook.durChapterPos;
+    target.durChapterTitle = oldBook.durChapterTitle;
+    target.durChapterTime = oldBook.durChapterTime;
+    target.syncTime = oldBook.syncTime;
+  }
+
+  @Builder
+  shelfChangeSourceDialog() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#80000000')
+        .onClick(() => {
+          if (!this.shelfChangeSourceSwitching) this.closeShelfChangeSource();
+        })
+
+      Column() {
+        Row() {
+          Column({ space: 3 }) {
+            Text('换源')
+              .fontSize(19)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.primaryTextColor())
+            Text(`《${this.shelfChangeSourceTarget?.name || ''}》`)
+              .fontSize(12)
+              .fontColor(this.subTextColor())
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+
+          if (this.shelfChangeSourceSearching) {
+            LoadingProgress()
+              .width(26)
+              .height(26)
+              .margin({ right: 14 })
+          } else {
+            SymbolGlyph($r('sys.symbol.arrow_clockwise'))
+              .fontSize(21)
+              .fontColor([this.primaryTextColor()])
+              .width(40)
+              .height(40)
+              .margin({ right: 4 })
+              .onClick(() => this.refreshShelfChangeSource())
+          }
+          SymbolGlyph($r('sys.symbol.xmark'))
+            .fontSize(20)
+            .fontColor([this.primaryTextColor()])
+            .width(40)
+            .height(40)
+            .onClick(() => {
+              if (!this.shelfChangeSourceSwitching) this.closeShelfChangeSource();
+            })
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        Text(this.shelfChangeSourceStatus || '将使用当前书名进行全词匹配搜索')
+          .fontSize(13)
+          .fontColor(this.subTextColor())
+          .width('100%')
+          .margin({ top: 8, bottom: 10 })
+
+        if (this.shelfChangeSourceSearching && this.shelfChangeSourceResults.length === 0) {
+          Column({ space: 10 }) {
+            LoadingProgress().width(36).height(36)
+            Text('正在搜索可用书源...')
+              .fontSize(13)
+              .fontColor(this.subTextColor())
+          }
+          .width('100%')
+          .height(260)
+          .justifyContent(FlexAlign.Center)
+        } else if (this.shelfChangeSourceResults.length === 0) {
+          Text('暂无可切换书源')
+            .fontSize(15)
+            .fontColor(this.subTextColor())
+            .width('100%')
+            .height(260)
+            .textAlign(TextAlign.Center)
+        } else {
+          List({ space: 8 }) {
+            ForEach(this.shelfChangeSourceResults, (book: SearchBook) => {
+              ListItem() {
+                Row() {
+                  Column({ space: 4 }) {
+                    Text(book.originName || book.origin)
+                      .fontSize(15)
+                      .fontWeight(FontWeight.Bold)
+                      .fontColor(this.primaryTextColor())
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Text(`${book.author || '作者未知'} ${book.latestChapterTitle || ''}`)
+                      .fontSize(12)
+                      .fontColor(this.subTextColor())
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  }
+                  .layoutWeight(1)
+                  .alignItems(HorizontalAlign.Start)
+
+                  Button(this.shelfChangeSourceSwitching ? '切换中' : '切换')
+                    .width(68)
+                    .height(32)
+                    .fontSize(13)
+                    .borderRadius(16)
+                    .backgroundColor(this.buttonColor())
+                    .fontColor('#FFFFFF')
+                    .enabled(!this.shelfChangeSourceSwitching)
+                    .onClick(() => this.switchShelfBookSource(book))
+                }
+                .width('100%')
+                .padding(12)
+                .backgroundColor(this.inputColor())
+                .borderRadius(10)
+              }
+            }, (book: SearchBook) => `${book.origin}|${book.bookUrl}`)
+
+            if (this.shelfChangeSourceSearching) {
+              ListItem() {
+                Row({ space: 8 }) {
+                  LoadingProgress().width(20).height(20)
+                  Text('继续搜索中...').fontSize(13).fontColor(this.subTextColor())
+                }
+                .width('100%')
+                .height(42)
+                .justifyContent(FlexAlign.Center)
+              }
+            }
+          }
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .width('100%')
+          .height(340)
+        }
+      }
+      .width('90%')
+      .padding(20)
+      .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
+      .clip(true)
+      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({ width: ThemeRuntime.glassBorderWidth('panel'),
+        color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
+    }
+    .width('100%')
+    .height('100%')
   }
 
   async openNetworkCoverPicker(book: Book): Promise<void> {
@@ -1802,8 +2210,8 @@ struct BookshelfPage {
   }
 
   bookActionMenuHeight(book: Book): number {
-    const baseHeight = 276;
-    return baseHeight + (book.customCoverUrl ? 44 : 0);
+    const baseHeight = 320;
+    return baseHeight + (LocalBookService.isLocalBook(book) ? 0 : 44) + (book.customCoverUrl ? 44 : 0);
   }
 
   contextMenuBottomInset(): number {
@@ -2203,6 +2611,22 @@ struct BookshelfPage {
             .onClick(() => this.closeBookActions())
 
           Column() {
+            this.contextActionItem($r('sys.symbol.info_circle'), '查看书籍详情', this.primaryTextColor(), () => {
+              if (this.pendingActionBook) {
+                const book = this.pendingActionBook;
+                this.closeBookActions();
+                this.openShelfBookDetail(book);
+              }
+            })
+            if (!LocalBookService.isLocalBook(this.pendingActionBook)) {
+              this.contextActionItem($r('sys.symbol.arrow_left_arrow_right'), '换源', this.primaryTextColor(), () => {
+                if (this.pendingActionBook) {
+                  const book = this.pendingActionBook;
+                  this.closeBookActions();
+                  this.openShelfChangeSource(book);
+                }
+              })
+            }
             if (!LocalBookService.isLocalBook(this.pendingActionBook)) {
               this.contextActionItem($r('sys.symbol.download'), '缓存', this.primaryTextColor(), () => {
                 if (this.pendingActionBook) {
@@ -2289,6 +2713,10 @@ struct BookshelfPage {
         }
         .width('100%')
         .height('100%')
+      }
+
+      if (this.showShelfChangeSourceDialog && this.shelfChangeSourceTarget) {
+        this.shelfChangeSourceDialog()
       }
 
       if (this.showNetworkCoverDialog && this.networkCoverTargetBook) {
@@ -3421,6 +3849,14 @@ struct BookshelfPage {
     return height;
   }
 
+  bookshelfTileTopSpacerHeight(): number {
+    const gridTopPadding = 10;
+    const comfortableGap = 12;
+    // Grid 会在顶部占位项与首行之间继续添加 rowsGap，需要从占位高度中抵消。
+    return Math.max(0, this.bookshelfTopOverlayHeight() + comfortableGap -
+      gridTopPadding - this.shelfTileRowGap());
+  }
+
   bookshelfListBottomInset(): number {
     const comfortableGap = 20;
     const multiSelectBarHeight = this.isBookMultiSelect ? 104 : 0;
@@ -3659,7 +4095,7 @@ struct BookshelfPage {
     Grid() {
       GridItem() {
         Row()
-          .height(this.bookshelfTopOverlayHeight())
+          .height(this.bookshelfTileTopSpacerHeight())
       }
       .columnStart(0)
       .columnEnd(this.shelfTileColumnCount() - 1)
@@ -3736,23 +4172,7 @@ struct BookshelfPage {
           .clip(true)
 
           Column() {
-            Text(this.getLastReadPagePreviewText(book))
-              .width('100%')
-              .layoutWeight(1)
-              .fontSize(4.8)
-              .lineHeight(7.5)
-              .fontColor(this.shelfTilePageTextColor())
-              .textAlign(TextAlign.JUSTIFY)
-              .wordBreak(WordBreak.BREAK_WORD)
-              .maxLines(16)
-              .textOverflow({ overflow: TextOverflow.Clip })
-              .margin({ top: 4 })
-
-            Text(this.getLastReadPageNumberText(book))
-              .width('100%')
-              .fontSize(5)
-              .fontColor(this.shelfTilePageSubTextColor())
-              .textAlign(TextAlign.End)
+            this.shelfLastReadLeaf(book)
           }
           .layoutWeight(1)
           .height('100%')
@@ -5953,8 +6373,7 @@ struct BookshelfPage {
       Column() {
         this.expandedShelfScopeSegment()
       }
-      .width(144)
-      .height(32)
+      .width(116)
       .position({ x: 60, y: this.statusBarHeight + 52 })
       .onClick(() => {
       })
@@ -5966,57 +6385,44 @@ struct BookshelfPage {
 
   @Builder
   expandedShelfScopeSegment() {
-    Stack({ alignContent: Alignment.TopStart }) {
-      Row()
-        .width(46)
-        .height(26)
-        .borderRadius(13)
-        .backgroundColor(this.accentColor())
-        .shadow({ radius: 5, color: this.appDarkMode ? '#38000000' : '#20000000', offsetY: 1 })
-        .translate({ x: this.shelfScopeIndicatorOffset() })
-        .animation({ duration: 180, curve: Curve.Friction })
-
-      Row({ space: 0 }) {
-        this.scopeSegmentItem('全部', 'all')
-        this.scopeSegmentItem('网络', 'network')
-        this.scopeSegmentItem('本地', 'local')
-      }
-      .width(138)
-      .height(26)
+    Column({ space: 4 }) {
+      this.scopeDropdownItem('全部', 'all')
+      this.scopeDropdownItem('网络', 'network')
+      this.scopeDropdownItem('本地', 'local')
     }
-    .width(144)
-    .height(32)
-    .padding(3)
-    .borderRadius(18)
-    .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
-    .backdropBlur(ThemeRuntime.glassBlur('overlay', 24))
-    .border({ width: ThemeRuntime.glassBorderWidth('overlay'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'overlay') })
-    .shadow({ radius: ThemeRuntime.glassShadowRadius('overlay'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'overlay'), offsetX: ThemeRuntime.glassShadowOffsetX('overlay'), offsetY: ThemeRuntime.glassShadowOffsetY('overlay') })
+    .width(116)
+    .padding(6)
+    .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
+    .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+    .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+    .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
+    .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
   }
 
   @Builder
-  scopeSegmentItem(label: string, scope: string) {
-    Text(label)
-      .fontSize(13)
-      .fontWeight(this.shelfScope === scope ? FontWeight.Medium : FontWeight.Regular)
-      .fontColor(this.shelfScope === scope ? '#FFFFFF' : this.secondaryTextColor())
-      .width(46)
-      .height(26)
-      .textAlign(TextAlign.Center)
-      .zIndex(1)
-      .onClick(() => {
-        this.switchShelfScopeBySelection(scope);
-      })
-  }
+  scopeDropdownItem(label: string, scope: string) {
+    Row() {
+      Text(label)
+        .fontSize(13)
+        .fontWeight(this.shelfScope === scope ? FontWeight.Medium : FontWeight.Regular)
+        .fontColor(this.shelfScope === scope ? this.accentColor() : this.primaryTextColor())
+        .layoutWeight(1)
 
-  shelfScopeIndicatorOffset(): number {
-    if (this.shelfScope === 'network') {
-      return 46;
+      if (this.shelfScope === scope) {
+        Text('✓')
+          .fontSize(13)
+          .fontColor(this.accentColor())
+      }
     }
-    if (this.shelfScope === 'local') {
-      return 92;
-    }
-    return 0;
+    .width('100%')
+    .height(34)
+    .padding({ left: 10, right: 10 })
+    .borderRadius(10)
+    .backgroundColor(this.shelfScope === scope ? this.selectedSoftBackgroundColor() : '#00000000')
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      this.switchShelfScopeBySelection(scope);
+    })
   }
 
   shelfScopeLabel(): string {
@@ -6504,6 +6910,108 @@ struct BookshelfPage {
     return pageCount > 0 ? `${Math.min(pageNumber, pageCount)}/${pageCount}` : `${pageNumber}`;
   }
 
+  getLastReadLeafContentMode(book: Book): string {
+    if (this.bookshelfLastReadLeafMode === 'bookInfo' || this.bookshelfLastReadLeafMode === 'contentPreview') {
+      return this.bookshelfLastReadLeafMode;
+    }
+    if (BookTypeSupport.isAudio(book)) {
+      return 'bookInfo';
+    }
+    if (this.isShelfComicBook(book) && this.getLastReadPageImage(book)) {
+      return 'comicPreview';
+    }
+    return 'contentPreview';
+  }
+
+  isShelfComicBook(book: Book): boolean {
+    if (book.origin === 'local') {
+      return BookTypeSupport.isImage(book);
+    }
+    return BookTypeSupport.isImage(book) || book.getVariable('readerComicManualMode') === 'comic' ||
+      book.getVariable('readerComicAutoDetected') === '1' || book.getVariable('readerComicMode') === '1';
+  }
+
+  getLastReadPageImage(book: Book): string {
+    const source = book.getVariable('lastReadPageImage').trim();
+    if (!source || /^(?:https?:|data:|file:)/i.test(source)) {
+      return source;
+    }
+    try {
+      return fileUri.getUriFromPath(source);
+    } catch (_) {
+      return source;
+    }
+  }
+
+  @Builder
+  shelfLastReadLeaf(book: Book) {
+    if (this.getLastReadLeafContentMode(book) === 'bookInfo') {
+      this.shelfLastReadBookInfo(book)
+    } else if (this.getLastReadLeafContentMode(book) === 'comicPreview') {
+      Image(this.getLastReadPageImage(book))
+        .width('100%')
+        .height('100%')
+        .objectFit(ImageFit.Contain)
+        .draggable(false)
+    } else {
+      Text(this.getLastReadPagePreviewText(book))
+        .width('100%')
+        .layoutWeight(1)
+        .fontSize(4.8)
+        .lineHeight(7.5)
+        .fontColor(this.shelfTilePageTextColor())
+        .textAlign(TextAlign.JUSTIFY)
+        .wordBreak(WordBreak.BREAK_WORD)
+        .maxLines(16)
+        .textOverflow({ overflow: TextOverflow.Clip })
+        .margin({ top: 4 })
+
+      Text(this.getLastReadPageNumberText(book))
+        .width('100%')
+        .fontSize(5)
+        .fontColor(this.shelfTilePageSubTextColor())
+        .textAlign(TextAlign.End)
+    }
+  }
+
+  @Builder
+  shelfLastReadBookInfo(book: Book) {
+    Column() {
+      Text('作者')
+        .width('100%')
+        .fontSize(5)
+        .fontColor(this.shelfTilePageSubTextColor())
+      Text((book.author || '').trim() || '作者未知')
+        .width('100%')
+        .fontSize(7)
+        .lineHeight(10)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.shelfTilePageTextColor())
+        .maxLines(3)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ top: 2 })
+
+      Blank()
+        .layoutWeight(1)
+
+      Text(BookTypeSupport.isAudio(book) ? '上次进度' : '上次阅读')
+        .width('100%')
+        .fontSize(5)
+        .fontColor(this.shelfTilePageSubTextColor())
+      Text(this.getLastReadChapterText(book))
+        .width('100%')
+        .fontSize(6)
+        .lineHeight(9)
+        .fontColor(this.shelfTilePageTextColor())
+        .maxLines(5)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ top: 2 })
+    }
+    .width('100%')
+    .height('100%')
+    .alignItems(HorizontalAlign.Start)
+  }
+
   shelfTilePageColor(): string {
     return this.appDarkMode ? '#242321' : '#F8F4E9';
   }
@@ -6781,7 +7289,7 @@ struct ExplorePage {
     this.status = this.books.length > 0 ?
       `${this.getSelectedSiteLabel()} · ${entry.sourceName} · ${entry.title} · ${this.books.length} 本${fromCache ? ' · 缓存' : ''}` :
       (this.verificationUrl ? `${entry.sourceName} 可能需要网页验证` :
-        `${this.getSelectedSiteLabel()} 当前分类暂无结果`);
+        (this.coordinator.getNoticeMessage() || `${this.getSelectedSiteLabel()} 当前分类暂无结果`));
   }
 
   build() {
@@ -8218,7 +8726,9 @@ struct SearchPage {
       }
       const verifyUrl = this.verificationUrl || AppStorage.get<string>('pendingVerificationUrl') || '';
       if (!this.showSearchProgress || !this.isSearching) {
-        const resultText = allBooks.length > 0 ? `搜索完成，共找到 ${allBooks.length} 本书` : '搜索完成，未找到相关书籍';
+        const failureReason = coordinator.getLastFailureReason();
+        const resultText = allBooks.length > 0 ? `搜索完成，共找到 ${allBooks.length} 本书` :
+          (failureReason ? `搜索完成：${failureReason}` : '搜索完成，未找到相关书籍');
         this.statusMessage = verifyUrl ? `${resultText}；有书源需要网页验证` : resultText;
       }
     } catch (e) {

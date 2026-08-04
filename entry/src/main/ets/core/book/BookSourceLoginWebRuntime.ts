@@ -20,6 +20,7 @@ export class LoginRuntimeStep {
   refreshExploreRequested: boolean = false;
   refreshLoginRequested: boolean = false;
   toastMessage: string = '';
+  logMessage: string = '';
   errorMessage: string = '';
   resultValue: string = '';
 }
@@ -74,7 +75,7 @@ export class BookSourceLoginWebRuntime {
       `function decodeUtf8(v){try{return decodeURIComponent(escape(atob(v)));}catch(e){return atob(v);}}` +
       `const S=JSON.parse(decodeUtf8('${stateBase64}'));` +
       `let pending='',pendingCookie='',pendingCrypto='',pendingBrowser='',pendingBrowserTitle='',pendingWebView='';` +
-      `let url='',title='',html='',injectJs='',searchKeyword='',refreshExplore=false,refreshLogin=false,toast='',error='';` +
+      `let url='',title='',html='',injectJs='',searchKeyword='',refreshExplore=false,refreshLogin=false,toast='',diagnostic='',error='';` +
       `const NativeDate=globalThis.Date;const FixedDate=function(){const a=Array.from(arguments);` +
       `if(new.target)return Reflect.construct(NativeDate,a.length?a:[S.fixedNow]);` +
       `return new NativeDate(S.fixedNow).toString();};FixedDate.now=function(){return S.fixedNow;};` +
@@ -133,6 +134,9 @@ export class BookSourceLoginWebRuntime {
       `catch(e){return String(v??'');}}` +
       `function uuid(){return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){const r=Math.random()*16|0;` +
       `return (c==='x'?r:(r&3|8)).toString(16);});}` +
+      `function stableDeviceId(){let value=String(vars.__legadoHarmonyDeviceId||'').trim();` +
+      `if(!/^[0-9a-f]{16}$/i.test(value)){value=uuid().replace(/-/g,'').substring(0,16).toLowerCase();` +
+      `vars.__legadoHarmonyDeviceId=value;}return value;}` +
       `function htmlE(v){const d=document.createElement('div');d.textContent=String(v??'');return d.innerHTML;}` +
       `function htmlD(v){const d=document.createElement('textarea');d.innerHTML=String(v??'');return d.value;}` +
       `function open(u,t,wait){const target=String(u??'');const label=String(t??'');` +
@@ -176,7 +180,7 @@ export class BookSourceLoginWebRuntime {
       `Object.keys(v).forEach(function(k){map[k]=v[k];});return map;}});return map;}` +
       `const java={` +
       `ajax:function(v){v=String(v??'');if(Object.prototype.hasOwnProperty.call(S.responses,v))return S.responses[v];` +
-      `if(!pending)pending=v;return '{"code":599,"message":"pending","data":{}}';},` +
+      `if(!pending)pending=v;return '{"code":599,"message":"pending","data":null}';},` +
       `put:function(k,v){vars[k]=v;return v;},get:function(k){` +
       `return Object.prototype.hasOwnProperty.call(vars,k)?vars[k]:null;},` +
       `toast:function(v){toast=String(v??'');return toast;},longToast:function(v){toast=String(v??'');return toast;},` +
@@ -195,10 +199,12 @@ export class BookSourceLoginWebRuntime {
       `urlEncode:function(v){return encodeURIComponent(String(v??''));},` +
       `urlDecode:function(v){try{return decodeURIComponent(String(v??''));}catch(e){return String(v??'');}},` +
       `encodeURI:function(v){return encodeURIComponent(String(v??''));},htmlEncode:htmlE,htmlDecode:htmlD,` +
-      `androidId:function(){return 'harmony';},deviceID:function(){return 'harmony';},randomUUID:uuid,` +
+      `androidId:stableDeviceId,deviceID:stableDeviceId,randomUUID:uuid,` +
       `getCookie:function(k){return cookie.getCookie(k);},lang:function(){return 'zh';},` +
       `reLoginView:function(){refreshLogin=true;return true;},` +
-      `qread:function(){return '0';},log:function(){return '';},logType:function(){return '';},` +
+      `qread:function(){return '0';},log:function(){diagnostic=Array.from(arguments).map(function(v){return String(v??'');}).join(' ');` +
+      `return diagnostic;},logType:function(){diagnostic=Array.from(arguments).map(function(v){return String(v??'');}).join(' ');` +
+      `return diagnostic;},` +
       `refreshExplore:function(){refreshExplore=true;return true;},` +
       `searchBook:function(k){searchKeyword=String(k??'');return searchKeyword;},getWebViewUA:function(){return navigator.userAgent;},` +
       `timeFormat:function(v){try{return new Date(v).toISOString().replace('T',' ').replace('Z','');}` +
@@ -222,6 +228,7 @@ export class BookSourceLoginWebRuntime {
       `let evaluatedResult;try{evaluatedResult=(function(){return eval(decodeUtf8('${codeBase64}'));}).call(globalThis);}` +
       `catch(e){error=String((e&&e.name?e.name+': ':'')+((e&&e.message)||e||'脚本执行失败')+` +
       `(e&&e.stack?'\\n'+e.stack:''));}` +
+      `if(!error&&!toast&&/(?:异常|失败|错误|error|exception)/i.test(diagnostic))error=diagnostic;` +
       `function resultText(v){if(typeof v==='string')return v;if(v&&v!==loginMap&&typeof v==='object'){` +
       `try{return JSON.stringify(v);}catch(e){return '';}}return '';}` +
       `const resultValue=resultText(globalThis.result)||resultText(evaluatedResult);` +
@@ -233,7 +240,7 @@ export class BookSourceLoginWebRuntime {
       `loginHeader:S.loginHeader||'',loginInfo:JSON.stringify(cleanInfo),requestedUrl:url,requestedTitle:title,` +
       `requestedHtml:html,requestedInjectJs:injectJs,requestedSearchKeyword:searchKeyword,` +
       `refreshExploreRequested:refreshExplore,refreshLoginRequested:refreshLogin,` +
-      `toastMessage:toast,errorMessage:error,resultValue:resultValue}));})()`;
+      `toastMessage:toast,logMessage:diagnostic,errorMessage:error,resultValue:resultValue}));})()`;
   }
 
   private static encodeBase64(value: string): string {
@@ -546,6 +553,7 @@ export class BookSourceLoginWebRuntime {
       result.refreshExploreRequested = record['refreshExploreRequested'] === true;
       result.refreshLoginRequested = record['refreshLoginRequested'] === true;
       result.toastMessage = String(record['toastMessage'] || '');
+      result.logMessage = String(record['logMessage'] || '');
       result.errorMessage = String(record['errorMessage'] || '');
       result.resultValue = String(record['resultValue'] || '');
       return result;

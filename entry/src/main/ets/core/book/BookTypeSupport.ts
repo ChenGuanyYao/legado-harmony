@@ -45,7 +45,8 @@ export class BookTypeSupport {
   }
 
   static isImage(book: Book | SearchBook | null): boolean {
-    if (!book || book.origin === 'local') return false;
+    if (!book) return false;
+    if (book.origin === 'local') return this.isLocalImageVariable(book.variable);
     if ((Number(book.type) & this.IMAGE) !== 0) return true;
     return this.typeFromVariable(book.variable) === this.IMAGE ||
       this.typeFromIdentity(book.originName, book.kind) === this.IMAGE;
@@ -68,5 +69,21 @@ export class BookTypeSupport {
     if (/听书|有声|音频|audiobook/i.test(value)) return this.AUDIO;
     if (/漫画|漫改|comic|manga/i.test(value)) return this.IMAGE;
     return 0;
+  }
+
+  private static isLocalImageVariable(variable: string): boolean {
+    if (!variable) return false;
+    try {
+      const record = JSON.parse(variable) as Record<string, Object>;
+      const manualMode = String(record['readerComicManualMode'] || '').trim().toLowerCase();
+      if (manualMode === 'text') return false;
+      if (manualMode === 'comic') return true;
+      const autoDetected = String(record['readerComicAutoDetected'] || '').trim().toLowerCase();
+      const comicMode = String(record['readerComicMode'] || '').trim().toLowerCase();
+      return autoDetected === '1' || autoDetected === 'true' ||
+        comicMode === '1' || comicMode === 'true';
+    } catch (_) {
+      return false;
+    }
   }
 }

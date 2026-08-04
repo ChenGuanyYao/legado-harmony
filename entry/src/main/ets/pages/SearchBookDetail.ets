@@ -13,6 +13,7 @@ import { SearchExplorePendingBook } from '../utils/SearchExplorePendingBook';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { SearchBookShelfHelper } from '../utils/SearchBookShelfHelper';
+import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
 
 @Entry
 @Component
@@ -180,6 +181,7 @@ struct SearchBookDetailPage {
                 .fontSize(16)
                 .fontColor(this.secondaryTextColor())
                 .lineHeight(26)
+                .copyOption(CopyOptions.LocalDevice)
                 .width('100%')
                 .margin({ top: 12 })
             }
@@ -233,6 +235,7 @@ struct SearchBookDetailPage {
       if (this.showAddToShelfOnBackDialog) {
         this.addToShelfOnBackDialog()
       }
+      BookSourceStageRuntimeHost()
     }
     .width('100%')
     .height('100%')

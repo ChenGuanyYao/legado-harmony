@@ -5,7 +5,7 @@ export class CloudSyncSettings {
   enabled: boolean = false;
   autoSyncEnabled: boolean = true;
   wifiOnly: boolean = false;
-  foregroundSyncEnabled: boolean = true;
+  foregroundSyncEnabled: boolean = false;
   readingDataEnabled: boolean = true;
   bookSourcesEnabled: boolean = true;
   readingPreferencesEnabled: boolean = true;
@@ -49,7 +49,7 @@ export class CloudSyncSettingsStore {
     AppStorage.setOrCreate(CloudSyncSettingsStore.STORAGE_ENABLED, false);
     AppStorage.setOrCreate(CloudSyncSettingsStore.STORAGE_AUTO_SYNC_ENABLED, true);
     AppStorage.setOrCreate(CloudSyncSettingsStore.STORAGE_WIFI_ONLY, false);
-    AppStorage.setOrCreate(CloudSyncSettingsStore.STORAGE_FOREGROUND_SYNC_ENABLED, true);
+    AppStorage.setOrCreate(CloudSyncSettingsStore.STORAGE_FOREGROUND_SYNC_ENABLED, false);
     AppStorage.setOrCreate(CloudSyncSettingsStore.STORAGE_READING_DATA_ENABLED, true);
     AppStorage.setOrCreate(CloudSyncSettingsStore.STORAGE_BOOK_SOURCES_ENABLED, true);
     AppStorage.setOrCreate(CloudSyncSettingsStore.STORAGE_READING_PREFERENCES_ENABLED, true);
@@ -274,7 +274,9 @@ export class CloudSyncSettingsStore {
     result.enabled = source.enabled === true;
     result.autoSyncEnabled = source.autoSyncEnabled !== false;
     result.wifiOnly = source.wifiOnly === true;
-    result.foregroundSyncEnabled = source.foregroundSyncEnabled !== false;
+    // A missing field belongs to an old/newly-created account and must not
+    // immediately fire another sync when the login flow returns to foreground.
+    result.foregroundSyncEnabled = source.foregroundSyncEnabled === true;
     result.readingDataEnabled = source.readingDataEnabled !== false;
     result.bookSourcesEnabled = source.bookSourcesEnabled !== false;
     result.readingPreferencesEnabled = source.readingPreferencesEnabled !== false;

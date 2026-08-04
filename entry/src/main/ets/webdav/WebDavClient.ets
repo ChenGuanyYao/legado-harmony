@@ -1,9 +1,9 @@
 import fs from '@ohos.file.fs';
 import http from '@ohos.net.http';
-import request from '@ohos.request';
 import xml from '@ohos.xml';
 import { Context } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
+import { rcp } from '@kit.RemoteCommunicationKit';
 import {
   WebDavConnection,
   WebDavConnectionTestResult,
@@ -86,8 +86,30 @@ export class WebDavClient {
   }
 
   async headUrl(url: string): Promise<WebDavFileInfo> {
-    const response = await this.request('HEAD', url, {}, undefined, 1024);
+    const davResponse = await this.request('PROPFIND', url, {
+      'Depth': '0',
+      'Content-Type': 'application/xml; charset=utf-8'
+    }, WebDavClient.propfindBody(), 1024 * 1024);
     const result = new WebDavFileInfo();
+    result.statusCode = davResponse.statusCode;
+    if (davResponse.statusCode === 207) {
+      const document = WebDavClient.parseXml(davResponse.body);
+      const responseNode = WebDavClient.findFirstNode(document, 'response');
+      if (responseNode) {
+        result.exists = true;
+        result.size = Math.max(0, Number(WebDavClient.nodeText(
+          WebDavClient.findFirstNode(responseNode, 'getcontentlength'))) || 0);
+        result.lastModified = this.parseDate(WebDavClient.nodeText(
+          WebDavClient.findFirstNode(responseNode, 'getlastmodified')));
+        result.etag = WebDavClient.nodeText(WebDavClient.findFirstNode(responseNode, 'getetag')).trim();
+        result.contentType = WebDavClient.nodeText(
+          WebDavClient.findFirstNode(responseNode, 'getcontenttype')).trim();
+        return result;
+      }
+    }
+    if (davResponse.statusCode === 404) return result;
+
+    const response = await this.request('HEAD', url, {}, undefined, 1024);
     result.statusCode = response.statusCode;
     result.exists = response.statusCode >= 200 && response.statusCode < 300;
     result.size = Math.max(0, Number(this.header(response.headers, 'content-length')) || 0);
@@ -469,89 +491,55 @@ export class WebDavClient {
       }
       uploadPath = cachePath;
     }
-    const file: request.agent.FileSpec = {
-      path: uploadPath,
-      filename: remoteName,
-      mimeType: 'application/octet-stream'
-    };
-    const config: request.agent.Config = {
-      action: request.agent.Action.UPLOAD,
-      mode: request.agent.Mode.FOREGROUND,
-      method: 'PUT',
-      url: targetUrl,
-      headers: this.headers({ 'Content-Type': 'application/octet-stream' }),
-      data: [{ name: 'file', value: file }],
-      title: `上传 ${remoteName}`,
-      network: request.agent.Network.ANY,
-      metered: true,
-      roaming: true,
-      retry: false,
-      redirect: false,
-      precise: true,
-      multipart: false
-    };
+    const completedBeforeUpload = cachePath ? total : 0;
+    const operationTotal = cachePath ? total * 2 : total;
+    const session = rcp.createSession();
     try {
-      const task = await request.agent.create(context, config);
-      return await new Promise<number>((resolve: (value: number) => void, reject: (reason?: Object) => void): void => {
-        let settled = false;
-        let responseStatus = 0;
-        const onTaskProgress = (progress: request.agent.Progress): void => {
-          const reportedTotal = progress.sizes.length > 0 && progress.sizes[0] >= 0 ? progress.sizes[0] : total;
-          const completedBeforeUpload = cachePath ? total : 0;
-          const operationTotal = cachePath ? total + reportedTotal : reportedTotal;
-          if (onProgress) {
-            onProgress(completedBeforeUpload + Math.max(0, progress.processed), operationTotal);
+      // request.agent always serializes uploads as multipart/form-data. WebDAV
+      // PUT requires the file bytes to be the request body itself, which is why
+      // strict servers such as 123Pan and Nutstore rejected the old upload.
+      const requestConfig: rcp.Configuration = {
+        transfer: {
+          autoRedirect: true,
+          maxAutoRedirects: WebDavClient.MAX_REDIRECTS,
+          timeout: {
+            connectMs: this.timeout,
+            transferMs: Math.max(this.timeout, 120000),
+            inactivityMs: this.timeout
           }
-        };
-        const onResponse = (response: request.agent.HttpResponse): void => {
-          responseStatus = response.statusCode;
-        };
-        const release = (): void => {
-          task.off('progress', onTaskProgress);
-          task.off('completed', onCompleted);
-          task.off('failed', onFailed);
-          task.off('response', onResponse);
-        };
-        const removeThen = (action: () => void): void => {
-          request.agent.remove(task.tid).then(action).catch(action);
-        };
-        const onCompleted = (_progress: request.agent.Progress): void => {
-          if (settled) return;
-          settled = true;
-          release();
-          removeThen((): void => {
-            if (responseStatus > 0 && (responseStatus < 200 || responseStatus >= 300)) {
-              reject(new Error(`上传文件失败：${this.statusMessage(responseStatus)}`));
-              return;
+        },
+        tracing: {
+          httpEventsHandler: {
+            onUploadProgress: (_uploadTotal: number, transferredSize: number): void => {
+              if (onProgress) {
+                onProgress(completedBeforeUpload + Math.max(0, Math.min(transferredSize, total)), operationTotal);
+              }
             }
-            if (onProgress) onProgress(total, total);
-            resolve(total);
-          });
-        };
-        const onFailed = (_progress: request.agent.Progress): void => {
-          if (settled) return;
-          settled = true;
-          release();
-          removeThen((): void => {
-            if (responseStatus > 0) {
-              reject(new Error(`上传文件失败：${this.statusMessage(responseStatus)}`));
-            } else {
-              reject(new Error('流式上传失败，请检查网络连接和服务器配置'));
-            }
-          });
-        };
-        task.on('progress', onTaskProgress);
-        task.on('completed', onCompleted);
-        task.on('failed', onFailed);
-        task.on('response', onResponse);
-        task.start().catch((error: Object): void => {
-          if (settled) return;
-          settled = true;
-          release();
-          removeThen((): void => reject(new Error(this.errorMessage(error))));
-        });
-      });
+          }
+        }
+      };
+      const uploadRequest = new rcp.Request(
+        targetUrl,
+        'PUT',
+        this.headers({
+          'Content-Type': 'application/octet-stream',
+          'Content-Length': `${total}`
+        }),
+        new rcp.UploadFromFile(uploadPath),
+        undefined,
+        undefined,
+        requestConfig
+      );
+      const response = await session.fetch(uploadRequest);
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw new Error(`上传文件失败：${this.statusMessage(response.statusCode)}`);
+      }
+      if (onProgress) onProgress(operationTotal, operationTotal);
+      return total;
+    } catch (error) {
+      throw new Error(this.errorMessage(error as Object));
     } finally {
+      session.close();
       if (cachePath) {
         try { fs.unlinkSync(cachePath); } catch (_) {}
       }

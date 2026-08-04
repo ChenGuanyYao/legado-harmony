@@ -208,13 +208,15 @@ export class TtsAvAudioPlayer {
       `state=${player.state},generation=${generation}`);
     const hint = event.hintType;
     if (hint === audio.InterruptHint.INTERRUPT_HINT_DUCK) {
-      if (event.forceType === audio.InterruptForceType.INTERRUPT_SHARE) {
-        try { player.setVolume(0.35); } catch (_) {}
-      }
+      // Do not alter the application stream gain for advisory duck events.
+      // Forced ducking is already applied by the system mixer and is restored
+      // by it, so a second app-side gain change only creates an audible step.
+      console.info(`[TTS] av duck handled by system mixer: ` +
+        `forced=${event.forceType === audio.InterruptForceType.INTERRUPT_FORCE}`);
       return;
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_UNDUCK) {
-      try { player.setVolume(1); } catch (_) {}
+      console.info('[TTS] av unduck received; application stream gain remains unchanged');
       return;
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_PAUSE) {
@@ -229,7 +231,6 @@ export class TtsAvAudioPlayer {
       return;
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_RESUME) {
-      try { player.setVolume(1); } catch (_) {}
       if (this.interruptPaused && !this.paused &&
         (player.state === 'paused' || player.state === 'prepared')) {
         this.interruptPaused = false;
