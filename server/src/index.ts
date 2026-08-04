@@ -66,6 +66,11 @@ import {
   cleanupExpiredSecurityRows,
   enforceAccountRateLimit
 } from './security.js';
+import {
+  findRedeemableTheme,
+  listPublishedThemes,
+  themeOfferMatchesExpectation
+} from './themeCatalog.js';
 
 interface AuthBody {
   authorizationCode?: string;
@@ -73,6 +78,8 @@ interface AuthBody {
 
 interface RedeemBody {
   requestId?: string;
+  expectedPricePoints?: number;
+  expectedValidDays?: number;
 }
 
 interface TtsRedeemBody {
@@ -115,19 +122,6 @@ class ApiError extends Error {
   }
 }
 
-const THEME_PRICE = 60;
-const THEME_IDS = new Set([
-  'strawberry-cream',
-  'crimson-archive',
-  'plum-tea',
-  'rose-letter',
-  'moon-crane',
-  'classic-blue',
-  'warm-paper',
-  'forest-mist',
-  'ink-wash',
-  'neon-night'
-]);
 const sessionKey = new TextEncoder().encode(config.sessionSecret);
 if (sessionKey.byteLength < 32) {
   throw new Error('SESSION_SECRET must contain at least 32 bytes');
@@ -427,6 +421,10 @@ app.post<{ Body: ProfileBody }>(
   }
 );
 
+app.get('/v1/themes/catalog', async () => ({
+  themes: await listPublishedThemes(pool)
+}));
+
 app.post<{ Params: { themeId: string }; Body: RedeemBody }>(
   '/v1/themes/:themeId/redeem',
   { preHandler: authenticate },
@@ -439,9 +437,6 @@ app.post<{ Params: { themeId: string }; Body: RedeemBody }>(
       'theme-redeem',
       config.http.sensitiveRateLimitPerMinute
     );
-    if (!THEME_IDS.has(themeId)) {
-      throw new ApiError(404, 'THEME_NOT_FOUND', '主题不存在');
-    }
     if (!requestId || requestId.length > 128) {
       throw new ApiError(400, 'INVALID_REQUEST_ID', '请求标识无效');
     }
@@ -455,6 +450,17 @@ app.post<{ Params: { themeId: string }; Body: RedeemBody }>(
       );
       if (duplicate.rowCount) {
         return snapshot(client, userId);
+      }
+      const theme = await findRedeemableTheme(client, themeId);
+      if (!theme) {
+        throw new ApiError(404, 'THEME_NOT_FOUND', '主题不存在或暂未上架');
+      }
+      if (!themeOfferMatchesExpectation(
+        theme,
+        request.body.expectedPricePoints,
+        request.body.expectedValidDays
+      )) {
+        throw new ApiError(409, 'THEME_OFFER_CHANGED', '主题价格或有效期已更新，请确认后重试');
       }
       const wallet = await client.query<{
         balance: string;
@@ -471,14 +477,14 @@ app.post<{ Params: { themeId: string }; Body: RedeemBody }>(
         throw new ApiError(404, 'ACCOUNT_NOT_FOUND', '账号不存在');
       }
       const balance = Number(wallet.rows[0]!.balance);
-      if (balance < THEME_PRICE) {
+      if (balance < theme.pricePoints) {
         throw new ApiError(409, 'INSUFFICIENT_POINTS', '点数不足，请先充值');
       }
       const promoBalance = Number(wallet.rows[0]!.promo_balance);
       const paidBalance = Number(wallet.rows[0]!.paid_balance);
-      const promoSpent = Math.min(promoBalance, THEME_PRICE);
-      const paidSpent = THEME_PRICE - promoSpent;
-      const balanceAfter = balance - THEME_PRICE;
+      const promoSpent = Math.min(promoBalance, theme.pricePoints);
+      const paidSpent = theme.pricePoints - promoSpent;
+      const balanceAfter = balance - theme.pricePoints;
       await client.query(
         `UPDATE point_wallets
          SET balance = $2,
@@ -492,19 +498,19 @@ app.post<{ Params: { themeId: string }; Body: RedeemBody }>(
         `INSERT INTO point_ledger (
            user_id, delta, balance_after, reason, reference_id, idempotency_key
          ) VALUES ($1, $2, $3, 'THEME_REDEEM', $4, $5)`,
-        [userId, -THEME_PRICE, balanceAfter, themeId, idempotencyKey]
+        [userId, -theme.pricePoints, balanceAfter, themeId, idempotencyKey]
       );
       await client.query(
         `INSERT INTO theme_entitlements (user_id, theme_id, expires_at)
-         VALUES ($1, $2, now() + interval '365 days')
+         VALUES ($1, $2, now() + make_interval(days => $3))
          ON CONFLICT (user_id, theme_id) DO UPDATE SET
            expires_at = CASE
              WHEN theme_entitlements.expires_at > now()
-               THEN theme_entitlements.expires_at + interval '365 days'
-             ELSE now() + interval '365 days'
+               THEN theme_entitlements.expires_at + make_interval(days => $3)
+             ELSE now() + make_interval(days => $3)
            END,
            updated_at = now()`,
-        [userId, themeId]
+        [userId, themeId, theme.validDays]
       );
       return snapshot(client, userId);
     });

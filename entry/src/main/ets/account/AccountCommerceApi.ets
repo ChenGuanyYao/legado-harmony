@@ -6,6 +6,7 @@ import {
   AccountSnapshot,
   HuaweiLoginResponse,
   IapCreditResponse,
+  ThemeCatalogResponse,
   TtsCatalogResponse,
   TtsPackageRedeemResponse,
   TtsWalletSnapshot
@@ -51,11 +52,21 @@ export class AccountCommerceApi {
     return AccountCommerceApi.normalizeAccount(JSON.parse(value) as AccountSnapshot);
   }
 
-  static async redeemTheme(themeId: string, requestId: string,
+  static async redeemTheme(themeId: string, requestId: string, expectedPricePoints: number,
+    expectedValidDays: number,
     sessionToken: string): Promise<AccountSnapshot> {
     const value = await AccountCommerceApi.request(`/v1/themes/${encodeURIComponent(themeId)}/redeem`,
-      'POST', JSON.stringify({ requestId: requestId }), sessionToken);
+      'POST', JSON.stringify({
+        requestId: requestId,
+        expectedPricePoints: expectedPricePoints,
+        expectedValidDays: expectedValidDays
+      }), sessionToken);
     return AccountCommerceApi.normalizeAccount(JSON.parse(value) as AccountSnapshot);
+  }
+
+  static async fetchThemeCatalog(): Promise<ThemeCatalogResponse> {
+    const value = await AccountCommerceApi.request('/v1/themes/catalog', 'GET', '', '');
+    return JSON.parse(value) as ThemeCatalogResponse;
   }
 
   static async creditIapPurchase(purchaseData: string, sessionToken: string): Promise<IapCreditResponse> {

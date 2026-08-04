@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test dist/tts.test.js dist/sync.test.js dist/ttsRuntime.test.js dist/security.test.js",
+    "test": "npm run build && node --test dist/tts.test.js dist/sync.test.js dist/ttsRuntime.test.js dist/security.test.js dist/themeCatalog.test.js",
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts"
   },

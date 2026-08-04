@@ -75,7 +75,7 @@ export class LocalBookService {
   static readonly EPUB_IMAGE_MARKER_PREFIX: string = ReaderImageMarker.PREFIX;
   static readonly EPUB_IMAGE_MARKER_SUFFIX: string = ReaderImageMarker.SUFFIX;
 
-  private static readonly TXT_PARSER_VERSION: string = '7';
+  private static readonly TXT_PARSER_VERSION: string = '8';
   private static readonly EPUB_PARSER_VERSION: string = '8';
   private static readonly TXT_READ_CHUNK_BYTES: number = 256 * 1024;
   private static readonly TXT_MAX_CHAPTER_CHARS: number = 32 * 1024;
@@ -83,7 +83,15 @@ export class LocalBookService {
   private static readonly TXT_CHARSET_OVERRIDE_KEY: string = 'localCharsetOverride';
   private static readonly LOCAL_INTRO_TARGET_LENGTH: number = 96;
   private static readonly TXT_RULE_TOP_LEVEL: string =
-    '^(?:扉页|[序引前楔][言子]?|(内容|文章|书籍)?简介|作品相关|卷[首尾末](语|总结|感言)|([^-·.–—_*＊~～=\\s\\n\\r](?!(者[：:]))|[-·.–—_*＊~～=](?!(\\s*[-·.–—_*＊~～=]))).*(?!.)|最?[上中下序引终末][章卷篇幕回节册季话集]|[\\dO零一两二三四五六七八九十百千万壹贰叁肆伍陆柒捌玖拾佰仟萬]+?\\s{0,4}[｜、_|：:；;–.·\\s—-]|[第章卷篇节幕回册]\\s{0,4}[\\dO零一两二三四五六七八九十百千万壹贰叁肆伍陆柒捌玖拾佰仟萬]+?\\s{0,4}[章卷页回幕册话段季篇节集部]?|[\\dO零一两二三四五六七八九十百千万壹贰叁肆伍陆柒捌玖拾佰仟萬]+?\\s{0,4}[章卷页季回幕册话段篇节集部]).{0,35}$';
+    '^(?:扉页|正文|目录|[序引前楔][言子]?|(?:内容|文章|书籍|作品|作者)?简介|作品相关|后记|尾声|' +
+    '卷[首尾末](?:语|总结|感言)|最?[上中下序引终末][章卷篇幕回节册季话集]|' +
+    '(?:第\\s*)?[\\dO零〇一两二三四五六七八九十百千万壹贰叁肆伍陆柒捌玖拾佰仟萬]{1,12}\\s*' +
+    '[章卷页季回幕册话段篇节集部](?:\\s+|[：:、._—-]\\s*)?.{0,30}|' +
+    '[章卷篇节幕回册话段季集部]\\s*[\\dO零〇一两二三四五六七八九十百千万壹贰叁肆伍陆柒捌玖拾佰仟萬]{1,12}' +
+    '(?:\\s+|[：:、._—-]\\s*)?.{0,30}|' +
+    '[\\dO零〇一两二三四五六七八九十百千万壹贰叁肆伍陆柒捌玖拾佰仟萬]{1,12}\\s*[｜、_|：:；;–.·—-]\\s*' +
+    '[^\\s].{0,30}|(?:chapter|part|volume|book)\\s+[0-9ivxlcdm]+(?:\\s+|[：:._—-]\\s*)?.{0,30}|' +
+    '[-·.–—_*＊~～=]{2,}\\s*.{1,35}\\s*[-·.–—_*＊~～=]{2,})$';
 
   static isLocalBook(book: Book): boolean {
     return book.origin === LocalBookService.ORIGIN;
@@ -506,6 +514,9 @@ export class LocalBookService {
   private static async rebuildTxtBook(book: Book, localPath: string): Promise<void> {
     const charsetOverride = LocalBookService.getTxtCharsetOverride(book);
     book.charset = charsetOverride || await LocalBookService.detectTextFileCharset(localPath);
+    const previousChapterCount = Math.max(book.totalChapterNum,
+      await appDb.getBookChapterCount(book.bookUrl));
+    const previousChapterIndex = Math.max(0, book.durChapterIndex);
     await appDb.deleteBookChapters(book.bookUrl);
     await appDb.deleteBookCachedContent(book.bookUrl);
     const imported = await LocalBookService.importTxtChapters(
@@ -515,7 +526,16 @@ export class LocalBookService {
     book.latestChapterTime = Date.now();
     book.intro = imported.intro;
     book.putVariable('localContentIntroVersion', '6');
-    if (book.durChapterIndex >= imported.chapterCount) {
+    // Parser v7 could classify nearly every short body line as a title. When repairing
+    // such an over-split book, retain an approximate whole-book position instead of
+    // dropping the reader at an unrelated chapter or resetting all progress.
+    if (previousChapterCount > imported.chapterCount * 4 && imported.chapterCount > 0) {
+      const progress = previousChapterCount > 1 ? previousChapterIndex / (previousChapterCount - 1) : 0;
+      book.durChapterIndex = Math.min(imported.chapterCount - 1,
+        Math.max(0, Math.round(progress * (imported.chapterCount - 1))));
+      book.durChapterPos = 0;
+      book.durChapterTitle = '';
+    } else if (book.durChapterIndex >= imported.chapterCount) {
       book.durChapterIndex = 0;
       book.durChapterPos = 0;
       book.durChapterTitle = '';
@@ -527,7 +547,7 @@ export class LocalBookService {
   private static async importTxtChapters(bookUrl: string, path: string,
     charset: string, bookName: string, bookAuthor: string): Promise<LocalTxtImportResult> {
     const result = new LocalTxtImportResult();
-    const titleRegex = new RegExp(LocalBookService.TXT_RULE_TOP_LEVEL);
+    const titleRegex = new RegExp(LocalBookService.TXT_RULE_TOP_LEVEL, 'i');
     let currentTitle = '';
     let currentPart = 1;
     let currentHasPersisted = false;
@@ -595,7 +615,7 @@ export class LocalBookService {
     const consumeLine = async (rawLine: string, forceBody: boolean = false): Promise<void> => {
       const line = rawLine.endsWith('\r') ? rawLine.substring(0, rawLine.length - 1) : rawLine;
       const candidate = line.trim();
-      if (!forceBody && candidate && candidate.length <= 50 && titleRegex.test(line)) {
+      if (!forceBody && candidate && candidate.length <= 50 && titleRegex.test(candidate)) {
         await persistCurrent(true);
         currentTitle = candidate;
         currentPart = 1;

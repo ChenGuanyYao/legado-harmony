@@ -16,6 +16,32 @@ function assert(condition, message) {
   }
 }
 
+function jpegDimensions(filePath) {
+  const data = fs.readFileSync(filePath);
+  assert(data.length >= 4 && data[0] === 0xff && data[1] === 0xd8, `Invalid JPEG: ${filePath}`);
+  const sofMarkers = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+  let offset = 2;
+  while (offset + 9 < data.length) {
+    if (data[offset] !== 0xff) {
+      offset++;
+      continue;
+    }
+    const marker = data[offset + 1];
+    offset += 2;
+    if (marker === 0xd8 || marker === 0xd9 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+      continue;
+    }
+    if (offset + 2 > data.length) break;
+    const length = data.readUInt16BE(offset);
+    if (sofMarkers.has(marker) && offset + 7 <= data.length) {
+      return { width: data.readUInt16BE(offset + 5), height: data.readUInt16BE(offset + 3) };
+    }
+    if (length < 2) break;
+    offset += length;
+  }
+  throw new Error(`JPEG dimensions are unreadable: ${filePath}`);
+}
+
 const models = read('entry/src/main/ets/theme/ThemeModels.ets');
 const registry = read('entry/src/main/ets/theme/BuiltinThemeRegistry.ets');
 const runtime = read('entry/src/main/ets/theme/ThemeRuntime.ets');
@@ -42,20 +68,34 @@ const searchCoordinator = read('entry/src/main/ets/core/book/SearchCoordinator.t
 const appIconManager = read('entry/src/main/ets/utils/AppIconManager.ets');
 const fontBootstrap = read('entry/src/main/ets/utils/ReaderFontBootstrap.ets');
 const entryAbility = read('entry/src/main/ets/entryability/EntryAbility.ets');
+const serverIndex = read('server/src/index.ts');
+const serverThemeCatalog = read('server/migrations/011_theme_catalog.sql');
 const pages = JSON.parse(read('entry/src/main/resources/base/profile/main_pages.json'));
 
-const expectedThemes = ['classic-blue', 'warm-paper', 'forest-mist', 'ink-wash', 'neon-night'];
+const expectedThemes = [
+  'classic-blue', 'warm-paper', 'forest-mist', 'ink-wash', 'neon-night', 'sword-frost'
+];
 for (const themeId of expectedThemes) {
   assert(models.includes(`'${themeId}'`), `Theme id is missing from ThemeModels: ${themeId}`);
   assert(registry.includes(`ThemeIds.`), 'Builtin registry is not using stable ThemeIds');
 }
+const redeemableThemeIds = [
+  'classic-blue', 'warm-paper', 'forest-mist', 'ink-wash', 'neon-night',
+  'strawberry-cream', 'crimson-archive', 'plum-tea', 'rose-letter', 'moon-crane', 'sword-frost'
+];
+for (const themeId of redeemableThemeIds) {
+  assert(serverThemeCatalog.includes(`('${themeId}'`), `Database theme catalog is missing: ${themeId}`);
+}
+assert(serverIndex.includes('findRedeemableTheme(client, themeId)'),
+  'Theme redemption must use the database catalog');
 assert((registry.match(/themes\.push\(/g) || []).length >= expectedThemes.length,
-  'Builtin registry must publish at least five themes');
+  `Builtin registry must publish at least ${expectedThemes.length} themes`);
 assert(registry.includes('static register(theme: ThemePack)'), 'Compiled theme registration API is missing');
 
 const expectedBackgrounds = [
   'paper-light', 'paper-dark', 'forest-light', 'forest-dark',
-  'ink-light', 'ink-dark', 'neon-light', 'neon-dark'
+  'ink-light', 'ink-dark', 'neon-light', 'neon-dark',
+  'sword-frost-light', 'sword-frost-dark'
 ];
 for (const assetId of expectedBackgrounds) {
   assert(assets.includes(`'${assetId}'`), `Background asset id is not mapped: ${assetId}`);
@@ -105,7 +145,35 @@ for (const fileName of themeLogoFiles) {
 }
 assert(assets.includes('static themeLogo(themeId: string)'), 'Theme logo resolver is missing');
 
-const bubbleStyles = ['qq-soft', 'qq-solid', 'capsule', 'paper', 'neon'];
+const swordFrostJpegs = [
+  'theme_startup_sword_frost.jpg',
+  'theme_cover_sword_frost_01.jpg', 'theme_cover_sword_frost_02.jpg',
+  'theme_cover_sword_frost_03.jpg', 'theme_cover_sword_frost_04.jpg',
+  'theme_cover_sword_frost_05.jpg', 'theme_cover_sword_frost_06.jpg',
+  'theme_folder_art_sword_frost.jpg'
+];
+for (const fileName of swordFrostJpegs) {
+  const filePath = path.join(mediaRoot, fileName);
+  assert(fs.existsSync(filePath), `Sword Frost artwork is missing: ${fileName}`);
+  const dimensions = jpegDimensions(filePath);
+  const expected = fileName === 'theme_startup_sword_frost.jpg' ? { width: 841, height: 1870 } :
+    { width: 450, height: 660 };
+  assert(dimensions.width === expected.width && dimensions.height === expected.height,
+    `Invalid Sword Frost artwork dimensions: ${fileName}`);
+}
+const swordFrostSvgs = [
+  'theme_logo_sword_frost.svg', 'theme_frame_sword_frost.svg',
+  'reader_bg_sword_frost_light.svg', 'reader_bg_sword_frost_dark.svg',
+  'reader_decor_sword_frost_light.svg', 'reader_decor_sword_frost_dark.svg',
+  'ic_theme_sword_frost_bookshelf.svg', 'ic_theme_sword_frost_explore.svg',
+  'ic_theme_sword_frost_search.svg', 'ic_theme_sword_frost_mine.svg',
+  'regex_frame_sword_talisman.svg', 'regex_cap_sword_talisman.svg'
+];
+for (const fileName of swordFrostSvgs) {
+  assert(fs.existsSync(path.join(mediaRoot, fileName)), `Sword Frost vector asset is missing: ${fileName}`);
+}
+
+const bubbleStyles = ['qq-soft', 'qq-solid', 'capsule', 'paper', 'neon', 'sword-talisman'];
 for (const styleId of bubbleStyles) {
   assert(models.includes(`'${styleId}'`), `Bubble style is missing from ThemeModels: ${styleId}`);
   assert(regexModel.includes(`'${styleId}'`), `Bubble resolver/codec is missing style: ${styleId}`);

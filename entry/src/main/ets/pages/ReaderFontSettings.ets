@@ -1169,6 +1169,7 @@ struct ReaderFontSettingsPage {
     this.appendAccessibleBubbleStyle(options, 'celadon-slip', '青瓷纸笺', revision);
     this.appendAccessibleBubbleStyle(options, 'rose-frame', '玫瑰信框', revision);
     this.appendAccessibleBubbleStyle(options, 'moon-halo', '月光描边', revision);
+    this.appendAccessibleBubbleStyle(options, 'sword-talisman', '剑符', revision);
     return options;
   }
 

@@ -31,6 +31,7 @@ export class ThemeAccessPolicy {
     if (normalized === 'celadon-slip') return ThemeIds.PLUM_TEA;
     if (normalized === 'rose-frame') return ThemeIds.ROSE_LETTER;
     if (normalized === 'moon-halo') return ThemeIds.MOON_CRANE;
+    if (normalized === 'sword-talisman') return ThemeIds.SWORD_FROST;
     return '';
   }
 

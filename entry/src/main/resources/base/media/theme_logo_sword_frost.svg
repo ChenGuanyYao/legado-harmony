@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <rect x="5" y="5" width="54" height="54" rx="8" fill="#26332F"/>
+  <rect x="9" y="9" width="46" height="46" rx="5" fill="none" stroke="#9B3B31" stroke-width="2"/>
+  <path d="M45 12 24 43l-5 9 9-5 21-31-4-4Z" fill="#D9D1BE"/>
+  <path d="m20 39 8 6-3 4-8-6 3-4Zm26-28 5-4 1 1-4 5-2-2Z" fill="#A7865E"/>
+  <text x="17" y="35" fill="#F4ECD9" font-size="25" font-family="serif" font-weight="700">侠</text>
+</svg>

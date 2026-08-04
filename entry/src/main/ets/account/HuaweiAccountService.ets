@@ -44,13 +44,15 @@ export class HuaweiAccountService {
     return AccountSessionStore.account();
   }
 
-  static async redeemTheme(context: Context, themeId: string): Promise<AccountSnapshot> {
+  static async redeemTheme(context: Context, themeId: string, expectedPricePoints: number,
+    expectedValidDays: number): Promise<AccountSnapshot> {
     await AccountSessionStore.load(context);
     if (!AccountSessionStore.isLoggedIn()) {
       throw new Error('请先登录华为账号');
     }
     const snapshot = await AccountCommerceApi.redeemTheme(
-      themeId, util.generateRandomUUID(), AccountSessionStore.token());
+      themeId, util.generateRandomUUID(), expectedPricePoints, expectedValidDays,
+      AccountSessionStore.token());
     await AccountSessionStore.updateSnapshot(context, snapshot);
     return AccountSessionStore.account();
   }

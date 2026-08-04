@@ -3,6 +3,17 @@ export class ThemeEntitlement {
   expiresAt: number = 0;
 }
 
+export class ThemeCatalogItem {
+  themeId: string = '';
+  displayName: string = '';
+  pricePoints: number = 60;
+  validDays: number = 365;
+}
+
+export class ThemeCatalogResponse {
+  themes: ThemeCatalogItem[] = [];
+}
+
 export class AccountSnapshot {
   userId: string = '';
   displayName: string = '华为用户';

@@ -15,7 +15,9 @@ import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ThemeIds, ThemePack, ThemeVariant } from '../theme/ThemeModels';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AccountCommerceConfig } from '../account/AccountCommerceConfig';
-import { AccountApiError, ThemeEntitlement } from '../account/AccountCommerceModels';
+import { AccountApiError, ThemeCatalogItem, ThemeCatalogResponse,
+  ThemeEntitlement } from '../account/AccountCommerceModels';
+import { AccountCommerceApi } from '../account/AccountCommerceApi';
 import { AccountSessionStore } from '../account/AccountSessionStore';
 import { HuaweiAccountService } from '../account/HuaweiAccountService';
 import {
@@ -80,6 +82,8 @@ struct ThemeSettingsPage {
   @State startupTextThemeId: string = '';
   @State startupTextTitle: string = '';
   @State startupTextSubtitle: string = '';
+  @State themeCatalog: ThemeCatalogItem[] = [];
+  @State themeCatalogLoaded: boolean = false;
   private customSchemeRefreshSerial: number = 0;
   private themeListScroller: ListScroller = new ListScroller();
 
@@ -87,6 +91,7 @@ struct ThemeSettingsPage {
     this.loadThemeSettings();
     this.refreshCustomSchemes();
     this.initializeAccount();
+    this.refreshThemeCatalog();
     this.syncBars();
   }
 
@@ -202,6 +207,19 @@ struct ThemeSettingsPage {
       }
     } catch (e) {
       console.warn('同步主题权益失败:', e);
+    }
+  }
+
+  async refreshThemeCatalog(): Promise<void> {
+    if (!AccountCommerceConfig.isServerConfigured()) return;
+    try {
+      const response: ThemeCatalogResponse = await AccountCommerceApi.fetchThemeCatalog();
+      this.themeCatalog = response.themes || [];
+      this.themeCatalogLoaded = true;
+    } catch (e) {
+      // Keep the bundled 60-point/365-day offer when the device is offline or
+      // is temporarily talking to an older server during a rolling upgrade.
+      console.warn('同步主题目录失败，使用内置价格:', e);
     }
   }
 
@@ -324,10 +342,17 @@ struct ThemeSettingsPage {
     if (themeId === ThemeIds.CUSTOM || this.hasThemeAccess(themeId)) {
       return true;
     }
+    const offer = this.themeOffer(themeId);
+    if (this.themeCatalogLoaded && !offer) {
+      promptAction.showToast({ message: '该主题暂未上架' });
+      return false;
+    }
+    const pricePoints = offer?.pricePoints || AccountCommerceConfig.THEME_PRICE_POINTS;
+    const validDays = offer?.validDays || AccountCommerceConfig.THEME_VALID_DAYS;
     if (!this.accountLoggedIn) {
       const loginDialog = await promptAction.showDialog({
         title: '登录后获取主题',
-        message: `该主题需要 ${AccountCommerceConfig.THEME_PRICE_POINTS} 点，获取后有效一年。首次登录免费送 300 点。`,
+        message: `该主题需要 ${pricePoints} 点，获取后有效 ${validDays} 天。首次登录免费送 300 点。`,
         buttons: [
           { text: '取消', color: this.subTextColor() },
           { text: '去登录', color: this.accentColor() }
@@ -341,25 +366,28 @@ struct ThemeSettingsPage {
     const theme = BuiltinThemeRegistry.findById(themeId);
     const confirm = await promptAction.showDialog({
       title: `获取「${theme.name}」`,
-      message: `将扣除 ${AccountCommerceConfig.THEME_PRICE_POINTS} 点，主题有效期为 365 天。有效期内可在所有已登录终端使用。`,
+      message: `将扣除 ${pricePoints} 点，主题有效期为 ${validDays} 天。有效期内可在所有已登录终端使用。`,
       buttons: [
         { text: '取消', color: this.subTextColor() },
-        { text: `确认 · ${AccountCommerceConfig.THEME_PRICE_POINTS} 点`, color: this.accentColor() }
+        { text: `确认 · ${pricePoints} 点`, color: this.accentColor() }
       ]
     });
     if (confirm.index !== 1) {
       return false;
     }
     try {
-      await HuaweiAccountService.redeemTheme(getContext(this), themeId);
-      promptAction.showToast({ message: `已获取「${theme.name}」，有效期一年` });
+      await HuaweiAccountService.redeemTheme(getContext(this), themeId, pricePoints, validDays);
+      promptAction.showToast({ message: `已获取「${theme.name}」，有效期 ${validDays} 天` });
       return true;
     } catch (e) {
       const error = e as AccountApiError;
-      if (error.errorCode === 'INSUFFICIENT_POINTS') {
+      if (error.errorCode === 'THEME_OFFER_CHANGED') {
+        await this.refreshThemeCatalog();
+        promptAction.showToast({ message: '主题价格或有效期已更新，请重新确认' });
+      } else if (error.errorCode === 'INSUFFICIENT_POINTS') {
         const recharge = await promptAction.showDialog({
           title: '点数不足',
-          message: `当前有 ${this.accountPoints} 点，获取该主题需要 ${AccountCommerceConfig.THEME_PRICE_POINTS} 点。`,
+          message: `当前有 ${this.accountPoints} 点，获取该主题需要 ${pricePoints} 点。`,
           buttons: [
             { text: '取消', color: this.subTextColor() },
             { text: '去充值', color: this.accentColor() }
@@ -373,6 +401,16 @@ struct ThemeSettingsPage {
       }
       return false;
     }
+  }
+
+  themeOffer(themeId: string): ThemeCatalogItem | null {
+    for (let index = 0; index < this.themeCatalog.length; index++) {
+      const offer = this.themeCatalog[index];
+      if (offer && offer.themeId === themeId && offer.pricePoints > 0 && offer.validDays > 0) {
+        return offer;
+      }
+    }
+    return null;
   }
 
   async setThemeBookCoverEnabled(enabled: boolean): Promise<void> {
@@ -1180,12 +1218,14 @@ struct ThemeSettingsPage {
                 this.startThemeTrial(theme);
               }
             })
-          Button('获取主题')
+          Button(this.themeCatalogLoaded && !this.themeOffer(theme.id) ? '暂未上架' :
+            `获取主题 · ${this.themeOffer(theme.id)?.pricePoints || AccountCommerceConfig.THEME_PRICE_POINTS}点`)
             .height(34)
             .fontSize(12)
             .fontColor('#FFFFFF')
             .backgroundColor(this.activeVariant(theme).colors.buttonColor)
             .layoutWeight(1)
+            .enabled(!this.themeCatalogLoaded || !!this.themeOffer(theme.id))
             .onClick(() => {
               this.acquireTheme(theme.id);
             })
@@ -1477,6 +1517,7 @@ struct ThemeSettingsPage {
     if (styleId === 'celadon-slip') return '青瓷纸笺';
     if (styleId === 'rose-frame') return '玫瑰信框';
     if (styleId === 'moon-halo') return '月光描边';
+    if (styleId === 'sword-talisman') return '剑符';
     return '强调气泡';
   }
 

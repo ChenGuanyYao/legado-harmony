@@ -50,6 +50,7 @@ export class StartupCoverTextStore {
     if (themeId === ThemeIds.PLUM_TEA) return '梅影入卷，茶烟伴读';
     if (themeId === ThemeIds.ROSE_LETTER) return '每一页，都是来信';
     if (themeId === ThemeIds.MOON_CRANE) return '月照书海，鹤引星河';
+    if (themeId === ThemeIds.SWORD_FROST) return '一页入江湖，万卷见天地';
     return '';
   }
 

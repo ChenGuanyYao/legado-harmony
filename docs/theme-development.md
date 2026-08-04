@@ -21,7 +21,7 @@ entry/src/main/resources/base/media/
 └── ic_theme_ink_*              # 水墨导航图标包
 ```
 
-当前还内置 `strawberry`、`crimson`、`plum`、`rose` 与 `crane` 五组主题专属导航图标，以及对应的浅/深阅读背景和主题标识。
+当前还内置 `strawberry`、`crimson`、`plum`、`rose`、`crane` 与 `sword-frost` 六组主题专属导航图标，以及对应的浅/深阅读背景和主题标识。
 
 `AppThemeSettingsStore` 是兼容桥：它继续读写原来的浅/深强调色与按钮色，同时保存 `appThemeId`，因此旧版本用户的自定义颜色不会在升级时丢失。
 
@@ -134,12 +134,14 @@ BuiltinThemeRegistry.register(theme);
 规则 schema v2 支持：
 
 - `emphasisMode`：`inherit`、`none`、`text`、`highlight`、`bubble`。
-- `bubbleStyleId`：`inherit`、`qq-soft`、`qq-solid`、`capsule`、`paper`、`neon`，以及十种主题专属样式：`classic-glass`、`warm-scroll`、`forest-dew`、`ink-brush`、`neon-pulse`、`strawberry-ribbon`、`crimson-stamp`、`celadon-slip`、`rose-frame`、`moon-halo`。
+- `bubbleStyleId`：支持 `inherit`、`qq-soft`、`qq-solid`、`capsule`、`paper`、`neon`，以及十一种主题专属样式：`classic-glass`、`warm-scroll`、`forest-dew`、`ink-brush`、`neon-pulse`、`strawberry-ribbon`、`crimson-stamp`、`celadon-slip`、`rose-frame`、`moon-halo`、`sword-talisman`。当 `emphasisMode = inherit` 时，正文强制使用当前主题的气泡形状、端饰和主题色，忽略规则中残留的样式字段；只有 `emphasisMode = custom` 时规则级气泡样式才生效。
 - `emphasisColor`：留空时跟随主题，设置后作为规则级覆盖。
 
-旧的 `highlightColorEnabled` 与 `shadowColor` 仍会读取和输出，用于升级兼容。所有气泡模式的正则命中统一使用行内 `ContainerSpan`：命中文字、主题背景、多层 `textShadow` 与左右镜像端饰属于同一个行内单元，不再根据匹配是否覆盖整段切换渲染方式。十套端饰分别表达玻璃星芒、卷轴、叶片露珠、墨迹印章、霓虹电路、草莓缎带、赤墨档案章、宋式回纹、玫瑰角花和月色鹤影；主题专属样式不再统一追加下划线。强调效果不会改变正文源文本或 TTS 索引，TTS 当前朗读高亮拥有最高显示优先级。
+旧的 `highlightColorEnabled`、`shadowColor` 与规则级 `bubbleStyleId` 仍会读取和输出，用于升级和降级兼容。“跟随主题”把强调模式、气泡形状、端饰和主题色作为一个整体继承；“自定义”才允许分别启用文字色、高亮色块、气泡，以及选择气泡样式与颜色。所有气泡模式的正则命中统一使用行内 `ContainerSpan`：命中文字、主题背景、多层 `textShadow` 与左右镜像端饰属于同一个行内单元，不再根据匹配是否覆盖整段切换渲染方式。十一套端饰分别表达玻璃星芒、卷轴、叶片露珠、墨迹印章、霓虹电路、草莓缎带、赤墨档案章、宋式回纹、玫瑰角花、月色鹤影和朱砂剑符；主题专属样式不再统一追加下划线。强调效果不会改变正文源文本或 TTS 索引，TTS 当前朗读高亮拥有最高显示优先级。
 
 ## 验证清单
+
+付费主题不再需要修改服务端代码。发布客户端版本前，按 `server/README.md` 的“主题目录运营”说明向 `theme_catalog` 幂等写入主题 ID、显示名、价格、有效天数和上架状态；新增迁移时也要把内置主题加入初始化数据。不要删除已发布记录，下架时设置 `enabled = FALSE`，以保留已有权益与历史账本的可追溯性。
 
 - 浅色、深色、跟随系统三种模式均检查一次。
 - 冷启动后主题 ID、颜色覆盖和自定义字体保持不变。

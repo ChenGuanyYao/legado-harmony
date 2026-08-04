@@ -14132,6 +14132,7 @@ struct ReadBookPage {
     if (styleId === 'celadon-slip') return 16;
     if (styleId === 'strawberry-ribbon' || styleId === 'moon-halo') return 16;
     if (styleId === 'crimson-stamp' || styleId === 'warm-scroll') return 15;
+    if (styleId === 'sword-talisman') return 16;
     return 14;
   }
 
@@ -14142,6 +14143,7 @@ struct ReadBookPage {
   getRegexFrameVerticalPaddingForStyle(styleId: string): number {
     if (styleId === 'rose-frame' || styleId === 'celadon-slip') return 7;
     if (styleId === 'strawberry-ribbon' || styleId === 'moon-halo') return 6;
+    if (styleId === 'sword-talisman') return 6;
     return 5;
   }
 
@@ -14157,6 +14159,7 @@ struct ReadBookPage {
     if (styleId === 'celadon-slip') return this.isReaderThemeDark() ? '#1828342D' : '#14E6EEE7';
     if (styleId === 'rose-frame') return this.isReaderThemeDark() ? '#182B171C' : '#14F8E7E1';
     if (styleId === 'moon-halo') return this.isReaderThemeDark() ? '#180A1627' : '#12DCEBFF';
+    if (styleId === 'sword-talisman') return this.isReaderThemeDark() ? '#1822302B' : '#16476963';
     return '#00000000';
   }
 
@@ -14172,6 +14175,7 @@ struct ReadBookPage {
     if (styleId === 'celadon-slip') return '#94A96B5C';
     if (styleId === 'rose-frame') return '#A0A84550';
     if (styleId === 'moon-halo') return '#9678B9F3';
+    if (styleId === 'sword-talisman') return '#9A6E817B';
     return '#00000000';
   }
 
@@ -14192,6 +14196,7 @@ struct ReadBookPage {
     if (styleId === 'forest-dew') return 18;
     if (styleId === 'classic-glass' || styleId === 'strawberry-ribbon') return 12;
     if (styleId === 'rose-frame' || styleId === 'moon-halo') return 10;
+    if (styleId === 'sword-talisman') return 4;
     if (styleId === 'neon-pulse') return 5;
     return 1;
   }
@@ -14201,6 +14206,7 @@ struct ReadBookPage {
     if (styleId === 'rose-frame') return 46;
     if (styleId === 'celadon-slip') return 32;
     if (styleId === 'strawberry-ribbon' || styleId === 'crimson-stamp') return 40;
+    if (styleId === 'sword-talisman') return 38;
     return 34;
   }
 
@@ -14208,6 +14214,7 @@ struct ReadBookPage {
     const styleId = this.getRegexParagraphFrameStyleId(paragraph, pageStart);
     if (styleId === 'rose-frame') return 28;
     if (styleId === 'celadon-slip') return 24;
+    if (styleId === 'sword-talisman') return 24;
     return 22;
   }
 

@@ -153,7 +153,7 @@ export class ReaderRegexFontCodec {
       value === 'paper' || value === 'neon' || value === 'classic-glass' || value === 'warm-scroll' ||
       value === 'forest-dew' || value === 'ink-brush' || value === 'neon-pulse' || value === 'strawberry-ribbon' ||
       value === 'crimson-stamp' || value === 'celadon-slip' || value === 'rose-frame' ||
-      value === 'moon-halo') {
+      value === 'moon-halo' || value === 'sword-talisman') {
       return value;
     }
     // Compatibility with early theme drafts.
@@ -242,7 +242,11 @@ export class ReaderRegexBubbleStyleResolver {
     result.mode = configuredMode === 'inherit' ?
       ReaderRegexFontCodec.normalizeResolvedEmphasisMode(context.inheritedMode) : configuredMode;
     const configuredStyle = rule ? ReaderRegexFontCodec.normalizeBubbleStyleId(rule.bubbleStyleId) : 'inherit';
-    result.bubbleStyleId = configuredStyle === 'inherit' ?
+    // "Follow theme" is atomic: mode, bubble shape, ornaments and theme color
+    // all come from the active theme, regardless of stale rule-level fields.
+    // A rule-level bubble style is considered only after the user explicitly
+    // switches the emphasis mode to "custom".
+    result.bubbleStyleId = configuredMode === 'inherit' || configuredStyle === 'inherit' ?
       ReaderRegexFontCodec.normalizeResolvedBubbleStyleId(context.inheritedBubbleStyleId) : configuredStyle;
     if (enforceThemeAccess) {
       result.bubbleStyleId = ThemeAccessPolicy.accessibleBubbleStyle(
@@ -457,6 +461,19 @@ export class ReaderRegexBubbleStyleResolver {
       ReaderRegexBubbleStyleResolver.addShadow(result, 8,
         ReaderRegexBubbleStyleResolver.withAlpha(base, 88), 0, 0);
       ReaderRegexBubbleStyleResolver.addShadow(result, 4, '#557A6CFF', 1, 0);
+      return;
+    }
+    if (result.bubbleStyleId === 'sword-talisman') {
+      const coldPaper = context.darkMode ? '#22302B' : '#E5E8DF';
+      result.backgroundColor = ReaderRegexBubbleStyleResolver.mix(coldPaper, base,
+        context.darkMode ? 0.32 : 0.24);
+      result.textColor = context.darkMode ? '#F3F7F1' : '#27342F';
+      ReaderRegexBubbleStyleResolver.setRadii(result, 3, 10, 3, 10);
+      ReaderRegexBubbleStyleResolver.addShadow(result, 0.5,
+        context.darkMode ? '#5534413C' : '#B8FFFFFF', 0, -0.5);
+      ReaderRegexBubbleStyleResolver.addShadow(result, 1.8,
+        ReaderRegexBubbleStyleResolver.withAlpha(base, 118), 0.8, 1.2);
+      ReaderRegexBubbleStyleResolver.addShadow(result, 0.6, '#889B3B31', -0.8, 0.6);
       return;
     }
     if (result.bubbleStyleId === 'qq-solid') {

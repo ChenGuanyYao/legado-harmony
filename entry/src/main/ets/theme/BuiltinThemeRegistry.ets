@@ -126,6 +126,7 @@ export class BuiltinThemeRegistry {
     themes.push(BuiltinThemeRegistry.plumTea());
     themes.push(BuiltinThemeRegistry.roseLetter());
     themes.push(BuiltinThemeRegistry.moonCrane());
+    themes.push(BuiltinThemeRegistry.swordFrost());
     themes.push(BuiltinThemeRegistry.classicBlue());
     themes.push(BuiltinThemeRegistry.warmPaper());
     themes.push(BuiltinThemeRegistry.forestMist());
@@ -414,6 +415,32 @@ export class BuiltinThemeRegistry {
     theme.radius = BuiltinThemeRegistry.radius(8, 13, 20, 14, 22, 11);
     theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 15, 0, 24, 24, 22, 24);
     theme.glass = BuiltinThemeRegistry.glass(30, 22, 70, 58, 58, 28, 24, 3);
+    return theme;
+  }
+
+  private static swordFrost(): ThemePack {
+    const theme = BuiltinThemeRegistry.theme(
+      ThemeIds.SWORD_FROST,
+      '剑影青霜',
+      '冷铁、松烟与朱砂，写一卷风雪江湖',
+      'serif',
+      'sword-frost'
+    );
+    theme.light = BuiltinThemeRegistry.variant(
+      BuiltinThemeRegistry.colors('#EEF0EA', '#F8F6EE', '#E1E5DD', '#272B27', '#6E756E', '#CBD2C8',
+        '#476963', '#83372F', '#B94438'),
+      BuiltinThemeRegistry.reader('#F4ECD9', 'sword-frost-light', '#3C352C', '#7C705F', 'light'),
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.SWORD_TALISMAN, '#476963', '#F8F6EE')
+    );
+    theme.dark = BuiltinThemeRegistry.variant(
+      BuiltinThemeRegistry.colors('#101714', '#19211E', '#25302C', '#E8EBE4', '#A2ACA4', '#34443E',
+        '#8AB1A7', '#B85C4F', '#E27667'),
+      BuiltinThemeRegistry.reader('#151C19', 'sword-frost-dark', '#DCE4DA', '#9EA9A0', 'dark'),
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.SWORD_TALISMAN, '#668E85', '#F3F7F1')
+    );
+    theme.radius = BuiltinThemeRegistry.radius(4, 8, 14, 8, 18, 4);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(21, 15, 3, 24, 24, 24, 24);
+    theme.glass = BuiltinThemeRegistry.glass(16, 12, 88, 74, 50, 22, 14, 4);
     return theme;
   }
 

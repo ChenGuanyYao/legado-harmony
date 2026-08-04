@@ -4,7 +4,7 @@
 
 - 使用客户端上传的 Authorization Code 向华为换取 Access Token，再从华为账号接口读取 OpenID。
 - 每个 OpenID 仅赠送一次 300 点。
-- 在数据库事务中扣除 60 点，并把主题有效期增加 365 天。
+- 从数据库主题目录读取上架状态、价格和有效期，并在事务中完成扣点与权益延期。
 - 校验 IAP JWS 证书链、调用华为订单状态查询接口，并按订单号幂等充值。
 - 返回账号级余额和主题权益，供多个终端同步。
 
@@ -23,6 +23,7 @@
    psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/008_security_hardening.sql
    psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/009_initial_sync_window.sql
    psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/010_compact_sync_change_markers.sql
+   psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/011_theme_catalog.sql
    ```
 
 2. 根据 `.env.example` 配置运行环境。所有 Client Secret、IAP 私钥和数据库凭据只能放在服务端密钥管理中，不得写入 HarmonyOS 工程。
@@ -60,9 +61,36 @@
 
 ## 业务规则
 
-- 每个主题获取时扣 60 点；为避免升级后立即锁定界面，升级前/首次启动时正在使用的主题可继续使用，切换后再次选回仍需有效权益。
-- 已在有效期内再次获取时，从原到期日再延长 365 天。
+- 主题的上架状态、兑换点数和有效天数由 `theme_catalog` 管理；默认是 60 点、365 天。
+- 已在有效期内再次获取时，从原到期日按该主题的 `valid_days` 继续延长。
 - 充值点可以兑换主题和在线朗读字数包；赠送点只能兑换主题。
+
+## 主题目录运营
+
+新增客户端主题后，不需要修改或重新部署服务端。发布客户端版本前，在数据库登记主题：
+
+```sql
+INSERT INTO theme_catalog (theme_id, display_name, price_points, valid_days, enabled)
+VALUES ('new-theme', '新主题', 60, 365, TRUE)
+ON CONFLICT (theme_id) DO UPDATE SET
+  display_name = EXCLUDED.display_name,
+  price_points = EXCLUDED.price_points,
+  valid_days = EXCLUDED.valid_days,
+  enabled = EXCLUDED.enabled,
+  updated_at = now();
+```
+
+临时下架只更新状态，不要删除记录；已有权益仍然保留：
+
+```sql
+UPDATE theme_catalog
+SET enabled = FALSE, updated_at = now()
+WHERE theme_id = 'new-theme';
+```
+
+`GET /v1/themes/catalog` 返回当前已上架的主题和服务端权威价格。新版客户端兑换时会回传刚刚确认的价格与有效期；若运营数据在兑换读取前已变化，服务端返回 `THEME_OFFER_CHANGED` 且不会扣点。未携带报价的旧客户端只允许兑换 60 点、365 天的兼容报价，调整价格前应先确认新版客户端已覆盖目标用户。应用角色只需目录的 `SELECT` 权限；兑换事务使用读取到的同一份报价完成扣点和延期，不授予客户端管理目录的权限。
+
+迁移建议使用服务自身的 `DATABASE_URL` 执行。如果托管环境必须通过 PostgreSQL 管理员执行，`011_theme_catalog.sql` 会从现有 `point_wallets` 表的所有者识别应用角色，并仅授予主题目录的 `SELECT` 权限；主题上下架与改价仍由数据库管理员操作。
 - 在线朗读字数包分标准和精品两档，每笔额度有效期 365 天，优先消耗最早到期额度。
 - 华为云按每次请求向上取整计费：标准音色以 100 字为单位，精品音色以 50 字为单位；应用字数余额采用相同规则。
 - 新账号首次打开在线朗读钱包，获得标准音色 5000 字、精品音色 1000 字，30 天有效。
