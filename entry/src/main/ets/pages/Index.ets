@@ -1971,7 +1971,7 @@ struct BookshelfPage {
               ListItem() {
                 Row({ space: 8 }) {
                   LoadingProgress().width(20).height(20)
-                  Text('继续搜索中...').fontSize(13).fontColor(this.subTextColor())
+                  Text('继续加载中...').fontSize(13).fontColor(this.subTextColor())
                 }
                 .width('100%')
                 .height(42)
@@ -6899,6 +6899,37 @@ struct BookshelfPage {
     return chapterTitle || '尚未记录章节';
   }
 
+  getLastReadChapterNumberText(book: Book): string {
+    if (!Book.hasStartedReading(book)) {
+      return '尚未阅读';
+    }
+    return book.durChapterIndex >= 0 ? `第${book.durChapterIndex + 1}章` : '章节号未知';
+  }
+
+  getLastReadChapterNameText(book: Book): string {
+    if (!Book.hasStartedReading(book)) {
+      return '尚未记录章节';
+    }
+    const originalTitle = this.getReadChapterText(book).replace(/\s+/g, ' ').trim();
+    if (!originalTitle) {
+      return '章节名未知';
+    }
+    let title = originalTitle;
+    const chineseChapterPrefix =
+      /^第\s*[0-9０-９零〇○一二三四五六七八九十百千万亿两壹贰叁肆伍陆柒捌玖拾佰仟]+\s*(?:章|回|节|話|话|集|篇|幕)\s*(?:[·•:：、.．\-—]+\s*)?/;
+    const englishChapterPrefix =
+      /^(?:chapter|chap\.?|ch\.?)\s*[0-9０-９]+\s*(?:[·•:：、.．\-—]+\s*)?/i;
+    // Some sources return duplicated prefixes such as “第233章 第233章 寒山奇石”.
+    // Strip at most a few leading ordinals while preserving the stored chapter title itself.
+    for (let index = 0; index < 3; index++) {
+      const stripped = title.replace(chineseChapterPrefix, '').replace(englishChapterPrefix, '').trim();
+      if (stripped === title) break;
+      title = stripped;
+      if (!title) break;
+    }
+    return title || '章节名未知';
+  }
+
   getLastReadPagePreviewText(book: Book): string {
     const text = book.getVariable('lastReadPageText').trim();
     return text || '再次阅读后，将在这里显示上次阅读页的正文内容。';
@@ -6977,35 +7008,43 @@ struct BookshelfPage {
   @Builder
   shelfLastReadBookInfo(book: Book) {
     Column() {
-      Text('作者')
+      Text(this.shelfTileBookDisplayName(book))
         .width('100%')
-        .fontSize(5)
-        .fontColor(this.shelfTilePageSubTextColor())
+        .fontSize(10)
+        .lineHeight(13)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.shelfTilePageTextColor())
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+
       Text((book.author || '').trim() || '作者未知')
         .width('100%')
         .fontSize(7)
         .lineHeight(10)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.shelfTilePageTextColor())
-        .maxLines(3)
+        .fontColor(this.shelfTilePageSubTextColor())
+        .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ top: 2 })
+        .margin({ top: 5 })
 
       Blank()
         .layoutWeight(1)
 
-      Text(BookTypeSupport.isAudio(book) ? '上次进度' : '上次阅读')
+      Text(this.getLastReadChapterNumberText(book))
         .width('100%')
-        .fontSize(5)
-        .fontColor(this.shelfTilePageSubTextColor())
-      Text(this.getLastReadChapterText(book))
-        .width('100%')
-        .fontSize(6)
-        .lineHeight(9)
+        .fontSize(8)
+        .lineHeight(11)
         .fontColor(this.shelfTilePageTextColor())
-        .maxLines(5)
+        .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ top: 2 })
+
+      Text(this.getLastReadChapterNameText(book))
+        .width('100%')
+        .fontSize(8)
+        .lineHeight(11)
+        .fontColor(this.shelfTilePageTextColor())
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .margin({ top: 1 })
     }
     .width('100%')
     .height('100%')
@@ -7103,11 +7142,15 @@ struct ExplorePage {
   @State shelfBookKeys: string[] = [];
   @State addingShelfBookKeys: string[] = [];
   @State isLoading: boolean = false;
+  @State isLoadingMore: boolean = false;
+  @State hasMoreExploreBooks: boolean = true;
   @State status: string = '';
   @State verificationUrl: string = '';
   @State verificationTitle: string = '';
   @StorageLink('explorePlatform') selectedPlatform: string = '番茄';
   @StorageLink('exploreSourceUrl') selectedSourceUrl: string = '';
+  @StorageLink('bookSourceExploreRefreshNonce') @Watch('onExploreRefreshRequested')
+  bookSourceExploreRefreshNonce: number = 0;
   @StorageLink('shelfUpdateTime') @Watch('onShelfChanged') shelfUpdateTime: number = 0;
   @StorageLink('bookSourceOrderRevision') @Watch('onBookSourceOrderChanged') bookSourceOrderRevision: number = 0;
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
@@ -7127,6 +7170,7 @@ struct ExplorePage {
   private shelfStatusVersion: number = 0;
   private exploreLoadVersion: number = 0;
   private exploreContentLoadedAt: number = 0;
+  private explorePage: number = 1;
 
   aboutToAppear() {
     if (this.isActive) {
@@ -7159,6 +7203,16 @@ struct ExplorePage {
   onBookSourceOrderChanged(): void {
     if (this.isActive && this.hasLoaded && !this.isLoading) {
       this.loadEntries();
+    }
+  }
+
+  onExploreRefreshRequested(): void {
+    if (this.bookSourceExploreRefreshNonce <= 0) return;
+    const sourceUrl = AppStorage.get<string>('bookSourceExploreRefreshSourceUrl') || '';
+    if (sourceUrl) this.selectedSourceUrl = sourceUrl;
+    this.exploreContentLoadedAt = 0;
+    if (this.isActive && !this.isLoading) {
+      this.loadEntries('', true);
     }
   }
 
@@ -7224,6 +7278,9 @@ struct ExplorePage {
   async loadBooks(loadVersion?: number, forceRefresh: boolean = false) {
     const currentLoadVersion = loadVersion ?? this.beginExploreLoad();
     this.exploreContentLoadedAt = 0;
+    this.explorePage = 1;
+    this.hasMoreExploreBooks = true;
+    this.isLoadingMore = false;
     const activeEntries = this.getActiveEntries();
     if (activeEntries.length === 0) {
       this.finishExploreLoad(currentLoadVersion);
@@ -7241,6 +7298,8 @@ struct ExplorePage {
           if (!this.isCurrentExploreLoad(currentLoadVersion)) return;
           if (cached) {
             this.exploreContentLoadedAt = cached.updatedAt;
+            this.explorePage = cached.pageCount;
+            this.hasMoreExploreBooks = cached.hasMore;
             await this.applyExploreBooks(cached.books, entry, currentLoadVersion, true);
             return;
           }
@@ -7250,13 +7309,14 @@ struct ExplorePage {
       }
       const books = await this.coordinator.explore(entry, 1);
       if (!this.isCurrentExploreLoad(currentLoadVersion)) return;
+      this.hasMoreExploreBooks = books.length > 0;
       await this.applyExploreBooks(books, entry, currentLoadVersion, false);
       if (!this.isCurrentExploreLoad(currentLoadVersion)) return;
       if (books.length > 0) {
         this.exploreContentLoadedAt = Date.now();
         try {
           await ExploreResultCache.save(getContext(this), entry.sourceUrl, this.selectedPlatform,
-            entry.title, entry.url, books);
+            entry.title, entry.url, books, this.explorePage, this.hasMoreExploreBooks);
         } catch (cacheError) {
           console.warn('保存发现内容缓存失败:', cacheError);
         }
@@ -7268,6 +7328,78 @@ struct ExplorePage {
     } finally {
       this.finishExploreLoad(currentLoadVersion);
     }
+  }
+
+  async loadMoreExploreBooks(): Promise<void> {
+    if (this.isLoading || this.isLoadingMore || !this.hasMoreExploreBooks || this.books.length === 0) return;
+    const activeEntries = this.getActiveEntries();
+    if (activeEntries.length === 0) return;
+    const entry = activeEntries[Math.min(this.selectedIndex, activeEntries.length - 1)];
+    const loadVersion = this.exploreLoadVersion;
+    const nextPage = this.explorePage + 1;
+    this.isLoadingMore = true;
+    try {
+      const nextBooks = await this.coordinator.explore(entry, nextPage);
+      if (!this.isCurrentExploreLoad(loadVersion)) return;
+      const merged = this.mergeExploreBooks(this.books, nextBooks);
+      const addedCount = merged.length - this.books.length;
+      if (nextBooks.length === 0 || addedCount === 0) {
+        const notice = this.coordinator.getNoticeMessage();
+        // Network/verification failures should remain retryable; a genuinely empty or duplicate
+        // next page means the source has reached its end (or does not implement pagination).
+        this.hasMoreExploreBooks = nextBooks.length === 0 && this.isRetryableExploreNotice(notice);
+        this.status = notice || `${this.getSelectedSiteLabel()} · ${entry.sourceName} · ${entry.title} · 已加载全部`;
+      } else {
+        this.books = merged;
+        this.explorePage = nextPage;
+        this.status = `${this.getSelectedSiteLabel()} · ${entry.sourceName} · ${entry.title} · ${this.books.length} 本`;
+        await this.syncExploreShelfStatus(this.books);
+      }
+      this.exploreContentLoadedAt = Date.now();
+      await ExploreResultCache.save(getContext(this), entry.sourceUrl, this.selectedPlatform,
+        entry.title, entry.url, this.books, this.explorePage, this.hasMoreExploreBooks);
+    } catch (e) {
+      if (this.isCurrentExploreLoad(loadVersion)) {
+        console.error('加载更多发现内容失败:', e);
+        this.status = '加载更多发现内容失败，可继续上滑重试';
+      }
+    } finally {
+      if (this.isCurrentExploreLoad(loadVersion)) this.isLoadingMore = false;
+    }
+  }
+
+  mergeExploreBooks(current: SearchBook[], incoming: SearchBook[]): SearchBook[] {
+    const merged = current.slice();
+    for (const book of incoming) {
+      if (!merged.some((item: SearchBook): boolean =>
+        item.origin === book.origin && item.bookUrl === book.bookUrl)) {
+        merged.push(book);
+      }
+    }
+    return merged;
+  }
+
+  isRetryableExploreNotice(notice: string): boolean {
+    return /请求失败|网络|超时|timeout|HTTP|网页验证|需要验证|接口返回空响应/i.test(notice || '');
+  }
+
+  shouldOfferExploreSourceLogin(): boolean {
+    return !!this.selectedSourceUrl &&
+      /请先登[录陆]|需要登[录陆]|未登[录陆]|令牌|token|无权限|登录设备数已达上限|设备管理/i.test(this.status || '');
+  }
+
+  exploreSourceLoginButtonLabel(): string {
+    return /登录设备数已达上限|设备管理/i.test(this.status || '') ? '管理登录设备' : '登录书源';
+  }
+
+  openExploreSourceLogin(): void {
+    if (!this.selectedSourceUrl) return;
+    router.pushUrl({
+      url: 'pages/BookSource',
+      params: {
+        openLoginSourceUrl: this.selectedSourceUrl
+      }
+    });
   }
 
   async applyExploreBooks(books: SearchBook[], entry: ExploreEntry, loadVersion: number,
@@ -7488,6 +7620,7 @@ struct ExplorePage {
           books: this.books,
           shelfBookKeys: this.shelfBookKeys,
           busyBookKeys: this.addingShelfBookKeys,
+          showLoadingMore: this.isLoadingMore,
           showKind: true,
           showResultCover: this.searchExploreShowResultCover,
           useBookshelfCoverGallery: this.searchExploreUseBookshelfCoverGallery,
@@ -7508,6 +7641,9 @@ struct ExplorePage {
           },
           onToggleShelf: (book: SearchBook) => {
             this.toggleSearchBookShelf(book);
+          },
+          onReachEnd: () => {
+            this.loadMoreExploreBooks();
           }
         })
       } else {
@@ -7531,6 +7667,18 @@ struct ExplorePage {
               .fontColor('#FFFFFF')
               .onClick(() => {
                 this.openVerification();
+              })
+          }
+          if (this.shouldOfferExploreSourceLogin()) {
+            Button(this.exploreSourceLoginButtonLabel())
+              .height(36)
+              .fontSize(14)
+              .borderRadius(18)
+              .margin({ top: 14 })
+              .backgroundColor(this.buttonColor())
+              .fontColor('#FFFFFF')
+              .onClick(() => {
+                this.openExploreSourceLogin();
               })
           }
         }

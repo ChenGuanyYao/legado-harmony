@@ -1,6 +1,6 @@
 import { util } from '@kit.ArkTS';
 import { webview } from '@kit.ArkWeb';
-import { Book, BookSource } from '../../model/data/Book';
+import { Book, BookChapter, BookSource } from '../../model/data/Book';
 import { AppDatabase } from '../../model/data/AppDatabase';
 import { CookieStore } from '../http/CookieStore';
 import { HttpClient, HttpResponse } from '../http/HttpClient';
@@ -9,6 +9,7 @@ import { AnalyzeUrl } from '../rule/AnalyzeUrl';
 export class StageWebRuntimeRequest {
   source: BookSource = new BookSource();
   book: Book | null = null;
+  chapter: BookChapter | null = null;
   code: string = '';
   content: string = '';
   contextContent: string = '';
@@ -25,6 +26,8 @@ export class StageWebRuntimeResult {
   value: string = '';
   variable: string = '';
   bookVariable: string = '';
+  bookType: string = '';
+  chapterImgUrl: string = '';
   requestedUrl: string = '';
   toastMessage: string = '';
   errorMessage: string = '';
@@ -33,6 +36,7 @@ export class StageWebRuntimeResult {
 class StageWebRuntimeStep extends StageWebRuntimeResult {
   pendingAjax: string = '';
   pendingCookie: string = '';
+  loginHeader: string = '';
   cookieOperations: string = '[]';
   cacheState: string = '{}';
   javaState: string = '{}';
@@ -204,7 +208,15 @@ export class BookSourceStageWebRuntime {
       this.ensureNotCancelled(request);
       const step = this.parseStep(raw);
       request.source.variable = step.variable;
-      if (request.book) request.book.variable = step.bookVariable;
+      request.source.loginHeader = step.loginHeader;
+      if (request.book) {
+        request.book.variable = step.bookVariable;
+        const bookType = Number(step.bookType);
+        if (step.bookType && Number.isFinite(bookType)) request.book.type = bookType;
+      }
+      if (request.chapter && step.chapterImgUrl) {
+        request.chapter.variable = this.setVariableValue(request.chapter.variable, 'imgUrl', step.chapterImgUrl);
+      }
       try {
         cacheState = JSON.parse(step.cacheState || '{}') as Record<string, string>;
       } catch (_) {
@@ -318,6 +330,9 @@ export class BookSourceStageWebRuntime {
       baseUrl: request.baseUrl || request.source.bookSourceUrl || '',
       variables: request.variables || {},
       bookVariables: bookVariables,
+      bookType: request.book ? request.book.type : 0,
+      chapterTitle: request.chapter ? request.chapter.title : '',
+      chapterImgUrl: request.chapter ? this.variableValue(request.chapter.variable, 'imgUrl') : '',
       responses: responses || {},
       cookies: cookies || {},
       cache: cacheState || {},
@@ -373,6 +388,8 @@ export class BookSourceStageWebRuntime {
       `const source={bookSourceUrl:S.sourceUrl,bookSourceName:S.sourceName,header:S.sourceHeader,` +
       `getKey:function(){return S.sourceUrl;},getTag:function(){return S.sourceName;},getSource:function(){return this;},` +
       `getLoginHeader:function(){return S.sourceLoginHeader||'';},` +
+      `putLoginHeader:function(v){S.sourceLoginHeader=String(v??'');return S.sourceLoginHeader;},` +
+      `removeLoginHeader:function(){S.sourceLoginHeader='';return '';},` +
       `getHeaderMap:function(){try{return JSON.parse(S.sourceHeader||'{}');}catch(e){return {};}} ,` +
       `getVariable:function(){return S.variable||'';},setVariable:function(v){S.variable=String(v??'');return S.variable;},` +
       `get:function(k){return sourceData[String(k??'')]??'';},put:function(k,v){sourceData[String(k??'')]=v;return v;},` +
@@ -380,8 +397,10 @@ export class BookSourceStageWebRuntime {
       `if(v&&typeof v==='object')Object.assign(loginMap,v);return v;},` +
       `getLoginInfo:function(k){return arguments.length?(loginMap[k]??''):JSON.stringify(loginMap);},` +
       `getLoginInfoMap:function(){return loginMap;}};` +
-      `const book={getVariable:function(k){return bookData[String(k??'')]??'';},` +
+      `const book={type:Number(S.bookType||0),getVariable:function(k){return bookData[String(k??'')]??'';},` +
       `putVariable:function(k,v){bookData[String(k??'')]=String(v??'');return v;}};` +
+      `const chapter={title:String(S.chapterTitle||''),imgUrl:String(S.chapterImgUrl||''),` +
+      `update:function(){return true;}};` +
       `const cache={get:function(k){return cacheData[k]??null;},getFromMemory:function(k){return cacheData[k]??null;},` +
       `put:function(k,v){cacheData[k]=v;return v;},putMemory:function(k,v){cacheData[k]=v;return v;},` +
       `delete:function(k){delete cacheData[k];return true;}};` +
@@ -410,7 +429,8 @@ export class BookSourceStageWebRuntime {
       `refreshExplore:function(){return true;},searchBook:function(){return true;}};` +
       `function TimeoutCancellationException(){}const Packages={io:{legato:{kazusa:{utils:{` +
       `TimeoutCancellationException:TimeoutCancellationException}}}}};` +
-      `globalThis.source=source;globalThis.book=book;globalThis.java=java;globalThis.cache=cache;globalThis.cookie=cookie;` +
+      `globalThis.source=source;globalThis.book=book;globalThis.chapter=chapter;globalThis.java=java;` +
+      `globalThis.cache=cache;globalThis.cookie=cookie;` +
       `globalThis.Packages=Packages;globalThis.baseUrl=S.baseUrl;globalThis.result=S.content;` +
       `Object.keys(S.variables||{}).forEach(function(k){globalThis[k]=S.variables[k];});` +
       `let evaluated;try{evaluated=(function(){return eval(dec('${codeBase64}'));}).call(globalThis);}` +
@@ -418,7 +438,8 @@ export class BookSourceStageWebRuntime {
       `function text(v){if(typeof v==='string')return v;if(v===undefined||v===null)return '';try{return JSON.stringify(v);}catch(e){return String(v);}}` +
       `const value=text(evaluated)||text(globalThis.result);` +
       `return encodeURIComponent(JSON.stringify({pendingAjax:pending,pendingCookie:pendingCookie,` +
-      `cookieOperations:JSON.stringify(cookieOps),variable:S.variable||'',bookVariable:JSON.stringify(bookData),` +
+      `cookieOperations:JSON.stringify(cookieOps),variable:S.variable||'',loginHeader:S.sourceLoginHeader||'',` +
+      `bookVariable:JSON.stringify(bookData),bookType:String(book.type??''),chapterImgUrl:String(chapter.imgUrl??''),` +
       `cacheState:JSON.stringify(cacheData),javaState:JSON.stringify(javaData),sourceState:JSON.stringify(sourceData),` +
       `value:value,requestedUrl:url,toastMessage:toast,errorMessage:error}));})()`;
   }
@@ -435,7 +456,10 @@ export class BookSourceStageWebRuntime {
       step.pendingCookie = String(record['pendingCookie'] || '');
       step.cookieOperations = String(record['cookieOperations'] || '[]');
       step.variable = String(record['variable'] || '');
+      step.loginHeader = String(record['loginHeader'] || '');
       step.bookVariable = String(record['bookVariable'] || '{}');
+      step.bookType = String(record['bookType'] || '');
+      step.chapterImgUrl = String(record['chapterImgUrl'] || '');
       step.cacheState = String(record['cacheState'] || '{}');
       step.javaState = String(record['javaState'] || '{}');
       step.sourceState = String(record['sourceState'] || '{}');
@@ -449,6 +473,26 @@ export class BookSourceStageWebRuntime {
       step.errorMessage = '书源脚本返回格式异常';
       return step;
     }
+  }
+
+  private variableValue(raw: string, key: string): string {
+    try {
+      const record = JSON.parse(raw || '{}') as Record<string, Object>;
+      return String(record[key] || '');
+    } catch (_) {
+      return '';
+    }
+  }
+
+  private setVariableValue(raw: string, key: string, value: string): string {
+    let record: Record<string, Object> = {};
+    try {
+      record = JSON.parse(raw || '{}') as Record<string, Object>;
+    } catch (_) {
+      record = {};
+    }
+    record[key] = value;
+    return JSON.stringify(record);
   }
 
   private functionExposeScript(script: string): string {

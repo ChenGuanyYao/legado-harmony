@@ -97,6 +97,7 @@ export class ExploreCoordinator {
   }
 
   async explore(entry: ExploreEntry, page: number = 1): Promise<SearchBook[]> {
+    this.noticeMessage = '';
     const source = await appDb.getBookSource(entry.sourceUrl);
     if (!source) return [];
     try {
@@ -259,8 +260,8 @@ export class ExploreCoordinator {
       try {
         const runtimeResult = await BookSourceStageWebRuntime.get().execute(request);
         if (runtimeResult.toastMessage) this.noticeMessage = runtimeResult.toastMessage.trim();
-        const parsed = JSON.parse(runtimeResult.value || '[]') as ExploreUrlItem[];
-        if (Array.isArray(parsed)) return parsed;
+        const parsed = this.parseExploreScriptResult(runtimeResult.value || '');
+        if (parsed.length > 0 || this.noticeMessage) return parsed;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error || '');
         if (message) this.noticeMessage = `发现脚本执行失败：${message}`;
@@ -272,12 +273,31 @@ export class ExploreCoordinator {
     this.seedSourceVariables(env.ctx, source);
     const result = new ScriptEngine(new JsRuntime()).evalBlock(code, env);
     if (!result.handled || !result.value) return [];
+    return this.parseExploreScriptResult(result.value);
+  }
+
+  private parseExploreScriptResult(value: string): ExploreUrlItem[] {
+    const raw = (value || '').trim();
+    if (!raw) return [];
     try {
-      const parsed = JSON.parse(result.value) as ExploreUrlItem[];
-      return Array.isArray(parsed) ? parsed : [];
+      const parsed = JSON.parse(raw) as Object;
+      if (Array.isArray(parsed)) return parsed as ExploreUrlItem[];
+      if (!parsed || typeof parsed !== 'object') return [];
+      const record = parsed as Record<string, Object>;
+      const message = String(record['message'] || record['msg'] || record['error'] || '').trim();
+      const code = String(record['code'] || record['status'] || '').trim();
+      if (message && (code === '401' ||
+        /请先登[录陆]|需要登[录陆]|未登[录陆]|令牌|token|无权限/i.test(message))) {
+        this.noticeMessage = message;
+        return [];
+      }
+      const data = record['data'];
+      if (Array.isArray(data)) return data as ExploreUrlItem[];
+      if (message && !this.noticeMessage) this.noticeMessage = message;
     } catch (_) {
-      return [];
+      // 非 JSON 返回仍交给后续旧版 DSL 降级解析。
     }
+    return [];
   }
 
   private parseEmbeddedExploreDsl(raw: string): ExploreUrlItem[] {
@@ -463,10 +483,17 @@ export class ExploreCoordinator {
     }
     const built = BookSourceDataUrlSupport.buildRequestUrl(source, url, String(page));
     if (built) return built;
+    // Ordinary Legado explore entries are very often relative URLs. Keep them on the lightweight
+    // runner, which evaluates page expressions and resolves the result against the selected source
+    // host before the caller performs its absolute-URL validity check.
+    const templated = BookSourceScriptRunner.evaluateUrl(source, url, '', String(page));
+    if (templated.handled && templated.value) return templated.value;
     const js = new JsRuntime();
     js.setVar('page', String(page));
     js.setVar('pageIndex', String(page));
-    return js.evalTemplate(this.applySourceTemplate(url, source)).replace(/\{\{[^}]+\}\}/g, String(page));
+    const fallback = js.evalTemplate(this.applySourceTemplate(url, source))
+      .replace(/\{\{[^}]+\}\}/g, String(page));
+    return BookUrlResolver.resolve(fallback, source.bookSourceUrl) || fallback;
   }
 
   private async analyzeExploreFieldBatch(source: BookSource, items: string[], baseUrl: string,

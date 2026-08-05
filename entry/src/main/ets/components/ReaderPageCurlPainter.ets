@@ -33,19 +33,38 @@ export class ReaderPageCurlPainter {
   private readonly singlePageMeshColumns: number = 14;
   private readonly doublePageMeshColumns: number = 8;
   private readonly meshRows: number = 2;
+  // The fold radius is still about 0.115 leaf widths at the final frame. Travelling beyond
+  // 1 + radius keeps the last folded strip fully outside the viewport instead of freezing
+  // visibly while the reader commits the incoming page.
+  private readonly pageTravelFactor: number = 1.14;
 
   draw(context: CanvasRenderingContext2D, front: image.PixelMap, back: image.PixelMap,
     canvasWidth: number, canvasHeight: number, progress: number, direction: number,
-    doublePage: boolean, darkMode: boolean): void {
+    doublePage: boolean, darkMode: boolean, topInset: number = 0): void {
     const width = Math.max(1, canvasWidth);
     const height = Math.max(1, canvasHeight);
     const leafWidth = doublePage ? width / 2 : width;
     const safeProgress = Math.max(0, Math.min(1, progress));
+    const safeTopInset = Math.max(0, Math.min(height - 1, topInset));
     context.clearRect(0, 0, width, height);
     context.imageSmoothingEnabled = true;
+    context.save();
+    if (safeTopInset > 0) {
+      // When body extension is disabled the status-bar wallpaper belongs to the stationary reader
+      // background, not to the turning sheet. Keeping the curl out of this area also prevents the
+      // snapshot texture from exposing an anti-aliased seam along the safe-area boundary.
+      context.beginPath();
+      context.moveTo(0, safeTopInset);
+      context.lineTo(width, safeTopInset);
+      context.lineTo(width, height);
+      context.lineTo(0, height);
+      context.closePath();
+      context.clip();
+    }
     if (safeProgress <= 0.001) {
       const startX = doublePage && direction > 0 ? leafWidth : 0;
       context.drawImage(front, startX, 0, leafWidth, height);
+      context.restore();
       return;
     }
 
@@ -54,6 +73,7 @@ export class ReaderPageCurlPainter {
     const triangles = this.buildTriangles(width, height, leafWidth, safeProgress, direction, doublePage);
     this.drawFace(context, triangles, front, leafWidth, height, 1, darkMode);
     this.drawFace(context, triangles, back, leafWidth, height, -1, darkMode);
+    context.restore();
   }
 
   private buildTriangles(canvasWidth: number, canvasHeight: number, leafWidth: number,
@@ -117,7 +137,7 @@ export class ReaderPageCurlPainter {
     const tangentY = sourceY - centerY;
     const normal = canonicalX * cosine - tangentY * sine;
     const tangent = canonicalX * sine + tangentY * cosine;
-    const axis = leafWidth * (1 - progress * 1.04);
+    const axis = leafWidth * (1 - progress * this.pageTravelFactor);
     const radius = leafWidth * (0.115 + 0.065 * Math.sin(progress * Math.PI));
     const distance = normal - axis;
     let mappedNormal = normal;
@@ -226,7 +246,7 @@ export class ReaderPageCurlPainter {
     const edge: CurlPoint[] = [];
     for (let index = 0; index <= 10; index++) {
       const y = canvasHeight * index / 10;
-      const sourceX = leafWidth * Math.min(1, Math.max(0, 1 - progress * 1.04 +
+      const sourceX = leafWidth * Math.min(1, Math.max(0, 1 - progress * this.pageTravelFactor +
         (0.5 * Math.PI) * (0.115 + 0.065 * Math.sin(progress * Math.PI))));
       edge.push(this.mapPoint(direction > 0 ? sourceX : leafWidth - sourceX, y, canvasWidth, canvasHeight,
         leafWidth, progress, direction, doublePage));
@@ -255,7 +275,10 @@ export class ReaderPageCurlPainter {
       gradient.addColorStop(0, '#00000000');
       gradient.addColorStop(1, darkMode ? '#99000000' : '#72000000');
     }
-    context.globalAlpha = 0.25 + 0.42 * Math.sin(progress * Math.PI);
+    // Fade the cast shadow with the departing edge. A non-zero shadow on the final frame made
+    // the completed page look stationary until the declarative surface handoff finished.
+    const finishFade = Math.max(0, Math.min(1, (1 - progress) / 0.12));
+    context.globalAlpha = (0.25 + 0.42 * Math.sin(progress * Math.PI)) * finishFade;
     context.fillStyle = gradient;
     context.fill();
     context.restore();

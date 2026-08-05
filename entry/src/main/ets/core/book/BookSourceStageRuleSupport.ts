@@ -6,6 +6,7 @@ import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceS
 class EmbeddedStageRule {
   baseRule: string = '';
   code: string = '';
+  trailingRule: string = '';
 }
 
 /** Full-JavaScript post-processing for list rules such as `jsonPath <js>...</js>`. */
@@ -15,10 +16,35 @@ export class BookSourceStageRuleSupport {
     maxResponseBytes: number = 8 * 1024 * 1024,
     maxTotalResponseBytes: number = 16 * 1024 * 1024): Promise<string[] | null> {
     const embedded = this.splitEmbeddedRule(rawRule || '');
-    if (!embedded || !embedded.baseRule || !embedded.code) return null;
+    if (!embedded || !embedded.code || (!embedded.baseRule && !embedded.trailingRule)) return null;
     const decision = BookSourceRuntimeRouter.decide(stage, `${source.jsLib || ''}\n${embedded.code}`);
     const runtime = BookSourceStageWebRuntime.get();
     if (decision.runtime !== 'arkweb' || !runtime.isAvailable()) return null;
+
+    if (embedded.trailingRule) {
+      const request = new StageWebRuntimeRequest();
+      request.source = source;
+      request.content = content || '';
+      request.contextContent = content || '';
+      request.baseUrl = baseUrl || source.bookSourceUrl;
+      request.code = embedded.code;
+      request.ownerId = ownerId;
+      request.maxResponseBytes = maxResponseBytes;
+      request.maxTotalResponseBytes = maxTotalResponseBytes;
+      try {
+        const result = await runtime.execute(request);
+        const transformed = (result.value || '').trim();
+        if (!transformed) return [];
+        let trailingRule = embedded.trailingRule.trim();
+        const reverse = trailingRule.startsWith('-') && trailingRule.length > 1;
+        if (reverse) trailingRule = trailingRule.substring(1).trim();
+        const values = new AnalyzeRule(transformed, baseUrl).analyze(trailingRule);
+        return reverse ? values.reverse() : values;
+      } catch (error) {
+        console.warn('[StageRule] list pre-process failed, fallback legacy:', source.bookSourceName, error);
+        return null;
+      }
+    }
 
     const baseItems = new AnalyzeRule(content || '', baseUrl).getElements(embedded.baseRule);
     const values: Object[] = [];
@@ -55,6 +81,13 @@ export class BookSourceStageRuleSupport {
 
   private static splitEmbeddedRule(rawRule: string): EmbeddedStageRule | null {
     const raw = (rawRule || '').trim();
+    const leadingBlock = raw.match(/^<js>([\s\S]*?)<\/js>\s*([\s\S]+)$/i);
+    if (leadingBlock && leadingBlock[1].trim() && leadingBlock[2].trim()) {
+      const result = new EmbeddedStageRule();
+      result.code = leadingBlock[1].trim();
+      result.trailingRule = leadingBlock[2].trim();
+      return result;
+    }
     const block = raw.match(/^([\s\S]*?)<js>([\s\S]*?)<\/js>\s*$/i);
     if (block && block[1].trim() && block[2].trim()) {
       const result = new EmbeddedStageRule();

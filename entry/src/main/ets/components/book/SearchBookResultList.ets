@@ -36,6 +36,7 @@ export struct SearchBookResultList {
   scroller: ListScroller = new ListScroller();
   onOpenBook: SearchBookAction = (_book: SearchBook) => {};
   onToggleShelf: SearchBookAction = (_book: SearchBook) => {};
+  onReachEnd: () => void = () => {};
 
   build() {
     List({ scroller: this.scroller, space: 8 }) {
@@ -109,7 +110,7 @@ export struct SearchBookResultList {
             LoadingProgress()
               .width(20)
               .height(20)
-            Text('继续搜索中...')
+            Text('继续加载中...')
               .fontSize(13)
               .fontColor(this.subTextColor)
               .margin({ left: 8 })
@@ -131,6 +132,9 @@ export struct SearchBookResultList {
     .padding({ left: 16, right: 16 })
     .backgroundColor(this.pageColor)
     .scrollBar(BarState.Auto)
+    .onReachEnd(() => {
+      this.onReachEnd();
+    })
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
 

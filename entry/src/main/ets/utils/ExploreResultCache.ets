@@ -5,6 +5,8 @@ import { SearchBook } from '../model/data/Book';
 class ExploreCacheEntry {
   key: string = '';
   updatedAt: number = 0;
+  pageCount: number = 1;
+  hasMore: boolean = true;
   books: SearchBook[] = [];
 }
 
@@ -14,6 +16,8 @@ class ExploreCachePayload {
 
 export class ExploreCacheHit {
   updatedAt: number = 0;
+  pageCount: number = 1;
+  hasMore: boolean = true;
   books: SearchBook[] = [];
 }
 
@@ -44,12 +48,14 @@ export class ExploreResultCache {
     }
     const hit = new ExploreCacheHit();
     hit.updatedAt = entry.updatedAt;
+    hit.pageCount = Math.max(1, Number(entry.pageCount) || 1);
+    hit.hasMore = entry.hasMore !== false;
     hit.books = entry.books.map((book: SearchBook) => ExploreResultCache.cloneSearchBook(book));
     return hit;
   }
 
   static async save(context: Context, sourceUrl: string, platform: string, entryTitle: string,
-    entryUrl: string, books: SearchBook[]): Promise<void> {
+    entryUrl: string, books: SearchBook[], pageCount: number = 1, hasMore: boolean = true): Promise<void> {
     const key = ExploreResultCache.buildKey(sourceUrl, platform, entryTitle, entryUrl);
     if (!key || books.length === 0) return;
     const payload = await ExploreResultCache.loadPayload(context);
@@ -57,6 +63,8 @@ export class ExploreResultCache {
     const entry = new ExploreCacheEntry();
     entry.key = key;
     entry.updatedAt = now;
+    entry.pageCount = Math.max(1, pageCount);
+    entry.hasMore = hasMore;
     entry.books = books.slice(0, ExploreResultCache.MAX_RESULTS_PER_ENTRY)
       .map((book: SearchBook) => ExploreResultCache.cloneSearchBook(book));
     payload.entries = [entry].concat(payload.entries.filter((item: ExploreCacheEntry) =>

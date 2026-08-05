@@ -990,7 +990,7 @@ export class WebBookService {
     }
 
     let value = content || '';
-    value = this.convertReaderNativeActions(value);
+    value = this.convertReaderNativeActions(source, value, baseUrl);
     value = value.replace(/<(?:img|image)\b[^>]*>/gi, (tag: string): string => {
       const images = this.collectReaderImageUrls([tag], baseUrl, false);
       return images.length > 0 ? `\n\n${ReaderImageMarker.create(images[0])}\n\n` : ' ';
@@ -1024,9 +1024,12 @@ export class WebBookService {
     return await this.materializeReaderImageMarkers(source, normalized);
   }
 
-  private convertReaderNativeActions(content: string): string {
+  private convertReaderNativeActions(source: BookSource, content: string, baseUrl: string): string {
     if (!content) return content;
-    let value = content.replace(/<p\b[^>]*>\s*<img\b([^>]*\bident\s*=\s*["'][^"']+["'][^>]*)\/?\s*>\s*<\/p>/gi,
+    let value = content.replace(/<img\b[^>]*>/gi, (tag: string): string => {
+      return this.readerActionMarkerFromLegacyImage(source, tag, baseUrl) || tag;
+    });
+    value = value.replace(/<p\b[^>]*>\s*<img\b([^>]*\bident\s*=\s*["'][^"']+["'][^>]*)\/?\s*>\s*<\/p>/gi,
       (_all: string, attrs: string): string => {
         const identMatch = /\bident\s*=\s*["']([^"']+)["']/i.exec(attrs || '');
         const url = this.decodeHtmlEntities(identMatch && identMatch[1] ? identMatch[1] : '');
@@ -1039,9 +1042,9 @@ export class WebBookService {
         const marker = this.readerActionMarkerFromCommentAttributes(attrs || '');
         return `${text}${marker}\n`;
       });
-    if (!/<div\b[^>]*\brs-native\b/i.test(value)) return value;
-    return value.replace(/<div\b[^>]*\brs-native\b[^>]*>([\s\S]*?)<\/div>/gi,
-      (_all: string, inner: string): string => {
+    if (!/<(?:div|span)\b[^>]*\brs-native\b/i.test(value)) return value;
+    return value.replace(/<(div|span)\b[^>]*\brs-native\b[^>]*>([\s\S]*?)<\/\1>/gi,
+      (_all: string, _tagName: string, inner: string): string => {
         const comment = /<comment\b([^>]*)>/i.exec(inner || '');
         const text = this.decodeHtmlEntities((inner || '').replace(/<comment\b[^>]*>/gi, '')
           .replace(/<[^>]+>/g, '')).trim();
@@ -1054,16 +1057,98 @@ export class WebBookService {
   private readerActionMarkerFromCommentAttributes(attrs: string): string {
     const countMatch = /\bcount\s*=\s*["']([^"']*)["']/i.exec(attrs || '');
     const identMatch = /\bident\s*=\s*["']([^"']*)["']/i.exec(attrs || '');
-    const pressMatch = /\bonPress\s*=\s*(["'])([\s\S]*?)\1/i.exec(attrs || '');
+    const pressMatch = /\b(?:onPress|onClick|click)\s*=\s*(["'])([\s\S]*?)\1/i.exec(attrs || '');
     const actionMatch = pressMatch ?
-      /java\.(?:showReadingBrowser|startBrowserDp|startBrowser|showBrowser)\(\s*(["'])([\s\S]*?)\1\s*,\s*(["'])([\s\S]*?)\3/i.exec(pressMatch[2]) : null;
+      /java\.(?:showReadingBrowser|startBrowserDp|startBrowser|showBrowser)\(\s*(["'])([\s\S]*?)\1(?:\s*,\s*(["'])([\s\S]*?)\3)?/i.exec(pressMatch[2]) : null;
     const url = this.decodeHtmlEntities(actionMatch && actionMatch[2] ? actionMatch[2] :
       (identMatch && identMatch[1] ? identMatch[1] : ''));
     if (!url) return '';
-    const title = this.decodeHtmlEntities(actionMatch && actionMatch[4] ? actionMatch[4] : '段评');
+    const rawTitle = this.decodeHtmlEntities(actionMatch && actionMatch[4] ? actionMatch[4] : '');
     const count = this.decodeHtmlEntities(countMatch && countMatch[1] ? countMatch[1] : '');
-    const label = count ? `${title} ${count}` : title;
+    const isComment = /\/comments(?:[/?#]|$)|\/idea_comment(?:[/?#]|$)|\/get_review(?:[/?#]|$)/i.test(url);
+    const title = isComment ? (rawTitle ? `段评 · ${rawTitle}` : '段评') : (rawTitle || '打开');
+    const label = isComment ? (count ? `段评 ${count}` : '段评') : (count ? `${title} ${count}` : title);
     return ReaderActionMarker.create(label, url, title);
+  }
+
+  /**
+   * Older Legado-compatible sources attach a JavaScript click action to an SVG data URL. The
+   * reader image pipeline deliberately strips those options, so translate the well-known
+   * paragraph-comment action into a native marker before normal image handling runs.
+   */
+  private readerActionMarkerFromLegacyImage(source: BookSource, tag: string, baseUrl: string): string {
+    const rawSource = this.decodeHtmlEntities(this.findReaderImageAttribute(tag));
+    const optionIndex = this.readerImageOptionIndex(rawSource);
+    if (optionIndex < 0) return '';
+    const rawOptions = rawSource.substring(optionIndex + 1).trim();
+    let options: Record<string, Object> = {};
+    try {
+      options = JSON.parse(rawOptions) as Record<string, Object>;
+    } catch (_) {
+      return '';
+    }
+    const action = String(options['click'] || options['js'] || '');
+    const actionMatch = /\b((?:fq)?(?:android)?showCmt)\s*\(\s*['"]?([^,'"\s)]+)['"]?\s*,\s*['"]?([^,'"\s)]+)['"]?\s*,\s*['"]?([^,'"\s)]+)['"]?/i.exec(action);
+    if (!actionMatch || !actionMatch[2] || !actionMatch[3] || !actionMatch[4]) return '';
+    const host = this.readerActionHost(source, baseUrl);
+    if (!host) return '';
+    const isFanqie = /^fq/i.test(actionMatch[1] || '');
+    const bookId = encodeURIComponent(actionMatch[2]);
+    const chapterId = encodeURIComponent(actionMatch[3]);
+    const paragraphId = encodeURIComponent(actionMatch[4]);
+    let url = `${host}/comments?bookId=${bookId}&chapterId=${chapterId}&paragraphId=${paragraphId}`;
+    if (isFanqie) url += '&source=fanqie';
+
+    const svgText = this.decodeLegacySvg(rawSource.substring(0, optionIndex));
+    const kind = /作家说/.test(svgText) ? '作家说评论' :
+      (/本章说/.test(svgText) ? '本章说' : (/热评|热门评论|神评论/.test(svgText) ? '神评论' : '段评'));
+    const countMatch = /<text\b[^>]*>([^<>]{1,20})<\/text>/gi;
+    let count = '';
+    let textMatch: RegExpExecArray | null;
+    while ((textMatch = countMatch.exec(svgText)) !== null) {
+      const candidate = this.decodeHtmlEntities(textMatch[1] || '').trim();
+      if (/^\d{1,4}$/.test(candidate)) count = candidate;
+    }
+    const label = count && kind === '段评' ? `${kind} ${count}` : kind;
+    const marker = ReaderActionMarker.create(label, url, kind);
+    if (!marker) return '';
+    // Rich chapter/author cards retain their artwork and receive a native action beside it.
+    return kind === '段评' ? marker : `${tag}\n${marker}`;
+  }
+
+  private decodeLegacySvg(dataUrl: string): string {
+    const match = /^data:image\/svg\+xml;base64,([^,]+)/i.exec(dataUrl || '');
+    if (!match || !match[1]) return '';
+    try {
+      const bytes = new util.Base64Helper().decodeSync(match[1]);
+      return util.TextDecoder.create('utf-8').decodeWithStream(bytes, { stream: false });
+    } catch (_) {
+      return '';
+    }
+  }
+
+  private readerActionHost(source: BookSource, baseUrl: string): string {
+    let preferred = '';
+    try {
+      const loginInfo = JSON.parse(source.loginInfo || '{}') as Record<string, Object>;
+      const rawRuntime = loginInfo['__legadoHarmonyRuntime'];
+      let runtime: Record<string, Object> = {};
+      if (typeof rawRuntime === 'string') {
+        runtime = JSON.parse(rawRuntime || '{}') as Record<string, Object>;
+      } else if (rawRuntime && typeof rawRuntime === 'object' && !Array.isArray(rawRuntime)) {
+        runtime = rawRuntime as Record<string, Object>;
+      }
+      const rawSource = runtime['source'];
+      if (rawSource && typeof rawSource === 'object' && !Array.isArray(rawSource)) {
+        const sourceState = rawSource as Record<string, Object>;
+        preferred = String(sourceState['qd_base'] || '');
+      }
+    } catch (_) {
+      preferred = '';
+    }
+    const candidate = preferred || baseUrl || source.bookSourceUrl || '';
+    const origin = /^https?:\/\/[^/]+/i.exec(candidate);
+    return origin && origin[0] ? origin[0].replace(/\/+$/, '') : '';
   }
 
   private async materializeReaderImageMarkers(source: BookSource, content: string): Promise<string> {
@@ -1255,7 +1340,7 @@ export class WebBookService {
   }
 
   private async runStageRule(source: BookSource, book: Book, rawRule: string, content: string,
-    baseUrl: string, stage: string): Promise<string> {
+    baseUrl: string, stage: string, chapter: BookChapter | null = null): Promise<string> {
     const code = this.stageRuleCode(rawRule);
     if (!code) return '';
     const decision = BookSourceRuntimeRouter.decide(stage, `${source.jsLib || ''}\n${code}`);
@@ -1271,6 +1356,8 @@ export class WebBookService {
     const request = new StageWebRuntimeRequest();
     request.source = source;
     request.book = book;
+    request.chapter = chapter;
+    request.readerActionMode = stage === SourceRuntimeStage.CONTENT;
     request.code = code;
     request.content = content || '';
     request.contextContent = content || '';
@@ -1517,7 +1604,7 @@ export class WebBookService {
       content = response.body;
       baseUrl = BookUrlResolver.effectiveBase(response, chapter.url, book.bookUrl || source.bookSourceUrl);
     }
-    return await this.runStageRule(source, book, rawRule, content, baseUrl, SourceRuntimeStage.CONTENT);
+    return await this.runStageRule(source, book, rawRule, content, baseUrl, SourceRuntimeStage.CONTENT, chapter);
   }
 
   private stageDataUrlInput(rawRule: string, url: string, fallback: string): string {

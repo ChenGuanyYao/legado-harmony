@@ -3684,6 +3684,9 @@ struct BookSourcePage {
       source.loginInfo = result.loginInfo;
       await AppDatabase.getInstance().updateBookSourceLoginRuntime(source.bookSourceUrl,
         source.variable, source.loginHeader, source.loginInfo);
+      if (this.shouldInvalidateExploreAfterLoginAction(item, result)) {
+        await this.invalidateRuntimeExplore(source);
+      }
       if (result.refreshLoginRequested) {
         const refreshedItems = await this.resolveSourceLoginItems(source);
         this.sourceLoginItems = refreshedItems;
@@ -4055,6 +4058,22 @@ struct BookSourcePage {
   }
 
   async refreshRuntimeExplore(source: BookSource): Promise<void> {
+    await this.invalidateRuntimeExplore(source);
+    this.showSourceLoginUiDialog = false;
+    this.sourceLoginItems = [];
+    router.back();
+  }
+
+  shouldInvalidateExploreAfterLoginAction(item: BookSourceLoginItem, result: LoginRuntimeStep): boolean {
+    const action = `${item.name}\n${item.action}`;
+    if (!/(?:登[录陆]|退出|注销|令牌|token)/i.test(action)) return false;
+    const outcome = `${result.resultValue || ''}\n${result.toastMessage || ''}`.trim();
+    if (/失败|无效|未登[录陆]|请先|错误|异常/i.test(outcome)) return false;
+    return /^(?:true|1)(?:\s|$)/i.test(outcome) ||
+      /登[录陆]成功|令牌已生效|已退出|已注销|已清除.*(?:登录|令牌|凭证|状态)/i.test(outcome);
+  }
+
+  async invalidateRuntimeExplore(source: BookSource): Promise<void> {
     try {
       await ExploreResultCache.clearSource(getContext(this), source.bookSourceUrl);
     } catch (error) {
@@ -4064,9 +4083,6 @@ struct BookSourcePage {
     AppStorage.setOrCreate('bookSourceExploreRefreshSourceUrl', source.bookSourceUrl);
     AppStorage.setOrCreate('exploreSourceUrl', source.bookSourceUrl);
     AppStorage.setOrCreate('bookSourceExploreRefreshNonce', nonce + 1);
-    this.showSourceLoginUiDialog = false;
-    this.sourceLoginItems = [];
-    router.back();
   }
 
   saveSourceLoginInputs(): void {

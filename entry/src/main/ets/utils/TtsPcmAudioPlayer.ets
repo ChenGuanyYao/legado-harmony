@@ -20,6 +20,8 @@ export interface PcmPlaybackCue {
 }
 
 export class TtsPcmAudioPlayer {
+  private static readonly CLOCK_FALLBACK_DRAIN_GRACE_MS: number = 300;
+  private static readonly RENDERER_DRAIN_MAX_WAIT_MS: number = 600;
   private readonly audioSessionOwner: string = `tts_pcm_${Date.now()}_${Math.random()}`;
   private renderer: audio.AudioRenderer | null = null;
   private currentSampleRate: audio.AudioSamplingRate = audio.AudioSamplingRate.SAMPLE_RATE_16000;
@@ -152,24 +154,54 @@ export class TtsPcmAudioPlayer {
       if (!await this.waitUntilRendererRunning(renderer, generation)) {
         return;
       }
-      await renderer.drain();
-      if (generation !== this.playGeneration || this.renderer !== renderer) {
-        return;
-      }
-      if (this.paused || this.systemInterrupted || renderer.state !== audio.AudioState.STATE_RUNNING) {
-        continue;
-      }
-      // Some devices resolve AudioRenderer.drain() when the final buffers have
-      // been accepted rather than when the speaker has rendered every frame.
-      // Wait for the renderer timeline as well, otherwise the chapter switch
-      // stops the last buffered sentences.
+      // Wait for the playback timeline before asking AudioRenderer to drain.
+      // Some devices leave drain() pending (or move the renderer out of RUNNING)
+      // while writeData keeps returning INVALID after the final PCM buffer. The
+      // old drain-first order therefore never completed the chapter handoff.
       if (!await this.waitUntilPlaybackFrameReached(targetFrame, renderer, generation)) {
         return;
       }
+      if (this.progressMode === 'CLOCK_FALLBACK') {
+        // Older devices lack a rendered-frame timestamp. Keep a small route
+        // latency margin so the clock fallback cannot clip the last syllable.
+        await this.delay(TtsPcmAudioPlayer.CLOCK_FALLBACK_DRAIN_GRACE_MS);
+      }
+      if (generation !== this.playGeneration || this.renderer !== renderer) {
+        return;
+      }
+      await this.settleRendererDrain(renderer, generation);
       this.lastReachedFrame = Math.max(this.lastReachedFrame, targetFrame);
       this.dispatchDuePlaybackMarks(generation);
       this.pausePlaybackTimelineAt(targetFrame);
       return;
+    }
+  }
+
+  private async settleRendererDrain(renderer: audio.AudioRenderer, generation: number): Promise<void> {
+    let settled = false;
+    let drainError: Error | null = null;
+    renderer.drain()
+      .then(() => {
+        settled = true;
+      })
+      .catch((error: Error) => {
+        drainError = error;
+        settled = true;
+      });
+    const waitStepMs = 40;
+    const maxAttempts = Math.ceil(TtsPcmAudioPlayer.RENDERER_DRAIN_MAX_WAIT_MS / waitStepMs);
+    for (let attempt = 0; attempt < maxAttempts && !settled; attempt++) {
+      if (generation !== this.playGeneration || this.renderer !== renderer) {
+        return;
+      }
+      await this.delay(waitStepMs);
+    }
+    if (drainError) {
+      console.warn('[TTS] renderer drain failed after playback reached its final frame:', drainError);
+    } else if (!settled) {
+      // The application-level frame timeline has already reached targetFrame,
+      // so a platform drain callback must not block onFinished/next chapter.
+      console.warn('[TTS] renderer drain callback timed out after final frame; continue chapter handoff');
     }
   }
 

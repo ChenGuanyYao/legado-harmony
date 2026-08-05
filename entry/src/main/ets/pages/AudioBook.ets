@@ -185,6 +185,7 @@ struct AudioBookPage {
       Column({ space: 14 }) {
         this.audioPlayerHeader()
         this.audioIntroCard()
+        this.progressSection()
         this.audioPanelControls()
         if (this.audioOptionsPanel === 1) {
           this.sleepSection()
@@ -540,7 +541,6 @@ struct AudioBookPage {
       .width('100%')
     }
     .width('100%')
-    .margin({ top: 18 })
   }
 
   @Builder

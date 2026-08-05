@@ -65,11 +65,10 @@ export class AnalyzeUrl {
       }
     }
 
-    // 4. 加载书源 headers, 使用单引号→双引号兼容
-    this.config.sourceHeaders = this.loadSourceHeaders();
-
-    // 5. 解决相对 URL
+    // 4. 解决相对 URL
     this.config.url = this.encodeUrl(this.resolveUrl(url.trim()));
+    // 5. 动态登录 Header 必须按目标站点限定作用域，避免覆盖第三方站点自己的 Cookie。
+    this.config.sourceHeaders = this.loadSourceHeaders(this.config.url);
     if (this.config.method === 'POST' && this.config.body && !this.looksLikeStructuredBody(this.config.body)) {
       this.config.body = this.encodeParams(this.config.body, false);
     }
@@ -143,28 +142,88 @@ export class AnalyzeUrl {
     return result;
   }
 
-  private loadSourceHeaders(): Record<string, string> {
-    if (!this.source?.header) return {};
+  private loadSourceHeaders(requestUrl: string = ''): Record<string, string> {
+    const headers: Record<string, string> = {};
+    if (!this.source) return headers;
+    this.mergeSourceHeaderText(headers, this.source.header || '');
+    // Legado login scripts persist dynamic authentication headers separately from the source's
+    // static header. They must participate in every normal AnalyzeUrl request; otherwise login
+    // validation can succeed inside the script while the following AJAX request is anonymous.
+    if (this.shouldApplyLoginHeaders(requestUrl)) {
+      this.mergeSourceHeaderText(headers, this.source.loginHeader || '');
+    }
+    return headers;
+  }
+
+  private shouldApplyLoginHeaders(requestUrl: string): boolean {
+    if (!this.source || !this.source.loginHeader) return false;
+    const requestHost = this.urlHost(requestUrl);
+    if (!requestHost) return true;
+    const trustedUrls: string[] = [this.source.bookSourceUrl || '', this.source.loginUrl || ''];
     try {
-      const parsed = this.parseLooseObject(this.source.header);
+      const loginInfo = JSON.parse(this.source.loginInfo || '{}') as Record<string, Object>;
+      const rawRuntime = loginInfo['__legadoHarmonyRuntime'];
+      let runtime: Record<string, Object> = {};
+      if (typeof rawRuntime === 'string') {
+        runtime = JSON.parse(rawRuntime || '{}') as Record<string, Object>;
+      } else if (rawRuntime && typeof rawRuntime === 'object' && !Array.isArray(rawRuntime)) {
+        runtime = rawRuntime as Record<string, Object>;
+      }
+      const rawSource = runtime['source'];
+      if (rawSource && typeof rawSource === 'object' && !Array.isArray(rawSource)) {
+        const sourceState = rawSource as Record<string, Object>;
+        for (const key of Object.keys(sourceState)) {
+          const value = String(sourceState[key] || '');
+          if (/^https?:\/\//i.test(value)) trustedUrls.push(value);
+        }
+      }
+    } catch (_) {
+    }
+    for (const trustedUrl of trustedUrls) {
+      const trustedHost = this.urlHost(trustedUrl);
+      if (trustedHost && this.hostsShareSite(requestHost, trustedHost)) return true;
+    }
+    return false;
+  }
+
+  private urlHost(url: string): string {
+    const match = /^https?:\/\/([^/:?#]+)/i.exec((url || '').trim());
+    return match && match[1] ? match[1].toLowerCase() : '';
+  }
+
+  private hostsShareSite(first: string, second: string): boolean {
+    if (!first || !second) return false;
+    if (first === second || first.endsWith(`.${second}`) || second.endsWith(`.${first}`)) return true;
+    return this.siteKey(first) === this.siteKey(second);
+  }
+
+  private siteKey(host: string): string {
+    const value = (host || '').toLowerCase();
+    if (!value || /^\d+(?:\.\d+){3}$/.test(value) || value === 'localhost') return value;
+    const labels = value.split('.').filter((item: string): boolean => item.length > 0);
+    if (labels.length <= 2) return value;
+    const suffix = labels.slice(-2).join('.');
+    const multiLevelSuffix = /^(?:com|net|org|gov|edu)\.cn$|^(?:com|net|org)\.hk$|^co\.(?:uk|jp|kr|nz)$|^com\.au$/;
+    return labels.slice(multiLevelSuffix.test(suffix) ? -3 : -2).join('.');
+  }
+
+  private mergeSourceHeaderText(target: Record<string, string>, raw: string): void {
+    const text = (raw || '').trim();
+    if (!text) return;
+    try {
+      const parsed = this.parseLooseObject(text);
       if (parsed) {
-        const headers: Record<string, string> = {};
-        for (const key in parsed) headers[key] = String(parsed[key]);
-        return headers;
+        for (const key in parsed) target[key] = String(parsed[key]);
+        return;
       }
-      const h: Record<string, string> = {};
-      for (const line of this.source.header.split(/[\n\r]+/)) {
-        const idx = line.indexOf(':');
-        if (idx > 0) h[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
-      }
-      return h;
-    } catch (e) {
-      const h: Record<string, string> = {};
-      for (const line of this.source.header.split(/[\n\r]+/)) {
-        const idx = line.indexOf(':');
-        if (idx > 0) h[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
-      }
-      return h;
+    } catch (_) {}
+    // A raw access token or query fragment is not a header block. Only accept the traditional
+    // multi-line "Name: value" representation when a real header separator is present.
+    for (const line of text.split(/[\n\r]+/)) {
+      const idx = line.indexOf(':');
+      if (idx <= 0) continue;
+      const name = line.substring(0, idx).trim();
+      if (name && /^[A-Za-z0-9-]+$/.test(name)) target[name] = line.substring(idx + 1).trim();
     }
   }
 
@@ -290,10 +349,12 @@ export class AnalyzeUrl {
 
   buildRequest(): HttpRequest {
     const merged = { ...this.config.sourceHeaders, ...this.config.headers };
-    if (this.source && !merged['Cookie']) {
+    const cookieHeaderName = this.headerName(merged, 'cookie');
+    if (this.source && !cookieHeaderName) {
       const cookie = VerificationSupport.sourceCookieHeader(this.source, this.config.url);
       if (cookie) merged['Cookie'] = cookie;
     }
+    this.applyUrlBoundCsrfCookie(merged, this.config.url);
     if (this.config.method === 'POST' && this.config.body && !this.findHeader(merged, 'content-type')) {
       merged['Content-Type'] = this.looksLikeStructuredBody(this.config.body) && this.config.body.trim().startsWith('{') ?
         'application/json; charset=utf-8' : 'application/x-www-form-urlencoded';
@@ -361,6 +422,43 @@ export class AnalyzeUrl {
     } catch (e) {
       return { url: url, statusCode: 0, headers: {}, body: '', success: false, error: String(e) };
     }
+  }
+
+  private applyUrlBoundCsrfCookie(headers: Record<string, string>, url: string): void {
+    const host = this.urlHost(url);
+    if (!host || !(host === 'qidian.com' || host.endsWith('.qidian.com'))) return;
+    const tokenMatch = /[?&]_csrfToken=([^&#]*)/i.exec(url || '');
+    if (!tokenMatch || !tokenMatch[1]) return;
+    let token = tokenMatch[1];
+    try {
+      token = decodeURIComponent(token);
+    } catch (_) {
+    }
+    if (!token) return;
+    const key = this.headerName(headers, 'cookie') || 'Cookie';
+    const parts: string[] = [];
+    let replaced = false;
+    for (const rawPart of String(headers[key] || '').split(';')) {
+      const part = rawPart.trim();
+      if (!part) continue;
+      const index = part.indexOf('=');
+      if (index > 0 && part.substring(0, index).trim() === '_csrfToken') {
+        parts.push(`_csrfToken=${token}`);
+        replaced = true;
+      } else {
+        parts.push(part);
+      }
+    }
+    if (!replaced) parts.push(`_csrfToken=${token}`);
+    headers[key] = parts.join('; ');
+  }
+
+  private headerName(headers: Record<string, string>, name: string): string {
+    const lower = (name || '').toLowerCase();
+    for (const key of Object.keys(headers)) {
+      if (key.toLowerCase() === lower) return key;
+    }
+    return '';
   }
 
   private estimatedDataUrlBytes(payload: string, base64: boolean): number {
