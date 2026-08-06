@@ -116,11 +116,12 @@ export class BookSourceLoginWebRuntime {
       `Object.assign(loginMap,next);}return a;},` +
       `removeLoginInfo:function(){Object.keys(loginMap).forEach(function(k){delete loginMap[k];});return '';}` +
       `};` +
+      `const nativeAtob=globalThis.atob;const nativeBtoa=globalThis.btoa;` +
       `function byteArray(v){if(v instanceof Uint8Array)return Array.from(v);if(Array.isArray(v))return v.map(function(x){` +
       `return Number(x)&255;});return Array.from(new TextEncoder().encode(String(v??'')));}` +
       `function b64e(v){try{const bytes=byteArray(v);let binary='';for(const x of bytes)binary+=String.fromCharCode(x);` +
-      `return btoa(binary);}catch(e){return String(v??'');}}` +
-      `function b64bytes(v){try{const binary=atob(String(v??''));const bytes=[];for(let i=0;i<binary.length;i++)` +
+      `return nativeBtoa.call(globalThis,binary);}catch(e){return String(v??'');}}` +
+      `function b64bytes(v){try{const binary=nativeAtob.call(globalThis,String(v??''));const bytes=[];for(let i=0;i<binary.length;i++)` +
       `bytes.push(binary.charCodeAt(i)&255);return bytes;}catch(e){return [];}}` +
       `function b64d(v){try{return new TextDecoder().decode(new Uint8Array(b64bytes(v)));}` +
       `catch(e){return String(v??'');}}` +
@@ -223,12 +224,35 @@ export class BookSourceLoginWebRuntime {
       `decryptStr:function(v){return cryptoOp(transformation,key,iv,'decryptStr',v);}};}` +
       `};` +
       `const TimeoutCancellationException=function(){};` +
+      `function markJavaClass(value,name){try{Object.defineProperty(value,'__simpleName',{value:name,` +
+      `enumerable:false,configurable:true});}catch(e){}return value;}` +
+      `const JavaBase64=markJavaClass({encodeToString:function(v){return b64e(v);}},'Base64');` +
+      `const JavaString=markJavaClass(String,'String');try{if(typeof String.prototype.getBytes!=='function')` +
+      `Object.defineProperty(String.prototype,'getBytes',{enumerable:false,configurable:true,value:function(){` +
+      `return byteArray(String(this));}});}catch(e){}` +
+      `const JavaURL=markJavaClass(function(v){const parsed=new globalThis.URL(String(v??''));return {` +
+      `host:parsed.hostname,hostname:parsed.hostname,protocol:parsed.protocol,port:parsed.port,` +
+      `path:parsed.pathname,toString:function(){return parsed.toString();}};},'URL');` +
+      `function topPrivateDomain(v){try{const host=new globalThis.URL(String(v??'')).hostname.toLowerCase();` +
+      `if(!host||/^\\d{1,3}(?:\\.\\d{1,3}){3}$/.test(host)||host.includes(':'))return null;` +
+      `const labels=host.split('.').filter(Boolean);if(labels.length<2)return host;const country=labels[labels.length-1];` +
+      `const second=labels[labels.length-2];const multipart=/^(?:com|net|org|gov|edu|ac|co)$/i.test(second)&&` +
+      `/^(?:cn|uk|jp|au|nz|kr|za)$/i.test(country);return labels.slice(multipart?-3:-2).join('.');}` +
+      `catch(e){return null;}}` +
+      `const JavaHttpUrl=markJavaClass({parse:function(v){const raw=String(v??'');try{new globalThis.URL(raw);}` +
+      `catch(e){return null;}return {topPrivateDomain:function(){return topPrivateDomain(raw);},` +
+      `host:function(){return new globalThis.URL(raw).hostname;},toString:function(){return raw;}};}},'HttpUrl');` +
+      `function JavaImporter(){const scope={};Object.defineProperty(scope,'importClass',{enumerable:false,` +
+      `value:function(clazz){if(!clazz)return clazz;const name=String(clazz.__simpleName||clazz.name||'').trim();` +
+      `if(name)this[name]=clazz;return clazz;}});Object.defineProperty(scope,'importPackage',{enumerable:false,` +
+      `value:function(pkg){if(pkg&&typeof pkg==='object')Object.keys(pkg).forEach(function(k){scope[k]=pkg[k];});` +
+      `return pkg;}});for(let i=0;i<arguments.length;i++)scope.importClass(arguments[i]);return scope;}` +
       `const Packages={io:{legato:{kazusa:{utils:{TimeoutCancellationException:TimeoutCancellationException}}}},` +
-      `java:{util:{HashMap:javaMap,LinkedHashMap:javaMap},lang:{Thread:{sleep:function(){return '';}}}},` +
-      `android:{util:{Base64:{` +
-      `encodeToString:function(v){return b64e(v);}}}}};` +
+      `java:{util:{HashMap:javaMap,LinkedHashMap:javaMap},lang:{String:JavaString,` +
+      `Thread:{sleep:function(){return '';}}},net:{URL:JavaURL}},` +
+      `android:{util:{Base64:JavaBase64}},okhttp3:{HttpUrl:JavaHttpUrl}};` +
       `globalThis.source=source;globalThis.java=java;globalThis.cache=cache;globalThis.cookie=cookie;` +
-      `globalThis.Packages=Packages;globalThis.result=loginMap;` +
+      `globalThis.Packages=Packages;globalThis.JavaImporter=JavaImporter;globalThis.result=loginMap;` +
       `let evaluatedResult;try{evaluatedResult=(function(){return eval(decodeUtf8('${codeBase64}'));}).call(globalThis);}` +
       `catch(e){error=String((e&&e.name?e.name+': ':'')+((e&&e.message)||e||'脚本执行失败')+` +
       `(e&&e.stack?'\\n'+e.stack:''));}` +

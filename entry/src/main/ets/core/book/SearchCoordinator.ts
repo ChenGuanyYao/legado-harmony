@@ -48,8 +48,8 @@ const MAX_SEARCH_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_VALIDATION_RESPONSE_BYTES = 512 * 1024;
 const MAX_VALIDATION_STAGE_RESPONSE_BYTES = 512 * 1024;
 const MAX_VALIDATION_STAGE_TOTAL_RESPONSE_BYTES = 2 * 1024 * 1024;
-const MAX_RESULTS_PER_SOURCE = 50;
-const MAX_TOTAL_SEARCH_RESULTS = 1000;
+const MAX_RESULTS_PER_SOURCE = 30;
+const MAX_TOTAL_SEARCH_RESULTS = 300;
 const MAX_VALIDATION_RULE_CHARS = 32 * 1024;
 // Keep preflight validation aligned with ScriptEngine's executable script ceiling. Aggregated
 // sources commonly share a 100-300 KiB jsLib even when each search rule itself remains small.
@@ -63,6 +63,12 @@ export interface SearchOptions {
   targetSources?: BookSource[];
   onSourceComplete?: (source: BookSource, result: SearchSourceResult) => Promise<void>;
   validationOnly?: boolean;
+  leanResult?: boolean;
+  excludeSourceUrls?: string[];
+  maxResultsPerSource?: number;
+  maxTotalResults?: number;
+  stopAfterResults?: number;
+  maxCandidatesPerSource?: number;
 }
 
 interface ScoredSearchBook {
@@ -114,9 +120,14 @@ export class SearchCoordinator {
       enabledSources = await appDb.getEnabledBookSourcesForSearch();
     }
     const selectedGroups = this.normalizeSelectedGroups(options.sourceGroups || []);
-    const sources = selectedGroups.length > 0 ?
+    const groupedSources = selectedGroups.length > 0 ?
       enabledSources.filter((source: BookSource) => selectedGroups.includes(this.normalizeGroupName(source.bookSourceGroup))) :
       enabledSources;
+    const excludedSourceUrls = new Set<string>((options.excludeSourceUrls || [])
+      .map((value: string): string => (value || '').trim()).filter((value: string): boolean => !!value));
+    const sources = excludedSourceUrls.size > 0 ?
+      groupedSources.filter((source: BookSource): boolean => !excludedSourceUrls.has(source.bookSourceUrl || '')) :
+      groupedSources;
     if (sources.length === 0) {
       safeCallback({ done: 0, total: 0, results: [], finished: true, status: '没有符合设置的启用书源' });
       return [];
@@ -132,6 +143,10 @@ export class SearchCoordinator {
     let currentSourceLabel = '';
     let pendingDeltaResults: SearchBook[] = [];
     const validationOnly = options.validationOnly === true;
+    const totalResultLimit = validationOnly ? 0 : this.normalizedLimit(options.maxTotalResults,
+      MAX_TOTAL_SEARCH_RESULTS, 1, MAX_TOTAL_SEARCH_RESULTS);
+    const stopAfterResults = validationOnly ? 0 : this.normalizedLimit(options.stopAfterResults,
+      totalResultLimit, 1, totalResultLimit);
     const effectiveConcurrency = validationOnly ? Math.min(this.concurrency, MAX_VALIDATION_CONCURRENCY) : this.concurrency;
     const workerCount = Math.min(effectiveConcurrency, sources.length);
 
@@ -142,7 +157,7 @@ export class SearchCoordinator {
       }
       lastProgressEmitAt = now;
       const verifyUrl = AppStorage.get<string>('pendingVerificationUrl') || '';
-      const finished = done >= sources.length;
+      const finished = force || done >= sources.length;
       const deltaResults = finished ? [] : pendingDeltaResults;
       pendingDeltaResults = [];
       safeCallback({
@@ -161,6 +176,7 @@ export class SearchCoordinator {
 
     const runWorker = async (): Promise<void> => {
       while (!this.cancelled) {
+        if (!validationOnly && stopAfterResults > 0 && all.length >= stopAfterResults) break;
         const sourceIndex = nextIndex;
         nextIndex++;
         if (sourceIndex >= sources.length) break;
@@ -181,7 +197,7 @@ export class SearchCoordinator {
             console.error('[SC] source completion callback failed:', e);
           }
         }
-        const remainingCapacity = Math.max(0, MAX_TOTAL_SEARCH_RESULTS - all.length);
+        const remainingCapacity = Math.max(0, totalResultLimit - all.length);
         const acceptedBooks = validationOnly ? [] : books.slice(0, remainingCapacity);
         const displayBooks = this.filterSearchResults(acceptedBooks, keyword, options);
 
@@ -225,10 +241,11 @@ export class SearchCoordinator {
       }
       const responseLimit = options.validationOnly === true ?
         MAX_VALIDATION_RESPONSE_BYTES : MAX_SEARCH_RESPONSE_BYTES;
-      const resultLimit = options.validationOnly === true ? 1 : MAX_RESULTS_PER_SOURCE;
+      const resultLimit = options.validationOnly === true ? 1 : this.normalizedLimit(options.maxResultsPerSource,
+        MAX_RESULTS_PER_SOURCE, 1, MAX_RESULTS_PER_SOURCE);
       if (BookSourceDataUrlSupport.sourceUsesGySearch(source)) {
         const books = await BookSourceDataUrlSupport.search(this.http, source, keyword, 1, responseLimit);
-        const sanitized = this.sanitizeSearchBooks(books, resultLimit);
+        const sanitized = this.sanitizeSearchBooks(books, resultLimit, options.leanResult === true);
         if (sanitized.length > 0) {
           return this.sourceResult(sanitized, BookSource.VALIDATION_PASSED, '');
         }
@@ -293,10 +310,12 @@ export class SearchCoordinator {
       const sourceApiBooks = this.parseSourceApiSearchResponse(source, resp.body, baseUrl, resultLimit,
         keyword, options);
       if (sourceApiBooks.length > 0) {
+        if (options.leanResult) this.stripLeanFields(sourceApiBooks);
         return this.sourceResult(sourceApiBooks, BookSource.VALIDATION_PASSED, '');
       }
       const shuqiBooks = this.parseShuqiSearchResponse(source, resp.body, resultLimit, keyword, options);
       if (shuqiBooks.length > 0) {
+        if (options.leanResult) this.stripLeanFields(shuqiBooks);
         return this.sourceResult(shuqiBooks, BookSource.VALIDATION_PASSED, '');
       }
       const rule = new AnalyzeRule(resp.body, baseUrl);
@@ -313,7 +332,10 @@ export class SearchCoordinator {
       if (this.cancelled) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
       }
-      const items = stageItems === null ? rule.getElements(searchRule.bookList || '') : stageItems;
+      const allItems = stageItems === null ? rule.getElements(searchRule.bookList || '') : stageItems;
+      const candidateLimit = this.normalizedLimit(options.maxCandidatesPerSource,
+        options.leanResult === true ? 60 : 120, 1, 200);
+      const items = allItems.length > candidateLimit ? allItems.slice(0, candidateLimit) : allItems;
       if (this.cancelled) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
       }
@@ -334,13 +356,15 @@ export class SearchCoordinator {
       fieldRequest.fields = [
         new RuleFieldRequest('name', searchRule.name || ''),
         new RuleFieldRequest('author', searchRule.author || ''),
-        new RuleFieldRequest('bookUrl', searchRule.bookUrl || ''),
-        new RuleFieldRequest('coverUrl', searchRule.coverUrl || ''),
-        new RuleFieldRequest('intro', searchRule.intro || ''),
-        new RuleFieldRequest('kind', searchRule.kind || ''),
-        new RuleFieldRequest('lastChapter', searchRule.lastChapter || ''),
-        new RuleFieldRequest('wordCount', searchRule.wordCount || '')
+        new RuleFieldRequest('bookUrl', searchRule.bookUrl || '')
       ];
+      if (!options.leanResult) {
+        fieldRequest.fields.push(new RuleFieldRequest('coverUrl', searchRule.coverUrl || ''));
+        fieldRequest.fields.push(new RuleFieldRequest('intro', searchRule.intro || ''));
+        fieldRequest.fields.push(new RuleFieldRequest('kind', searchRule.kind || ''));
+        fieldRequest.fields.push(new RuleFieldRequest('lastChapter', searchRule.lastChapter || ''));
+        fieldRequest.fields.push(new RuleFieldRequest('wordCount', searchRule.wordCount || ''));
+      }
       if (sourceBackendHost) {
         fieldRequest.contextValues['host'] = sourceBackendHost;
         fieldRequest.contextValues['backend'] = sourceBackendHost;
@@ -409,7 +433,7 @@ export class SearchCoordinator {
           }
         }
         book.variable = itemIndex < fieldBatch.contextValues.length ? fieldBatch.contextValues[itemIndex] :
-          ir.getContext().toJson();
+          ir.getContext().toPersistentJson();
         BookTypeSupport.applySearchBookType(book, source);
         // 如果解析后仍含 JSONPath 表达式，直接从 item 提取
         if (!book.bookUrl || book.bookUrl.startsWith('$') || book.bookUrl.includes('$._id') || book.bookUrl.includes('$..')) {
@@ -445,6 +469,7 @@ export class SearchCoordinator {
         book.customOrder = source.customOrder;
         book.weight = source.weight;
 
+        if (options.leanResult) this.stripLeanFieldValues(book);
         this.sanitizeSearchBook(book);
         const bookKey = `${book.origin || ''}::${book.bookUrl || ''}`;
         if (book.name && book.bookUrl && !seenBookKeys.has(bookKey)) {
@@ -596,10 +621,11 @@ export class SearchCoordinator {
     book.variable = this.cleanJsonField(book.variable, 8192);
   }
 
-  private sanitizeSearchBooks(books: SearchBook[], limit: number): SearchBook[] {
+  private sanitizeSearchBooks(books: SearchBook[], limit: number, leanResult: boolean = false): SearchBook[] {
     const cleaned: SearchBook[] = [];
     const seen = new Set<string>();
     for (const book of books || []) {
+      if (leanResult) this.stripLeanFieldValues(book);
       this.sanitizeSearchBook(book);
       if (!book.name || !book.bookUrl) continue;
       const key = `${book.origin || ''}::${book.bookUrl || ''}`;
@@ -609,6 +635,24 @@ export class SearchCoordinator {
       if (cleaned.length >= limit) break;
     }
     return cleaned;
+  }
+
+  private stripLeanFields(books: SearchBook[]): void {
+    for (const book of books) this.stripLeanFieldValues(book);
+  }
+
+  private stripLeanFieldValues(book: SearchBook): void {
+    book.coverUrl = '';
+    book.intro = '';
+    book.kind = '';
+    book.latestChapterTitle = '';
+    book.wordCount = '';
+    book.bookSourceComment = '';
+  }
+
+  private normalizedLimit(value: number | undefined, fallback: number, minimum: number, maximum: number): number {
+    if (value === undefined || value === null || !Number.isFinite(value)) return fallback;
+    return Math.max(minimum, Math.min(Math.floor(value), maximum));
   }
 
   private fillSearchFallbackFields(source: BookSource, ir: AnalyzeRule, book: SearchBook, baseUrl: string,
@@ -1043,6 +1087,7 @@ export class SearchCoordinator {
       if (!available) return '';
     }
     const request = new StageWebRuntimeRequest();
+    request.applyStageBudget(SourceRuntimeStage.SEARCH);
     request.source = source;
     request.baseUrl = source.bookSourceUrl;
     request.ownerId = this.stageRuntimeOwnerId;

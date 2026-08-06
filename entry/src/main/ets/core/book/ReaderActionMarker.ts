@@ -27,22 +27,25 @@ export class ReaderActionMarker {
     return `${ReaderActionMarker.PREFIX}${encodeURIComponent(JSON.stringify(data))}${ReaderActionMarker.SUFFIX}`;
   }
 
-  /**
-   * Dense Shuqi chapters can contain more than one hundred comment actions. Keeping the repeated API host,
-   * key and JSON field names in every marker makes text measurement unnecessarily expensive, so persist only
-   * the chapter coordinates and restore the real URL when the marker is clicked.
-   */
-  static createShuqiComment(label: string, bookId: string, chapterId: string,
+  /** Compact provider action. Secrets and repeated endpoint data stay in the provider, outside measured text. */
+  static createProviderComment(providerId: string, label: string, bookId: string, chapterId: string,
     paragraphId: string, mode: string = 'paragraph'): string {
     const safeLabel = (label || '').trim() || '段评';
+    const safeProviderId = (providerId || '').trim();
     const safeBookId = (bookId || '').trim();
     const safeChapterId = (chapterId || '').trim();
     const safeParagraphId = (paragraphId || '').trim();
-    if (!safeBookId || !safeChapterId || !safeParagraphId) return '';
+    if (!safeProviderId || !safeBookId || !safeChapterId || !safeParagraphId) return '';
     const modeCode = mode === 'chapterTitle' || mode === 'chapter' ? 'c' : 'p';
-    const fields = [safeLabel, safeBookId, safeChapterId, safeParagraphId]
+    const fields = [safeProviderId, safeLabel, safeBookId, safeChapterId, safeParagraphId]
       .map((value: string): string => encodeURIComponent(value));
-    return `${ReaderActionMarker.PREFIX}S|${fields.join('|')}|${modeCode}${ReaderActionMarker.SUFFIX}`;
+    return `${ReaderActionMarker.PREFIX}P|${fields.join('|')}|${modeCode}${ReaderActionMarker.SUFFIX}`;
+  }
+
+  /** Compatibility for source converters and already compiled call sites. */
+  static createShuqiComment(label: string, bookId: string, chapterId: string,
+    paragraphId: string, mode: string = 'paragraph'): string {
+    return this.createProviderComment('shuqi-comments', label, bookId, chapterId, paragraphId, mode);
   }
 
   static parse(value: string): ReaderActionData | null {
@@ -54,6 +57,23 @@ export class ReaderActionMarker {
     const encoded = text.substring(prefix.length,
       text.length - ReaderActionMarker.SUFFIX.length);
     try {
+      if (encoded.startsWith('P|')) {
+        const fields = encoded.split('|');
+        if (fields.length !== 7) return null;
+        const providerId = decodeURIComponent(fields[1] || '');
+        const label = decodeURIComponent(fields[2] || '') || '段评';
+        const bookId = decodeURIComponent(fields[3] || '');
+        const chapterId = decodeURIComponent(fields[4] || '');
+        const paragraphId = decodeURIComponent(fields[5] || '');
+        if (!providerId || !bookId || !chapterId || !paragraphId) return null;
+        const data = new ReaderActionData();
+        data.label = label;
+        data.url = `legado-provider-action://${encodeURIComponent(providerId)}/${encodeURIComponent(bookId)}/` +
+          `${encodeURIComponent(chapterId)}/${encodeURIComponent(paragraphId)}?mode=` +
+          `${fields[6] === 'c' ? 'chapterTitle' : 'paragraph'}`;
+        data.title = fields[6] === 'c' ? '章评' : '段评';
+        return data;
+      }
       if (encoded.startsWith('S|')) {
         const fields = encoded.split('|');
         if (fields.length !== 6) return null;

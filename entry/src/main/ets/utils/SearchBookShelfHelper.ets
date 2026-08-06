@@ -73,22 +73,16 @@ export class SearchBookShelfHelper {
   static async syncShelfKeys(context: Context, books: SearchBook[]): Promise<string[]> {
     const db = AppDatabase.getInstance();
     await db.initWithContext(context);
-    const allBooks = await db.getAllBooks();
-    SearchBookShelfHelper.cacheShelfBooks(allBooks);
-    const shelfBooks = SearchExplorePendingBook.filterShelfBooks(allBooks);
-    const shelfKeySet = new Set<string>();
-    for (const book of shelfBooks) {
-      const key = BookIdentity.keyOfBook(book);
-      if (key) {
-        shelfKeySet.add(key);
-      }
-    }
+    const lookup = await SearchBookShelfHelper.getShelfLookup();
     const keys: string[] = [];
+    const added = new Set<string>();
     for (const book of books) {
       const key = SearchBookShelfHelper.keyOf(book);
-      if (key && shelfKeySet.has(key) && !keys.includes(key)) {
-        keys.push(key);
-      }
+      if (!key || added.has(key)) continue;
+      const matches = lookup.get(key) || [];
+      if (!matches.some((item: Book): boolean => !SearchExplorePendingBook.isPendingAddToShelf(item))) continue;
+      added.add(key);
+      keys.push(key);
     }
     return keys;
   }

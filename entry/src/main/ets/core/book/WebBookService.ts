@@ -87,7 +87,7 @@ export class WebBookService {
     fieldRequest.ownerId = `book_info_${Date.now()}_${book.bookUrl}`;
     fieldRequest.contents = [content];
     fieldRequest.baseUrl = baseUrl;
-    fieldRequest.contextValues = ctx.toRecord();
+    fieldRequest.contextValues = ctx.toPersistentRecord();
     fieldRequest.fields = [
       new RuleFieldRequest('name', infoRule.name || ''),
       new RuleFieldRequest('author', infoRule.author || ''),
@@ -125,7 +125,7 @@ export class WebBookService {
     if (tocUrl) book.tocUrl = this.repairUrlWithBookId(tocUrl, book.bookUrl);
 
     // 保存变量
-    book.variable = ctx.toJson();
+    book.variable = ctx.toPersistentJson();
 
     // 如果 tocUrl 为空，尝试从 bookUrl 构造
     if (!book.tocUrl) {
@@ -275,7 +275,7 @@ export class WebBookService {
         }
         const specialChapters = await this.tryBuildSpecialChapterList(source, book, currentResp.body);
         if (specialChapters.length > 0) {
-          book.variable = ctx.toJson();
+          book.variable = ctx.toPersistentJson();
           return specialChapters;
         }
       }
@@ -297,7 +297,7 @@ export class WebBookService {
         await this.fetchEncodedDataUrl(currentUrl, source) : await au.fetch(currentUrl);
     }
 
-    book.variable = ctx.toJson();
+    book.variable = ctx.toPersistentJson();
     if (chapters.length > 0) return chapters;
 
     const chaoxingDetailChapter = this.tryBuildChaoxingDetailChapter(source, book, firstBody, firstBaseUrl);
@@ -326,7 +326,7 @@ export class WebBookService {
     fieldRequest.ownerId = `toc_fields_${Date.now()}_${book.bookUrl}`;
     fieldRequest.contents = items;
     fieldRequest.baseUrl = baseUrl;
-    fieldRequest.contextValues = ctx.toRecord();
+    fieldRequest.contextValues = ctx.toPersistentRecord();
     fieldRequest.fields = [
       new RuleFieldRequest('chapterName', tocRule.chapterName || ''),
       new RuleFieldRequest('chapterUrl', tocRule.chapterUrl || ''),
@@ -509,7 +509,7 @@ export class WebBookService {
       currentResp = EncodedSourceUrl.canHandle(currentUrl) ?
         await this.fetchEncodedDataUrl(currentUrl, source) : await au.fetch(currentUrl);
     }
-    book.variable = ctx.toJson();
+    book.variable = ctx.toPersistentJson();
     return parts.join('\n\n');
   }
 
@@ -528,7 +528,7 @@ export class WebBookService {
     fieldRequest.ownerId = `content_fields_${Date.now()}_${chapter.url}`;
     fieldRequest.contents = [body];
     fieldRequest.baseUrl = baseUrl;
-    fieldRequest.contextValues = ctx.toRecord();
+    fieldRequest.contextValues = ctx.toPersistentRecord();
     fieldRequest.fields = [
       new RuleFieldRequest('content', directContent ? '' : (contentRule.content || '')),
       new RuleFieldRequest('nextContentUrl', contentRule.nextContentUrl || '', true),
@@ -1161,7 +1161,10 @@ export class WebBookService {
     if (!url) return '';
     const rawTitle = this.decodeHtmlEntities(actionMatch && actionMatch[4] ? actionMatch[4] : '');
     const count = this.decodeHtmlEntities(countMatch && countMatch[1] ? countMatch[1] : '');
-    const isComment = /\/comments(?:[/?#]|$)|\/idea_comment(?:[/?#]|$)|\/get_review(?:[/?#]|$)/i.test(url);
+    const isQidianComment = /\/qidian_full_api\.php\?/i.test(url) &&
+      /[?&]action=(?:paragraph_(?:comments|image_comments|audio_comments)|chapter_comments)(?:&|$)/i.test(url);
+    const isComment = /\/comments(?:[/?#]|$)|\/idea_comment(?:[/?#]|$)|\/get_review(?:[/?#]|$)/i.test(url) ||
+      isQidianComment;
     const title = isComment ? (rawTitle ? `段评 · ${rawTitle}` : '段评') : (rawTitle || '打开');
     const label = isComment ? (count ? `段评 ${count}` : '段评') : (count ? `${title} ${count}` : title);
     return ReaderActionMarker.create(label, url, title);
@@ -1224,7 +1227,7 @@ export class WebBookService {
     const count = this.readerLegacySvgCommentCount(svgText);
     const kind = mode === 'chapterTitle' ? '章评' : '段评';
     const label = count ? `${kind} ${count}` : kind;
-    return ReaderActionMarker.createShuqiComment(label, args[0], args[1], args[2], mode);
+    return ReaderActionMarker.createProviderComment('shuqi-comments', label, args[0], args[1], args[2], mode);
   }
 
   private parseLegacyJavaScriptCallArguments(script: string, openIndex: number): string[] {
@@ -1523,13 +1526,14 @@ export class WebBookService {
       return '';
     }
     const request = new StageWebRuntimeRequest();
+    request.applyStageBudget(stage);
     request.source = source;
     request.book = book;
     request.chapter = chapter;
     request.readerActionMode = stage === SourceRuntimeStage.CONTENT;
     request.code = code;
     request.content = content || '';
-    request.contextContent = content || '';
+    request.contextContent = '';
     request.baseUrl = baseUrl || book.bookUrl || source.bookSourceUrl;
     try {
       const result = await runtime.execute(request);
@@ -1555,7 +1559,7 @@ export class WebBookService {
     request.ownerId = `${stage}_field_${Date.now()}_${book.bookUrl}`;
     request.contents = [content];
     request.baseUrl = baseUrl;
-    request.contextValues = ctx.toRecord();
+    request.contextValues = ctx.toPersistentRecord();
     request.fields = [new RuleFieldRequest('value', rawRule, resolveUrl)];
     request.timeoutMs = 15000;
     try {
@@ -1780,7 +1784,7 @@ export class WebBookService {
     fieldRequest.ownerId = `stage_toc_fields_${Date.now()}_${book.bookUrl}`;
     fieldRequest.contents = items;
     fieldRequest.baseUrl = baseUrl;
-    fieldRequest.contextValues = ctx.toRecord();
+    fieldRequest.contextValues = ctx.toPersistentRecord();
     fieldRequest.fields = [
       new RuleFieldRequest('chapterName', tocRule.chapterName || ''),
       new RuleFieldRequest('chapterUrl', tocRule.chapterUrl || ''),
@@ -1820,7 +1824,7 @@ export class WebBookService {
       if (updateTime) chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'updateTime', updateTime);
       chapters.push(chapter);
     }
-    book.variable = ctx.toJson();
+    book.variable = ctx.toPersistentJson();
     return chapters;
   }
 

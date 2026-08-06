@@ -87,11 +87,18 @@ export class ReadBookEngine {
       const oldTocUrl = oldBook.tocUrl;
       const oldLatestChapter = oldBook.latestChapterTitle;
       const oldCoverUrl = oldBook.coverUrl;
-      const infoBook = await this.webBook.getBookInfo(this.source, this.book);
-      this.book = infoBook;
-      this.book.coverUrl = CoverUrlNormalizer.prefer(oldCoverUrl, this.book.coverUrl);
-      this.preserveReadingState(this.book, oldBook);
-      console.log('[RE] getBookInfo done, tocUrl:', this.book.tocUrl);
+      const canReuseResolvedInfo = !!oldBook.tocUrl && oldBook.lastCheckTime > 0 &&
+        Date.now() - oldBook.lastCheckTime < 2 * 60 * 1000;
+      if (!canReuseResolvedInfo) {
+        const infoBook = await this.webBook.getBookInfo(this.source, this.book);
+        this.book = infoBook;
+        this.book.lastCheckTime = Date.now();
+        this.book.coverUrl = CoverUrlNormalizer.prefer(oldCoverUrl, this.book.coverUrl);
+        this.preserveReadingState(this.book, oldBook);
+        console.log('[RE] getBookInfo done, tocUrl:', this.book.tocUrl);
+      } else {
+        console.log('[RE] reuse recently resolved book info, tocUrl:', this.book.tocUrl);
+      }
       if (!this.book.tocUrl && oldTocUrl) {
         this.book.tocUrl = oldTocUrl;
       }

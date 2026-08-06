@@ -542,6 +542,103 @@ export class AppDatabase {
     }
   }
 
+  async commitBookSourceSwitch(oldBookUrl: string, book: Book, chapters: BookChapter[]): Promise<void> {
+    if (!this.store || !oldBookUrl || !book.bookUrl) return;
+    const bookBucket: relationalStore.ValuesBucket = {
+      bookUrl: book.bookUrl,
+      tocUrl: book.tocUrl,
+      origin: book.origin,
+      originName: book.originName,
+      name: book.name,
+      author: book.author,
+      kind: book.kind,
+      customTag: book.customTag,
+      coverUrl: book.coverUrl,
+      customCoverUrl: book.customCoverUrl,
+      intro: book.intro,
+      customIntro: book.customIntro,
+      charset: book.charset,
+      type: book.type,
+      groupId: book.group,
+      latestChapterTitle: book.latestChapterTitle,
+      latestChapterTime: book.latestChapterTime,
+      lastCheckTime: book.lastCheckTime,
+      lastCheckCount: book.lastCheckCount,
+      totalChapterNum: book.totalChapterNum,
+      durChapterTitle: book.durChapterTitle,
+      durChapterIndex: book.durChapterIndex,
+      durChapterPos: book.durChapterPos,
+      durChapterTime: book.durChapterTime,
+      wordCount: book.wordCount,
+      canUpdate: book.canUpdate ? 1 : 0,
+      bookOrder: book.order,
+      originOrder: book.originOrder,
+      variable: book.variable,
+      readConfig: JSON.stringify(book.readConfig),
+      syncTime: book.syncTime
+    };
+    const chapterBuckets: relationalStore.ValuesBucket[] = [];
+    for (const chapter of chapters) {
+      chapterBuckets.push({
+        url: chapter.url,
+        title: chapter.title,
+        bookUrl: book.bookUrl,
+        chapterIndex: chapter.index,
+        isVip: chapter.isVip ? 1 : 0,
+        isPay: chapter.isPay ? 1 : 0,
+        resourceUrl: chapter.resourceUrl,
+        tag: chapter.tag,
+        startOffset: chapter.start,
+        endOffset: chapter.end,
+        variable: chapter.variable
+      });
+    }
+
+    const transaction = await this.store.createTransaction();
+    try {
+      if (oldBookUrl !== book.bookUrl) {
+        const destinationBookmarks = new relationalStore.RdbPredicates('bookmarks');
+        destinationBookmarks.equalTo('bookUrl', book.bookUrl);
+        await transaction.delete(destinationBookmarks);
+
+        const sourceBookmarks = new relationalStore.RdbPredicates('bookmarks');
+        sourceBookmarks.equalTo('bookUrl', oldBookUrl);
+        await transaction.update({
+          bookUrl: book.bookUrl,
+          bookName: book.name,
+          bookAuthor: book.author
+        }, sourceBookmarks);
+
+        for (const table of ['book_chapters', 'book_contents', 'books']) {
+          const oldPredicates = new relationalStore.RdbPredicates(table);
+          oldPredicates.equalTo('bookUrl', oldBookUrl);
+          await transaction.delete(oldPredicates);
+          const destinationPredicates = new relationalStore.RdbPredicates(table);
+          destinationPredicates.equalTo('bookUrl', book.bookUrl);
+          await transaction.delete(destinationPredicates);
+        }
+        await transaction.insert('books', bookBucket);
+      } else {
+        const bookPredicates = new relationalStore.RdbPredicates('books');
+        bookPredicates.equalTo('bookUrl', book.bookUrl);
+        const updateBucket: relationalStore.ValuesBucket = { ...bookBucket };
+        delete updateBucket.bookUrl;
+        await transaction.update(updateBucket, bookPredicates);
+        for (const table of ['book_chapters', 'book_contents']) {
+          const predicates = new relationalStore.RdbPredicates(table);
+          predicates.equalTo('bookUrl', book.bookUrl);
+          await transaction.delete(predicates);
+        }
+      }
+      if (chapterBuckets.length > 0) await transaction.batchInsert('book_chapters', chapterBuckets);
+      await transaction.commit();
+      CloudSyncChangeTracker.markDataChanged();
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+  }
+
   async updateBookReadingProgress(bookUrl: string, chapterTitle: string, chapterIndex: number,
     chapterPos: number, chapterTime: number, variable: string,
     syncRelevant: boolean = true): Promise<void> {
@@ -1380,7 +1477,9 @@ export class AppDatabase {
     if (ruleScope === 'explore') predicates.equalTo('enabledExplore', 1);
     predicates.orderByDesc('isPinned');
     predicates.orderByAsc('customOrder');
-    const resultSet = await this.store.query(predicates, []);
+    const columns = ruleScope === 'search' ? this.searchBookSourceColumns() :
+      (ruleScope === 'explore' ? this.exploreBookSourceColumns() : []);
+    const resultSet = await this.store.query(predicates, columns);
     const sources: BookSource[] = [];
     try {
       while (resultSet.goToNextRow()) {
@@ -1412,76 +1511,90 @@ export class AppDatabase {
 
   private resultSetToBookSource(resultSet: relationalStore.ResultSet, ruleScope: string = 'all'): BookSource {
     const source = new BookSource();
-    source.bookSourceUrl = resultSet.getString(resultSet.getColumnIndex('bookSourceUrl'));
-    source.bookSourceName = resultSet.getString(resultSet.getColumnIndex('bookSourceName'));
+    source.bookSourceUrl = this.getStringColumn(resultSet, 'bookSourceUrl');
+    source.bookSourceName = this.getStringColumn(resultSet, 'bookSourceName');
     source.bookSourceType = this.getLongColumn(resultSet, 'bookSourceType');
-    source.bookSourceGroup = resultSet.getString(resultSet.getColumnIndex('bookSourceGroup'));
-    source.bookSourceComment = resultSet.getString(resultSet.getColumnIndex('bookSourceComment'));
-    source.loginUrl = resultSet.getString(resultSet.getColumnIndex('loginUrl'));
-    source.loginUi = resultSet.getString(resultSet.getColumnIndex('loginUi'));
-    source.loginCheckJs = resultSet.getString(resultSet.getColumnIndex('loginCheckJs'));
-    const loginHeaderIndex = resultSet.getColumnIndex('loginHeader');
-    source.loginHeader = loginHeaderIndex >= 0 ? resultSet.getString(loginHeaderIndex) : '';
+    source.bookSourceGroup = this.getStringColumn(resultSet, 'bookSourceGroup');
+    source.bookSourceComment = this.getStringColumn(resultSet, 'bookSourceComment');
+    source.loginUrl = this.getStringColumn(resultSet, 'loginUrl');
+    source.loginUi = this.getStringColumn(resultSet, 'loginUi');
+    source.loginCheckJs = this.getStringColumn(resultSet, 'loginCheckJs');
+    source.loginHeader = this.getStringColumn(resultSet, 'loginHeader');
     source.loginInfo = this.getStringColumn(resultSet, 'loginInfo');
     source.rawSourceJson = this.getStringColumn(resultSet, 'rawSourceJson');
-    source.bookUrlPattern = resultSet.getString(resultSet.getColumnIndex('bookUrlPattern'));
-    const searchUrlIndex = resultSet.getColumnIndex('searchUrl');
-    source.searchUrl = searchUrlIndex >= 0 ? resultSet.getString(searchUrlIndex) : '';
-    const exploreUrlIndex = resultSet.getColumnIndex('exploreUrl');
-    source.exploreUrl = exploreUrlIndex >= 0 ? resultSet.getString(exploreUrlIndex) : '';
-    const jsLibIndex = resultSet.getColumnIndex('jsLib');
-    source.jsLib = jsLibIndex >= 0 ? resultSet.getString(jsLibIndex) : '';
-    source.header = resultSet.getString(resultSet.getColumnIndex('header'));
+    source.bookUrlPattern = this.getStringColumn(resultSet, 'bookUrlPattern');
+    source.searchUrl = this.getStringColumn(resultSet, 'searchUrl');
+    source.exploreUrl = this.getStringColumn(resultSet, 'exploreUrl');
+    source.jsLib = this.getStringColumn(resultSet, 'jsLib');
+    source.header = this.getStringColumn(resultSet, 'header');
     if (ruleScope === 'all') {
       try {
-        source.bookListRule = JSON.parse(resultSet.getString(resultSet.getColumnIndex('bookListRule')));
+        source.bookListRule = JSON.parse(this.getStringColumn(resultSet, 'bookListRule'));
       } catch (e) {}
     }
     if (ruleScope === 'all' || ruleScope === 'search' || ruleScope === 'explore') {
       try {
-        source.searchRule = JSON.parse(resultSet.getString(resultSet.getColumnIndex('searchRule')));
+        source.searchRule = JSON.parse(this.getStringColumn(resultSet, 'searchRule'));
       } catch (e) {}
     }
     if (ruleScope === 'all' || ruleScope === 'explore') {
       try {
-        const parsed = JSON.parse(resultSet.getString(resultSet.getColumnIndex('exploreRule'))) as Object;
+        const parsed = JSON.parse(this.getStringColumn(resultSet, 'exploreRule')) as Object;
         if (parsed && !Array.isArray(parsed)) source.exploreRule = parsed as ExploreRule;
       } catch (e) {}
     }
     if (ruleScope === 'all') {
       try {
-        source.bookInfoRule = JSON.parse(resultSet.getString(resultSet.getColumnIndex('bookInfoRule')));
+        source.bookInfoRule = JSON.parse(this.getStringColumn(resultSet, 'bookInfoRule'));
       } catch (e) {}
       try {
-        const parsed = JSON.parse(resultSet.getString(resultSet.getColumnIndex('tocRule'))) as Object;
+        const parsed = JSON.parse(this.getStringColumn(resultSet, 'tocRule')) as Object;
         if (parsed && !Array.isArray(parsed)) source.tocRule = parsed as TocRule;
         source.tocRule.nextTocUrl = source.tocRule.nextTocUrl || '';
       } catch (e) {}
       try {
-        const parsed = JSON.parse(resultSet.getString(resultSet.getColumnIndex('contentRule'))) as Object;
+        const parsed = JSON.parse(this.getStringColumn(resultSet, 'contentRule')) as Object;
         if (parsed && !Array.isArray(parsed)) source.contentRule = parsed as ContentRule;
         source.contentRule.nextContentUrl = source.contentRule.nextContentUrl || '';
         source.contentRule.imageDecode = source.contentRule.imageDecode || '';
       } catch (e) {}
     }
-    source.variableComment = resultSet.getString(resultSet.getColumnIndex('variableComment'));
-    const variableIndex = resultSet.getColumnIndex('variable');
-    source.variable = variableIndex >= 0 ? resultSet.getString(variableIndex) : '';
-    source.lastUpdateTime = resultSet.getLong(resultSet.getColumnIndex('lastUpdateTime'));
+    source.variableComment = this.getStringColumn(resultSet, 'variableComment');
+    source.variable = this.getStringColumn(resultSet, 'variable');
+    source.lastUpdateTime = this.getLongColumn(resultSet, 'lastUpdateTime');
     source.respondTime = this.getLongColumn(resultSet, 'respondTime', 180000);
-    source.customOrder = resultSet.getLong(resultSet.getColumnIndex('customOrder'));
+    source.customOrder = this.getLongColumn(resultSet, 'customOrder');
     source.customButton = this.getLongColumn(resultSet, 'customButton') === 1;
     source.eventListener = this.getLongColumn(resultSet, 'eventListener') === 1;
     source.isPinned = this.getLongColumn(resultSet, 'isPinned') === 1;
-    source.enabled = resultSet.getLong(resultSet.getColumnIndex('enabled')) === 1;
+    source.enabled = this.getLongColumn(resultSet, 'enabled') === 1;
     source.isLocked = this.getLongColumn(resultSet, 'isLocked') === 1;
-    source.enabledExplore = resultSet.getLong(resultSet.getColumnIndex('enabledExplore')) === 1;
+    source.enabledExplore = this.getLongColumn(resultSet, 'enabledExplore') === 1;
     source.validationStatus = this.normalizeBookSourceValidationStatus(
       this.getLongColumn(resultSet, 'validationStatus'));
-    source.weight = resultSet.getLong(resultSet.getColumnIndex('weight'));
-    source.concurrentRate = resultSet.getString(resultSet.getColumnIndex('concurrentRate'));
+    source.weight = this.getLongColumn(resultSet, 'weight');
+    source.concurrentRate = this.getStringColumn(resultSet, 'concurrentRate');
     source.enabledCookieJar = this.getLongColumn(resultSet, 'enabledCookieJar', 1) === 1;
     return source;
+  }
+
+  private searchBookSourceColumns(): string[] {
+    return [
+      'bookSourceUrl', 'bookSourceName', 'bookSourceType', 'bookSourceGroup', 'bookSourceComment',
+      'loginUrl', 'loginHeader', 'loginInfo', 'searchUrl', 'jsLib', 'header', 'searchRule',
+      'variable', 'lastUpdateTime', 'respondTime', 'customOrder', 'customButton', 'eventListener',
+      'isPinned', 'enabled', 'isLocked', 'validationStatus', 'weight', 'concurrentRate', 'enabledCookieJar'
+    ];
+  }
+
+  private exploreBookSourceColumns(): string[] {
+    return [
+      'bookSourceUrl', 'bookSourceName', 'bookSourceType', 'bookSourceGroup', 'bookSourceComment',
+      'loginUrl', 'loginHeader', 'loginInfo', 'searchUrl', 'exploreUrl', 'jsLib', 'header',
+      'searchRule', 'exploreRule', 'variable', 'lastUpdateTime', 'respondTime', 'customOrder',
+      'customButton', 'eventListener', 'isPinned', 'enabled', 'isLocked', 'enabledExplore',
+      'validationStatus', 'weight', 'concurrentRate', 'enabledCookieJar'
+    ];
   }
 
   async insertBookChapter(chapter: BookChapter): Promise<void> {

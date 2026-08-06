@@ -13,6 +13,7 @@ import { AppIconSettingsStore } from '../utils/AppIconSettingsStore';
 import { ReaderFontBootstrap } from '../utils/ReaderFontBootstrap';
 import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
 import { TtsSettingsStore } from '../utils/TtsSettingsStore';
+import { ReaderProgressCheckpoint } from '../utils/ReaderProgressCheckpoint';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ThemeIds } from '../theme/ThemeModels';
 import { ThemeTrialManager } from '../utils/ThemeTrialManager';
@@ -139,7 +140,7 @@ export default class EntryAbility extends UIAbility {
     PersistentStorage.persistProp('searchExploreExactSearch', false);
     PersistentStorage.persistProp('searchExploreExactSearchMatchAuthor', true);
     PersistentStorage.persistProp('searchExploreShowSearchProgress', true);
-    PersistentStorage.persistProp('searchExploreSearchConcurrency', 8);
+    PersistentStorage.persistProp('searchExploreSearchConcurrency', 6);
     PersistentStorage.persistProp('searchExploreSelectedSourceGroups', '');
     PersistentStorage.persistProp('searchExploreSourceSort', '');
     PersistentStorage.persistProp('bookSourceOrderRevision', 0);
@@ -305,8 +306,11 @@ export default class EntryAbility extends UIAbility {
 
   onBackground(): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onBackground');
-    CloudSyncCoordinator.syncAutomatically(
-      this.context, CloudSyncCoordinator.TRIGGER_BACKGROUND).catch((e: Error) => {
+    ReaderProgressCheckpoint.request('ability-background').then(() => {
+      // Keep the background upload behind the local checkpoint so it cannot publish a stale page number.
+      return CloudSyncCoordinator.syncAutomatically(
+        this.context, CloudSyncCoordinator.TRIGGER_BACKGROUND);
+    }).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Background cloud sync failed: %{public}s', JSON.stringify(e));
     });
   }

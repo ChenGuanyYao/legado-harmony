@@ -5,6 +5,7 @@ import { AppDatabase } from '../../model/data/AppDatabase';
 import { CookieStore } from '../http/CookieStore';
 import { HttpClient, HttpResponse } from '../http/HttpClient';
 import { AnalyzeUrl } from '../rule/AnalyzeUrl';
+import { SourceRuntimeStage } from './BookSourceRuntimeRouter';
 
 export class StageWebRuntimeRequest {
   source: BookSource = new BookSource();
@@ -19,7 +20,40 @@ export class StageWebRuntimeRequest {
   networkTimeoutMs: number = 20000;
   maxResponseBytes: number = 8 * 1024 * 1024;
   maxTotalResponseBytes: number = 16 * 1024 * 1024;
+  maxInputBytes: number = 20 * 1024 * 1024;
+  maxRequestCount: number = 12;
+  stage: string = SourceRuntimeStage.URL;
   ownerId: string = '';
+
+  applyStageBudget(stage: string): void {
+    this.stage = stage || SourceRuntimeStage.URL;
+    if (this.stage === SourceRuntimeStage.SEARCH || this.stage === SourceRuntimeStage.EXPLORE) {
+      this.maxResponseBytes = 2 * 1024 * 1024;
+      this.maxTotalResponseBytes = 4 * 1024 * 1024;
+      this.maxInputBytes = 8 * 1024 * 1024;
+      this.maxRequestCount = 6;
+    } else if (this.stage === SourceRuntimeStage.BOOK_INFO) {
+      this.maxResponseBytes = 4 * 1024 * 1024;
+      this.maxTotalResponseBytes = 6 * 1024 * 1024;
+      this.maxInputBytes = 12 * 1024 * 1024;
+      this.maxRequestCount = 8;
+    } else if (this.stage === SourceRuntimeStage.TOC) {
+      this.maxResponseBytes = 4 * 1024 * 1024;
+      this.maxTotalResponseBytes = 8 * 1024 * 1024;
+      this.maxInputBytes = 16 * 1024 * 1024;
+      this.maxRequestCount = 8;
+    } else if (this.stage === SourceRuntimeStage.CONTENT) {
+      this.maxResponseBytes = 6 * 1024 * 1024;
+      this.maxTotalResponseBytes = 10 * 1024 * 1024;
+      this.maxInputBytes = 20 * 1024 * 1024;
+      this.maxRequestCount = 8;
+    } else {
+      this.maxResponseBytes = 2 * 1024 * 1024;
+      this.maxTotalResponseBytes = 4 * 1024 * 1024;
+      this.maxInputBytes = 8 * 1024 * 1024;
+      this.maxRequestCount = 4;
+    }
+  }
 }
 
 export class StageWebRuntimeResult {
@@ -52,6 +86,7 @@ class StageWebRuntimeCookieOperation {
 
 class StageWebRuntimeTask {
   request: StageWebRuntimeRequest = new StageWebRuntimeRequest();
+  estimatedBytes: number = 0;
   resolve: ((value: StageWebRuntimeResult) => void) | null = null;
   reject: ((reason: Error) => void) | null = null;
 }
@@ -61,19 +96,30 @@ class StageWebRuntimeTask {
  * network/cookie side effect is replayed through the native bridge before a result is accepted.
  */
 export class BookSourceStageWebRuntime {
+  private static readonly MAX_QUEUED_TASKS: number = 16;
+  private static readonly MAX_QUEUED_BYTES: number = 24 * 1024 * 1024;
+  private static readonly MAX_CACHE_SOURCES: number = 24;
+  private static readonly MAX_CACHE_ENTRIES_PER_SOURCE: number = 128;
+  private static readonly MAX_CACHE_BYTES_PER_SOURCE: number = 512 * 1024;
+  private static readonly MAX_CACHE_BYTES_TOTAL: number = 4 * 1024 * 1024;
+  private static readonly RECYCLE_TASK_INTERVAL: number = 40;
   private static instance: BookSourceStageWebRuntime | null = null;
   private controller: webview.WebviewController | null = null;
   private controllers: webview.WebviewController[] = [];
   private readyControllers: Set<webview.WebviewController> = new Set<webview.WebviewController>();
   private ready: boolean = false;
   private tasks: StageWebRuntimeTask[] = [];
+  private queuedBytes: number = 0;
   private running: boolean = false;
   private activeTask: StageWebRuntimeTask | null = null;
   private activeHttpClient: HttpClient | null = null;
   private cancelledOwners: Set<string> = new Set<string>();
   private caches: Record<string, Record<string, string>> = {};
+  private cacheTouchedAt: Record<string, number> = {};
   private resetHandler: (() => void) | null = null;
+  private resetHandlerController: webview.WebviewController | null = null;
   private resetRequested: boolean = false;
+  private completedTaskCount: number = 0;
 
   static get(): BookSourceStageWebRuntime {
     if (!BookSourceStageWebRuntime.instance) {
@@ -82,8 +128,16 @@ export class BookSourceStageWebRuntime {
     return BookSourceStageWebRuntime.instance;
   }
 
-  setResetHandler(handler: (() => void) | null): void {
+  setResetHandler(handler: (() => void) | null,
+    controller: webview.WebviewController | null = this.controller): void {
     this.resetHandler = handler;
+    this.resetHandlerController = handler ? controller : null;
+  }
+
+  clearResetHandler(controller: webview.WebviewController): void {
+    if (this.resetHandlerController !== controller) return;
+    this.resetHandler = null;
+    this.resetHandlerController = null;
   }
 
   attach(controller: webview.WebviewController): void {
@@ -92,6 +146,7 @@ export class BookSourceStageWebRuntime {
     this.controller = controller;
     this.ready = this.readyControllers.has(controller);
     this.resetRequested = false;
+    this.completedTaskCount = 0;
   }
 
   setReady(ready: boolean, controller: webview.WebviewController | null = null): void {
@@ -133,11 +188,25 @@ export class BookSourceStageWebRuntime {
         reject(new Error('书源脚本任务已取消'));
         return;
       }
+      const estimatedBytes = this.estimateRequestBytes(request);
+      const inputLimit = Math.max(256 * 1024,
+        Math.min(request.maxInputBytes || 20 * 1024 * 1024, 24 * 1024 * 1024));
+      if (estimatedBytes > inputLimit) {
+        reject(new Error(`书源脚本输入过大(${Math.ceil(estimatedBytes / 1024)} KiB)`));
+        return;
+      }
+      if (this.tasks.length >= BookSourceStageWebRuntime.MAX_QUEUED_TASKS ||
+        this.queuedBytes + estimatedBytes > BookSourceStageWebRuntime.MAX_QUEUED_BYTES) {
+        reject(new Error('书源脚本队列繁忙，请稍后重试'));
+        return;
+      }
       const task = new StageWebRuntimeTask();
       task.request = request;
+      task.estimatedBytes = estimatedBytes;
       task.resolve = resolve;
       task.reject = reject;
       this.tasks.push(task);
+      this.queuedBytes += estimatedBytes;
       this.startNext();
     });
   }
@@ -148,6 +217,7 @@ export class BookSourceStageWebRuntime {
     const remaining: StageWebRuntimeTask[] = [];
     for (const task of this.tasks) {
       if (task.request.ownerId === ownerId) {
+        this.queuedBytes = Math.max(0, this.queuedBytes - task.estimatedBytes);
         if (task.reject) task.reject(new Error('书源脚本任务已取消'));
       } else {
         remaining.push(task);
@@ -167,6 +237,7 @@ export class BookSourceStageWebRuntime {
     if (this.running || !this.controller || !this.ready || this.tasks.length === 0) return;
     const task = this.tasks.shift();
     if (!task) return;
+    this.queuedBytes = Math.max(0, this.queuedBytes - task.estimatedBytes);
     this.running = true;
     this.activeTask = task;
     this.executeTask(task.request)
@@ -180,6 +251,8 @@ export class BookSourceStageWebRuntime {
         this.activeTask = null;
         this.activeHttpClient = null;
         this.running = false;
+        this.completedTaskCount++;
+        if (this.maybeRecycleController()) return;
         this.startNext();
       });
   }
@@ -229,9 +302,9 @@ export class BookSourceStageWebRuntime {
       } catch (_) {
         cacheState = {};
       }
-      this.caches[sourceKey] = cacheState;
+      cacheState = this.storeCache(sourceKey, cacheState);
       request.source.loginInfo = this.mergeRuntimeState(request.source.loginInfo || '',
-        step.javaState, step.sourceState, cacheState);
+        step.javaState, step.sourceState);
       this.applyCookieOperations(step.cookieOperations, appliedOperations);
       if (step.pendingCookie) {
         cookies[step.pendingCookie] = CookieStore.getCookie(step.pendingCookie);
@@ -239,7 +312,8 @@ export class BookSourceStageWebRuntime {
       }
       if (step.pendingAjax) {
         requestCount++;
-        if (requestCount > 12) throw new Error('书源脚本网络请求次数过多');
+        const requestLimit = Math.max(1, Math.min(request.maxRequestCount || 12, 12));
+        if (requestCount > requestLimit) throw new Error('书源脚本网络请求次数过多');
         const response = await this.fetch(request, step.pendingAjax);
         this.ensureNotCancelled(request);
         if (!response.success && response.statusCode === 0) {
@@ -249,7 +323,9 @@ export class BookSourceStageWebRuntime {
         // ArkTS/ArkWeb exchange response bodies as UTF-16 strings. Count their in-memory
         // footprint instead of only character count so the cumulative guard remains useful.
         totalResponseBytes += responseBody.length * 2;
-        const totalLimit = Math.max(request.maxResponseBytes,
+        const responseLimit = Math.max(64 * 1024,
+          Math.min(request.maxResponseBytes || 8 * 1024 * 1024, 8 * 1024 * 1024));
+        const totalLimit = Math.max(responseLimit,
           Math.min(request.maxTotalResponseBytes || 16 * 1024 * 1024, 16 * 1024 * 1024));
         if (totalResponseBytes > totalLimit) {
           throw new Error('书源脚本累计响应过大');
@@ -266,7 +342,7 @@ export class BookSourceStageWebRuntime {
         request.source.loginHeader = request.source.loginHeader || persistedBeforeSave.loginHeader || '';
         request.source.loginInfo = this.mergeRuntimeState(
           persistedBeforeSave.loginInfo || request.source.loginInfo || '',
-          step.javaState, step.sourceState, cacheState);
+          step.javaState, step.sourceState);
       }
       await AppDatabase.getInstance().updateBookSourceLoginRuntime(request.source.bookSourceUrl,
         request.source.variable || '', request.source.loginHeader || '', request.source.loginInfo || '');
@@ -329,10 +405,100 @@ export class BookSourceStageWebRuntime {
       this.controller = this.controllers.length > 0 ? this.controllers[this.controllers.length - 1] : null;
       this.ready = !!this.controller && this.readyControllers.has(this.controller);
     }
-    if (this.ready || this.resetRequested || !this.resetHandler) return;
+    if (this.ready || this.resetRequested || !this.resetHandler ||
+      this.resetHandlerController !== controller) return;
     this.resetRequested = true;
     console.warn('[StageWebRuntime] reset requested:', reason);
     this.resetHandler();
+  }
+
+  private maybeRecycleController(): boolean {
+    if (this.completedTaskCount < BookSourceStageWebRuntime.RECYCLE_TASK_INTERVAL ||
+      this.resetRequested || !this.controller || !this.resetHandler ||
+      this.resetHandlerController !== this.controller) {
+      return false;
+    }
+    const controller = this.controller;
+    const handler = this.resetHandler;
+    this.readyControllers.delete(controller);
+    this.controllers = this.controllers.filter((item: webview.WebviewController): boolean => item !== controller);
+    this.controller = this.controllers.length > 0 ? this.controllers[this.controllers.length - 1] : null;
+    this.ready = !!this.controller && this.readyControllers.has(this.controller);
+    this.resetRequested = true;
+    this.completedTaskCount = 0;
+    console.info('[StageWebRuntime] recycle requested after task budget');
+    handler();
+    return true;
+  }
+
+  private estimateRequestBytes(request: StageWebRuntimeRequest): number {
+    let total = this.utf16Bytes(request.content);
+    if (request.contextContent && request.contextContent !== request.content) {
+      total += this.utf16Bytes(request.contextContent);
+    }
+    total += this.utf16Bytes(request.code);
+    total += this.utf16Bytes(request.source.jsLib);
+    total += this.utf16Bytes(request.source.header);
+    total += this.utf16Bytes(request.source.loginHeader);
+    total += this.utf16Bytes(request.source.loginInfo);
+    total += this.utf16Bytes(request.source.variable);
+    try {
+      total += this.utf16Bytes(JSON.stringify(request.variables || {}));
+    } catch (_) {}
+    return total;
+  }
+
+  private utf16Bytes(value: string): number {
+    return (value || '').length * 2;
+  }
+
+  private storeCache(sourceKey: string, rawState: Record<string, string>): Record<string, string> {
+    const state: Record<string, string> = {};
+    const keys = Object.keys(rawState || {});
+    const selectedKeys: string[] = [];
+    let bytes = 0;
+    for (let i = keys.length - 1; i >= 0 &&
+      selectedKeys.length < BookSourceStageWebRuntime.MAX_CACHE_ENTRIES_PER_SOURCE; i--) {
+      const key = keys[i];
+      const value = String(rawState[key] || '');
+      const entryBytes = this.utf16Bytes(key) + this.utf16Bytes(value);
+      if (entryBytes > BookSourceStageWebRuntime.MAX_CACHE_BYTES_PER_SOURCE ||
+        bytes + entryBytes > BookSourceStageWebRuntime.MAX_CACHE_BYTES_PER_SOURCE) {
+        continue;
+      }
+      selectedKeys.unshift(key);
+      bytes += entryBytes;
+    }
+    for (const key of selectedKeys) state[key] = String(rawState[key] || '');
+    this.caches[sourceKey] = state;
+    this.cacheTouchedAt[sourceKey] = Date.now();
+    this.pruneCaches();
+    return this.caches[sourceKey] || {};
+  }
+
+  private pruneCaches(): void {
+    const sourceKeys = Object.keys(this.caches);
+    sourceKeys.sort((left: string, right: string): number =>
+      (this.cacheTouchedAt[left] || 0) - (this.cacheTouchedAt[right] || 0));
+    let totalBytes = 0;
+    const sizes: Record<string, number> = {};
+    for (const sourceKey of sourceKeys) {
+      let sourceBytes = 0;
+      const state = this.caches[sourceKey] || {};
+      for (const key of Object.keys(state)) {
+        sourceBytes += this.utf16Bytes(key) + this.utf16Bytes(String(state[key] || ''));
+      }
+      sizes[sourceKey] = sourceBytes;
+      totalBytes += sourceBytes;
+    }
+    while (sourceKeys.length > BookSourceStageWebRuntime.MAX_CACHE_SOURCES ||
+      totalBytes > BookSourceStageWebRuntime.MAX_CACHE_BYTES_TOTAL) {
+      const oldest = sourceKeys.shift();
+      if (!oldest) break;
+      totalBytes = Math.max(0, totalBytes - (sizes[oldest] || 0));
+      delete this.caches[oldest];
+      delete this.cacheTouchedAt[oldest];
+    }
   }
 
   private buildScript(request: StageWebRuntimeRequest, responses: Record<string, string>,
@@ -341,6 +507,8 @@ export class BookSourceStageWebRuntime {
     const loginInfo = this.parseLoginInfo(request.source.loginInfo || '');
     const javaState = this.parseRuntimeJavaState(request.source.loginInfo || '');
     const sourceState = this.parseRuntimeObjectState(request.source.loginInfo || '', 'source');
+    const contextContent = request.contextContent && request.contextContent !== request.content ?
+      request.contextContent : '';
     const state = JSON.stringify({
       sourceUrl: request.source.bookSourceUrl || '',
       sourceName: request.source.bookSourceName || '',
@@ -348,7 +516,7 @@ export class BookSourceStageWebRuntime {
       sourceLoginHeader: request.source.loginHeader || '',
       variable: request.source.variable || '',
       content: request.content || '',
-      contextContent: request.contextContent || request.content || '',
+      contextContent: contextContent,
       baseUrl: request.baseUrl || request.source.bookSourceUrl || '',
       variables: request.variables || {},
       bookVariables: bookVariables,
@@ -397,7 +565,7 @@ export class BookSourceStageWebRuntime {
       `function hexD(v){try{v=String(v??'').replace(/\\s+/g,'');const a=[];for(let i=0;i<v.length;i+=2)` +
       `a.push(parseInt(v.substring(i,i+2),16));return new TextDecoder().decode(new Uint8Array(a));}catch(e){return '';}}` +
       `function hexE(v){return bytes(v).map(function(x){return Number(x).toString(16).padStart(2,'0');}).join('');}` +
-      `let contextValue=S.contextContent;function pathValue(path){try{let value=typeof contextValue==='string'?JSON.parse(contextValue):contextValue;` +
+      `let contextValue=S.contextContent||S.content;function pathValue(path){try{let value=typeof contextValue==='string'?JSON.parse(contextValue):contextValue;` +
       `const parts=String(path??'').replace(/^\\$\\.?/,'').split('.').filter(Boolean);for(const p of parts){` +
       `if(value===null||value===undefined)return '';value=value[p];}return value===null||value===undefined?'':value;}catch(e){return '';}}` +
       `const cookieData=Object.assign({},S.cookies||{});const cookie={getCookie:function(k){k=String(k??'');` +
@@ -609,8 +777,7 @@ export class BookSourceStageWebRuntime {
     }
   }
 
-  private mergeRuntimeState(raw: string, javaStateRaw: string, sourceStateRaw: string,
-    cacheState: Record<string, string>): string {
+  private mergeRuntimeState(raw: string, javaStateRaw: string, sourceStateRaw: string): string {
     let loginInfo: Record<string, Object> = {};
     try {
       const parsed = JSON.parse(raw || '{}') as Object;
@@ -628,7 +795,9 @@ export class BookSourceStageWebRuntime {
     } catch (_) {}
     runtime['java'] = this.parseObjectState(javaStateRaw);
     runtime['source'] = this.parseObjectState(sourceStateRaw);
-    runtime['cache'] = cacheState;
+    // Script cache is a bounded in-memory acceleration structure. Persisting it inside loginInfo
+    // duplicated potentially large values in the database and in every later runtime request.
+    delete runtime['cache'];
     loginInfo['__legadoHarmonyRuntime'] = JSON.stringify(runtime);
     return JSON.stringify(loginInfo);
   }

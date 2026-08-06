@@ -11,7 +11,7 @@ import fs from '@ohos.file.fs';
 import fileUri from '@ohos.file.fileuri';
 import commonEventManager from '@ohos.commonEventManager';
 import { HdsTabs, hdsMaterial } from '@kit.UIDesignKit';
-import { Book, BookChapter, BookGroup, BookSource, SearchBook } from '../model/data/Book';
+import { Book, BookChapter, BookGroup, BookSource, SearchBook, SearchKeyword } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { SearchCoordinator, SearchCallback, SearchProgress } from '../core/book/SearchCoordinator';
 import { ExploreCoordinator, ExploreEntry, ExploreSourceOption } from '../core/book/ExploreCoordinator';
@@ -222,7 +222,8 @@ struct Index {
 
   aboutToAppear() {
     this.shortcutRoutingActive = true;
-    BookSourceStageWebRuntime.get().setResetHandler((): void => this.resetStageRuntimeHost());
+    BookSourceStageWebRuntime.get().setResetHandler((): void => this.resetStageRuntimeHost(),
+      this.stageRuntimeController);
     hilog.info(0x0000, 'testTag', 'StartupTrace Index aboutToAppear %{public}d', Date.now());
     this.syncHomeSystemBars();
     this.openPendingShortcut();
@@ -251,7 +252,7 @@ struct Index {
   }
 
   aboutToDisappear(): void {
-    BookSourceStageWebRuntime.get().setResetHandler(null);
+    BookSourceStageWebRuntime.get().clearResetHandler(this.stageRuntimeController);
     BookSourceStageWebRuntime.get().detach(this.stageRuntimeController);
   }
 
@@ -454,6 +455,8 @@ struct Index {
           .mixedMode(MixedMode.All)
           .onControllerAttached(() => {
             BookSourceStageWebRuntime.get().attach(this.stageRuntimeController);
+            BookSourceStageWebRuntime.get().setResetHandler((): void => this.resetStageRuntimeHost(),
+              this.stageRuntimeController);
           })
           .onPageBegin(() => {
             BookSourceStageWebRuntime.get().setReady(false, this.stageRuntimeController);
@@ -1664,7 +1667,7 @@ struct BookshelfPage {
     this.shelfChangeSourceSwitching = false;
     this.showShelfChangeSourceDialog = true;
     try {
-      const cached = await ChangeSourceResultCache.load(getContext(this), book.name);
+      const cached = await ChangeSourceResultCache.load(getContext(this), book.name, book.author);
       if (!this.isShelfChangeSourceSessionActive(sessionId)) return;
       this.shelfChangeSourceResults = this.filterShelfChangeSourceResults(cached, book.bookUrl, book.origin);
       if (this.shelfChangeSourceResults.length > 0) {
@@ -1704,7 +1707,7 @@ struct BookshelfPage {
     const target = this.shelfChangeSourceTarget;
     if (!target) return;
     const cacheBookName = target.name;
-    const coordinator = new SearchCoordinator(SearchExploreSettingsStore.getSearchConcurrency());
+    const coordinator = new SearchCoordinator(Math.min(2, SearchExploreSettingsStore.getSearchConcurrency()));
     this.activeShelfChangeSourceCoordinator = coordinator;
     this.shelfChangeSourceSearching = true;
     this.shelfChangeSourceStatus = '正在搜索可用书源...';
@@ -1720,13 +1723,21 @@ struct BookshelfPage {
         }
         this.shelfChangeSourceStatus = progress.status;
         if (progress.finished) this.shelfChangeSourceSearching = false;
-      }, { exactMatch: true });
+      }, {
+        exactMatch: true,
+        leanResult: true,
+        excludeSourceUrls: [target.origin],
+        maxResultsPerSource: 1,
+        maxTotalResults: 60,
+        stopAfterResults: 20,
+        maxCandidatesPerSource: 32
+      });
       if (!this.isShelfChangeSourceSessionActive(sessionId)) return;
       this.shelfChangeSourceResults = this.filterShelfChangeSourceResults(results, target.bookUrl, target.origin);
       this.shelfChangeSourceStatus = this.shelfChangeSourceResults.length > 0 ?
         `搜索完成，找到 ${this.shelfChangeSourceResults.length} 个可切换书源` : '搜索完成，未找到可切换书源';
       try {
-        await ChangeSourceResultCache.save(getContext(this), cacheBookName, results);
+        await ChangeSourceResultCache.save(getContext(this), cacheBookName, results, target.author);
       } catch (e) {
         console.warn('保存书架换源结果失败:', e);
       }
@@ -1757,11 +1768,13 @@ struct BookshelfPage {
 
   filterShelfChangeSourceResults(results: SearchBook[], currentBookUrl: string, currentOrigin: string): SearchBook[] {
     const filtered: SearchBook[] = [];
+    const seen = new Set<string>();
     for (const result of results) {
       if (!result.bookUrl || (result.bookUrl === currentBookUrl && result.origin === currentOrigin)) continue;
-      if (!filtered.some((item: SearchBook) => item.bookUrl === result.bookUrl && item.origin === result.origin)) {
-        filtered.push(result);
-      }
+      const key = `${result.origin || ''}\n${result.bookUrl}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      filtered.push(result);
     }
     return filtered;
   }
@@ -1793,6 +1806,7 @@ struct BookshelfPage {
       this.preserveShelfSourceBookState(fullBook, nextBook, oldBook);
       const chapters = await service.getChapterList(source, fullBook);
       if (!this.isShelfChangeSourceSessionActive(sessionId)) return;
+      if (chapters.length === 0) throw new Error('新书源目录为空，已保留原书源');
       fullBook.totalChapterNum = chapters.length;
       if (chapters.length > 0) {
         const safeIndex = Math.max(0, Math.min(oldBook.durChapterIndex, chapters.length - 1));
@@ -1801,18 +1815,7 @@ struct BookshelfPage {
         fullBook.latestChapterTitle = chapters[chapters.length - 1].title;
       }
 
-      if (oldBookUrl !== fullBook.bookUrl) {
-        const existing = await db.getBook(fullBook.bookUrl);
-        if (existing) await db.deleteBook(existing.bookUrl);
-        await db.moveBookBookmarks(oldBookUrl, fullBook.bookUrl, fullBook.name, fullBook.author);
-        await db.deleteBook(oldBookUrl);
-        await db.insertBook(fullBook);
-      } else {
-        await db.updateBook(fullBook);
-        await db.deleteBookChapters(fullBook.bookUrl);
-        await db.deleteBookCachedContent(fullBook.bookUrl);
-      }
-      if (chapters.length > 0) await db.insertBookChapters(chapters);
+      await db.commitBookSourceSwitch(oldBookUrl, fullBook, chapters);
 
       this.closeShelfChangeSource();
       AppStorage.setOrCreate('shelfUpdateTime', Date.now());
@@ -7189,6 +7192,7 @@ struct ExplorePage {
   @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
   @StorageLink('readerActiveFontFamily') readerActiveFontFamily: string = '';
   private coordinator: ExploreCoordinator = new ExploreCoordinator();
+  private exploreSourceScroller: Scroller = new Scroller();
   private hasLoaded: boolean = false;
   private hasRestoredExploreSelection: boolean = false;
   private shelfStatusVersion: number = 0;
@@ -7779,7 +7783,7 @@ struct ExplorePage {
     Column() {
       this.exploreSourceGroupBar()
 
-      Scroll() {
+      Scroll(this.exploreSourceScroller) {
         Column() {
           if (this.getFilteredExploreSourceOptions().length === 0) {
             Text(this.activeExploreSourceGroup === '__all__' ? '没有匹配的书源' : '当前分组没有匹配的书源')
@@ -7849,6 +7853,9 @@ struct ExplorePage {
       .width('100%')
       .constraintSize({ maxHeight: 320 })
       .scrollBar(BarState.Auto)
+      .onAppear(() => {
+        setTimeout(() => this.scrollExploreSourceToCurrent(), 0);
+      })
     }
     .width(this.exploreSourceDropdownWidth())
     .padding(8)
@@ -7880,6 +7887,21 @@ struct ExplorePage {
 
       Column() {
         Row() {
+          SymbolGlyph($r('sys.symbol.arrow_right_up_and_square'))
+            .fontSize(19)
+            .fontColor([this.primaryTextColor()])
+            .width(34)
+          Text('登录')
+            .fontSize(15)
+            .fontColor(this.primaryTextColor())
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(44)
+        .padding({ left: 10, right: 10 })
+        .onClick(() => this.loginActionExploreSource())
+
+        Row() {
           SymbolGlyph($r('sys.symbol.square_and_pencil'))
             .fontSize(19)
             .fontColor([this.primaryTextColor()])
@@ -7904,7 +7926,7 @@ struct ExplorePage {
       .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'),
         color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'),
         offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-      .position({ x: this.exploreContextMenuLeft(132), y: this.exploreContextMenuTop(56) })
+      .position({ x: this.exploreContextMenuLeft(132), y: this.exploreContextMenuTop(100) })
     }
     .width('100%')
     .height('100%')
@@ -7976,6 +7998,22 @@ struct ExplorePage {
     this.showExploreSourcePicker = true;
   }
 
+  scrollExploreSourceToCurrent(): void {
+    if (!this.showExploreSourcePicker || !this.selectedSourceUrl) return;
+    const options = this.getFilteredExploreSourceOptions();
+    const selectedIndex = options.findIndex((option: ExploreSourceOption) =>
+      option.sourceUrl === this.selectedSourceUrl);
+    if (selectedIndex < 0) return;
+    const rowHeight = 44;
+    const visibleHeight = 320;
+    const targetOffset = Math.max(0, selectedIndex * rowHeight - (visibleHeight - rowHeight) / 2);
+    try {
+      this.exploreSourceScroller.scrollTo({ xOffset: 0, yOffset: targetOffset, animation: false });
+    } catch (error) {
+      console.warn('定位当前发现书源失败:', error);
+    }
+  }
+
   toggleExploreSourcePicker(): void {
     if (this.showExploreSourcePicker) {
       this.showExploreSourcePicker = false;
@@ -8004,8 +8042,6 @@ struct ExplorePage {
       this.exploreContextMenuY = finger.globalY;
     }
     this.actionExploreSourceUrl = option.sourceUrl;
-    this.showExploreSourcePicker = false;
-    this.clearExploreSourceFilter();
     this.showExploreSourceActionMenu = true;
   }
 
@@ -8021,6 +8057,16 @@ struct ExplorePage {
     router.pushUrl({
       url: 'pages/BookSourceEdit',
       params: { bookSourceUrl: sourceUrl }
+    });
+  }
+
+  loginActionExploreSource(): void {
+    const sourceUrl = this.actionExploreSourceUrl;
+    if (!sourceUrl) return;
+    this.closeExploreSourceActions();
+    router.pushUrl({
+      url: 'pages/BookSource',
+      params: { openLoginSourceUrl: sourceUrl }
     });
   }
 
@@ -8845,11 +8891,6 @@ struct SearchPage {
         targetSources.push(targetSource);
       }
 
-      // 点击搜索后立即保存，不再等待搜索任务完成。
-      await db.saveSearchKeyword(keyword);
-      const keywords = await db.getSearchKeywords();
-      this.searchHistory = keywords.map(k => k.keyword);
-
       this.isSearching = true;
       this.showResult = true;
       this.searchResults = [];
@@ -8863,6 +8904,7 @@ struct SearchPage {
       const coordinator = new SearchCoordinator(SearchExploreSettingsStore.getSearchConcurrency());
       activeCoordinator = coordinator;
       this.coordinator = coordinator;
+      this.saveSearchHistoryLater(db, keyword);
 
       const callback: SearchCallback = (p: SearchProgress) => {
         if (sessionId !== this.searchSessionId || this.coordinator !== coordinator) {
@@ -8914,6 +8956,16 @@ struct SearchPage {
       if (sessionId === this.searchSessionId && this.coordinator === activeCoordinator && !this.isSearching) {
         this.coordinator = null;
       }
+    }
+  }
+
+  async saveSearchHistoryLater(db: AppDatabase, keyword: string): Promise<void> {
+    try {
+      await db.saveSearchKeyword(keyword);
+      const keywords = await db.getSearchKeywords();
+      this.searchHistory = keywords.map((item: SearchKeyword): string => item.keyword);
+    } catch (error) {
+      console.warn('保存搜索历史失败:', error);
     }
   }
 

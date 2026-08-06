@@ -75,7 +75,7 @@ export class LocalBookService {
   static readonly EPUB_IMAGE_MARKER_PREFIX: string = ReaderImageMarker.PREFIX;
   static readonly EPUB_IMAGE_MARKER_SUFFIX: string = ReaderImageMarker.SUFFIX;
 
-  private static readonly TXT_PARSER_VERSION: string = '8';
+  private static readonly TXT_PARSER_VERSION: string = '10';
   private static readonly EPUB_PARSER_VERSION: string = '8';
   private static readonly TXT_READ_CHUNK_BYTES: number = 256 * 1024;
   private static readonly TXT_MAX_CHAPTER_CHARS: number = 32 * 1024;
@@ -85,13 +85,19 @@ export class LocalBookService {
   private static readonly TXT_RULE_TOP_LEVEL: string =
     '^(?:扉页|正文|目录|[序引前楔][言子]?|(?:内容|文章|书籍|作品|作者)?简介|作品相关|后记|尾声|' +
     '卷[首尾末](?:语|总结|感言)|最?[上中下序引终末][章卷篇幕回节册季话集]|' +
-    '(?:第\\s*)?[\\dO零〇一两二三四五六七八九十百千万壹贰叁肆伍陆柒捌玖拾佰仟萬]{1,12}\\s*' +
+    '第\\s*[\\dO零〇一两二三四五六七八九十百千万壹贰叁肆伍陆柒捌玖拾佰仟萬]{1,12}\\s*' +
     '[章卷页季回幕册话段篇节集部](?:\\s+|[：:、._—-]\\s*)?.{0,30}|' +
+    '[\\dO零〇一两二三四五六七八九十百千万壹贰叁肆伍陆柒捌玖拾佰仟萬]{1,12}\\s*' +
+    '[章卷页季回幕册话段篇节集部](?:(?:\\s+|[：:、._—-]\\s*).{1,30})?|' +
     '[章卷篇节幕回册话段季集部]\\s*[\\dO零〇一两二三四五六七八九十百千万壹贰叁肆伍陆柒捌玖拾佰仟萬]{1,12}' +
     '(?:\\s+|[：:、._—-]\\s*)?.{0,30}|' +
     '[\\dO零〇一两二三四五六七八九十百千万壹贰叁肆伍陆柒捌玖拾佰仟萬]{1,12}\\s*[｜、_|：:；;–.·—-]\\s*' +
     '[^\\s].{0,30}|(?:chapter|part|volume|book)\\s+[0-9ivxlcdm]+(?:\\s+|[：:._—-]\\s*)?.{0,30}|' +
     '[-·.–—_*＊~～=]{2,}\\s*.{1,35}\\s*[-·.–—_*＊~～=]{2,})$';
+  private static readonly TXT_RULE_PUNCTUATION_ONLY: string =
+    '^[\\s\\u0000-\\u001F\\u007F-\\u009F\\x21-\\x2F\\x3A-\\x40\\x5B-\\x60\\x7B-\\x7E' +
+    '\\u2000-\\u206F\\u2100-\\u2BFF\\u2E00-\\u2E7F\\u3000-\\u303F\\uFE10-\\uFE1F' +
+    '\\uFE30-\\uFE4F\\uFF01-\\uFF0F\\uFF1A-\\uFF20\\uFF3B-\\uFF40\\uFF5B-\\uFF65]+$';
 
   static isLocalBook(book: Book): boolean {
     return book.origin === LocalBookService.ORIGIN;
@@ -548,6 +554,7 @@ export class LocalBookService {
     charset: string, bookName: string, bookAuthor: string): Promise<LocalTxtImportResult> {
     const result = new LocalTxtImportResult();
     const titleRegex = new RegExp(LocalBookService.TXT_RULE_TOP_LEVEL, 'i');
+    const punctuationOnlyRegex = new RegExp(LocalBookService.TXT_RULE_PUNCTUATION_ONLY);
     let currentTitle = '';
     let currentPart = 1;
     let currentHasPersisted = false;
@@ -614,8 +621,9 @@ export class LocalBookService {
 
     const consumeLine = async (rawLine: string, forceBody: boolean = false): Promise<void> => {
       const line = rawLine.endsWith('\r') ? rawLine.substring(0, rawLine.length - 1) : rawLine;
-      const candidate = line.trim();
-      if (!forceBody && candidate && candidate.length <= 50 && titleRegex.test(candidate)) {
+      const candidate = LocalBookService.normalizeTxtChapterCandidate(line);
+      if (!forceBody && LocalBookService.isTxtChapterTitleCandidate(candidate, titleRegex,
+        punctuationOnlyRegex)) {
         await persistCurrent(true);
         currentTitle = candidate;
         currentPart = 1;
@@ -677,6 +685,18 @@ export class LocalBookService {
       await fs.close(file);
     }
     return result;
+  }
+
+  private static normalizeTxtChapterCandidate(value: string): string {
+    // trim() does not remove zero-width characters. Treat formatting-only lines as
+    // blank before applying the chapter-title grammar.
+    return (value || '').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').trim();
+  }
+
+  private static isTxtChapterTitleCandidate(candidate: string, titleRegex: RegExp,
+    punctuationOnlyRegex: RegExp): boolean {
+    if (!candidate || candidate.length > 50 || punctuationOnlyRegex.test(candidate)) return false;
+    return titleRegex.test(candidate);
   }
 
   private static appendContentIntro(currentIntro: string, content: string, chapterTitle: string = '',

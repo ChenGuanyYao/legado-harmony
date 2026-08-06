@@ -18,6 +18,7 @@ import { BookSourceShuqiSupport } from './BookSourceShuqiSupport';
 import { RuleExecutionService } from '../rule/RuleExecutionService';
 import { RuleBatchExecutionRequest, RuleBatchExecutionResult, RuleFieldRequest } from '../rule/RuleExecutionModels';
 import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
+import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
 
 export interface ExploreEntry {
   title: string;
@@ -208,13 +209,13 @@ export class ExploreCoordinator {
         book.author = fieldValues['author'] || '';
         book.coverUrl = BookSourceDataUrlSupport.normalizeCoverUrlFromItem(source,
           fieldValues['coverUrl'] || '', item, baseUrl);
-        book.intro = fieldValues['intro'] || '';
+        book.intro = BookFieldSanitizer.clean(fieldValues['intro'] || '');
         book.kind = fieldValues['kind'] || '';
         book.latestChapterTitle = fieldValues['lastChapter'] || '';
         book.wordCount = fieldValues['wordCount'] || '';
         book.bookUrl = BookUrlResolver.resolve(fieldValues['bookUrl'] || '', baseUrl);
         book.variable = itemIndex < fieldBatch.contextValues.length ? fieldBatch.contextValues[itemIndex] :
-          ir.getContext().toJson();
+          ir.getContext().toPersistentJson();
         book.origin = source.bookSourceUrl;
         book.originName = source.bookSourceName;
         BookTypeSupport.applySearchBookType(book, source);
@@ -307,6 +308,7 @@ export class ExploreCoordinator {
     if (!runtime.isAvailable()) await runtime.waitUntilAvailable(1000);
     if (runtime.isAvailable()) {
       const request = new StageWebRuntimeRequest();
+      request.applyStageBudget(SourceRuntimeStage.EXPLORE);
       request.source = source;
       request.code = code;
       request.baseUrl = source.bookSourceUrl;
@@ -512,6 +514,7 @@ export class ExploreCoordinator {
     if (requiresStageRuntime && !runtime.isAvailable()) await runtime.waitUntilAvailable(1000);
     if (requiresStageRuntime && runtime.isAvailable()) {
       const request = new StageWebRuntimeRequest();
+      request.applyStageBudget(SourceRuntimeStage.EXPLORE);
       request.source = source;
       request.baseUrl = source.bookSourceUrl;
       request.variables = { page: String(page), pageIndex: String(page) };

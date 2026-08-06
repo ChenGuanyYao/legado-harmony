@@ -92,7 +92,9 @@ export class RuleExecutionService {
           this.throwIfDeadlineExceeded(deadlineAt, request.stage);
         }
         result.values.push(itemValues);
-        result.contextValues.push(analyzer.getContext().toJson());
+        // Static source fields (especially jsLib) are re-seeded for every stage and must not be
+        // copied into every item's persistent context.
+        result.contextValues.push(analyzer.getContext().toPersistentJson());
       }
       return result;
     } catch (error) {
@@ -121,6 +123,7 @@ export class RuleExecutionService {
       if (!available) throw new Error('完整脚本运行环境未就绪');
     }
     const runtimeRequest = new StageWebRuntimeRequest();
+    runtimeRequest.applyStageBudget(request.stage);
     runtimeRequest.source = request.source;
     runtimeRequest.book = request.book;
     runtimeRequest.chapter = request.chapter;
@@ -128,7 +131,9 @@ export class RuleExecutionService {
     runtimeRequest.content = JSON.stringify(request.contents.map((item: string): Object | string => {
       try { return JSON.parse(item) as Object; } catch (_) { return item; }
     }));
-    runtimeRequest.contextContent = runtimeRequest.content;
+    // The runtime falls back to content when contextContent is empty. Keeping only one copy avoids
+    // serializing every search item twice before it crosses into ArkWeb.
+    runtimeRequest.contextContent = '';
     runtimeRequest.baseUrl = request.baseUrl || request.source.bookSourceUrl;
     runtimeRequest.variables = request.contextValues;
     runtimeRequest.ownerId = request.ownerId;

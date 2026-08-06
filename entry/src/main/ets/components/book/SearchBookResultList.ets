@@ -6,6 +6,29 @@ import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
 
 export type SearchBookAction = (book: SearchBook) => void;
 
+class SearchBookResultDataSource implements IDataSource {
+  private books: SearchBook[] = [];
+  private listeners: DataChangeListener[] = [];
+
+  totalCount(): number { return this.books.length; }
+
+  getData(index: number): SearchBook { return this.books[index]; }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (!this.listeners.includes(listener)) this.listeners.push(listener);
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    const index = this.listeners.indexOf(listener);
+    if (index >= 0) this.listeners.splice(index, 1);
+  }
+
+  replace(books: SearchBook[]): void {
+    this.books = books.slice();
+    for (const listener of this.listeners) listener.onDataReloaded();
+  }
+}
+
 @Component
 export struct SearchBookResultList {
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
@@ -14,7 +37,7 @@ export struct SearchBookResultList {
   @StorageLink('bookshelfLightCoverAlbumId') bookshelfLightCoverAlbumId: string = '';
   @StorageLink('bookshelfDarkCoverAlbumId') bookshelfDarkCoverAlbumId: string = '';
   @StorageLink('bookshelfCoverMode') bookshelfCoverMode: string = 'sequence';
-  @Prop books: SearchBook[] = [];
+  @Prop @Watch('onBooksChanged') books: SearchBook[] = [];
   @Prop shelfBookKeys: string[] = [];
   @Prop busyBookKeys: string[] = [];
   @Prop showLoadingMore: boolean = false;
@@ -34,9 +57,22 @@ export struct SearchBookResultList {
   @Prop topPadding: number = 0;
   @Prop bottomPadding: number = 12;
   scroller: ListScroller = new ListScroller();
+  private dataSource: SearchBookResultDataSource = new SearchBookResultDataSource();
+  private tagCache: Map<string, string[]> = new Map<string, string[]>();
+  private coverCache: Map<string, string> = new Map<string, string>();
   onOpenBook: SearchBookAction = (_book: SearchBook) => {};
   onToggleShelf: SearchBookAction = (_book: SearchBook) => {};
   onReachEnd: () => void = () => {};
+
+  aboutToAppear(): void {
+    this.onBooksChanged();
+  }
+
+  onBooksChanged(): void {
+    this.dataSource.replace(this.books);
+    this.tagCache.clear();
+    this.coverCache.clear();
+  }
 
   build() {
     List({ scroller: this.scroller, space: 8 }) {
@@ -47,7 +83,7 @@ export struct SearchBookResultList {
         }
       }
 
-      ForEach(this.books, (book: SearchBook) => {
+      LazyForEach(this.dataSource, (book: SearchBook) => {
         ListItem() {
           Row() {
             if (this.showResultCover) {
@@ -197,7 +233,12 @@ export struct SearchBookResultList {
     if (!this.showResultTags) {
       return [];
     }
-    return BookDisplayHelper.splitTags(this.safeText(book.kind, ''), '');
+    const key = `${this.itemKey(book)}\n${book.kind || ''}`;
+    const cached = this.tagCache.get(key);
+    if (cached) return cached;
+    const tags = BookDisplayHelper.splitTags(this.safeText(book.kind, ''), '');
+    this.tagCache.set(key, tags);
+    return tags;
   }
 
   @Builder
@@ -247,13 +288,19 @@ export struct SearchBookResultList {
   }
 
   displayCover(book: SearchBook): string {
+    const key = `${this.itemKey(book)}\n${book.coverUrl || ''}`;
+    const cached = this.coverCache.get(key);
+    if (cached !== undefined) return cached;
+    let result = '';
     if (this.useBookshelfCoverGallery) {
       const galleryCover = this.bookshelfGalleryCover(book);
       if (galleryCover) {
-        return galleryCover;
+        result = galleryCover;
       }
     }
-    return this.safeText(book.coverUrl, '');
+    if (!result) result = this.safeText(book.coverUrl, '');
+    this.coverCache.set(key, result);
+    return result;
   }
 
   bookshelfGalleryCover(searchBook: SearchBook): string {

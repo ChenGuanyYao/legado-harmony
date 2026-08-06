@@ -9,13 +9,36 @@ export class BookFieldSanitizer {
     if (!text || BookFieldSanitizer.isUnresolved(text)) {
       return '';
     }
-    return text
+    const cleaned = text
       .replace(/&nbsp;/gi, ' ')
       .replace(/&lrm;/gi, '')
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<[^>]+>/g, '')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
+    const structuredIntro = BookFieldSanitizer.extractStructuredIntro(cleaned);
+    if (structuredIntro) return structuredIntro;
+    // Some explore rules accidentally return the whole JSON record as the intro. Do not flash that record on
+    // the detail page while the real book-info request is still running.
+    if (/^[\[{]/.test(cleaned) && /"(?:type|name|author|cover|status|data)"\s*:/i.test(cleaned)) return '';
+    return cleaned;
+  }
+
+  private static extractStructuredIntro(value: string): string {
+    if (!/^[\[{]/.test(value || '')) return '';
+    const keys = ['desc', 'intro', 'description', 'abstract'];
+    for (const key of keys) {
+      const match = new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`, 'i').exec(value);
+      if (!match || !match[1]) continue;
+      try {
+        const decoded = String(JSON.parse(`"${match[1]}"`));
+        if (decoded.trim()) return BookFieldSanitizer.clean(decoded);
+      } catch (_) {
+        const fallback = match[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').trim();
+        if (fallback) return fallback;
+      }
+    }
+    return '';
   }
 
   static isUnresolved(value: string): boolean {

@@ -22,6 +22,7 @@ export class ReaderSettings {
   pageTurnMode: number = 2;
   pageTurnAnimationType: number = 1;
   landscapeDoublePage: boolean = false;
+  screenOrientation: string = 'system';
   tapZoneActions: string = '3,3,3,3,1,2,2,2,2';
   volumeTurnPage: boolean = false;
   screenTimeoutMinutes: number = -1;
@@ -61,6 +62,9 @@ export class ReaderSettingsStore {
   static readonly PAGE_TURN_ANIMATION_SIMULATION: number = 6;
   static readonly SCREEN_TIMEOUT_FOLLOW_SYSTEM: number = 0;
   static readonly SCREEN_TIMEOUT_ALWAYS_ON: number = -1;
+  static readonly SCREEN_ORIENTATION_SYSTEM: string = 'system';
+  static readonly SCREEN_ORIENTATION_PORTRAIT: string = 'portrait';
+  static readonly SCREEN_ORIENTATION_LANDSCAPE: string = 'landscape';
   static readonly KEY_FONT_SIZE: string = 'readerFontSize';
   static readonly KEY_LINE_HEIGHT: string = 'readerLineHeight';
   static readonly KEY_LINE_HEIGHT_MODE: string = 'readerLineHeightMode';
@@ -81,6 +85,7 @@ export class ReaderSettingsStore {
   static readonly KEY_PAGE_TURN_ANIMATION: string = 'readerPageTurnAnimation';
   static readonly KEY_PAGE_TURN_ANIMATION_TYPE: string = 'readerPageTurnAnimationType';
   static readonly KEY_LANDSCAPE_DOUBLE_PAGE: string = 'readerLandscapeDoublePage';
+  static readonly KEY_SCREEN_ORIENTATION: string = 'readerScreenOrientation';
   static readonly KEY_TAP_ZONE_ACTIONS: string = 'readerTapZoneActions';
   static readonly KEY_VOLUME_TURN_PAGE: string = 'readerVolumeTurnPage';
   static readonly KEY_SCREEN_TIMEOUT_MINUTES: string = 'readerScreenTimeoutMinutes';
@@ -240,6 +245,14 @@ export class ReaderSettingsStore {
       store,
       ReaderSettingsStore.KEY_LANDSCAPE_DOUBLE_PAGE,
       AppStorage.get<boolean>(ReaderSettingsStore.KEY_LANDSCAPE_DOUBLE_PAGE) ?? false
+    );
+    settings.screenOrientation = ReaderSettingsStore.normalizeScreenOrientation(
+      await ReaderSettingsStore.getString(
+        store,
+        ReaderSettingsStore.KEY_SCREEN_ORIENTATION,
+        AppStorage.get<string>(ReaderSettingsStore.KEY_SCREEN_ORIENTATION) ||
+          ReaderSettingsStore.SCREEN_ORIENTATION_SYSTEM
+      )
     );
     settings.tapZoneActions = ReaderSettingsStore.normalizeTapZoneActions(
       await ReaderSettingsStore.getString(
@@ -655,6 +668,17 @@ export class ReaderSettingsStore {
     await store.flush();
   }
 
+  static async saveScreenOrientation(context: Context, orientation: string): Promise<void> {
+    const settings = ReaderSettingsStore.cachedSettings || ReaderSettingsStore.fromStorage();
+    settings.screenOrientation = ReaderSettingsStore.normalizeScreenOrientation(orientation);
+    ReaderSettingsStore.cachedSettings = ReaderSettingsStore.clone(settings);
+    AppStorage.setOrCreate(ReaderSettingsStore.KEY_SCREEN_ORIENTATION, settings.screenOrientation);
+    const store = await preferences.getPreferences(context, ReaderSettingsStore.STORE_NAME);
+    await store.put(ReaderSettingsStore.KEY_SCREEN_ORIENTATION, settings.screenOrientation);
+    await ReaderSettingsStore.persistActiveThemeProfile(store, settings);
+    await store.flush();
+  }
+
   static async saveAll(context: Context, settings: ReaderSettings,
     currentDarkMode: boolean = false): Promise<void> {
     await ReaderSettingsStore.saveLayoutSettings(
@@ -681,6 +705,7 @@ export class ReaderSettingsStore {
     await ReaderSettingsStore.savePageTurnMode(context, settings.pageTurnMode);
     await ReaderSettingsStore.savePageTurnAnimationType(context, settings.pageTurnAnimationType);
     await ReaderSettingsStore.saveLandscapeDoublePage(context, settings.landscapeDoublePage);
+    await ReaderSettingsStore.saveScreenOrientation(context, settings.screenOrientation);
     await ReaderSettingsStore.saveReadingInteractionSettings(
       context,
       settings.volumeTurnPage,
@@ -717,6 +742,7 @@ export class ReaderSettingsStore {
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_PAGE_TURN_MODE, normalized.pageTurnMode);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_PAGE_TURN_ANIMATION_TYPE, normalized.pageTurnAnimationType);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_LANDSCAPE_DOUBLE_PAGE, normalized.landscapeDoublePage);
+    AppStorage.setOrCreate(ReaderSettingsStore.KEY_SCREEN_ORIENTATION, normalized.screenOrientation);
     AppStorage.setOrCreate(
       ReaderSettingsStore.KEY_PAGE_TURN_ANIMATION,
       normalized.pageTurnAnimationType !== ReaderSettingsStore.PAGE_TURN_ANIMATION_NONE
@@ -1020,6 +1046,15 @@ export class ReaderSettingsStore {
     return ReaderSettingsStore.SCREEN_TIMEOUT_FOLLOW_SYSTEM;
   }
 
+  static normalizeScreenOrientation(orientation: string): string {
+    const value = (orientation || '').trim().toLowerCase();
+    if (value === ReaderSettingsStore.SCREEN_ORIENTATION_PORTRAIT ||
+      value === ReaderSettingsStore.SCREEN_ORIENTATION_LANDSCAPE) {
+      return value;
+    }
+    return ReaderSettingsStore.SCREEN_ORIENTATION_SYSTEM;
+  }
+
   private static normalizeTapZoneActions(actions: string): string {
     const fallback = [3, 3, 3, 3, 1, 2, 2, 2, 2];
     const parts = (actions || '').split(',');
@@ -1071,6 +1106,7 @@ export class ReaderSettingsStore {
     settings.pageTurnAnimationType = ReaderSettingsStore.normalizePageTurnAnimationForMode(
       settings.pageTurnMode, source.pageTurnAnimationType);
     settings.landscapeDoublePage = source.landscapeDoublePage;
+    settings.screenOrientation = ReaderSettingsStore.normalizeScreenOrientation(source.screenOrientation);
     settings.tapZoneActions = ReaderSettingsStore.normalizeTapZoneActions(source.tapZoneActions);
     settings.volumeTurnPage = source.volumeTurnPage;
     settings.screenTimeoutMinutes = ReaderSettingsStore.normalizeScreenTimeoutMinutes(
@@ -1173,6 +1209,9 @@ export class ReaderSettingsStore {
     settings.pageTurnAnimationType = ReaderSettingsStore.normalizePageTurnAnimationForMode(
       settings.pageTurnMode, settings.pageTurnAnimationType);
     settings.landscapeDoublePage = AppStorage.get<boolean>(ReaderSettingsStore.KEY_LANDSCAPE_DOUBLE_PAGE) ?? false;
+    settings.screenOrientation = ReaderSettingsStore.normalizeScreenOrientation(
+      AppStorage.get<string>(ReaderSettingsStore.KEY_SCREEN_ORIENTATION) ||
+        ReaderSettingsStore.SCREEN_ORIENTATION_SYSTEM);
     settings.tapZoneActions = ReaderSettingsStore.normalizeTapZoneActions(
       AppStorage.get<string>(ReaderSettingsStore.KEY_TAP_ZONE_ACTIONS) || ''
     );

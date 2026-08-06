@@ -3,6 +3,13 @@ import { BookUrlResolver } from './BookUrlResolver';
 import { EncodedJsonMap, EncodedSourceUrl } from './EncodedSourceUrl';
 import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceStageWebRuntime';
 import { ReaderActionMarker } from './ReaderActionMarker';
+import { BookSourceRuntimeSnapshotStore } from './BookSourceRuntimeSnapshot';
+import {
+  ReaderInteractionBundle,
+  ReaderInteractionProvider,
+  ReaderInteractionProviderRegistry,
+  ReaderParagraphInteraction
+} from './ReaderInteractionProvider';
 import { CookieStore } from '../http/CookieStore';
 import { HttpClient } from '../http/HttpClient';
 
@@ -26,9 +33,10 @@ export class BookSourceInteractionPostProcessor {
     let result = content;
     const commentsEnabled = this.isParagraphCommentsEnabled(source);
     const commentPlan = this.buildCommentPlan(source, chapter, book);
-    if (commentPlan?.sourceType === 'sq' &&
+    const interactionProvider = ReaderInteractionProviderRegistry.resolve(source);
+    if (commentPlan && interactionProvider &&
       (commentsEnabled || this.isNamedSettingEnabled(source, '章评开关'))) {
-      result = await this.applyShuqiComments(source, result, commentPlan);
+      result = await this.applyProviderComments(source, result, commentPlan, interactionProvider);
     }
     if (commentPlan?.sourceType === 'qd' && this.hasQidianCommentsEnabled(source)) {
       result = await this.applyQidianComments(source, result, commentPlan);
@@ -66,7 +74,7 @@ export class BookSourceInteractionPostProcessor {
       '本章说开关', '神评论开关', '书旗评论 API Key'];
     const values: string[] = [];
     for (const key of keys) values.push(`${key}=${this.sourceSetting(source, key)}`);
-    if (/\bSQ_COMMENT_API_BASE\b/.test(script)) values.push('shuqiMarker=compact-v2');
+    if (ReaderInteractionProviderRegistry.resolve(source)) values.push('providerMarker=compact-v3');
     return values.join('&');
   }
 
@@ -195,10 +203,11 @@ export class BookSourceInteractionPostProcessor {
   private static async runCommentHelper(source: BookSource, book: Book, chapter: BookChapter,
     content: string, plan: ParagraphCommentPlan): Promise<string> {
     const request = new StageWebRuntimeRequest();
+    request.applyStageBudget('content');
     request.source = source;
     request.book = book;
     request.content = content;
-    request.contextContent = content;
+    request.contextContent = '';
     request.baseUrl = chapter.url || book.bookUrl || source.bookSourceUrl;
     request.readerActionMode = true;
     request.networkTimeoutMs = 6000;
@@ -233,10 +242,11 @@ export class BookSourceInteractionPostProcessor {
     const apiUrl = `${host.replace(/\/+$/, '')}/para_idea?item_id=${encodeURIComponent(plan.chapterId)}` +
       `&ssionid=${encodeURIComponent(sessionId)}`;
     const request = new StageWebRuntimeRequest();
+    request.applyStageBudget('content');
     request.source = source;
     request.book = book;
     request.content = content;
-    request.contextContent = content;
+    request.contextContent = '';
     request.baseUrl = chapter.url || book.bookUrl || source.bookSourceUrl;
     request.readerActionMode = true;
     request.networkTimeoutMs = 6000;
@@ -267,34 +277,7 @@ export class BookSourceInteractionPostProcessor {
   }
 
   private static sourceSetting(source: BookSource, key: string): string {
-    for (const raw of [source.variable || '', source.loginInfo || '']) {
-      try {
-        const value = JSON.parse(raw || '{}') as Object;
-        const found = this.deepStringValue(value, key);
-        if (found) return found;
-      } catch (_) {}
-    }
-    return '';
-  }
-
-  private static deepStringValue(value: Object, key: string): string {
-    if (!value || typeof value !== 'object') return '';
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        const found = this.deepStringValue(item as Object, key);
-        if (found) return found;
-      }
-      return '';
-    }
-    const record = value as Record<string, Object>;
-    if (record[key] !== undefined && record[key] !== null) return String(record[key]);
-    for (const name of Object.keys(record)) {
-      if (record[name] && typeof record[name] === 'object') {
-        const found = this.deepStringValue(record[name], key);
-        if (found) return found;
-      }
-    }
-    return '';
+    return BookSourceRuntimeSnapshotStore.get(source).getString(key);
   }
 
   private static firstHttpHost(script: string): string {
@@ -373,7 +356,18 @@ export class BookSourceInteractionPostProcessor {
       chapterId: this.urlQueryValue(chapter.url || '', 'chapterId') ||
         this.urlQueryValue(chapter.url || '', 'chapter_id')
     };
-    for (const raw of [chapter.variable || '', source.loginInfo || '', source.variable || '']) {
+    const attachedBookId = BookUrlResolver.getVariableJson(chapter.variable, 'shuqiBookId') ||
+      BookUrlResolver.getVariableJson(chapter.variable, 'sqBookId');
+    const attachedChapterId = BookUrlResolver.getVariableJson(chapter.variable, 'shuqiChapterId') ||
+      BookUrlResolver.getVariableJson(chapter.variable, 'sqChapterId');
+    if (attachedBookId) result['bookId'] = attachedBookId;
+    if (attachedChapterId) result['chapterId'] = attachedChapterId;
+    if (result['bookId'] && result['chapterId']) return result;
+
+    // Compatibility for chapters cached before metadata was attached directly. Read the legacy
+    // runtime map from the parsed snapshot instead of recursively scanning the full loginInfo blob.
+    const legacyMetaMap = BookSourceRuntimeSnapshotStore.get(source).getRuntimeJavaValue('sqMetaMap');
+    for (const raw of [chapter.variable || '', source.variable || '']) {
       let value: Object | null = null;
       try { value = JSON.parse(raw || '{}') as Object; } catch (_) {}
       if (!value) continue;
@@ -381,8 +375,9 @@ export class BookSourceInteractionPostProcessor {
       const directChapterId = this.deepNamedString(value, ['shuqiChapterId', 'sqChapterId']);
       if (directBookId) result['bookId'] = directBookId;
       if (directChapterId) result['chapterId'] = directChapterId;
-      const mapValue = this.deepNamedValue(value, 'sqMetaMap');
-      const map = this.objectRecord(this.parseNestedObject(mapValue));
+    }
+    const map = this.objectRecord(this.parseNestedObject(legacyMetaMap));
+    if (map && Object.keys(map).length > 0) {
       for (const suffix of Object.keys(map)) {
         if (!suffix || !(chapter.url || '').includes(suffix)) continue;
         const record = this.objectRecord(this.parseNestedObject(map[suffix]));
@@ -547,43 +542,24 @@ export class BookSourceInteractionPostProcessor {
     }
   }
 
-  private static async applyShuqiComments(source: BookSource, content: string,
-    plan: ParagraphCommentPlan): Promise<string> {
+  private static async applyProviderComments(source: BookSource, content: string,
+    plan: ParagraphCommentPlan, provider: ReaderInteractionProvider): Promise<string> {
     if (!content || content.includes('legado_reader_shuqi=1') ||
       content.includes('legado_reader_shuqi%3D1') || /\bshowSqComments\s*\(/.test(content)) {
       return content;
     }
-    const apiBase = plan.extra['apiBase'] || '';
-    const apiKey = plan.extra['apiKey'] || '';
-    if (!apiBase || !apiKey) return content;
     try {
-      const response = await new HttpClient(8000).execute({
-        url: `${apiBase}/v1/reader/render-ext`,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ bookId: plan.bookId, chapterId: plan.chapterId, apiKey: apiKey }),
-        maxResponseBytes: 2 * 1024 * 1024
-      });
-      if (!response.body) throw new Error(response.error || `书旗评论接口请求失败：${response.statusCode}`);
-      const root = this.objectRecord(JSON.parse(response.body.replace(/^\uFEFF/, '')) as Object);
-      if (root['ok'] !== true && String(root['ok'] || '') !== 'true') {
-        throw new Error(String(root['error'] || '书旗评论接口返回异常'));
-      }
-      const outer = this.objectRecord(root['data']);
-      const data = this.objectRecord(outer['data'] || outer['Data']);
-      const ext = this.objectRecord(data['bookChapterExtInfo'] || data['BookChapterExtInfo']);
-      const paragraphs = this.objectList(ext['paragraphList'] || ext['ParagraphList']);
-      if (paragraphs.length === 0) return content;
-      return this.attachShuqiCommentMarkers(source, content, plan, paragraphs);
+      const bundle = await ReaderInteractionProviderRegistry.fetch(source, plan.bookId, plan.chapterId);
+      return bundle ? this.attachProviderCommentMarkers(source, content, bundle) : content;
     } catch (error) {
-      console.warn('[InteractionPostProcessor] shuqi comments skipped:', source.bookSourceName,
+      console.warn('[InteractionPostProcessor] provider comments skipped:', provider.id, source.bookSourceName,
         `bookId=${plan.bookId}`, `chapterId=${plan.chapterId}`, error);
       return content;
     }
   }
 
-  private static attachShuqiCommentMarkers(source: BookSource, content: string,
-    plan: ParagraphCommentPlan, paragraphs: Object[]): string {
+  private static attachProviderCommentMarkers(source: BookSource, content: string,
+    bundle: ReaderInteractionBundle): string {
     const paragraphEnabled = this.isParagraphCommentsEnabled(source);
     const chapterEnabled = this.isNamedSettingEnabled(source, '章评开关');
     const lines = (content || '').replace(/<br\s*\/?>/gi, '\n').replace(/\r\n?/g, '\n').split('\n');
@@ -594,16 +570,16 @@ export class BookSourceInteractionPostProcessor {
       const plain = lines[index].replace(/<[^>]+>/g, '').trim();
       if (plain && !/^\[\[LEGADO_READER_(?:IMAGE|ACTION)/.test(plain)) textIndexes.push(index);
     }
-    for (const value of paragraphs) {
-      const record = this.objectRecord(value);
-      const order = Number(record['orderId'] ?? record['OrderId'] ?? -1);
-      const count = Number(record['commentCount'] || record['CommentCount'] || 0);
+    for (const action of bundle.actions) {
+      const interaction = action as ReaderParagraphInteraction;
+      const order = interaction.order;
+      const count = interaction.count;
       if (count <= 0 || order < 0) continue;
-      const paragraphId = String(record['paragraphId'] || record['ParagraphId'] || `p${order}`);
+      const paragraphId = interaction.paragraphId || `p${order}`;
       if (order === 0) {
         if (!chapterEnabled || textIndexes.length === 0) continue;
-        const marker = ReaderActionMarker.createShuqiComment(`章评 ${count}`, plan.bookId,
-          plan.chapterId, paragraphId, 'chapterTitle');
+        const marker = ReaderActionMarker.createProviderComment(bundle.providerId, `章评 ${count}`, bundle.bookId,
+          bundle.chapterId, paragraphId, 'chapterTitle');
         if (marker) {
           // The fetched body does not contain the reader-generated chapter title. Keep the title action as a
           // standalone leading marker; the common reader layer relocates it after the real title. Appending it
@@ -616,15 +592,15 @@ export class BookSourceInteractionPostProcessor {
       if (!paragraphEnabled) continue;
       const lineIndex = textIndexes[order - 1];
       if (lineIndex === undefined || lineIndex < 0 || lineIndex >= lines.length) continue;
-      const marker = ReaderActionMarker.createShuqiComment(`段评 ${count}`, plan.bookId,
-        plan.chapterId, paragraphId, 'paragraph');
+      const marker = ReaderActionMarker.createProviderComment(bundle.providerId, `段评 ${count}`, bundle.bookId,
+        bundle.chapterId, paragraphId, 'paragraph');
       if (marker) {
         lines[lineIndex] = `${lines[lineIndex]}${marker}`;
         attached++;
       }
     }
-    console.info('[InteractionPostProcessor] shuqi comments ready:', source.bookSourceName,
-      `bookId=${plan.bookId}`, `chapterId=${plan.chapterId}`, `markers=${attached}`);
+    console.info('[InteractionPostProcessor] provider comments ready:', bundle.providerId, source.bookSourceName,
+      `bookId=${bundle.bookId}`, `chapterId=${bundle.chapterId}`, `markers=${attached}`);
     const body = lines.join('\n');
     return chapterMarker ? `${chapterMarker}\n${body}` : body;
   }
@@ -749,67 +725,7 @@ export class BookSourceInteractionPostProcessor {
   }
 
   private static sourceSettingState(source: BookSource, keys: string[]): number {
-    for (const key of keys) {
-      const runtimeValue = this.runtimeJavaValue(source, key);
-      if (this.isEnabledSettingValue(runtimeValue)) return 1;
-      if (this.isDisabledSettingValue(runtimeValue)) return -1;
-    }
-    for (const raw of [source.variable || '', source.loginInfo || '']) {
-      try {
-        const state = this.deepSettingState(JSON.parse(raw || '{}') as Object, keys);
-        if (state !== 0) return state;
-      } catch (_) {}
-    }
-    return 0;
-  }
-
-  private static runtimeJavaValue(source: BookSource, key: string): string {
-    try {
-      const loginInfo = JSON.parse(source.loginInfo || '{}') as Record<string, Object>;
-      let runtime = loginInfo['__legadoHarmonyRuntime'];
-      if (typeof runtime === 'string') runtime = JSON.parse(runtime) as Object;
-      if (!runtime || typeof runtime !== 'object' || Array.isArray(runtime)) return '';
-      const javaState = (runtime as Record<string, Object>)['java'];
-      if (!javaState || typeof javaState !== 'object' || Array.isArray(javaState)) return '';
-      return String((javaState as Record<string, Object>)[key] || '').toLowerCase();
-    } catch (_) {
-      return '';
-    }
-  }
-
-  private static deepSettingState(value: Object, keys: string[]): number {
-    if (!value || typeof value !== 'object') return 0;
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        const state = this.deepSettingState(item as Object, keys);
-        if (state !== 0) return state;
-      }
-      return 0;
-    }
-    const record = value as Record<string, Object>;
-    for (const key of Object.keys(record)) {
-      if (keys.includes(key)) {
-        if (this.isEnabledSettingValue(record[key])) return 1;
-        if (this.isDisabledSettingValue(record[key])) return -1;
-      }
-      if (record[key] && typeof record[key] === 'object') {
-        const state = this.deepSettingState(record[key], keys);
-        if (state !== 0) return state;
-      }
-    }
-    return 0;
-  }
-
-  private static isEnabledSettingValue(value: Object | string | undefined | null): boolean {
-    const normalized = String(value ?? '').trim().toLowerCase();
-    return normalized === 'on' || normalized === 'true' || normalized === '1' || normalized === 'yes' ||
-      normalized === 'enabled' || normalized === '✅';
-  }
-
-  private static isDisabledSettingValue(value: Object | string | undefined | null): boolean {
-    const normalized = String(value ?? '').trim().toLowerCase();
-    return normalized === 'off' || normalized === 'false' || normalized === '0' || normalized === 'no' ||
-      normalized === 'disabled' || normalized === '❌';
+    return BookSourceRuntimeSnapshotStore.get(source).settingState(keys);
   }
 
   private static appendMediaAction(chapter: BookChapter, content: string): string {

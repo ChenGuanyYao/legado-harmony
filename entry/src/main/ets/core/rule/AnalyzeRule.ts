@@ -110,7 +110,7 @@ export class AnalyzeRule {
     if (orParts.length > 1) {
       const parts = orParts;
       for (const part of parts) {
-        const values = this.analyze(part);
+        const values = this.analyze(part).filter((value: string): boolean => this.isNonEmptyRuleValue(value));
         if (values.length > 0) return values;
       }
       return [];
@@ -225,7 +225,12 @@ export class AnalyzeRule {
       return this.ctx.get(key.trim());
     });
 
-    if (!rule.startsWith('@js:') && rule.includes('result') && rule.includes('+')) {
+    // Resolve extraction fallbacks before JS-like expression heuristics. A suffix such as
+    // `@js:'prefix' + result` belongs to the selected branch, not to the whole source body.
+    const combinedValue = this.analyzeCombinedFirst(rule);
+    if (combinedValue !== null) return combinedValue;
+
+    if (!rule.includes('@js:') && rule.includes('result') && rule.includes('+')) {
       const jsLikeValue = this.evalResultJs(rule, this.content);
       if (jsLikeValue && jsLikeValue !== rule) return this.applyProcessor(jsLikeValue, originalRule);
     }
@@ -253,6 +258,24 @@ export class AnalyzeRule {
 
     const a = this.analyze(rule);
     return a.length > 0 ? this.applyProcessor(a[0], originalRule) : '';
+  }
+
+  private analyzeCombinedFirst(rule: string): string | null {
+    if (rule.startsWith('@js:') || rule.startsWith('js:')) return null;
+    const extractionRule = this.stripProcessor(rule);
+    const orParts = this.splitCombinedRule(extractionRule, '||');
+    if (orParts.length <= 1) return null;
+
+    const processorSuffix = rule.substring(extractionRule.length);
+    for (const part of orParts) {
+      const value = this.analyzeFirst(part + processorSuffix);
+      if (this.isNonEmptyRuleValue(value)) return value;
+    }
+    return '';
+  }
+
+  private isNonEmptyRuleValue(value: string): boolean {
+    return !!value && value.trim().length > 0;
   }
 
   private extractPutBlock(rule: string): { start: number, end: number, body: string } | null {
@@ -2399,19 +2422,30 @@ export class AnalyzeRule {
       if (jsValue) value = jsValue;
     }
 
-    // 处理 @js: 后缀（AES解密等）
-    const jsSuffix = rule.match(/@js:([\s\S]+)$/);
-    if (jsSuffix) {
-      const jsCode = jsSuffix[1].trim();
+    // `@js:` and `##` are two processors of the same extracted value. Remove the
+    // JS segment before parsing the replacement rule so its code cannot leak into
+    // the replacement text (or consume a following `##` segment).
+    let replacementRule = rule;
+    const jsIndex = rule.indexOf('@js:');
+    if (jsIndex > 0) {
+      const replacementIndex = rule.indexOf('##');
+      let jsCode = '';
+      if (replacementIndex > jsIndex) {
+        jsCode = rule.substring(jsIndex + 4, replacementIndex).trim();
+        replacementRule = rule.substring(0, jsIndex) + rule.substring(replacementIndex);
+      } else {
+        jsCode = rule.substring(jsIndex + 4).trim();
+        replacementRule = rule.substring(0, jsIndex);
+      }
       if (jsCode.startsWith('java.aesBase64DecodeToString')) {
         value = this.applyAesDecrypt(value, jsCode);
         if (!value) return '';
-      } else {
+      } else if (jsCode) {
         value = this.evalResultJs(jsCode, value);
       }
     }
 
-    const parts = this.splitReplacementRule(rule);
+    const parts = this.splitReplacementRule(replacementRule);
     if (parts.length < 2) return value;
 
     try {

@@ -48,6 +48,11 @@ struct SearchBookDetailPage {
   @State isSaving: boolean = false;
   @State isLoadingBookInfo: boolean = false;
   private hasLoadedBookInfo: boolean = false;
+  private resolvedBookInfo: Book | null = null;
+  private bookInfoPromise: Promise<Book | null> | null = null;
+  private shelfCheckPromise: Promise<void> | null = null;
+  private shelfCheckKey: string = '';
+  private shelfCheckVersion: number = -1;
   @State promptAddToShelfOnBackFromResult: boolean = false;
   @State promptAddToShelfAfterRead: boolean = false;
   @State pendingAddToShelfBookUrl: string = '';
@@ -66,7 +71,7 @@ struct SearchBookDetailPage {
       this.author = params['author'] || '';
       this.kind = params['kind'] || '';
       this.coverUrl = params['coverUrl'] || '';
-      this.intro = params['intro'] || '';
+      this.intro = BookFieldSanitizer.clean(params['intro'] || '');
       this.latestChapterTitle = params['latestChapterTitle'] || '';
       this.wordCount = params['wordCount'] || '';
       this.bookType = Number(params['type'] || 0) || 0;
@@ -271,7 +276,23 @@ struct SearchBookDetailPage {
     return false;
   }
 
-  async checkShelf() {
+  async checkShelf(): Promise<void> {
+    const key = BookIdentity.keyOfUrl(this.bookUrl);
+    const version = AppStorage.get<number>('shelfUpdateTime') || 0;
+    if (this.shelfCheckPromise) return this.shelfCheckPromise;
+    if (key && key === this.shelfCheckKey && version === this.shelfCheckVersion) return;
+    const task = this.performShelfCheck();
+    this.shelfCheckPromise = task;
+    try {
+      await task;
+      this.shelfCheckKey = BookIdentity.keyOfUrl(this.bookUrl);
+      this.shelfCheckVersion = AppStorage.get<number>('shelfUpdateTime') || 0;
+    } finally {
+      if (this.shelfCheckPromise === task) this.shelfCheckPromise = null;
+    }
+  }
+
+  private async performShelfCheck(): Promise<void> {
     if (!this.bookUrl || this.bookUrl.trim() === '') {
       this.isInShelf = false;
       return;
@@ -351,10 +372,8 @@ struct SearchBookDetailPage {
       book.lastCheckTime = Date.now();
       book.latestChapterTime = Date.now();
       const fallbackCoverUrl = book.coverUrl;
-      const source = book.origin ? await db.getBookSource(book.origin) : null;
-      if (source) {
-        const service = new WebBookService();
-        const fullBook = await service.getBookInfo(source, book);
+      const fullBook = await this.resolveBookInfo();
+      if (fullBook) {
         book.bookUrl = fullBook.bookUrl || book.bookUrl;
         book.tocUrl = fullBook.tocUrl || book.tocUrl;
         book.name = fullBook.name || book.name;
@@ -409,55 +428,62 @@ struct SearchBookDetailPage {
   }
 
   async loadBookInfo(): Promise<void> {
-    if (this.hasLoadedBookInfo || this.isLoadingBookInfo || !this.bookUrl || !this.origin) {
-      return;
-    }
-
-    this.hasLoadedBookInfo = true;
-    this.isLoadingBookInfo = true;
     try {
-      const db = AppDatabase.getInstance();
-      await db.initWithContext(getContext(this));
-      const source = await db.getBookSource(this.origin);
-      if (!source) {
-        return;
-      }
-
-      const book = new Book();
-      book.bookUrl = this.bookUrl;
-      book.tocUrl = this.tocUrl;
-      book.origin = this.origin;
-      book.originName = this.originName;
-      book.name = this.name;
-      book.author = this.author;
-      book.kind = BookFieldSanitizer.clean(this.kind);
-      book.coverUrl = CoverUrlNormalizer.normalize(this.coverUrl);
-      book.intro = BookFieldSanitizer.clean(this.intro);
-      book.latestChapterTitle = BookFieldSanitizer.clean(this.latestChapterTitle);
-      book.wordCount = BookFieldSanitizer.clean(this.wordCount);
-      book.type = this.bookType;
-      book.variable = this.bookVariable;
-      BookTypeSupport.applyBookType(book, source);
-
-      const fallbackCoverUrl = book.coverUrl;
-      const service = new WebBookService();
-      const fullBook = await service.getBookInfo(source, book);
-      this.bookUrl = fullBook.bookUrl || this.bookUrl;
-      this.tocUrl = fullBook.tocUrl || this.tocUrl;
-      this.name = fullBook.name || this.name;
-      this.author = fullBook.author || this.author;
-      this.kind = BookFieldSanitizer.prefer(fullBook.kind, this.kind);
-      this.coverUrl = CoverUrlNormalizer.prefer(fallbackCoverUrl, fullBook.coverUrl || this.coverUrl);
-      this.intro = BookFieldSanitizer.prefer(fullBook.intro, this.intro);
-      this.latestChapterTitle = BookFieldSanitizer.prefer(fullBook.latestChapterTitle, this.latestChapterTitle);
-      this.wordCount = BookFieldSanitizer.prefer(fullBook.wordCount, this.wordCount);
-      this.bookType = fullBook.type || this.bookType;
-      this.bookVariable = fullBook.variable || this.bookVariable;
+      const fullBook = await this.resolveBookInfo();
+      if (fullBook) this.syncStateFromBook(fullBook);
     } catch (e) {
       console.warn('加载书籍详情失败:', e);
+    }
+  }
+
+  private async resolveBookInfo(): Promise<Book | null> {
+    if (this.resolvedBookInfo) return this.resolvedBookInfo;
+    if (this.bookInfoPromise) return this.bookInfoPromise;
+    if (this.hasLoadedBookInfo || !this.bookUrl || !this.origin) return null;
+    this.hasLoadedBookInfo = true;
+    this.isLoadingBookInfo = true;
+    const task = this.fetchBookInfo();
+    this.bookInfoPromise = task;
+    try {
+      const fullBook = await task;
+      if (fullBook) {
+        fullBook.lastCheckTime = Date.now();
+        this.resolvedBookInfo = fullBook;
+        this.syncStateFromBook(fullBook);
+      }
+      return fullBook;
     } finally {
+      if (this.bookInfoPromise === task) this.bookInfoPromise = null;
       this.isLoadingBookInfo = false;
     }
+  }
+
+  private async fetchBookInfo(): Promise<Book | null> {
+    const db = AppDatabase.getInstance();
+    await db.initWithContext(getContext(this));
+    const source = await db.getBookSource(this.origin);
+    if (!source) return null;
+    const book = this.buildCurrentBook();
+    BookTypeSupport.applyBookType(book, source);
+    return new WebBookService().getBookInfo(source, book);
+  }
+
+  private buildCurrentBook(): Book {
+    const book = new Book();
+    book.bookUrl = this.bookUrl;
+    book.tocUrl = this.tocUrl;
+    book.origin = this.origin;
+    book.originName = this.originName;
+    book.name = this.name;
+    book.author = this.author;
+    book.kind = BookFieldSanitizer.clean(this.kind);
+    book.coverUrl = CoverUrlNormalizer.normalize(this.coverUrl);
+    book.intro = BookFieldSanitizer.clean(this.intro);
+    book.latestChapterTitle = BookFieldSanitizer.clean(this.latestChapterTitle);
+    book.wordCount = BookFieldSanitizer.clean(this.wordCount);
+    book.type = this.bookType;
+    book.variable = this.bookVariable;
+    return book;
   }
 
   handleBack(): void {
@@ -674,11 +700,8 @@ struct SearchBookDetailPage {
     book.lastCheckTime = Date.now();
     book.latestChapterTime = Date.now();
     const fallbackCoverUrl = book.coverUrl;
-    const db = AppDatabase.getInstance();
-    const source = book.origin ? await db.getBookSource(book.origin) : null;
-    if (source) {
-      const service = new WebBookService();
-      const fullBook = await service.getBookInfo(source, book);
+    const fullBook = await this.resolveBookInfo();
+    if (fullBook) {
       book.bookUrl = fullBook.bookUrl || book.bookUrl;
       book.tocUrl = fullBook.tocUrl || book.tocUrl;
       book.name = fullBook.name || book.name;

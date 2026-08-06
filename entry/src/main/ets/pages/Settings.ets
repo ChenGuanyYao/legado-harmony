@@ -60,6 +60,8 @@ struct SettingsPage {
   @StorageLink('readerPageTurnMode') readerPageTurnMode: number = 1;
   @StorageLink('readerPageTurnAnimationType') readerPageTurnAnimationType: number = ReaderSettingsStore.PAGE_TURN_ANIMATION_SLIDE;
   @StorageLink('readerLandscapeDoublePage') readerLandscapeDoublePage: boolean = false;
+  @StorageLink('readerScreenOrientation') readerScreenOrientation: string =
+    ReaderSettingsStore.SCREEN_ORIENTATION_SYSTEM;
   @StorageLink('readerTapZoneActions') readerTapZoneActions: string = '3,3,3,3,1,2,2,2,2';
   @StorageLink('readerVolumeTurnPage') readerVolumeTurnPage: boolean = false;
   @StorageLink('readerScreenTimeoutMinutes') readerScreenTimeoutMinutes: number =
@@ -170,6 +172,10 @@ struct SettingsPage {
             this.readerLandscapeDoublePage, (value: boolean) => {
               this.setReaderLandscapeDoublePage(value);
             })
+          this.selectItem('屏幕方向', '设置正文阅读时使用的屏幕方向',
+            this.screenOrientationOptions(), this.screenOrientationSelectedIndex(), (index: number) => {
+              this.setReaderScreenOrientationByIndex(index);
+            }, 'settings_screen_orientation_select')
           this.switchItem('音量键翻页', '阅读页获得焦点时使用音量上/下键切换上一页/下一页', this.readerVolumeTurnPage, (value: boolean) => {
             this.setReaderVolumeTurnPage(value);
           })
@@ -512,6 +518,7 @@ struct SettingsPage {
     this.readerPageTurnMode = settings.pageTurnMode;
     this.readerPageTurnAnimationType = settings.pageTurnAnimationType;
     this.readerLandscapeDoublePage = settings.landscapeDoublePage;
+    this.readerScreenOrientation = settings.screenOrientation;
     this.readerTapZoneActions = settings.tapZoneActions;
     this.readerVolumeTurnPage = settings.volumeTurnPage;
     this.readerScreenTimeoutMinutes = settings.screenTimeoutMinutes;
@@ -1245,6 +1252,37 @@ struct SettingsPage {
     this.readerLandscapeDoublePage = enabled;
     ReaderSettingsStore.saveLandscapeDoublePage(getContext(this), enabled).catch((e: Error) => {
       console.error('保存双翻页设置失败:', e);
+    });
+  }
+
+  screenOrientationOptions(): SelectOption[] {
+    return [
+      { value: '跟随系统' },
+      { value: '强制竖屏' },
+      { value: '强制横屏' }
+    ];
+  }
+
+  screenOrientationValues(): string[] {
+    return [
+      ReaderSettingsStore.SCREEN_ORIENTATION_SYSTEM,
+      ReaderSettingsStore.SCREEN_ORIENTATION_PORTRAIT,
+      ReaderSettingsStore.SCREEN_ORIENTATION_LANDSCAPE
+    ];
+  }
+
+  screenOrientationSelectedIndex(): number {
+    const value = ReaderSettingsStore.normalizeScreenOrientation(this.readerScreenOrientation);
+    const index = this.screenOrientationValues().indexOf(value);
+    return index >= 0 ? index : 0;
+  }
+
+  setReaderScreenOrientationByIndex(index: number): void {
+    const values = this.screenOrientationValues();
+    this.readerScreenOrientation = index >= 0 && index < values.length ? values[index] :
+      ReaderSettingsStore.SCREEN_ORIENTATION_SYSTEM;
+    ReaderSettingsStore.saveScreenOrientation(getContext(this), this.readerScreenOrientation).catch((e: Error) => {
+      console.error('保存阅读屏幕方向失败:', e);
     });
   }
 

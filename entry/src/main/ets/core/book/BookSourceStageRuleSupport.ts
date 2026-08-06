@@ -23,14 +23,15 @@ export class BookSourceStageRuleSupport {
 
     if (embedded.trailingRule) {
       const request = new StageWebRuntimeRequest();
+      request.applyStageBudget(stage);
       request.source = source;
       request.content = content || '';
       request.contextContent = content || '';
       request.baseUrl = baseUrl || source.bookSourceUrl;
       request.code = embedded.code;
       request.ownerId = ownerId;
-      request.maxResponseBytes = maxResponseBytes;
-      request.maxTotalResponseBytes = maxTotalResponseBytes;
+      request.maxResponseBytes = Math.min(request.maxResponseBytes, maxResponseBytes);
+      request.maxTotalResponseBytes = Math.min(request.maxTotalResponseBytes, maxTotalResponseBytes);
       try {
         const result = await runtime.execute(request);
         const transformed = (result.value || '').trim();
@@ -56,14 +57,15 @@ export class BookSourceStageRuleSupport {
       }
     }
     const request = new StageWebRuntimeRequest();
+    request.applyStageBudget(stage);
     request.source = source;
     request.content = JSON.stringify(values);
     request.contextContent = content || '';
     request.baseUrl = baseUrl || source.bookSourceUrl;
     request.code = embedded.code;
     request.ownerId = ownerId;
-    request.maxResponseBytes = maxResponseBytes;
-    request.maxTotalResponseBytes = maxTotalResponseBytes;
+    request.maxResponseBytes = Math.min(request.maxResponseBytes, maxResponseBytes);
+    request.maxTotalResponseBytes = Math.min(request.maxTotalResponseBytes, maxTotalResponseBytes);
     try {
       const result = await runtime.execute(request);
       const parsed = JSON.parse(result.value || '[]') as Object;
