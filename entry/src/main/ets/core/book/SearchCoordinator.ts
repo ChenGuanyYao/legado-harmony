@@ -11,11 +11,14 @@ import { EncodedSourceUrl } from './EncodedSourceUrl';
 import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
 import { BookUrlResolver } from './BookUrlResolver';
 import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
-import { BookSourceScriptRunner } from './BookSourceScriptRunner';
 import { BookTypeSupport } from './BookTypeSupport';
 import { BookSourceRuntimeRouter, SourceRuntimeStage } from './BookSourceRuntimeRouter';
 import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceStageWebRuntime';
 import { BookSourceStageRuleSupport } from './BookSourceStageRuleSupport';
+import { BookSourceShuqiSupport } from './BookSourceShuqiSupport';
+import { RuleExecutionService } from '../rule/RuleExecutionService';
+import { RuleBatchExecutionRequest, RuleFieldRequest } from '../rule/RuleExecutionModels';
+import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
 
 export interface SearchProgress {
   done: number;
@@ -89,7 +92,7 @@ export class SearchCoordinator {
     this.cancelled = true;
     this.http.cancelAll();
     if (this.stageRuntimeOwnerId) {
-      BookSourceStageWebRuntime.get().cancelOwner(this.stageRuntimeOwnerId);
+      RuleExecutionService.get().cancelOwner(this.stageRuntimeOwnerId);
     }
   }
 
@@ -201,7 +204,7 @@ export class SearchCoordinator {
       emitProgress(true);
       return validationOnly ? [] : this.filterAndSortSearchResults(all, keyword, options);
     } finally {
-      BookSourceStageWebRuntime.get().clearOwner(runtimeOwnerId);
+      RuleExecutionService.get().clearOwner(runtimeOwnerId);
       if (this.stageRuntimeOwnerId === runtimeOwnerId) this.stageRuntimeOwnerId = '';
     }
   }
@@ -292,6 +295,10 @@ export class SearchCoordinator {
       if (sourceApiBooks.length > 0) {
         return this.sourceResult(sourceApiBooks, BookSource.VALIDATION_PASSED, '');
       }
+      const shuqiBooks = this.parseShuqiSearchResponse(source, resp.body, resultLimit, keyword, options);
+      if (shuqiBooks.length > 0) {
+        return this.sourceResult(shuqiBooks, BookSource.VALIDATION_PASSED, '');
+      }
       const rule = new AnalyzeRule(resp.body, baseUrl);
       this.seedSourceVariables(rule.getContext(), source);
       rule.setJsVar('key', encodeURIComponent(keyword));
@@ -318,8 +325,39 @@ export class SearchCoordinator {
       const seenBookKeys = new Set<string>();
       const normalizedKeyword = this.normalizeSearchText(keyword);
       const sourceBackendHost = BookSourceDataUrlSupport.sourceBackendHost(source);
-      const stageBookUrls = await this.analyzeSearchFieldBatch(source, items, baseUrl, searchRule.bookUrl);
+      const fieldRequest = new RuleBatchExecutionRequest();
+      fieldRequest.source = source;
+      fieldRequest.stage = SourceRuntimeStage.SEARCH;
+      fieldRequest.ownerId = this.stageRuntimeOwnerId;
+      fieldRequest.contents = items;
+      fieldRequest.baseUrl = baseUrl || source.bookSourceUrl;
+      fieldRequest.fields = [
+        new RuleFieldRequest('name', searchRule.name || ''),
+        new RuleFieldRequest('author', searchRule.author || ''),
+        new RuleFieldRequest('bookUrl', searchRule.bookUrl || ''),
+        new RuleFieldRequest('coverUrl', searchRule.coverUrl || ''),
+        new RuleFieldRequest('intro', searchRule.intro || ''),
+        new RuleFieldRequest('kind', searchRule.kind || ''),
+        new RuleFieldRequest('lastChapter', searchRule.lastChapter || ''),
+        new RuleFieldRequest('wordCount', searchRule.wordCount || '')
+      ];
+      if (sourceBackendHost) {
+        fieldRequest.contextValues['host'] = sourceBackendHost;
+        fieldRequest.contextValues['backend'] = sourceBackendHost;
+      }
+      fieldRequest.timeoutMs = options.validationOnly === true ? 15000 : 30000;
+      const fieldBatch = await RuleExecutionService.get().executeBatch(fieldRequest);
+      if (fieldBatch.cancelled || this.cancelled) {
+        return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
+      }
+      if (fieldBatch.errors.length > 0) {
+        console.warn('[SC] unified field errors:', source.bookSourceName, fieldBatch.errors.join('; '));
+      }
+      const parsingSlice = CooperativeScheduler.createTimeSlice();
       for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+        // Parsing a large response used to keep every result-field rule in one native callback. Even individually
+        // fast selectors could then accumulate past HarmonyOS' 3-second foreground freeze threshold.
+        if (itemIndex > 0) await parsingSlice.checkpoint();
         const item = items[itemIndex];
         if (this.cancelled) {
           return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
@@ -331,18 +369,17 @@ export class SearchCoordinator {
           ir.getContext().put('backend', sourceBackendHost);
         }
         const book = new SearchBook();
-        book.name = await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.name);
-        book.author = await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.author);
+        const fieldValues = itemIndex < fieldBatch.values.length ? fieldBatch.values[itemIndex] : {};
+        book.name = fieldValues['name'] || '';
+        book.author = fieldValues['author'] || '';
         const sourceApiRecord = this.parseJsonRecord(item);
         if (sourceApiRecord) {
           if (!book.name) book.name = String(sourceApiRecord['name'] || sourceApiRecord['bookName'] ||
             sourceApiRecord['title'] || '');
           if (!book.author) book.author = String(sourceApiRecord['author'] || sourceApiRecord['writer'] || '');
         }
-        const stageBookUrl = itemIndex < stageBookUrls.length ? stageBookUrls[itemIndex] : '';
         const sourceApiBookUrl = this.buildSourceApiBookUrl(source, item, searchRule.bookUrl || '');
-        book.bookUrl = BookUrlResolver.resolve(stageBookUrl || sourceApiBookUrl ||
-          await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.bookUrl, true), baseUrl);
+        book.bookUrl = BookUrlResolver.resolve(sourceApiBookUrl || fieldValues['bookUrl'] || '', baseUrl);
         this.fillSearchFallbackFields(source, ir, book, baseUrl, item);
         if (options.exactMatch) {
           if (!this.matchesExactSearch(this.normalizeSearchText(book.name), this.normalizeSearchText(book.author),
@@ -352,11 +389,11 @@ export class SearchCoordinator {
         }
 
         book.coverUrl = BookSourceDataUrlSupport.normalizeCoverUrlFromItem(source,
-          await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.coverUrl), item, baseUrl);
-        book.intro = await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.intro);
-        book.kind = await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.kind);
-        book.latestChapterTitle = await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.lastChapter);
-        book.wordCount = await this.analyzeSearchField(source, ir, item, baseUrl, searchRule.wordCount);
+          fieldValues['coverUrl'] || '', item, baseUrl);
+        book.intro = fieldValues['intro'] || '';
+        book.kind = fieldValues['kind'] || '';
+        book.latestChapterTitle = fieldValues['lastChapter'] || '';
+        book.wordCount = fieldValues['wordCount'] || '';
         if (sourceApiRecord) {
           if (!book.coverUrl) book.coverUrl = String(sourceApiRecord['cover'] || sourceApiRecord['coverUrl'] || '');
           if (!book.intro) book.intro = String(sourceApiRecord['desc'] || sourceApiRecord['intro'] ||
@@ -371,7 +408,8 @@ export class SearchCoordinator {
               .join(' ');
           }
         }
-        book.variable = ir.getContext().toJson();
+        book.variable = itemIndex < fieldBatch.contextValues.length ? fieldBatch.contextValues[itemIndex] :
+          ir.getContext().toJson();
         BookTypeSupport.applySearchBookType(book, source);
         // 如果解析后仍含 JSONPath 表达式，直接从 item 提取
         if (!book.bookUrl || book.bookUrl.startsWith('$') || book.bookUrl.includes('$._id') || book.bookUrl.includes('$..')) {
@@ -692,75 +730,6 @@ export class SearchCoordinator {
     return '';
   }
 
-  /**
-   * Search result fields may themselves be complete JavaScript rules. They must use the same
-   * ArkWeb environment as the search URL so source-library helpers such as getApiUrl() remain
-   * available. Plain selector and lightweight suffix rules keep the existing analyzer path.
-   */
-  private async analyzeSearchField(source: BookSource, ir: AnalyzeRule, item: string,
-    baseUrl: string, rawRule: string, skipStageRuntime: boolean = false): Promise<string> {
-    const rule = (rawRule || '').trim();
-    if (!rule) return '';
-    const suffixIndex = rule.indexOf('@js:');
-    if (suffixIndex > 0) {
-      const baseValue = ir.analyzeFirst(rule.substring(0, suffixIndex).trim()) || '';
-      if (!baseValue || skipStageRuntime) return baseValue;
-      const suffixCode = rule.substring(suffixIndex + 4).trim();
-      const prefixConcat = suffixCode.match(/^(["'])([\s\S]*?)\1\s*\+\s*result\s*;?$/);
-      if (prefixConcat) return this.decodeSimpleJsLiteral(prefixConcat[2]) + baseValue;
-      const suffixConcat = suffixCode.match(/^result\s*\+\s*(["'])([\s\S]*?)\1\s*;?$/);
-      if (suffixConcat) return baseValue + this.decodeSimpleJsLiteral(suffixConcat[2]);
-      const suffixDecision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.SEARCH,
-        `${source.jsLib || ''}\n${suffixCode}`);
-      const suffixRuntime = BookSourceStageWebRuntime.get();
-      if (suffixDecision.runtime !== 'arkweb' || !suffixRuntime.isAvailable()) return baseValue;
-      const suffixRequest = new StageWebRuntimeRequest();
-      suffixRequest.source = source;
-      suffixRequest.code = suffixCode;
-      suffixRequest.content = baseValue;
-      suffixRequest.contextContent = item || '';
-      suffixRequest.baseUrl = baseUrl || source.bookSourceUrl;
-      suffixRequest.ownerId = this.stageRuntimeOwnerId;
-      try {
-        const suffixResult = await suffixRuntime.execute(suffixRequest);
-        return suffixResult.value || baseValue;
-      } catch (_) {
-        return baseValue;
-      }
-    }
-    if (!/^@?js:/i.test(rule)) return ir.analyzeFirst(rawRule) || '';
-
-    if (skipStageRuntime) return ir.analyzeFirst(rawRule) || '';
-    const code = rule.replace(/^@?js:\s*/i, '');
-    const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.SEARCH,
-      `${source.jsLib || ''}\n${code}`);
-    const runtime = BookSourceStageWebRuntime.get();
-    if (decision.runtime !== 'arkweb' || !runtime.isAvailable()) return ir.analyzeFirst(rawRule) || '';
-
-    const request = new StageWebRuntimeRequest();
-    request.source = source;
-    request.code = code;
-    request.content = item || '';
-    request.contextContent = item || '';
-    request.baseUrl = baseUrl || source.bookSourceUrl;
-    request.ownerId = this.stageRuntimeOwnerId;
-    try {
-      const result = await runtime.execute(request);
-      return result.value || ir.analyzeFirst(rawRule) || '';
-    } catch (error) {
-      console.warn('[SC] stage runtime field failed, fallback legacy:', source.bookSourceName, error);
-      return ir.analyzeFirst(rawRule) || '';
-    }
-  }
-
-  private decodeSimpleJsLiteral(value: string): string {
-    return (value || '')
-      .replace(/\\n/g, '\n')
-      .replace(/\\r/g, '\r')
-      .replace(/\\t/g, '\t')
-      .replace(/\\([\\"'])/g, '$1');
-  }
-
   private buildSourceApiBookUrl(source: BookSource, item: string, rawRule: string): string {
     if (!/getApiUrl\s*\(/.test(rawRule || '')) return '';
     const apiMatch = (source.jsLib || '').match(/\b(?:const|let|var)\s+api\s*=\s*['"](https?:\/\/[^'"]+)['"]/);
@@ -830,6 +799,47 @@ export class SearchCoordinator {
     return result;
   }
 
+  private parseShuqiSearchResponse(source: BookSource, body: string, limit: number,
+    keyword: string, options: SearchOptions): SearchBook[] {
+    const records = BookSourceShuqiSupport.parseBookRecords(source, body, true);
+    if (records.length === 0) return [];
+    const result: SearchBook[] = [];
+    const normalizedKeyword = this.normalizeSearchText(keyword);
+    for (const record of records) {
+      const book = new SearchBook();
+      book.name = String(record['bookName'] || record['title'] || '').trim();
+      book.author = String(record['authorName'] || record['author'] || '').trim();
+      book.bookUrl = BookSourceShuqiSupport.buildBookInfoUrl(source, record);
+      if (!book.name || !book.bookUrl) continue;
+      if (options.exactMatch && !this.matchesExactSearch(this.normalizeSearchText(book.name),
+        this.normalizeSearchText(book.author), normalizedKeyword, options)) continue;
+      book.coverUrl = String(record['imgUrl'] || record['cover'] || '').trim();
+      book.intro = String(record['desc'] || '').trim();
+      const category = String(record['className'] || record['category'] || '').trim();
+      const hasSearchStatus = record['status'] !== undefined && record['status'] !== null;
+      const rawState = String(hasSearchStatus ? record['status'] : record['state']);
+      const state = hasSearchStatus ? (rawState === '0' ? '连载' : '完结') :
+        (rawState === '1' ? '连载' : (rawState ? '完结' : ''));
+      book.kind = [category, state].filter((value: string): boolean => !!value).join(',');
+      const rawLatest = record['latest_chapter'];
+      if (rawLatest && typeof rawLatest === 'object' && !Array.isArray(rawLatest)) {
+        book.latestChapterTitle = String((rawLatest as Record<string, Object>)['cname'] || '');
+      }
+      book.wordCount = String(record['wordCount'] || record['words'] || '').trim();
+      book.variable = JSON.stringify(record);
+      book.origin = source.bookSourceUrl;
+      book.originName = source.bookSourceName;
+      book.bookSourceComment = source.bookSourceComment;
+      book.customOrder = source.customOrder;
+      book.weight = source.weight;
+      BookTypeSupport.applySearchBookType(book, source);
+      this.sanitizeSearchBook(book);
+      result.push(book);
+      if (result.length >= limit) break;
+    }
+    return result;
+  }
+
   private parseJsonRecord(value: string): Record<string, Object> | null {
     let current: Object;
     try {
@@ -849,39 +859,6 @@ export class SearchCoordinator {
     }
     if (!current || typeof current !== 'object' || Array.isArray(current)) return null;
     return current as Record<string, Object>;
-  }
-
-  private async analyzeSearchFieldBatch(source: BookSource, items: string[], baseUrl: string,
-    rawRule: string): Promise<string[]> {
-    const rule = (rawRule || '').trim();
-    if (!rule || !/^@?js:/i.test(rule) || items.length === 0) return [];
-    const code = rule.replace(/^@?js:\s*/i, '');
-    const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.SEARCH,
-      `${source.jsLib || ''}\n${code}`);
-    const runtime = BookSourceStageWebRuntime.get();
-    if (decision.runtime !== 'arkweb' || !runtime.isAvailable()) return [];
-
-    const request = new StageWebRuntimeRequest();
-    request.source = source;
-    request.content = JSON.stringify(items.map((item: string): Object | string => {
-      try { return JSON.parse(item) as Object; } catch (_) { return item; }
-    }));
-    request.contextContent = request.content;
-    request.baseUrl = baseUrl || source.bookSourceUrl;
-    request.ownerId = this.stageRuntimeOwnerId;
-    request.code = `const __fieldItems=JSON.parse(result||'[]');const __fieldCode=${JSON.stringify(code)};` +
-      `JSON.stringify(__fieldItems.map(function(__fieldItem){java.__setContextContent(__fieldItem);` +
-      `try{const __fieldValue=eval(__fieldCode);return __fieldValue==null?'':String(__fieldValue);}` +
-      `catch(__fieldError){return '';}}));`;
-    try {
-      const result = await runtime.execute(request);
-      const parsed = JSON.parse(result.value || '[]') as Object;
-      if (!Array.isArray(parsed)) return [];
-      return (parsed as Object[]).map((value: Object): string => String(value || ''));
-    } catch (error) {
-      console.warn('[SC] stage runtime field batch failed, fallback legacy:', source.bookSourceName, error);
-      return [];
-    }
   }
 
   private searchRelevanceScore(book: SearchBook, normalizedKeyword: string): number {
@@ -1005,21 +982,24 @@ export class SearchCoordinator {
     const searchUrl = source.searchUrl;
     const baseUrl = source.bookSourceUrl;
     if (!searchUrl) return `${baseUrl}/search?q={{key}}`;
+    const shuqiSearchUrl = BookSourceShuqiSupport.buildSearchUrl(source, keyword, 1);
+    if (shuqiSearchUrl) return shuqiSearchUrl;
+    const isFullJsSearchUrl = /^\s*@?js:/i.test(searchUrl);
+    const searchRuntimeDecision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.SEARCH,
+      `${source.jsLib || ''}\n${searchUrl}`);
+    const requiresStageRuntime = isFullJsSearchUrl ||
+      (searchUrl.includes('{{') && searchRuntimeDecision.runtime === 'arkweb');
     const stageUrl = await this.tryBuildStageRuntimeSearchUrl(source, keyword, validationOnly);
     if (stageUrl) return stageUrl;
-    if (/^\s*@?js:/i.test(searchUrl)) {
-      const scripted = BookSourceScriptRunner.evaluateUrl(source, searchUrl, keyword, '1');
-      if (scripted.handled && scripted.value) {
-        source.variable = scripted.variable;
-        return scripted.value;
-      }
-    }
     const scriptedFormUrl = await this.tryBuildScriptedFormSearchUrl(source, keyword, maxResponseBytes);
     if (scriptedFormUrl) return scriptedFormUrl;
     const buildRequestUrl = BookSourceDataUrlSupport.buildRequestUrl(source, searchUrl, '1', keyword);
     if (buildRequestUrl) return buildRequestUrl;
     const qingtianUrl = this.buildQingtianSearchUrl(source, keyword, '1');
     if (qingtianUrl) return qingtianUrl;
+    // Complete or complex JavaScript URLs are never retried in the synchronous compatibility
+    // interpreter. A failed ArkWeb execution should fail this source, not freeze the UI thread.
+    if (requiresStageRuntime) return '';
     let url = searchUrl;
     url = this.stripLeadingJsUrl(url);
     if (url.startsWith('@js:')) {
@@ -1052,9 +1032,16 @@ export class SearchCoordinator {
 
   private async tryBuildStageRuntimeSearchUrl(source: BookSource, keyword: string,
     validationOnly: boolean): Promise<string> {
+    const rawSearchUrl = source.searchUrl || '';
+    const isFullJsUrl = /^\s*@?js:/i.test(rawSearchUrl);
     const hostCode = `${source.jsLib || ''}\n${source.searchUrl || ''}`;
     const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.SEARCH, hostCode);
-    if (decision.runtime !== 'arkweb' || !BookSourceStageWebRuntime.get().isAvailable()) return '';
+    if (!isFullJsUrl && decision.runtime !== 'arkweb') return '';
+    const runtime = BookSourceStageWebRuntime.get();
+    if (!runtime.isAvailable()) {
+      const available = await runtime.waitUntilAvailable(1000);
+      if (!available) return '';
+    }
     const request = new StageWebRuntimeRequest();
     request.source = source;
     request.baseUrl = source.bookSourceUrl;
@@ -1063,8 +1050,6 @@ export class SearchCoordinator {
       request.maxResponseBytes = MAX_VALIDATION_STAGE_RESPONSE_BYTES;
       request.maxTotalResponseBytes = MAX_VALIDATION_STAGE_TOTAL_RESPONSE_BYTES;
     }
-    const rawSearchUrl = source.searchUrl || '';
-    const isFullJsUrl = /^\s*@?js:/i.test(rawSearchUrl);
     request.variables = {
       key: isFullJsUrl ? keyword : encodeURIComponent(keyword),
       searchKey: isFullJsUrl ? keyword : encodeURIComponent(keyword),
@@ -1083,10 +1068,10 @@ export class SearchCoordinator {
         `function(_,expr){try{return String(eval(expr));}catch(e){return '';}});result;`;
     }
     try {
-      const result = await BookSourceStageWebRuntime.get().execute(request);
+      const result = await runtime.execute(request);
       return result.value || '';
     } catch (error) {
-      console.warn('[SC] stage runtime search URL failed, fallback legacy:', source.bookSourceName, error);
+      console.warn('[SC] stage runtime search URL failed:', source.bookSourceName, error);
       return '';
     }
   }

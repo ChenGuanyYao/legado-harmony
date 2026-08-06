@@ -27,6 +27,24 @@ export class ReaderActionMarker {
     return `${ReaderActionMarker.PREFIX}${encodeURIComponent(JSON.stringify(data))}${ReaderActionMarker.SUFFIX}`;
   }
 
+  /**
+   * Dense Shuqi chapters can contain more than one hundred comment actions. Keeping the repeated API host,
+   * key and JSON field names in every marker makes text measurement unnecessarily expensive, so persist only
+   * the chapter coordinates and restore the real URL when the marker is clicked.
+   */
+  static createShuqiComment(label: string, bookId: string, chapterId: string,
+    paragraphId: string, mode: string = 'paragraph'): string {
+    const safeLabel = (label || '').trim() || '段评';
+    const safeBookId = (bookId || '').trim();
+    const safeChapterId = (chapterId || '').trim();
+    const safeParagraphId = (paragraphId || '').trim();
+    if (!safeBookId || !safeChapterId || !safeParagraphId) return '';
+    const modeCode = mode === 'chapterTitle' || mode === 'chapter' ? 'c' : 'p';
+    const fields = [safeLabel, safeBookId, safeChapterId, safeParagraphId]
+      .map((value: string): string => encodeURIComponent(value));
+    return `${ReaderActionMarker.PREFIX}S|${fields.join('|')}|${modeCode}${ReaderActionMarker.SUFFIX}`;
+  }
+
   static parse(value: string): ReaderActionData | null {
     const text = (value || '').trim();
     const prefix = text.startsWith(ReaderActionMarker.PREFIX) ? ReaderActionMarker.PREFIX :
@@ -36,6 +54,22 @@ export class ReaderActionMarker {
     const encoded = text.substring(prefix.length,
       text.length - ReaderActionMarker.SUFFIX.length);
     try {
+      if (encoded.startsWith('S|')) {
+        const fields = encoded.split('|');
+        if (fields.length !== 6) return null;
+        const label = decodeURIComponent(fields[1] || '') || '段评';
+        const bookId = decodeURIComponent(fields[2] || '');
+        const chapterId = decodeURIComponent(fields[3] || '');
+        const paragraphId = decodeURIComponent(fields[4] || '');
+        if (!bookId || !chapterId || !paragraphId) return null;
+        const data = new ReaderActionData();
+        data.label = label;
+        data.url = `legado-shuqi-comment://${encodeURIComponent(bookId)}/` +
+          `${encodeURIComponent(chapterId)}/${encodeURIComponent(paragraphId)}?mode=` +
+          `${fields[5] === 'c' ? 'chapterTitle' : 'paragraph'}`;
+        data.title = fields[5] === 'c' ? '章评' : '段评';
+        return data;
+      }
       const record = JSON.parse(decodeURIComponent(encoded)) as Record<string, Object>;
       const data = new ReaderActionData();
       data.label = String(record['label'] || '打开');

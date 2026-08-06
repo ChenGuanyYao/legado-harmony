@@ -4,6 +4,8 @@ import { WebBookService } from './WebBookService';
 import { CoverUrlNormalizer } from '../../utils/CoverUrlNormalizer';
 import { LocalChapterContentLoader } from './LocalChapterContentLoader';
 import { ReaderActionMarker } from './ReaderActionMarker';
+import { BookSourceInteractionPostProcessor } from './BookSourceInteractionPostProcessor';
+import { BookSourceShuqiSupport } from './BookSourceShuqiSupport';
 
 export class ReadBookEngine {
   private static inst: ReadBookEngine | null = null;
@@ -21,6 +23,8 @@ export class ReadBookEngine {
   private chapterLoading: Map<number, Promise<string>> = new Map();
   private readonly chapterCacheLimit: number = 7;
   private preloadGeneration: number = 0;
+  private sourceInteractionIdentity: string = '';
+  private static readonly SOURCE_INTERACTION_IDENTITY_KEY: string = '__readerSourceInteractionIdentity';
 
   private constructor() { this.webBook = new WebBookService(); }
 
@@ -49,17 +53,25 @@ export class ReadBookEngine {
       console.log('[RE] source loaded:', this.source ? this.source.bookSourceName : 'none');
     }
 
+    await this.initializeSourceInteractionIdentity();
+
     this.chapters = await appDb.getBookChapters(book.bookUrl);
     console.log('[RE] cached chapters:', this.chapters.length);
 
     // 检查缓存章节是否有未解析的变量（旧版本残留）
     const hasBrokenUrls = book.origin !== 'local' && this.chapters.some(c => this.isBrokenChapterUrl(c.url));
+    const needsShuqiMetadata = !!this.source &&
+      BookSourceShuqiSupport.needsChapterMetadataRefresh(this.source, this.chapters);
 
-    if (hasBrokenUrls || (this.chapters.length === 0 && this.source && book.origin !== 'local')) {
+    if (hasBrokenUrls || needsShuqiMetadata ||
+      (this.chapters.length === 0 && this.source && book.origin !== 'local')) {
       if (hasBrokenUrls) {
         console.log('[RE] 检测到过期缓存，清除并重新获取');
         await appDb.deleteBookChapters(book.bookUrl);
         this.chapters = [];
+      }
+      if (needsShuqiMetadata) {
+        console.log('[RE] 书旗章节缺少评论定位信息，刷新目录');
       }
       console.log('[RE] no valid chapters, refreshing toc...');
       await this.refreshToc();
@@ -295,6 +307,52 @@ export class ReadBookEngine {
     }
     this.content = '';
     this.preloadGeneration++;
+  }
+
+  async refreshSourceInteractionState(): Promise<boolean> {
+    if (!this.book || !this.source || !this.book.origin || this.book.origin === 'local') return false;
+    const latestSource = await appDb.getBookSource(this.book.origin);
+    if (!latestSource) return false;
+    const nextIdentity = this.buildSourceInteractionIdentity(latestSource);
+    this.source = latestSource;
+    if (nextIdentity === this.sourceInteractionIdentity) return false;
+    this.sourceInteractionIdentity = nextIdentity;
+    this.chapterCache.clear();
+    this.chapterLoading.clear();
+    this.content = '';
+    this.preloadGeneration++;
+    await appDb.deleteBookCachedContent(this.book.bookUrl);
+    this.book.putVariable(ReadBookEngine.SOURCE_INTERACTION_IDENTITY_KEY, nextIdentity);
+    await appDb.updateBook(this.book, false);
+    console.info('[RE] source interaction settings changed, chapter cache cleared:',
+      this.source.bookSourceName);
+    return true;
+  }
+
+  private async initializeSourceInteractionIdentity(): Promise<void> {
+    if (!this.book || !this.source || this.book.origin === 'local') {
+      this.sourceInteractionIdentity = '';
+      return;
+    }
+    const nextIdentity = this.buildSourceInteractionIdentity(this.source);
+    const storedIdentity = this.book.getVariable(ReadBookEngine.SOURCE_INTERACTION_IDENTITY_KEY);
+    this.sourceInteractionIdentity = nextIdentity;
+    if (storedIdentity === nextIdentity) return;
+    await appDb.deleteBookCachedContent(this.book.bookUrl);
+    this.book.putVariable(ReadBookEngine.SOURCE_INTERACTION_IDENTITY_KEY, nextIdentity);
+    await appDb.updateBook(this.book, false);
+    console.info('[RE] source interaction cache identity initialized:', this.source.bookSourceName);
+  }
+
+  private buildSourceInteractionIdentity(source: BookSource): string {
+    const raw = BookSourceInteractionPostProcessor.interactionCacheIdentity(source);
+    if (!raw) return '';
+    let hash = 2166136261;
+    for (let index = 0; index < raw.length; index++) {
+      hash ^= raw.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `${source.bookSourceUrl || ''}:${(hash >>> 0).toString(16)}`;
   }
 
   preloadAround(idx: number, forwardCount: number = 2, backwardCount: number = 1): void {

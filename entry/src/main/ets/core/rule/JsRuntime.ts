@@ -440,6 +440,10 @@ export class JsRuntime {
     return this.splitTopLevel(expr, [';']);
   }
 
+  md5Encode(value: string): string {
+    return this.digest('MD5', value || '');
+  }
+
   private base64UrlEncode(input: string): string {
     return this.base64(input).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
   }

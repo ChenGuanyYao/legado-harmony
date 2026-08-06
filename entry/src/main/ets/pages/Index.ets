@@ -162,6 +162,8 @@ class ShelfTileEntryDataSource implements IDataSource {
 @Component
 struct Index {
   private stageRuntimeController: webview.WebviewController = new webview.WebviewController();
+  @State stageRuntimeMounted: boolean = true;
+  private stageRuntimeResetScheduled: boolean = false;
   private shortcutRoutingActive: boolean = false;
   private cloudSyncDebounceTimer: number = -1;
   @State currentIndex: number = 0;
@@ -220,6 +222,7 @@ struct Index {
 
   aboutToAppear() {
     this.shortcutRoutingActive = true;
+    BookSourceStageWebRuntime.get().setResetHandler((): void => this.resetStageRuntimeHost());
     hilog.info(0x0000, 'testTag', 'StartupTrace Index aboutToAppear %{public}d', Date.now());
     this.syncHomeSystemBars();
     this.openPendingShortcut();
@@ -245,6 +248,24 @@ struct Index {
 
   onPageHide(): void {
     this.shortcutRoutingActive = false;
+  }
+
+  aboutToDisappear(): void {
+    BookSourceStageWebRuntime.get().setResetHandler(null);
+    BookSourceStageWebRuntime.get().detach(this.stageRuntimeController);
+  }
+
+  resetStageRuntimeHost(): void {
+    if (this.stageRuntimeResetScheduled) return;
+    this.stageRuntimeResetScheduled = true;
+    const previous = this.stageRuntimeController;
+    BookSourceStageWebRuntime.get().detach(previous);
+    this.stageRuntimeMounted = false;
+    setTimeout(() => {
+      this.stageRuntimeController = new webview.WebviewController();
+      this.stageRuntimeMounted = true;
+      this.stageRuntimeResetScheduled = false;
+    }, 0);
   }
 
   onSingleSourceSearchRequested(): void {
@@ -423,22 +444,24 @@ struct Index {
       if (this.globalTtsActive && this.showGlobalTtsPanel && this.showGlobalTtsCatalog) {
         this.globalTtsCatalogOverlay()
       }
-      Web({ src: 'about:blank', controller: this.stageRuntimeController })
-        .width(1)
-        .height(1)
-        .opacity(0.01)
-        .javaScriptAccess(true)
-        .domStorageAccess(true)
-        .mixedMode(MixedMode.All)
-        .onControllerAttached(() => {
-          BookSourceStageWebRuntime.get().attach(this.stageRuntimeController);
-        })
-        .onPageBegin(() => {
-          BookSourceStageWebRuntime.get().setReady(false, this.stageRuntimeController);
-        })
-        .onPageEnd(() => {
-          BookSourceStageWebRuntime.get().setReady(true, this.stageRuntimeController);
-        })
+      if (this.stageRuntimeMounted) {
+        Web({ src: 'about:blank', controller: this.stageRuntimeController })
+          .width(1)
+          .height(1)
+          .opacity(0.01)
+          .javaScriptAccess(true)
+          .domStorageAccess(true)
+          .mixedMode(MixedMode.All)
+          .onControllerAttached(() => {
+            BookSourceStageWebRuntime.get().attach(this.stageRuntimeController);
+          })
+          .onPageBegin(() => {
+            BookSourceStageWebRuntime.get().setReady(false, this.stageRuntimeController);
+          })
+          .onPageEnd(() => {
+            BookSourceStageWebRuntime.get().setReady(true, this.stageRuntimeController);
+          })
+      }
     }
     .width('100%')
     .height('100%')
@@ -4278,7 +4301,7 @@ struct BookshelfPage {
 
   @Builder
   shelfTileGroupFolder(group: BookGroup) {
-    Column({ space: 6 }) {
+    Column({ space: 4 }) {
       if (this.shouldUseThemeBookCover()) {
         Stack() {
           Image(this.activeThemeShelfFolder())
@@ -4314,8 +4337,9 @@ struct BookshelfPage {
 
       Text(group.groupName)
         .width('100%')
-        .height(38)
+        .height(30)
         .fontSize(14)
+        .lineHeight(15)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.primaryTextColor())
         .maxLines(2)
@@ -4330,8 +4354,8 @@ struct BookshelfPage {
           .fontColor(this.subTextColor())
       }
       .width('100%')
-      .height(18)
-      .alignItems(VerticalAlign.Center)
+      .height(13)
+      .alignItems(VerticalAlign.Bottom)
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)

@@ -69,11 +69,13 @@ const appIconManager = read('entry/src/main/ets/utils/AppIconManager.ets');
 const fontBootstrap = read('entry/src/main/ets/utils/ReaderFontBootstrap.ets');
 const entryAbility = read('entry/src/main/ets/entryability/EntryAbility.ets');
 const serverIndex = read('server/src/index.ts');
-const serverThemeCatalog = read('server/migrations/011_theme_catalog.sql');
+const serverThemeCatalog = read('server/migrations/011_theme_catalog.sql') + '\n' +
+  read('server/migrations/012_qingluan_water_theme.sql');
 const pages = JSON.parse(read('entry/src/main/resources/base/profile/main_pages.json'));
 
 const expectedThemes = [
-  'classic-blue', 'warm-paper', 'forest-mist', 'ink-wash', 'neon-night', 'sword-frost'
+  'classic-blue', 'warm-paper', 'forest-mist', 'ink-wash', 'neon-night', 'sword-frost',
+  'qingluan-water'
 ];
 for (const themeId of expectedThemes) {
   assert(models.includes(`'${themeId}'`), `Theme id is missing from ThemeModels: ${themeId}`);
@@ -81,7 +83,8 @@ for (const themeId of expectedThemes) {
 }
 const redeemableThemeIds = [
   'classic-blue', 'warm-paper', 'forest-mist', 'ink-wash', 'neon-night',
-  'strawberry-cream', 'crimson-archive', 'plum-tea', 'rose-letter', 'moon-crane', 'sword-frost'
+  'strawberry-cream', 'crimson-archive', 'plum-tea', 'rose-letter', 'moon-crane', 'sword-frost',
+  'qingluan-water'
 ];
 for (const themeId of redeemableThemeIds) {
   assert(serverThemeCatalog.includes(`('${themeId}'`), `Database theme catalog is missing: ${themeId}`);
@@ -95,7 +98,7 @@ assert(registry.includes('static register(theme: ThemePack)'), 'Compiled theme r
 const expectedBackgrounds = [
   'paper-light', 'paper-dark', 'forest-light', 'forest-dark',
   'ink-light', 'ink-dark', 'neon-light', 'neon-dark',
-  'sword-frost-light', 'sword-frost-dark'
+  'sword-frost-light', 'sword-frost-dark', 'qingluan-water-light', 'qingluan-water-dark'
 ];
 for (const assetId of expectedBackgrounds) {
   assert(assets.includes(`'${assetId}'`), `Background asset id is not mapped: ${assetId}`);
@@ -173,7 +176,35 @@ for (const fileName of swordFrostSvgs) {
   assert(fs.existsSync(path.join(mediaRoot, fileName)), `Sword Frost vector asset is missing: ${fileName}`);
 }
 
-const bubbleStyles = ['qq-soft', 'qq-solid', 'capsule', 'paper', 'neon', 'sword-talisman'];
+const qingluanWaterJpegs = [
+  'theme_startup_qingluan_water.jpg',
+  'theme_cover_qingluan_water_01.jpg', 'theme_cover_qingluan_water_02.jpg',
+  'theme_cover_qingluan_water_03.jpg', 'theme_cover_qingluan_water_04.jpg',
+  'theme_cover_qingluan_water_05.jpg', 'theme_cover_qingluan_water_06.jpg',
+  'theme_folder_art_qingluan_water.jpg'
+];
+for (const fileName of qingluanWaterJpegs) {
+  const filePath = path.join(mediaRoot, fileName);
+  assert(fs.existsSync(filePath), `Qingluan Water artwork is missing: ${fileName}`);
+  const dimensions = jpegDimensions(filePath);
+  const expected = fileName === 'theme_startup_qingluan_water.jpg' ? { width: 841, height: 1870 } :
+    { width: 450, height: 660 };
+  assert(dimensions.width === expected.width && dimensions.height === expected.height,
+    `Invalid Qingluan Water artwork dimensions: ${fileName}`);
+}
+const qingluanWaterSvgs = [
+  'theme_logo_qingluan_water.svg', 'theme_frame_qingluan_water.svg',
+  'reader_bg_qingluan_water_light.svg', 'reader_bg_qingluan_water_dark.svg',
+  'reader_decor_qingluan_water_light.svg', 'reader_decor_qingluan_water_dark.svg',
+  'ic_theme_qingluan_water_bookshelf.svg', 'ic_theme_qingluan_water_explore.svg',
+  'ic_theme_qingluan_water_search.svg', 'ic_theme_qingluan_water_mine.svg',
+  'regex_frame_qingluan_jade.svg', 'regex_cap_qingluan_jade.svg'
+];
+for (const fileName of qingluanWaterSvgs) {
+  assert(fs.existsSync(path.join(mediaRoot, fileName)), `Qingluan Water vector asset is missing: ${fileName}`);
+}
+
+const bubbleStyles = ['qq-soft', 'qq-solid', 'capsule', 'paper', 'neon', 'sword-talisman', 'qingluan-jade'];
 for (const styleId of bubbleStyles) {
   assert(models.includes(`'${styleId}'`), `Bubble style is missing from ThemeModels: ${styleId}`);
   assert(regexModel.includes(`'${styleId}'`), `Bubble resolver/codec is missing style: ${styleId}`);
@@ -207,10 +238,11 @@ assert(indexPage.includes('this.shelfSortButton()') &&
   !indexPage.includes("this.sortChip('新阅读', 'recentRead')"),
   'Bookshelf sorting must use a compact dropdown selector');
 assert(indexPage.includes('shelfScopeSegment()') &&
-  indexPage.includes("this.scopeSegmentItem('网络', 'network')") &&
-  indexPage.includes("this.scopeSegmentItem('本地', 'local')") &&
+  indexPage.includes('expandedShelfScopeSegment()') &&
+  indexPage.includes("this.scopeDropdownItem('网络', 'network')") &&
+  indexPage.includes("this.scopeDropdownItem('本地', 'local')") &&
   !indexPage.includes("this.scopeChip('网络', 'network')"),
-  'Bookshelf network/local switch must use the segmented control');
+  'Bookshelf network/local switch must use the compact dropdown selector');
 assert((indexPage.includes("this.actionItem('多选'") ||
   indexPage.includes("this.contextActionItem($r('sys.symbol.checkmark_circle'), '多选'")) &&
   indexPage.includes('this.bookMultiSelectBar()'),
@@ -303,7 +335,8 @@ assert(reader.includes('buildReaderMeasureTextStyle(this.readerFontSize, this.ge
 assert(reader.includes('this.readerTypographySettingsPanel()') &&
   reader.includes("this.readerTypographySlider('左边距'") &&
   reader.includes("this.readerTypographySlider('右边距'") &&
-  reader.includes('applyReaderMargin'),
+  reader.includes('applyReaderTypographyValue') &&
+  reader.includes('commitReaderTypographyDraft'),
   'In-reader settings do not provide the shared typography controls');
 assert(bookModel.includes('static hasStartedReading(book: Book | null)') &&
   bookModel.includes("book.getVariable('readStarted')"),

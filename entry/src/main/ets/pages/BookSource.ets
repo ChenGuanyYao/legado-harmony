@@ -3618,7 +3618,13 @@ struct BookSourcePage {
     }
     if (loginItems.length > 0) {
       const loginInfo = BookSourceLoginWebRuntime.parseRecord(source.loginInfo);
+      let compatibilityValueSeeded = false;
       for (const item of loginItems) {
+        const compatibilityDefault = this.sourceLoginCompatibilityDefault(source, item);
+        if (compatibilityDefault && loginInfo[item.name] === undefined) {
+          loginInfo[item.name] = compatibilityDefault;
+          compatibilityValueSeeded = true;
+        }
         if ((this.isSourceLoginInput(item) || this.isSourceLoginChoice(item)) &&
           loginInfo[item.name] !== undefined) {
           item.value = loginInfo[item.name];
@@ -3629,6 +3635,11 @@ struct BookSourcePage {
       this.hydrateSourceLoginItemStates(source, loginItems);
       this.actionSourceDetail = source;
       this.sourceLoginItems = loginItems;
+      if (compatibilityValueSeeded) {
+        source.loginInfo = BookSourceLoginWebRuntime.mergeRecord(source.loginInfo, loginInfo);
+        await AppDatabase.getInstance().updateBookSourceLoginRuntime(source.bookSourceUrl,
+          source.variable, source.loginHeader, source.loginInfo);
+      }
       this.showSourceLoginUiDialog = true;
       return;
     }
@@ -3650,9 +3661,20 @@ struct BookSourcePage {
   async resolveSourceLoginItems(source: BookSource): Promise<BookSourceLoginItem[]> {
     const dynamicScript = BookSourceScriptRunner.dynamicLoginUiScript(source);
     if (!dynamicScript) return BookSourceScriptRunner.loginItems(source);
+    const staticItems = BookSourceScriptRunner.loginItems(source);
+    if (staticItems.length > 0) return staticItems;
     const result = await this.runSourceLoginAction(source, dynamicScript);
     if (result.errorMessage) throw new Error(result.errorMessage);
     return BookSourceScriptRunner.parseLoginItems(result.resultValue);
+  }
+
+  sourceLoginCompatibilityDefault(source: BookSource, item: BookSourceLoginItem): string {
+    const sourceIdentity = `${source.bookSourceUrl || ''}\n${source.bookSourceName || ''}\n${source.jsLib || ''}`;
+    const itemName = (item.name || '').replace(/\s+/g, '');
+    if (/(?:shuqireader\.com|书旗)/i.test(sourceIdentity) && /书旗评论API(?:Key|密钥)/i.test(itemName)) {
+      return 'tongrenshuqi134679';
+    }
+    return '';
   }
 
   async executeSourceLoginAction(item: BookSourceLoginItem): Promise<void> {

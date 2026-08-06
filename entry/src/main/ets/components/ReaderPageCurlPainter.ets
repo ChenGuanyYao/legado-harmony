@@ -156,7 +156,12 @@ export class ReaderPageCurlPainter {
       }
     }
     const mappedX = mappedNormal * cosine + tangent * sine;
-    const mappedY = centerY - mappedNormal * sine + tangent * cosine;
+    const curledY = centerY - mappedNormal * sine + tangent * cosine;
+    // Keep the physical top and bottom edges attached to the viewport. Applying the full tilted-axis displacement
+    // at y=0/height lifts the sheet away from the screen edge and reads as vertical compression. The middle of the
+    // leaf retains the S-shaped curl, while the displacement fades smoothly to zero at both horizontal edges.
+    const edgeLock = Math.sin(Math.PI * Math.max(0, Math.min(1, sourceY / Math.max(1, canvasHeight))));
+    const mappedY = sourceY + (curledY - sourceY) * edgeLock;
     const canonicalOrigin = doublePage ? leafWidth : 0;
     const canonicalGlobalX = canonicalOrigin + mappedX;
     return {

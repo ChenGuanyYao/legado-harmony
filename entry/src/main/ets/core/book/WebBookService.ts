@@ -20,6 +20,10 @@ import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceS
 import { ReaderActionMarker } from './ReaderActionMarker';
 import { BookSourceInteractionPostProcessor } from './BookSourceInteractionPostProcessor';
 import { CookieStore } from '../http/CookieStore';
+import { BookSourceShuqiSupport } from './BookSourceShuqiSupport';
+import { RuleExecutionService } from '../rule/RuleExecutionService';
+import { RuleBatchExecutionRequest, RuleFieldRequest } from '../rule/RuleExecutionModels';
+import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
 
 class ContentPageData {
   content: string = '';
@@ -45,6 +49,7 @@ export class WebBookService {
     }
     const sourceApiBook = await this.tryGetSourceApiBookInfo(source, book);
     if (sourceApiBook) return sourceApiBook;
+    await BookSourceShuqiSupport.ensureAuthorization(this.http, source);
     console.log('[WS] getBookInfo, URL:', book.bookUrl);
     const au = new AnalyzeUrl(source, this.http);
     const resp = EncodedSourceUrl.canHandle(book.bookUrl) ?
@@ -66,7 +71,7 @@ export class WebBookService {
     if (infoRule.init) {
       let initResult = await this.runStageRule(source, book, infoRule.init, content, baseUrl,
         SourceRuntimeStage.BOOK_INFO);
-      if (!initResult) {
+      if (!initResult && !this.stageRuleCode(infoRule.init)) {
         const ir = new AnalyzeRule(content, baseUrl, ctx);
         this.seedSourceVariables(ctx, source);
         initResult = ir.getString(infoRule.init);
@@ -74,24 +79,49 @@ export class WebBookService {
       if (initResult) content = initResult;
     }
 
-    const ir = new AnalyzeRule(content, baseUrl, ctx);
     this.seedSourceVariables(ctx, source);
-    book.name = await this.getBookInfoFieldValue(source, book, ir, infoRule.name, content, baseUrl) || book.name;
-    book.author = await this.getBookInfoFieldValue(source, book, ir, infoRule.author, content, baseUrl) || book.author;
+    const fieldRequest = new RuleBatchExecutionRequest();
+    fieldRequest.source = source;
+    fieldRequest.book = book;
+    fieldRequest.stage = SourceRuntimeStage.BOOK_INFO;
+    fieldRequest.ownerId = `book_info_${Date.now()}_${book.bookUrl}`;
+    fieldRequest.contents = [content];
+    fieldRequest.baseUrl = baseUrl;
+    fieldRequest.contextValues = ctx.toRecord();
+    fieldRequest.fields = [
+      new RuleFieldRequest('name', infoRule.name || ''),
+      new RuleFieldRequest('author', infoRule.author || ''),
+      new RuleFieldRequest('coverUrl', infoRule.coverUrl || ''),
+      new RuleFieldRequest('intro', infoRule.intro || ''),
+      new RuleFieldRequest('kind', infoRule.kind || ''),
+      new RuleFieldRequest('lastChapter', infoRule.lastChapter || ''),
+      new RuleFieldRequest('wordCount', infoRule.wordCount || ''),
+      new RuleFieldRequest('tocUrl', infoRule.tocUrl || '', true)
+    ];
+    fieldRequest.timeoutMs = 20000;
+    let fieldValues: Record<string, string> = {};
+    try {
+      const batch = await RuleExecutionService.get().executeBatch(fieldRequest);
+      if (batch.errors.length > 0) {
+        console.warn('[WS] book info field errors:', source.bookSourceName, batch.errors.join('; '));
+      }
+      if (batch.values.length > 0) fieldValues = batch.values[0];
+      if (batch.contextValues.length > 0) ctx.loadFromJson(batch.contextValues[0]);
+    } finally {
+      RuleExecutionService.get().clearOwner(fieldRequest.ownerId);
+    }
+    book.name = fieldValues['name'] || book.name;
+    book.author = fieldValues['author'] || book.author;
     const infoCoverUrl = BookSourceDataUrlSupport.normalizeCoverUrl(source,
-      await this.getBookInfoFieldValue(source, book, ir, infoRule.coverUrl, content, baseUrl), baseUrl);
+      fieldValues['coverUrl'] || '', baseUrl);
     book.coverUrl = book.coverUrl || infoCoverUrl;
-    book.intro = BookFieldSanitizer.prefer(
-      await this.getBookInfoFieldValue(source, book, ir, infoRule.intro, content, baseUrl), book.intro);
-    book.kind = BookFieldSanitizer.prefer(
-      await this.getBookInfoFieldValue(source, book, ir, infoRule.kind, content, baseUrl), book.kind);
-    book.latestChapterTitle = BookFieldSanitizer.prefer(
-      await this.getBookInfoFieldValue(source, book, ir, infoRule.lastChapter, content, baseUrl),
-      book.latestChapterTitle);
-    book.wordCount = BookFieldSanitizer.prefer(
-      await this.getBookInfoFieldValue(source, book, ir, infoRule.wordCount, content, baseUrl), book.wordCount);
+    book.intro = BookFieldSanitizer.prefer(fieldValues['intro'] || '', book.intro);
+    book.kind = BookFieldSanitizer.prefer(fieldValues['kind'] || '', book.kind);
+    book.latestChapterTitle = BookFieldSanitizer.prefer(fieldValues['lastChapter'] || '', book.latestChapterTitle);
+    book.wordCount = BookFieldSanitizer.prefer(fieldValues['wordCount'] || '', book.wordCount);
 
-    const tocUrl = await this.getBookInfoFieldValue(source, book, ir, infoRule.tocUrl, content, baseUrl, true);
+    const nativeShuqiTocUrl = BookSourceShuqiSupport.buildTocUrl(source, content);
+    const tocUrl = nativeShuqiTocUrl || fieldValues['tocUrl'] || '';
     if (tocUrl) book.tocUrl = this.repairUrlWithBookId(tocUrl, book.bookUrl);
 
     // 保存变量
@@ -193,6 +223,7 @@ export class WebBookService {
     if (qtqdChapters.length > 0) return qtqdChapters;
     const sourceApiChapters = await this.tryBuildSourceApiChapterList(source, book);
     if (sourceApiChapters.length > 0) return sourceApiChapters;
+    await BookSourceShuqiSupport.ensureAuthorization(this.http, source);
     console.log('[WS] getChapterList, tocUrl:', book.tocUrl);
     const tocUrl = this.resolveTocUrl(source, book);
     const au = new AnalyzeUrl(source, this.http);
@@ -231,8 +262,9 @@ export class WebBookService {
         const runtimeList = await this.runStageRule(source, book, tocRule.chapterList,
           runtimeInput, baseUrl, SourceRuntimeStage.TOC);
         if (runtimeList) {
-          const runtimeChapters = this.parseStageChapterList(source, book, runtimeList, baseUrl);
+          const runtimeChapters = await this.parseStageChapterList(source, book, runtimeList, baseUrl);
           if (runtimeChapters.length > 0) {
+            BookSourceShuqiSupport.attachChapterMetadata(source, book, runtimeChapters, currentResp.body);
             return runtimeChapters;
           }
           AppStorage.setOrCreate('bookSourceStageLastError',
@@ -247,7 +279,7 @@ export class WebBookService {
           return specialChapters;
         }
       }
-      const pageChapters = this.parseChapterPage(source, book, currentResp.body, baseUrl, ctx, chapters.length);
+      const pageChapters = await this.parseChapterPage(source, book, currentResp.body, baseUrl, ctx, chapters.length);
       for (const chapter of pageChapters) {
         const chapterKey = this.urlWithoutFragment(chapter.url);
         if (seenChapterUrls.has(chapterKey)) continue;
@@ -256,8 +288,8 @@ export class WebBookService {
         chapters.push(chapter);
       }
       if (!tocRule.nextTocUrl) break;
-      const pageRule = new AnalyzeRule(currentResp.body, baseUrl, ctx);
-      const nextUrl = pageRule.getString(tocRule.nextTocUrl, true);
+      const nextUrl = await this.executeSingleRuleField(source, book, null, tocRule.nextTocUrl,
+        currentResp.body, baseUrl, SourceRuntimeStage.TOC, ctx, true);
       const nextKey = this.urlWithoutFragment(nextUrl);
       if (!nextUrl || seenPageUrls.has(nextKey)) break;
       currentUrl = nextUrl;
@@ -276,25 +308,51 @@ export class WebBookService {
     return chapters;
   }
 
-  private parseChapterPage(source: BookSource, book: Book, body: string, baseUrl: string,
-    ctx: RuleContext, startIndex: number): BookChapter[] {
+  private async parseChapterPage(source: BookSource, book: Book, body: string, baseUrl: string,
+    ctx: RuleContext, startIndex: number): Promise<BookChapter[]> {
     const tocRule = source.tocRule;
+    // A complete list script has already been attempted through ArkWeb by getChapterList. Never
+    // retry it synchronously when it returned no usable chapters.
+    if (this.stageRuleCode(tocRule.chapterList || '')) return [];
     const rule = new AnalyzeRule(body, baseUrl, ctx);
     const items = rule.getElements(tocRule.chapterList || '');
     console.log('[WS] getChapterList page items:', items.length, 'from resp:', body.length);
     const chapters: BookChapter[] = [];
-    for (let i = 0; i < items.length; i++) {
-      const ir = new AnalyzeRule(items[i], baseUrl, ctx);
-      this.seedSourceVariables(ctx, source);
-      const chap = new BookChapter();
-      chap.title = this.cleanChapterTitle(ir.getString(tocRule.chapterName) || `第${startIndex + i + 1}章`);
-      let rawUrl = ir.getString(tocRule.chapterUrl);
-      if (rawUrl && (rawUrl.startsWith('@js:') || rawUrl.includes('$..') || rawUrl.includes('$.'))) {
-        const repairedUrl = ir.getString(tocRule.chapterUrl, true);
-        if (repairedUrl && !repairedUrl.includes('@js:') && !repairedUrl.includes('$..') && !repairedUrl.includes('$.')) {
-          rawUrl = repairedUrl;
-        }
+    if (items.length === 0) return chapters;
+    const fieldRequest = new RuleBatchExecutionRequest();
+    fieldRequest.source = source;
+    fieldRequest.book = book;
+    fieldRequest.stage = SourceRuntimeStage.TOC;
+    fieldRequest.ownerId = `toc_fields_${Date.now()}_${book.bookUrl}`;
+    fieldRequest.contents = items;
+    fieldRequest.baseUrl = baseUrl;
+    fieldRequest.contextValues = ctx.toRecord();
+    fieldRequest.fields = [
+      new RuleFieldRequest('chapterName', tocRule.chapterName || ''),
+      new RuleFieldRequest('chapterUrl', tocRule.chapterUrl || ''),
+      new RuleFieldRequest('isVip', tocRule.isVip || ''),
+      new RuleFieldRequest('updateTime', tocRule.updateTime || '')
+    ];
+    fieldRequest.timeoutMs = 30000;
+    let fieldValues: Record<string, string>[] = [];
+    let contextValues: string[] = [];
+    try {
+      const batch = await RuleExecutionService.get().executeBatch(fieldRequest);
+      fieldValues = batch.values;
+      contextValues = batch.contextValues;
+      if (batch.errors.length > 0) {
+        console.warn('[WS] toc field errors:', source.bookSourceName, batch.errors.join('; '));
       }
+    } finally {
+      RuleExecutionService.get().clearOwner(fieldRequest.ownerId);
+    }
+    const parsingSlice = CooperativeScheduler.createTimeSlice();
+    for (let i = 0; i < items.length; i++) {
+      if (i > 0) await parsingSlice.checkpoint();
+      const values = i < fieldValues.length ? fieldValues[i] : {};
+      const chap = new BookChapter();
+      chap.title = this.cleanChapterTitle(values['chapterName'] || `第${startIndex + i + 1}章`);
+      let rawUrl = values['chapterUrl'] || '';
       if (rawUrl && (rawUrl.startsWith('@js:') || rawUrl.includes('$..') || rawUrl.includes('$.'))) {
         let itemData: Record<string, Object> | null = null;
         try { itemData = JSON.parse(items[i]) as Record<string, Object>; } catch (_) {}
@@ -313,10 +371,15 @@ export class WebBookService {
       chap.url = this.normalizeChaoxingUrl(source, this.repairUrlWithBookId(resolvedChapterUrl, book.bookUrl));
       chap.bookUrl = book.bookUrl;
       chap.index = startIndex + i;
-      chap.isVip = ir.getString(tocRule.isVip) === 'true';
+      chap.isVip = values['isVip'] === 'true';
       chap.variable = BookUrlResolver.setVariableJson(chap.variable, 'baseUrl', baseUrl);
+      const updateTime = values['updateTime'] || '';
+      if (updateTime) {
+        chap.variable = BookUrlResolver.setVariableJson(chap.variable, 'updateTime', updateTime);
+      }
       if (chap.title && chap.url) chapters.push(chap);
     }
+    if (contextValues.length > 0) ctx.loadFromJson(contextValues[contextValues.length - 1]);
     return chapters;
   }
 
@@ -372,9 +435,16 @@ export class WebBookService {
     const stageContent = await this.tryGetStageContent(source, book, chapter);
     if (stageContent) {
       if (isAudioContent) return stageContent.trim();
+      const interactiveContent = await BookSourceInteractionPostProcessor.process(source, book, chapter,
+        stageContent);
       return await this.normalizeReaderContent(source,
-        this.applyContentReplaceRule(stageContent, source.contentRule.replaceRegex,
+        this.applyContentReplaceRule(interactiveContent, source.contentRule.replaceRegex,
           new RuleContext(), chapter), chapter.url);
+    }
+    if (this.stageRuleCode(source.contentRule.content || '')) {
+      // The complete content script was already executed in ArkWeb. Retrying an empty/error result
+      // with the synchronous compatibility engine is precisely the path that can trigger AppFreeze.
+      return '';
     }
     const normalizedContentUrl = this.normalizeChaoxingUrl(source, chapter.url);
     if (normalizedContentUrl !== chapter.url) {
@@ -388,8 +458,10 @@ export class WebBookService {
       this.seedBookVariables(specialCtx, book.bookUrl);
       this.seedSourceVariables(specialCtx, source);
       this.seedChapterVariables(specialCtx, chapter);
+      const interactiveContent = await BookSourceInteractionPostProcessor.process(source, book, chapter,
+        specialContent);
       return await this.normalizeReaderContent(source,
-        this.applyContentReplaceRule(specialContent, source.contentRule.replaceRegex, specialCtx, chapter), chapter.url);
+        this.applyContentReplaceRule(interactiveContent, source.contentRule.replaceRegex, specialCtx, chapter), chapter.url);
     }
     const au = new AnalyzeUrl(source, this.http);
     let resp = EncodedSourceUrl.canHandle(chapter.url) ?
@@ -444,18 +516,42 @@ export class WebBookService {
   private async parseContentPage(source: BookSource, book: Book, chapter: BookChapter, body: string,
     baseUrl: string, ctx: RuleContext): Promise<ContentPageData> {
     const data = new ContentPageData();
-    const rule = new AnalyzeRule(body, baseUrl, ctx);
     const contentRule = source.contentRule;
     const isAudioContent = source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
-    if (contentRule.nextContentUrl) {
-      data.nextUrl = rule.getString(contentRule.nextContentUrl, true);
+    const directContent = await this.tryGetDirectAjaxRuleContent(source, body, baseUrl, ctx, contentRule.content);
+    const fieldRequest = new RuleBatchExecutionRequest();
+    fieldRequest.source = source;
+    fieldRequest.book = book;
+    fieldRequest.chapter = chapter;
+    fieldRequest.readerActionMode = true;
+    fieldRequest.stage = SourceRuntimeStage.CONTENT;
+    fieldRequest.ownerId = `content_fields_${Date.now()}_${chapter.url}`;
+    fieldRequest.contents = [body];
+    fieldRequest.baseUrl = baseUrl;
+    fieldRequest.contextValues = ctx.toRecord();
+    fieldRequest.fields = [
+      new RuleFieldRequest('content', directContent ? '' : (contentRule.content || '')),
+      new RuleFieldRequest('nextContentUrl', contentRule.nextContentUrl || '', true),
+      new RuleFieldRequest('images', contentRule.images || '', false, true)
+    ];
+    fieldRequest.timeoutMs = 20000;
+    let values: Record<string, string> = {};
+    try {
+      const batch = await RuleExecutionService.get().executeBatch(fieldRequest);
+      if (batch.values.length > 0) values = batch.values[0];
+      if (batch.contextValues.length > 0) ctx.loadFromJson(batch.contextValues[0]);
+      if (batch.errors.length > 0) {
+        console.warn('[WS] content field errors:', source.bookSourceName, batch.errors.join('; '));
+      }
+    } finally {
+      RuleExecutionService.get().clearOwner(fieldRequest.ownerId);
     }
-    let imageRuleValues = contentRule.images ? rule.getStringList(contentRule.images) : [];
+    data.nextUrl = values['nextContentUrl'] || '';
+    let imageRuleValues = this.parseStringListValue(values['images'] || '');
     if (imageRuleValues.length === 0) {
       imageRuleValues = this.tryExtractScriptedComicImages(body);
     }
-    let content = await this.tryGetDirectAjaxRuleContent(source, body, baseUrl, ctx, contentRule.content);
-    if (!content) content = rule.getString(contentRule.content);
+    let content = directContent || values['content'] || '';
     // Audio rules return a media address (or JSON/HTML containing one), not reader text.
     // Preserve that value so the audio page can resolve relative, escaped and tagged URLs.
     if (isAudioContent) {
@@ -1088,6 +1184,9 @@ export class WebBookService {
       return '';
     }
     const action = String(options['click'] || options['js'] || '');
+    const svgText = this.decodeLegacySvg(rawSource.substring(0, optionIndex));
+    const shuqiMarker = this.readerActionMarkerFromShuqiLegacyAction(source, action, svgText);
+    if (shuqiMarker) return shuqiMarker;
     const actionMatch = /\b((?:fq)?(?:android)?showCmt)\s*\(\s*['"]?([^,'"\s)]+)['"]?\s*,\s*['"]?([^,'"\s)]+)['"]?\s*,\s*['"]?([^,'"\s)]+)['"]?/i.exec(action);
     if (!actionMatch || !actionMatch[2] || !actionMatch[3] || !actionMatch[4]) return '';
     const host = this.readerActionHost(source, baseUrl);
@@ -1099,7 +1198,6 @@ export class WebBookService {
     let url = `${host}/comments?bookId=${bookId}&chapterId=${chapterId}&paragraphId=${paragraphId}`;
     if (isFanqie) url += '&source=fanqie';
 
-    const svgText = this.decodeLegacySvg(rawSource.substring(0, optionIndex));
     const kind = /作家说/.test(svgText) ? '作家说评论' :
       (/本章说/.test(svgText) ? '本章说' : (/热评|热门评论|神评论/.test(svgText) ? '神评论' : '段评'));
     const countMatch = /<text\b[^>]*>([^<>]{1,20})<\/text>/gi;
@@ -1114,6 +1212,77 @@ export class WebBookService {
     if (!marker) return '';
     // Rich chapter/author cards retain their artwork and receive a native action beside it.
     return kind === '段评' ? marker : `${tag}\n${marker}`;
+  }
+
+  private readerActionMarkerFromShuqiLegacyAction(source: BookSource, action: string, svgText: string): string {
+    const call = /\b(showSqComments|showSqChapterComments)\s*\(/i.exec(action || '');
+    if (!call || call.index < 0) return '';
+    const openIndex = (action || '').indexOf('(', call.index);
+    const args = this.parseLegacyJavaScriptCallArguments(action || '', openIndex);
+    if (args.length < 3 || !args[0] || !args[1] || !args[2]) return '';
+    const mode = /^showSqChapterComments$/i.test(call[1] || '') ? 'chapterTitle' : 'paragraph';
+    const count = this.readerLegacySvgCommentCount(svgText);
+    const kind = mode === 'chapterTitle' ? '章评' : '段评';
+    const label = count ? `${kind} ${count}` : kind;
+    return ReaderActionMarker.createShuqiComment(label, args[0], args[1], args[2], mode);
+  }
+
+  private parseLegacyJavaScriptCallArguments(script: string, openIndex: number): string[] {
+    if (openIndex < 0 || script.charAt(openIndex) !== '(') return [];
+    const result: string[] = [];
+    let index = openIndex + 1;
+    while (index < script.length && result.length < 8) {
+      while (index < script.length && /[\s,]/.test(script.charAt(index))) index++;
+      if (index >= script.length || script.charAt(index) === ')') break;
+      const quote = script.charAt(index);
+      let value = '';
+      if (quote === '"' || quote === "'") {
+        index++;
+        while (index < script.length) {
+          const char = script.charAt(index++);
+          if (char === '\\' && index < script.length) {
+            const escaped = script.charAt(index++);
+            if (escaped === 'n') value += '\n';
+            else if (escaped === 'r') value += '\r';
+            else if (escaped === 't') value += '\t';
+            else value += escaped;
+          } else if (char === quote) {
+            break;
+          } else {
+            value += char;
+          }
+        }
+      } else {
+        const start = index;
+        while (index < script.length && script.charAt(index) !== ',' && script.charAt(index) !== ')') index++;
+        value = script.substring(start, index).trim();
+      }
+      result.push(value);
+      while (index < script.length && /\s/.test(script.charAt(index))) index++;
+      if (script.charAt(index) === ',') index++;
+      else if (script.charAt(index) === ')') break;
+    }
+    return result;
+  }
+
+  private readerLegacySvgCommentCount(svgText: string): string {
+    const countRegex = /<text\b[^>]*>([^<>]{1,20})<\/text>/gi;
+    let count = '';
+    let match: RegExpExecArray | null;
+    while ((match = countRegex.exec(svgText || '')) !== null) {
+      const candidate = this.decodeHtmlEntities(match[1] || '').trim();
+      if (/^(?:999\+?|\d{1,4})$/.test(candidate)) count = candidate;
+    }
+    return count;
+  }
+
+  private bookSourceLoginInfoValue(source: BookSource, key: string): string {
+    try {
+      const record = JSON.parse(source.loginInfo || '{}') as Record<string, Object>;
+      const value = record[key];
+      if (value !== undefined && value !== null && typeof value !== 'object') return String(value).trim();
+    } catch (_) {}
+    return '';
   }
 
   private decodeLegacySvg(dataUrl: string): string {
@@ -1366,10 +1535,50 @@ export class WebBookService {
       const result = await runtime.execute(request);
       return result.value || '';
     } catch (error) {
-      console.warn('[WS] stage runtime failed, fallback legacy:', source.bookSourceName, stage, error);
+      console.warn('[WS] stage runtime failed:', source.bookSourceName, stage, error);
       const message = error instanceof Error ? error.message : String(error || '');
       AppStorage.setOrCreate('bookSourceStageLastError', `${stage} 阶段：${message || '脚本执行失败'}`);
       return '';
+    }
+  }
+
+  private async executeSingleRuleField(source: BookSource, book: Book, chapter: BookChapter | null,
+    rawRule: string, content: string, baseUrl: string, stage: string, ctx: RuleContext,
+    resolveUrl: boolean = false): Promise<string> {
+    if (!rawRule) return '';
+    const request = new RuleBatchExecutionRequest();
+    request.source = source;
+    request.book = book;
+    request.chapter = chapter;
+    request.readerActionMode = stage === SourceRuntimeStage.CONTENT;
+    request.stage = stage;
+    request.ownerId = `${stage}_field_${Date.now()}_${book.bookUrl}`;
+    request.contents = [content];
+    request.baseUrl = baseUrl;
+    request.contextValues = ctx.toRecord();
+    request.fields = [new RuleFieldRequest('value', rawRule, resolveUrl)];
+    request.timeoutMs = 15000;
+    try {
+      const batch = await RuleExecutionService.get().executeBatch(request);
+      if (batch.contextValues.length > 0) ctx.loadFromJson(batch.contextValues[0]);
+      if (batch.errors.length > 0) {
+        console.warn('[WS] single field error:', source.bookSourceName, stage, batch.errors.join('; '));
+      }
+      return batch.values.length > 0 ? batch.values[0]['value'] || '' : '';
+    } finally {
+      RuleExecutionService.get().clearOwner(request.ownerId);
+    }
+  }
+
+  private parseStringListValue(value: string): string[] {
+    if (!value) return [];
+    try {
+      const parsed = JSON.parse(value) as Object;
+      if (!Array.isArray(parsed)) return [];
+      return (parsed as Object[]).map((item: Object): string => String(item || ''))
+        .filter((item: string): boolean => !!item);
+    } catch (_) {
+      return [];
     }
   }
 
@@ -1533,15 +1742,6 @@ export class WebBookService {
     }
   }
 
-  private async getBookInfoFieldValue(source: BookSource, book: Book, rule: AnalyzeRule,
-    rawRule: string, content: string, baseUrl: string, resolveUrl: boolean = false): Promise<string> {
-    if (!rawRule) return '';
-    const stageValue = await this.runStageRule(source, book, rawRule, content, baseUrl,
-      SourceRuntimeStage.BOOK_INFO);
-    if (stageValue) return resolveUrl ? BookUrlResolver.resolve(stageValue, baseUrl) : stageValue;
-    return rule.getString(rawRule, resolveUrl);
-  }
-
   private stageRuleCode(rawRule: string): string {
     const raw = (rawRule || '').trim();
     if (/^@?js:/i.test(raw)) return raw.replace(/^@?js:\s*/i, '');
@@ -1550,7 +1750,8 @@ export class WebBookService {
     return '';
   }
 
-  private parseStageChapterList(source: BookSource, book: Book, raw: string, baseUrl: string): BookChapter[] {
+  private async parseStageChapterList(source: BookSource, book: Book, raw: string,
+    baseUrl: string): Promise<BookChapter[]> {
     let values: Object[] = [];
     try {
       const parsed = JSON.parse(raw || '[]') as Object;
@@ -1560,14 +1761,52 @@ export class WebBookService {
     }
     const chapters: BookChapter[] = [];
     const tocRule = source.tocRule;
+    const records: Record<string, Object>[] = [];
+    const items: string[] = [];
     for (const value of values) {
       if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-      const item = JSON.stringify(value);
-      const rule = new AnalyzeRule(item, baseUrl);
-      const record = value as Record<string, Object>;
+      records.push(value as Record<string, Object>);
+      items.push(JSON.stringify(value));
+    }
+    if (items.length === 0) return chapters;
+    const ctx = new RuleContext();
+    ctx.loadFromJson(book.variable);
+    this.seedBookVariables(ctx, book.bookUrl);
+    this.seedSourceVariables(ctx, source);
+    const fieldRequest = new RuleBatchExecutionRequest();
+    fieldRequest.source = source;
+    fieldRequest.book = book;
+    fieldRequest.stage = SourceRuntimeStage.TOC;
+    fieldRequest.ownerId = `stage_toc_fields_${Date.now()}_${book.bookUrl}`;
+    fieldRequest.contents = items;
+    fieldRequest.baseUrl = baseUrl;
+    fieldRequest.contextValues = ctx.toRecord();
+    fieldRequest.fields = [
+      new RuleFieldRequest('chapterName', tocRule.chapterName || ''),
+      new RuleFieldRequest('chapterUrl', tocRule.chapterUrl || ''),
+      new RuleFieldRequest('isVip', tocRule.isVip || ''),
+      new RuleFieldRequest('updateTime', tocRule.updateTime || '')
+    ];
+    fieldRequest.timeoutMs = 30000;
+    let parsedFields: Record<string, string>[] = [];
+    try {
+      const batch = await RuleExecutionService.get().executeBatch(fieldRequest);
+      parsedFields = batch.values;
+      if (batch.contextValues.length > 0) ctx.loadFromJson(batch.contextValues[batch.contextValues.length - 1]);
+      if (batch.errors.length > 0) {
+        console.warn('[WS] stage toc field errors:', source.bookSourceName, batch.errors.join('; '));
+      }
+    } finally {
+      RuleExecutionService.get().clearOwner(fieldRequest.ownerId);
+    }
+    const parsingSlice = CooperativeScheduler.createTimeSlice();
+    for (let index = 0; index < records.length; index++) {
+      if (index > 0) await parsingSlice.checkpoint();
+      const record = records[index];
+      const fields = index < parsedFields.length ? parsedFields[index] : {};
       const isVolume = record['isVolume'] === true || String(record['isVolume'] || '') === 'true';
-      const title = this.cleanChapterTitle(rule.getString(tocRule.chapterName) || String(record['title'] || ''));
-      let url = rule.getString(tocRule.chapterUrl) || String(record['url'] || '');
+      const title = this.cleanChapterTitle(fields['chapterName'] || String(record['title'] || ''));
+      let url = fields['chapterUrl'] || String(record['url'] || '');
       if (!title || isVolume || !url) continue;
       if (!url.startsWith('data:')) url = BookUrlResolver.resolve(url, baseUrl);
       const chapter = new BookChapter();
@@ -1575,12 +1814,13 @@ export class WebBookService {
       chapter.url = url;
       chapter.bookUrl = book.bookUrl;
       chapter.index = chapters.length;
-      chapter.isVip = rule.getString(tocRule.isVip) === 'true' || record['v'] === true;
+      chapter.isVip = fields['isVip'] === 'true' || record['v'] === true;
       chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'baseUrl', baseUrl);
-      const updateTime = rule.getString(tocRule.updateTime) || String(record['t'] || '');
+      const updateTime = fields['updateTime'] || String(record['t'] || '');
       if (updateTime) chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'updateTime', updateTime);
       chapters.push(chapter);
     }
+    book.variable = ctx.toJson();
     return chapters;
   }
 

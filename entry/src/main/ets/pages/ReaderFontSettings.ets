@@ -1170,6 +1170,7 @@ struct ReaderFontSettingsPage {
     this.appendAccessibleBubbleStyle(options, 'rose-frame', '玫瑰信框', revision);
     this.appendAccessibleBubbleStyle(options, 'moon-halo', '月光描边', revision);
     this.appendAccessibleBubbleStyle(options, 'sword-talisman', '剑符', revision);
+    this.appendAccessibleBubbleStyle(options, 'qingluan-jade', '青鸾玉令', revision);
     return options;
   }
 

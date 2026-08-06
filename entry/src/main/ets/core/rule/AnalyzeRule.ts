@@ -1079,6 +1079,10 @@ export class AnalyzeRule {
     let text = expr.trim();
     if (!text || /\b(function|if|while|for|JSON|java\.ajax|java\.get\(|java\.post\()/i.test(text)) return null;
     text = text.replace(/\{\{([^}]+)\}\}/g, (_: string, rule: string) => this.resolveRuleValue(rule.trim()));
+    // Resolve Legado's JSON accessors before the generic $.path replacement below.
+    // Otherwise a template such as java.getString('$.state') == '1' ? '连载' : '完结'
+    // has its quoted function argument rewritten first and the ternary is left as literal text.
+    text = this.replaceJavaStringAccessorCalls(text);
     text = text.replace(/\$\.\.(\w+)/g, (_: string, key: string) => this.jsonValueToString(this.deepFind(this.parseContentObject(), key)));
     text = text.replace(/\$\.(\w+)/g, (_: string, key: string) => {
       const data = EncodedSourceUrl.asMap(this.parseContentObject());
@@ -1117,6 +1121,13 @@ export class AnalyzeRule {
     if (/^-?\d+(?:\.\d+)?$/.test(text)) return text;
     if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(text)) return this.ctx.get(text) || vars[text] || '';
     return null;
+  }
+
+  private replaceJavaStringAccessorCalls(expression: string): string {
+    return expression.replace(/java\.(?:getString|getElement)\(\s*(['"])([\s\S]*?)\1\s*\)/g,
+      (_: string, _quote: string, pathOrKey: string): string => {
+        return JSON.stringify(this.getJavaString(this.unescapeJsString(pathOrKey)));
+      });
   }
 
   private evalBaseUrlMatchReplace(expr: string): string | null {
@@ -2261,6 +2272,10 @@ export class AnalyzeRule {
       const rule = expr.trim();
       const javaTime = this.evalJavaTimeFormatTemplate(rule);
       if (javaTime !== null) return javaTime;
+      if (this.indexOfTopLevel(rule, '?') >= 0 || /java\.(?:getString|getElement)\s*\(/.test(rule)) {
+        const expressionValue = this.evalSimpleJsExpression(rule, {});
+        if (expressionValue !== null) return expressionValue;
+      }
       const sourceValue = this.evalSourceVariable(rule);
       if (sourceValue !== null) return sourceValue;
       if (rule.startsWith('@get:{')) {

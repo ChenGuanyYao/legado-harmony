@@ -79,6 +79,7 @@ export class VerificationSupport {
   }
 
   static resolveBookSourceLoginUrl(source: BookSource): string {
+    if (this.isShuqiGatewaySource(source)) return 'https://t.shuqi.com/';
     const loginUrl = this.cleanUrl(source.loginUrl || '');
     if (this.isHttpUrl(loginUrl)) return loginUrl;
 
@@ -121,6 +122,7 @@ export class VerificationSupport {
   }
 
   static pickVerificationUrl(source: BookSource, requestUrl: string, rule?: string): string {
+    if (this.isShuqiGatewaySource(source)) return 'https://t.shuqi.com/';
     const fromRule = this.pickStartBrowserUrl(rule || '') ||
       this.pickStartBrowserUrl(source.searchUrl || '') ||
       this.pickStartBrowserUrl(source.bookInfoRule?.init || '') ||
@@ -163,6 +165,11 @@ export class VerificationSupport {
       this.canBrowserVerify(source.bookInfoRule?.init || '') ||
       this.canBrowserVerify(source.tocRule?.chapterList || '') ||
       this.canBrowserVerify(source.contentRule?.content || '');
+  }
+
+  private static isShuqiGatewaySource(source: BookSource): boolean {
+    const raw = `${source.bookSourceUrl || ''}\n${source.jsLib || ''}\n${source.loginUrl || ''}`;
+    return /ocean\.shuqireader\.com/i.test(raw) && /shuqi_token|sq_h5_gateway/i.test(raw);
   }
 
   private static hasLoginEntry(source: BookSource): boolean {

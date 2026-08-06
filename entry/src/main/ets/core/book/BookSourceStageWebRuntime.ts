@@ -72,6 +72,8 @@ export class BookSourceStageWebRuntime {
   private activeHttpClient: HttpClient | null = null;
   private cancelledOwners: Set<string> = new Set<string>();
   private caches: Record<string, Record<string, string>> = {};
+  private resetHandler: (() => void) | null = null;
+  private resetRequested: boolean = false;
 
   static get(): BookSourceStageWebRuntime {
     if (!BookSourceStageWebRuntime.instance) {
@@ -80,11 +82,16 @@ export class BookSourceStageWebRuntime {
     return BookSourceStageWebRuntime.instance;
   }
 
+  setResetHandler(handler: (() => void) | null): void {
+    this.resetHandler = handler;
+  }
+
   attach(controller: webview.WebviewController): void {
     this.controllers = this.controllers.filter((item: webview.WebviewController): boolean => item !== controller);
     this.controllers.push(controller);
     this.controller = controller;
     this.ready = this.readyControllers.has(controller);
+    this.resetRequested = false;
   }
 
   setReady(ready: boolean, controller: webview.WebviewController | null = null): void {
@@ -295,6 +302,7 @@ export class BookSourceStageWebRuntime {
       const timer = setTimeout(() => {
         if (completed) return;
         completed = true;
+        this.quarantineController(controller, '书源脚本引擎响应超时');
         reject(new Error('书源脚本引擎响应超时'));
       }, 20000);
       controller.runJavaScript(script)
@@ -311,6 +319,20 @@ export class BookSourceStageWebRuntime {
           reject(error);
         });
     });
+  }
+
+  /** A timed-out renderer must not receive the next queued script. Rebuild the hidden Web host first. */
+  private quarantineController(controller: webview.WebviewController, reason: string): void {
+    this.readyControllers.delete(controller);
+    this.controllers = this.controllers.filter((item: webview.WebviewController): boolean => item !== controller);
+    if (this.controller === controller) {
+      this.controller = this.controllers.length > 0 ? this.controllers[this.controllers.length - 1] : null;
+      this.ready = !!this.controller && this.readyControllers.has(this.controller);
+    }
+    if (this.ready || this.resetRequested || !this.resetHandler) return;
+    this.resetRequested = true;
+    console.warn('[StageWebRuntime] reset requested:', reason);
+    this.resetHandler();
   }
 
   private buildScript(request: StageWebRuntimeRequest, responses: Record<string, string>,
@@ -343,7 +365,7 @@ export class BookSourceStageWebRuntime {
       sourceState: sourceState,
       readerActionMode: request.readerActionMode
     });
-    const library = request.source.jsLib || '';
+    const library = this.normalizeScript(request.source.jsLib || '');
     const exposeFunctions = this.functionExposeScript(library);
     const code = `${library}\n${exposeFunctions}\n${request.code || ''}\n//# sourceURL=book-source-stage.js`;
     const stateBase64 = this.encodeBase64(state);
@@ -431,7 +453,9 @@ export class BookSourceStageWebRuntime {
       `TimeoutCancellationException:TimeoutCancellationException}}}}};` +
       `globalThis.source=source;globalThis.book=book;globalThis.chapter=chapter;globalThis.java=java;` +
       `globalThis.cache=cache;globalThis.cookie=cookie;` +
-      `globalThis.Packages=Packages;globalThis.baseUrl=S.baseUrl;globalThis.result=S.content;` +
+      `globalThis.Packages=Packages;globalThis.baseUrl=S.baseUrl;globalThis.result=S.content;globalThis.src=S.content;` +
+      `globalThis.title=S.chapterTitle||'';Object.keys(bookData).forEach(function(k){` +
+      `if(/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k)&&globalThis[k]===undefined)globalThis[k]=bookData[k];});` +
       `Object.keys(S.variables||{}).forEach(function(k){globalThis[k]=S.variables[k];});` +
       `let evaluated;try{evaluated=(function(){return eval(dec('${codeBase64}'));}).call(globalThis);}` +
       `catch(e){error=String((e&&e.name?e.name+': ':'')+((e&&e.message)||e||'脚本执行失败')+(e&&e.stack?'\\n'+e.stack:''));}` +
@@ -508,6 +532,15 @@ export class BookSourceStageWebRuntime {
       code += `if(typeof ${name}==='function')globalThis[${JSON.stringify(name)}]=${name};`;
     }
     return code;
+  }
+
+  private normalizeScript(script: string): string {
+    // Rhino/Legado sources sometimes redeclare a function argument while applying a default:
+    // `function f(sourceUrl) { let sourceUrl = sourceUrl || host; }`. Chromium correctly rejects
+    // this as a duplicate lexical declaration. Rewriting only the self-fallback declaration keeps
+    // the intended assignment and also covers the same legacy pattern with other argument names.
+    return (script || '').replace(/\b(?:let|const)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\1\s*\|\|/g,
+      (_match: string, name: string): string => `${name} = ${name} ||`);
   }
 
   private applyCookieOperations(raw: string, applied: string[]): void {

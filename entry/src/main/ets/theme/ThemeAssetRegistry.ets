@@ -21,6 +21,8 @@ export class ThemeAssetRegistry {
   static readonly BACKGROUND_MOON_CRANE_DARK: string = 'moon-crane-dark';
   static readonly BACKGROUND_SWORD_FROST_LIGHT: string = 'sword-frost-light';
   static readonly BACKGROUND_SWORD_FROST_DARK: string = 'sword-frost-dark';
+  static readonly BACKGROUND_QINGLUAN_WATER_LIGHT: string = 'qingluan-water-light';
+  static readonly BACKGROUND_QINGLUAN_WATER_DARK: string = 'qingluan-water-dark';
 
   static readonly ICON_PACK_CLASSIC: string = 'classic';
   static readonly ICON_PACK_ROUNDED: string = 'rounded';
@@ -31,6 +33,7 @@ export class ThemeAssetRegistry {
   static readonly ICON_PACK_ROSE: string = 'rose';
   static readonly ICON_PACK_CRANE: string = 'crane';
   static readonly ICON_PACK_SWORD_FROST: string = 'sword-frost';
+  static readonly ICON_PACK_QINGLUAN_WATER: string = 'qingluan-water';
 
   static readonly TAB_BOOKSHELF: string = 'bookshelf';
   static readonly TAB_EXPLORE: string = 'explore';
@@ -79,6 +82,10 @@ export class ThemeAssetRegistry {
         return $r('app.media.reader_bg_sword_frost_light');
       case ThemeAssetRegistry.BACKGROUND_SWORD_FROST_DARK:
         return $r('app.media.reader_bg_sword_frost_dark');
+      case ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_LIGHT:
+        return $r('app.media.reader_bg_qingluan_water_light');
+      case ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_DARK:
+        return $r('app.media.reader_bg_qingluan_water_dark');
       default:
         return '';
     }
@@ -126,6 +133,10 @@ export class ThemeAssetRegistry {
         return $r('app.media.reader_decor_sword_frost_light');
       case ThemeAssetRegistry.BACKGROUND_SWORD_FROST_DARK:
         return $r('app.media.reader_decor_sword_frost_dark');
+      case ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_LIGHT:
+        return $r('app.media.reader_decor_qingluan_water_light');
+      case ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_DARK:
+        return $r('app.media.reader_decor_qingluan_water_dark');
       default:
         return '';
     }
@@ -153,6 +164,8 @@ export class ThemeAssetRegistry {
       case ThemeAssetRegistry.BACKGROUND_MOON_CRANE_DARK: return '#478BBEFF';
       case ThemeAssetRegistry.BACKGROUND_SWORD_FROST_LIGHT: return '#59476963';
       case ThemeAssetRegistry.BACKGROUND_SWORD_FROST_DARK: return '#528AB1A7';
+      case ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_LIGHT: return '#4E607F79';
+      case ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_DARK: return '#568AB5AC';
       default: return '';
     }
   }
@@ -164,7 +177,9 @@ export class ThemeAssetRegistry {
       normalized === ThemeAssetRegistry.BACKGROUND_ROSE_LETTER_LIGHT ||
       normalized === ThemeAssetRegistry.BACKGROUND_ROSE_LETTER_DARK ||
       normalized === ThemeAssetRegistry.BACKGROUND_SWORD_FROST_LIGHT ||
-      normalized === ThemeAssetRegistry.BACKGROUND_SWORD_FROST_DARK) {
+      normalized === ThemeAssetRegistry.BACKGROUND_SWORD_FROST_DARK ||
+      normalized === ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_LIGHT ||
+      normalized === ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_DARK) {
       return 1.5;
     }
     return 1;
@@ -184,7 +199,8 @@ export class ThemeAssetRegistry {
       normalizedPackId === ThemeAssetRegistry.ICON_PACK_PLUM ||
       normalizedPackId === ThemeAssetRegistry.ICON_PACK_ROSE ||
       normalizedPackId === ThemeAssetRegistry.ICON_PACK_CRANE ||
-      normalizedPackId === ThemeAssetRegistry.ICON_PACK_SWORD_FROST) {
+      normalizedPackId === ThemeAssetRegistry.ICON_PACK_SWORD_FROST ||
+      normalizedPackId === ThemeAssetRegistry.ICON_PACK_QINGLUAN_WATER) {
       return ThemeAssetRegistry.themedNavigationIcon(normalizedPackId, normalizedTabId);
     }
     return ThemeAssetRegistry.classicNavigationIcon(normalizedTabId);
@@ -216,6 +232,8 @@ export class ThemeAssetRegistry {
         return $r('app.media.theme_logo_moon_crane');
       case ThemeIds.SWORD_FROST:
         return $r('app.media.theme_logo_sword_frost');
+      case ThemeIds.QINGLUAN_WATER:
+        return $r('app.media.theme_logo_qingluan_water');
       default:
         return $r('app.media.theme_logo_classic_blue');
     }
@@ -233,6 +251,7 @@ export class ThemeAssetRegistry {
       case ThemeIds.ROSE_LETTER: return $r('app.media.theme_startup_rose_letter');
       case ThemeIds.MOON_CRANE: return $r('app.media.theme_startup_moon_crane');
       case ThemeIds.SWORD_FROST: return $r('app.media.theme_startup_sword_frost');
+      case ThemeIds.QINGLUAN_WATER: return $r('app.media.theme_startup_qingluan_water');
       default: return $r('app.media.theme_startup_classic_blue');
     }
   }
@@ -279,6 +298,11 @@ export class ThemeAssetRegistry {
         $r('app.media.theme_cover_sword_frost_03'), $r('app.media.theme_cover_sword_frost_04'),
         $r('app.media.theme_cover_sword_frost_05'), $r('app.media.theme_cover_sword_frost_06')
       ];
+      case ThemeIds.QINGLUAN_WATER: return [
+        $r('app.media.theme_cover_qingluan_water_01'), $r('app.media.theme_cover_qingluan_water_02'),
+        $r('app.media.theme_cover_qingluan_water_03'), $r('app.media.theme_cover_qingluan_water_04'),
+        $r('app.media.theme_cover_qingluan_water_05'), $r('app.media.theme_cover_qingluan_water_06')
+      ];
       default: return [$r('app.media.theme_cover_classic_blue')];
     }
   }
@@ -296,6 +320,7 @@ export class ThemeAssetRegistry {
       case ThemeIds.ROSE_LETTER: return $r('app.media.theme_frame_rose_letter');
       case ThemeIds.MOON_CRANE: return $r('app.media.theme_frame_moon_crane');
       case ThemeIds.SWORD_FROST: return $r('app.media.theme_frame_sword_frost');
+      case ThemeIds.QINGLUAN_WATER: return $r('app.media.theme_frame_qingluan_water');
       default: return $r('app.media.theme_frame_classic_blue');
     }
   }
@@ -313,6 +338,7 @@ export class ThemeAssetRegistry {
       case ThemeIds.ROSE_LETTER: return $r('app.media.theme_folder_art_rose_letter');
       case ThemeIds.MOON_CRANE: return $r('app.media.theme_folder_art_moon_crane');
       case ThemeIds.SWORD_FROST: return $r('app.media.theme_folder_art_sword_frost');
+      case ThemeIds.QINGLUAN_WATER: return $r('app.media.theme_folder_art_qingluan_water');
       default: return $r('app.media.theme_folder_art_classic_blue');
     }
   }
@@ -330,6 +356,7 @@ export class ThemeAssetRegistry {
       case 'rose-frame': return $r('app.media.regex_frame_rose_letter');
       case 'moon-halo': return $r('app.media.regex_frame_moon_halo');
       case 'sword-talisman': return $r('app.media.regex_frame_sword_talisman');
+      case 'qingluan-jade': return $r('app.media.regex_frame_qingluan_jade');
       default: return '';
     }
   }
@@ -351,6 +378,7 @@ export class ThemeAssetRegistry {
       case 'rose-frame': return $r('app.media.regex_cap_rose_letter');
       case 'moon-halo': return $r('app.media.regex_cap_moon_halo');
       case 'sword-talisman': return $r('app.media.regex_cap_sword_talisman');
+      case 'qingluan-jade': return $r('app.media.regex_cap_qingluan_jade');
       default: return '';
     }
   }
@@ -382,6 +410,8 @@ export class ThemeAssetRegistry {
       case ThemeAssetRegistry.BACKGROUND_MOON_CRANE_DARK:
       case ThemeAssetRegistry.BACKGROUND_SWORD_FROST_LIGHT:
       case ThemeAssetRegistry.BACKGROUND_SWORD_FROST_DARK:
+      case ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_LIGHT:
+      case ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_DARK:
         return normalized;
       default:
         return '';
@@ -397,7 +427,8 @@ export class ThemeAssetRegistry {
       normalized === ThemeAssetRegistry.ICON_PACK_PLUM ||
       normalized === ThemeAssetRegistry.ICON_PACK_ROSE ||
       normalized === ThemeAssetRegistry.ICON_PACK_CRANE ||
-      normalized === ThemeAssetRegistry.ICON_PACK_SWORD_FROST) {
+      normalized === ThemeAssetRegistry.ICON_PACK_SWORD_FROST ||
+      normalized === ThemeAssetRegistry.ICON_PACK_QINGLUAN_WATER) {
       return normalized;
     }
     return ThemeAssetRegistry.ICON_PACK_CLASSIC;
@@ -491,6 +522,14 @@ export class ThemeAssetRegistry {
         case ThemeAssetRegistry.TAB_SEARCH: return $r('app.media.ic_theme_sword_frost_search');
         case ThemeAssetRegistry.TAB_MINE: return $r('app.media.ic_theme_sword_frost_mine');
         default: return $r('app.media.ic_theme_sword_frost_bookshelf');
+      }
+    }
+    if (iconPackId === ThemeAssetRegistry.ICON_PACK_QINGLUAN_WATER) {
+      switch (tabId) {
+        case ThemeAssetRegistry.TAB_EXPLORE: return $r('app.media.ic_theme_qingluan_water_explore');
+        case ThemeAssetRegistry.TAB_SEARCH: return $r('app.media.ic_theme_qingluan_water_search');
+        case ThemeAssetRegistry.TAB_MINE: return $r('app.media.ic_theme_qingluan_water_mine');
+        default: return $r('app.media.ic_theme_qingluan_water_bookshelf');
       }
     }
     switch (tabId) {

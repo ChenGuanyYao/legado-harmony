@@ -25,7 +25,11 @@ export class BookSourceInteractionPostProcessor {
     if (!content) return '';
     let result = content;
     const commentsEnabled = this.isParagraphCommentsEnabled(source);
-    const commentPlan = this.buildCommentPlan(source, chapter);
+    const commentPlan = this.buildCommentPlan(source, chapter, book);
+    if (commentPlan?.sourceType === 'sq' &&
+      (commentsEnabled || this.isNamedSettingEnabled(source, '章评开关'))) {
+      result = await this.applyShuqiComments(source, result, commentPlan);
+    }
     if (commentPlan?.sourceType === 'qd' && this.hasQidianCommentsEnabled(source)) {
       result = await this.applyQidianComments(source, result, commentPlan);
     }
@@ -53,6 +57,17 @@ export class BookSourceInteractionPostProcessor {
     const plan = this.buildCommentPlan(source, chapter);
     if (!plan) return false;
     return ['fq', 'qm', 'td', 'qq'].includes(plan.sourceType);
+  }
+
+  static interactionCacheIdentity(source: BookSource): string {
+    const script = `${source.contentRule?.content || ''}\n${source.jsLib || ''}`;
+    if (!/段评|章评|评论|comment|review|showSqComments/i.test(script)) return '';
+    const keys = ['段评开关', '章评开关', '章名段评', '本章讨论', '作者评论', '热门评论',
+      '本章说开关', '神评论开关', '书旗评论 API Key'];
+    const values: string[] = [];
+    for (const key of keys) values.push(`${key}=${this.sourceSetting(source, key)}`);
+    if (/\bSQ_COMMENT_API_BASE\b/.test(script)) values.push('shuqiMarker=compact-v2');
+    return values.join('&');
   }
 
   static shouldRequestGodComments(source: BookSource, chapter: BookChapter): boolean {
@@ -289,10 +304,13 @@ export class BookSourceInteractionPostProcessor {
     return origin && origin[1] ? origin[1] : '';
   }
 
-  private static buildCommentPlan(source: BookSource, chapter: BookChapter): ParagraphCommentPlan | null {
+  private static buildCommentPlan(source: BookSource, chapter: BookChapter,
+    book: Book | null = null): ParagraphCommentPlan | null {
     const payload = EncodedSourceUrl.decode(chapter.url);
-    if (!payload) return null;
-    const data: EncodedJsonMap = { ...payload.data, ...payload.options };
+    const isShuqi = /\bSQ_COMMENT_API_BASE\b/.test(source.jsLib || '') &&
+      /\b(?:sqDecorateContent|showSqComments)\b/.test(source.jsLib || '');
+    if (!payload && !isShuqi) return null;
+    const data: EncodedJsonMap = payload ? { ...payload.data, ...payload.options } : {};
     const sourceName = this.value(data, ['source', 'sources']);
     const normalizedSourceName = sourceName.replace(/^svip_/, '');
     const plan = new ParagraphCommentPlan();
@@ -327,11 +345,101 @@ export class BookSourceInteractionPostProcessor {
       /\bfunction\s+qdApi\s*\(|\bfunction\s+getComments\s*\(/.test(source.jsLib || '')) {
       plan.sourceType = 'qd';
       plan.bookId = this.value(data, ['novelId', 'novel_id', 'book_id', 'bookId']);
-      plan.chapterId = payload.text || this.value(data, ['chapId', 'chapterId', 'chapter_id', 'cid']);
+      plan.chapterId = (payload ? payload.text : '') ||
+        this.value(data, ['chapId', 'chapterId', 'chapter_id', 'cid']);
+    } else if (isShuqi) {
+      const meta = this.shuqiChapterMeta(source, book, chapter);
+      plan.sourceType = 'sq';
+      plan.bookId = meta['bookId'] || '';
+      plan.chapterId = meta['chapterId'] || '';
+      const baseMatch = (source.jsLib || '').match(/\bSQ_COMMENT_API_BASE\s*=\s*['"](https?:\/\/[^'"]+)['"]/i);
+      const keyMatch = (source.jsLib || '').match(/\bSQ_COMMENT_API_KEY\s*=\s*['"]([^'"]*)['"]/i);
+      plan.extra = {
+        apiBase: baseMatch && baseMatch[1] ? baseMatch[1].replace(/\/+$/, '') : '',
+        apiKey: this.sourceSetting(source, '书旗评论 API Key') ||
+          (keyMatch && keyMatch[1] ? keyMatch[1] : '')
+      };
     } else {
       return null;
     }
     return plan.bookId && plan.chapterId ? plan : null;
+  }
+
+  private static shuqiChapterMeta(source: BookSource, book: Book | null,
+    chapter: BookChapter): Record<string, string> {
+    const result: Record<string, string> = {
+      bookId: this.urlQueryValue(book?.tocUrl || book?.bookUrl || chapter.bookUrl || '', 'bookId') ||
+        this.urlQueryValue(book?.tocUrl || book?.bookUrl || chapter.bookUrl || '', 'book_id'),
+      chapterId: this.urlQueryValue(chapter.url || '', 'chapterId') ||
+        this.urlQueryValue(chapter.url || '', 'chapter_id')
+    };
+    for (const raw of [chapter.variable || '', source.loginInfo || '', source.variable || '']) {
+      let value: Object | null = null;
+      try { value = JSON.parse(raw || '{}') as Object; } catch (_) {}
+      if (!value) continue;
+      const directBookId = this.deepNamedString(value, ['shuqiBookId', 'sqBookId']);
+      const directChapterId = this.deepNamedString(value, ['shuqiChapterId', 'sqChapterId']);
+      if (directBookId) result['bookId'] = directBookId;
+      if (directChapterId) result['chapterId'] = directChapterId;
+      const mapValue = this.deepNamedValue(value, 'sqMetaMap');
+      const map = this.objectRecord(this.parseNestedObject(mapValue));
+      for (const suffix of Object.keys(map)) {
+        if (!suffix || !(chapter.url || '').includes(suffix)) continue;
+        const record = this.objectRecord(this.parseNestedObject(map[suffix]));
+        const bookId = String(record['bookId'] || record['book_id'] || '').trim();
+        const chapterId = String(record['chapterId'] || record['chapter_id'] || '').trim();
+        if (bookId) result['bookId'] = bookId;
+        if (chapterId) result['chapterId'] = chapterId;
+        break;
+      }
+    }
+    return result;
+  }
+
+  private static deepNamedString(value: Object, keys: string[]): string {
+    for (const key of keys) {
+      const found = this.deepNamedValue(value, key);
+      if (found !== null && found !== undefined && typeof found !== 'object') {
+        const text = String(found).trim();
+        if (text) return text;
+      }
+    }
+    return '';
+  }
+
+  private static deepNamedValue(value: Object, key: string): Object | null {
+    const parsed = this.parseNestedObject(value);
+    if (!parsed || typeof parsed !== 'object') return null;
+    if (Array.isArray(parsed)) {
+      for (const item of parsed as Object[]) {
+        const found = this.deepNamedValue(item, key);
+        if (found !== null) return found;
+      }
+      return null;
+    }
+    const record = parsed as Record<string, Object>;
+    if (record[key] !== undefined && record[key] !== null) return record[key];
+    for (const name of Object.keys(record)) {
+      const child = record[name];
+      if (child && (typeof child === 'object' || typeof child === 'string')) {
+        const found = this.deepNamedValue(child, key);
+        if (found !== null) return found;
+      }
+    }
+    return null;
+  }
+
+  private static parseNestedObject(value: Object | null | undefined): Object {
+    if (typeof value !== 'string') return value || {};
+    const text = (value as string).trim();
+    if (!text || (!text.startsWith('{') && !text.startsWith('['))) return value;
+    try { return JSON.parse(text) as Object; } catch (_) { return value; }
+  }
+
+  private static urlQueryValue(url: string, key: string): string {
+    const match = (url || '').match(new RegExp(`(?:^|[?&])${key}=([^&#]+)`, 'i'));
+    if (!match || !match[1]) return '';
+    try { return decodeURIComponent(match[1]); } catch (_) { return match[1]; }
   }
 
   private static value(data: EncodedJsonMap, keys: string[]): string {
@@ -437,6 +545,88 @@ export class BookSourceInteractionPostProcessor {
       console.warn('[InteractionPostProcessor] qidian comments skipped:', source.bookSourceName, error);
       return content;
     }
+  }
+
+  private static async applyShuqiComments(source: BookSource, content: string,
+    plan: ParagraphCommentPlan): Promise<string> {
+    if (!content || content.includes('legado_reader_shuqi=1') ||
+      content.includes('legado_reader_shuqi%3D1') || /\bshowSqComments\s*\(/.test(content)) {
+      return content;
+    }
+    const apiBase = plan.extra['apiBase'] || '';
+    const apiKey = plan.extra['apiKey'] || '';
+    if (!apiBase || !apiKey) return content;
+    try {
+      const response = await new HttpClient(8000).execute({
+        url: `${apiBase}/v1/reader/render-ext`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ bookId: plan.bookId, chapterId: plan.chapterId, apiKey: apiKey }),
+        maxResponseBytes: 2 * 1024 * 1024
+      });
+      if (!response.body) throw new Error(response.error || `书旗评论接口请求失败：${response.statusCode}`);
+      const root = this.objectRecord(JSON.parse(response.body.replace(/^\uFEFF/, '')) as Object);
+      if (root['ok'] !== true && String(root['ok'] || '') !== 'true') {
+        throw new Error(String(root['error'] || '书旗评论接口返回异常'));
+      }
+      const outer = this.objectRecord(root['data']);
+      const data = this.objectRecord(outer['data'] || outer['Data']);
+      const ext = this.objectRecord(data['bookChapterExtInfo'] || data['BookChapterExtInfo']);
+      const paragraphs = this.objectList(ext['paragraphList'] || ext['ParagraphList']);
+      if (paragraphs.length === 0) return content;
+      return this.attachShuqiCommentMarkers(source, content, plan, paragraphs);
+    } catch (error) {
+      console.warn('[InteractionPostProcessor] shuqi comments skipped:', source.bookSourceName,
+        `bookId=${plan.bookId}`, `chapterId=${plan.chapterId}`, error);
+      return content;
+    }
+  }
+
+  private static attachShuqiCommentMarkers(source: BookSource, content: string,
+    plan: ParagraphCommentPlan, paragraphs: Object[]): string {
+    const paragraphEnabled = this.isParagraphCommentsEnabled(source);
+    const chapterEnabled = this.isNamedSettingEnabled(source, '章评开关');
+    const lines = (content || '').replace(/<br\s*\/?>/gi, '\n').replace(/\r\n?/g, '\n').split('\n');
+    const textIndexes: number[] = [];
+    let chapterMarker = '';
+    let attached = 0;
+    for (let index = 0; index < lines.length; index++) {
+      const plain = lines[index].replace(/<[^>]+>/g, '').trim();
+      if (plain && !/^\[\[LEGADO_READER_(?:IMAGE|ACTION)/.test(plain)) textIndexes.push(index);
+    }
+    for (const value of paragraphs) {
+      const record = this.objectRecord(value);
+      const order = Number(record['orderId'] ?? record['OrderId'] ?? -1);
+      const count = Number(record['commentCount'] || record['CommentCount'] || 0);
+      if (count <= 0 || order < 0) continue;
+      const paragraphId = String(record['paragraphId'] || record['ParagraphId'] || `p${order}`);
+      if (order === 0) {
+        if (!chapterEnabled || textIndexes.length === 0) continue;
+        const marker = ReaderActionMarker.createShuqiComment(`章评 ${count}`, plan.bookId,
+          plan.chapterId, paragraphId, 'chapterTitle');
+        if (marker) {
+          // The fetched body does not contain the reader-generated chapter title. Keep the title action as a
+          // standalone leading marker; the common reader layer relocates it after the real title. Appending it
+          // to the first body line would put two actions in one paragraph and expose a raw marker in ArkUI.
+          chapterMarker = marker;
+          attached++;
+        }
+        continue;
+      }
+      if (!paragraphEnabled) continue;
+      const lineIndex = textIndexes[order - 1];
+      if (lineIndex === undefined || lineIndex < 0 || lineIndex >= lines.length) continue;
+      const marker = ReaderActionMarker.createShuqiComment(`段评 ${count}`, plan.bookId,
+        plan.chapterId, paragraphId, 'paragraph');
+      if (marker) {
+        lines[lineIndex] = `${lines[lineIndex]}${marker}`;
+        attached++;
+      }
+    }
+    console.info('[InteractionPostProcessor] shuqi comments ready:', source.bookSourceName,
+      `bookId=${plan.bookId}`, `chapterId=${plan.chapterId}`, `markers=${attached}`);
+    const body = lines.join('\n');
+    return chapterMarker ? `${chapterMarker}\n${body}` : body;
   }
 
   private static attachQidianParagraphMarkers(content: string, plan: ParagraphCommentPlan, summary: Object[],

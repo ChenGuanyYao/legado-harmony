@@ -1518,6 +1518,7 @@ struct ThemeSettingsPage {
     if (styleId === 'rose-frame') return '玫瑰信框';
     if (styleId === 'moon-halo') return '月光描边';
     if (styleId === 'sword-talisman') return '剑符';
+    if (styleId === 'qingluan-jade') return '青鸾玉令';
     return '强调气泡';
   }
 

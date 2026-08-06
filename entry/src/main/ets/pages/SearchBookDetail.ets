@@ -553,14 +553,21 @@ struct SearchBookDetailPage {
       const requestKey = BookIdentity.keyOfUrl(this.bookUrl);
       const existing = await db.getBook(this.bookUrl) || await this.findShelfBookByKey(requestKey, true);
       if (existing) {
+        let bookChanged = false;
         const inferredType = this.bookType || BookTypeSupport.typeFromVariable(this.bookVariable);
         if (inferredType && existing.type !== inferredType) {
           existing.type = inferredType;
-          await db.updateBook(existing);
+          bookChanged = true;
         }
         const nextCoverUrl = CoverUrlNormalizer.prefer(this.coverUrl, existing.coverUrl);
         if (nextCoverUrl && existing.coverUrl !== nextCoverUrl) {
           existing.coverUrl = nextCoverUrl;
+          bookChanged = true;
+        }
+        if (this.mergeResolvedDetailIntoBook(existing)) {
+          bookChanged = true;
+        }
+        if (bookChanged) {
           await db.updateBook(existing);
           AppStorage.setOrCreate('shelfUpdateTime', Date.now());
         }
@@ -580,6 +587,10 @@ struct SearchBookDetailPage {
       const book = await this.buildBookForShelf();
       const resolvedExisting = await this.findShelfBookByKey(BookIdentity.keyOfBook(book), true);
       if (resolvedExisting) {
+        if (this.mergeResolvedDetailIntoBook(resolvedExisting)) {
+          await db.updateBook(resolvedExisting);
+          AppStorage.setOrCreate('shelfUpdateTime', Date.now());
+        }
         this.syncStateFromBook(resolvedExisting);
         if (SearchExplorePendingBook.isPendingAddToShelf(resolvedExisting)) {
           this.isInShelf = false;
@@ -607,6 +618,39 @@ struct SearchBookDetailPage {
     } finally {
       this.isSaving = false;
     }
+  }
+
+  private mergeResolvedDetailIntoBook(book: Book): boolean {
+    let changed = false;
+    const kind = BookFieldSanitizer.prefer(this.kind, book.kind);
+    const intro = BookFieldSanitizer.prefer(this.intro, book.intro);
+    const latestChapterTitle = BookFieldSanitizer.prefer(this.latestChapterTitle, book.latestChapterTitle);
+    const wordCount = BookFieldSanitizer.prefer(this.wordCount, book.wordCount);
+    if (kind !== book.kind) {
+      book.kind = kind;
+      changed = true;
+    }
+    if (intro !== book.intro) {
+      book.intro = intro;
+      changed = true;
+    }
+    if (latestChapterTitle !== book.latestChapterTitle) {
+      book.latestChapterTitle = latestChapterTitle;
+      changed = true;
+    }
+    if (wordCount !== book.wordCount) {
+      book.wordCount = wordCount;
+      changed = true;
+    }
+    if (this.tocUrl && this.tocUrl !== book.tocUrl) {
+      book.tocUrl = this.tocUrl;
+      changed = true;
+    }
+    if (this.bookVariable && this.bookVariable !== book.variable) {
+      book.variable = this.bookVariable;
+      changed = true;
+    }
+    return changed;
   }
 
   async buildBookForShelf(): Promise<Book> {

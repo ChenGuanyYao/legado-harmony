@@ -21,7 +21,7 @@ entry/src/main/resources/base/media/
 └── ic_theme_ink_*              # 水墨导航图标包
 ```
 
-当前还内置 `strawberry`、`crimson`、`plum`、`rose`、`crane` 与 `sword-frost` 六组主题专属导航图标，以及对应的浅/深阅读背景和主题标识。
+当前还内置 `strawberry`、`crimson`、`plum`、`rose`、`crane`、`sword-frost` 与 `qingluan-water` 七组主题专属导航图标，以及对应的浅/深阅读背景和主题标识。
 
 `AppThemeSettingsStore` 是兼容桥：它继续读写原来的浅/深强调色与按钮色，同时保存 `appThemeId`，因此旧版本用户的自定义颜色不会在升级时丢失。
 
@@ -131,13 +131,13 @@ BuiltinThemeRegistry.register(theme);
 
 ## 正则气泡
 
-规则 schema v2 支持：
+规则 schema v3 支持：
 
 - `emphasisMode`：`inherit`、`none`、`text`、`highlight`、`bubble`。
-- `bubbleStyleId`：支持 `inherit`、`qq-soft`、`qq-solid`、`capsule`、`paper`、`neon`，以及十一种主题专属样式：`classic-glass`、`warm-scroll`、`forest-dew`、`ink-brush`、`neon-pulse`、`strawberry-ribbon`、`crimson-stamp`、`celadon-slip`、`rose-frame`、`moon-halo`、`sword-talisman`。当 `emphasisMode = inherit` 时，正文强制使用当前主题的气泡形状、端饰和主题色，忽略规则中残留的样式字段；只有 `emphasisMode = custom` 时规则级气泡样式才生效。
+- `bubbleStyleId`：支持 `inherit`、`qq-soft`、`qq-solid`、`capsule`、`paper`、`neon`，以及十二种主题专属样式：`classic-glass`、`warm-scroll`、`forest-dew`、`ink-brush`、`neon-pulse`、`strawberry-ribbon`、`crimson-stamp`、`celadon-slip`、`rose-frame`、`moon-halo`、`sword-talisman`、`qingluan-jade`。当 `emphasisMode = inherit` 时，正文强制使用当前主题的气泡形状、端饰和主题色，忽略规则中残留的样式字段；只有 `emphasisMode = custom` 时规则级气泡样式才生效。
 - `emphasisColor`：留空时跟随主题，设置后作为规则级覆盖。
 
-旧的 `highlightColorEnabled`、`shadowColor` 与规则级 `bubbleStyleId` 仍会读取和输出，用于升级和降级兼容。“跟随主题”把强调模式、气泡形状、端饰和主题色作为一个整体继承；“自定义”才允许分别启用文字色、高亮色块、气泡，以及选择气泡样式与颜色。所有气泡模式的正则命中统一使用行内 `ContainerSpan`：命中文字、主题背景、多层 `textShadow` 与左右镜像端饰属于同一个行内单元，不再根据匹配是否覆盖整段切换渲染方式。十一套端饰分别表达玻璃星芒、卷轴、叶片露珠、墨迹印章、霓虹电路、草莓缎带、赤墨档案章、宋式回纹、玫瑰角花、月色鹤影和朱砂剑符；主题专属样式不再统一追加下划线。强调效果不会改变正文源文本或 TTS 索引，TTS 当前朗读高亮拥有最高显示优先级。
+旧的 `highlightColorEnabled`、`shadowColor` 与规则级 `bubbleStyleId` 仍会读取和输出，用于升级和降级兼容。“跟随主题”把强调模式、气泡形状、端饰和主题色作为一个整体继承；“自定义”才允许分别启用文字色、高亮色块、气泡，以及选择气泡样式与颜色。所有气泡模式的正则命中统一使用行内 `ContainerSpan`：命中文字、主题背景、多层 `textShadow` 与左右镜像端饰属于同一个行内单元，不再根据匹配是否覆盖整段切换渲染方式。十二套端饰分别表达玻璃星芒、卷轴、叶片露珠、墨迹印章、霓虹电路、草莓缎带、赤墨档案章、宋式回纹、玫瑰角花、月色鹤影、朱砂剑符和青鸾玉令；主题专属样式不再统一追加下划线。强调效果不会改变正文源文本或 TTS 索引，TTS 当前朗读高亮拥有最高显示优先级。
 
 ## 验证清单
 

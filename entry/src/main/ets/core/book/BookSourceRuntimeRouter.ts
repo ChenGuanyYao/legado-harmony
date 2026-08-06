@@ -52,6 +52,7 @@ export class BookSourceRuntimeRouter {
     'base64DecodeToByteArray', 'base64UrlEncode', 'base64UrlDecode',
     'hexEncodeToString', 'hexDecodeToString', 'urlEncode', 'urlDecode', 'encodeURI',
     'htmlEncode', 'htmlDecode',
+    'md5Encode', 'md5Encode16', 'md5Encode32',
     'androidId', 'deviceID', 'randomUUID', 'getCookie', 'lang', 'log', 'logType',
     'getWebViewUA', 'timeFormat', 'timeFormatUTC', 'strToBytes', 'bytesToStr', 'evalJS',
     'createSymmetricCrypto', 'reLoginView', 'refreshExplore', 'searchBook', 'upLoginData', 'webView'
@@ -63,7 +64,7 @@ export class BookSourceRuntimeRouter {
 
   private static readonly SOURCE_METHODS: string[] = [
     'getKey', 'getTag', 'getSource', 'getVariable', 'setVariable', 'getLoginHeader',
-    'putLoginHeader', 'removeLoginHeader', 'getLoginInfo', 'getLoginInfoMap',
+    'putLoginHeader', 'removeLoginHeader', 'getLoginHeaderMap', 'getLoginInfo', 'getLoginInfoMap',
     'putLoginInfo', 'removeLoginInfo', 'getHeaderMap', 'get', 'put'
   ];
 

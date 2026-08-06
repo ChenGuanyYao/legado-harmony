@@ -127,6 +127,7 @@ export class BuiltinThemeRegistry {
     themes.push(BuiltinThemeRegistry.roseLetter());
     themes.push(BuiltinThemeRegistry.moonCrane());
     themes.push(BuiltinThemeRegistry.swordFrost());
+    themes.push(BuiltinThemeRegistry.qingluanWater());
     themes.push(BuiltinThemeRegistry.classicBlue());
     themes.push(BuiltinThemeRegistry.warmPaper());
     themes.push(BuiltinThemeRegistry.forestMist());
@@ -441,6 +442,32 @@ export class BuiltinThemeRegistry {
     theme.radius = BuiltinThemeRegistry.radius(4, 8, 14, 8, 18, 4);
     theme.readerLayout = BuiltinThemeRegistry.readerLayout(21, 15, 3, 24, 24, 24, 24);
     theme.glass = BuiltinThemeRegistry.glass(16, 12, 88, 74, 50, 22, 14, 4);
+    return theme;
+  }
+
+  private static qingluanWater(): ThemePack {
+    const theme = BuiltinThemeRegistry.theme(
+      ThemeIds.QINGLUAN_WATER,
+      '青鸾照水',
+      '青鸾衔月，剑气拂花；她的江湖，不借谁的光',
+      'serif',
+      'qingluan-water'
+    );
+    theme.light = BuiltinThemeRegistry.variant(
+      BuiltinThemeRegistry.colors('#F2F2EC', '#FBF8F2', '#E3E9E6', '#302C31', '#756D77', '#D3D8D2',
+        '#607F79', '#9C4F62', '#B84655'),
+      BuiltinThemeRegistry.reader('#F7F3EA', 'qingluan-water-light', '#353137', '#7A727C', 'light'),
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.QINGLUAN_JADE, '#7A9C94', '#44383F')
+    );
+    theme.dark = BuiltinThemeRegistry.variant(
+      BuiltinThemeRegistry.colors('#111819', '#1B2424', '#273131', '#ECE8E6', '#ADA4AE', '#384545',
+        '#8AB5AC', '#C16A7D', '#E47B8A'),
+      BuiltinThemeRegistry.reader('#141C1D', 'qingluan-water-dark', '#E8E4E3', '#A9A0AA', 'dark'),
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.QINGLUAN_JADE, '#81AAA1', '#F7F1ED')
+    );
+    theme.radius = BuiltinThemeRegistry.radius(7, 11, 18, 12, 20, 12);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(21, 14, 4, 23, 23, 23, 23);
+    theme.glass = BuiltinThemeRegistry.glass(18, 14, 86, 72, 54, 24, 16, 4);
     return theme;
   }
 

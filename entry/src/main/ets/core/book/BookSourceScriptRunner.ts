@@ -58,7 +58,68 @@ export class BookSourceScriptRunner {
   }
 
   static loginItems(source: BookSource): BookSourceLoginItem[] {
-    return this.parseLoginItems(source.loginUi || '');
+    const raw = source.loginUi || '';
+    const dynamicScript = this.dynamicLoginUiScript(source);
+    if (dynamicScript) {
+      const staticItems = this.parseStaticDynamicLoginItems(dynamicScript);
+      if (staticItems.length > 0) return staticItems;
+    }
+    return this.parseLoginItems(raw);
+  }
+
+  /**
+   * Most Legado dynamic login panels only use JavaScript to stringify a literal control array.
+   * Extract that array without starting ArkWeb or evaluating the source's unrelated jsLib. This
+   * keeps large reading/comment libraries out of the login-panel startup path while the caller can
+   * still fall back to the full runtime for genuinely computed panels.
+   */
+  static parseStaticDynamicLoginItems(script: string): BookSourceLoginItem[] {
+    const code = script || '';
+    const stringify = /\bJSON\s*\.\s*stringify\s*\(/g;
+    let match: RegExpExecArray | null;
+    while ((match = stringify.exec(code)) !== null) {
+      const open = code.indexOf('[', stringify.lastIndex);
+      if (open < 0) continue;
+      const close = this.findBalancedLoginUiArrayEnd(code, open);
+      if (close < 0) continue;
+      const literal = code.substring(open, close + 1)
+        // Android loginUi accepts arbitrary layout objects. Harmony renders the controls with its
+        // own responsive layout, so identifier-valued style properties are safe to omit here.
+        .replace(/,\s*style\s*:\s*[A-Za-z_$][A-Za-z0-9_$]*(?=\s*[,}])/g, '');
+      const items = this.parseLoginItems(literal);
+      if (items.length > 0) return items;
+      stringify.lastIndex = close + 1;
+    }
+    return [];
+  }
+
+  private static findBalancedLoginUiArrayEnd(code: string, start: number): number {
+    let depth = 0;
+    let quote = '';
+    let escaped = false;
+    for (let index = start; index < code.length; index++) {
+      const current = code.charAt(index);
+      if (quote) {
+        if (escaped) {
+          escaped = false;
+        } else if (current === '\\') {
+          escaped = true;
+        } else if (current === quote) {
+          quote = '';
+        }
+        continue;
+      }
+      if (current === '\'' || current === '"' || current === '`') {
+        quote = current;
+        continue;
+      }
+      if (current === '[') depth++;
+      if (current === ']') {
+        depth--;
+        if (depth === 0) return index;
+      }
+    }
+    return -1;
   }
 
   static parseLoginItems(value: string): BookSourceLoginItem[] {

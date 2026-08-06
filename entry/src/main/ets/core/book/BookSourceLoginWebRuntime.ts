@@ -106,6 +106,7 @@ export class BookSourceLoginWebRuntime {
       `getLoginHeader:function(){return S.loginHeader||'';},` +
       `putLoginHeader:function(v){S.loginHeader=String(v??'');return S.loginHeader;},` +
       `removeLoginHeader:function(){S.loginHeader='';return '';},` +
+      `getLoginHeaderMap:function(){try{return JSON.parse(S.loginHeader||'{}');}catch(e){return null;}},` +
       `getHeaderMap:function(){try{return JSON.parse(S.sourceHeader||'{}');}catch(e){return {};}} ,` +
       `getLoginInfoMap:function(){return loginMap;},` +
       `getLoginInfo:function(k){return arguments.length?(k?loginMap[k]||'':''):JSON.stringify(loginMap);},` +
@@ -196,6 +197,9 @@ export class BookSourceLoginWebRuntime {
       `base64Encode:b64e,base64EncodeToString:b64e,base64Decode:b64d,base64DecodeToString:b64d,` +
       `base64DecodeToByteArray:b64bytes,base64UrlEncode:b64ue,base64UrlDecode:b64ud,` +
       `hexEncodeToString:hexE,hexDecodeToString:hexD,strToBytes:strBytes,bytesToStr:bytesStr,` +
+      `md5Encode:function(v){return cryptoOp('MD5','','','digestHex',v);},` +
+      `md5Encode32:function(v){return cryptoOp('MD5','','','digestHex',v);},` +
+      `md5Encode16:function(v){return String(cryptoOp('MD5','','','digestHex',v)).substring(8,24);},` +
       `urlEncode:function(v){return encodeURIComponent(String(v??''));},` +
       `urlDecode:function(v){try{return decodeURIComponent(String(v??''));}catch(e){return String(v??'');}},` +
       `encodeURI:function(v){return encodeURIComponent(String(v??''));},htmlEncode:htmlE,htmlDecode:htmlD,` +
@@ -252,8 +256,13 @@ export class BookSourceLoginWebRuntime {
     // Some ArkWeb versions reject an unparenthesized object literal that is indexed directly
     // in a variable initializer: `const value = { a: 1 }[key]`. Parentheses are equivalent and
     // are accepted by both the Web engine and the JavaScript dialect used by Android Legado.
-    return (script || '').replace(/=\s*\{([^{}]*)\}\s*\[([A-Za-z_$][A-Za-z0-9_$]*)\]/g,
-      (_match: string, body: string, key: string): string => `= ({${body}})[${key}]`);
+    return (script || '')
+      .replace(/=\s*\{([^{}]*)\}\s*\[([A-Za-z_$][A-Za-z0-9_$]*)\]/g,
+        (_match: string, body: string, key: string): string => `= ({${body}})[${key}]`)
+      // Rhino accepts redeclaring a function parameter while assigning its default value,
+      // whereas Chromium rejects the duplicate lexical declaration. Preserve the assignment.
+      .replace(/\b(?:let|const)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*\1\s*\|\|/g,
+        (_match: string, name: string): string => `${name} = ${name} ||`);
   }
 
   private static shouldIsolateActionScript(script: string): boolean {

@@ -5,7 +5,6 @@ import { AnalyzeUrl } from '../rule/AnalyzeUrl';
 import { AnalyzeRule } from '../rule/AnalyzeRule';
 import { RuleContext } from '../rule/RuleContext';
 import { JsRuntime } from '../rule/JsRuntime';
-import { ScriptEngine, ScriptEngineContext } from '../rule/ScriptEngine';
 import { VerificationSupport } from '../http/VerificationSupport';
 import { EncodedSourceUrl } from './EncodedSourceUrl';
 import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
@@ -15,6 +14,10 @@ import { BookTypeSupport } from './BookTypeSupport';
 import { BookSourceRuntimeRouter, SourceRuntimeStage } from './BookSourceRuntimeRouter';
 import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceStageWebRuntime';
 import { BookSourceStageRuleSupport } from './BookSourceStageRuleSupport';
+import { BookSourceShuqiSupport } from './BookSourceShuqiSupport';
+import { RuleExecutionService } from '../rule/RuleExecutionService';
+import { RuleBatchExecutionRequest, RuleBatchExecutionResult, RuleFieldRequest } from '../rule/RuleExecutionModels';
+import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
 
 export interface ExploreEntry {
   title: string;
@@ -79,6 +82,19 @@ export class ExploreCoordinator {
         }
         continue;
       }
+      if (BookSourceShuqiSupport.canHandle(source)) {
+        const items = await BookSourceShuqiSupport.getExploreMenuItems(this.http, source);
+        for (const item of items) {
+          entries.push({
+            title: item.title,
+            url: item.url,
+            sourceUrl: source.bookSourceUrl,
+            sourceName: source.bookSourceName
+          });
+        }
+        if (items.length === 0) this.noticeMessage = '书旗分类接口未返回可用菜单';
+        continue;
+      }
       if (!source.variable && this.requiresSourceVariable(source)) {
         const hint = (source.variableComment || '').trim();
         this.noticeMessage = hint ? `请先在书源编辑中填写书源变量：${hint}` :
@@ -129,6 +145,9 @@ export class ExploreCoordinator {
         return [];
       }
 
+      const shuqiBooks = this.parseShuqiExploreBooks(source, resp.body);
+      if (shuqiBooks.length > 0) return shuqiBooks;
+
       const baseUrl = BookUrlResolver.effectiveBase(resp, reqUrl, source.bookSourceUrl);
       const rule = new AnalyzeRule(resp.body, baseUrl);
       this.seedSourceVariables(rule.getContext(), source);
@@ -140,9 +159,42 @@ export class ExploreCoordinator {
       console.info('[ExploreCoordinator] parsed list:', source.bookSourceName, 'rule:', exploreRule.bookList, 'count:', items.length);
       const books: SearchBook[] = [];
       const sourceBackendHost = BookSourceDataUrlSupport.sourceBackendHost(source);
-      const stageBookUrls = await this.analyzeExploreFieldBatch(source, items, baseUrl, exploreRule.bookUrl);
+      const fieldRequest = new RuleBatchExecutionRequest();
+      fieldRequest.source = source;
+      fieldRequest.stage = SourceRuntimeStage.EXPLORE;
+      fieldRequest.ownerId = `explore_${Date.now()}_${source.bookSourceUrl}`;
+      fieldRequest.contents = items;
+      fieldRequest.baseUrl = baseUrl || source.bookSourceUrl;
+      fieldRequest.fields = [
+        new RuleFieldRequest('name', exploreRule.name || ''),
+        new RuleFieldRequest('author', exploreRule.author || ''),
+        new RuleFieldRequest('bookUrl', exploreRule.bookUrl || ''),
+        new RuleFieldRequest('coverUrl', exploreRule.coverUrl || ''),
+        new RuleFieldRequest('intro', exploreRule.intro || ''),
+        new RuleFieldRequest('kind', exploreRule.kind || ''),
+        new RuleFieldRequest('lastChapter', exploreRule.lastChapter || ''),
+        new RuleFieldRequest('wordCount', exploreRule.wordCount || '')
+      ];
+      if (sourceBackendHost) {
+        fieldRequest.contextValues['host'] = sourceBackendHost;
+        fieldRequest.contextValues['backend'] = sourceBackendHost;
+      }
+      fieldRequest.timeoutMs = 30000;
+      let fieldBatch = new RuleBatchExecutionResult();
+      try {
+        fieldBatch = await RuleExecutionService.get().executeBatch(fieldRequest);
+      } finally {
+        RuleExecutionService.get().clearOwner(fieldRequest.ownerId);
+      }
+      if (fieldBatch.cancelled) return [];
+      if (fieldBatch.errors.length > 0) {
+        console.warn('[ExploreCoordinator] unified field errors:', source.bookSourceName,
+          fieldBatch.errors.join('; '));
+      }
+      const parsingSlice = CooperativeScheduler.createTimeSlice();
 
       for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+        if (itemIndex > 0) await parsingSlice.checkpoint();
         const item = items[itemIndex];
         const ir = new AnalyzeRule(item, baseUrl);
         this.seedSourceVariables(ir.getContext(), source);
@@ -151,16 +203,18 @@ export class ExploreCoordinator {
           ir.getContext().put('backend', sourceBackendHost);
         }
         const book = new SearchBook();
-        book.name = ir.analyzeFirst(exploreRule.name) || '';
-        book.author = ir.analyzeFirst(exploreRule.author) || '';
+        const fieldValues = itemIndex < fieldBatch.values.length ? fieldBatch.values[itemIndex] : {};
+        book.name = fieldValues['name'] || '';
+        book.author = fieldValues['author'] || '';
         book.coverUrl = BookSourceDataUrlSupport.normalizeCoverUrlFromItem(source,
-          ir.analyzeFirst(exploreRule.coverUrl), item, baseUrl);
-        book.intro = ir.analyzeFirst(exploreRule.intro) || '';
-        book.kind = ir.analyzeFirst(exploreRule.kind) || '';
-        book.latestChapterTitle = ir.analyzeFirst(exploreRule.lastChapter) || '';
-        book.wordCount = ir.analyzeFirst(exploreRule.wordCount) || '';
-        const stageBookUrl = itemIndex < stageBookUrls.length ? stageBookUrls[itemIndex] : '';
-        book.bookUrl = BookUrlResolver.resolve(stageBookUrl || ir.analyzeFirst(exploreRule.bookUrl), baseUrl);
+          fieldValues['coverUrl'] || '', item, baseUrl);
+        book.intro = fieldValues['intro'] || '';
+        book.kind = fieldValues['kind'] || '';
+        book.latestChapterTitle = fieldValues['lastChapter'] || '';
+        book.wordCount = fieldValues['wordCount'] || '';
+        book.bookUrl = BookUrlResolver.resolve(fieldValues['bookUrl'] || '', baseUrl);
+        book.variable = itemIndex < fieldBatch.contextValues.length ? fieldBatch.contextValues[itemIndex] :
+          ir.getContext().toJson();
         book.origin = source.bookSourceUrl;
         book.originName = source.bookSourceName;
         BookTypeSupport.applySearchBookType(book, source);
@@ -249,31 +303,28 @@ export class ExploreCoordinator {
 
   private async evaluateExploreScript(raw: string, source: BookSource): Promise<ExploreUrlItem[]> {
     const code = raw.replace(/^\s*@?js:\s*/, '');
-    const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.EXPLORE,
-      `${source.jsLib || ''}\n${code}`);
-    if (decision.runtime === 'arkweb' && BookSourceStageWebRuntime.get().isAvailable()) {
+    const runtime = BookSourceStageWebRuntime.get();
+    if (!runtime.isAvailable()) await runtime.waitUntilAvailable(1000);
+    if (runtime.isAvailable()) {
       const request = new StageWebRuntimeRequest();
       request.source = source;
       request.code = code;
       request.baseUrl = source.bookSourceUrl;
       request.variables = { page: '1', pageIndex: '1' };
       try {
-        const runtimeResult = await BookSourceStageWebRuntime.get().execute(request);
+        const runtimeResult = await runtime.execute(request);
         if (runtimeResult.toastMessage) this.noticeMessage = runtimeResult.toastMessage.trim();
         const parsed = this.parseExploreScriptResult(runtimeResult.value || '');
         if (parsed.length > 0 || this.noticeMessage) return parsed;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error || '');
         if (message) this.noticeMessage = `发现脚本执行失败：${message}`;
-        console.warn('[ExploreCoordinator] stage runtime menu failed, fallback legacy:', source.bookSourceName, error);
+        console.warn('[ExploreCoordinator] stage runtime menu failed:', source.bookSourceName, error);
       }
+    } else {
+      this.noticeMessage = '发现脚本运行环境未就绪';
     }
-    const env = new ScriptEngineContext();
-    env.baseUrl = source.bookSourceUrl;
-    this.seedSourceVariables(env.ctx, source);
-    const result = new ScriptEngine(new JsRuntime()).evalBlock(code, env);
-    if (!result.handled || !result.value) return [];
-    return this.parseExploreScriptResult(result.value);
+    return [];
   }
 
   private parseExploreScriptResult(value: string): ExploreUrlItem[] {
@@ -451,11 +502,15 @@ export class ExploreCoordinator {
   }
 
   private async buildUrl(source: BookSource, url: string, page: number): Promise<string> {
+    const shuqiUrl = BookSourceShuqiSupport.buildExploreUrl(source, url, page);
+    if (shuqiUrl) return shuqiUrl;
     const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.URL,
       `${source.jsLib || ''}\n${url || ''}`);
     const isFullJsUrl = /^\s*@?js:/i.test(url || '');
-    if (decision.runtime === 'arkweb' && BookSourceStageWebRuntime.get().isAvailable() &&
-      (isFullJsUrl || url.includes('{{'))) {
+    const requiresStageRuntime = isFullJsUrl || (url.includes('{{') && decision.runtime === 'arkweb');
+    const runtime = BookSourceStageWebRuntime.get();
+    if (requiresStageRuntime && !runtime.isAvailable()) await runtime.waitUntilAvailable(1000);
+    if (requiresStageRuntime && runtime.isAvailable()) {
       const request = new StageWebRuntimeRequest();
       request.source = source;
       request.baseUrl = source.bookSourceUrl;
@@ -468,19 +523,13 @@ export class ExploreCoordinator {
           `function(_,expr){try{return String(eval(expr));}catch(e){return '';}});result;`;
       }
       try {
-        const result = await BookSourceStageWebRuntime.get().execute(request);
+        const result = await runtime.execute(request);
         if (result.value) return result.value;
       } catch (error) {
-        console.warn('[ExploreCoordinator] stage runtime URL failed, fallback legacy:', source.bookSourceName, error);
+        console.warn('[ExploreCoordinator] stage runtime URL failed:', source.bookSourceName, error);
       }
     }
-    if (/^\s*@?js:/i.test(url || '')) {
-      const scripted = BookSourceScriptRunner.evaluateUrl(source, url, '', String(page));
-      if (scripted.handled && scripted.value) {
-        source.variable = scripted.variable;
-        return scripted.value;
-      }
-    }
+    if (requiresStageRuntime) return '';
     const built = BookSourceDataUrlSupport.buildRequestUrl(source, url, String(page));
     if (built) return built;
     // Ordinary Legado explore entries are very often relative URLs. Keep them on the lightweight
@@ -496,37 +545,31 @@ export class ExploreCoordinator {
     return BookUrlResolver.resolve(fallback, source.bookSourceUrl) || fallback;
   }
 
-  private async analyzeExploreFieldBatch(source: BookSource, items: string[], baseUrl: string,
-    rawRule: string): Promise<string[]> {
-    const rule = (rawRule || '').trim();
-    if (!rule || !/^@?js:/i.test(rule) || items.length === 0) return [];
-    const code = rule.replace(/^@?js:\s*/i, '');
-    const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.EXPLORE,
-      `${source.jsLib || ''}\n${code}`);
-    const runtime = BookSourceStageWebRuntime.get();
-    if (decision.runtime !== 'arkweb' || !runtime.isAvailable()) return [];
-
-    const request = new StageWebRuntimeRequest();
-    request.source = source;
-    request.content = JSON.stringify(items.map((item: string): Object | string => {
-      try { return JSON.parse(item) as Object; } catch (_) { return item; }
-    }));
-    request.contextContent = request.content;
-    request.baseUrl = baseUrl || source.bookSourceUrl;
-    request.code = `const __fieldItems=JSON.parse(result||'[]');const __fieldCode=${JSON.stringify(code)};` +
-      `JSON.stringify(__fieldItems.map(function(__fieldItem){java.__setContextContent(__fieldItem);` +
-      `try{const __fieldValue=eval(__fieldCode);return __fieldValue==null?'':String(__fieldValue);}` +
-      `catch(__fieldError){return '';}}));`;
-    try {
-      const result = await runtime.execute(request);
-      const parsed = JSON.parse(result.value || '[]') as Object;
-      if (!Array.isArray(parsed)) return [];
-      return (parsed as Object[]).map((value: Object): string => String(value || ''));
-    } catch (error) {
-      console.warn('[ExploreCoordinator] stage runtime field batch failed, fallback legacy:',
-        source.bookSourceName, error);
-      return [];
+  private parseShuqiExploreBooks(source: BookSource, body: string): SearchBook[] {
+    const records = BookSourceShuqiSupport.parseBookRecords(source, body, false);
+    const books: SearchBook[] = [];
+    for (const record of records) {
+      const book = new SearchBook();
+      book.name = String(record['bookName'] || record['title'] || '').trim();
+      book.author = String(record['authorName'] || record['author'] || '').trim();
+      book.bookUrl = BookSourceShuqiSupport.buildBookInfoUrl(source, record);
+      if (!book.name || !book.bookUrl) continue;
+      book.coverUrl = String(record['imgUrl'] || record['cover'] || '').trim();
+      book.intro = String(record['desc'] || '').trim();
+      const category = String(record['className'] || record['category'] || '').trim();
+      const hasSearchStatus = record['status'] !== undefined && record['status'] !== null;
+      const rawState = String(hasSearchStatus ? record['status'] : record['state']);
+      const state = hasSearchStatus ? (rawState === '0' ? '连载' : '完结') :
+        (rawState === '1' ? '连载' : (rawState ? '完结' : ''));
+      book.kind = [category, state].filter((value: string): boolean => !!value).join(',');
+      book.wordCount = String(record['wordCount'] || record['words'] || '').trim();
+      book.variable = JSON.stringify(record);
+      book.origin = source.bookSourceUrl;
+      book.originName = source.bookSourceName;
+      BookTypeSupport.applySearchBookType(book, source);
+      books.push(book);
     }
+    return books;
   }
 
   private applySourceTemplate(url: string, source: BookSource): string {

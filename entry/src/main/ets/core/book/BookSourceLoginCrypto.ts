@@ -29,6 +29,11 @@ export class BookSourceLoginCrypto {
   }
 
   private static async transform(request: LoginCryptoRequest): Promise<Object> {
+    if (request.method === 'digestHex') {
+      const md = cryptoFramework.createMd((request.transformation || 'MD5').toUpperCase());
+      md.updateSync({ data: this.bytes(request.data) });
+      return this.hex(md.digestSync().data);
+    }
     const keyBytes = this.bytes(request.key);
     const spec = this.algorithm(request.transformation, keyBytes.length);
     const key = await cryptoFramework.createSymKeyGenerator(spec.keyAlgorithm)

@@ -63,12 +63,15 @@ import {
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
+import { ReaderContentPreprocessor } from '../core/concurrency/ReaderContentPreprocessor';
+import { CooperativeScheduler } from '../core/concurrency/CooperativeScheduler';
 
 const TOC_WINDOW_PAGE_SIZE = 72;
 const FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS = 5000;
-const READER_CURRENT_PAGINATION_AHEAD_PAGE_COUNT = 8;
-const READER_ADJACENT_PAGINATION_PREVIEW_PAGE_COUNT = 4;
+const READER_CURRENT_PAGINATION_AHEAD_PAGE_COUNT = 4;
+const READER_ADJACENT_PAGINATION_PREVIEW_PAGE_COUNT = 2;
 const READER_PAGINATION_BATCH_DELAY_MS = 64;
+const READER_INTERACTIVE_PAGINATION_BATCH_DELAY_MS = 140;
 const READER_PAGINATION_BUSY_RETRY_DELAY_MS = 48;
 
 interface ReadTextSlice {
@@ -108,6 +111,26 @@ interface ReaderPaginationResult {
 interface ReaderParagraphMeasureFallback {
   fontSize: number;
   fontFamily: string;
+}
+
+interface ReaderInlineActionBoundsTask {
+  text: string;
+  marker: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  pageIdentity: string;
+  attempts: number;
+}
+
+interface ReaderMergedActionBoundsTask {
+  paragraphs: ReaderTextParagraph[];
+  selectableKey: string;
+  left: number;
+  top: number;
+  pageIdentity: string;
+  attempts: number;
 }
 
 class ReaderComicPageDataSource implements IDataSource {
@@ -156,6 +179,13 @@ class ReaderComicPageDataSource implements IDataSource {
       } else {
         listener.onDataReloaded();
       }
+    }
+  }
+
+  notifyChanged(index: number): void {
+    if (index < 0 || index >= this.pages.length) return;
+    for (const listener of this.listeners) {
+      listener.onDataChange(index);
     }
   }
 }
@@ -260,6 +290,8 @@ struct ReadBookPage {
   private readerCommentPanelHtml: string = '';
   private readerCommentPanelBaseUrl: string = '';
   private readerCommentPanelHtmlLoaded: boolean = false;
+  private readerCommentPanelLoadSerial: number = 0;
+  private readerCommentPanelReadyTimerId: number = -1;
   @State showToc: boolean = false;
   @State tocPanelTab: number = 0;
   @State bookmarks: Bookmark[] = [];
@@ -294,7 +326,16 @@ struct ReadBookPage {
   @State readerInitialPageReady: boolean = false;
   @State readerComicMode: boolean = false;
   @State readerComicImageRatios: number[] = [];
+  @State readerComicPaginationParsing: boolean = false;
+  @State readerComicPaginationParsedPages: number = 0;
+  @State readerComicPaginationTotalPages: number = 0;
   @State readerComicChapterSwitching: boolean = false;
+  @State readerComicBoundaryDirection: number = 0;
+  @State readerComicBoundaryPullDistance: number = 0;
+  @State readerComicBoundaryReady: boolean = false;
+  @State readerComicChapterTransitionY: number = 0;
+  @State readerComicChapterTransitionOpacity: number = 1;
+  private readerComicPaginationSource: string = '';
   @State statusBarSafeHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State isTtsSpeaking: boolean = false;
@@ -354,12 +395,15 @@ struct ReadBookPage {
   private globalTtsCatalogSource: ReaderFloatingCatalogDataSource = new ReaderFloatingCatalogDataSource();
   private readerComicScroller: ListScroller = new ListScroller();
   private readerComicPageDataSource: ReaderComicPageDataSource = new ReaderComicPageDataSource();
+  private readerComicImageRatioCache: Map<string, number> = new Map();
+  private readerComicImageRatioLoading: Set<string> = new Set();
   private readerComicScrollRestoreSerial: number = 0;
   private readerComicScrollRestoring: boolean = false;
   private readerComicProgressSaveTimerId: number = -1;
   private readerPagedProgressSaveTimerId: number = -1;
   private readerComicPanLastOffsetY: number = 0;
   private readerComicPanMoved: boolean = false;
+  private readerComicBoundaryPullOriginY: number = 0;
   private readerComicSuppressClickUntil: number = 0;
   private ttsReader: SystemTtsReader = new SystemTtsReader();
   private ttsAutoContinue: boolean = false;
@@ -395,6 +439,8 @@ struct ReadBookPage {
   private contentPageEnds: number[] = [];
   private pagedContentText: string = '';
   private readerPaginationCache: Map<string, ReaderPaginationResult> = new Map();
+  private readerPreparedContentCache: Map<string, string> = new Map();
+  private readerAdaptiveLineHeightCache: Map<string, number> = new Map();
   private cachedRegexRulesKey: string = '';
   private cachedRegexRules: ReaderRegexFontRule[] = [];
   private cachedDocumentRegexSource: string = '';
@@ -402,6 +448,7 @@ struct ReadBookPage {
   private cachedDocumentRegexSlices: ReadTextSlice[] = [];
   private regexFrameStyleCache: Map<string, string> = new Map();
   private adjacentPaginationPreloadSerial: number = 0;
+  private previousPaginationPreloadSerial: number = 0;
   private readerPaginationWorkSerial: number = 0;
   private pageTurnPreviewKey: string = '';
   private pageTurnPreviewLoadingKey: string = '';
@@ -410,6 +457,7 @@ struct ReadBookPage {
     new CanvasRenderingContext2D(new RenderingContextSettings(true));
   private readerPageCurlFront: image.PixelMap | null = null;
   private readerPageCurlBack: image.PixelMap | null = null;
+  private readerPageCurlSnapshotHeight: number = 0;
   private readerPageCurlCaptureKey: string = '';
   private readerPageCurlCaptureSerial: number = 0;
   private readerPageCurlCapturePending: boolean = false;
@@ -461,6 +509,20 @@ struct ReadBookPage {
   private readerTouchActionMarker: string = '';
   private readerInlineTouchActionMarker: string = '';
   private readerSourceActionAreas: Map<string, number[]> = new Map<string, number[]>();
+  private readerPendingInlineActionBounds: Map<string, ReaderInlineActionBoundsTask> =
+    new Map<string, ReaderInlineActionBoundsTask>();
+  private readerPendingMergedActionBounds: Map<string, ReaderMergedActionBoundsTask> =
+    new Map<string, ReaderMergedActionBoundsTask>();
+  private readerActionMatchCache: Map<string, ReaderActionMatch> = new Map<string, ReaderActionMatch>();
+  private readerSourceSettingCacheSource: BookSource | null = null;
+  private readerSourceSettingCacheVariable: string = '';
+  private readerSourceSettingCacheLoginInfo: string = '';
+  private readerSourceSettingCacheContentRule: string = '';
+  private readerSourceSettingCacheJsLib: string = '';
+  private readerSourceSettingRoots: Object[] = [];
+  private readerSourceSettingValues: Map<string, string> = new Map<string, string>();
+  private readerSourceHasCommentBubbleScript: boolean = false;
+  private readerSourceActionBoundsFlushPending: boolean = false;
   private readerInlineActionTextControllers: Map<string, TextController> = new Map<string, TextController>();
   private readerSelectableTextControllers: Map<string, TextController> = new Map<string, TextController>();
   private readerSelectableTextAreas: Map<string, number[]> = new Map<string, number[]>();
@@ -468,8 +530,8 @@ struct ReadBookPage {
   private readerTextSelectionUntil: number = 0;
   private readerTapLayerGlobalX: number = 0;
   private readerTapLayerGlobalY: number = 0;
-  private readerSourceActionHitSlopX: number = 16;
-  private readerSourceActionHitSlopY: number = 12;
+  private readerSourceActionHitSlopX: number = 8;
+  private readerSourceActionHitSlopY: number = 8;
   private readerTapSlop: number = 12;
   private readerPageTurnCommitDistance: number = 18;
   private readerPageTurnDirectionRatio: number = 0.8;
@@ -576,6 +638,9 @@ struct ReadBookPage {
   private lastLoggedReaderFontFamily: string = '';
   private readerFontChangeSerial: number = 0;
   private readerLayoutApplyTimerId: number = -1;
+  private readerExtendLayoutRefreshTimerId: number = -1;
+  private readerExtendLayoutReadingOffset: number = -1;
+  private readerPageContentTopPaddingSnapshot: number = -1;
   private readerLayoutCommitInProgress: boolean = false;
   private readerTypographyDraftPending: boolean = false;
   @State readerTypographyValueRevision: number = 0;
@@ -665,6 +730,9 @@ struct ReadBookPage {
         });
         this.reloadReaderReplaceRules(true).catch((error: Error) => {
           console.warn('恢复替换净化规则失败:', error);
+        });
+        this.reloadSourceInteractionsAfterPageShow().catch((error: Error) => {
+          console.warn('恢复书源交互设置失败:', error);
         });
       }
     }
@@ -759,6 +827,18 @@ struct ReadBookPage {
     this.paginateContent(this.content);
   }
 
+  async reloadSourceInteractionsAfterPageShow(): Promise<void> {
+    if (!this.book || this.book.origin === 'local' || this.chapters.length === 0) return;
+    const engine = ReadBookEngine.get();
+    const changed = await engine.refreshSourceInteractionState();
+    if (!changed) return;
+    this.book = engine.book || this.book;
+    this.chapters = [...engine.chapters];
+    this.pendingRestorePageIndex = this.currentPageIndex;
+    this.readerPaginationCache.clear();
+    await this.loadContent(true, this.currentChapterIndex, true);
+  }
+
   reregisterReaderFontAfterShow(delayMs: number): void {
     setTimeout(() => {
       if (!this.readerFontFilePath) {
@@ -771,6 +851,11 @@ struct ReadBookPage {
   aboutToDisappear() {
     this.readerPageVisible = false;
     this.resetReaderPageCurl();
+    if (this.readerExtendLayoutRefreshTimerId >= 0) {
+      clearTimeout(this.readerExtendLayoutRefreshTimerId);
+      this.readerExtendLayoutRefreshTimerId = -1;
+    }
+    this.readerExtendLayoutReadingOffset = -1;
     this.flushPendingReaderLayoutChange(false);
     this.releaseReaderScreenTimeout();
     this.shortcutRoutingActive = false;
@@ -787,7 +872,7 @@ struct ReadBookPage {
       this.ttsReader.shutdown();
     }
     if (!this.readerExitProgressSaved) {
-      this.saveReadingProgress().then(() => {
+      this.saveReadingProgress(true).then(() => {
         return CloudSyncCoordinator.syncAutomatically(
           getContext(this), CloudSyncCoordinator.TRIGGER_CHANGE);
       }).catch((error: Error) => {
@@ -815,7 +900,7 @@ struct ReadBookPage {
     if (!RecentReadShortcut.isPending()) {
       return;
     }
-    this.saveReadingProgress().catch((error: Error) => {
+    this.saveReadingProgress(true).catch((error: Error) => {
       console.warn('快捷入口切换前保存进度失败:', error);
     });
     try {
@@ -1013,6 +1098,12 @@ struct ReadBookPage {
     this.contentPageEnds = [];
     this.pagedContentText = '';
     this.readerPaginationCache.clear();
+    if (this.readerExtendLayoutRefreshTimerId >= 0) {
+      clearTimeout(this.readerExtendLayoutRefreshTimerId);
+      this.readerExtendLayoutRefreshTimerId = -1;
+    }
+    this.readerExtendLayoutReadingOffset = -1;
+    this.resetReaderPageCurl();
     this.adjacentPaginationPreloadSerial++;
     this.currentPageIndex = 0;
     this.currentPageText = '';
@@ -1030,7 +1121,14 @@ struct ReadBookPage {
     this.readerInitialPageReady = false;
     this.readerComicMode = false;
     this.readerComicImageRatios = [];
+    this.clearReaderComicPaginationProgress();
     this.readerComicChapterSwitching = false;
+    this.readerComicBoundaryDirection = 0;
+    this.readerComicBoundaryPullDistance = 0;
+    this.readerComicBoundaryReady = false;
+    this.readerComicChapterTransitionY = 0;
+    this.readerComicChapterTransitionOpacity = 1;
+    this.readerComicBoundaryPullOriginY = 0;
     this.readerComicScrollRestoreSerial++;
     this.readerComicScrollRestoring = false;
     this.clearReaderComicProgressSaveTimer();
@@ -1090,7 +1188,10 @@ struct ReadBookPage {
       this.currentChapterIndex = chapterIndex;
       this.closeReaderCommentPanel();
       this.readerComicImageRatios = [];
-      let loadedContent = this.applyReaderContentRules(body);
+      let loadedContent = await this.prepareReaderContentRules(body, chapterIndex);
+      if (loadSerial !== this.contentLoadSerial) {
+        return;
+      }
       if (body) {
         this.content = loadedContent;
         this.chapters = [...engine.chapters];
@@ -1137,7 +1238,7 @@ struct ReadBookPage {
     try {
       const body = await engine.reloadContent(this.currentChapterIndex);
       if (body) {
-        const processedBody = this.applyReaderContentRules(body);
+        const processedBody = await this.prepareReaderContentRules(body, this.currentChapterIndex);
         this.readerComicImageRatios = [];
         this.content = processedBody;
         this.detectReaderComicMode(processedBody);
@@ -1519,7 +1620,8 @@ struct ReadBookPage {
   }
 
   shouldBlockReaderInteraction(): boolean {
-    return this.isLoading || this.isPagedReaderAwaitingPagination() || !this.readerInitialPageReady;
+    return this.isLoading || this.isPagedReaderAwaitingPagination() || !this.readerInitialPageReady ||
+      this.readerComicPaginationParsing;
   }
 
   getReaderLoadingText(): string {
@@ -1547,6 +1649,39 @@ struct ReadBookPage {
   }
 
   @Builder
+  readerComicPaginationPanel() {
+    Column({ space: 10 }) {
+      LoadingProgress()
+        .width(44)
+        .height(44)
+        .color(this.accentColor())
+      Text('正在解析漫画')
+        .fontSize(16)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.getTextColor())
+      Text(`已解析 ${this.readerComicPaginationParsedPages} / ${this.readerComicPaginationTotalPages} 页`)
+        .fontSize(13)
+        .fontColor(this.isReaderThemeDark() ? '#AEB4BE' : '#777777')
+      Progress({
+        value: this.readerComicPaginationParsedPages,
+        total: Math.max(1, this.readerComicPaginationTotalPages),
+        type: ProgressType.Linear
+      })
+        .width(196)
+        .height(4)
+        .color(this.accentColor())
+        .backgroundColor(this.isReaderThemeDark() ? '#3A3D43' : '#DDD8D0')
+      Text('解析完成后自动开始阅读')
+        .fontSize(12)
+        .fontColor(this.isReaderThemeDark() ? '#858B94' : '#999999')
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .backgroundColor(this.getBackgroundColor())
+  }
+
+  @Builder
   readerComicScrollSurface() {
     Stack() {
       List({ space: 0, scroller: this.readerComicScroller }) {
@@ -1559,6 +1694,11 @@ struct ReadBookPage {
                 .margin({ top: -this.getReaderComicImageSeamOverlap(index) })
                 .objectFit(this.getReaderComicImageFit(index))
                 .draggable(false)
+                .onAppear(() => {
+                  this.ensureReaderComicImageRatio(index, page).catch((error: Error) => {
+                    console.warn('预读取漫画图片尺寸失败:', error);
+                  });
+                })
                 .onComplete((event) => {
                   if (event) {
                     this.updateReaderComicImageRatio(index, event.width, event.height);
@@ -1594,6 +1734,8 @@ struct ReadBookPage {
       .width('100%')
       .height('100%')
       .scrollBar(BarState.Off)
+      .translate({ y: this.readerComicChapterTransitionY })
+      .opacity(this.readerComicChapterTransitionOpacity)
       .onScrollIndex((start: number, end: number) => {
         this.onReaderComicScrollIndexChanged(start, end);
       })
@@ -1606,6 +1748,10 @@ struct ReadBookPage {
       .width('100%')
       .height('100%')
       .hitTestBehavior(HitTestMode.None)
+
+      if (this.readerComicBoundaryDirection !== 0 || this.readerComicChapterSwitching) {
+        this.readerComicBoundaryHint()
+      }
     }
     .width('100%')
     .height('100%')
@@ -1613,6 +1759,7 @@ struct ReadBookPage {
     .opacity(this.readerInitialPageReady ? 1 : 0)
     .onAreaChange((_oldValue: Area, newValue: Area) => {
       this.updatePagedReaderArea(newValue);
+      this.rememberReaderTapLayerArea(newValue);
     })
     .priorityGesture(
       GestureGroup(GestureMode.Exclusive,
@@ -1625,32 +1772,32 @@ struct ReadBookPage {
         PanGesture({ direction: PanDirection.Vertical, distance: this.readerTapSlop })
           .onActionStart(() => {
             if (!this.isReaderNovelContinuousScrollModeActive()) return;
-            this.readerComicPanLastOffsetY = 0;
-            this.readerComicPanMoved = false;
+            this.beginReaderComicPan();
           })
           .onActionUpdate((event: GestureEvent) => {
             if (!this.isReaderNovelContinuousScrollModeActive()) return;
-            const deltaY = event.offsetY - this.readerComicPanLastOffsetY;
-            this.readerComicPanLastOffsetY = event.offsetY;
-            if (Math.abs(event.offsetY) > 3) this.readerComicPanMoved = true;
-            this.readerComicScroller.scrollBy(0, -deltaY);
+            this.updateReaderComicPan(event);
           })
           .onActionEnd((event: GestureEvent) => {
             if (!this.isReaderNovelContinuousScrollModeActive()) return;
-            if (this.readerComicPanMoved) {
-              this.readerComicSuppressClickUntil = Date.now() + 220;
-              this.readerComicScroller.fling(event.velocityY);
-            }
-            this.readerComicPanLastOffsetY = 0;
-            this.readerComicPanMoved = false;
+            this.finishReaderComicPan(event);
           })
           .onActionCancel(() => {
-            this.readerComicPanLastOffsetY = 0;
-            this.readerComicPanMoved = false;
+            this.cancelReaderComicPan();
           }),
         TapGesture()
-          .onAction(() => {
-            if (!this.isReaderNovelContinuousScrollModeActive() || this.consumeSuppressedReaderTapClick()) return;
+          .onAction((event: GestureEvent) => {
+            if (!this.isReaderNovelContinuousScrollModeActive()) return;
+            if (event.fingerList.length > 0) {
+              const finger = event.fingerList[0];
+              const marker = this.readerSourceActionAtPoint(Number(finger.globalX), Number(finger.globalY));
+              if (marker) {
+                this.beginReaderInteractiveAction();
+                this.openReaderSourceAction(marker);
+                return;
+              }
+            }
+            if (this.consumeSuppressedReaderTapClick()) return;
             if (Date.now() >= this.readerComicSuppressClickUntil &&
               !this.showMenu && !this.showToc && !this.showSettings) {
               this.showMenu = true;
@@ -1659,6 +1806,63 @@ struct ReadBookPage {
       ),
       GestureMask.IgnoreInternal
     )
+  }
+
+  @Builder
+  readerComicBoundaryHint() {
+    Column() {
+      if (this.readerComicBoundaryDirection < 0) {
+        this.readerComicBoundaryHintContent()
+      }
+      Blank()
+        .layoutWeight(1)
+      if (this.readerComicBoundaryDirection > 0) {
+        this.readerComicBoundaryHintContent()
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .padding({ top: this.readerComicBoundaryHintTopPadding(), bottom: 54 })
+    .alignItems(HorizontalAlign.Center)
+    .hitTestBehavior(HitTestMode.None)
+  }
+
+  readerComicBoundaryHintTopPadding(): number {
+    // The continuous surface is already inset when body content does not extend into the status bar;
+    // extended and comic layouts are not.
+    // Add only the unconsumed safe-area height so the top hint never sits underneath status-bar content.
+    const consumedTopInset = this.getReaderTopSafePadding();
+    return Math.max(14, this.statusBarSafeHeight - consumedTopInset + 12);
+  }
+
+  @Builder
+  readerComicBoundaryHintContent() {
+    Row({ space: 8 }) {
+      if (this.readerComicChapterSwitching) {
+        LoadingProgress()
+          .width(18)
+          .height(18)
+          .color(this.accentColor())
+      } else {
+        SymbolGlyph(this.readerComicBoundaryDirection < 0 ?
+          $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_up'))
+          .fontSize(17)
+          .fontColor([this.readerComicBoundaryReady ? this.accentColor() : this.getTextColor()])
+      }
+      Text(this.readerComicBoundaryHintText())
+        .fontSize(13)
+        .fontWeight(this.readerComicBoundaryReady || this.readerComicChapterSwitching ? FontWeight.Medium :
+          FontWeight.Regular)
+        .fontColor(this.readerComicBoundaryReady || this.readerComicChapterSwitching ?
+          this.accentColor() : this.getTextColor())
+    }
+    .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+    .borderRadius(18)
+    .backgroundColor(this.isReaderThemeDark() ? '#E61B1D20' : '#E6FFFFFF')
+    .shadow({ radius: 10, color: this.isReaderThemeDark() ? '#66000000' : '#26000000', offsetY: 3 })
+    .opacity(this.readerComicChapterSwitching ? 1 :
+      Math.min(1, 0.35 + this.readerComicBoundaryPullDistance / 56))
+    .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
@@ -1682,40 +1886,23 @@ struct ReadBookPage {
           if (this.isReaderInteractiveActionActive()) {
             return;
           }
-          this.readerComicPanLastOffsetY = 0;
-          this.readerComicPanMoved = false;
+          this.beginReaderComicPan();
         })
         .onActionUpdate((event: GestureEvent) => {
           if (this.isReaderInteractiveActionActive()) {
             return;
           }
-          const deltaY = event.offsetY - this.readerComicPanLastOffsetY;
-          this.readerComicPanLastOffsetY = event.offsetY;
-          if (Math.abs(event.offsetY) > 3) {
-            this.readerComicPanMoved = true;
-          }
-          this.readerComicScroller.scrollBy(0, -deltaY);
+          this.updateReaderComicPan(event);
         })
         .onActionEnd((event: GestureEvent) => {
           if (this.isReaderInteractiveActionActive()) {
-            this.readerComicPanLastOffsetY = 0;
-            this.readerComicPanMoved = false;
+            this.cancelReaderComicPan();
             return;
           }
-          const chapterDirection = this.comicBoundaryChapterSwipeDirection(event.offsetY);
-          if (chapterDirection !== 0) {
-            this.readerComicSuppressClickUntil = Date.now() + 300;
-            this.switchComicBoundaryChapter(chapterDirection);
-          } else if (this.readerComicPanMoved) {
-            this.readerComicSuppressClickUntil = Date.now() + 220;
-            this.readerComicScroller.fling(event.velocityY);
-          }
-          this.readerComicPanLastOffsetY = 0;
-          this.readerComicPanMoved = false;
+          this.finishReaderComicPan(event);
         })
         .onActionCancel(() => {
-          this.readerComicPanLastOffsetY = 0;
-          this.readerComicPanMoved = false;
+          this.cancelReaderComicPan();
         })
     )
   }
@@ -1791,7 +1978,9 @@ struct ReadBookPage {
         this.readerTapLayer()
       }
 
-      if (this.shouldShowReaderLoadingOverlay()) {
+      if (this.readerComicPaginationParsing) {
+        this.readerComicPaginationPanel()
+      } else if (this.shouldShowReaderLoadingOverlay()) {
         this.readerLoadingPanel()
       }
 
@@ -1951,27 +2140,14 @@ struct ReadBookPage {
             .forceDarkAccess(this.appDarkMode)
             .onControllerAttached(() => {
               this.readerCommentPanelHtmlLoaded = false;
+              setTimeout(() => this.loadReaderCommentPanelHtmlIfNeeded(), 0);
             })
             .onPageBegin(() => {
               this.readerCommentPanelLoading = true;
             })
             .onPageEnd(() => {
-              if (this.readerCommentPanelHtml && !this.readerCommentPanelHtmlLoaded) {
-                this.readerCommentPanelHtmlLoaded = true;
-                try {
-                  const baseUrl = this.readerCommentPanelBaseUrl || 'https://pl.001122.top/';
-                  this.readerCommentPanelController.loadData(this.readerCommentPanelHtml, 'text/html', 'UTF-8',
-                    baseUrl, baseUrl);
-                  return;
-                } catch (error) {
-                  console.warn('加载原生评论面板失败:', error);
-                }
-              }
-              this.syncReaderCommentPanelWebTheme().finally(() => {
-                if (this.showReaderCommentPanel) {
-                  this.readerCommentPanelLoading = false;
-                }
-              });
+              if (this.loadReaderCommentPanelHtmlIfNeeded()) return;
+              this.scheduleReaderCommentPanelHostReady(0);
             })
         }
         .width('100%')
@@ -4874,6 +5050,38 @@ struct ReadBookPage {
     return ReaderReplaceRuleStore.applyContent(content, this.readerReplaceRules, this.book);
   }
 
+  readerPreparedContentKey(content: string, chapterIndex: number): string {
+    return `${chapterIndex}_${content.length}_${this.hashText(content)}_${this.readerReplaceRules.length}_` +
+      `${this.readerReplaceRulesUpdateTime}`;
+  }
+
+  getPreparedReaderContent(content: string, chapterIndex: number): string {
+    return this.readerPreparedContentCache.get(this.readerPreparedContentKey(content, chapterIndex)) || '';
+  }
+
+  async prepareReaderContentRules(content: string, chapterIndex: number): Promise<string> {
+    if (!content) return '';
+    const key = this.readerPreparedContentKey(content, chapterIndex);
+    const cached = this.readerPreparedContentCache.get(key);
+    if (cached !== undefined) return cached;
+    const startedAt = Date.now();
+    const processed = await ReaderContentPreprocessor.apply(content, this.readerReplaceRules, this.book);
+    const elapsedMs = Math.max(0, Date.now() - startedAt);
+    if (elapsedMs >= CooperativeScheduler.DANGEROUS_OPERATION_MS) {
+      console.info(`[ReaderPreprocessor] worker elapsed=${elapsedMs}ms input=${content.length}`);
+    }
+    this.readerPreparedContentCache.set(key, processed);
+    while (this.readerPreparedContentCache.size > 8) {
+      const oldestKey = this.readerPreparedContentCache.keys().next().value as string | undefined;
+      if (!oldestKey) break;
+      this.readerPreparedContentCache.delete(oldestKey);
+    }
+    // Do not begin native paragraph measurement in the same event-loop turn that publishes a
+    // potentially large TaskPool result.
+    await CooperativeScheduler.yieldToEventLoop();
+    return processed;
+  }
+
   onReaderReplaceRulesChanged(): void {
     if (this.readerEntryInitializing || !this.readerPageVisible) {
       return;
@@ -4886,6 +5094,7 @@ struct ReadBookPage {
   async reloadReaderReplaceRules(repaginate: boolean): Promise<void> {
     this.readerReplaceRules = await ReaderReplaceRuleStore.load(getContext(this), true);
     this.readerPaginationCache.clear();
+    this.readerPreparedContentCache.clear();
     this.adjacentPaginationPreloadSerial++;
     this.pageTurnPreviewKey = '';
     this.pageTurnPreviewLoadingKey = '';
@@ -4896,7 +5105,7 @@ struct ReadBookPage {
     if (!raw) {
       return;
     }
-    const processed = this.applyReaderContentRules(raw);
+    const processed = await this.prepareReaderContentRules(raw, this.currentChapterIndex);
     this.content = processed;
     this.paginateContent(processed, this.currentChapterIndex);
     this.refreshReaderTextRender();
@@ -5063,7 +5272,7 @@ struct ReadBookPage {
   }
 
   comicBoundaryChapterSwipeDirection(offsetY: number): number {
-    if (!this.isReaderContinuousScrollSurfaceActive() || this.readerComicChapterSwitching || Math.abs(offsetY) < 36) {
+    if (!this.isReaderContinuousScrollSurfaceActive() || this.readerComicChapterSwitching || Math.abs(offsetY) < 2) {
       return 0;
     }
     try {
@@ -5081,16 +5290,135 @@ struct ReadBookPage {
     return 0;
   }
 
+  beginReaderComicPan(): void {
+    if (this.readerComicChapterSwitching) return;
+    this.readerComicPanLastOffsetY = 0;
+    this.readerComicPanMoved = false;
+    this.readerComicBoundaryPullOriginY = 0;
+    this.resetReaderComicBoundaryFeedback(false);
+  }
+
+  updateReaderComicPan(event: GestureEvent): void {
+    if (this.readerComicChapterSwitching) return;
+    const previousOffsetY = this.readerComicPanLastOffsetY;
+    const deltaY = event.offsetY - previousOffsetY;
+    this.readerComicPanLastOffsetY = event.offsetY;
+    if (Math.abs(event.offsetY) > 3) this.readerComicPanMoved = true;
+    this.readerComicScroller.scrollBy(0, -deltaY);
+
+    const direction = this.comicBoundaryChapterSwipeDirection(event.offsetY);
+    if (direction === 0) {
+      if (this.readerComicBoundaryDirection !== 0) this.resetReaderComicBoundaryFeedback(true);
+      return;
+    }
+    if (direction !== this.readerComicBoundaryDirection) {
+      this.readerComicBoundaryDirection = direction;
+      this.readerComicBoundaryPullOriginY = previousOffsetY;
+    }
+    const distance = Math.min(88, Math.abs(event.offsetY - this.readerComicBoundaryPullOriginY));
+    this.readerComicBoundaryPullDistance = distance;
+    this.readerComicBoundaryReady = distance >= 48;
+    this.readerComicChapterTransitionY = (direction < 0 ? 1 : -1) * Math.min(20, distance * 0.3);
+    this.readerComicChapterTransitionOpacity = 1;
+  }
+
+  finishReaderComicPan(event: GestureEvent): void {
+    if (this.readerComicChapterSwitching) return;
+    const chapterDirection = this.readerComicBoundaryReady ? this.readerComicBoundaryDirection : 0;
+    const hadBoundaryPull = this.readerComicBoundaryDirection !== 0;
+    if (chapterDirection !== 0) {
+      this.readerComicSuppressClickUntil = Date.now() + 360;
+      this.switchComicBoundaryChapter(chapterDirection);
+    } else {
+      if (this.readerComicPanMoved && !hadBoundaryPull) {
+        this.readerComicSuppressClickUntil = Date.now() + 220;
+        this.readerComicScroller.fling(event.velocityY);
+      }
+      this.resetReaderComicBoundaryFeedback(true);
+    }
+    this.readerComicPanLastOffsetY = 0;
+    this.readerComicPanMoved = false;
+    this.readerComicBoundaryPullOriginY = 0;
+  }
+
+  cancelReaderComicPan(): void {
+    this.readerComicPanLastOffsetY = 0;
+    this.readerComicPanMoved = false;
+    this.readerComicBoundaryPullOriginY = 0;
+    this.resetReaderComicBoundaryFeedback(true);
+  }
+
+  resetReaderComicBoundaryFeedback(animated: boolean): void {
+    this.readerComicBoundaryDirection = 0;
+    this.readerComicBoundaryPullDistance = 0;
+    this.readerComicBoundaryReady = false;
+    if (this.readerComicChapterSwitching) return;
+    if (animated) {
+      animateTo({ duration: 150, curve: Curve.EaseOut }, () => {
+        this.readerComicChapterTransitionY = 0;
+        this.readerComicChapterTransitionOpacity = 1;
+      });
+    } else {
+      this.readerComicChapterTransitionY = 0;
+      this.readerComicChapterTransitionOpacity = 1;
+    }
+  }
+
+  readerComicBoundaryHintText(): string {
+    const previous = this.readerComicBoundaryDirection < 0;
+    if (this.readerComicChapterSwitching) return previous ? '正在加载上一章…' : '正在加载下一章…';
+    if (this.readerComicBoundaryReady) return previous ? '松开加载上一章' : '松开加载下一章';
+    return previous ? '下拉加载上一章' : '上滑加载下一章';
+  }
+
   switchComicBoundaryChapter(direction: number): void {
     if (direction === 0 || this.readerComicChapterSwitching) return;
-    this.readerComicChapterSwitching = true;
-    const task = direction > 0 ?
-      this.loadNextChapter(false, false) : this.loadPrevChapter(true, false, false);
-    task.catch((error: Error) => {
+    this.runReaderComicChapterTransition(direction).catch((error: Error) => {
       console.error('滚动切换漫画章节失败:', error);
-    }).finally(() => {
-      this.readerComicChapterSwitching = false;
     });
+  }
+
+  async runReaderComicChapterTransition(direction: number): Promise<void> {
+    if (direction === 0 || this.readerComicChapterSwitching) return;
+    const startedAt = Date.now();
+    const sourceChapterIndex = this.currentChapterIndex;
+    this.readerComicChapterSwitching = true;
+    this.readerComicBoundaryDirection = direction;
+    this.readerComicBoundaryPullDistance = Math.max(48, this.readerComicBoundaryPullDistance);
+    this.readerComicBoundaryReady = true;
+    animateTo({ duration: 110, curve: Curve.EaseIn }, () => {
+      this.readerComicChapterTransitionY = direction > 0 ? -34 : 34;
+      this.readerComicChapterTransitionOpacity = 0.18;
+    });
+    await this.delay(112);
+    try {
+      if (direction > 0) {
+        await this.loadNextChapter(false, false);
+      } else {
+        await this.loadPrevChapter(true, false, false);
+      }
+      const switched = this.currentChapterIndex !== sourceChapterIndex;
+      this.readerComicChapterTransitionY = switched ? (direction > 0 ? 28 : -28) :
+        (direction > 0 ? -20 : 20);
+      this.readerComicChapterTransitionOpacity = switched ? 0 : 0.35;
+      await this.delay(24);
+      animateTo({ duration: 220, curve: Curve.Friction }, () => {
+        this.readerComicChapterTransitionY = 0;
+        this.readerComicChapterTransitionOpacity = 1;
+      });
+      await this.delay(224);
+      console.info(`[ReaderBoundary] direction=${direction} switched=${switched} elapsed=${Date.now() - startedAt}ms`);
+    } finally {
+      this.readerComicSuppressClickUntil = Date.now() + 320;
+      this.suppressReaderTapClick = true;
+      this.readerComicChapterSwitching = false;
+      this.readerComicBoundaryDirection = 0;
+      this.readerComicBoundaryPullDistance = 0;
+      this.readerComicBoundaryReady = false;
+      this.readerComicBoundaryPullOriginY = 0;
+      this.readerComicChapterTransitionY = 0;
+      this.readerComicChapterTransitionOpacity = 1;
+    }
   }
 
   syncReaderComicPageDataSource(): void {
@@ -5103,7 +5431,8 @@ struct ReadBookPage {
   }
 
   getReaderComicImageHeight(index: number): number {
-    const fallbackHeight = Math.max(240, this.pageViewHeight);
+    // 尺寸读取期间使用接近图片宽度的短占位，避免解码失败时每张图片都遗留整屏空白。
+    const fallbackHeight = Math.max(240, this.pageViewWidth);
     const ratio = index >= 0 && index < this.readerComicImageRatios.length ?
       this.readerComicImageRatios[index] : 0;
     if (ratio <= 0 || this.pageViewWidth <= 0) return fallbackHeight;
@@ -5140,6 +5469,55 @@ struct ReadBookPage {
     }
     ratios[index] = ratio;
     this.readerComicImageRatios = ratios;
+    // LazyForEach 不会因为外部的比例数组变化而自动重建已经生成的 ListItem。
+    // 显式通知当前图片项刷新，否则初始整屏占位会一直保留，形成图片之间的大块空白。
+    this.readerComicPageDataSource.notifyChanged(index);
+  }
+
+  async ensureReaderComicImageRatio(index: number, marker: string): Promise<void> {
+    if (index < 0 || index >= this.contentPages.length || this.readerComicImageRatios[index] > 0 ||
+      this.contentPages[index] !== marker) {
+      return;
+    }
+    const path = LocalBookService.epubImagePathFromMarker(marker);
+    if (!path || /^(?:https?:|data:)/i.test(path)) return;
+    const cachedRatio = this.readerComicImageRatioCache.get(path) || 0;
+    if (cachedRatio > 0) {
+      this.updateReaderComicImageRatio(index, 1, cachedRatio);
+      return;
+    }
+    if (this.readerComicImageRatioLoading.has(path)) return;
+    this.readerComicImageRatioLoading.add(path);
+    let file: fs.File | null = null;
+    let source: image.ImageSource | null = null;
+    try {
+      file = fs.openSync(path, fs.OpenMode.READ_ONLY);
+      source = image.createImageSource(file.fd);
+      const info = await source.getImageInfo();
+      const width = info.size.width;
+      const height = info.size.height;
+      if (width > 0 && height > 0) {
+        const ratio = height / width;
+        this.readerComicImageRatioCache.set(path, ratio);
+        if (index < this.contentPages.length && this.contentPages[index] === marker) {
+          this.updateReaderComicImageRatio(index, width, height);
+        }
+      }
+    } finally {
+      this.readerComicImageRatioLoading.delete(path);
+      if (source) {
+        try {
+          await source.release();
+        } catch (_) {
+        }
+      }
+      if (file) {
+        try {
+          fs.closeSync(file);
+        } catch (_) {
+        }
+      }
+    }
   }
 
   scheduleReaderComicScrollRestore(): void {
@@ -5167,7 +5545,8 @@ struct ReadBookPage {
   }
 
   onReaderComicScrollIndexChanged(start: number, end: number): void {
-    if (!this.isReaderContinuousScrollSurfaceActive() || this.readerComicScrollRestoring || this.contentPages.length === 0) {
+    if (!this.isReaderContinuousScrollSurfaceActive() || this.readerComicScrollRestoring ||
+      this.pendingRestorePageIndex >= 0 || this.contentPages.length === 0) {
       return;
     }
     const pageIndex = Math.max(0, Math.min(Math.round(start), this.contentPages.length - 1));
@@ -5178,6 +5557,7 @@ struct ReadBookPage {
       this.preloadReaderContentLater();
       this.preloadNextChapterPaginationLater(0);
     }
+    if (pageIndex <= 3) this.preloadPreviousChapterPaginationLater(0);
     this.scheduleReaderComicProgressSave();
   }
 
@@ -5213,6 +5593,49 @@ struct ReadBookPage {
     const text = source || '';
     if (!LocalBookService.hasEpubImageMarkers(text)) return false;
     return LocalBookService.stripEpubImageMarkers(text).trim().length === 0;
+  }
+
+  countReaderImageMarkers(source: string): number {
+    const text = source || '';
+    const prefix = LocalBookService.EPUB_IMAGE_MARKER_PREFIX;
+    let count = 0;
+    let cursor = 0;
+    while (cursor < text.length) {
+      const markerStart = text.indexOf(prefix, cursor);
+      if (markerStart < 0) break;
+      count++;
+      cursor = markerStart + prefix.length;
+    }
+    return count;
+  }
+
+  clearReaderComicPaginationProgress(): void {
+    this.readerComicPaginationParsing = false;
+    this.readerComicPaginationParsedPages = 0;
+    this.readerComicPaginationTotalPages = 0;
+    this.readerComicPaginationSource = '';
+  }
+
+  updateReaderComicPaginationProgress(chapterIndex: number, result: ReaderPaginationResult): void {
+    if (chapterIndex !== this.currentChapterIndex) return;
+    if (!this.isReaderComicModeActive()) {
+      this.clearReaderComicPaginationProgress();
+      return;
+    }
+    let total = this.readerComicPaginationTotalPages;
+    if (this.readerComicPaginationSource !== result.source) {
+      if (!this.isReaderImageOnlySource(result.source)) {
+        this.clearReaderComicPaginationProgress();
+        return;
+      }
+      this.readerComicPaginationSource = result.source;
+      total = this.countReaderImageMarkers(result.source);
+    }
+    total = Math.max(total, result.pages.length);
+    this.readerComicPaginationTotalPages = total;
+    this.readerComicPaginationParsedPages = Math.min(total, result.pages.length);
+    this.readerComicPaginationParsing = result.complete !== true &&
+      this.readerComicPaginationParsedPages < total;
   }
 
   isReaderImageOnlyPage(text: string): boolean {
@@ -5276,6 +5699,7 @@ struct ReadBookPage {
       this.chapterJumpRenderGeneration++;
     }
     this.readerSourceActionAreas.clear();
+    this.clearPendingReaderSourceActionBounds();
     this.currentPageText = nextText;
     this.displayPageText = nextText;
     this.displayPageChapterIndex = this.currentChapterIndex;
@@ -5302,7 +5726,9 @@ struct ReadBookPage {
 
   updatePagedReaderArea(area: Area): void {
     const width = this.parseAreaDimension(area.width);
-    const height = Math.max(1, this.parseAreaDimension(area.height) - this.getReaderPageContentTopPadding());
+    const contentTopPadding = this.getReaderPageContentTopPadding();
+    const height = Math.max(1, this.parseAreaDimension(area.height) - contentTopPadding);
+    this.readerPageContentTopPaddingSnapshot = contentTopPadding;
     if (width <= 0 || height <= 0) {
       return;
     }
@@ -5322,6 +5748,7 @@ struct ReadBookPage {
     }
     this.syncCurrentPageText();
     this.preloadNextChapterPaginationLater();
+    this.preloadPreviousChapterPaginationLater();
   }
 
   hasPagedReaderArea(): boolean {
@@ -6958,7 +7385,12 @@ struct ReadBookPage {
 
   getReaderSafeAreaEdges(): SafeAreaEdge[] {
     return this.isReaderComicModeActive() || this.readerExtendToStatusBar ||
-      this.hasBackgroundImage() || this.isStackPageTurnAnimation() ?
+      this.hasBackgroundImage() || this.isStackPageTurnAnimation() || this.isSimulationPageTurnAnimation() ?
+      [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM] : [SafeAreaEdge.BOTTOM];
+  }
+
+  getReaderPageTurnSurfaceSafeAreaEdges(): SafeAreaEdge[] {
+    return this.isSimulationPageTurnAnimation() ?
       [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM] : [SafeAreaEdge.BOTTOM];
   }
 
@@ -6988,8 +7420,13 @@ struct ReadBookPage {
     return 24;
   }
 
+  getReaderPaginationBottomInfoBarHeight(): number {
+    // 扩展模式允许正文使用完整的底部视口；普通模式只预留页脚自身高度。
+    return this.readerExtendToStatusBar ? 0 : this.getReaderBottomInfoBarHeight();
+  }
+
   getReaderBottomInfoBarVisualOffsetY(): number {
-    // 仅移动页脚绘制位置；保留原有 24vp 分页占位，避免正文重新分页。
+    // 仅移动页脚绘制位置，不参与分页占位计算。
     return -6;
   }
 
@@ -7119,12 +7556,84 @@ struct ReadBookPage {
   }
 
   getReaderBackgroundViewportHeight(): number {
-    return Math.max(1, this.pageViewHeight +
-      (this.statusBarSafeHeight > 0 ? this.statusBarSafeHeight : 32));
+    // pageViewHeight excludes the explicit text-only status-bar inset when extension is disabled,
+    // but already includes it in extended mode. Reuse the page-turn viewport calculation so the
+    // static paper, simulation snapshots and curl canvas always fit the exact same full-screen rect.
+    return Math.max(1, this.getPageTurnHeight());
   }
 
   getEffectiveReaderLineHeight(): number {
     return this.readerFontSize + Math.max(0, this.readerLineHeight);
+  }
+
+  getReaderAdaptivePageLineHeight(text: string, chapterIndex: number, pageIndex: number,
+    pageStart: number = -1, documentSource: string = ''): number {
+    const baseLineHeight = this.getEffectiveReaderLineHeight();
+    if (!text || this.isReaderNovelContinuousScrollModeActive() || this.isReaderImageOnlyPage(text)) {
+      return baseLineHeight;
+    }
+    const source = documentSource || (chapterIndex === this.currentChapterIndex ? this.pagedContentText : '');
+    const resolvedStart = pageStart >= 0 ? pageStart :
+      (chapterIndex === this.currentChapterIndex ? this.getPageStartOffset(pageIndex) : -1);
+    if (!source || resolvedStart < 0 || this.isReaderChapterLastPage(text, resolvedStart, source)) {
+      return baseLineHeight;
+    }
+
+    const horizontalPadding = this.readerMarginLeft + this.readerMarginRight;
+    const verticalPadding = this.readerMarginTop + this.getReaderContentBottomPadding() +
+      this.getReaderPaginationBottomInfoBarHeight() + this.getReaderPaginationRenderGuardHeight();
+    const columnWidth = this.isLandscapeDoublePageActive() ? this.pageViewWidth / 2 : this.pageViewWidth;
+    const availableWidth = Math.max(1, columnWidth - horizontalPadding);
+    const availableHeight = Math.max(1, this.getReaderPaginationViewportHeight() - verticalPadding);
+    const cacheKey = `${chapterIndex}_${pageIndex}_${resolvedStart}_${this.pageViewWidth}_${availableHeight}_` +
+      `${this.readerTypographyCacheIdentity()}_${this.hashText(text)}`;
+    const cached = this.readerAdaptiveLineHeightCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const availableHeightPx = this.toMeasurePx(availableHeight);
+    const baseLineHeightPx = this.toMeasurePx(baseLineHeight);
+    const paragraphs = this.getReaderTextParagraphs(text);
+    let measuredHeightPx = 0;
+    let adaptableLineCount = 0;
+    let hasSpecialText = false;
+    for (const paragraph of paragraphs) {
+      const paragraphHeightPx = this.measureReaderSingleParagraphHeight(paragraph.text, availableWidth,
+        chapterIndex, source, resolvedStart + paragraph.start);
+      measuredHeightPx += paragraphHeightPx;
+      if (ReaderActionMarker.parse(paragraph.text) || LocalBookService.isEpubImageMarker(paragraph.text)) {
+        hasSpecialText = true;
+      } else {
+        adaptableLineCount += Math.max(1, Math.round(paragraphHeightPx / Math.max(1, baseLineHeightPx)));
+        hasSpecialText = hasSpecialText || this.shouldUseTitleStyle(paragraph.text, chapterIndex) ||
+          this.hasInlineReaderSourceAction(paragraph.text);
+      }
+    }
+    for (const group of this.getReaderTextParagraphGroups(text)) {
+      if (!group.paragraphs[group.paragraphs.length - 1].isLast) {
+        measuredHeightPx += this.toMeasurePx(this.readerParagraphSpacing);
+      }
+    }
+    const remainingHeightPx = Math.max(0, availableHeightPx - measuredHeightPx);
+    let adaptiveLineHeight = baseLineHeight;
+    if (adaptableLineCount >= 3 && remainingHeightPx > 0.5) {
+      const normalMaxExtraLineHeight = Math.max(2, Math.min(6, baseLineHeight * 0.16));
+      const maxExtraLineHeight = hasSpecialText ? Math.min(3, normalMaxExtraLineHeight) : normalMaxExtraLineHeight;
+      const extraLineHeight = Math.min(maxExtraLineHeight, px2vp(remainingHeightPx / adaptableLineCount));
+      adaptiveLineHeight = baseLineHeight + Math.max(0, extraLineHeight);
+    }
+    this.readerAdaptiveLineHeightCache.set(cacheKey, adaptiveLineHeight);
+    while (this.readerAdaptiveLineHeightCache.size > 96) {
+      const oldestKey = this.readerAdaptiveLineHeightCache.keys().next().value as string | undefined;
+      if (oldestKey === undefined) break;
+      this.readerAdaptiveLineHeightCache.delete(oldestKey);
+    }
+    return adaptiveLineHeight;
+  }
+
+  isReaderChapterLastPage(text: string, pageStart: number, documentSource: string): boolean {
+    let pageEnd = Math.max(0, Math.min(documentSource.length, pageStart + (text || '').length));
+    while (pageEnd < documentSource.length && this.isReaderTrimChar(documentSource.charAt(pageEnd))) pageEnd++;
+    return pageEnd >= documentSource.length;
   }
 
   onReadLayoutChanged(): void {
@@ -7215,9 +7724,65 @@ struct ReadBookPage {
   }
 
   onReaderExtendToStatusBarChanged(): void {
+    this.scheduleReaderExtendLayoutRefresh();
+  }
+
+  syncReaderPageHeightForContentTopPadding(previousTopPadding: number =
+    this.readerPageContentTopPaddingSnapshot): void {
+    const nextTopPadding = this.getReaderPageContentTopPadding();
+    if (this.pageViewHeight <= 0 || previousTopPadding < 0) {
+      this.readerPageContentTopPaddingSnapshot = nextTopPadding;
+      return;
+    }
+    if (Math.abs(previousTopPadding - nextTopPadding) >= 0.5) {
+      // pageViewHeight is the text viewport, while the curl/background surface also contains the explicit
+      // status-bar inset. Rebalance both values in the same UI task so toggling the option can never expose
+      // one frame whose wallpaper surface and text surface have different total heights.
+      const fullSurfaceHeight = this.pageViewHeight + previousTopPadding;
+      this.pageViewHeight = Math.max(1, fullSurfaceHeight - nextTopPadding);
+      this.readerCommentPageAreaHeight = this.pageViewHeight;
+    }
+    this.readerPageContentTopPaddingSnapshot = nextTopPadding;
+  }
+
+  scheduleReaderExtendLayoutRefresh(readingOffset: number = -1): void {
+    if (readingOffset >= 0 && this.readerExtendLayoutReadingOffset < 0) {
+      this.readerExtendLayoutReadingOffset = readingOffset;
+    }
     this.enterReaderImmersive();
-    this.paginateContent(this.content);
-    this.saveReadingProgress();
+    this.syncReaderPageHeightForContentTopPadding();
+    if (this.readerEntryInitializing || !this.content || !this.hasPagedReaderArea()) return;
+
+    // A system-bar mode change rebuilds the safe-area geometry asynchronously. Stop and invalidate
+    // every old curl surface immediately; otherwise a gesture started before the new area arrives can
+    // combine the old wallpaper snapshot with the new text viewport for one visibly jumping frame.
+    this.finishPageTurnAnimation(false);
+    this.readerPaginationWorkSerial++;
+    this.adjacentPaginationPreloadSerial++;
+    this.readerPaginationCache.clear();
+    this.pageTurnPreviewKey = '';
+    this.pageTurnPreviewLoadingKey = '';
+    this.refreshReaderTextRender();
+
+    if (this.readerExtendLayoutRefreshTimerId >= 0) {
+      clearTimeout(this.readerExtendLayoutRefreshTimerId);
+    }
+    this.readerExtendLayoutRefreshTimerId = setTimeout(() => {
+      this.readerExtendLayoutRefreshTimerId = -1;
+      if (!this.readerPageVisible || !this.content) {
+        this.readerExtendLayoutReadingOffset = -1;
+        return;
+      }
+      const restoreOffset = this.readerExtendLayoutReadingOffset >= 0 ?
+        this.readerExtendLayoutReadingOffset : this.getCurrentPageStartOffset();
+      this.readerExtendLayoutReadingOffset = -1;
+      this.readerPaginationCache.clear();
+      this.paginateContent(this.content);
+      this.currentPageIndex = this.normalizeReaderSpreadPageIndex(this.findPageIndexByOffset(restoreOffset));
+      this.syncCurrentPageText();
+      this.preloadNextChapterPaginationLater();
+      this.saveReadingProgress();
+    }, 80);
   }
 
   onReaderThemeChanged(): void {
@@ -7883,7 +8448,7 @@ struct ReadBookPage {
     target.putVariable('lastReadTime', `${Date.now()}`);
   }
 
-  async saveReadingProgress(): Promise<void> {
+  async saveReadingProgress(notifyShelf: boolean = false): Promise<void> {
     if (!this.book || this.chapters.length === 0) {
       return;
     }
@@ -7926,8 +8491,13 @@ struct ReadBookPage {
       const db = AppDatabase.getInstance();
       await db.updateBookReadingProgress(
         bookUrl, chapterTitle, chapterIndex, pageIndex, now, variable, syncRelevant);
-      AppStorage.setOrCreate('shelfUpdateTime', Date.now());
-      this.reloadRecentReadCardLater(shouldRefreshRecentCard);
+      // Page turns are saved frequently, while the retained bookshelf page is still alive underneath the reader.
+      // Publishing shelfUpdateTime here would rebuild every hidden shelf card and decode all theme cover fallbacks on
+      // every turn. Persist the progress immediately, but notify the shelf only when leaving the reader.
+      if (notifyShelf) AppStorage.setOrCreate('shelfUpdateTime', Date.now());
+      if (notifyShelf || shouldRefreshRecentCard) {
+        this.reloadRecentReadCardLater(shouldRefreshRecentCard);
+      }
     });
     this.readingProgressSaveQueue = next;
     try {
@@ -8639,6 +9209,8 @@ struct ReadBookPage {
       this.readerTouchMoved = false;
       this.suppressReaderTapClick = false;
       this.slideResetSerial++;
+      // An explicitly rendered action owns its exact hit region. Page-turn tap zones only run
+      // when no action was hit, so justified line-end comments remain accessible near an edge.
       const actionMarker = this.readerSourceActionAtPoint(globalX, globalY);
       if (actionMarker) {
         this.readerTouchActionMarker = actionMarker;
@@ -9097,7 +9669,7 @@ struct ReadBookPage {
     Column({ space: 4 }) {
       this.readerFontEntryItem()
 
-      this.readerSwitchSettingItem('正文扩展至状态栏', '开启后正文阅读区域会延伸到顶部状态栏安全区', this.readerExtendToStatusBar,
+      this.readerSwitchSettingItem('正文扩展至状态栏', '开启后正文同时延伸到顶部状态栏和底部系统安全区', this.readerExtendToStatusBar,
         (checked: boolean) => {
           this.setReaderExtendToStatusBar(checked);
         })
@@ -10397,14 +10969,16 @@ struct ReadBookPage {
   }
 
   setReaderExtendToStatusBar(enabled: boolean): void {
+    if (this.readerExtendToStatusBar === enabled) return;
     const readingOffset = this.getCurrentPageStartOffset();
+    const previousTopPadding = this.getReaderPageContentTopPadding();
+    this.readerExtendLayoutReadingOffset = readingOffset;
     this.readerExtendToStatusBar = enabled;
-    this.enterReaderImmersive();
-    this.paginateContent(this.content);
-    this.currentPageIndex = this.normalizeReaderSpreadPageIndex(this.findPageIndexByOffset(readingOffset));
-    this.syncCurrentPageText();
+    this.syncReaderPageHeightForContentTopPadding(previousTopPadding);
+    // StorageLink watchers can be delivered in a later UI task. Calling the coalesced refresh here
+    // makes the switch responsive, while a subsequent watch notification only restarts the same timer.
+    this.scheduleReaderExtendLayoutRefresh(readingOffset);
     this.saveReaderInteractionSettings();
-    this.saveReadingProgress();
     this.saveReadConfig();
   }
 
@@ -11562,7 +12136,13 @@ struct ReadBookPage {
 
   buildPagedSourceText(chapterIndex: number, content: string): string {
     const title = this.getChapterTitle(chapterIndex).trim();
-    const sourceBody = this.stripDuplicatedChapterTitle(this.normalizeChapterBody(content || ''), title);
+    const leadingAction = ReaderActionMarker.findFirst(content || '');
+    const titleAction = leadingAction && leadingAction.start === 0 && leadingAction.data.title === '章评' ?
+      leadingAction.marker : '';
+    const contentBody = titleAction && leadingAction ?
+      (content || '').substring(leadingAction.end).replace(/^\s+/, '') :
+      (content || '');
+    const sourceBody = this.stripDuplicatedChapterTitle(this.normalizeChapterBody(contentBody), title);
     const body = this.buildIndentedChapterBody(sourceBody);
     if (LocalBookService.hasEpubImageMarkers(body) &&
       !LocalBookService.stripEpubImageMarkers(body).trim()) {
@@ -11571,7 +12151,7 @@ struct ReadBookPage {
     if (!title) {
       return body;
     }
-    return `${title}\n\n${body}`;
+    return titleAction ? `${title}${titleAction}\n\n${body}` : `${title}\n\n${body}`;
   }
 
   normalizeChapterBody(text: string): string {
@@ -11665,6 +12245,11 @@ struct ReadBookPage {
     if (!line || line.trim().length === 0) {
       return line;
     }
+    const trimmed = line.trim();
+    // 图片标记是结构数据，不是正文段落；给它添加两个全角空格会被分页器拆成一张不可见的文本页。
+    if (LocalBookService.isEpubImageMarker(trimmed)) {
+      return trimmed;
+    }
     if (line.startsWith('　　')) {
       return line;
     }
@@ -11685,7 +12270,7 @@ struct ReadBookPage {
 
   isReaderTrimChar(value: string): boolean {
     return value === ' ' || value === '\t' || value === '\n' || value === '\r' ||
-      value === '\u00A0' || value === '\uFEFF' || value === '\u200B' ||
+      value === '\u00A0' || value === '\u3000' || value === '\uFEFF' || value === '\u200B' ||
       value === '\u200C' || value === '\u200D' || value === '\u2060';
   }
 
@@ -11762,6 +12347,17 @@ struct ReadBookPage {
       return source.length;
     }
 
+    // Comment-heavy pages used to binary-search a whole page repeatedly. Every probe rebuilt all earlier
+    // paragraph/action spans, so ten bubbles could be measured dozens of times. Accumulate complete paragraphs
+    // once and only binary-search the single paragraph that actually crosses the page boundary.
+    const actionWindowEnd = Math.min(source.length, safeStart + Math.max(4000,
+      this.getReaderLayoutWindowSize(availableWidth, availableHeight)));
+    if (ReaderActionMarker.has(source.substring(safeStart, actionWindowEnd))) {
+      const actionEnd = this.findInteractiveParagraphPageEnd(source, safeStart, actionWindowEnd,
+        availableWidth, availableHeight, chapterIndex);
+      if (actionEnd > safeStart) return actionEnd;
+    }
+
     const paragraphEnd = this.findParagraphLayoutPageEnd(source, safeStart, availableWidth, availableHeight,
       chapterIndex);
     if (paragraphEnd > safeStart) {
@@ -11769,8 +12365,15 @@ struct ReadBookPage {
         chapterIndex);
     }
 
+    // The precise paragraph path intentionally falls back when interactive markers are present because its
+    // shortened display label no longer has a 1:1 source offset. Never binary-search the rest of the whole
+    // chapter in that case: each probe would rebuild every following comment bubble and dense chapters can
+    // block ArkUI for several seconds. The layout window is already at least twice the estimated visible text,
+    // so it preserves the exact bubble-aware measurement while keeping every probe local to the current page.
+    const layoutWindowEnd = Math.min(source.length,
+      safeStart + this.getReaderLayoutWindowSize(availableWidth, availableHeight));
     let low = safeStart + 1;
-    let high = source.length;
+    let high = layoutWindowEnd;
     let best = low;
     while (low <= high) {
       const mid = Math.floor((low + high) / 2);
@@ -11786,6 +12389,91 @@ struct ReadBookPage {
 
     const end = this.chooseReaderPageBreak(source, safeStart, best);
     return Math.max(safeStart + 1, end);
+  }
+
+  findInteractiveParagraphPageEnd(source: string, start: number, windowEnd: number, availableWidth: number,
+    availableHeight: number, chapterIndex: number = this.currentChapterIndex): number {
+    const layoutText = source.substring(start, Math.max(start + 1, windowEnd));
+    const paragraphs = this.getReaderTextParagraphs(layoutText);
+    const spacing = this.toMeasurePx(this.readerParagraphSpacing);
+    let usedHeight = 0;
+    let best = start;
+    for (let index = 0; index < paragraphs.length; index++) {
+      const paragraph = paragraphs[index];
+      const paragraphStart = start + paragraph.start;
+      const paragraphEnd = start + paragraph.end;
+      const beforeSpacing = index > 0 ? spacing : 0;
+      const paragraphHeight = this.measureReaderSingleParagraphHeight(paragraph.text, availableWidth,
+        chapterIndex, source, paragraphStart);
+      if (usedHeight + beforeSpacing + paragraphHeight <= availableHeight) {
+        usedHeight += beforeSpacing + paragraphHeight;
+        best = paragraphEnd;
+        continue;
+      }
+
+      // Use the space left after the complete paragraphs instead of moving the whole next paragraph to the
+      // following page. Comment-heavy sources frequently append a marker to every paragraph; treating all of
+      // those paragraphs as atomic left several visible lines empty at the bottom of every page.
+      const remainingHeight = Math.max(0, availableHeight - usedHeight - beforeSpacing);
+      if (remainingHeight <= 0 && best > start) return best;
+
+      // The common comment shape is "paragraph text + inline action marker". When the text itself
+      // crosses the page, one Paragraph layout gives exact line end indexes; rebuilding it for every
+      // binary-search probe was the source of 50-120ms single-page batches on comment-heavy books.
+      const inlineAction = ReaderActionMarker.findFirst(paragraph.text);
+      if (inlineAction && inlineAction.start > 0) {
+        const plainText = paragraph.text.substring(0, inlineAction.start);
+        const plainEnd = this.findSingleParagraphLineEnd(plainText, availableWidth, remainingHeight,
+          chapterIndex, source, paragraphStart);
+        if (plainEnd > 0 && plainEnd < plainText.length) {
+          const directEnd = this.chooseReaderPageBreak(source, paragraphStart, paragraphStart + plainEnd);
+          return Math.max(paragraphStart + 1, directEnd);
+        }
+      }
+
+      // Keep marker boundaries atomic while finding the largest fitting source range, so compact action payloads
+      // can never leak into rendered text when the text portion of an interactive paragraph is split across pages.
+      let low = paragraphStart + 1;
+      let high = paragraphEnd;
+      let paragraphBest = paragraphStart;
+      while (low <= high) {
+        const mid = Math.floor((low + high) / 2);
+        const candidateEnd = Math.min(paragraphEnd,
+          this.adjustReaderActionMarkerPageEnd(source, paragraphStart, mid));
+        const candidate = source.substring(paragraphStart, candidateEnd);
+        if (this.measureReaderSingleParagraphHeight(candidate, availableWidth, chapterIndex,
+          source, paragraphStart) <= remainingHeight) {
+          paragraphBest = Math.max(paragraphBest, candidateEnd);
+          low = mid + 1;
+        } else {
+          high = mid - 1;
+        }
+      }
+      if (paragraphBest <= paragraphStart && best > start) return best;
+      const breakEnd = this.chooseReaderPageBreak(source, paragraphStart, paragraphBest);
+      return Math.max(paragraphStart + 1,
+        this.adjustReaderActionMarkerPageEnd(source, paragraphStart, breakEnd));
+    }
+    return best;
+  }
+
+  findSingleParagraphLineEnd(text: string, availableWidth: number, availableHeight: number,
+    chapterIndex: number, documentSource: string, absoluteStart: number): number {
+    if (!text || availableHeight <= 0) return -1;
+    try {
+      const paragraph = this.buildMeasuredReaderParagraph(text, availableWidth, chapterIndex,
+        documentSource, absoluteStart);
+      const metrics = paragraph.getLineMetrics();
+      const lineHeightPx = this.toMeasurePx(this.getEffectiveReaderLineHeight());
+      let end = -1;
+      for (let index = 0; index < metrics.length; index++) {
+        if ((index + 1) * lineHeightPx > availableHeight) break;
+        end = Math.max(end, metrics[index].endIndex);
+      }
+      return end;
+    } catch (_) {
+      return -1;
+    }
   }
 
   refineMeasuredPageEnd(source: string, start: number, initialEnd: number, availableWidth: number,
@@ -11897,9 +12585,8 @@ struct ReadBookPage {
   }
 
   getReaderPaginationRenderGuardHeight(): number {
-    // Measurement and rendering now share the same font runs and line-break strategy. Keep only
-    // a sub-line rounding guard; reserving a complete line made every page visibly one line short.
-    return 1;
+    // 页边距和普通模式下的页脚高度已经精确扣除，不再叠加额外安全距离。
+    return 0;
   }
 
   getReaderTextParagraphs(text: string): ReaderTextParagraph[] {
@@ -12084,7 +12771,9 @@ struct ReadBookPage {
       align: graphicsText.TextAlign.JUSTIFY,
       textDirection: graphicsText.TextDirection.LTR,
       wordBreak: graphicsText.WordBreak.BREAK_WORD,
-      breakStrategy: graphicsText.BreakStrategy.HIGH_QUALITY,
+      // Reader Text uses BREAK_WORD and does not hyphenate. GREEDY matches that rendering model and
+      // avoids the substantially more expensive paragraph-wide optimization of HIGH_QUALITY.
+      breakStrategy: graphicsText.BreakStrategy.GREEDY,
       trailingSpaceOptimized: true,
       includeFontPadding: false
     };
@@ -12106,7 +12795,17 @@ struct ReadBookPage {
       builder.popStyle();
       const rest = text.substring(titleLength);
       if (rest) {
-        this.addMeasuredRegexReaderText(builder, rest, bodyStyle, documentSource, absoluteStart + titleLength);
+        // Shuqi chapter comments are stored immediately after the reader-generated title. Measuring the
+        // compact marker as ordinary text both disagreed with the rendered comment pill and made title pages
+        // substantially more expensive to paginate.
+        const inlineAction = this.findMeasuredReaderInlineAction(rest, documentSource,
+          absoluteStart + titleLength);
+        if (inlineAction) {
+          this.addMeasuredReaderInlineActionText(builder, rest, chapterIndex, bodyStyle, documentSource,
+            absoluteStart + titleLength, inlineAction);
+        } else {
+          this.addMeasuredRegexReaderText(builder, rest, bodyStyle, documentSource, absoluteStart + titleLength);
+        }
       }
       return;
     }
@@ -12607,6 +13306,7 @@ struct ReadBookPage {
     .height('100%')
     .backgroundColor(this.readerContentLayerColor())
     .clip(true)
+    .expandSafeArea([SafeAreaType.SYSTEM], this.getReaderPageTurnSurfaceSafeAreaEdges())
   }
 
   @Builder
@@ -12630,6 +13330,7 @@ struct ReadBookPage {
     .height('100%')
     .backgroundColor(this.readerContentLayerColor())
     .clip(true)
+    .expandSafeArea([SafeAreaType.SYSTEM], this.getReaderPageTurnSurfaceSafeAreaEdges())
   }
 
   @Builder
@@ -12895,6 +13596,7 @@ struct ReadBookPage {
     .translate({ x: this.getIncomingSlideX(), y: this.getIncomingSlideY() })
     .opacity(this.getVisiblePageTurnIncomingOpacity())
     .clip(true)
+    .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
@@ -13056,7 +13758,9 @@ struct ReadBookPage {
     Column() {
       ForEach(this.getReaderTextParagraphGroups(text), (group: ReaderTextParagraphGroup) => {
         this.styledReaderParagraphGroup(group, chapterIndex, this.hasActiveTtsHighlight(text), ttsRenderVersion,
-          contentRenderVersion, pageRenderIdentity, this.getPageStartOffset(pageIndex), this.pagedContentText)
+          contentRenderVersion, pageRenderIdentity, this.getPageStartOffset(pageIndex), this.pagedContentText,
+          this.getReaderAdaptivePageLineHeight(text, chapterIndex, pageIndex,
+            this.getPageStartOffset(pageIndex), this.pagedContentText))
       }, (group: ReaderTextParagraphGroup) => `${pageRenderIdentity}_${group.key}`)
     }
     .width('100%')
@@ -13082,7 +13786,11 @@ struct ReadBookPage {
           contentRenderVersion, pageRenderIdentity,
           pageStartOverride >= -1 ? pageStartOverride :
             (chapterIndex === this.currentChapterIndex ? this.getPageStartOffset(pageIndex) : -1),
-          documentSourceOverride || (chapterIndex === this.currentChapterIndex ? this.pagedContentText : ''))
+          documentSourceOverride || (chapterIndex === this.currentChapterIndex ? this.pagedContentText : ''),
+          this.getReaderAdaptivePageLineHeight(text, chapterIndex, pageIndex,
+            pageStartOverride >= -1 ? pageStartOverride :
+              (chapterIndex === this.currentChapterIndex ? this.getPageStartOffset(pageIndex) : -1),
+            documentSourceOverride || (chapterIndex === this.currentChapterIndex ? this.pagedContentText : '')))
       }, (group: ReaderTextParagraphGroup) => `${pageRenderIdentity}_${group.key}`)
     }
     .width('100%')
@@ -13109,7 +13817,11 @@ struct ReadBookPage {
       mergeableParagraphs = [];
     };
     for (const paragraph of paragraphs) {
-      if (LocalBookService.isEpubImageMarker(paragraph.text) || ReaderActionMarker.parse(paragraph.text)) {
+      // Inline actions need their own TextController and touch stream. Merging them into the page-wide
+      // selectable Text makes Span clicks compete with the reader tap layer, and some platform versions
+      // never expose a LayoutManager for the merged node.
+      if (LocalBookService.isEpubImageMarker(paragraph.text) || ReaderActionMarker.parse(paragraph.text) ||
+        this.hasInlineReaderSourceAction(paragraph.text)) {
         flushMergeableParagraphs();
         groups.push({
           paragraphs: [paragraph],
@@ -13127,15 +13839,15 @@ struct ReadBookPage {
   @Builder
   styledReaderParagraphGroup(group: ReaderTextParagraphGroup, chapterIndex: number,
     ttsHighlightActive: boolean, ttsRenderVersion: number, contentRenderVersion: number,
-    pageRenderIdentity: string, pageStart: number, documentSource: string) {
+    pageRenderIdentity: string, pageStart: number, documentSource: string, pageLineHeight: number) {
     if (group.mergeable) {
       this.styledMergedReaderParagraphs(group.paragraphs, chapterIndex, ttsHighlightActive, ttsRenderVersion,
-        contentRenderVersion, `${pageRenderIdentity}_${group.key}`, pageStart, documentSource)
+        contentRenderVersion, `${pageRenderIdentity}_${group.key}`, pageStart, documentSource, pageLineHeight)
       this.readerParagraphGap(group.paragraphs[group.paragraphs.length - 1])
     } else {
       ForEach(group.paragraphs, (paragraph: ReaderTextParagraph) => {
         this.styledReaderParagraph(paragraph, chapterIndex, ttsHighlightActive, ttsRenderVersion,
-          contentRenderVersion, pageRenderIdentity, pageStart, documentSource)
+          contentRenderVersion, pageRenderIdentity, pageStart, documentSource, pageLineHeight)
         this.readerParagraphGap(paragraph)
       }, (paragraph: ReaderTextParagraph) => `${pageRenderIdentity}_${paragraph.key}`)
     }
@@ -13156,7 +13868,7 @@ struct ReadBookPage {
   @Builder
   styledMergedReaderParagraphs(paragraphs: ReaderTextParagraph[], chapterIndex: number,
     ttsHighlightActive: boolean, ttsRenderVersion: number, contentRenderVersion: number,
-    pageRenderIdentity: string, pageStart: number, documentSource: string) {
+    pageRenderIdentity: string, pageStart: number, documentSource: string, pageLineHeight: number) {
     Text('', { controller: this.readerSelectableTextController(this.readerSelectablePageTextKey(
       pageRenderIdentity, contentRenderVersion, ttsRenderVersion, this.mergedReaderParagraphText(paragraphs))) }) {
       ForEach(paragraphs, (paragraph: ReaderTextParagraph, paragraphIndex: number) => {
@@ -13166,11 +13878,26 @@ struct ReadBookPage {
             .fontFamily(this.getBodyReaderFontFamily())
         }
         if (this.hasInlineReaderSourceAction(paragraph.text)) {
-          ForEach(this.getStyledParagraphTextSlices(this.readerInlineSourceActionParagraphData(paragraph),
-            ttsHighlightActive, pageStart, documentSource), (slice: ReadTextSlice) => {
-            this.styledRegexSlice(slice)
-          }, (slice: ReadTextSlice) =>
-            `merged_inline_${pageRenderIdentity}_${paragraph.key}_${slice.key}`)
+          if (this.shouldUseTitleStyle(paragraph.text, chapterIndex)) {
+            ForEach(this.getTitleTextSlices(this.readerInlineSourceActionParagraphData(paragraph), chapterIndex,
+              ttsHighlightActive), (slice: ReadTextSlice) => {
+              Span(slice.text)
+                .fontSize(this.readerTitleFontSize)
+                .fontFamily(this.getTitleReaderFontFamily())
+                .fontColor(slice.ttsHighlighted ? this.getTtsHighlightTextColor() : this.getTextColor())
+                .textBackgroundStyle(slice.ttsHighlighted ? {
+                  color: this.getTtsHighlightColor(),
+                  radius: 4
+                } : {})
+            }, (slice: ReadTextSlice) =>
+              `merged_inline_title_${pageRenderIdentity}_${paragraph.key}_${slice.key}`)
+          } else {
+            ForEach(this.getStyledParagraphTextSlices(this.readerInlineSourceActionParagraphData(paragraph),
+              ttsHighlightActive, pageStart, documentSource), (slice: ReadTextSlice) => {
+              this.styledRegexSlice(slice)
+            }, (slice: ReadTextSlice) =>
+              `merged_inline_${pageRenderIdentity}_${paragraph.key}_${slice.key}`)
+          }
           Span(this.readerInlineSourceActionLabel(paragraph.text))
             .fontSize(this.readerInlineSourceActionFontSize(paragraph.text))
             .fontColor(this.readerInlineSourceActionFontColor(paragraph.text))
@@ -13180,8 +13907,7 @@ struct ReadBookPage {
             })
             .textShadow(this.readerInlineSourceActionTextShadow(paragraph.text))
             .onClick(() => {
-              if (this.isReaderInteractiveActionActive()) return;
-              const match = ReaderActionMarker.findFirst(paragraph.text);
+              const match = this.readerInlineSourceActionMatch(paragraph.text);
               if (match) {
                 this.beginReaderInteractiveAction();
                 this.openReaderSourceAction(match.marker);
@@ -13213,7 +13939,7 @@ struct ReadBookPage {
         }
       }, (paragraph: ReaderTextParagraph) => `merged_${pageRenderIdentity}_${paragraph.key}`)
     }
-    .lineHeight(this.getEffectiveReaderLineHeight())
+    .lineHeight(pageLineHeight)
     .fontColor(this.getTextColor())
     .textAlign(TextAlign.JUSTIFY)
     .wordBreak(WordBreak.BREAK_WORD)
@@ -13230,66 +13956,89 @@ struct ReadBookPage {
         mergedText,
         newValue
       );
-      this.rememberMergedReaderInlineSourceActionAreas(paragraphs, selectableKey, newValue);
+      this.rememberMergedReaderInlineSourceActionAreas(paragraphs, selectableKey, pageRenderIdentity, newValue);
     })
     .id(`reader_merged_${pageRenderIdentity}_${this.buildTextSliceKey(this.mergedReaderParagraphText(paragraphs))}`)
   }
 
   rememberMergedReaderInlineSourceActionAreas(paragraphs: ReaderTextParagraph[], selectableKey: string,
-    area: Area): void {
+    pageIdentity: string, area: Area): void {
     const left = Number(area.globalPosition.x);
     const top = Number(area.globalPosition.y);
     const width = this.parseAreaDimension(area.width);
     const height = this.parseAreaDimension(area.height);
     if (!Number.isFinite(left) || !Number.isFinite(top) || width <= 0 || height <= 0) return;
-    const registerBounds = (): void => {
-      try {
-        const manager = this.readerSelectableTextController(selectableKey).getLayoutManager();
-        let cursor = 0;
-        for (let paragraphIndex = 0; paragraphIndex < paragraphs.length; paragraphIndex++) {
-          const paragraph = paragraphs[paragraphIndex];
-          const bodyText = this.hasInlineReaderSourceAction(paragraph.text) ?
-            this.readerInlineSourceActionText(paragraph.text) : paragraph.text;
-          const label = this.hasInlineReaderSourceAction(paragraph.text) ?
-            this.readerInlineSourceActionLabel(paragraph.text) : '';
-          if (label) {
-            const match = ReaderActionMarker.findFirst(paragraph.text);
+    this.readerPendingMergedActionBounds.set(selectableKey, {
+      paragraphs: paragraphs,
+      selectableKey: selectableKey,
+      left: left,
+      top: top,
+      pageIdentity: pageIdentity,
+      attempts: 0
+    });
+    this.scheduleReaderSourceActionBoundsFlush();
+  }
+
+  registerMergedReaderInlineSourceActionBounds(task: ReaderMergedActionBoundsTask, visibleText: string): boolean {
+    let hasVisibleMarker = false;
+    for (const paragraph of task.paragraphs) {
+      const match = this.readerInlineSourceActionMatch(paragraph.text);
+      if (match && visibleText.includes(match.marker)) {
+        hasVisibleMarker = true;
+        break;
+      }
+    }
+    if (!hasVisibleMarker) return true;
+    try {
+      const manager = this.readerSelectableTextController(task.selectableKey).getLayoutManager();
+      if (!manager) {
+        if (task.attempts >= 7) console.warn('合并正文段评布局尚未就绪，点击区域注册失败');
+        return false;
+      }
+      let cursor = 0;
+      for (let paragraphIndex = 0; paragraphIndex < task.paragraphs.length; paragraphIndex++) {
+        const paragraph = task.paragraphs[paragraphIndex];
+        const bodyText = this.hasInlineReaderSourceAction(paragraph.text) ?
+          this.readerInlineSourceActionText(paragraph.text) : paragraph.text;
+        const label = this.hasInlineReaderSourceAction(paragraph.text) ?
+          this.readerInlineSourceActionLabel(paragraph.text) : '';
+        if (label) {
+          const match = this.readerInlineSourceActionMatch(paragraph.text);
+          if (match && visibleText.includes(match.marker)) {
             const labelStart = cursor + bodyText.length;
             const labelEnd = labelStart + label.length;
             const boxes: graphicsText.TextBox[] = manager.getRectsForRange({ start: labelStart, end: labelEnd },
               graphicsText.RectWidthStyle.TIGHT, graphicsText.RectHeightStyle.MAX);
-            if (match) {
-              for (const box of boxes) {
-                const localLeft = px2vp(box.rect.left);
-                const localTop = px2vp(box.rect.top);
-                const localRight = px2vp(box.rect.right);
-                const localBottom = px2vp(box.rect.bottom);
-                this.rememberReaderSourceActionBounds(match.marker, left + localLeft, top + localTop,
-                  left + localRight, top + localBottom);
-              }
+            for (const box of boxes) {
+              const localLeft = px2vp(box.rect.left);
+              const localTop = px2vp(box.rect.top);
+              const localRight = px2vp(box.rect.right);
+              const localBottom = px2vp(box.rect.bottom);
+              this.rememberReaderSourceActionBounds(match.marker, task.left + localLeft, task.top + localTop,
+                task.left + localRight, task.top + localBottom);
             }
           }
-          cursor += bodyText.length + label.length;
-          if (paragraphIndex < paragraphs.length - 1) cursor++;
         }
-      } catch (error) {
-        console.warn('合并正文段评点击区域计算失败:', error);
+        cursor += bodyText.length + label.length;
+        if (paragraphIndex < task.paragraphs.length - 1) cursor++;
       }
-    };
-    registerBounds();
-    setTimeout(registerBounds, 0);
+      return true;
+    } catch (error) {
+      if (task.attempts >= 7) console.warn('合并正文段评点击区域计算失败:', error);
+      return false;
+    }
   }
 
   @Builder
   styledReaderParagraph(paragraph: ReaderTextParagraph, chapterIndex: number = this.currentChapterIndex,
     ttsHighlightActive: boolean = true, ttsRenderVersion: number = this.ttsHighlightRenderVersion,
     contentRenderVersion: number = this.pageRenderVersion, pageRenderIdentity: string = '', pageStart: number = -1,
-    documentSource: string = this.pagedContentText) {
+    documentSource: string = this.pagedContentText, pageLineHeight: number = this.getEffectiveReaderLineHeight()) {
     if (LocalBookService.isEpubImageMarker(paragraph.text)) {
       this.readerEpubImage(paragraph.text)
     } else if (this.hasInlineReaderSourceAction(paragraph.text)) {
       this.readerInlineSourceActionParagraph(paragraph, chapterIndex, ttsHighlightActive, ttsRenderVersion,
-        contentRenderVersion, pageRenderIdentity, pageStart, documentSource)
+        contentRenderVersion, pageRenderIdentity, pageStart, documentSource, pageLineHeight)
     } else if (ReaderActionMarker.parse(paragraph.text)) {
       this.readerSourceAction(paragraph.text)
     } else if (this.shouldUseTitleStyle(paragraph.text, chapterIndex)) {
@@ -13315,7 +14064,7 @@ struct ReadBookPage {
           `title_body_${this.effectiveReaderPageRenderIdentity(pageRenderIdentity, chapterIndex, contentRenderVersion,
             ttsRenderVersion, paragraph.text)}_${paragraph.key}_${slice.key}`)
       }
-      .lineHeight(this.getEffectiveReaderLineHeight())
+      .lineHeight(pageLineHeight)
       .fontColor(this.getTextColor())
       .lineBreakStrategy(LineBreakStrategy.HIGH_QUALITY)
       .copyOption(CopyOptions.LocalDevice)
@@ -13334,7 +14083,7 @@ struct ReadBookPage {
     } else if (this.readerRegexFontEnabled) {
       this.regexReaderText(paragraph, ttsHighlightActive, ttsRenderVersion, contentRenderVersion,
         this.effectiveReaderPageRenderIdentity(pageRenderIdentity, chapterIndex, contentRenderVersion,
-          ttsRenderVersion, paragraph.text), pageStart, documentSource)
+          ttsRenderVersion, paragraph.text), pageStart, documentSource, pageLineHeight)
     } else {
       Text('', { controller: this.readerSelectableTextController(
         this.readerSelectableTextKey('plain', pageRenderIdentity, contentRenderVersion, ttsRenderVersion,
@@ -13352,7 +14101,7 @@ struct ReadBookPage {
           `${this.effectiveReaderPageRenderIdentity(pageRenderIdentity, chapterIndex, contentRenderVersion,
             ttsRenderVersion, paragraph.text)}_${paragraph.key}_${slice.key}`)
       }
-        .lineHeight(this.getEffectiveReaderLineHeight())
+        .lineHeight(pageLineHeight)
         .fontColor(this.getTextColor())
         .textAlign(TextAlign.JUSTIFY)
         .wordBreak(WordBreak.BREAK_WORD)
@@ -13424,22 +14173,53 @@ struct ReadBookPage {
   }
 
   hasInlineReaderSourceAction(text: string): boolean {
-    const match = ReaderActionMarker.findFirst(text);
+    const match = this.readerInlineSourceActionMatch(text);
     return !!match && (match.start > 0 || match.end < (text || '').length);
+  }
+
+  readerInlineSourceActionMatch(text: string): ReaderActionMatch | null {
+    const source = text || '';
+    const cached = this.readerActionMatchCache.get(source);
+    if (cached) return cached;
+    const match = ReaderActionMarker.findFirst(source);
+    if (!match) return null;
+    this.readerActionMatchCache.set(source, match);
+    while (this.readerActionMatchCache.size > 192) {
+      const oldest = this.readerActionMatchCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.readerActionMatchCache.delete(oldest);
+    }
+    return match;
   }
 
   @Builder
   readerInlineSourceActionParagraph(paragraph: ReaderTextParagraph, chapterIndex: number = this.currentChapterIndex,
     ttsHighlightActive: boolean = true, ttsRenderVersion: number = this.ttsHighlightRenderVersion,
     contentRenderVersion: number = this.pageRenderVersion, pageRenderIdentity: string = '', pageStart: number = -1,
-    documentSource: string = this.pagedContentText) {
+    documentSource: string = this.pagedContentText, pageLineHeight: number = this.getEffectiveReaderLineHeight()) {
     Text('', { controller: this.readerInlineActionTextController(paragraph.text) }) {
-      ForEach(this.getStyledParagraphTextSlices(this.readerInlineSourceActionParagraphData(paragraph),
-        ttsHighlightActive, pageStart, documentSource), (slice: ReadTextSlice) => {
-        this.styledRegexSlice(slice)
-      }, (slice: ReadTextSlice) =>
-        `inline_${this.effectiveReaderPageRenderIdentity(pageRenderIdentity, chapterIndex, contentRenderVersion,
-          ttsRenderVersion, paragraph.text)}_${paragraph.key}_${slice.key}`)
+      if (this.shouldUseTitleStyle(paragraph.text, chapterIndex)) {
+        ForEach(this.getTitleTextSlices(this.readerInlineSourceActionParagraphData(paragraph), chapterIndex,
+          ttsHighlightActive), (slice: ReadTextSlice) => {
+          Span(slice.text)
+            .fontSize(this.readerTitleFontSize)
+            .fontFamily(this.getTitleReaderFontFamily())
+            .fontColor(slice.ttsHighlighted ? this.getTtsHighlightTextColor() : this.getTextColor())
+            .textBackgroundStyle(slice.ttsHighlighted ? {
+              color: this.getTtsHighlightColor(),
+              radius: 4
+            } : {})
+        }, (slice: ReadTextSlice) =>
+          `inline_title_${this.effectiveReaderPageRenderIdentity(pageRenderIdentity, chapterIndex,
+            contentRenderVersion, ttsRenderVersion, paragraph.text)}_${paragraph.key}_${slice.key}`)
+      } else {
+        ForEach(this.getStyledParagraphTextSlices(this.readerInlineSourceActionParagraphData(paragraph),
+          ttsHighlightActive, pageStart, documentSource), (slice: ReadTextSlice) => {
+          this.styledRegexSlice(slice)
+        }, (slice: ReadTextSlice) =>
+          `inline_${this.effectiveReaderPageRenderIdentity(pageRenderIdentity, chapterIndex, contentRenderVersion,
+            ttsRenderVersion, paragraph.text)}_${paragraph.key}_${slice.key}`)
+      }
       Span(this.readerInlineSourceActionLabel(paragraph.text))
         .fontSize(this.readerInlineSourceActionFontSize(paragraph.text))
         .fontColor(this.readerInlineSourceActionFontColor(paragraph.text))
@@ -13449,17 +14229,14 @@ struct ReadBookPage {
         })
         .textShadow(this.readerInlineSourceActionTextShadow(paragraph.text))
         .onClick(() => {
-          if (this.isReaderInteractiveActionActive()) {
-            return;
-          }
-          const match = ReaderActionMarker.findFirst(paragraph.text);
+          const match = this.readerInlineSourceActionMatch(paragraph.text);
           if (match) {
             this.beginReaderInteractiveAction();
             this.openReaderSourceAction(match.marker);
           }
         })
     }
-    .lineHeight(this.getEffectiveReaderLineHeight())
+    .lineHeight(pageLineHeight)
     .fontColor(this.getTextColor())
     .textAlign(TextAlign.JUSTIFY)
     .wordBreak(WordBreak.BREAK_WORD)
@@ -13468,7 +14245,7 @@ struct ReadBookPage {
     .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
     .width('100%')
     .onAreaChange((_oldValue: Area, newValue: Area) => {
-      this.rememberReaderInlineSourceActionArea(paragraph.text, newValue);
+      this.rememberReaderInlineSourceActionArea(paragraph.text, pageRenderIdentity, newValue);
       this.rememberReaderSelectableText(
         this.readerSelectableTextKey('inline', pageRenderIdentity, contentRenderVersion, ttsRenderVersion,
           paragraph),
@@ -13478,10 +14255,7 @@ struct ReadBookPage {
       );
     })
     .onClick((event: ClickEvent) => {
-      if (this.isReaderInteractiveActionActive()) {
-        return;
-      }
-      const match = ReaderActionMarker.findFirst(paragraph.text);
+      const match = this.readerInlineSourceActionMatch(paragraph.text);
       if (match && this.isReaderInlineActionTextPoint(paragraph.text, event.x, event.y)) {
         this.beginReaderInteractiveAction();
         this.openReaderSourceAction(match.marker);
@@ -13493,7 +14267,7 @@ struct ReadBookPage {
   }
 
   readerInlineActionTextController(text: string): TextController {
-    const match = ReaderActionMarker.findFirst(text);
+    const match = this.readerInlineSourceActionMatch(text);
     const key = match ? match.marker : text;
     let controller = this.readerInlineActionTextControllers.get(key);
     if (!controller) {
@@ -13509,7 +14283,7 @@ struct ReadBookPage {
   }
 
   handleReaderInlineActionTextTouch(text: string, event: TouchEvent): void {
-    const match = ReaderActionMarker.findFirst(text);
+    const match = this.readerInlineSourceActionMatch(text);
     if (!match) return;
     const point = event.changedTouches && event.changedTouches.length > 0 ? event.changedTouches[0] :
       (event.touches && event.touches.length > 0 ? event.touches[0] : null);
@@ -13533,7 +14307,7 @@ struct ReadBookPage {
   }
 
   isReaderInlineActionTextPoint(text: string, x: number, y: number): boolean {
-    const match = ReaderActionMarker.findFirst(text);
+    const match = this.readerInlineSourceActionMatch(text);
     if (!match) return false;
     const bounds = this.readerInlineActionLocalBounds(text, this.readerInlineActionExpectedWidth(),
       this.pageViewHeight);
@@ -13564,7 +14338,7 @@ struct ReadBookPage {
   }
 
   readerInlineActionLocalBounds(text: string, componentWidth: number, componentHeight: number): number[] {
-    const match = ReaderActionMarker.findFirst(text);
+    const match = this.readerInlineSourceActionMatch(text);
     if (!match) return [];
     try {
       const manager = this.readerInlineActionTextController(text).getLayoutManager();
@@ -13612,33 +14386,103 @@ struct ReadBookPage {
     }
   }
 
-  rememberReaderInlineSourceActionArea(text: string, area: Area): void {
-    const match = ReaderActionMarker.findFirst(text);
+  rememberReaderInlineSourceActionArea(text: string, pageIdentity: string, area: Area): void {
+    const match = this.readerInlineSourceActionMatch(text);
     if (!match) return;
     const left = Number(area.globalPosition.x);
     const top = Number(area.globalPosition.y);
     const width = this.parseAreaDimension(area.width);
     const height = this.parseAreaDimension(area.height);
-    this.registerReaderInlineSourceActionBounds(text, match.marker, left, top, width, height);
+    if (!Number.isFinite(left) || !Number.isFinite(top) || width <= 0 || height <= 0) return;
+    this.readerPendingInlineActionBounds.set(match.marker, {
+      text: text,
+      marker: match.marker,
+      left: left,
+      top: top,
+      width: width,
+      height: height,
+      pageIdentity: pageIdentity,
+      attempts: 0
+    });
+    this.scheduleReaderSourceActionBoundsFlush();
+  }
+
+  clearPendingReaderSourceActionBounds(): void {
+    this.readerPendingInlineActionBounds.clear();
+    this.readerPendingMergedActionBounds.clear();
+  }
+
+  scheduleReaderSourceActionBoundsFlush(delayMs: number = 56): void {
+    if (this.readerSourceActionBoundsFlushPending) return;
+    this.readerSourceActionBoundsFlushPending = true;
     setTimeout(() => {
-      if (this.visibleCurrentPageText().includes(match.marker)) {
-        this.registerReaderInlineSourceActionBounds(text, match.marker, left, top, width, height);
+      this.readerSourceActionBoundsFlushPending = false;
+      this.flushPendingReaderSourceActionBounds();
+    }, delayMs);
+  }
+
+  flushPendingReaderSourceActionBounds(): void {
+    if (this.isPageTurning || this.pageTurnAnimating || this.pageSlideDirection !== 0) {
+      this.scheduleReaderSourceActionBoundsFlush(72);
+      return;
+    }
+    const visibleText = this.visibleCurrentPageText();
+    const actionDocumentText = this.isReaderNovelContinuousScrollModeActive() ?
+      (this.pagedContentText || this.content) : visibleText;
+    const inlineRetries: ReaderInlineActionBoundsTask[] = [];
+    const mergedRetries: ReaderMergedActionBoundsTask[] = [];
+    let remainingBudget = 6;
+    for (const entry of this.readerPendingInlineActionBounds.entries()) {
+      if (remainingBudget <= 0) break;
+      const marker = entry[0];
+      const task = entry[1];
+      this.readerPendingInlineActionBounds.delete(marker);
+      if (actionDocumentText.includes(marker)) {
+        const registered = this.registerReaderInlineSourceActionBounds(task.text, task.marker, task.left, task.top,
+          task.width, task.height);
+        if (!registered && task.attempts < 8) {
+          task.attempts++;
+          inlineRetries.push(task);
+        } else if (!registered) {
+          console.warn('正文段评布局尚未就绪，点击区域注册失败');
+        }
       }
-    }, 0);
+      remainingBudget--;
+    }
+    if (remainingBudget > 0) {
+      for (const entry of this.readerPendingMergedActionBounds.entries()) {
+        if (remainingBudget <= 0) break;
+        const selectableKey = entry[0];
+        const task = entry[1];
+        this.readerPendingMergedActionBounds.delete(selectableKey);
+        const registered = this.registerMergedReaderInlineSourceActionBounds(task, actionDocumentText);
+        if (!registered && task.attempts < 8) {
+          task.attempts++;
+          mergedRetries.push(task);
+        }
+        remainingBudget--;
+      }
+    }
+    for (const task of inlineRetries) this.readerPendingInlineActionBounds.set(task.marker, task);
+    for (const task of mergedRetries) this.readerPendingMergedActionBounds.set(task.selectableKey, task);
+    if (this.readerPendingInlineActionBounds.size > 0 || this.readerPendingMergedActionBounds.size > 0) {
+      this.scheduleReaderSourceActionBoundsFlush(16);
+    }
   }
 
   registerReaderInlineSourceActionBounds(text: string, marker: string, left: number, top: number,
-    width: number, height: number): void {
-    if (!marker || !Number.isFinite(left) || !Number.isFinite(top)) return;
+    width: number, height: number): boolean {
+    if (!marker || !Number.isFinite(left) || !Number.isFinite(top)) return true;
     const localBounds = this.readerInlineActionLocalBounds(text,
       width > 0 ? width : this.readerInlineActionExpectedWidth(), height > 0 ? height : this.pageViewHeight);
-    if (localBounds.length < 4) return;
+    if (localBounds.length < 4) return false;
     const globalBounds: number[] = [];
     for (let index = 0; index + 3 < localBounds.length; index += 4) {
       globalBounds.push(left + localBounds[index], top + localBounds[index + 1],
         left + localBounds[index + 2], top + localBounds[index + 3]);
     }
     this.readerSourceActionAreas.set(marker, globalBounds);
+    return true;
   }
 
   readerInlineSourceActionParagraphData(paragraph: ReaderTextParagraph): ReaderTextParagraph {
@@ -13654,13 +14498,13 @@ struct ReadBookPage {
   }
 
   readerInlineSourceActionText(text: string): string {
-    const match: ReaderActionMatch | null = ReaderActionMarker.findFirst(text);
+    const match: ReaderActionMatch | null = this.readerInlineSourceActionMatch(text);
     if (!match) return text || '';
     return `${text.substring(0, match.start)}${text.substring(match.end)}`;
   }
 
   readerInlineSourceActionLabel(text: string): string {
-    const match: ReaderActionMatch | null = ReaderActionMarker.findFirst(text);
+    const match: ReaderActionMatch | null = this.readerInlineSourceActionMatch(text);
     if (!match) return '';
     const count = (match.data.label || '').match(/(99\+|\d+)\s*$/);
     // Keep the compact comment pill together and bind it to the preceding sentence. Normal spaces
@@ -13713,23 +14557,55 @@ struct ReadBookPage {
   }
 
   readerUsesConfiguredCommentBubble(text: string): boolean {
-    const match = ReaderActionMarker.findFirst(text);
+    const match = this.readerInlineSourceActionMatch(text);
     if (!match || !/段评|评论|本章说/.test(match.data.label || '')) return false;
     const source = this.currentReaderSource();
-    return !!source && (`${source.contentRule?.content || ''}\n${source.jsLib || ''}`.includes('段评样式') ||
-      !!this.readerSourceSettingValue('段评样式'));
+    if (!source) return false;
+    this.ensureReaderSourceSettingCache(source);
+    return this.readerSourceHasCommentBubbleScript || !!this.readerSourceSettingValue('段评样式');
   }
 
   readerSourceSettingValue(key: string): string {
     const source = this.currentReaderSource();
     if (!source || !key) return '';
-    for (const raw of [source.variable || '', source.loginInfo || '']) {
+    this.ensureReaderSourceSettingCache(source);
+    if (this.readerSourceSettingValues.has(key)) {
+      return this.readerSourceSettingValues.get(key) || '';
+    }
+    let result = '';
+    for (const root of this.readerSourceSettingRoots) {
+      result = this.readerDeepSourceSetting(root, key);
+      if (result) break;
+    }
+    this.readerSourceSettingValues.set(key, result);
+    return result;
+  }
+
+  ensureReaderSourceSettingCache(source: BookSource): void {
+    const variable = source.variable || '';
+    const loginInfo = source.loginInfo || '';
+    const contentRule = source.contentRule?.content || '';
+    const jsLib = source.jsLib || '';
+    if (this.readerSourceSettingCacheSource === source &&
+      this.readerSourceSettingCacheVariable === variable &&
+      this.readerSourceSettingCacheLoginInfo === loginInfo &&
+      this.readerSourceSettingCacheContentRule === contentRule &&
+      this.readerSourceSettingCacheJsLib === jsLib) {
+      return;
+    }
+    this.readerSourceSettingCacheSource = source;
+    this.readerSourceSettingCacheVariable = variable;
+    this.readerSourceSettingCacheLoginInfo = loginInfo;
+    this.readerSourceSettingCacheContentRule = contentRule;
+    this.readerSourceSettingCacheJsLib = jsLib;
+    this.readerSourceSettingRoots = [];
+    this.readerSourceSettingValues.clear();
+    for (const raw of [variable, loginInfo]) {
       try {
-        const value = this.readerDeepSourceSetting(JSON.parse(raw || '{}') as Object, key);
-        if (value) return value;
+        this.readerSourceSettingRoots.push(JSON.parse(raw || '{}') as Object);
       } catch (_) {}
     }
-    return '';
+    this.readerSourceHasCommentBubbleScript = contentRule.includes('段评样式') || jsLib.includes('段评样式');
   }
 
   readerDeepSourceSetting(value: Object, key: string): string {
@@ -13806,7 +14682,8 @@ struct ReadBookPage {
   }
 
   readerSourceActionAtPoint(globalX: number, globalY: number): string {
-    const visibleText = this.visibleCurrentPageText();
+    const visibleText = this.isReaderNovelContinuousScrollModeActive() ?
+      (this.pagedContentText || this.content) : this.visibleCurrentPageText();
     for (const entry of this.readerSourceActionAreas.entries()) {
       const marker = entry[0];
       const bounds = entry[1];
@@ -13827,6 +14704,9 @@ struct ReadBookPage {
     const now = Date.now();
     if (now - this.readerSourceActionOpenedAt < 500) return;
     const action: ReaderActionData | null = ReaderActionMarker.parse(marker);
+    if (action && /^legado-shuqi-comment:\/\//i.test(action.url)) {
+      action.url = this.expandCompactShuqiCommentUrl(action.url);
+    }
     if (!action || !/^https?:\/\//i.test(action.url)) {
       promptAction.showToast({ message: '书源操作地址无效' });
       return;
@@ -13860,9 +14740,36 @@ struct ReadBookPage {
     });
   }
 
+  expandCompactShuqiCommentUrl(compactUrl: string): string {
+    const match = /^legado-shuqi-comment:\/\/([^/]+)\/([^/]+)\/([^?]+)\?mode=([^&#]+)/i.exec(compactUrl || '');
+    if (!match || !match[1] || !match[2] || !match[3]) return '';
+    let apiKey = this.readerSourceSettingValue('书旗评论 API Key');
+    if (!apiKey) {
+      const source = this.currentReaderSource();
+      const keyMatch = (source?.jsLib || '').match(/\bSQ_COMMENT_API_KEY\s*=\s*['"]([^'"]*)['"]/i);
+      apiKey = keyMatch && keyMatch[1] ? keyMatch[1] : '';
+    }
+    let bookId = '';
+    let chapterId = '';
+    let paragraphId = '';
+    let mode = 'paragraph';
+    try {
+      bookId = decodeURIComponent(match[1]);
+      chapterId = decodeURIComponent(match[2]);
+      paragraphId = decodeURIComponent(match[3]);
+      mode = decodeURIComponent(match[4] || 'paragraph') === 'chapterTitle' ? 'chapterTitle' : 'paragraph';
+    } catch (_) {
+      return '';
+    }
+    return `https://shuqi.aadcn.cn/paragraph?legado_reader_shuqi=1` +
+      `&apiKey=${encodeURIComponent(apiKey)}&bookId=${encodeURIComponent(bookId)}` +
+      `&chapterId=${encodeURIComponent(chapterId)}&paragraphId=${encodeURIComponent(paragraphId)}` +
+      `&mode=${encodeURIComponent(mode)}`;
+  }
+
   isReaderCommentAction(action: ReaderActionData): boolean {
     const metadata = `${action.label || ''}\n${action.title || ''}`;
-    if (/段评|评论|本章说/.test(metadata)) return true;
+    if (/段评|章评|神评论|评论|本章说/.test(metadata)) return true;
     return /\/(?:get_review|get_para_review|para_idea)(?:[/?#]|$)|[?&](?:review|comment)=/i.test(action.url || '');
   }
 
@@ -13873,11 +14780,21 @@ struct ReadBookPage {
       return;
     }
     this.readerSourceActionOpenedAt = Date.now();
+    this.readerCommentPanelLoadSerial++;
+    if (this.readerCommentPanelReadyTimerId >= 0) {
+      clearTimeout(this.readerCommentPanelReadyTimerId);
+      this.readerCommentPanelReadyTimerId = -1;
+    }
     this.readerCommentPanelTitle = title || '段评';
     if (this.isQidianCommentApiUrl(normalizedUrl)) {
       this.readerCommentPanelHtmlLoaded = false;
       this.readerCommentPanelHtml = this.buildQidianCommentPanelHtml(normalizedUrl);
       this.readerCommentPanelBaseUrl = 'https://pl.001122.top/';
+      this.readerCommentPanelUrl = 'about:blank';
+    } else if (this.isShuqiCommentApiUrl(normalizedUrl)) {
+      this.readerCommentPanelHtmlLoaded = false;
+      this.readerCommentPanelHtml = this.buildShuqiCommentPanelHtml(normalizedUrl);
+      this.readerCommentPanelBaseUrl = 'https://shuqi.aadcn.cn/';
       this.readerCommentPanelUrl = 'about:blank';
     } else {
       this.readerCommentPanelHtml = '';
@@ -13893,7 +14810,46 @@ struct ReadBookPage {
     this.showReaderCommentPanel = true;
   }
 
+  loadReaderCommentPanelHtmlIfNeeded(): boolean {
+    if (!this.showReaderCommentPanel || !this.readerCommentPanelHtml || this.readerCommentPanelHtmlLoaded) {
+      return false;
+    }
+    this.readerCommentPanelHtmlLoaded = true;
+    try {
+      const baseUrl = this.readerCommentPanelBaseUrl || 'https://pl.001122.top/';
+      this.readerCommentPanelController.loadData(this.readerCommentPanelHtml, 'text/html', 'UTF-8', baseUrl, baseUrl);
+      // Some ArkWeb versions do not emit a second onPageEnd for loadData. The embedded page owns its
+      // network loading state, so reveal it after the document has been handed to the controller.
+      this.scheduleReaderCommentPanelHostReady(180);
+      return true;
+    } catch (error) {
+      this.readerCommentPanelHtmlLoaded = false;
+      console.warn('加载原生评论面板失败:', error);
+      this.scheduleReaderCommentPanelHostReady(0);
+      return false;
+    }
+  }
+
+  scheduleReaderCommentPanelHostReady(delayMs: number): void {
+    if (this.readerCommentPanelReadyTimerId >= 0) clearTimeout(this.readerCommentPanelReadyTimerId);
+    const serial = this.readerCommentPanelLoadSerial;
+    this.readerCommentPanelReadyTimerId = setTimeout(() => {
+      this.readerCommentPanelReadyTimerId = -1;
+      if (!this.showReaderCommentPanel || serial !== this.readerCommentPanelLoadSerial) return;
+      this.syncReaderCommentPanelWebTheme().finally(() => {
+        if (this.showReaderCommentPanel && serial === this.readerCommentPanelLoadSerial) {
+          this.readerCommentPanelLoading = false;
+        }
+      });
+    }, Math.max(0, delayMs));
+  }
+
   closeReaderCommentPanel(): void {
+    this.readerCommentPanelLoadSerial++;
+    if (this.readerCommentPanelReadyTimerId >= 0) {
+      clearTimeout(this.readerCommentPanelReadyTimerId);
+      this.readerCommentPanelReadyTimerId = -1;
+    }
     this.showReaderCommentPanel = false;
     this.readerCommentPanelUrl = '';
     this.readerCommentPanelMarker = '';
@@ -13933,6 +14889,93 @@ struct ReadBookPage {
   isQidianCommentApiUrl(url: string): boolean {
     return /^https:\/\/pl\.001122\.top\/api\/qidian_full_api\.php\?/i.test(url || '') &&
       /[?&]legado_reader_comment=1(?:&|$)/i.test(url || '');
+  }
+
+  isShuqiCommentApiUrl(url: string): boolean {
+    return /^https:\/\/shuqi\.aadcn\.cn\/paragraph\?/i.test(url || '') &&
+      /[?&]legado_reader_shuqi=1(?:&|$)/i.test(url || '');
+  }
+
+  readerCommentQueryValue(url: string, key: string): string {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = new RegExp(`[?&]${escaped}=([^&#]*)`, 'i').exec(url || '');
+    if (!match || !match[1]) return '';
+    try {
+      return decodeURIComponent(match[1].replace(/\+/g, ' '));
+    } catch (_) {
+      return match[1];
+    }
+  }
+
+  buildShuqiCommentPanelHtml(url: string): string {
+    const apiKey = JSON.stringify(this.readerCommentQueryValue(url, 'apiKey'));
+    const bookId = JSON.stringify(this.readerCommentQueryValue(url, 'bookId'));
+    const chapterId = JSON.stringify(this.readerCommentQueryValue(url, 'chapterId'));
+    const paragraphId = JSON.stringify(this.readerCommentQueryValue(url, 'paragraphId'));
+    const mode = JSON.stringify(this.readerCommentQueryValue(url, 'mode') || 'paragraph');
+    const quoteText = JSON.stringify(this.readerCommentQueryValue(url, 'quoteText'));
+    return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" ` +
+      `content="width=device-width,initial-scale=1,maximum-scale=1"><style>` +
+      `:root{color-scheme:light dark;--bg:#f6f6f7;--card:#fff;--text:#202124;--muted:#777;` +
+      `--line:#e7e7e9;--accent:#df493c;--reply:#f3f3f5}*{box-sizing:border-box}` +
+      `body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,sans-serif}` +
+      `header{position:sticky;top:0;z-index:2;padding:14px 15px 10px;background:var(--card);` +
+      `border-bottom:1px solid var(--line)}h1{font-size:18px;margin:0 0 5px}.quote{display:none;margin:9px 0 4px;` +
+      `padding:8px 10px;border-left:3px solid var(--accent);background:var(--reply);border-radius:0 7px 7px 0;` +
+      `font-size:13px;line-height:1.55;white-space:pre-wrap}.subtitle{font-size:12px;color:var(--muted)}` +
+      `.tabs{display:flex;gap:22px;margin-top:9px}.tab{border:0;border-bottom:2px solid transparent;padding:6px 0;` +
+      `background:none;color:var(--muted);font-size:14px}.tab.active{color:var(--accent);border-color:var(--accent)}` +
+      `main{padding:9px}.item,.section{padding:13px;margin-bottom:8px;border:1px solid var(--line);` +
+      `border-radius:10px;background:var(--card)}.head{display:flex;align-items:center;gap:9px}.avatar{width:34px;` +
+      `height:34px;border-radius:50%;object-fit:cover;background:var(--reply)}.identity{min-width:0;flex:1}` +
+      `.name{font-size:14px;font-weight:650}.time,.likes{font-size:11px;color:var(--muted)}.text{margin-top:9px;` +
+      `font-size:15px;line-height:1.65;white-space:pre-wrap;word-break:break-word}.replies{margin-top:9px;padding:7px 9px;` +
+      `border-radius:7px;background:var(--reply);font-size:13px;line-height:1.6}.section h2{font-size:14px;color:var(--accent)}` +
+      `.state{text-align:center;padding:38px 10px;color:var(--muted)}.error{color:#b42318}` +
+      `@media(prefers-color-scheme:dark){:root{--bg:#111214;--card:#1c1d20;--text:#eceef1;` +
+      `--muted:#a0a3a9;--line:#303238;--accent:#ff7165;--reply:#27282c}}` +
+      `</style></head><body><header><h1 id="title">段评</h1><div id="quote" class="quote"></div>` +
+      `<div id="subtitle" class="subtitle">加载中…</div><div id="tabs" class="tabs">` +
+      `<button class="tab active" data-order="hot">最热</button><button class="tab" data-order="new">最新</button>` +
+      `</div></header><main id="list"><div class="state">评论加载中…</div></main><script>` +
+      `(function(){var API='https://shuqi.aadcn.cn',KEY=${apiKey},BID=${bookId},CID=${chapterId},` +
+      `PID=${paragraphId},MODE=${mode},QUOTE=${quoteText};var list=document.getElementById('list'),` +
+      `title=document.getElementById('title'),subtitle=document.getElementById('subtitle'),` +
+      `tabs=document.getElementById('tabs'),quote=document.getElementById('quote');` +
+      `if(QUOTE){quote.textContent=QUOTE;quote.style.display='block'}` +
+      `function esc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;')` +
+      `.replace(/>/g,'&gt;').replace(/"/g,'&quot;')}` +
+      `function mediaUrl(v){var u=String(v==null?'':v).trim(),lower=u.toLowerCase();` +
+      `if(u.indexOf('//')===0){u='https:'+u;lower=u.toLowerCase()}` +
+      `if(lower.indexOf('http://img-tailor.11222.cn/')===0)u='https://'+u.substring(7);` +
+      `lower=u.toLowerCase();return lower.indexOf('https:')===0||lower.indexOf('data:image/')===0?u:''}` +
+      `function fail(e){list.innerHTML='<div class="state error">加载失败：'+esc(e&&e.message||e)+'</div>';` +
+      `subtitle.textContent='请在书源登录面板检查“书旗评论 API Key”'}` +
+      `function post(path,body){body=body||{};body.apiKey=KEY;return fetch(API+path,{method:'POST',` +
+      `headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(body),` +
+      `cache:'no-store'}).then(function(r){return r.text()}).then(function(raw){var root=JSON.parse(String(raw||'{}')` +
+      `.replace(/^\\uFEFF/,''));if(!root.ok)throw new Error(root.error||'评论接口返回异常');return root})}` +
+      `function replyHtml(r){return '<div><b>'+esc(r&&r.nickname||'书友')+'</b>：'+` +
+      `esc(r&&(r.text||r.richText)||'')+'</div>'}` +
+      `function card(c){c=c||{};var photo=mediaUrl(c.userPhoto),avatar=photo?` +
+      `'<img class="avatar" src="'+esc(photo)+'">':` +
+      `'<span class="avatar"></span>',rs=c.replies&&c.replies.commentList||[],replies='';` +
+      `for(var i=0;i<rs.length;i++)replies+=replyHtml(rs[i]);return '<article class="item"><div class="head">'+` +
+      `avatar+'<div class="identity"><div class="name">'+esc(c.nickname||'书友')+'</div><div class="time">'+` +
+      `esc(c.pubTime||'')+'</div></div><span class="likes">赞 '+Number(c.likes||0)+'</span></div>'+` +
+      `'<div class="text">'+esc(c.text||c.richText||'')+'</div>'+(replies?'<div class="replies">'+replies+'</div>':'')+` +
+      `'</article>'}` +
+      `function comments(root){var outer=root.data||{},data=outer.data||outer.Data||{},arr=data.commentList||` +
+      `data.CommentList||[],html='';for(var i=0;i<arr.length;i++)html+=card(arr[i]);return {html:html,count:arr.length}}` +
+      `function load(order){list.innerHTML='<div class="state">评论加载中…</div>';post('/v1/comments/chapter-list',` +
+      `{bookId:BID,chapterId:CID,paragraphId:PID,order:order,size:50}).then(function(root){var out=comments(root);` +
+      `list.innerHTML=out.html||'<div class="state">暂无评论</div>';subtitle.textContent=(MODE==='chapterTitle'?'章节标题':` +
+      `('第 '+String(PID).replace(/\\D/g,'')+' 段'))+' · 已加载 '+out.count+' 条'}).catch(fail)}` +
+      `if(!KEY){fail(new Error('未配置书旗评论 API Key'));return}if(!BID||!CID||!PID){fail(new Error('评论定位参数不完整'));return}` +
+      `title.textContent=MODE==='chapterTitle'?'章评':'段评';var bs=tabs.querySelectorAll('.tab');` +
+      `for(var i=0;i<bs.length;i++)bs[i].onclick=function(){for(var j=0;j<bs.length;j++)bs[j].className='tab';` +
+      `this.className='tab active';load(this.getAttribute('data-order'))};load('hot')})();` +
+      `</script></body></html>`;
   }
 
   buildQidianCommentPanelHtml(url: string): string {
@@ -14010,7 +15053,8 @@ struct ReadBookPage {
   }
 
   getReaderEpubImageHeight(): number {
-    const availableHeight = this.getReaderPaginationViewportHeight() - this.getReaderBottomInfoBarHeight();
+    const availableHeight = this.getReaderPaginationViewportHeight() -
+      this.getReaderPaginationBottomInfoBarHeight();
     return Math.max(120, availableHeight);
   }
 
@@ -14027,7 +15071,7 @@ struct ReadBookPage {
   regexReaderText(paragraph: ReaderTextParagraph, ttsHighlightActive: boolean = true,
     ttsRenderVersion: number = this.ttsHighlightRenderVersion, contentRenderVersion: number = this.pageRenderVersion,
     pageRenderIdentity: string = '', pageStart: number = -1,
-    documentSource: string = this.pagedContentText) {
+    documentSource: string = this.pagedContentText, pageLineHeight: number = this.getEffectiveReaderLineHeight()) {
     Text('', { controller: this.readerSelectableTextController(
       this.readerSelectableTextKey('regex', pageRenderIdentity, contentRenderVersion, ttsRenderVersion, paragraph)) }) {
       ForEach(this.getStyledParagraphTextSlices(paragraph, ttsHighlightActive, pageStart, documentSource),
@@ -14037,7 +15081,7 @@ struct ReadBookPage {
         `${this.effectiveReaderPageRenderIdentity(pageRenderIdentity, this.currentChapterIndex, contentRenderVersion,
           ttsRenderVersion, paragraph.text)}_${paragraph.key}_${slice.key}`)
     }
-    .lineHeight(this.getEffectiveReaderLineHeight())
+    .lineHeight(pageLineHeight)
     .fontColor(this.getTextColor())
     .textAlign(TextAlign.JUSTIFY)
     .wordBreak(WordBreak.BREAK_WORD)
@@ -14213,7 +15257,7 @@ struct ReadBookPage {
   framedRegexReaderText(paragraph: ReaderTextParagraph, ttsHighlightActive: boolean = true,
     ttsRenderVersion: number = this.ttsHighlightRenderVersion, contentRenderVersion: number = this.pageRenderVersion,
     pageRenderIdentity: string = '', pageStart: number = -1,
-    documentSource: string = this.pagedContentText) {
+    documentSource: string = this.pagedContentText, pageLineHeight: number = this.getEffectiveReaderLineHeight()) {
     Text('', { controller: this.readerSelectableTextController(
       this.readerSelectableTextKey('frame', pageRenderIdentity, contentRenderVersion, ttsRenderVersion,
         paragraph)) }) {
@@ -14233,7 +15277,7 @@ struct ReadBookPage {
         `framed_${this.effectiveReaderPageRenderIdentity(pageRenderIdentity, this.currentChapterIndex,
           contentRenderVersion, ttsRenderVersion, paragraph.text)}_${paragraph.key}_${slice.key}`)
     }
-    .lineHeight(this.getEffectiveReaderLineHeight())
+    .lineHeight(pageLineHeight)
     .fontColor(this.getTextColor())
     .textAlign(TextAlign.JUSTIFY)
     .wordBreak(WordBreak.BREAK_WORD)
@@ -14350,6 +15394,7 @@ struct ReadBookPage {
     if (styleId === 'strawberry-ribbon' || styleId === 'moon-halo') return 16;
     if (styleId === 'crimson-stamp' || styleId === 'warm-scroll') return 15;
     if (styleId === 'sword-talisman') return 16;
+    if (styleId === 'qingluan-jade') return 18;
     return 14;
   }
 
@@ -14361,6 +15406,7 @@ struct ReadBookPage {
     if (styleId === 'rose-frame' || styleId === 'celadon-slip') return 7;
     if (styleId === 'strawberry-ribbon' || styleId === 'moon-halo') return 6;
     if (styleId === 'sword-talisman') return 6;
+    if (styleId === 'qingluan-jade') return 7;
     return 5;
   }
 
@@ -14377,6 +15423,7 @@ struct ReadBookPage {
     if (styleId === 'rose-frame') return this.isReaderThemeDark() ? '#182B171C' : '#14F8E7E1';
     if (styleId === 'moon-halo') return this.isReaderThemeDark() ? '#180A1627' : '#12DCEBFF';
     if (styleId === 'sword-talisman') return this.isReaderThemeDark() ? '#1822302B' : '#16476963';
+    if (styleId === 'qingluan-jade') return this.isReaderThemeDark() ? '#1A263735' : '#18E3EBE7';
     return '#00000000';
   }
 
@@ -14393,6 +15440,7 @@ struct ReadBookPage {
     if (styleId === 'rose-frame') return '#A0A84550';
     if (styleId === 'moon-halo') return '#9678B9F3';
     if (styleId === 'sword-talisman') return '#9A6E817B';
+    if (styleId === 'qingluan-jade') return '#A2B4935C';
     return '#00000000';
   }
 
@@ -14414,6 +15462,7 @@ struct ReadBookPage {
     if (styleId === 'classic-glass' || styleId === 'strawberry-ribbon') return 12;
     if (styleId === 'rose-frame' || styleId === 'moon-halo') return 10;
     if (styleId === 'sword-talisman') return 4;
+    if (styleId === 'qingluan-jade') return 12;
     if (styleId === 'neon-pulse') return 5;
     return 1;
   }
@@ -14424,6 +15473,7 @@ struct ReadBookPage {
     if (styleId === 'celadon-slip') return 32;
     if (styleId === 'strawberry-ribbon' || styleId === 'crimson-stamp') return 40;
     if (styleId === 'sword-talisman') return 38;
+    if (styleId === 'qingluan-jade') return 44;
     return 34;
   }
 
@@ -14432,6 +15482,7 @@ struct ReadBookPage {
     if (styleId === 'rose-frame') return 28;
     if (styleId === 'celadon-slip') return 24;
     if (styleId === 'sword-talisman') return 24;
+    if (styleId === 'qingluan-jade') return 28;
     return 22;
   }
 
@@ -15078,7 +16129,7 @@ struct ReadBookPage {
     this.hideReaderPanels();
     if (this.openedFromShortcut) {
       this.readerExitProgressSaved = true;
-      this.saveReadingProgress().then(() => {
+      this.saveReadingProgress(true).then(() => {
         return CloudSyncCoordinator.syncAutomatically(
           getContext(this), CloudSyncCoordinator.TRIGGER_CHANGE);
       }).catch((error: Error) => {
@@ -15096,7 +16147,7 @@ struct ReadBookPage {
       return;
     }
     try {
-      await this.saveReadingProgress();
+      await this.saveReadingProgress(true);
       this.readerExitProgressSaved = true;
       CloudSyncCoordinator.syncAutomatically(
         getContext(this), CloudSyncCoordinator.TRIGGER_CHANGE).catch((error: Error) => {
@@ -15128,7 +16179,7 @@ struct ReadBookPage {
 
     const horizontalPadding = this.readerMarginLeft + this.readerMarginRight;
     const verticalPadding = this.readerMarginTop + this.getReaderContentBottomPadding() +
-      this.getReaderBottomInfoBarHeight() + this.getReaderPaginationRenderGuardHeight();
+      this.getReaderPaginationBottomInfoBarHeight() + this.getReaderPaginationRenderGuardHeight();
     const columnWidth = this.isLandscapeDoublePageActive() ? this.pageViewWidth / 2 : this.pageViewWidth;
     const availableWidth = Math.max(1, columnWidth - horizontalPadding);
     const availableHeight = Math.max(1, this.getReaderPaginationViewportHeight() - verticalPadding);
@@ -15226,7 +16277,9 @@ struct ReadBookPage {
   }
 
   buildReaderPaginationCacheKey(chapterIndex: number, source: string): string {
-    return `reader_page_v16_${chapterIndex}_${this.pageViewWidth}_${this.getReaderPaginationViewportHeight()}_` +
+    // Bump whenever page-boundary semantics change. Reusing offsets produced before action-marker-aware
+    // pagination can make a valid comment marker appear as raw text even though the chapter body is unchanged.
+    return `reader_page_v23_${chapterIndex}_${this.pageViewWidth}_${this.getReaderPaginationViewportHeight()}_` +
       `${this.readerExtendToStatusBar}_${this.isLandscapeDoublePageActive()}_${this.readerTypographyCacheIdentity()}_` +
       `${source.length}_${this.hashText(source)}`;
   }
@@ -15276,6 +16329,9 @@ struct ReadBookPage {
     } else if (!result.complete && result.pages.length < desiredPageCount) {
       this.appendReaderPaginationBatch(result, chapterIndex, desiredPageCount - result.pages.length);
     }
+    if (chapterIndex === this.currentChapterIndex) {
+      this.updateReaderComicPaginationProgress(chapterIndex, result);
+    }
     if (chapterIndex === this.currentChapterIndex && !result.complete) {
       this.scheduleReaderPaginationCompletion(chapterIndex, key, result);
     } else if (result.complete) {
@@ -15301,14 +16357,17 @@ struct ReadBookPage {
       cursor: 0,
       complete: false
     };
-    const initialBatchSize = LocalBookService.hasEpubImageMarkers(text) ?
-      Math.min(2, Math.max(1, initialPageCount)) : Math.max(1, initialPageCount);
+    const hasInteractiveMarkers = ReaderActionMarker.has(text);
+    const initialBatchSize = hasInteractiveMarkers ? 1 :
+      (LocalBookService.hasEpubImageMarkers(text) ?
+        Math.min(2, Math.max(1, initialPageCount)) : Math.max(1, initialPageCount));
     this.appendReaderPaginationBatch(result, chapterIndex, initialBatchSize);
     return result;
   }
 
   appendReaderPaginationBatch(result: ReaderPaginationResult, chapterIndex: number, maxPages: number): void {
     if (result.complete || maxPages <= 0) return;
+    const batchStartedAt = Date.now();
     const text = result.source || '';
     if (!text || this.pageViewWidth <= 0 || this.pageViewHeight <= 0) {
       result.complete = true;
@@ -15317,7 +16376,7 @@ struct ReadBookPage {
     }
     const horizontalPadding = this.readerMarginLeft + this.readerMarginRight;
     const verticalPadding = this.readerMarginTop + this.getReaderContentBottomPadding() +
-      this.getReaderBottomInfoBarHeight() + this.getReaderPaginationRenderGuardHeight();
+      this.getReaderPaginationBottomInfoBarHeight() + this.getReaderPaginationRenderGuardHeight();
     const columnWidth = this.isLandscapeDoublePageActive() ? this.pageViewWidth / 2 : this.pageViewWidth;
     const availableWidth = Math.max(1, columnWidth - horizontalPadding);
     const availableHeight = Math.max(1, this.getReaderPaginationViewportHeight() - verticalPadding);
@@ -15364,11 +16423,16 @@ struct ReadBookPage {
     while (cursor < text.length && this.isReaderTrimChar(text.charAt(cursor))) cursor++;
     result.cursor = cursor;
     result.complete = cursor >= text.length;
+    CooperativeScheduler.reportSynchronousOperation('reader/pagination-batch', Date.now() - batchStartedAt,
+      `pages=${appended},cursor=${cursor}/${text.length}`);
   }
 
   scheduleReaderPaginationCompletion(chapterIndex: number, key: string,
     result: ReaderPaginationResult): void {
     const serial = ++this.readerPaginationWorkSerial;
+    const imageOnlyPagination = this.isReaderImageOnlySource(result.source);
+    const batchDelay = ReaderActionMarker.has(result.source) ?
+      READER_INTERACTIVE_PAGINATION_BATCH_DELAY_MS : READER_PAGINATION_BATCH_DELAY_MS;
     const runBatch = (): void => {
       if (serial !== this.readerPaginationWorkSerial || chapterIndex !== this.currentChapterIndex ||
         this.readerPaginationCache.get(key) !== result) {
@@ -15380,19 +16444,28 @@ struct ReadBookPage {
       }
       // Text measurement and paragraph layout both run on the UI thread. Keep each idle batch small and do not
       // publish every intermediate array: repeated @State replacements rebuild the reader while a page is moving.
-      this.appendReaderPaginationBatch(result, chapterIndex, 1);
+      const batchStartedAt = Date.now();
+      // A pure comic page is already delimited by an image marker and requires no text measurement. Parse a small
+      // group per idle slice so large comics finish promptly without turning the whole chapter into one UI task.
+      this.appendReaderPaginationBatch(result, chapterIndex, imageOnlyPagination ? 8 : 1);
+      const batchElapsedMs = Math.max(0, Date.now() - batchStartedAt);
       if (result.complete) {
         this.publishCurrentReaderPagination(result);
         this.persistReaderPagination(chapterIndex, key, result);
+        this.updateReaderComicPaginationProgress(chapterIndex, result);
         return;
       }
-      setTimeout(runBatch, READER_PAGINATION_BATCH_DELAY_MS);
+      this.updateReaderComicPaginationProgress(chapterIndex, result);
+      const adaptiveDelay = batchElapsedMs >= CooperativeScheduler.SLOW_OPERATION_MS ?
+        Math.min(240, Math.max(batchDelay, batchElapsedMs * 2)) : batchDelay;
+      setTimeout(runBatch, adaptiveDelay);
     };
-    setTimeout(runBatch, READER_PAGINATION_BATCH_DELAY_MS);
+    setTimeout(runBatch, batchDelay);
   }
 
   isReaderPaginationInteractionBusy(): boolean {
-    return this.isPageTurning || this.readerPanActive || this.readerTouchActive ||
+    return this.showReaderCommentPanel || this.isPageTurning || this.readerPanActive || this.readerTouchActive ||
+      this.readerComicPanMoved || this.readerComicBoundaryDirection !== 0 || this.readerComicChapterSwitching ||
       this.pageSlideDirection !== 0 || this.pageTurnAnimating;
   }
 
@@ -15406,8 +16479,11 @@ struct ReadBookPage {
     if (pendingRestore >= 0 && this.pendingRestorePageIndex < 0) {
       this.setCurrentPageText(this.contentPages[this.currentPageIndex] || '');
     }
+    const restoredPendingPosition = pendingRestore >= 0 && this.pendingRestorePageIndex < 0;
     if (this.isReaderContinuousScrollSurfaceActive()) {
+      if (restoredPendingPosition) this.readerComicScrollRestoring = true;
       this.syncReaderComicPageDataSource();
+      if (restoredPendingPosition) this.scheduleReaderComicScrollRestore();
     }
   }
 
@@ -15460,6 +16536,7 @@ struct ReadBookPage {
       complete: true
     };
     this.readerPaginationCache.set(key, result);
+    this.updateReaderComicPaginationProgress(chapterIndex, result);
     this.applyReaderPaginationResult(result, content);
     return true;
   }
@@ -15478,15 +16555,17 @@ struct ReadBookPage {
         return;
       }
       ReadBookEngine.get().peekContent(targetChapterIndex)
-        .then((body: string) => {
+        .then(async (body: string): Promise<void> => {
           if (!body || serial !== this.adjacentPaginationPreloadSerial ||
             (this.currentChapterIndex !== sourceChapterIndex && this.currentChapterIndex !== targetChapterIndex)) {
             return;
           }
-          const source = this.buildPagedSourceText(targetChapterIndex, this.applyReaderContentRules(body));
-          if (!this.getCachedReaderPagination(targetChapterIndex, source)) {
+          const processed = await this.prepareReaderContentRules(body, targetChapterIndex);
+          const source = this.buildPagedSourceText(targetChapterIndex, processed);
+          const key = this.buildReaderPaginationCacheKey(targetChapterIndex, source);
+          const result = this.getCachedReaderPagination(targetChapterIndex, source) ||
             this.getOrCreateReaderPagination(targetChapterIndex, source);
-          }
+          this.scheduleNextChapterPaginationCompletion(sourceChapterIndex, targetChapterIndex, key, result, serial);
         })
         .catch((err: Error) => {
           console.error('预排版下一章失败:', err);
@@ -15494,9 +16573,100 @@ struct ReadBookPage {
     }, Math.max(0, delayMs));
   }
 
+  scheduleNextChapterPaginationCompletion(sourceChapterIndex: number, targetChapterIndex: number, key: string,
+    result: ReaderPaginationResult, serial: number): void {
+    if (result.complete) {
+      this.persistReaderPagination(targetChapterIndex, key, result);
+      return;
+    }
+    const batchDelay = ReaderActionMarker.has(result.source) ?
+      READER_INTERACTIVE_PAGINATION_BATCH_DELAY_MS : READER_PAGINATION_BATCH_DELAY_MS;
+    const runBatch = (): void => {
+      if (serial !== this.adjacentPaginationPreloadSerial || this.currentChapterIndex !== sourceChapterIndex ||
+        this.readerPaginationCache.get(key) !== result) return;
+      if (this.isReaderPaginationInteractionBusy()) {
+        setTimeout(runBatch, READER_PAGINATION_BUSY_RETRY_DELAY_MS);
+        return;
+      }
+      const startedAt = Date.now();
+      this.appendReaderPaginationBatch(result, targetChapterIndex, 1);
+      if (result.complete) {
+        this.persistReaderPagination(targetChapterIndex, key, result);
+        console.info(`[ReaderPreload] next chapter=${targetChapterIndex} pages=${result.pages.length} ` +
+          `lastBatch=${Date.now() - startedAt}ms`);
+        return;
+      }
+      const elapsedMs = Math.max(0, Date.now() - startedAt);
+      const nextDelay = elapsedMs >= CooperativeScheduler.SLOW_OPERATION_MS ?
+        Math.min(240, Math.max(batchDelay, elapsedMs * 2)) : batchDelay;
+      setTimeout(runBatch, nextDelay);
+    };
+    setTimeout(runBatch, batchDelay);
+  }
+
+  preloadPreviousChapterPaginationLater(delayMs: number = 180): void {
+    if (!this.readerPreloadEnabled || !this.hasPagedReaderArea() || this.currentChapterIndex <= 0) return;
+    const sourceChapterIndex = this.currentChapterIndex;
+    const targetChapterIndex = sourceChapterIndex - 1;
+    const serial = ++this.previousPaginationPreloadSerial;
+    setTimeout(() => {
+      if (serial !== this.previousPaginationPreloadSerial || this.currentChapterIndex !== sourceChapterIndex) return;
+      ReadBookEngine.get().peekContent(targetChapterIndex)
+        .then(async (body: string): Promise<void> => {
+          if (!body || serial !== this.previousPaginationPreloadSerial ||
+            this.currentChapterIndex !== sourceChapterIndex) return;
+          const processed = await this.prepareReaderContentRules(body, targetChapterIndex);
+          if (serial !== this.previousPaginationPreloadSerial || this.currentChapterIndex !== sourceChapterIndex) {
+            return;
+          }
+          const source = this.buildPagedSourceText(targetChapterIndex, processed);
+          const key = this.buildReaderPaginationCacheKey(targetChapterIndex, source);
+          const result = this.getCachedReaderPagination(targetChapterIndex, source) ||
+            this.getOrCreateReaderPagination(targetChapterIndex, source);
+          this.schedulePreviousChapterPaginationCompletion(sourceChapterIndex, targetChapterIndex, key, result,
+            serial);
+        })
+        .catch((error: Error) => {
+          console.error('预排版上一章失败:', error);
+        });
+    }, Math.max(0, delayMs));
+  }
+
+  schedulePreviousChapterPaginationCompletion(sourceChapterIndex: number, targetChapterIndex: number, key: string,
+    result: ReaderPaginationResult, serial: number): void {
+    if (result.complete) {
+      this.persistReaderPagination(targetChapterIndex, key, result);
+      return;
+    }
+    const batchDelay = ReaderActionMarker.has(result.source) ?
+      READER_INTERACTIVE_PAGINATION_BATCH_DELAY_MS : READER_PAGINATION_BATCH_DELAY_MS;
+    const runBatch = (): void => {
+      if (serial !== this.previousPaginationPreloadSerial || this.currentChapterIndex !== sourceChapterIndex ||
+        this.readerPaginationCache.get(key) !== result) return;
+      if (this.isReaderPaginationInteractionBusy()) {
+        setTimeout(runBatch, READER_PAGINATION_BUSY_RETRY_DELAY_MS);
+        return;
+      }
+      const startedAt = Date.now();
+      this.appendReaderPaginationBatch(result, targetChapterIndex, 1);
+      if (result.complete) {
+        this.persistReaderPagination(targetChapterIndex, key, result);
+        console.info(`[ReaderPreload] previous chapter=${targetChapterIndex} pages=${result.pages.length} ` +
+          `lastBatch=${Date.now() - startedAt}ms`);
+        return;
+      }
+      const elapsedMs = Math.max(0, Date.now() - startedAt);
+      const nextDelay = elapsedMs >= CooperativeScheduler.SLOW_OPERATION_MS ?
+        Math.min(240, Math.max(batchDelay, elapsedMs * 2)) : batchDelay;
+      setTimeout(runBatch, nextDelay);
+    };
+    setTimeout(runBatch, batchDelay);
+  }
+
   paginateContent(sourceContent?: string, chapterIndex: number = this.currentChapterIndex) {
     const content = sourceContent !== undefined ? sourceContent : this.content;
     if (!content) {
+      this.clearReaderComicPaginationProgress();
       this.contentPages = [];
       this.pagedContentText = '';
       this.contentPageStarts = [];
@@ -15506,6 +16676,7 @@ struct ReadBookPage {
     }
 
     if (!this.hasPagedReaderArea()) {
+      this.clearReaderComicPaginationProgress();
       this.contentPages = [];
       this.pagedContentText = '';
       this.contentPageStarts = [];
@@ -15579,6 +16750,7 @@ struct ReadBookPage {
     const engine = ReadBookEngine.get();
     engine.preloadAround(this.currentChapterIndex, this.normalizePreloadChapterCount(this.readerPreloadChapterCount), 0);
     this.preloadNextChapterPaginationLater();
+    this.preloadPreviousChapterPaginationLater();
   }
 
   normalizePreloadChapterCount(count: number): number {
@@ -15818,6 +16990,7 @@ struct ReadBookPage {
       return;
     }
     this.readerSourceActionAreas.clear();
+    this.clearPendingReaderSourceActionBounds();
     this.currentPageText = nextText;
     this.displayPageText = nextText;
     this.displayPageChapterIndex = this.currentChapterIndex;
@@ -16088,6 +17261,7 @@ struct ReadBookPage {
 
   buildPageTurnPreviewKey(direction: number, chapterIndex: number): string {
     return `${direction}_${chapterIndex}_${this.pageViewWidth}_${this.pageViewHeight}_` +
+      `${this.readerExtendToStatusBar}_${this.getReaderPageContentTopPadding()}_` +
       `${this.isLandscapeDoublePageActive()}_${this.readerTypographyCacheIdentity()}`;
   }
 
@@ -16096,11 +17270,15 @@ struct ReadBookPage {
     if (!body) {
       return { text: '', pageIndex: 0, chapterIndex: chapterIndex };
     }
-    return this.buildAdjacentPageTurnPreview(direction, chapterIndex, body);
+    const prepared = this.getPreparedReaderContent(body, chapterIndex);
+    if (!prepared && ReaderContentPreprocessor.hasActiveContentRules(this.readerReplaceRules)) {
+      return { text: '', pageIndex: 0, chapterIndex: chapterIndex };
+    }
+    return this.buildAdjacentPageTurnPreview(direction, chapterIndex, prepared || body);
   }
 
-  buildAdjacentPageTurnPreview(direction: number, chapterIndex: number, body: string): PageTurnPreview {
-    const source = this.buildPagedSourceText(chapterIndex, this.applyReaderContentRules(body));
+  buildAdjacentPageTurnPreview(direction: number, chapterIndex: number, preparedBody: string): PageTurnPreview {
+    const source = this.buildPagedSourceText(chapterIndex, preparedBody);
     const result = this.getOrCreateReaderPagination(chapterIndex, source);
     if (result.pages.length === 0) {
       return { text: '', pageIndex: 0, chapterIndex: chapterIndex };
@@ -16136,11 +17314,13 @@ struct ReadBookPage {
     }
     this.pageTurnPreviewLoadingKey = key;
     ReadBookEngine.get().peekContent(chapterIndex)
-      .then((body: string) => {
+      .then(async (body: string): Promise<void> => {
         if (this.pageTurnPreviewKey !== key || this.pageSlideDirection !== direction) {
           return;
         }
-        const preview = this.buildAdjacentPageTurnPreview(direction, chapterIndex, body);
+        const prepared = await this.prepareReaderContentRules(body, chapterIndex);
+        if (this.pageTurnPreviewKey !== key || this.pageSlideDirection !== direction) return;
+        const preview = this.buildAdjacentPageTurnPreview(direction, chapterIndex, prepared);
         if (preview.text) {
           this.applyPageTurnPreview(preview);
         }
@@ -16278,7 +17458,10 @@ struct ReadBookPage {
 
   getPageTurnHeight(): number {
     const contentHeight = this.pageViewHeight > 0 ? this.pageViewHeight : 640;
-    return Math.max(1, contentHeight + this.getReaderPageContentTopPadding());
+    // The declarative page-turn surface expands through the bottom system safe area. pageViewHeight is measured
+    // before that expansion, so omitting the navigation inset scales a full-height snapshot into a shorter canvas
+    // and makes the entire page visibly squeeze upward while it is turning.
+    return Math.max(1, contentHeight + this.getReaderPageContentTopPadding() + Math.max(0, this.navBarHeight));
   }
 
   isVerticalPageTurnAnimation(): boolean {
@@ -16300,14 +17483,17 @@ struct ReadBookPage {
   }
 
   getReaderPageCurlCanvasHeight(): number {
-    return this.getPageTurnHeight();
+    // Prefer the actual captured component height. It stays correct for gesture-navigation variants, split-screen
+    // windows and devices whose bottom avoid area differs from the globally cached navigation height.
+    return this.readerPageCurlSnapshotHeight > 0 ? this.readerPageCurlSnapshotHeight : this.getPageTurnHeight();
   }
 
   readerPageCurlKey(): string {
     return `${this.pageSlideDirection}_${this.currentChapterIndex}_${this.currentPageIndex}_` +
       `${this.pageRenderVersion}_${this.ttsHighlightRenderVersion}_${this.pageTurnIncomingChapterIndex}_` +
       `${this.pageTurnIncomingPageIndex}_${this.pageTurnIncomingRenderVersion}_` +
-      `${this.isLandscapeDoublePageActive() ? 1 : 0}`;
+      `${this.isLandscapeDoublePageActive() ? 1 : 0}_${this.getPageTurnWidth()}_${this.getPageTurnHeight()}_` +
+      `${this.getReaderPageContentTopPadding()}_${this.navBarHeight}_${this.readerExtendToStatusBar ? 1 : 0}`;
   }
 
   drawReaderPageCurl(): void {
@@ -16380,6 +17566,13 @@ struct ReadBookPage {
       }
     }
     if (!front || !back) return;
+    let snapshotHeight = this.getPageTurnHeight();
+    try {
+      const frontInfo = await front.getImageInfo();
+      snapshotHeight = px2vp(Math.max(1, frontInfo.size.height));
+    } catch (error) {
+      console.warn('读取仿真翻页快照尺寸失败，使用页面布局高度:', error);
+    }
     if (serial !== this.readerPageCurlCaptureSerial || key !== this.readerPageCurlCaptureKey ||
       this.pageSlideDirection === 0) {
       front.release().catch(() => {});
@@ -16390,6 +17583,7 @@ struct ReadBookPage {
     const oldBack = this.readerPageCurlBack;
     this.readerPageCurlFront = front;
     this.readerPageCurlBack = back;
+    this.readerPageCurlSnapshotHeight = snapshotHeight;
     this.readerPageCurlCapturePending = false;
     this.readerPageCurlSnapshotReady = true;
     this.drawReaderPageCurl();
@@ -16436,6 +17630,7 @@ struct ReadBookPage {
     this.readerPageCurlAnimator = null;
     if (activeAnimator) activeAnimator.cancel();
     this.readerPageCurlOffset = 0;
+    this.readerPageCurlSnapshotHeight = 0;
     const front = this.readerPageCurlFront;
     const back = this.readerPageCurlBack;
     this.readerPageCurlFront = null;

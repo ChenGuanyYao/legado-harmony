@@ -12,6 +12,7 @@ export class ThemeIds {
   static readonly ROSE_LETTER: string = 'rose-letter';
   static readonly MOON_CRANE: string = 'moon-crane';
   static readonly SWORD_FROST: string = 'sword-frost';
+  static readonly QINGLUAN_WATER: string = 'qingluan-water';
 }
 
 export class ThemeComponentSourceIds {
@@ -53,6 +54,7 @@ export class ThemeBubbleStyles {
   static readonly ROSE_FRAME: string = 'rose-frame';
   static readonly MOON_HALO: string = 'moon-halo';
   static readonly SWORD_TALISMAN: string = 'sword-talisman';
+  static readonly QINGLUAN_JADE: string = 'qingluan-jade';
 }
 
 export class ThemeColorTokens {
