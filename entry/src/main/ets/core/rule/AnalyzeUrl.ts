@@ -15,6 +15,7 @@ export interface UrlConfig {
   type: string;
   useWebView: boolean;
   webJs: string;
+  rawBody: boolean;
 }
 
 export class AnalyzeUrl {
@@ -69,7 +70,8 @@ export class AnalyzeUrl {
     this.config.url = this.encodeUrl(this.resolveUrl(url.trim()));
     // 5. 动态登录 Header 必须按目标站点限定作用域，避免覆盖第三方站点自己的 Cookie。
     this.config.sourceHeaders = this.loadSourceHeaders(this.config.url);
-    if (this.config.method === 'POST' && this.config.body && !this.looksLikeStructuredBody(this.config.body)) {
+    if (this.config.method === 'POST' && this.config.body && !this.config.rawBody &&
+      !this.looksLikeStructuredBody(this.config.body)) {
       this.config.body = this.encodeParams(this.config.body, false);
     }
 
@@ -92,6 +94,7 @@ export class AnalyzeUrl {
       if (opt['type']) this.config.type = String(opt['type']);
       if (opt['webView'] !== undefined) this.config.useWebView = String(opt['webView']).toLowerCase() !== 'false';
       if (opt['webJs']) this.config.webJs = String(opt['webJs']);
+      if (opt['rawBody'] !== undefined) this.config.rawBody = String(opt['rawBody']).toLowerCase() !== 'false';
     } catch (e) {
       // 正则保底提取
       const m = optStr.match(/['"]?method['"]?\s*:\s*['"]?(\w+)['"]?/i);
@@ -100,6 +103,8 @@ export class AnalyzeUrl {
       if (b) this.config.body = b[2];
       const c = optStr.match(/['"]?charset['"]?\s*:\s*(['"])([\s\S]*?)\1/i);
       if (c) this.config.charset = c[2];
+      const rawBody = optStr.match(/['"]?rawBody['"]?\s*:\s*(true|false)/i);
+      if (rawBody) this.config.rawBody = rawBody[1].toLowerCase() === 'true';
     }
   }
 
@@ -264,7 +269,11 @@ export class AnalyzeUrl {
     if (!charset && this.looksEncoded(value)) return value;
     if (charset === 'escape') return this.escapeComponent(value);
     if (charset && charset !== 'utf-8' && charset !== 'utf8') {
-      return this.percentEncode(value, charset, !isQuery);
+      // SearchCoordinator keeps the historical Legado behavior of exposing {{key}}
+      // as an UTF-8 percent-encoded value. Legacy sites that declare GBK/GB2312
+      // must decode that intermediate value before applying their own charset,
+      // otherwise "%E6..." is sent literally and the site returns an empty result.
+      return this.percentEncode(this.safeDecode(value), charset, !isQuery);
     }
     try {
       const encoded = encodeURIComponent(charset ? value : this.safeDecode(value));
@@ -350,7 +359,7 @@ export class AnalyzeUrl {
   buildRequest(): HttpRequest {
     const merged = { ...this.config.sourceHeaders, ...this.config.headers };
     const cookieHeaderName = this.headerName(merged, 'cookie');
-    if (this.source && !cookieHeaderName) {
+    if (this.source && this.source.enabledCookieJar !== false && !cookieHeaderName) {
       const cookie = VerificationSupport.sourceCookieHeader(this.source, this.config.url);
       if (cookie) merged['Cookie'] = cookie;
     }
@@ -359,13 +368,19 @@ export class AnalyzeUrl {
       merged['Content-Type'] = this.looksLikeStructuredBody(this.config.body) && this.config.body.trim().startsWith('{') ?
         'application/json; charset=utf-8' : 'application/x-www-form-urlencoded';
     }
-    return {
+    const request: HttpRequest = {
       url: this.config.url,
       method: this.config.method,
       headers: merged,
       body: this.config.body,
-      charset: this.config.charset
+      charset: this.config.charset,
+      useCookieJar: this.source ? this.source.enabledCookieJar !== false : true
     };
+    if (this.config.rawBody && this.config.body) {
+      const charset = this.normalizeCharset(this.config.charset || 'utf-8');
+      request.bodyBytes = new util.TextEncoder(charset).encodeInto(this.config.body).buffer as ArrayBuffer;
+    }
+    return request;
   }
 
   async fetch(urlTemplate: string, maxResponseBytes?: number): Promise<HttpResponse> {
@@ -517,8 +532,14 @@ export class AnalyzeUrl {
   private emptyConfig(url: string): UrlConfig {
     return {
       url: url, method: 'GET', body: '', charset: '', headers: {}, sourceHeaders: {},
-      retry: 0, type: '', useWebView: false, webJs: ''
+      retry: 0, type: '', useWebView: false, webJs: '', rawBody: false
     };
+  }
+
+  private normalizeCharset(charset: string): string {
+    const value = (charset || '').toLowerCase().replace(/["']/g, '').trim();
+    if (value === 'gbk' || value === 'gb2312') return 'gb18030';
+    return value || 'utf-8';
   }
 
   private findOptionIndex(value: string): number {

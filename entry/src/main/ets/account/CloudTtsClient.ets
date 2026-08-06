@@ -58,7 +58,7 @@ export class CloudTtsClient {
     const cachePath = this.cachePath(voiceId, text, normalizedSpeed);
     if (cachePath && this.fileExists(cachePath)) {
       try {
-        return this.audioFromFile(cachePath);
+        return this.audioFromFile(cachePath, text);
       } catch (error) {
         console.warn('[TTS] discard invalid timed cloud cache:', error);
         try {
@@ -81,7 +81,7 @@ export class CloudTtsClient {
         }
         this.writeCacheFile(cachePath, responseBuffer);
         this.pruneCache();
-        return this.audioFromBuffer(responseBuffer);
+        return this.audioFromBuffer(responseBuffer, text);
       } catch (error) {
         lastError = error as Error;
         const apiError = error as AccountApiError;
@@ -170,7 +170,7 @@ export class CloudTtsClient {
     return `${dir}/${this.hashText(key)}.bin`;
   }
 
-  private audioFromFile(path: string): CloudTtsAudio {
+  private audioFromFile(path: string, text: string): CloudTtsAudio {
     const stat = fs.statSync(path);
     const size = Number(stat.size);
     if (!Number.isSafeInteger(size) || size <= 0 || size > 30 * 1024 * 1024) {
@@ -183,15 +183,15 @@ export class CloudTtsClient {
       if (readLength !== size) {
         throw new Error('读取在线语音缓存失败');
       }
-      return this.audioFromBuffer(buffer);
+      return this.audioFromBuffer(buffer, text);
     } finally {
       fs.closeSync(file);
     }
   }
 
-  private audioFromBuffer(buffer: ArrayBuffer): CloudTtsAudio {
+  private audioFromBuffer(buffer: ArrayBuffer, text: string): CloudTtsAudio {
     if (this.isBinaryEnvelope(buffer)) {
-      return this.audioFromBinaryEnvelope(buffer);
+      return this.audioFromBinaryEnvelope(buffer, text);
     }
     let body: CloudTtsTimedResponse;
     try {
@@ -228,6 +228,7 @@ export class CloudTtsClient {
     audio.speed = 1;
     audio.timingMode = body.timingMode === 'WORD' ? 'WORD' : 'SILENCE_ALIGNED';
     audio.timings = this.validTimings(body.timings, audio);
+    this.trimTrailingPcmSilence(audio, text);
     return audio;
   }
 
@@ -237,7 +238,7 @@ export class CloudTtsClient {
     return bytes[0] === 0x51 && bytes[1] === 0x59 && bytes[2] === 0x54 && bytes[3] === 0x42;
   }
 
-  private audioFromBinaryEnvelope(buffer: ArrayBuffer): CloudTtsAudio {
+  private audioFromBinaryEnvelope(buffer: ArrayBuffer, text: string): CloudTtsAudio {
     if (buffer.byteLength < 10 || buffer.byteLength > 21 * 1024 * 1024) {
       throw new AccountApiError('在线语音响应无效', 502, 'INVALID_TIMED_TTS_RESPONSE');
     }
@@ -273,7 +274,59 @@ export class CloudTtsClient {
     audio.speed = 1;
     audio.timingMode = metadata.timingMode === 'WORD' ? 'WORD' : 'SILENCE_ALIGNED';
     audio.timings = this.validTimings(metadata.timings, audio);
+    this.trimTrailingPcmSilence(audio, text);
     return audio;
+  }
+
+  private trimTrailingPcmSilence(audio: CloudTtsAudio, text: string): void {
+    const pcm = audio.pcm;
+    const sampleRate = Math.max(8000, Math.round(audio.sampleRate || 16000));
+    const totalFrames = Math.floor(pcm.byteLength / 2);
+    if (totalFrames < Math.round(sampleRate * 0.35)) return;
+    const view = new DataView(pcm);
+    const windowFrames = Math.max(32, Math.round(sampleRate * 0.01));
+    let lastActiveFrame = -1;
+    for (let windowEnd = totalFrames; windowEnd > 0; windowEnd -= windowFrames) {
+      const windowStart = Math.max(0, windowEnd - windowFrames);
+      let absoluteSum = 0;
+      let peak = 0;
+      let samples = 0;
+      for (let frame = windowStart; frame < windowEnd; frame += 2) {
+        const amplitude = Math.abs(view.getInt16(frame * 2, true));
+        absoluteSum += amplitude;
+        peak = Math.max(peak, amplitude);
+        samples++;
+      }
+      const average = samples > 0 ? absoluteSum / samples : 0;
+      if (average >= 64 || peak >= 320) {
+        lastActiveFrame = windowEnd;
+        break;
+      }
+    }
+    if (lastActiveFrame < 0) return;
+    const keepFrames = Math.round(sampleRate * this.trailingPauseSeconds(text));
+    const targetFrames = Math.min(totalFrames, lastActiveFrame + keepFrames);
+    if (totalFrames - targetFrames < Math.round(sampleRate * 0.12)) return;
+    audio.pcm = pcm.slice(0, targetFrames * 2);
+    const durationMs = targetFrames * 1000 / sampleRate;
+    for (const timing of audio.timings) {
+      timing.startTime = Math.min(timing.startTime, Math.max(0, Math.round(durationMs)));
+      timing.endTime = Math.max(timing.startTime,
+        Math.min(timing.endTime, Math.max(0, Math.round(durationMs))));
+    }
+    console.info(`[TTS] trimmed cloud pcm tail: frames=${totalFrames - targetFrames},` +
+      `durationMs=${Math.round((totalFrames - targetFrames) * 1000 / sampleRate)}`);
+  }
+
+  private trailingPauseSeconds(text: string): number {
+    const value = (text || '').trim();
+    let index = value.length - 1;
+    while (index >= 0 && '”’"\'）)】]》〉」』'.includes(value.charAt(index))) index--;
+    const last = index >= 0 ? value.charAt(index) : '';
+    if ('。！？!?'.includes(last)) return 0.22;
+    if ('；;：:'.includes(last)) return 0.16;
+    if ('，,、'.includes(last)) return 0.12;
+    return 0.1;
   }
 
   private writeCacheFile(path: string, buffer: ArrayBuffer): void {

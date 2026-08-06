@@ -147,6 +147,21 @@ test('fallback RTTS timeline snaps sentence boundaries to PCM silence', async ()
   assert.equal(timings[1]!.endOffset, 30);
 });
 
+test('RTTS audio removes an excessive silent tail while preserving a natural pause', async () => {
+  const { trimTrailingPcmSilence } = await importHuaweiSisForTimelineTests();
+  const sampleRate = 16_000;
+  const spokenFrames = Math.round(sampleRate * 1.2);
+  const pcm = Buffer.alloc(sampleRate * 2 * 2);
+  for (let frame = 0; frame < spokenFrames; frame++) {
+    pcm.writeInt16LE(frame % 2 === 0 ? 2400 : -2400, frame * 2);
+  }
+
+  const trimmed = trimTrailingPcmSilence('这是一句话。', pcm, sampleRate);
+  const durationMs = trimmed.length * 1000 / (sampleRate * 2);
+  assert.ok(durationMs >= 1380 && durationMs <= 1450);
+  assert.ok(trimmed.length < pcm.length);
+});
+
 async function importHuaweiSisForTimelineTests() {
   const requiredValues: Record<string, string> = {
     DATABASE_URL: 'postgres://test:test@127.0.0.1:5432/test',

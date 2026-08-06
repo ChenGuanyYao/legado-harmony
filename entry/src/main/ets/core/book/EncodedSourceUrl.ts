@@ -136,13 +136,14 @@ export class EncodedSourceUrl {
       undefined, maxResponseBytes);
   }
 
-  static buildSearchUrl(keyword: string, page: number = 1, tab: string = '小说', source: string = '全部'): string {
+  static buildSearchUrl(keyword: string, page: number = 1, tab: string = '小说', source: string = '全部',
+    disabledSources: string = '0'): string {
     return EncodedSourceUrl.encode({
       key: keyword,
       tab: tab,
       sourcesKey: source,
       page: String(page),
-      disabled_sources: '0'
+      disabled_sources: disabledSources || '0'
     }, 'gysearch');
   }
 

@@ -233,6 +233,7 @@ export class HttpTtsReader {
       this.handleLoginCheck(voice, this.safePreviewText(buffer, contentType, rule.charset), rule.url);
       const wavAudio = this.tryParseWavPcm(buffer);
       if (wavAudio) {
+        wavAudio.pcm = this.trimTrailingPcmSilence(wavAudio.pcm, wavAudio.sampleRate, text);
         wavAudio.contentType = contentType || 'audio/wav';
         wavAudio.speed = speed;
         return wavAudio;
@@ -596,6 +597,48 @@ export class HttpTtsReader {
       outputView.setInt16(frame * 2, Math.max(-32768, Math.min(32767, Math.round(sum / channels))), true);
     }
     return output;
+  }
+
+  private trimTrailingPcmSilence(pcm: ArrayBuffer, sampleRate: number, text: string): ArrayBuffer {
+    const safeSampleRate = Math.max(8000, Math.round(sampleRate || 16000));
+    const totalFrames = Math.floor(pcm.byteLength / 2);
+    if (totalFrames < Math.round(safeSampleRate * 0.35)) return pcm;
+    const view = new DataView(pcm);
+    const windowFrames = Math.max(32, Math.round(safeSampleRate * 0.01));
+    let lastActiveFrame = -1;
+    for (let windowEnd = totalFrames; windowEnd > 0; windowEnd -= windowFrames) {
+      const windowStart = Math.max(0, windowEnd - windowFrames);
+      let absoluteSum = 0;
+      let peak = 0;
+      let samples = 0;
+      for (let frame = windowStart; frame < windowEnd; frame += 2) {
+        const amplitude = Math.abs(view.getInt16(frame * 2, true));
+        absoluteSum += amplitude;
+        peak = Math.max(peak, amplitude);
+        samples++;
+      }
+      const average = samples > 0 ? absoluteSum / samples : 0;
+      if (average >= 64 || peak >= 320) {
+        lastActiveFrame = windowEnd;
+        break;
+      }
+    }
+    if (lastActiveFrame < 0) return pcm;
+    const keepFrames = Math.round(safeSampleRate * this.trailingPauseSeconds(text));
+    const targetFrames = Math.min(totalFrames, lastActiveFrame + keepFrames);
+    if (totalFrames - targetFrames < Math.round(safeSampleRate * 0.12)) return pcm;
+    return pcm.slice(0, targetFrames * 2);
+  }
+
+  private trailingPauseSeconds(text: string): number {
+    const value = (text || '').trim();
+    let index = value.length - 1;
+    while (index >= 0 && '”’"\'）)】]》〉」』'.includes(value.charAt(index))) index--;
+    const last = index >= 0 ? value.charAt(index) : '';
+    if ('。！？!?'.includes(last)) return 0.22;
+    if ('；;：:'.includes(last)) return 0.16;
+    if ('，,、'.includes(last)) return 0.12;
+    return 0.1;
   }
 
   private createSilentAudio(): HttpTtsAudio {

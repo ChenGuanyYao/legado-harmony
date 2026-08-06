@@ -312,7 +312,7 @@ struct Index {
   }
 
   onGlobalTtsRevisionChanged(): void {
-    if (this.globalTtsMode !== 'audio') this.scrollGlobalTtsTextToCurrent();
+    if (this.showGlobalTtsPanel && this.globalTtsMode !== 'audio') this.scrollGlobalTtsTextToCurrent();
   }
 
   onBackPress(): boolean {

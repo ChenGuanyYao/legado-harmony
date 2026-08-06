@@ -173,14 +173,21 @@ export class ReaderTtsFloatingSession {
     }
   }
 
-  static updatePosition(ownerId: string, chapterIndex: number, offsetStart: number, offsetEnd: number): void {
+  static updatePosition(ownerId: string, chapterIndex: number, offsetStart: number, offsetEnd: number,
+    notifyObservers: boolean = true): void {
     if (!ReaderTtsFloatingSession.isOwner(ownerId)) {
       return;
     }
+    const changed = AppStorage.get<number>('globalTtsChapterIndex') !== chapterIndex ||
+      AppStorage.get<number>('globalTtsOffsetStart') !== offsetStart ||
+      AppStorage.get<number>('globalTtsOffsetEnd') !== offsetEnd;
+    if (!changed) return;
     AppStorage.setOrCreate('globalTtsChapterIndex', chapterIndex);
     AppStorage.setOrCreate('globalTtsOffsetStart', offsetStart);
     AppStorage.setOrCreate('globalTtsOffsetEnd', offsetEnd);
-    ReaderTtsFloatingSession.notifyChanged();
+    // While the owning reader is visible it already applies the chunk focus directly. Publishing
+    // a global revision would also wake the retained Index page and a second focus synchronizer.
+    if (notifyObservers) ReaderTtsFloatingSession.notifyChanged();
   }
 
   static isOwner(ownerId: string): boolean {

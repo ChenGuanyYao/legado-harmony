@@ -31,6 +31,7 @@ class ReaderPaginationCacheWrite {
 }
 
 export class AppDatabase {
+  private static readonly BATCH_INSERT_CHUNK_SIZE: number = 400;
   private static instance: AppDatabase | null = null;
   private store: relationalStore.RdbStore | null = null;
   private initialized: boolean = false;
@@ -630,7 +631,10 @@ export class AppDatabase {
           await transaction.delete(predicates);
         }
       }
-      if (chapterBuckets.length > 0) await transaction.batchInsert('book_chapters', chapterBuckets);
+      for (let offset = 0; offset < chapterBuckets.length; offset += AppDatabase.BATCH_INSERT_CHUNK_SIZE) {
+        await transaction.batchInsert('book_chapters',
+          chapterBuckets.slice(offset, offset + AppDatabase.BATCH_INSERT_CHUNK_SIZE));
+      }
       await transaction.commit();
       CloudSyncChangeTracker.markDataChanged();
     } catch (error) {
@@ -1634,7 +1638,10 @@ export class AppDatabase {
         variable: chapter.variable
       });
     }
-    await this.store.batchInsert('book_chapters', buckets);
+    for (let offset = 0; offset < buckets.length; offset += AppDatabase.BATCH_INSERT_CHUNK_SIZE) {
+      await this.store.batchInsert('book_chapters',
+        buckets.slice(offset, offset + AppDatabase.BATCH_INSERT_CHUNK_SIZE));
+    }
   }
 
   async insertBookChaptersWithContents(bookUrl: string, chapters: BookChapter[], contents: string[]): Promise<void> {
@@ -1669,8 +1676,12 @@ export class AppDatabase {
     }
     const transaction = await this.store.createTransaction();
     try {
-      await transaction.batchInsert('book_chapters', chapterBuckets);
-      await transaction.batchInsert('book_contents', contentBuckets);
+      for (let offset = 0; offset < chapterBuckets.length; offset += AppDatabase.BATCH_INSERT_CHUNK_SIZE) {
+        await transaction.batchInsert('book_chapters',
+          chapterBuckets.slice(offset, offset + AppDatabase.BATCH_INSERT_CHUNK_SIZE));
+        await transaction.batchInsert('book_contents',
+          contentBuckets.slice(offset, offset + AppDatabase.BATCH_INSERT_CHUNK_SIZE));
+      }
       await transaction.commit();
     } catch (e) {
       await transaction.rollback();

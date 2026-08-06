@@ -7,7 +7,9 @@ export interface HttpRequest {
   method: string;
   headers: Record<string, string>;
   body?: string;
+  bodyBytes?: ArrayBuffer;
   charset?: string;
+  useCookieJar?: boolean;
   connectTimeout?: number;
   readTimeout?: number;
   contentType?: string;
@@ -56,7 +58,8 @@ export class HttpClient {
     try {
       const method = this.resolveMethod(req.method);
       const headers: Record<string, string> = { ...this.defaultHeaders, ...req.headers };
-      const cookie = CookieStore.getCookie(req.url);
+      const requestData = this.requestData(req);
+      const cookie = req.useCookieJar === false ? '' : CookieStore.getCookie(req.url);
       if (cookie && !headers['Cookie']) {
         headers['Cookie'] = cookie;
       }
@@ -92,7 +95,7 @@ export class HttpClient {
           responseCode = await client.requestInStream(req.url, {
             method: method,
             header: headers,
-            extraData: req.body,
+            extraData: requestData,
             connectTimeout: req.connectTimeout || this.timeout,
             readTimeout: req.readTimeout || this.timeout
           });
@@ -127,7 +130,7 @@ export class HttpClient {
       const resp = await client.request(req.url, {
         method: method,
         header: headers,
-        extraData: req.body,
+        extraData: requestData,
         connectTimeout: req.connectTimeout || this.timeout,
         readTimeout: req.readTimeout || this.timeout,
         expectDataType: http.HttpDataType.ARRAY_BUFFER
@@ -160,12 +163,13 @@ export class HttpClient {
     this.activeClients.add(client);
     try {
       const headers: Record<string, string> = { ...this.defaultHeaders, ...req.headers };
-      const cookie = CookieStore.getCookie(req.url);
+      const requestData = this.requestData(req);
+      const cookie = req.useCookieJar === false ? '' : CookieStore.getCookie(req.url);
       if (cookie && !headers['Cookie']) headers['Cookie'] = cookie;
       const resp = await client.request(req.url, {
         method: this.resolveMethod(req.method),
         header: headers,
-        extraData: req.body,
+        extraData: requestData,
         connectTimeout: req.connectTimeout || this.timeout,
         readTimeout: req.readTimeout || this.timeout,
         expectDataType: http.HttpDataType.ARRAY_BUFFER
@@ -229,6 +233,12 @@ export class HttpClient {
       case 'HEAD': return http.RequestMethod.HEAD;
       default: return http.RequestMethod.GET;
     }
+  }
+
+  private requestData(req: HttpRequest): string | ArrayBuffer {
+    const method = (req.method || 'GET').toUpperCase();
+    if (method === 'GET' || method === 'HEAD') return '';
+    return req.bodyBytes || req.body || '';
   }
 
   private findHeader(headers: Record<string, string>, name: string): string {

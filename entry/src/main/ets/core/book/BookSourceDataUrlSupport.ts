@@ -32,8 +32,9 @@ export class BookSourceDataUrlSupport {
 
   static sourceUsesGySearch(source: BookSource): boolean {
     if (BookSourceDataUrlSupport.sourceUsesShushan(source)) return true;
-    return (source.searchUrl || '').includes('gysearch') || (source.searchUrl || '').includes('gycatalog') ||
-      (source.searchUrl || '').includes('gycontent');
+    const searchUrl = source.searchUrl || '';
+    return searchUrl.includes('gysearch') || searchUrl.includes('gycatalog') ||
+      searchUrl.includes('gycontent') || BookSourceDataUrlSupport.isQingtianSearchScript(searchUrl);
   }
 
   static sourceUsesGyExplore(source: BookSource): boolean {
@@ -117,8 +118,9 @@ export class BookSourceDataUrlSupport {
         `/search?login=search&key=${encodeURIComponent(query.keyword)}&page=${page}`, maxResponseBytes);
       return fallbackRoot ? BookSourceDataUrlSupport.parseShushanBookList(fallbackRoot, source, host) : [];
     }
+    const query = BookSourceDataUrlSupport.parseGySearchKeyword(source, keyword);
     const host = BookSourceDataUrlSupport.firstHostFromSource(source);
-    const url = EncodedSourceUrl.buildSearchUrl(keyword, page);
+    const url = EncodedSourceUrl.buildSearchUrl(query.keyword, page, query.tab, query.source, query.disabledSources);
     const root = await EncodedSourceUrl.requestJsonForDataUrl(http, url, host, maxResponseBytes);
     if (!root) return [];
     return BookSourceDataUrlSupport.parseBookList(root, source, host);
@@ -1191,7 +1193,7 @@ export class BookSourceDataUrlSupport {
       const bookId = EncodedSourceUrl.str(rec['book_id']);
       const itemSource = EncodedSourceUrl.str(rec['source']);
       const tab = EncodedSourceUrl.str(rec['tab']) || '小说';
-      const name = EncodedSourceUrl.str(rec['book_name']);
+      const name = EncodedSourceUrl.str(rec['book_name']).replace(/（别名：.*?）/g, '').trim();
       if (!name || !bookId || bookId === 'vip' || bookId === 'svip' || !itemSource) continue;
       const tocUrl = EncodedSourceUrl.str(rec['toc_url']);
       const host = EncodedSourceUrl.hostFromData(rec) || fallbackHost || BookSourceDataUrlSupport.firstHostFromSource(source);
@@ -1843,11 +1845,65 @@ export class BookSourceDataUrlSupport {
   }
 
   private static firstHostFromSource(source: BookSource): string {
+    const configuredHost = BookSourceDataUrlSupport.sourceVariableValue(source, 'server');
+    if (/^https?:\/\/[^/]+\/?$/i.test(configuredHost)) return configuredHost.replace(/\/$/, '');
     const raw = `${source.jsLib || ''}\n${source.exploreUrl || ''}`;
     const hostBlock = raw.match(/\bhosts?\s*=\s*\[([\s\S]*?)\]/);
     const body = hostBlock ? hostBlock[1] : raw;
     const match = body.match(/https?:\/\/[^'",\]\s]+/);
     return match ? match[0] : '';
+  }
+
+  private static isQingtianSearchScript(searchUrl: string): boolean {
+    const value = searchUrl || '';
+    return value.includes('/search?title=${key}') && value.includes('getArguments(source.getVariable()');
+  }
+
+  private static parseGySearchKeyword(source: BookSource, keyword: string): {
+    keyword: string, tab: string, source: string, disabledSources: string
+  } {
+    let searchKeyword = keyword || '';
+    let tab = BookSourceDataUrlSupport.sourceVariableValue(source, 'tab') ||
+      BookSourceDataUrlSupport.sourceVariableValue(source, 'media') || '小说';
+    let selectedSource = BookSourceDataUrlSupport.sourceVariableValue(source, 'sources') ||
+      BookSourceDataUrlSupport.sourceVariableValue(source, 'source') || '全部';
+    const disabledSources = BookSourceDataUrlSupport.sourceVariableValue(source, 'disabled_sources') || '0';
+    const prefix = searchKeyword.length >= 2 ? searchKeyword.substring(0, 2) : '';
+    if (prefix === 'm:' || prefix === 'm：') {
+      tab = '漫画';
+      searchKeyword = searchKeyword.substring(2);
+    } else if (prefix === 't:' || prefix === 't：') {
+      tab = '听书';
+      searchKeyword = searchKeyword.substring(2);
+    } else if (prefix === 'd:' || prefix === 'd：') {
+      tab = '短剧';
+      searchKeyword = searchKeyword.substring(2);
+    } else if (prefix === 'x:' || prefix === 'x：') {
+      tab = '小说';
+      searchKeyword = searchKeyword.substring(2);
+    }
+    const sourceSeparator = searchKeyword.indexOf('@');
+    if (sourceSeparator >= 0) {
+      const override = searchKeyword.substring(sourceSeparator + 1).trim();
+      searchKeyword = searchKeyword.substring(0, sourceSeparator);
+      if (override) selectedSource = override;
+    }
+    return {
+      keyword: searchKeyword.trim(),
+      tab: tab,
+      source: selectedSource,
+      disabledSources: disabledSources
+    };
+  }
+
+  private static sourceVariableValue(source: BookSource, key: string): string {
+    try {
+      const parsed = JSON.parse(source.variable || '{}') as Object;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return '';
+      return EncodedSourceUrl.str((parsed as Record<string, Object>)[key]).trim();
+    } catch (_) {
+      return '';
+    }
   }
 
   private static uniqueStrings(items: string[]): string[] {

@@ -20,14 +20,16 @@ export interface PcmPlaybackCue {
 }
 
 export class TtsPcmAudioPlayer {
-  private static readonly CLOCK_FALLBACK_DRAIN_GRACE_MS: number = 300;
-  private static readonly RENDERER_DRAIN_MAX_WAIT_MS: number = 600;
+  private static readonly CLOCK_FALLBACK_DRAIN_GRACE_MS: number = 80;
+  private static readonly TIMESTAMP_TAIL_DRAIN_GRACE_MS: number = 100;
+  private static readonly RENDERER_DRAIN_MAX_WAIT_MS: number = 120;
   private readonly audioSessionOwner: string = `tts_pcm_${Date.now()}_${Math.random()}`;
   private renderer: audio.AudioRenderer | null = null;
   private currentSampleRate: audio.AudioSamplingRate = audio.AudioSamplingRate.SAMPLE_RATE_16000;
   private playGeneration: number = 0;
   private writeChain: Promise<void> = Promise.resolve();
   private queuedFrames: number = 0;
+  private queuedContentEndFrame: number = 0;
   private queuedSampleRate: number = 0;
   private playbackMarks: PcmPlaybackMark[] = [];
   private timelineBaseFrame: number = 0;
@@ -87,6 +89,7 @@ export class TtsPcmAudioPlayer {
     const startFrame = this.queuedFrames;
     const segmentFrames = Math.floor(audioData.byteLength / 2);
     this.queuedFrames += segmentFrames;
+    this.queuedContentEndFrame = this.queuedFrames;
     if (cues && cues.length > 0) {
       const sortedCues = cues.slice().sort((left: PcmPlaybackCue, right: PcmPlaybackCue) =>
         left.frameOffset - right.frameOffset);
@@ -146,7 +149,13 @@ export class TtsPcmAudioPlayer {
     await this.waitUntilResumed();
     const renderer = this.renderer;
     const generation = this.playGeneration;
-    const targetFrame = this.queuedFrames;
+    // writeData requires a complete platform buffer, so the final callback can
+    // contain zero padding after the last real PCM frame. Some devices do not
+    // advance their rendered-frame timestamp through those transport-only
+    // frames. Waiting for queuedFrames therefore leaves chapter completion
+    // blocked even though every audible sample has already played.
+    const targetFrame = this.queuedContentEndFrame;
+    console.info(`[TTS] pcm drain waiting: contentEnd=${targetFrame},transportEnd=${this.queuedFrames}`);
     if (!renderer || generation !== this.playGeneration) {
       return;
     }
@@ -162,8 +171,9 @@ export class TtsPcmAudioPlayer {
         return;
       }
       if (this.progressMode === 'CLOCK_FALLBACK') {
-        // Older devices lack a rendered-frame timestamp. Keep a small route
-        // latency margin so the clock fallback cannot clip the last syllable.
+        // Older devices lack a rendered-frame timestamp. The final writeData
+        // block is already zero-padded, so only a short route-latency guard is
+        // needed here; a longer fixed grace becomes audible at every chapter.
         await this.delay(TtsPcmAudioPlayer.CLOCK_FALLBACK_DRAIN_GRACE_MS);
       }
       if (generation !== this.playGeneration || this.renderer !== renderer) {
@@ -173,6 +183,7 @@ export class TtsPcmAudioPlayer {
       this.lastReachedFrame = Math.max(this.lastReachedFrame, targetFrame);
       this.dispatchDuePlaybackMarks(generation);
       this.pausePlaybackTimelineAt(targetFrame);
+      console.info(`[TTS] pcm content playback complete: contentEnd=${targetFrame},transportEnd=${this.queuedFrames}`);
       return;
     }
   }
@@ -207,15 +218,41 @@ export class TtsPcmAudioPlayer {
 
   private async waitUntilPlaybackFrameReached(targetFrame: number, renderer: audio.AudioRenderer,
     generation: number): Promise<boolean> {
+    const sampleRate = Math.max(1, this.queuedSampleRate || Number(this.currentSampleRate) || 16000);
+    let fallbackBaseFrame = this.lastReachedFrame;
+    let fallbackStartedAt = Date.now();
     while (generation === this.playGeneration && this.renderer === renderer) {
       if (this.paused || this.systemInterrupted || renderer.state !== audio.AudioState.STATE_RUNNING) {
         if (!await this.waitUntilRendererRunning(renderer, generation)) {
           return false;
         }
+        // Paused/interrupted time must never count as played audio.
+        fallbackBaseFrame = this.lastReachedFrame;
+        fallbackStartedAt = Date.now();
         continue;
       }
       this.updatePlaybackTimeline(generation);
       if (this.lastReachedFrame >= targetFrame) {
+        return true;
+      }
+      const now = Date.now();
+      if (this.lastReachedFrame > fallbackBaseFrame) {
+        fallbackBaseFrame = this.lastReachedFrame;
+        fallbackStartedAt = now;
+      }
+      // On some devices framePos stops at an underrun just before the real PCM
+      // end while AudioRenderer remains RUNNING forever. Once all bytes have
+      // been accepted, finish the small unreported tail with an active-playback
+      // clock. Its duration still comes from the exact remaining PCM frames, so
+      // this does not cut speech; the grace only absorbs output-route latency.
+      const fallbackElapsedMs = Math.max(0,
+        now - fallbackStartedAt - TtsPcmAudioPlayer.TIMESTAMP_TAIL_DRAIN_GRACE_MS);
+      const fallbackFrame = fallbackBaseFrame + Math.floor(fallbackElapsedMs * sampleRate / 1000);
+      if (this.pendingWriteBytes === 0 && fallbackFrame >= targetFrame) {
+        console.warn(`[TTS] pcm drain timestamp tail fallback: reached=${this.lastReachedFrame},` +
+          `target=${targetFrame},elapsedMs=${now - fallbackStartedAt}`);
+        this.lastReachedFrame = targetFrame;
+        this.dispatchDuePlaybackMarks(generation);
         return true;
       }
       await this.delay(40);
@@ -320,12 +357,13 @@ export class TtsPcmAudioPlayer {
   debugState(): string {
     if (!this.renderer) {
       return `renderer=none,paused=${this.paused},interrupted=${this.systemInterrupted},ducked=${this.systemDucked},` +
-        `queuedFrames=${this.queuedFrames},marks=${this.playbackMarks.length},` +
+        `queuedFrames=${this.queuedFrames},contentEnd=${this.queuedContentEndFrame},marks=${this.playbackMarks.length},` +
         `pendingBytes=${this.pendingWriteBytes},progress=${this.progressMode}`;
     }
     return `renderer=${this.audioStateName(this.renderer.state)},paused=${this.paused},` +
       `interrupted=${this.systemInterrupted},ducked=${this.systemDucked},sampleRate=${this.currentSampleRate},` +
-      `generation=${this.playGeneration},queuedFrames=${this.queuedFrames},marks=${this.playbackMarks.length},` +
+      `generation=${this.playGeneration},queuedFrames=${this.queuedFrames},contentEnd=${this.queuedContentEndFrame},` +
+      `marks=${this.playbackMarks.length},` +
       `pendingBytes=${this.pendingWriteBytes},progress=${this.progressMode}`;
   }
 
@@ -538,6 +576,7 @@ export class TtsPcmAudioPlayer {
   private clearPlaybackTimeline(renderer: audio.AudioRenderer | null): void {
     this.clearPlaybackTimelineTimer();
     this.queuedFrames = 0;
+    this.queuedContentEndFrame = 0;
     this.queuedSampleRate = 0;
     this.playbackMarks = [];
     this.timelineBaseFrame = 0;

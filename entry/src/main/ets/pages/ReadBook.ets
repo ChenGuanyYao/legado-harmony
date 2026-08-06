@@ -431,6 +431,10 @@ struct ReadBookPage {
   private ttsPageTurnSerial: number = 0;
   private ttsPendingTargetPageIndex: number = -1;
   private ttsPendingHighlightChunk: TtsChunk | null = null;
+  private ttsManualPageTurnResumePending: boolean = false;
+  private ttsManualPageTurnResumeTimerId: number = -1;
+  private ttsManualPageTurnResumeSerial: number = 0;
+  private ttsManualPageTurnStartedAt: number = 0;
   private ttsBackgroundRunning: boolean = false;
   private ttsBackgroundRequesting: boolean = false;
   private ttsBackgroundDesired: boolean = false;
@@ -769,6 +773,9 @@ struct ReadBookPage {
   }
 
   onGlobalTtsRevisionChanged(): void {
+    if (!this.isMirroringActiveTtsForCurrentBook()) {
+      return;
+    }
     this.syncMirroredTtsFocus().catch((error: Error) => {
       console.warn('同步后台朗读正文焦点失败:', error);
     });
@@ -11257,7 +11264,13 @@ struct ReadBookPage {
     }
   }
 
-  async startTtsReadingFromCurrentPosition(showToast: boolean): Promise<void> {
+  async startTtsReadingFromCurrentPosition(showToast: boolean,
+    manualPageTurnResume: boolean = false, manualPageTurnResumeSerial: number = -1): Promise<void> {
+    if (!manualPageTurnResume) {
+      this.cancelManualPageTurnTtsResume();
+    } else if (!this.isManualPageTurnTtsResumeCurrent(manualPageTurnResumeSerial)) {
+      return;
+    }
     if (this.isReaderComicModeActive()) {
       this.finishTtsReading();
       return;
@@ -11274,6 +11287,12 @@ struct ReadBookPage {
     }
     const token = ++this.ttsReadToken;
     await ReaderTtsFloatingSession.stopOther(this.ttsFloatingSessionOwnerId);
+    // A later page turn or explicit stop supersedes this async start. The stale task must not
+    // restore auto-continue or tear down the newer page-turn resume that replaced it.
+    if (token !== this.ttsReadToken ||
+      (manualPageTurnResume && !this.isManualPageTurnTtsResumeCurrent(manualPageTurnResumeSerial))) {
+      return;
+    }
     this.ttsAutoContinue = true;
     this.isTtsPaused = false;
     this.ttsDisplayText = this.currentPageText;
@@ -11285,13 +11304,23 @@ struct ReadBookPage {
     try {
       this.isTtsSpeaking = true;
       this.updateVolumeKeySubscription();
-      this.preloadReaderContent();
+      if (manualPageTurnResume) {
+        // The page-turn path already scheduled adjacent-page/chapter preloading. Repeating it here
+        // competes with the first resumed audio buffer on the UI thread.
+        this.preloadReaderContentLater();
+      } else {
+        this.preloadReaderContent();
+      }
       const backgroundStarted = await this.startTtsBackgroundRunning();
       if (!backgroundStarted && showToast) {
         promptAction.showToast({ message: '后台朗读任务启动失败，息屏后可能中断' });
       }
-      if (token !== this.ttsReadToken || !this.ttsAutoContinue) {
-        this.stopTtsReading(false);
+      if (token !== this.ttsReadToken ||
+        (manualPageTurnResume && !this.isManualPageTurnTtsResumeCurrent(manualPageTurnResumeSerial))) {
+        return;
+      }
+      if (!this.ttsAutoContinue) {
+        if (!manualPageTurnResume) this.stopTtsReading(false);
         return;
       }
       this.publishTtsFloatingSession();
@@ -11337,11 +11366,12 @@ struct ReadBookPage {
         // chapter boundaries; explicit stop/pause paths still release it.
         keepAudioOutputOnFinish: true
       });
-      if (showToast) {
+      if (showToast && token === this.ttsReadToken) {
         promptAction.showToast({ message: '开始连续朗读' });
       }
     } catch (error) {
-      if (token !== this.ttsReadToken) {
+      if (token !== this.ttsReadToken ||
+        (manualPageTurnResume && !this.isManualPageTurnTtsResumeCurrent(manualPageTurnResumeSerial))) {
         return;
       }
       this.finishTtsReading();
@@ -11351,6 +11381,7 @@ struct ReadBookPage {
   }
 
   stopTtsReading(userCancelled: boolean = true): void {
+    this.cancelManualPageTurnTtsResume();
     this.flushTtsReadPosition();
     this.clearTtsSleepTimer();
     this.isTtsPaused = false;
@@ -11385,6 +11416,7 @@ struct ReadBookPage {
   }
 
   stopTtsReaderForChapterSwitch(): void {
+    this.cancelManualPageTurnTtsResume();
     this.flushTtsReadPosition();
     this.ttsAutoContinue = false;
     this.isTtsPaused = false;
@@ -11399,6 +11431,83 @@ struct ReadBookPage {
     this.isTtsSpeaking = false;
     this.clearTtsHighlight();
     this.setTtsPagedScrollOverride(false);
+  }
+
+  clearManualPageTurnTtsResumeTimer(): void {
+    if (this.ttsManualPageTurnResumeTimerId < 0) return;
+    clearTimeout(this.ttsManualPageTurnResumeTimerId);
+    this.ttsManualPageTurnResumeTimerId = -1;
+  }
+
+  cancelManualPageTurnTtsResume(): void {
+    this.clearManualPageTurnTtsResumeTimer();
+    this.ttsManualPageTurnResumeSerial++;
+    this.ttsManualPageTurnResumePending = false;
+    this.ttsManualPageTurnStartedAt = 0;
+  }
+
+  deferManualPageTurnTtsResume(): void {
+    this.clearManualPageTurnTtsResumeTimer();
+    this.ttsManualPageTurnResumeSerial++;
+  }
+
+  isManualPageTurnTtsResumeCurrent(serial: number): boolean {
+    return serial >= 0 && this.ttsManualPageTurnResumePending &&
+      serial === this.ttsManualPageTurnResumeSerial;
+  }
+
+  prepareTtsForManualPageTurn(): void {
+    this.deferManualPageTurnTtsResume();
+    if (!this.ttsManualPageTurnResumePending) {
+      this.ttsManualPageTurnResumePending = true;
+      this.ttsManualPageTurnStartedAt = Date.now();
+      this.flushTtsReadPosition();
+    }
+    // This also cancels a deferred start that already passed its debounce window. Previously the
+    // early return left that start alive; once it noticed its stale token it performed a full stop
+    // and accidentally removed the newest resume timer.
+    this.ttsAutoContinue = false;
+    this.isTtsPaused = false;
+    this.ttsReadToken++;
+    this.ttsAutoTurningPage = false;
+    this.ttsPendingTargetPageIndex = -1;
+    this.ttsPendingHighlightChunk = null;
+    this.ttsLastFocusChunk = null;
+    this.ttsLastFocusPageIndex = -1;
+    this.ttsPageTurnSerial++;
+    // Preserve the visible speaking/highlight state while the outgoing page animates. Clearing it
+    // here used to rebuild the whole reader subtree immediately before the page-turn animation.
+    this.ttsReader.stop();
+  }
+
+  scheduleTtsResumeAfterManualPageTurn(): void {
+    if (!this.ttsManualPageTurnResumePending) return;
+    this.deferManualPageTurnTtsResume();
+    const serial = this.ttsManualPageTurnResumeSerial;
+    this.ttsManualPageTurnResumeTimerId = setTimeout(() => {
+      this.ttsManualPageTurnResumeTimerId = -1;
+      if (serial !== this.ttsManualPageTurnResumeSerial || !this.ttsManualPageTurnResumePending) return;
+      if (this.isPageTurning || this.queuedPageTurnCount > 0 || this.queuedPageTurnDirection !== 0) {
+        this.scheduleTtsResumeAfterManualPageTurn();
+        return;
+      }
+      const startedAt = this.ttsManualPageTurnStartedAt;
+      const chapterIndex = this.currentChapterIndex;
+      const pageIndex = this.currentPageIndex;
+      this.startTtsReadingFromCurrentPosition(false, true, serial)
+        .then(() => {
+          if (!this.isManualPageTurnTtsResumeCurrent(serial)) return;
+          this.ttsManualPageTurnResumePending = false;
+          console.info(`[TTS-Turn] resumed chapter=${chapterIndex},page=${pageIndex},` +
+            `elapsed=${Math.max(0, Date.now() - startedAt)}ms`);
+          this.ttsManualPageTurnStartedAt = 0;
+        })
+        .catch((error: Error) => {
+          if (serial !== this.ttsManualPageTurnResumeSerial) return;
+          console.warn('[TTS-Turn] deferred resume failed:', error);
+          this.finishTtsReading();
+        });
+    }, 120);
   }
 
   async continueTtsReading(token: number): Promise<void> {
@@ -11457,6 +11566,7 @@ struct ReadBookPage {
   }
 
   finishTtsReading(): void {
+    this.cancelManualPageTurnTtsResume();
     this.flushTtsReadPosition();
     this.clearTtsSleepTimer();
     this.ttsAutoContinue = false;
@@ -12243,6 +12353,10 @@ struct ReadBookPage {
   }
 
   clearTtsHighlight(): void {
+    if (!this.ttsDisplayText && this.ttsHighlightStart < 0 && this.ttsHighlightEnd < 0 &&
+      this.ttsTextStartOffset === 0) {
+      return;
+    }
     this.ttsDisplayText = '';
     this.ttsHighlightStart = -1;
     this.ttsHighlightEnd = -1;
@@ -13186,7 +13300,9 @@ struct ReadBookPage {
     const pageEnd = this.getPageEndOffset(pageIndex);
     const pageText = this.getPageText(pageIndex);
     this.ttsDisplayText = pageText;
-    if (pageIndex === this.currentPageIndex) {
+    if (pageIndex === this.currentPageIndex &&
+      (this.currentPageText !== pageText || this.displayPageText !== pageText ||
+        this.displayPageChapterIndex !== this.currentChapterIndex || this.displayPageIndex !== this.currentPageIndex)) {
       this.setCurrentPageText(pageText);
     }
     this.ttsHighlightStart = Math.max(0, Math.min(absoluteStart - pageStart, pageText.length));
@@ -13204,7 +13320,7 @@ struct ReadBookPage {
     this.book.putVariable('ttsReadOffsetStart', `${start}`);
     this.book.putVariable('ttsReadOffsetEnd', `${end}`);
     ReaderTtsFloatingSession.updatePosition(
-      this.ttsFloatingSessionOwnerId, this.currentChapterIndex, start, end);
+      this.ttsFloatingSessionOwnerId, this.currentChapterIndex, start, end, !this.readerPageVisible);
     if (this.ttsProgressSaveTimerId >= 0) return;
     this.ttsProgressSaveTimerId = setTimeout(() => {
       this.ttsProgressSaveTimerId = -1;
@@ -16988,14 +17104,18 @@ struct ReadBookPage {
       }
       return;
     }
-    const resumeTtsAfterTurn = this.isTtsSpeaking || this.ttsReader.isSpeaking();
+    const turnRequestStartedAt = Date.now();
+    const resumeTtsAfterTurn = this.ttsManualPageTurnResumePending ||
+      this.isTtsSpeaking || this.ttsReader.isSpeaking();
+    let ttsPrepareElapsed = 0;
     if (resumeTtsAfterTurn) {
-      // Stop only the speech pipeline. Keeping the background task and media
-      // session alive avoids a stop/start race and makes the new visible page
-      // the authoritative TTS cursor.
-      this.stopTtsReaderForChapterSwitch();
-      await this.updateTtsAvSessionPlaybackState(avSession.PlaybackState.PLAYBACK_STATE_BUFFERING);
+      // Stop only synthesis/audio. Do not synchronously refresh AVSession metadata or clear the
+      // highlighted subtree before the visual turn; both operations are much more expensive than
+      // the animation itself. Rapid/queued turns share one deferred restart at the final page.
+      this.prepareTtsForManualPageTurn();
+      ttsPrepareElapsed = Math.max(0, Date.now() - turnRequestStartedAt);
     }
+    const visualStartedAt = Date.now();
     this.isPageTurning = true;
     let turnCompleted = false;
     try {
@@ -17010,10 +17130,14 @@ struct ReadBookPage {
     } finally {
       this.isPageTurning = false;
     }
-    if (resumeTtsAfterTurn && turnCompleted) {
-      await this.startTtsReadingFromCurrentPosition(false);
+    if (resumeTtsAfterTurn) {
+      console.info(`[TTS-Turn] visual ${turnCompleted ? 'completed' : 'cancelled'} in ` +
+        `${Math.max(0, Date.now() - visualStartedAt)}ms,request=${Math.max(0, Date.now() - turnRequestStartedAt)}ms,` +
+        `prepare=${ttsPrepareElapsed}ms,chapter=${this.currentChapterIndex},` +
+        `page=${this.currentPageIndex},queued=${this.queuedPageTurnCount}`);
     }
     this.runQueuedPageTurnLater();
+    if (resumeTtsAfterTurn) this.scheduleTtsResumeAfterManualPageTurn();
   }
 
   runQueuedPageTurnLater(): void {

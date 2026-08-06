@@ -201,11 +201,12 @@ export async function synthesizeTimedWithHuaweiSis(
     };
     const complete = () => {
       if (settled) return;
-      const audio = Buffer.concat(audioChunks);
-      if (!audio.length || audio.length > 20 * 1024 * 1024) {
+      const receivedAudio = Buffer.concat(audioChunks);
+      if (!receivedAudio.length || receivedAudio.length > 20 * 1024 * 1024) {
         fail(new HuaweiSisError('SIS_INVALID_RESPONSE', '语音服务返回了无效音频'));
         return;
       }
+      const audio = trimTrailingPcmSilence(input.text, receivedAudio, sampleRate);
       const wordTimings = input.wordTimestamps
         ? normalizeWordTimings(input.text, rawTimings, audio.length, sampleRate)
         : [];
@@ -293,6 +294,59 @@ export async function synthesizeTimedWithHuaweiSis(
       }
     });
   });
+}
+
+/**
+ * Huawei RTTS can append a sizeable zero/near-zero tail after the last spoken
+ * syllable. It is valid PCM, so both AudioRenderer and chapter handoff wait for
+ * it unless it is removed before the timeline is generated.
+ */
+export function trimTrailingPcmSilence(
+  text: string,
+  pcm: Buffer,
+  sampleRate: number
+): Buffer {
+  const safeSampleRate = Math.max(8_000, Math.round(sampleRate || 16_000));
+  const totalFrames = Math.floor(pcm.length / 2);
+  if (totalFrames < Math.round(safeSampleRate * 0.35)) return pcm;
+
+  const windowFrames = Math.max(32, Math.round(safeSampleRate * 0.01));
+  let lastActiveFrame = -1;
+  for (let windowEnd = totalFrames; windowEnd > 0; windowEnd -= windowFrames) {
+    const windowStart = Math.max(0, windowEnd - windowFrames);
+    let absoluteSum = 0;
+    let peak = 0;
+    let samples = 0;
+    for (let frame = windowStart; frame < windowEnd; frame += 2) {
+      const amplitude = Math.abs(pcm.readInt16LE(frame * 2));
+      absoluteSum += amplitude;
+      peak = Math.max(peak, amplitude);
+      samples++;
+    }
+    const average = samples > 0 ? absoluteSum / samples : 0;
+    if (average >= 64 || peak >= 320) {
+      lastActiveFrame = windowEnd;
+      break;
+    }
+  }
+  if (lastActiveFrame < 0) return pcm;
+
+  const keepFrames = Math.round(safeSampleRate * trailingPauseSeconds(text));
+  const targetFrames = Math.min(totalFrames, lastActiveFrame + keepFrames);
+  const removableFrames = totalFrames - targetFrames;
+  if (removableFrames < Math.round(safeSampleRate * 0.12)) return pcm;
+  return pcm.subarray(0, targetFrames * 2);
+}
+
+function trailingPauseSeconds(text: string): number {
+  const value = (text || '').trim();
+  let index = value.length - 1;
+  while (index >= 0 && isClosingPunctuation(value[index]!)) index--;
+  const last = index >= 0 ? value[index]! : '';
+  if ('。！？!?'.includes(last)) return 0.22;
+  if ('；;：:'.includes(last)) return 0.16;
+  if ('，,、'.includes(last)) return 0.12;
+  return 0.1;
 }
 
 function rawDataBuffer(data: RawData): Buffer {
