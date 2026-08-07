@@ -1079,7 +1079,14 @@ struct AudioBookPage {
       this.floatingSessionOwnerId,
       this.currentVoiceCode(),
       () => this.openFloatingPanel('voice'),
-      () => this.openFloatingPanel('catalog')
+      () => this.openFloatingPanel('catalog'),
+      (positionMs: number) => {
+        const target = Math.max(0, Math.min(positionMs, this.latestDurationMs || positionMs));
+        this.latestPositionMs = target;
+        if (this.pageVisible) this.positionMs = target;
+        this.playback.seek(target);
+        this.scheduleProgressSave();
+      }
     );
     ReaderTtsFloatingSession.configureAudioCatalog(
       this.floatingSessionOwnerId,
@@ -1107,6 +1114,8 @@ struct AudioBookPage {
       this.speed, this.sleepMinutes, this.sleepRemainingSeconds,
       this.chapterIndex > 0, this.chapterIndex < this.chapters.length - 1
     );
+    ReaderTtsFloatingSession.updateAudioProgress(
+      this.floatingSessionOwnerId, this.latestPositionMs, this.latestDurationMs);
     ReaderTtsFloatingSession.updateAudioCatalogIndex(this.floatingSessionOwnerId, this.chapterIndex);
   }
 

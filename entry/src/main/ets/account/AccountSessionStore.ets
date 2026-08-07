@@ -62,6 +62,21 @@ export class AccountSessionStore {
     AccountSessionStore.applyToStorage();
   }
 
+  static async updateSessionToken(context: Context, expectedToken: string, sessionToken: string): Promise<boolean> {
+    if (!sessionToken) {
+      throw new Error('续签接口未返回登录凭证');
+    }
+    if (!expectedToken || AccountSessionStore.sessionToken !== expectedToken) {
+      return false;
+    }
+    AccountSessionStore.sessionToken = sessionToken;
+    const store = await preferences.getPreferences(context, AccountSessionStore.STORE_NAME);
+    await store.put(AccountSessionStore.KEY_SESSION_TOKEN, sessionToken);
+    await store.flush();
+    AccountSessionStore.applyToStorage();
+    return true;
+  }
+
   static async clear(context: Context): Promise<void> {
     AccountSessionStore.sessionToken = '';
     AccountSessionStore.snapshot = new AccountSnapshot();

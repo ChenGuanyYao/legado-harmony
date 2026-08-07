@@ -1,6 +1,6 @@
 import Fastify, { FastifyReply, FastifyRequest } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
-import { SignJWT, jwtVerify } from 'jose';
+import { jwtVerify } from 'jose';
 import { Buffer } from 'node:buffer';
 import { createHash, randomUUID } from 'node:crypto';
 import { gzip as gzipCallback, constants as zlibConstants } from 'node:zlib';
@@ -71,6 +71,12 @@ import {
   listPublishedThemes,
   themeOfferMatchesExpectation
 } from './themeCatalog.js';
+import {
+  SESSION_AUDIENCE,
+  SESSION_ISSUER,
+  sessionExpiresAt,
+  signSessionToken
+} from './sessionTokens.js';
 
 interface AuthBody {
   authorizationCode?: string;
@@ -295,6 +301,27 @@ app.post<{ Body: AuthBody }>('/v1/auth/huawei', {
   return {
     sessionToken: await issueSession(account.userId, request.ip),
     account
+  };
+});
+
+app.post('/v1/auth/renew', { preHandler: authenticate }, async (request) => {
+  const userId = requiredUserId(request);
+  const sessionId = (request as AuthenticatedRequest).sessionId!;
+  const requestedExpiresAt = sessionExpiresAt(config.auth.sessionTtlDays);
+  const renewed = await pool.query<{ expires_at: Date }>(
+    `UPDATE auth_sessions
+     SET expires_at = GREATEST(expires_at, $3)
+     WHERE id = $1 AND user_id = $2 AND revoked_at IS NULL AND expires_at > now()
+     RETURNING expires_at`,
+    [sessionId, userId, requestedExpiresAt]
+  );
+  if (!renewed.rowCount) {
+    throw new ApiError(401, 'SESSION_EXPIRED', '登录已过期，请重新登录');
+  }
+  const expiresAt = renewed.rows[0]!.expires_at;
+  return {
+    sessionToken: await signSessionToken(sessionKey, userId, sessionId, expiresAt),
+    expiresAt: expiresAt.getTime()
   };
 });
 
@@ -978,8 +1005,8 @@ async function authenticate(request: AuthenticatedRequest, _reply: FastifyReply)
   let sessionId = '';
   try {
     const verified = await jwtVerify(authorization.substring(7), sessionKey, {
-      issuer: 'legado-account-commerce',
-      audience: 'legado-harmony',
+      issuer: SESSION_ISSUER,
+      audience: SESSION_AUDIENCE,
       algorithms: ['HS256']
     });
     userId = verified.payload.sub || '';
@@ -1014,23 +1041,13 @@ function requiredUserId(request: AuthenticatedRequest): string {
 
 async function issueSession(userId: string, sourceIp: string): Promise<string> {
   const sessionId = randomUUID();
-  const expiresAt = new Date(
-    Date.now() + config.auth.sessionTtlDays * 24 * 60 * 60 * 1000
-  );
+  const expiresAt = sessionExpiresAt(config.auth.sessionTtlDays);
   await pool.query(
     `INSERT INTO auth_sessions (id, user_id, expires_at, created_ip)
      VALUES ($1, $2, $3, $4)`,
     [sessionId, userId, expiresAt, sourceIp]
   );
-  return new SignJWT({})
-    .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-    .setIssuer('legado-account-commerce')
-    .setAudience('legado-harmony')
-    .setSubject(userId)
-    .setJti(sessionId)
-    .setIssuedAt()
-    .setExpirationTime(expiresAt)
-    .sign(sessionKey);
+  return signSessionToken(sessionKey, userId, sessionId, expiresAt);
 }
 
 interface Queryable {

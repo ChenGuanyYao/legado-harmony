@@ -376,6 +376,8 @@ struct ReadBookPage {
   @StorageLink('globalTtsCurrentText') @Watch('onGlobalTtsPanelTextChanged') globalTtsCurrentText: string = '';
   @StorageLink('globalTtsTextAfter') globalTtsTextAfter: string = '';
   @StorageLink('globalTtsChapterProgress') globalTtsChapterProgress: string = '';
+  @StorageLink('globalTtsAudioPositionMs') globalTtsAudioPositionMs: number = 0;
+  @StorageLink('globalTtsAudioDurationMs') globalTtsAudioDurationMs: number = 0;
   @StorageLink('globalTtsSpeed') globalTtsSpeed: number = 1;
   @StorageLink('globalTtsTimerMinutes') globalTtsTimerMinutes: number = 0;
   @StorageLink('globalTtsTimerRemainingSeconds') globalTtsTimerRemainingSeconds: number = 0;
@@ -4303,6 +4305,10 @@ struct ReadBookPage {
         .borderRadius(14)
         .backgroundColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
 
+        if (this.globalTtsMode === 'audio') {
+          this.globalTtsQuickAudioProgress()
+        }
+
         Row() {
           this.ttsQuickControl($r('sys.symbol.timer'), this.globalTtsTimerMinutes > 0 ?
             `${Math.max(1, Math.ceil(this.globalTtsTimerRemainingSeconds / 60))}分` : '定时', true, false,
@@ -4380,6 +4386,48 @@ struct ReadBookPage {
     }
     .width('100%')
     .height('100%')
+  }
+
+  @Builder
+  globalTtsQuickAudioProgress() {
+    Column({ space: 2 }) {
+      Slider({
+        value: this.globalTtsAudioPositionMs,
+        min: 0,
+        max: Math.max(1, this.globalTtsAudioDurationMs),
+        step: 1000
+      })
+        .width('100%')
+        .selectedColor(this.accentColor())
+        .trackColor(ThemeRuntime.inputColor(this.isReaderThemeDark()))
+        .onChange((value: number, mode: SliderChangeMode) => {
+          this.globalTtsAudioPositionMs = value;
+          if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+            ReaderTtsFloatingSession.seekAudio(value);
+          }
+        })
+      Row() {
+        Text(this.formatGlobalTtsAudioDuration(this.globalTtsAudioPositionMs))
+          .fontSize(11)
+          .fontColor(this.getSubTextColor())
+        Blank()
+        Text(this.formatGlobalTtsAudioDuration(this.globalTtsAudioDurationMs))
+          .fontSize(11)
+          .fontColor(this.getSubTextColor())
+      }
+      .width('100%')
+    }
+    .width('100%')
+  }
+
+  formatGlobalTtsAudioDuration(valueMs: number): string {
+    const totalSeconds = Math.max(0, Math.floor((valueMs || 0) / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const mm = minutes.toString().padStart(2, '0');
+    const ss = seconds.toString().padStart(2, '0');
+    return hours > 0 ? `${hours}:${mm}:${ss}` : `${minutes}:${ss}`;
   }
 
   @Builder

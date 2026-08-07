@@ -18,6 +18,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ThemeIds } from '../theme/ThemeModels';
 import { ThemeTrialManager } from '../utils/ThemeTrialManager';
 import { AccountSessionStore } from '../account/AccountSessionStore';
+import { HuaweiAccountService } from '../account/HuaweiAccountService';
 import { CloudSyncSettingsStore } from '../account/CloudSyncSettingsStore';
 import { CloudSyncCoordinator } from '../account/CloudSyncCoordinator';
 import { CloudSyncChangeTracker } from '../account/CloudSyncChangeTracker';
@@ -30,6 +31,7 @@ export default class EntryAbility extends UIAbility {
   private modeDependentThemeKey: string = '';
   private themeBootstrapPromise: Promise<void> = Promise.resolve();
   private readerBootstrapPromise: Promise<void> = Promise.resolve();
+  private accountBootstrapPromise: Promise<void> = Promise.resolve();
   private deferredStartupScheduled: boolean = false;
   private mainWindowStage: window.WindowStage | null = null;
 
@@ -172,9 +174,9 @@ export default class EntryAbility extends UIAbility {
     }).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Sync tts settings failed: %{public}s', JSON.stringify(e));
     });
-    AccountSessionStore.load(this.context).then(() => {
+    this.accountBootstrapPromise = AccountSessionStore.load(this.context).then(() => {
       const userId = AccountSessionStore.isLoggedIn() ? AccountSessionStore.account().userId : '';
-      return CloudSyncSettingsStore.load(this.context, userId);
+      return CloudSyncSettingsStore.load(this.context, userId).then((): void => {});
     }).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Load account session failed: %{public}s', JSON.stringify(e));
     });
@@ -268,12 +270,19 @@ export default class EntryAbility extends UIAbility {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onForeground');
     ThemeTrialManager.stopIfExpired();
     this.syncSystemColorMode(this.context.config);
-    setTimeout(() => {
-      CloudSyncCoordinator.syncAutomatically(
-        this.context, CloudSyncCoordinator.TRIGGER_FOREGROUND).catch((e: Error) => {
-        hilog.warn(0x0000, 'testTag', 'Foreground cloud sync failed: %{public}s', JSON.stringify(e));
+    this.accountBootstrapPromise
+      .then(() => HuaweiAccountService.renewSession(this.context))
+      .catch((e: Error) => {
+        hilog.warn(0x0000, 'testTag', 'Renew account session failed: %{public}s', JSON.stringify(e));
+      })
+      .finally(() => {
+        setTimeout(() => {
+          CloudSyncCoordinator.syncAutomatically(
+            this.context, CloudSyncCoordinator.TRIGGER_FOREGROUND).catch((e: Error) => {
+            hilog.warn(0x0000, 'testTag', 'Foreground cloud sync failed: %{public}s', JSON.stringify(e));
+          });
+        }, 1200);
       });
-    }, 1200);
   }
 
   onNewWant(want: Want, launchParam: AbilityConstant.LaunchParam): void {

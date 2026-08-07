@@ -31,6 +31,11 @@ export class HuaweiLoginResponse {
   account: AccountSnapshot = new AccountSnapshot();
 }
 
+export class SessionRenewResponse {
+  sessionToken: string = '';
+  expiresAt: number = 0;
+}
+
 export class IapCreditResponse {
   account: AccountSnapshot = new AccountSnapshot();
   purchaseOrderId: string = '';

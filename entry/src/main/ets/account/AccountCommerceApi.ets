@@ -6,6 +6,7 @@ import {
   AccountSnapshot,
   HuaweiLoginResponse,
   IapCreditResponse,
+  SessionRenewResponse,
   ThemeCatalogResponse,
   TtsCatalogResponse,
   TtsPackageRedeemResponse,
@@ -35,6 +36,18 @@ export class AccountCommerceApi {
   static async fetchAccount(sessionToken: string): Promise<AccountSnapshot> {
     const value = await AccountCommerceApi.request('/v1/me', 'GET', '', sessionToken);
     return AccountCommerceApi.normalizeAccount(JSON.parse(value) as AccountSnapshot);
+  }
+
+  static async renewSession(sessionToken: string): Promise<SessionRenewResponse> {
+    const value = await AccountCommerceApi.request('/v1/auth/renew', 'POST', '{}', sessionToken);
+    const raw = JSON.parse(value) as SessionRenewResponse;
+    const response = new SessionRenewResponse();
+    response.sessionToken = raw.sessionToken || '';
+    response.expiresAt = Math.max(0, Math.floor(Number(raw.expiresAt) || 0));
+    if (!response.sessionToken || response.expiresAt <= 0) {
+      throw new AccountApiError('账号续签响应格式异常', 502, 'INVALID_SESSION_RENEW_RESPONSE');
+    }
+    return response;
   }
 
   static async logout(sessionToken: string): Promise<void> {

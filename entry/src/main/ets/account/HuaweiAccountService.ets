@@ -2,11 +2,19 @@ import { authentication } from '@kit.AccountKit';
 import { common, Context } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import { AccountCommerceApi } from './AccountCommerceApi';
-import { AccountSnapshot, HuaweiLoginResponse, IapCreditResponse } from './AccountCommerceModels';
+import {
+  AccountApiError,
+  AccountSnapshot,
+  HuaweiLoginResponse,
+  IapCreditResponse,
+  SessionRenewResponse
+} from './AccountCommerceModels';
 import { AccountSessionStore } from './AccountSessionStore';
 import { CloudSyncSettingsStore } from './CloudSyncSettingsStore';
 
 export class HuaweiAccountService {
+  private static renewing: Promise<void> | null = null;
+
   static async initialize(context: Context): Promise<void> {
     await AccountSessionStore.load(context);
   }
@@ -42,6 +50,40 @@ export class HuaweiAccountService {
     const snapshot = await AccountCommerceApi.fetchAccount(AccountSessionStore.token());
     await AccountSessionStore.updateSnapshot(context, snapshot);
     return AccountSessionStore.account();
+  }
+
+  static async renewSession(context: Context): Promise<void> {
+    if (HuaweiAccountService.renewing !== null) {
+      return await HuaweiAccountService.renewing;
+    }
+    const task = HuaweiAccountService.doRenewSession(context);
+    HuaweiAccountService.renewing = task;
+    try {
+      await task;
+    } finally {
+      if (HuaweiAccountService.renewing === task) {
+        HuaweiAccountService.renewing = null;
+      }
+    }
+  }
+
+  private static async doRenewSession(context: Context): Promise<void> {
+    await AccountSessionStore.load(context);
+    if (!AccountSessionStore.isLoggedIn()) {
+      return;
+    }
+    const currentToken = AccountSessionStore.token();
+    try {
+      const response: SessionRenewResponse = await AccountCommerceApi.renewSession(currentToken);
+      await AccountSessionStore.updateSessionToken(context, currentToken, response.sessionToken);
+    } catch (error) {
+      if (error instanceof AccountApiError && error.statusCode === 401 &&
+        error.errorCode === 'SESSION_EXPIRED' && AccountSessionStore.token() === currentToken) {
+        await AccountSessionStore.clear(context);
+        await CloudSyncSettingsStore.load(context, '');
+      }
+      throw new Error(error instanceof Error ? error.message : String(error));
+    }
   }
 
   static async redeemTheme(context: Context, themeId: string, expectedPricePoints: number,
@@ -80,6 +122,13 @@ export class HuaweiAccountService {
   }
 
   static async logout(context: Context): Promise<void> {
+    if (HuaweiAccountService.renewing !== null) {
+      try {
+        await HuaweiAccountService.renewing;
+      } catch {
+        // Logout must continue even when foreground renewal failed.
+      }
+    }
     const sessionToken = AccountSessionStore.token();
     if (sessionToken) {
       try {

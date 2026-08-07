@@ -71,8 +71,11 @@ export class ReaderPageCurlPainter {
     this.drawCastShadow(context, width, height, leafWidth, safeProgress, direction, doublePage,
       darkMode);
     const triangles = this.buildTriangles(width, height, leafWidth, safeProgress, direction, doublePage);
-    this.drawFace(context, triangles, front, leafWidth, height, 1, darkMode);
-    this.drawFace(context, triangles, back, leafWidth, height, -1, darkMode);
+    this.drawFace(context, triangles, front, leafWidth, height, 1, darkMode, false);
+    // The landed double-page mesh reverses its horizontal axis when the right leaf moves onto
+    // the left side (and vice versa). Pre-mirror only the paper-back texture so the composed
+    // preview keeps its normal reading orientation throughout the turn.
+    this.drawFace(context, triangles, back, leafWidth, height, -1, darkMode, doublePage);
     context.restore();
   }
 
@@ -155,6 +158,20 @@ export class ReaderPageCurlPainter {
         shade = Math.max(0.16, 0.46 - Math.min(0.3, (angle - Math.PI) * 0.07));
       }
     }
+    if (doublePage) {
+      // Unlike a single sheet, a double-page leaf must finish by lying flat on the opposite half
+      // of the spread. Keeping the normal curl radius through progress=1 leaves a narrow folded
+      // strip parked at the spine; it then appears frozen while ArkUI commits the new spread.
+      // Blend that strip into its exact landed geometry during the final part of the motion.
+      const settle = this.doublePageSettleProgress(progress);
+      if (settle > 0) {
+        mappedNormal += (-normal - mappedNormal) * settle;
+        // A negative shade carries the landing blend to drawFace without expanding every mesh type.
+        // It removes the paper-back dimming as the leaf becomes the fully lit destination page.
+        shade = -settle;
+        if (settle >= 0.9) face = -1;
+      }
+    }
     const mappedX = mappedNormal * cosine + tangent * sine;
     const curledY = centerY - mappedNormal * sine + tangent * cosine;
     // Keep the physical top and bottom edges attached to the viewport. Applying the full tilted-axis displacement
@@ -172,13 +189,22 @@ export class ReaderPageCurlPainter {
     };
   }
 
+  private doublePageSettleProgress(progress: number): number {
+    const start = 0.78;
+    if (progress <= start) return 0;
+    const value = Math.max(0, Math.min(1, (progress - start) / (1 - start)));
+    return value * value * (3 - 2 * value);
+  }
+
   private drawFace(context: CanvasRenderingContext2D, triangles: CurlTriangle[], texture: image.PixelMap,
-    leafWidth: number, leafHeight: number, face: number, darkMode: boolean): void {
+    leafWidth: number, leafHeight: number, face: number, darkMode: boolean, flipTextureX: boolean): void {
     for (const triangle of triangles) {
       if (triangle.face !== face) continue;
+      const settle = Math.max(0, Math.min(1, -triangle.shade));
+      const physicalShade = Math.max(0, triangle.shade);
       this.drawTexturedTriangle(context, triangle, texture, leafWidth, leafHeight,
-        face < 0 ? 0.83 : 1);
-      const alpha = face < 0 ? 0.13 + triangle.shade * 0.26 : triangle.shade * 0.12;
+        face < 0 ? 0.83 + settle * 0.17 : 1, flipTextureX);
+      const alpha = face < 0 ? (0.13 + physicalShade * 0.26) * (1 - settle) : physicalShade * 0.12;
       if (alpha > 0.01) {
         this.fillTriangle(context, triangle, darkMode ? '#05080B' : (face < 0 ? '#D8D2C6' : '#5D554A'),
           alpha);
@@ -187,10 +213,14 @@ export class ReaderPageCurlPainter {
   }
 
   private drawTexturedTriangle(context: CanvasRenderingContext2D, triangle: CurlTriangle,
-    texture: image.PixelMap, leafWidth: number, leafHeight: number, alpha: number): void {
-    const sx1 = triangle.sx1 - triangle.sx0;
+    texture: image.PixelMap, leafWidth: number, leafHeight: number, alpha: number,
+    flipTextureX: boolean): void {
+    const sourceX0 = flipTextureX ? leafWidth - triangle.sx0 : triangle.sx0;
+    const sourceX1 = flipTextureX ? leafWidth - triangle.sx1 : triangle.sx1;
+    const sourceX2 = flipTextureX ? leafWidth - triangle.sx2 : triangle.sx2;
+    const sx1 = sourceX1 - sourceX0;
     const sy1 = triangle.sy1 - triangle.sy0;
-    const sx2 = triangle.sx2 - triangle.sx0;
+    const sx2 = sourceX2 - sourceX0;
     const sy2 = triangle.sy2 - triangle.sy0;
     const determinant = sx1 * sy2 - sx2 * sy1;
     if (Math.abs(determinant) < 0.0001) return;
@@ -202,8 +232,8 @@ export class ReaderPageCurlPainter {
     const b = (dy1 * sy2 - dy2 * sy1) / determinant;
     const c = (-dx1 * sx2 + dx2 * sx1) / determinant;
     const d = (-dy1 * sx2 + dy2 * sx1) / determinant;
-    const e = triangle.d0.x - a * triangle.sx0 - c * triangle.sy0;
-    const f = triangle.d0.y - b * triangle.sx0 - d * triangle.sy0;
+    const e = triangle.d0.x - a * sourceX0 - c * triangle.sy0;
+    const f = triangle.d0.y - b * sourceX0 - d * triangle.sy0;
     context.save();
     this.trianglePath(context, triangle);
     context.clip();

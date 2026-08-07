@@ -10,6 +10,7 @@ export class ReaderTtsFloatingSession {
   private static timerAction: ((minutes: number) => void) | null = null;
   private static voiceAction: (() => void) | null = null;
   private static catalogAction: (() => void) | null = null;
+  private static audioSeekAction: ((positionMs: number) => void) | null = null;
   private static audioCatalogTitles: string[] = [];
   private static audioCatalogIndex: number = 0;
   private static audioCatalogSelectAction: ((index: number) => void) | null = null;
@@ -68,12 +69,31 @@ export class ReaderTtsFloatingSession {
   }
 
   static configureAudioControls(ownerId: string, voiceCode: string,
-    voiceAction: () => void, catalogAction: () => void): void {
+    voiceAction: () => void, catalogAction: () => void,
+    seekAction: (positionMs: number) => void): void {
     if (!ReaderTtsFloatingSession.isOwner(ownerId)) return;
     ReaderTtsFloatingSession.voiceAction = voiceAction;
     ReaderTtsFloatingSession.catalogAction = catalogAction;
+    ReaderTtsFloatingSession.audioSeekAction = seekAction;
     AppStorage.setOrCreate('globalTtsMode', 'audio');
     AppStorage.setOrCreate('globalTtsVoiceCode', voiceCode || '默认');
+  }
+
+  static updateAudioProgress(ownerId: string, positionMs: number, durationMs: number): void {
+    if (!ReaderTtsFloatingSession.isOwner(ownerId)) return;
+    const nextDuration = Math.max(0, durationMs || 0);
+    const nextPosition = Math.max(0, Math.min(positionMs || 0, nextDuration || positionMs || 0));
+    if (AppStorage.get<number>('globalTtsAudioPositionMs') !== nextPosition) {
+      AppStorage.setOrCreate('globalTtsAudioPositionMs', nextPosition);
+    }
+    if (AppStorage.get<number>('globalTtsAudioDurationMs') !== nextDuration) {
+      AppStorage.setOrCreate('globalTtsAudioDurationMs', nextDuration);
+    }
+  }
+
+  static seekAudio(positionMs: number): void {
+    const action = ReaderTtsFloatingSession.audioSeekAction;
+    if (action) action(Math.max(0, positionMs || 0));
   }
 
   static openVoice(): void {
@@ -287,6 +307,7 @@ export class ReaderTtsFloatingSession {
     ReaderTtsFloatingSession.timerAction = null;
     ReaderTtsFloatingSession.voiceAction = null;
     ReaderTtsFloatingSession.catalogAction = null;
+    ReaderTtsFloatingSession.audioSeekAction = null;
     ReaderTtsFloatingSession.audioCatalogTitles = [];
     ReaderTtsFloatingSession.audioCatalogIndex = 0;
     ReaderTtsFloatingSession.audioCatalogSelectAction = null;
@@ -297,6 +318,8 @@ export class ReaderTtsFloatingSession {
     AppStorage.setOrCreate('globalTtsChapterTitle', '');
     AppStorage.setOrCreate('globalTtsMode', '');
     AppStorage.setOrCreate('globalTtsVoiceCode', '');
+    AppStorage.setOrCreate('globalTtsAudioPositionMs', 0);
+    AppStorage.setOrCreate('globalTtsAudioDurationMs', 0);
     AppStorage.setOrCreate<ResourceStr>('globalTtsCover', '');
     AppStorage.setOrCreate<ResourceStr>('globalTtsCoverFrame', '');
     AppStorage.setOrCreate('globalTtsContent', '');

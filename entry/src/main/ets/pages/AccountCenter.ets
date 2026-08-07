@@ -604,7 +604,16 @@ struct AccountCenterPage {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
-      if (!this.accountLoggedIn) {
+      if (this.accountLoggedIn) {
+        Button('编辑')
+          .height(34)
+          .fontSize(13)
+          .fontColor(this.accentColor())
+          .backgroundColor(this.inputColor())
+          .onClick(() => {
+            this.beginEditProfile();
+          })
+      } else {
         Button(this.loading ? '登录中' : '华为账号登录')
           .height(38)
           .fontSize(13)
@@ -936,16 +945,7 @@ struct AccountCenterPage {
 
   @Builder
   accountActions() {
-    Column({ space: 10 }) {
-      Button(this.editingProfile ? '正在编辑个人资料' : '编辑昵称和头像')
-        .width('100%')
-        .height(44)
-        .fontColor(this.accentColor())
-        .backgroundColor(this.cardColor())
-        .enabled(!this.editingProfile)
-        .onClick(() => {
-          this.beginEditProfile();
-        })
+    Column() {
       Button('退出登录')
         .width('100%')
         .height(44)

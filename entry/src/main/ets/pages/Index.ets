@@ -201,6 +201,8 @@ struct Index {
   @StorageLink('globalTtsCurrentText') globalTtsCurrentText: string = '';
   @StorageLink('globalTtsTextAfter') globalTtsTextAfter: string = '';
   @StorageLink('globalTtsChapterProgress') globalTtsChapterProgress: string = '';
+  @StorageLink('globalTtsAudioPositionMs') globalTtsAudioPositionMs: number = 0;
+  @StorageLink('globalTtsAudioDurationMs') globalTtsAudioDurationMs: number = 0;
   @StorageLink('globalTtsSpeed') globalTtsSpeed: number = 1;
   @StorageLink('globalTtsTimerMinutes') globalTtsTimerMinutes: number = 0;
   @StorageLink('globalTtsTimerRemainingSeconds') globalTtsTimerRemainingSeconds: number = 0;
@@ -660,6 +662,10 @@ struct Index {
       .borderRadius(14)
       .backgroundColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
 
+      if (this.globalTtsMode === 'audio') {
+        this.globalTtsAudioProgress()
+      }
+
       Row() {
         this.globalTtsControl($r('sys.symbol.timer'), this.globalTtsTimerMinutes > 0 ?
           `${Math.max(1, Math.ceil(this.globalTtsTimerRemainingSeconds / 60))}分` : '定时', true,
@@ -730,6 +736,48 @@ struct Index {
     .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
     .backdropBlur(ThemeRuntime.glassBlur('panel', 24))
     .transition(this.globalTtsPanelTransition())
+  }
+
+  @Builder
+  globalTtsAudioProgress() {
+    Column({ space: 2 }) {
+      Slider({
+        value: this.globalTtsAudioPositionMs,
+        min: 0,
+        max: Math.max(1, this.globalTtsAudioDurationMs),
+        step: 1000
+      })
+        .width('100%')
+        .selectedColor(this.tabBarActiveColor())
+        .trackColor(ThemeRuntime.inputColor(this.appDarkMode))
+        .onChange((value: number, mode: SliderChangeMode) => {
+          this.globalTtsAudioPositionMs = value;
+          if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
+            ReaderTtsFloatingSession.seekAudio(value);
+          }
+        })
+      Row() {
+        Text(this.formatGlobalTtsAudioDuration(this.globalTtsAudioPositionMs))
+          .fontSize(11)
+          .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
+        Blank()
+        Text(this.formatGlobalTtsAudioDuration(this.globalTtsAudioDurationMs))
+          .fontSize(11)
+          .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
+      }
+      .width('100%')
+    }
+    .width('100%')
+  }
+
+  formatGlobalTtsAudioDuration(valueMs: number): string {
+    const totalSeconds = Math.max(0, Math.floor((valueMs || 0) / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const mm = minutes.toString().padStart(2, '0');
+    const ss = seconds.toString().padStart(2, '0');
+    return hours > 0 ? `${hours}:${mm}:${ss}` : `${minutes}:${ss}`;
   }
 
   @Builder
@@ -7159,6 +7207,12 @@ struct ExplorePage {
   @State showExploreSourcePicker: boolean = false;
   @State showExploreSourceActionMenu: boolean = false;
   @State actionExploreSourceUrl: string = '';
+  @State showExploreSourceVariableDialog: boolean = false;
+  @State exploreSourceVariableUrl: string = '';
+  @State exploreSourceVariableName: string = '';
+  @State exploreSourceVariableValue: string = '';
+  @State exploreSourceVariableComment: string = '';
+  @State savingExploreSourceVariable: boolean = false;
   @State exploreContextMenuX: number = 16;
   @State exploreContextMenuY: number = 96;
   @State exploreSourceFilterInput: string = '';
@@ -7215,6 +7269,7 @@ struct ExplorePage {
         this.clearExploreSourceFilter();
       }
       this.closeExploreSourceActions();
+      this.closeExploreSourceVariableEditor();
     }
   }
 
@@ -7739,6 +7794,10 @@ struct ExplorePage {
       if (this.showExploreSourceActionMenu) {
         this.exploreSourceActionMenu()
       }
+
+      if (this.showExploreSourceVariableDialog) {
+        this.exploreSourceVariableDialog()
+      }
     }
     .width('100%')
     .height('100%')
@@ -7902,6 +7961,21 @@ struct ExplorePage {
         .onClick(() => this.loginActionExploreSource())
 
         Row() {
+          SymbolGlyph($r('sys.symbol.list_bullet'))
+            .fontSize(19)
+            .fontColor([this.primaryTextColor()])
+            .width(34)
+          Text('源变量')
+            .fontSize(15)
+            .fontColor(this.primaryTextColor())
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(44)
+        .padding({ left: 10, right: 10 })
+        .onClick(() => this.openExploreSourceVariableEditor())
+
+        Row() {
           SymbolGlyph($r('sys.symbol.square_and_pencil'))
             .fontSize(19)
             .fontColor([this.primaryTextColor()])
@@ -7926,11 +8000,101 @@ struct ExplorePage {
       .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'),
         color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'),
         offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-      .position({ x: this.exploreContextMenuLeft(132), y: this.exploreContextMenuTop(100) })
+      .position({ x: this.exploreContextMenuLeft(132), y: this.exploreContextMenuTop(144) })
     }
     .width('100%')
     .height('100%')
     .zIndex(12)
+  }
+
+  @Builder
+  exploreSourceVariableDialog() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor('#80000000')
+        .onClick(() => {
+          if (!this.savingExploreSourceVariable) this.closeExploreSourceVariableEditor();
+        })
+
+      Column({ space: 12 }) {
+        Text('编辑源变量')
+          .fontSize(19)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+          .textAlign(TextAlign.Center)
+
+        Text(this.exploreSourceVariableName || this.exploreSourceVariableUrl)
+          .fontSize(13)
+          .fontColor(this.secondaryTextColor())
+          .width('100%')
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .textAlign(TextAlign.Center)
+
+        if (this.exploreSourceVariableComment) {
+          Text(this.exploreSourceVariableComment)
+            .fontSize(12)
+            .lineHeight(18)
+            .fontColor(this.secondaryTextColor())
+            .width('100%')
+            .padding(10)
+            .borderRadius(8)
+            .backgroundColor(this.inputColor())
+        }
+
+        TextArea({
+          text: this.exploreSourceVariableValue,
+          placeholder: this.exploreSourceVariableComment || '请输入书源变量'
+        })
+          .width('100%')
+          .height(180)
+          .fontSize(14)
+          .fontColor(this.primaryTextColor())
+          .placeholderColor(this.secondaryTextColor())
+          .backgroundColor(this.inputColor())
+          .borderRadius(10)
+          .padding(12)
+          .enabled(!this.savingExploreSourceVariable)
+          .onChange((value: string) => {
+            this.exploreSourceVariableValue = value;
+          })
+
+        Row({ space: 10 }) {
+          Button('取消')
+            .layoutWeight(1)
+            .height(40)
+            .fontColor(this.primaryTextColor())
+            .backgroundColor(this.inputColor())
+            .enabled(!this.savingExploreSourceVariable)
+            .onClick(() => this.closeExploreSourceVariableEditor())
+          Button(this.savingExploreSourceVariable ? '保存中…' : '保存')
+            .layoutWeight(1)
+            .height(40)
+            .fontColor('#FFFFFF')
+            .backgroundColor(this.buttonColor())
+            .enabled(!this.savingExploreSourceVariable)
+            .onClick(() => this.saveExploreSourceVariable())
+        }
+        .width('100%')
+      }
+      .width('calc(100% - 40vp)')
+      .constraintSize({ maxWidth: 520 })
+      .padding(18)
+      .borderRadius(ThemeRuntime.glassCornerRadius(16, 'panel'))
+      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({ width: ThemeRuntime.glassBorderWidth('panel'),
+        color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'),
+        color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'),
+        offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
+    }
+    .width('100%')
+    .height('100%')
+    .zIndex(13)
   }
 
   @Builder
@@ -8048,6 +8212,60 @@ struct ExplorePage {
   closeExploreSourceActions(): void {
     this.showExploreSourceActionMenu = false;
     this.actionExploreSourceUrl = '';
+  }
+
+  async openExploreSourceVariableEditor(): Promise<void> {
+    const sourceUrl = this.actionExploreSourceUrl;
+    if (!sourceUrl) return;
+    this.closeExploreSourceActions();
+    try {
+      const db = AppDatabase.getInstance();
+      await db.initWithContext(getContext(this));
+      const source = await db.getBookSource(sourceUrl);
+      if (!source) {
+        promptAction.showToast({ message: '书源不存在' });
+        return;
+      }
+      this.exploreSourceVariableUrl = source.bookSourceUrl;
+      this.exploreSourceVariableName = source.bookSourceName || source.bookSourceUrl;
+      this.exploreSourceVariableValue = source.variable || '';
+      this.exploreSourceVariableComment = (source.variableComment || '').trim();
+      this.showExploreSourceVariableDialog = true;
+    } catch (error) {
+      console.error('读取书源变量失败:', error);
+      promptAction.showToast({ message: '读取书源变量失败' });
+    }
+  }
+
+  closeExploreSourceVariableEditor(): void {
+    if (this.savingExploreSourceVariable) return;
+    this.showExploreSourceVariableDialog = false;
+    this.exploreSourceVariableUrl = '';
+    this.exploreSourceVariableName = '';
+    this.exploreSourceVariableValue = '';
+    this.exploreSourceVariableComment = '';
+  }
+
+  async saveExploreSourceVariable(): Promise<void> {
+    const sourceUrl = this.exploreSourceVariableUrl;
+    if (!sourceUrl || this.savingExploreSourceVariable) return;
+    this.savingExploreSourceVariable = true;
+    try {
+      const db = AppDatabase.getInstance();
+      await db.initWithContext(getContext(this));
+      await db.updateBookSourceVariable(sourceUrl, this.exploreSourceVariableValue);
+      await ExploreResultCache.clearSource(getContext(this), sourceUrl);
+      this.savingExploreSourceVariable = false;
+      this.closeExploreSourceVariableEditor();
+      promptAction.showToast({ message: '源变量已保存' });
+      if (this.isActive && !this.isLoading && this.selectedSourceUrl === sourceUrl) {
+        await this.loadEntries('', true);
+      }
+    } catch (error) {
+      this.savingExploreSourceVariable = false;
+      console.error('保存书源变量失败:', error);
+      promptAction.showToast({ message: '保存源变量失败' });
+    }
   }
 
   editActionExploreSource(): void {
