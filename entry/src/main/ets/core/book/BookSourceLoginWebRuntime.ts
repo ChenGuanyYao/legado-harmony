@@ -116,7 +116,7 @@ export class BookSourceLoginWebRuntime {
       `Object.assign(loginMap,next);}return a;},` +
       `removeLoginInfo:function(){Object.keys(loginMap).forEach(function(k){delete loginMap[k];});return '';}` +
       `};` +
-      `const nativeAtob=globalThis.atob;const nativeBtoa=globalThis.btoa;` +
+      `const nativeAtob=globalThis.atob;const nativeBtoa=globalThis.btoa;const NativeURL=globalThis.URL;` +
       `function byteArray(v){if(v instanceof Uint8Array)return Array.from(v);if(Array.isArray(v))return v.map(function(x){` +
       `return Number(x)&255;});return Array.from(new TextEncoder().encode(String(v??'')));}` +
       `function b64e(v){try{const bytes=byteArray(v);let binary='';for(const x of bytes)binary+=String.fromCharCode(x);` +
@@ -230,21 +230,21 @@ export class BookSourceLoginWebRuntime {
       `const JavaString=markJavaClass(String,'String');try{if(typeof String.prototype.getBytes!=='function')` +
       `Object.defineProperty(String.prototype,'getBytes',{enumerable:false,configurable:true,value:function(){` +
       `return byteArray(String(this));}});}catch(e){}` +
-      `const JavaURL=markJavaClass(function(v){const parsed=new globalThis.URL(String(v??''));return {` +
+      `const JavaURL=markJavaClass(function(v){const parsed=new NativeURL(String(v??''));return {` +
       `host:parsed.hostname,hostname:parsed.hostname,protocol:parsed.protocol,port:parsed.port,` +
       `path:parsed.pathname,toString:function(){return parsed.toString();}};},'URL');` +
-      `function topPrivateDomain(v){try{const host=new globalThis.URL(String(v??'')).hostname.toLowerCase();` +
+      `function topPrivateDomain(v){try{const host=new NativeURL(String(v??'')).hostname.toLowerCase();` +
       `if(!host||/^\\d{1,3}(?:\\.\\d{1,3}){3}$/.test(host)||host.includes(':'))return null;` +
       `const labels=host.split('.').filter(Boolean);if(labels.length<2)return host;const country=labels[labels.length-1];` +
       `const second=labels[labels.length-2];const multipart=/^(?:com|net|org|gov|edu|ac|co)$/i.test(second)&&` +
       `/^(?:cn|uk|jp|au|nz|kr|za)$/i.test(country);return labels.slice(multipart?-3:-2).join('.');}` +
       `catch(e){return null;}}` +
-      `const JavaHttpUrl=markJavaClass({parse:function(v){const raw=String(v??'');try{new globalThis.URL(raw);}` +
+      `const JavaHttpUrl=markJavaClass({parse:function(v){const raw=String(v??'');try{new NativeURL(raw);}` +
       `catch(e){return null;}return {topPrivateDomain:function(){return topPrivateDomain(raw);},` +
-      `host:function(){return new globalThis.URL(raw).hostname;},toString:function(){return raw;}};}},'HttpUrl');` +
+      `host:function(){return new NativeURL(raw).hostname;},toString:function(){return raw;}};}},'HttpUrl');` +
       `function JavaImporter(){const scope={};Object.defineProperty(scope,'importClass',{enumerable:false,` +
       `value:function(clazz){if(!clazz)return clazz;const name=String(clazz.__simpleName||clazz.name||'').trim();` +
-      `if(name)this[name]=clazz;return clazz;}});Object.defineProperty(scope,'importPackage',{enumerable:false,` +
+      `if(name){this[name]=clazz;globalThis[name]=clazz;}return clazz;}});Object.defineProperty(scope,'importPackage',{enumerable:false,` +
       `value:function(pkg){if(pkg&&typeof pkg==='object')Object.keys(pkg).forEach(function(k){scope[k]=pkg[k];});` +
       `return pkg;}});for(let i=0;i<arguments.length;i++)scope.importClass(arguments[i]);return scope;}` +
       `const Packages={io:{legato:{kazusa:{utils:{TimeoutCancellationException:TimeoutCancellationException}}}},` +
@@ -293,7 +293,11 @@ export class BookSourceLoginWebRuntime {
     // `[removed]` is produced by privacy/sanitizing pipelines when a template expression is
     // stripped. Some pipelines also remove its closing backtick, making an otherwise unrelated
     // function invalidate the whole login library. Clean sources keep their exact full script.
-    return (script || '').includes('[removed]');
+    // Large aggregation sources commonly bundle tens of thousands of lines of unrelated HTML,
+    // parsers and account actions. Evaluating the whole bundle for a one-line switch both delays
+    // every click and lets an unrelated optional function break all buttons. The dependency
+    // selector preserves the shared prelude plus the called function graph.
+    return (script || '').includes('[removed]') || (script || '').length > 64 * 1024;
   }
 
   private static selectActionScript(script: string, action: string): string {

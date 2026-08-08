@@ -1559,6 +1559,7 @@ export class AppDatabase {
       try {
         const parsed = JSON.parse(this.getStringColumn(resultSet, 'contentRule')) as Object;
         if (parsed && !Array.isArray(parsed)) source.contentRule = parsed as ContentRule;
+        source.contentRule.sourceRegex = source.contentRule.sourceRegex || '';
         source.contentRule.nextContentUrl = source.contentRule.nextContentUrl || '';
         source.contentRule.imageDecode = source.contentRule.imageDecode || '';
       } catch (e) {}

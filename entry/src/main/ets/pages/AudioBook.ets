@@ -16,6 +16,7 @@ import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
+import { BookSourceAudioWebRuntimeHost } from '../components/BookSourceAudioWebRuntimeHost';
 
 class AudioBookPlaybackListener implements RemoteAudioPlaybackListener {
   private readonly stateCallback: (state: string) => void;
@@ -215,6 +216,7 @@ struct AudioBookPage {
         this.voiceCodeDialog()
       }
       BookSourceStageRuntimeHost()
+      BookSourceAudioWebRuntimeHost()
     }
     .width('100%')
     .height('100%')
@@ -1199,6 +1201,14 @@ struct AudioBookPage {
     if (fieldMatch && fieldMatch[1]) {
       const fieldUrl = this.normalizeAudioCandidate(fieldMatch[1], baseUrl, true);
       if (fieldUrl) return fieldUrl;
+    }
+
+    // HTML/JS chapter pages often contain covers, analytics and API links before the player.
+    // Prefer a media-looking address so a generic first URL cannot mask the actual stream.
+    const mediaMatch = value.match(/(?:https?:)?\/\/[^\s"'<>\\]+?\.(?:aac|flac|m3u8|m4a|mp3|mp4|ogg|opus|wav)(?:\?[^\s"'<>\\]*)?/i);
+    if (mediaMatch) {
+      const mediaUrl = this.normalizeAudioCandidate(mediaMatch[0], baseUrl, true);
+      if (mediaUrl) return mediaUrl;
     }
 
     const absoluteMatch = value.match(/https?:\/\/[^\s"'<>]+/i);

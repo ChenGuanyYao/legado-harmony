@@ -450,8 +450,7 @@ struct VerifyWebPage {
       }
       this.syncBookSourceLoginCookies();
       CookieStore.saveSync();
-      const raw = await this.controller.runJavaScript(
-        `document.documentElement ? document.documentElement.outerHTML : (document.body ? document.body.innerHTML : '')`);
+      const raw = await this.controller.runJavaScript(this.browserAwaitResultScript());
       const body = this.normalizeBrowserScriptResult(raw);
       if (body.length > 2 * 1024 * 1024) {
         this.publishBrowserAwaitResult('', '网页返回内容超过2MB');
@@ -473,6 +472,32 @@ struct VerifyWebPage {
       } catch (_) {}
     }
     return value;
+  }
+
+  browserAwaitResultScript(): string {
+    // ArkWeb presents <select> with a native picker. On some devices its visible value is committed
+    // before the page's change listener has refreshed the hidden result nodes used by Legado source
+    // setting pages. Reconcile those nodes from the live controls immediately before serializing the
+    // document. This is deliberately idempotent and does not dispatch events, so pages with network
+    // or toggle side effects are not executed a second time.
+    return `(function(){try{` +
+      `const active=document.activeElement;if(active&&typeof active.blur==='function')active.blur();` +
+      `if(typeof globalThis.updateHiddenSettings==='function'){try{globalThis.updateHiddenSettings();}catch(e){}}` +
+      `const controls=document.querySelectorAll('input,select,textarea');` +
+      `for(const control of controls){const id=String(control.id||'');if(!id)continue;` +
+      `let value='';if(control.type==='checkbox'||control.type==='radio')value=control.checked?'true':'false';` +
+      `else value=String(control.value??'');` +
+      `const ids=[id+'Value'];if(/Switch$/.test(id))ids.push(id.replace(/Switch$/,'Value'));` +
+      `for(const resultId of ids){const result=document.getElementById(resultId);` +
+      `if(result)result.textContent=value;}` +
+      `if(control.tagName==='SELECT'){for(const option of control.options){` +
+      `if(option.selected)option.setAttribute('selected','selected');else option.removeAttribute('selected');}}` +
+      `else if(control.type==='checkbox'||control.type==='radio'){` +
+      `if(control.checked)control.setAttribute('checked','checked');else control.removeAttribute('checked');}` +
+      `else control.setAttribute('value',value);}` +
+      `}catch(e){}` +
+      `return document.documentElement?document.documentElement.outerHTML:` +
+      `(document.body?document.body.innerHTML:'');})()`;
   }
 
   publishBrowserAwaitResult(body: string, error: string): void {

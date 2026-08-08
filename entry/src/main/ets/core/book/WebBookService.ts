@@ -24,6 +24,7 @@ import { BookSourceShuqiSupport } from './BookSourceShuqiSupport';
 import { RuleExecutionService } from '../rule/RuleExecutionService';
 import { RuleBatchExecutionRequest, RuleFieldRequest } from '../rule/RuleExecutionModels';
 import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
+import { BookSourceAudioWebRuntime } from './BookSourceAudioWebRuntime';
 
 class ContentPageData {
   content: string = '';
@@ -428,9 +429,14 @@ export class WebBookService {
         chapter.url || book.bookUrl || source.bookSourceUrl);
     }
     const isAudioContent = source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
-    if (isAudioContent && !source.contentRule.content &&
-      /\.(?:aac|flac|m3u8|m4a|mp3|mp4|ogg|opus|wav)(?:[?#]|$)/i.test(chapter.url)) {
-      return BookUrlResolver.resolve(chapter.url, book.bookUrl || source.bookSourceUrl);
+    if (isAudioContent) {
+      const audioRule = (source.contentRule.content || '').trim();
+      const directAudioUrl = this.resolvedAudioChapterUrl(source, book, chapter);
+      // In Legado an empty audio content rule means that the catalog's chapterUrl is already
+      // the playable address. It does not need a filename extension (signed streams commonly do not).
+      if (!audioRule || this.isPureAudioBaseUrlRule(audioRule)) return directAudioUrl;
+      const webViewAudioUrl = await this.tryResolveAudioWebViewUrl(source, chapter, directAudioUrl);
+      if (webViewAudioUrl) return webViewAudioUrl;
     }
     const stageContent = await this.tryGetStageContent(source, book, chapter);
     if (stageContent) {
@@ -1847,8 +1853,101 @@ export class WebBookService {
       if (!response.success || !response.body) return '';
       content = response.body;
       baseUrl = BookUrlResolver.effectiveBase(response, chapter.url, book.bookUrl || source.bookSourceUrl);
+      if (source.bookSourceType === 1 || (Number(book.type) & 32) !== 0) {
+        const mediaUrl = this.extractAudioSourceRegexUrl(source.contentRule.sourceRegex || '',
+          response.url || baseUrl, content, baseUrl);
+        if (mediaUrl) return mediaUrl;
+      }
     }
     return await this.runStageRule(source, book, rawRule, content, baseUrl, SourceRuntimeStage.CONTENT, chapter);
+  }
+
+  private resolvedAudioChapterUrl(source: BookSource, book: Book, chapter: BookChapter): string {
+    const analyzer = new AnalyzeUrl(source, this.http);
+    const config = analyzer.parse(chapter.url || '');
+    const value = config.url || chapter.url || '';
+    return BookUrlResolver.resolve(value, book.bookUrl || source.bookSourceUrl);
+  }
+
+  private isPureAudioBaseUrlRule(rawRule: string): boolean {
+    const normalized = (rawRule || '').trim()
+      .replace(/^<js>\s*|\s*<\/js>$/gi, '')
+      .replace(/^@?js:\s*/i, '')
+      .replace(/;\s*$/, '')
+      .trim();
+    return normalized === 'baseUrl' || normalized === 'String(baseUrl)';
+  }
+
+  private async tryResolveAudioWebViewUrl(source: BookSource, chapter: BookChapter,
+    resolvedChapterUrl: string): Promise<string> {
+    const sourceRegex = source.contentRule.sourceRegex || '';
+    if (!sourceRegex || !this.audioChapterRuleUsesWebView(source)) return '';
+    const runtime = BookSourceAudioWebRuntime.get();
+    if (!await runtime.waitUntilAvailable()) return '';
+    try {
+      return await runtime.resolveAudioUrl(resolvedChapterUrl, sourceRegex,
+        this.audioSourceUserAgent(source), 15000);
+    } catch (error) {
+      console.warn('[WS] audio WebView source interception failed, fallback HTTP:',
+        source.bookSourceName, chapter.title, error);
+      return '';
+    }
+  }
+
+  private audioChapterRuleUsesWebView(source: BookSource): boolean {
+    const raw = source.tocRule.chapterUrl || '';
+    return /["'“”]?webView["'“”]?\s*:\s*["'“”]?true["'“”]?/i.test(raw);
+  }
+
+  private audioSourceUserAgent(source: BookSource): string {
+    const raw = source.header || '';
+    try {
+      const parsed = JSON.parse(raw.replace(/[“”]/g, '"').replace(/'/g, '"')) as Record<string, Object>;
+      for (const key of Object.keys(parsed)) {
+        if (key.toLowerCase() === 'user-agent') return String(parsed[key] || '');
+      }
+    } catch (_) {
+      const match = raw.match(/["']?User-Agent["']?\s*:\s*["']([^"']+)["']/i);
+      if (match && match[1]) return match[1].trim();
+    }
+    return '';
+  }
+
+  private extractAudioSourceRegexUrl(rawRegex: string, responseUrl: string,
+    body: string, baseUrl: string): string {
+    const pattern = (rawRegex || '').trim();
+    if (!pattern) return '';
+    const matches = (candidate: string): boolean => {
+      try {
+        const literal = pattern.match(/^\/([\s\S]+)\/([dgimsuvy]*)$/);
+        const regex = literal ? new RegExp(literal[1], literal[2]) : new RegExp(pattern, 'i');
+        return regex.test(candidate);
+      } catch (_) {
+        return /\.(?:aac|flac|m3u8|m4a|mp3|mp4|ogg|opus|wav)(?:[?#]|$)/i.test(candidate);
+      }
+    };
+    const candidates: string[] = [];
+    const append = (value: string): void => {
+      const decoded = String(value || '').replace(/&amp;/gi, '&').replace(/\\\//g, '/').trim();
+      if (!decoded) return;
+      const resolved = BookUrlResolver.resolve(decoded, baseUrl);
+      if (resolved && !candidates.includes(resolved)) candidates.push(resolved);
+    };
+    append(responseUrl);
+    const tagPattern = /<(?:audio|source|video)\b[^>]*(?:src|data-src|data-url)\s*=\s*["']([^"']+)["']/gi;
+    let tagMatch: RegExpExecArray | null;
+    while ((tagMatch = tagPattern.exec(body || '')) !== null && candidates.length < 512) {
+      append(tagMatch[1] || '');
+    }
+    const urlPattern = /(?:https?:)?\/\/[^\s"'<>\\]+/gi;
+    let urlMatch: RegExpExecArray | null;
+    while ((urlMatch = urlPattern.exec(body || '')) !== null && candidates.length < 1024) {
+      append(urlMatch[0] || '');
+    }
+    for (const candidate of candidates) {
+      if (matches(candidate)) return candidate;
+    }
+    return '';
   }
 
   private stageDataUrlInput(rawRule: string, url: string, fallback: string): string {
