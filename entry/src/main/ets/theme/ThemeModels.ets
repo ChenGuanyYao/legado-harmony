@@ -13,6 +13,7 @@ export class ThemeIds {
   static readonly MOON_CRANE: string = 'moon-crane';
   static readonly SWORD_FROST: string = 'sword-frost';
   static readonly QINGLUAN_WATER: string = 'qingluan-water';
+  static readonly CAT_PIPI: string = 'cat-pipi';
 }
 
 export class ThemeComponentSourceIds {
@@ -55,6 +56,7 @@ export class ThemeBubbleStyles {
   static readonly MOON_HALO: string = 'moon-halo';
   static readonly SWORD_TALISMAN: string = 'sword-talisman';
   static readonly QINGLUAN_JADE: string = 'qingluan-jade';
+  static readonly PIPI_SOFT_PAW: string = 'pipi-soft-paw';
 }
 
 export class ThemeColorTokens {

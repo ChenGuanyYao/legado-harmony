@@ -1376,6 +1376,10 @@ struct BookSourcePage {
           .padding({ left: 12, right: 12 })
           .textAlign(TextAlign.Start)
 
+        this.popupActionItem($r('sys.symbol.checkmark_circle'), '校验所选', this.primaryTextColor(), () => {
+          this.showMoreActionDialog = false;
+          this.checkSelectedSources();
+        })
         this.popupActionItem($r('sys.symbol.checkmark_circle'), '启用发现', this.primaryTextColor(), () => {
           this.showMoreActionDialog = false;
           this.batchSetExploreEnabled(true);
@@ -1409,7 +1413,7 @@ struct BookSourcePage {
       .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
       .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
       .position({ x: '100%', y: '100%' })
-      .translate({ x: -200, y: -(334 + Math.max(this.navBarHeight, 8)) })
+      .translate({ x: -200, y: -(378 + Math.max(this.navBarHeight, 8)) })
     }
     .width('100%')
     .height('100%')
@@ -5019,6 +5023,31 @@ struct BookSourcePage {
       return;
     }
     await this.startCheckSources([source], 'none');
+  }
+
+  async checkSelectedSources(): Promise<void> {
+    if (this.isCheckingSources) {
+      promptAction.showToast({ message: '正在校验中' });
+      return;
+    }
+    const selectedUrls = new Set<string>(this.selectedSourceUrls);
+    if (selectedUrls.size === 0) {
+      promptAction.showToast({ message: '请先选择书源' });
+      return;
+    }
+
+    try {
+      const allSources = await AppDatabase.getInstance().getAllBookSources();
+      const targetSources = allSources.filter((source: BookSource) => selectedUrls.has(source.bookSourceUrl));
+      if (targetSources.length === 0) {
+        promptAction.showToast({ message: '所选书源不存在' });
+        return;
+      }
+      await this.startCheckSources(targetSources, 'none');
+    } catch (e) {
+      console.error('加载所选书源失败:', e);
+      promptAction.showToast({ message: '加载所选书源失败' });
+    }
   }
 
   async startCheckSources(targetSources: BookSource[], action: string = 'none'): Promise<void> {

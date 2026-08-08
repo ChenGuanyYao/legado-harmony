@@ -70,12 +70,13 @@ const fontBootstrap = read('entry/src/main/ets/utils/ReaderFontBootstrap.ets');
 const entryAbility = read('entry/src/main/ets/entryability/EntryAbility.ets');
 const serverIndex = read('server/src/index.ts');
 const serverThemeCatalog = read('server/migrations/011_theme_catalog.sql') + '\n' +
-  read('server/migrations/012_qingluan_water_theme.sql');
+  read('server/migrations/012_qingluan_water_theme.sql') + '\n' +
+  read('server/migrations/013_cat_pipi_theme.sql');
 const pages = JSON.parse(read('entry/src/main/resources/base/profile/main_pages.json'));
 
 const expectedThemes = [
   'classic-blue', 'warm-paper', 'forest-mist', 'ink-wash', 'neon-night', 'sword-frost',
-  'qingluan-water'
+  'qingluan-water', 'cat-pipi'
 ];
 for (const themeId of expectedThemes) {
   assert(models.includes(`'${themeId}'`), `Theme id is missing from ThemeModels: ${themeId}`);
@@ -84,7 +85,7 @@ for (const themeId of expectedThemes) {
 const redeemableThemeIds = [
   'classic-blue', 'warm-paper', 'forest-mist', 'ink-wash', 'neon-night',
   'strawberry-cream', 'crimson-archive', 'plum-tea', 'rose-letter', 'moon-crane', 'sword-frost',
-  'qingluan-water'
+  'qingluan-water', 'cat-pipi'
 ];
 for (const themeId of redeemableThemeIds) {
   assert(serverThemeCatalog.includes(`('${themeId}'`), `Database theme catalog is missing: ${themeId}`);
@@ -98,7 +99,8 @@ assert(registry.includes('static register(theme: ThemePack)'), 'Compiled theme r
 const expectedBackgrounds = [
   'paper-light', 'paper-dark', 'forest-light', 'forest-dark',
   'ink-light', 'ink-dark', 'neon-light', 'neon-dark',
-  'sword-frost-light', 'sword-frost-dark', 'qingluan-water-light', 'qingluan-water-dark'
+  'sword-frost-light', 'sword-frost-dark', 'qingluan-water-light', 'qingluan-water-dark',
+  'cat-pipi-light', 'cat-pipi-dark'
 ];
 for (const assetId of expectedBackgrounds) {
   assert(assets.includes(`'${assetId}'`), `Background asset id is not mapped: ${assetId}`);
@@ -204,7 +206,36 @@ for (const fileName of qingluanWaterSvgs) {
   assert(fs.existsSync(path.join(mediaRoot, fileName)), `Qingluan Water vector asset is missing: ${fileName}`);
 }
 
-const bubbleStyles = ['qq-soft', 'qq-solid', 'capsule', 'paper', 'neon', 'sword-talisman', 'qingluan-jade'];
+const catPipiJpegs = [
+  'theme_startup_cat_pipi.jpg',
+  'theme_cover_cat_pipi_01.jpg', 'theme_cover_cat_pipi_02.jpg',
+  'theme_cover_cat_pipi_03.jpg', 'theme_cover_cat_pipi_04.jpg',
+  'theme_cover_cat_pipi_05.jpg', 'theme_cover_cat_pipi_06.jpg',
+  'theme_folder_art_cat_pipi.jpg'
+];
+for (const fileName of catPipiJpegs) {
+  const filePath = path.join(mediaRoot, fileName);
+  assert(fs.existsSync(filePath), `Cat Pipi artwork is missing: ${fileName}`);
+  const dimensions = jpegDimensions(filePath);
+  const expected = fileName === 'theme_startup_cat_pipi.jpg' ? { width: 841, height: 1870 } :
+    { width: 450, height: 660 };
+  assert(dimensions.width === expected.width && dimensions.height === expected.height,
+    `Invalid Cat Pipi artwork dimensions: ${fileName}`);
+}
+const catPipiSvgs = [
+  'theme_logo_cat_pipi.svg', 'theme_frame_cat_pipi.svg',
+  'reader_bg_cat_pipi_light.svg', 'reader_bg_cat_pipi_dark.svg',
+  'reader_decor_cat_pipi_light.svg', 'reader_decor_cat_pipi_dark.svg',
+  'ic_theme_cat_pipi_bookshelf.svg', 'ic_theme_cat_pipi_explore.svg',
+  'ic_theme_cat_pipi_search.svg', 'ic_theme_cat_pipi_mine.svg',
+  'regex_frame_pipi_soft_paw.svg', 'regex_cap_pipi_soft_paw.svg'
+];
+for (const fileName of catPipiSvgs) {
+  assert(fs.existsSync(path.join(mediaRoot, fileName)), `Cat Pipi vector asset is missing: ${fileName}`);
+}
+
+const bubbleStyles = ['qq-soft', 'qq-solid', 'capsule', 'paper', 'neon', 'sword-talisman', 'qingluan-jade',
+  'pipi-soft-paw'];
 for (const styleId of bubbleStyles) {
   assert(models.includes(`'${styleId}'`), `Bubble style is missing from ThemeModels: ${styleId}`);
   assert(regexModel.includes(`'${styleId}'`), `Bubble resolver/codec is missing style: ${styleId}`);

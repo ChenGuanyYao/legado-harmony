@@ -1171,6 +1171,7 @@ struct ReaderFontSettingsPage {
     this.appendAccessibleBubbleStyle(options, 'moon-halo', '月光描边', revision);
     this.appendAccessibleBubbleStyle(options, 'sword-talisman', '剑符', revision);
     this.appendAccessibleBubbleStyle(options, 'qingluan-jade', '青鸾玉令', revision);
+    this.appendAccessibleBubbleStyle(options, 'pipi-soft-paw', '皮皮软爪', revision);
     return options;
   }
 

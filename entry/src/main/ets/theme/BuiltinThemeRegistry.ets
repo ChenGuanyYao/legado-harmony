@@ -128,6 +128,7 @@ export class BuiltinThemeRegistry {
     themes.push(BuiltinThemeRegistry.moonCrane());
     themes.push(BuiltinThemeRegistry.swordFrost());
     themes.push(BuiltinThemeRegistry.qingluanWater());
+    themes.push(BuiltinThemeRegistry.catPipi());
     themes.push(BuiltinThemeRegistry.classicBlue());
     themes.push(BuiltinThemeRegistry.warmPaper());
     themes.push(BuiltinThemeRegistry.forestMist());
@@ -468,6 +469,32 @@ export class BuiltinThemeRegistry {
     theme.radius = BuiltinThemeRegistry.radius(7, 11, 18, 12, 20, 12);
     theme.readerLayout = BuiltinThemeRegistry.readerLayout(21, 14, 4, 23, 23, 23, 23);
     theme.glass = BuiltinThemeRegistry.glass(18, 14, 86, 72, 54, 24, 16, 4);
+    return theme;
+  }
+
+  private static catPipi(): ThemePack {
+    const theme = BuiltinThemeRegistry.theme(
+      ThemeIds.CAT_PIPI,
+      '小猫皮皮',
+      '卷毛、暖阳和小肉垫，把每一页读成柔软的午后',
+      'sans-serif',
+      'cat-pipi'
+    );
+    theme.light = BuiltinThemeRegistry.variant(
+      BuiltinThemeRegistry.colors('#FFF7ED', '#FFFCF7', '#F2E2D2', '#352B27', '#806E65', '#E8D7C5',
+        '#C46F45', '#587E73', '#D99086'),
+      BuiltinThemeRegistry.reader('#FFF9F0', 'cat-pipi-light', '#3A2E29', '#806E65', 'light'),
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.PIPI_SOFT_PAW, '#D99086', '#4B342E')
+    );
+    theme.dark = BuiltinThemeRegistry.variant(
+      BuiltinThemeRegistry.colors('#171310', '#241C18', '#30251F', '#F7ECE2', '#B7A397', '#49372D',
+        '#E8A06F', '#79A99B', '#E39A8F'),
+      BuiltinThemeRegistry.reader('#191411', 'cat-pipi-dark', '#F2E6DC', '#B7A397', 'dark'),
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.PIPI_SOFT_PAW, '#D98E7E', '#FFF2E8')
+    );
+    theme.radius = BuiltinThemeRegistry.radius(10, 14, 22, 16, 24, 16);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 14, 2, 22, 22, 22, 22);
+    theme.glass = BuiltinThemeRegistry.glass(20, 16, 86, 72, 56, 24, 18, 4);
     return theme;
   }
 

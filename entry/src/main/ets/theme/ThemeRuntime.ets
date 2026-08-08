@@ -699,7 +699,8 @@ export class ThemeRuntime {
       style === ThemeBubbleStyles.STRAWBERRY_RIBBON ||
       style === ThemeBubbleStyles.CRIMSON_STAMP || style === ThemeBubbleStyles.CELADON_SLIP ||
       style === ThemeBubbleStyles.ROSE_FRAME || style === ThemeBubbleStyles.MOON_HALO ||
-      style === ThemeBubbleStyles.SWORD_TALISMAN || style === ThemeBubbleStyles.QINGLUAN_JADE) {
+      style === ThemeBubbleStyles.SWORD_TALISMAN || style === ThemeBubbleStyles.QINGLUAN_JADE ||
+      style === ThemeBubbleStyles.PIPI_SOFT_PAW) {
       return style;
     }
     const fallbackStyle = (fallback || '').trim();
@@ -712,7 +713,8 @@ export class ThemeRuntime {
       fallbackStyle === ThemeBubbleStyles.CRIMSON_STAMP || fallbackStyle === ThemeBubbleStyles.CELADON_SLIP ||
       fallbackStyle === ThemeBubbleStyles.ROSE_FRAME || fallbackStyle === ThemeBubbleStyles.MOON_HALO ||
       fallbackStyle === ThemeBubbleStyles.SWORD_TALISMAN ||
-      fallbackStyle === ThemeBubbleStyles.QINGLUAN_JADE) {
+      fallbackStyle === ThemeBubbleStyles.QINGLUAN_JADE ||
+      fallbackStyle === ThemeBubbleStyles.PIPI_SOFT_PAW) {
       return fallbackStyle;
     }
     return ThemeBubbleStyles.QQ_SOFT;

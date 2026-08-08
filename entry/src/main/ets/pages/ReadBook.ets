@@ -9,6 +9,7 @@ import image from '@ohos.multimedia.image';
 import fs from '@ohos.file.fs';
 import fileUri from '@ohos.file.fileuri';
 import graphicsText from '@ohos.graphics.text';
+import { LengthMetrics } from '@ohos.arkui.node';
 import deviceInfo from '@ohos.deviceInfo';
 import Animator, { AnimatorResult } from '@ohos.animator';
 import { HdsTabs, hdsMaterial } from '@kit.UIDesignKit';
@@ -119,6 +120,8 @@ interface ReaderParagraphMeasureFallback {
 interface ReaderParagraphMetrics {
   heightPx: number;
   lineEnds: number[];
+  lineBottomsPx: number[];
+  lineCount: number;
 }
 
 interface ReaderInlineActionBoundsTask {
@@ -7530,8 +7533,19 @@ struct ReadBookPage {
   }
 
   getReaderTopSafePadding(): number {
-    return this.isReaderComicModeActive() || this.readerExtendToStatusBar ||
-      this.isStackPageTurnAnimation() || this.isSimulationPageTurnAnimation() ? 0 : this.statusBarSafeHeight;
+    if (this.isReaderComicModeActive()) {
+      return 0;
+    }
+    // 扩展模式会隐藏状态栏，正文直接从屏幕顶部起算，不为已隐藏的状态栏保留高度。
+    if (this.readerExtendToStatusBar) {
+      return 0;
+    }
+    // 堆叠/仿真翻页的每一层会单独补偿顶部安全区，避免动画层与静态层坐标不一致。
+    if (this.isStackPageTurnAnimation() || this.isSimulationPageTurnAnimation()) {
+      return 0;
+    }
+    // 普通布局由系统安全区确定顶部起点。只有背景图要求根容器覆盖状态栏时才手动补偿。
+    return this.hasBackgroundImage() ? this.statusBarSafeHeight : 0;
   }
 
   getReaderPageContentTopPadding(): number {
@@ -7701,6 +7715,21 @@ struct ReadBookPage {
     return this.readerFontSize + Math.max(0, this.readerLineHeight);
   }
 
+  getReaderPageLineSpacing(pageLineHeight: number = this.getEffectiveReaderLineHeight()): number {
+    return Math.max(0, pageLineHeight - this.readerFontSize);
+  }
+
+  getReaderParagraphBoundarySpacing(pageLineHeight: number = this.getEffectiveReaderLineHeight()): number {
+    return this.getReaderPageLineSpacing(pageLineHeight) + Math.max(0, this.readerParagraphSpacing);
+  }
+
+  getMeasuredReaderParagraphBoundarySpacingPx(): number {
+    const boundaryPx = this.toMeasurePx(this.getReaderParagraphBoundarySpacing());
+    // Separate Text/Blank nodes are rounded independently by ArkUI. Model the average half-vp
+    // boundary rounding only when paragraph spacing actually splits ordinary paragraphs into nodes.
+    return boundaryPx + (this.readerParagraphSpacing > 0 ? this.toMeasurePx(0.5) : 0);
+  }
+
   getReaderAdaptivePageLineHeight(text: string, chapterIndex: number, pageIndex: number,
     pageStart: number = -1, documentSource: string = ''): number {
     const baseLineHeight = this.getEffectiveReaderLineHeight();
@@ -7726,35 +7755,28 @@ struct ReadBookPage {
     if (cached !== undefined) return cached;
 
     const availableHeightPx = this.toMeasurePx(availableHeight);
-    const baseLineHeightPx = this.toMeasurePx(baseLineHeight);
     const paragraphs = this.getReaderTextParagraphs(text);
     let measuredHeightPx = 0;
-    let adaptableLineCount = 0;
-    let hasSpecialText = false;
+    let adaptableInternalGapCount = 0;
     for (const paragraph of paragraphs) {
-      const paragraphHeightPx = this.measureReaderSingleParagraphHeight(paragraph.text, availableWidth,
+      const metrics = this.readerParagraphMetrics(paragraph.text, availableWidth,
         chapterIndex, source, resolvedStart + paragraph.start);
-      measuredHeightPx += paragraphHeightPx;
-      if (ReaderActionMarker.parse(paragraph.text) || LocalBookService.isEpubImageMarker(paragraph.text)) {
-        hasSpecialText = true;
-      } else {
-        adaptableLineCount += Math.max(1, Math.round(paragraphHeightPx / Math.max(1, baseLineHeightPx)));
-        hasSpecialText = hasSpecialText || this.shouldUseTitleStyle(paragraph.text, chapterIndex) ||
-          this.hasInlineReaderSourceAction(paragraph.text);
+      measuredHeightPx += metrics.heightPx;
+      if (!ReaderActionMarker.parse(paragraph.text) && !LocalBookService.isEpubImageMarker(paragraph.text)) {
+        const lineCount = Math.max(1, metrics.lineCount);
+        adaptableInternalGapCount += Math.max(0, lineCount - 1);
       }
     }
-    for (const group of this.getReaderTextParagraphGroups(text)) {
-      if (!group.paragraphs[group.paragraphs.length - 1].isLast) {
-        measuredHeightPx += this.toMeasurePx(this.readerParagraphSpacing);
-      }
+    if (paragraphs.length > 1) {
+      measuredHeightPx += this.getMeasuredReaderParagraphBoundarySpacingPx() * (paragraphs.length - 1);
     }
     const remainingHeightPx = Math.max(0, availableHeightPx - measuredHeightPx);
     let adaptiveLineHeight = baseLineHeight;
-    if (adaptableLineCount >= 3 && remainingHeightPx > 0.5) {
-      const normalMaxExtraLineHeight = Math.max(2, Math.min(6, baseLineHeight * 0.16));
-      const maxExtraLineHeight = hasSpecialText ? Math.min(3, normalMaxExtraLineHeight) : normalMaxExtraLineHeight;
-      const extraLineHeight = Math.min(maxExtraLineHeight, px2vp(remainingHeightPx / adaptableLineCount));
-      adaptiveLineHeight = baseLineHeight + Math.max(0, extraLineHeight);
+    // All spacing is placed strictly between text lines. Internal text gaps and paragraph boundaries
+    // are the only adjustable positions; fixed action/image rows retain their measured height.
+    const adaptableGapCount = adaptableInternalGapCount + Math.max(0, paragraphs.length - 1);
+    if (adaptableGapCount > 0 && remainingHeightPx > 0.5) {
+      adaptiveLineHeight = baseLineHeight + Math.max(0, px2vp(remainingHeightPx / adaptableGapCount));
     }
     this.readerAdaptiveLineHeightCache.set(cacheKey, adaptiveLineHeight);
     while (this.readerAdaptiveLineHeightCache.size > 96) {
@@ -7887,21 +7909,11 @@ struct ReadBookPage {
     this.applyReaderScreenOrientation(ReaderSettingsStore.SCREEN_ORIENTATION_SYSTEM);
   }
 
-  syncReaderPageHeightForContentTopPadding(previousTopPadding: number =
-    this.readerPageContentTopPaddingSnapshot): void {
+  syncReaderPageHeightForContentTopPadding(): void {
     const nextTopPadding = this.getReaderPageContentTopPadding();
-    if (this.pageViewHeight <= 0 || previousTopPadding < 0) {
-      this.readerPageContentTopPaddingSnapshot = nextTopPadding;
-      return;
-    }
-    if (Math.abs(previousTopPadding - nextTopPadding) >= 0.5) {
-      // pageViewHeight is the text viewport, while the curl/background surface also contains the explicit
-      // status-bar inset. Rebalance both values in the same UI task so toggling the option can never expose
-      // one frame whose wallpaper surface and text surface have different total heights.
-      const fullSurfaceHeight = this.pageViewHeight + previousTopPadding;
-      this.pageViewHeight = Math.max(1, fullSurfaceHeight - nextTopPadding);
-      this.readerCommentPageAreaHeight = this.pageViewHeight;
-    }
+    // The system-bar switch itself changes the reader area's measured height. Do not pre-add/subtract the
+    // same inset here: onAreaChange will publish the new text viewport, and applying both adjustments makes
+    // extended mode exactly one status-bar too tall (causing the last paragraph to be clipped).
     this.readerPageContentTopPaddingSnapshot = nextTopPadding;
   }
 
@@ -11172,10 +11184,9 @@ struct ReadBookPage {
   setReaderExtendToStatusBar(enabled: boolean): void {
     if (this.readerExtendToStatusBar === enabled) return;
     const readingOffset = this.getCurrentPageStartOffset();
-    const previousTopPadding = this.getReaderPageContentTopPadding();
     this.readerExtendLayoutReadingOffset = readingOffset;
     this.readerExtendToStatusBar = enabled;
-    this.syncReaderPageHeightForContentTopPadding(previousTopPadding);
+    this.syncReaderPageHeightForContentTopPadding();
     // StorageLink watchers can be delivered in a later UI task. Calling the coalesced refresh here
     // makes the switch responsive, while a subsequent watch notification only restarts the same timer.
     this.scheduleReaderExtendLayoutRefresh(readingOffset);
@@ -12694,7 +12705,7 @@ struct ReadBookPage {
     availableHeight: number, chapterIndex: number = this.currentChapterIndex): number {
     const layoutText = source.substring(start, Math.max(start + 1, windowEnd));
     const paragraphs = this.getReaderTextParagraphs(layoutText);
-    const spacing = this.toMeasurePx(this.readerParagraphSpacing);
+    const spacing = this.getMeasuredReaderParagraphBoundarySpacingPx();
     let usedHeight = 0;
     let best = start;
     for (let index = 0; index < paragraphs.length; index++) {
@@ -12763,10 +12774,10 @@ struct ReadBookPage {
     chapterIndex: number, documentSource: string, absoluteStart: number): number {
     if (!text || availableHeight <= 0) return -1;
     const metrics = this.readerParagraphMetrics(text, availableWidth, chapterIndex, documentSource, absoluteStart);
-    const lineHeightPx = this.toMeasurePx(this.getEffectiveReaderLineHeight());
     let end = -1;
     for (let index = 0; index < metrics.lineEnds.length; index++) {
-      if ((index + 1) * lineHeightPx > availableHeight) break;
+      const lineBottom = metrics.lineBottomsPx[index] || metrics.heightPx;
+      if (lineBottom > availableHeight) break;
       end = Math.max(end, metrics.lineEnds[index]);
     }
     return end;
@@ -12846,11 +12857,10 @@ struct ReadBookPage {
       }
 
       const safeHeight = Math.max(1, availableHeight - 1);
-      const lineHeightPx = this.toMeasurePx(this.getEffectiveReaderLineHeight());
       let end = -1;
       for (let i = 0; i < metrics.length; i++) {
         const metric = metrics[i];
-        if ((i + 1) * lineHeightPx > safeHeight) {
+        if (metric.baseline + metric.descent > safeHeight) {
           break;
         }
         end = Math.max(end, metric.endIndex);
@@ -12881,8 +12891,9 @@ struct ReadBookPage {
   }
 
   getReaderPaginationRenderGuardHeight(): number {
-    // 页边距和普通模式下的页脚高度已经精确扣除，不再叠加额外安全距离。
-    return 0;
+    // 这不是安全区预留。ArkUI 会把多个 Text/Blank 的 vp 高度分别取整，长页累计约 1–2 vp；
+    // 在分页测量中抵消这部分取整误差，避免最后一行被屏幕边缘裁掉。
+    return 2;
   }
 
   getReaderTextParagraphs(text: string): ReaderTextParagraph[] {
@@ -12953,7 +12964,7 @@ struct ReadBookPage {
         totalHeight += this.measureReaderSingleParagraphHeight(paragraph.text, availableWidth, chapterIndex,
           documentSource, absoluteStart + paragraph.start);
         if (!paragraph.isLast) {
-          totalHeight += this.toMeasurePx(this.readerParagraphSpacing);
+          totalHeight += this.getMeasuredReaderParagraphBoundarySpacingPx();
         }
       }
       return totalHeight;
@@ -12970,7 +12981,7 @@ struct ReadBookPage {
   readerParagraphMetrics(text: string, availableWidth: number,
     chapterIndex: number = this.currentChapterIndex, documentSource: string = text,
     absoluteStart: number = 0): ReaderParagraphMetrics {
-    if (!text) return { heightPx: 0, lineEnds: [] };
+    if (!text) return { heightPx: 0, lineEnds: [], lineBottomsPx: [], lineCount: 0 };
     const key = `${chapterIndex}_${absoluteStart}_${Math.round(availableWidth * 10)}_` +
       `${this.readerTypographyCacheIdentity()}_${this.buildTextSliceKey(documentSource)}_` +
       `${text.length}_${this.hashText(text)}`;
@@ -12981,7 +12992,9 @@ struct ReadBookPage {
     if (ReaderActionMarker.parse(text)) {
       result = {
         heightPx: this.toMeasurePx(Math.max(this.getEffectiveReaderLineHeight(), 32)),
-        lineEnds: [text.length]
+        lineEnds: [text.length],
+        lineBottomsPx: [this.toMeasurePx(Math.max(this.getEffectiveReaderLineHeight(), 32))],
+        lineCount: 1
       };
       this.cacheReaderParagraphMetrics(key, result);
       return result;
@@ -12993,10 +13006,26 @@ struct ReadBookPage {
       const nativeMetrics = paragraph.getLineMetrics();
       if (nativeMetrics.length > 0) {
         const lineEnds: number[] = [];
-        for (const metric of nativeMetrics) lineEnds.push(metric.endIndex);
-        const height = this.toMeasurePx(nativeMetrics.length * this.getEffectiveReaderLineHeight());
+        const lineBottomsPx: number[] = [];
+        const renderedLineBoxPx = this.getRenderedReaderParagraphLineBoxPx(text, chapterIndex,
+          documentSource, absoluteStart);
+        const renderedLineSpacingPx = this.toMeasurePx(Math.max(0, this.readerLineHeight));
+        for (let index = 0; index < nativeMetrics.length; index++) {
+          const metric = nativeMetrics[index];
+          lineEnds.push(metric.endIndex);
+          lineBottomsPx.push((index + 1) * renderedLineBoxPx + index * renderedLineSpacingPx);
+        }
+        // graphics.text exposes the exact wrapping offsets, but custom-font ascent/descent can differ
+        // from ArkUI Text's fp-sized row box. Reconstruct height from the same fp row and vp spacing
+        // units used by the renderer, retaining native offsets only for line breaking.
+        const height = lineBottomsPx[lineBottomsPx.length - 1];
         if (height > 0) {
-          result = { heightPx: height, lineEnds: lineEnds };
+          result = {
+            heightPx: height,
+            lineEnds: lineEnds,
+            lineBottomsPx: lineBottomsPx,
+            lineCount: nativeMetrics.length
+          };
           this.cacheReaderParagraphMetrics(key, result);
           return result;
         }
@@ -13019,7 +13048,13 @@ struct ReadBookPage {
       const size = this.getUIContext().getMeasureUtils().measureTextSize(options);
       const height = Number(size.height);
       if (height > 0) {
-        result = { heightPx: height, lineEnds: [] };
+        const fallbackLineHeightPx = this.toMeasurePx(this.getEffectiveReaderLineHeight());
+        result = {
+          heightPx: height,
+          lineEnds: [],
+          lineBottomsPx: [],
+          lineCount: Math.max(1, Math.round(height / Math.max(1, fallbackLineHeightPx)))
+        };
         this.cacheReaderParagraphMetrics(key, result);
         return result;
       }
@@ -13028,7 +13063,12 @@ struct ReadBookPage {
     }
     const charsPerLine = Math.max(8, Math.floor(availableWidth / Math.max(1, this.readerFontSize * 1.08)));
     const lines = Math.max(1, Math.ceil(measuredText.length / charsPerLine));
-    result = { heightPx: this.toMeasurePx(lines * this.getEffectiveReaderLineHeight()), lineEnds: [] };
+    result = {
+      heightPx: this.toMeasurePx(lines * this.getEffectiveReaderLineHeight()),
+      lineEnds: [],
+      lineBottomsPx: [],
+      lineCount: lines
+    };
     this.cacheReaderParagraphMetrics(key, result);
     return result;
   }
@@ -13078,15 +13118,16 @@ struct ReadBookPage {
   }
 
   buildReaderMeasureTextStyle(fontSize: number, fontFamily: string): graphicsText.TextStyle {
-    const lineHeightPx = this.toMeasurePx(this.getEffectiveReaderLineHeight());
     return {
-      fontSize: this.toMeasurePx(fontSize),
+      // ArkUI Text.fontSize(number) is expressed in fp and follows the system font scale. Widths,
+      // line spacing and margins are vp. Keeping those conversions separate is essential on devices
+      // whose font scale is not 1.0; vp2px(fontSize) otherwise overestimates every page substantially.
+      fontSize: this.toMeasureFontPx(fontSize),
       fontFamilies: [fontFamily || this.getBodyReaderFontFamily()],
       fontWeight: graphicsText.FontWeight.W400,
-      lineHeightMinimum: lineHeightPx,
-      lineHeightMaximum: lineHeightPx,
-      halfLeading: true,
-      heightOnly: false,
+      halfLeading: false,
+      heightOnly: true,
+      heightScale: 1,
       locale: 'zh-Hans'
     };
   }
@@ -13100,10 +13141,10 @@ struct ReadBookPage {
       align: graphicsText.TextAlign.JUSTIFY,
       textDirection: graphicsText.TextDirection.LTR,
       wordBreak: graphicsText.WordBreak.BREAK_WORD,
-      // Reader Text uses BREAK_WORD and does not hyphenate. GREEDY matches that rendering model and
-      // avoids the substantially more expensive paragraph-wide optimization of HIGH_QUALITY.
+      // Keep native page measurement on the same bounded breaker as the ArkUI Text nodes.
       breakStrategy: graphicsText.BreakStrategy.GREEDY,
       trailingSpaceOptimized: true,
+      lineSpacing: this.toMeasurePx(Math.max(0, this.readerLineHeight)),
       includeFontPadding: false
     };
     const builder = new graphicsText.ParagraphBuilder(paragraphStyle, graphicsText.FontCollection.getGlobalInstance());
@@ -13256,6 +13297,40 @@ struct ReadBookPage {
       return Math.max(1, vp2px(value));
     } catch (_) {
       return Math.max(1, value);
+    }
+  }
+
+  getRenderedReaderParagraphLineBoxPx(text: string, chapterIndex: number,
+    documentSource: string = text, absoluteStart: number = 0): number {
+    // ArkUI's actual glyph row is slightly taller than the configured fp size even with font padding
+    // disabled. The factor matches Text's tight row box while avoiding custom font ascent inflation.
+    let lineBoxPx = this.toMeasureFontPx(this.readerFontSize) * 1.09;
+    if (this.shouldUseTitleStyle(text, chapterIndex)) {
+      lineBoxPx = Math.max(lineBoxPx, this.toMeasureFontPx(this.readerTitleFontSize) * 1.09);
+    }
+    if (this.readerRegexFontEnabled) {
+      const slices = this.getRegexTextSlicesForDocumentRange(text, documentSource, absoluteStart);
+      for (const slice of slices) {
+        if (!slice.highlighted) continue;
+        lineBoxPx = Math.max(lineBoxPx, this.toMeasureFontPx(this.getRegexSliceFontSize(slice)) * 1.09);
+        if (this.shouldUseFullThemeRegexDecoration(slice)) {
+          lineBoxPx = Math.max(lineBoxPx, this.toMeasurePx(this.getRegexBubbleCapSize(slice)));
+        }
+      }
+    }
+    const inlineAction = this.findMeasuredReaderInlineAction(text, documentSource, absoluteStart);
+    if (inlineAction) {
+      lineBoxPx = Math.max(lineBoxPx,
+        this.toMeasureFontPx(this.readerInlineSourceActionFontSize(inlineAction.marker)) * 1.09);
+    }
+    return Math.max(1, lineBoxPx);
+  }
+
+  toMeasureFontPx(value: number): number {
+    try {
+      return Math.max(1, fp2px(value));
+    } catch (_) {
+      return this.toMeasurePx(value);
     }
   }
 
@@ -14173,6 +14248,9 @@ struct ReadBookPage {
         });
       } else {
         mergeableParagraphs.push(paragraph);
+        // A visible paragraph spacing value applies to every paragraph boundary. Keep those paragraphs
+        // as independent Text nodes so the gap is rendered where it belongs instead of once at page end.
+        if (this.readerParagraphSpacing > 0) flushMergeableParagraphs();
       }
     }
     flushMergeableParagraphs();
@@ -14186,12 +14264,12 @@ struct ReadBookPage {
     if (group.mergeable) {
       this.styledMergedReaderParagraphs(group.paragraphs, chapterIndex, ttsHighlightActive, ttsRenderVersion,
         contentRenderVersion, `${pageRenderIdentity}_${group.key}`, pageStart, documentSource, pageLineHeight)
-      this.readerParagraphGap(group.paragraphs[group.paragraphs.length - 1])
+      this.readerParagraphGap(group.paragraphs[group.paragraphs.length - 1], pageLineHeight)
     } else {
       ForEach(group.paragraphs, (paragraph: ReaderTextParagraph) => {
         this.styledReaderParagraph(paragraph, chapterIndex, ttsHighlightActive, ttsRenderVersion,
           contentRenderVersion, pageRenderIdentity, pageStart, documentSource, pageLineHeight)
-        this.readerParagraphGap(paragraph)
+        this.readerParagraphGap(paragraph, pageLineHeight)
       }, (paragraph: ReaderTextParagraph) => `${pageRenderIdentity}_${paragraph.key}`)
     }
   }
@@ -14282,11 +14360,13 @@ struct ReadBookPage {
         }
       }, (paragraph: ReaderTextParagraph) => `merged_${pageRenderIdentity}_${paragraph.key}`)
     }
-    .lineHeight(pageLineHeight)
+    .lineSpacing(LengthMetrics.vp(this.getReaderPageLineSpacing(pageLineHeight)), { onlyBetweenLines: true })
+    .halfLeading(false)
+    .includeFontPadding(false)
     .fontColor(this.getTextColor())
     .textAlign(TextAlign.JUSTIFY)
     .wordBreak(WordBreak.BREAK_WORD)
-    .lineBreakStrategy(LineBreakStrategy.HIGH_QUALITY)
+    .lineBreakStrategy(LineBreakStrategy.GREEDY)
     .copyOption(CopyOptions.LocalDevice)
     .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
     .width('100%')
@@ -14407,9 +14487,11 @@ struct ReadBookPage {
           `title_body_${this.effectiveReaderPageRenderIdentity(pageRenderIdentity, chapterIndex, contentRenderVersion,
             ttsRenderVersion, paragraph.text)}_${paragraph.key}_${slice.key}`)
       }
-      .lineHeight(pageLineHeight)
+      .lineSpacing(LengthMetrics.vp(this.getReaderPageLineSpacing(pageLineHeight)), { onlyBetweenLines: true })
+      .halfLeading(false)
+      .includeFontPadding(false)
       .fontColor(this.getTextColor())
-      .lineBreakStrategy(LineBreakStrategy.HIGH_QUALITY)
+      .lineBreakStrategy(LineBreakStrategy.GREEDY)
       .copyOption(CopyOptions.LocalDevice)
       .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
       .width('100%')
@@ -14444,11 +14526,13 @@ struct ReadBookPage {
           `${this.effectiveReaderPageRenderIdentity(pageRenderIdentity, chapterIndex, contentRenderVersion,
             ttsRenderVersion, paragraph.text)}_${paragraph.key}_${slice.key}`)
       }
-        .lineHeight(pageLineHeight)
+        .lineSpacing(LengthMetrics.vp(this.getReaderPageLineSpacing(pageLineHeight)), { onlyBetweenLines: true })
+        .halfLeading(false)
+        .includeFontPadding(false)
         .fontColor(this.getTextColor())
         .textAlign(TextAlign.JUSTIFY)
         .wordBreak(WordBreak.BREAK_WORD)
-        .lineBreakStrategy(LineBreakStrategy.HIGH_QUALITY)
+        .lineBreakStrategy(LineBreakStrategy.GREEDY)
         .copyOption(CopyOptions.LocalDevice)
         .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
         .width('100%')
@@ -14579,11 +14663,13 @@ struct ReadBookPage {
           }
         })
     }
-    .lineHeight(pageLineHeight)
+    .lineSpacing(LengthMetrics.vp(this.getReaderPageLineSpacing(pageLineHeight)), { onlyBetweenLines: true })
+    .halfLeading(false)
+    .includeFontPadding(false)
     .fontColor(this.getTextColor())
     .textAlign(TextAlign.JUSTIFY)
     .wordBreak(WordBreak.BREAK_WORD)
-    .lineBreakStrategy(LineBreakStrategy.HIGH_QUALITY)
+    .lineBreakStrategy(LineBreakStrategy.GREEDY)
     .copyOption(CopyOptions.LocalDevice)
     .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
     .width('100%')
@@ -15294,10 +15380,11 @@ struct ReadBookPage {
   }
 
   @Builder
-  readerParagraphGap(paragraph: ReaderTextParagraph) {
-    if (!paragraph.isLast && this.readerParagraphSpacing > 0) {
+  readerParagraphGap(paragraph: ReaderTextParagraph,
+    pageLineHeight: number = this.getEffectiveReaderLineHeight()) {
+    if (!paragraph.isLast) {
       Blank()
-        .height(this.readerParagraphSpacing)
+        .height(this.getReaderParagraphBoundarySpacing(pageLineHeight))
         .width('100%')
     }
   }
@@ -15316,11 +15403,13 @@ struct ReadBookPage {
         `${this.effectiveReaderPageRenderIdentity(pageRenderIdentity, this.currentChapterIndex, contentRenderVersion,
           ttsRenderVersion, paragraph.text)}_${paragraph.key}_${slice.key}`)
     }
-    .lineHeight(pageLineHeight)
+    .lineSpacing(LengthMetrics.vp(this.getReaderPageLineSpacing(pageLineHeight)), { onlyBetweenLines: true })
+    .halfLeading(false)
+    .includeFontPadding(false)
     .fontColor(this.getTextColor())
     .textAlign(TextAlign.JUSTIFY)
     .wordBreak(WordBreak.BREAK_WORD)
-    .lineBreakStrategy(LineBreakStrategy.HIGH_QUALITY)
+    .lineBreakStrategy(LineBreakStrategy.GREEDY)
     .copyOption(CopyOptions.LocalDevice)
     .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
     .width('100%')
@@ -15512,11 +15601,13 @@ struct ReadBookPage {
         `framed_${this.effectiveReaderPageRenderIdentity(pageRenderIdentity, this.currentChapterIndex,
           contentRenderVersion, ttsRenderVersion, paragraph.text)}_${paragraph.key}_${slice.key}`)
     }
-    .lineHeight(pageLineHeight)
+    .lineSpacing(LengthMetrics.vp(this.getReaderPageLineSpacing(pageLineHeight)), { onlyBetweenLines: true })
+    .halfLeading(false)
+    .includeFontPadding(false)
     .fontColor(this.getTextColor())
     .textAlign(TextAlign.JUSTIFY)
     .wordBreak(WordBreak.BREAK_WORD)
-    .lineBreakStrategy(LineBreakStrategy.HIGH_QUALITY)
+    .lineBreakStrategy(LineBreakStrategy.GREEDY)
     .copyOption(CopyOptions.LocalDevice)
     .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
     .width('100%')
@@ -15630,6 +15721,7 @@ struct ReadBookPage {
     if (styleId === 'crimson-stamp' || styleId === 'warm-scroll') return 15;
     if (styleId === 'sword-talisman') return 16;
     if (styleId === 'qingluan-jade') return 18;
+    if (styleId === 'pipi-soft-paw') return 18;
     return 14;
   }
 
@@ -15642,6 +15734,7 @@ struct ReadBookPage {
     if (styleId === 'strawberry-ribbon' || styleId === 'moon-halo') return 6;
     if (styleId === 'sword-talisman') return 6;
     if (styleId === 'qingluan-jade') return 7;
+    if (styleId === 'pipi-soft-paw') return 7;
     return 5;
   }
 
@@ -15659,6 +15752,7 @@ struct ReadBookPage {
     if (styleId === 'moon-halo') return this.isReaderThemeDark() ? '#180A1627' : '#12DCEBFF';
     if (styleId === 'sword-talisman') return this.isReaderThemeDark() ? '#1822302B' : '#16476963';
     if (styleId === 'qingluan-jade') return this.isReaderThemeDark() ? '#1A263735' : '#18E3EBE7';
+    if (styleId === 'pipi-soft-paw') return this.isReaderThemeDark() ? '#1A332721' : '#18FFF4E8';
     return '#00000000';
   }
 
@@ -15676,6 +15770,7 @@ struct ReadBookPage {
     if (styleId === 'moon-halo') return '#9678B9F3';
     if (styleId === 'sword-talisman') return '#9A6E817B';
     if (styleId === 'qingluan-jade') return '#A2B4935C';
+    if (styleId === 'pipi-soft-paw') return this.isReaderThemeDark() ? '#9AE8A06F' : '#9AC46F45';
     return '#00000000';
   }
 
@@ -15698,6 +15793,7 @@ struct ReadBookPage {
     if (styleId === 'rose-frame' || styleId === 'moon-halo') return 10;
     if (styleId === 'sword-talisman') return 4;
     if (styleId === 'qingluan-jade') return 12;
+    if (styleId === 'pipi-soft-paw') return 16;
     if (styleId === 'neon-pulse') return 5;
     return 1;
   }
@@ -15709,6 +15805,7 @@ struct ReadBookPage {
     if (styleId === 'strawberry-ribbon' || styleId === 'crimson-stamp') return 40;
     if (styleId === 'sword-talisman') return 38;
     if (styleId === 'qingluan-jade') return 44;
+    if (styleId === 'pipi-soft-paw') return 44;
     return 34;
   }
 
@@ -15718,6 +15815,7 @@ struct ReadBookPage {
     if (styleId === 'celadon-slip') return 24;
     if (styleId === 'sword-talisman') return 24;
     if (styleId === 'qingluan-jade') return 28;
+    if (styleId === 'pipi-soft-paw') return 28;
     return 22;
   }
 
@@ -16514,7 +16612,7 @@ struct ReadBookPage {
   buildReaderPaginationCacheKey(chapterIndex: number, source: string): string {
     // Bump whenever page-boundary semantics change. Reusing offsets produced before action-marker-aware
     // pagination can make a valid comment marker appear as raw text even though the chapter body is unchanged.
-    return `reader_page_v24_${chapterIndex}_${this.pageViewWidth}_${this.getReaderPaginationViewportHeight()}_` +
+    return `reader_page_v32_${chapterIndex}_${this.pageViewWidth}_${this.getReaderPaginationViewportHeight()}_` +
       `${this.readerExtendToStatusBar}_${this.isLandscapeDoublePageActive()}_${this.readerTypographyCacheIdentity()}_` +
       `${source.length}_${this.hashText(source)}`;
   }

@@ -153,7 +153,8 @@ export class ReaderRegexFontCodec {
       value === 'paper' || value === 'neon' || value === 'classic-glass' || value === 'warm-scroll' ||
       value === 'forest-dew' || value === 'ink-brush' || value === 'neon-pulse' || value === 'strawberry-ribbon' ||
       value === 'crimson-stamp' || value === 'celadon-slip' || value === 'rose-frame' ||
-      value === 'moon-halo' || value === 'sword-talisman' || value === 'qingluan-jade') {
+      value === 'moon-halo' || value === 'sword-talisman' || value === 'qingluan-jade' ||
+      value === 'pipi-soft-paw') {
       return value;
     }
     // Compatibility with early theme drafts.
@@ -487,6 +488,19 @@ export class ReaderRegexBubbleStyleResolver {
       ReaderRegexBubbleStyleResolver.addShadow(result, 1.4,
         ReaderRegexBubbleStyleResolver.withAlpha(base, 104), 0.5, 1);
       ReaderRegexBubbleStyleResolver.addShadow(result, 0.5, '#88B4935C', -0.5, 0.5);
+      return;
+    }
+    if (result.bubbleStyleId === 'pipi-soft-paw') {
+      const cream = context.darkMode ? '#332721' : '#FFF4E8';
+      result.backgroundColor = ReaderRegexBubbleStyleResolver.mix(cream, base,
+        context.darkMode ? 0.22 : 0.16);
+      result.textColor = context.darkMode ? '#FFF2E8' : '#4B342E';
+      ReaderRegexBubbleStyleResolver.setUniformRadius(result, 16);
+      ReaderRegexBubbleStyleResolver.addShadow(result, 0.6,
+        context.darkMode ? '#66563D34' : '#B8FFFFFF', 0, -0.5);
+      ReaderRegexBubbleStyleResolver.addShadow(result, 1.6,
+        ReaderRegexBubbleStyleResolver.withAlpha(base, 96), 0.5, 1.2);
+      ReaderRegexBubbleStyleResolver.addShadow(result, 0.5, '#88773A2C', -0.5, 0.5);
       return;
     }
     if (result.bubbleStyleId === 'qq-solid') {

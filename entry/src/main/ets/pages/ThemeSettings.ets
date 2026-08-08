@@ -1519,6 +1519,7 @@ struct ThemeSettingsPage {
     if (styleId === 'moon-halo') return '月光描边';
     if (styleId === 'sword-talisman') return '剑符';
     if (styleId === 'qingluan-jade') return '青鸾玉令';
+    if (styleId === 'pipi-soft-paw') return '皮皮软爪';
     return '强调气泡';
   }
 

@@ -33,6 +33,7 @@ export class ThemeAccessPolicy {
     if (normalized === 'moon-halo') return ThemeIds.MOON_CRANE;
     if (normalized === 'sword-talisman') return ThemeIds.SWORD_FROST;
     if (normalized === 'qingluan-jade') return ThemeIds.QINGLUAN_WATER;
+    if (normalized === 'pipi-soft-paw') return ThemeIds.CAT_PIPI;
     return '';
   }
 
