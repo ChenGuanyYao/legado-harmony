@@ -15097,7 +15097,6 @@ struct ReadBookPage {
     const source = this.currentReaderSource();
     if (action && source) {
       action.url = ReaderInteractionProviderRegistry.expandAction(source, action.url);
-      action.url = this.normalizeTongrenCommentUrl(source, action);
     }
     if (!action || !/^https?:\/\//i.test(action.url)) {
       promptAction.showToast({ message: '书源操作地址无效' });
@@ -15131,31 +15130,9 @@ struct ReadBookPage {
     });
   }
 
-  normalizeTongrenCommentUrl(source: BookSource, action: ReaderActionData): string {
-    const identity = `${source.bookSourceName || ''}\n${source.bookSourceUrl || ''}`;
-    const url = (action.url || '').trim();
-    if (!identity.includes('同人小说') || this.isQidianCommentApiUrl(url) ||
-      !/(?:\/comments\?|\/paragraph-comment\?|\/qidian_full_api\.php\?)/i.test(url)) {
-      return url;
-    }
-    const bookId = this.readerCommentQueryValue(url, 'bookId') || this.readerCommentQueryValue(url, 'book_id');
-    const chapterId = this.readerCommentQueryValue(url, 'chapterId') ||
-      this.readerCommentQueryValue(url, 'chapter_id');
-    const paragraphId = this.readerCommentQueryValue(url, 'paragraphId') ||
-      this.readerCommentQueryValue(url, 'paragraph_id');
-    const metadata = `${action.label || ''}\n${action.title || ''}`;
-    const apiAction = /本章说|本章讨论|章评/.test(metadata) ? 'chapter_comments' : 'paragraph_comments';
-    if (!bookId || !chapterId || (apiAction === 'paragraph_comments' && !paragraphId)) return url;
-    return `https://pl.001122.top/api/qidian_full_api.php?action=${apiAction}` +
-      `&book_id=${encodeURIComponent(bookId)}&chapter_id=${encodeURIComponent(chapterId)}` +
-      `${apiAction === 'paragraph_comments' ? `&paragraph_id=${encodeURIComponent(paragraphId)}` : ''}` +
-      '&page=1&page_size=20&legado_reader_comment=1';
-  }
-
   isReaderCommentAction(action: ReaderActionData): boolean {
     const metadata = `${action.label || ''}\n${action.title || ''}`;
     if (/段评|章评|神评论|评论|本章说/.test(metadata)) return true;
-    if (this.isQidianCommentApiUrl(action.url || '')) return true;
     return /\/(?:get_review|get_para_review|para_idea)(?:[/?#]|$)|[?&](?:review|comment)=/i.test(action.url || '');
   }
 
@@ -15175,12 +15152,7 @@ struct ReadBookPage {
     this.readerCommentPanelHeightRatio = 0.6;
     this.readerCommentPanelDragStartRatio = 0.6;
     const providerPanel = ReaderInteractionProviderRegistry.buildPanel(normalizedUrl);
-    if (this.isQidianCommentApiUrl(normalizedUrl)) {
-      this.readerCommentPanelHtmlLoaded = false;
-      this.readerCommentPanelHtml = this.buildQidianCommentPanelHtml(normalizedUrl);
-      this.readerCommentPanelBaseUrl = 'https://pl.001122.top/';
-      this.readerCommentPanelUrl = 'about:blank';
-    } else if (providerPanel) {
+    if (providerPanel) {
       this.readerCommentPanelHtmlLoaded = false;
       this.readerCommentPanelHtml = providerPanel.html;
       this.readerCommentPanelBaseUrl = providerPanel.baseUrl;
@@ -15205,7 +15177,7 @@ struct ReadBookPage {
     }
     this.readerCommentPanelHtmlLoaded = true;
     try {
-      const baseUrl = this.readerCommentPanelBaseUrl || 'https://pl.001122.top/';
+      const baseUrl = this.readerCommentPanelBaseUrl || 'about:blank';
       this.readerCommentPanelController.loadData(this.readerCommentPanelHtml, 'text/html', 'UTF-8', baseUrl, baseUrl);
       // Some ArkWeb versions do not emit a second onPageEnd for loadData. The embedded page owns its
       // network loading state, so reveal it after the document has been handed to the controller.
@@ -15275,69 +15247,6 @@ struct ReadBookPage {
     } catch (error) {
       console.warn('同步评论面板深浅色模式失败:', error);
     }
-  }
-
-  isQidianCommentApiUrl(url: string): boolean {
-    if (!/^https?:\/\/pl\.001122\.top\/api\/qidian_full_api\.php\?/i.test(url || '')) return false;
-    const action = this.readerCommentQueryValue(url, 'action');
-    return /^(?:paragraph_(?:comments|image_comments|audio_comments)|chapter_comments)$/i.test(action);
-  }
-
-  readerCommentQueryValue(url: string, key: string): string {
-    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const match = new RegExp(`[?&]${escaped}=([^&#]*)`, 'i').exec(url || '');
-    if (!match || !match[1]) return '';
-    try {
-      return decodeURIComponent(match[1].replace(/\+/g, ' '));
-    } catch (_) {
-      return match[1];
-    }
-  }
-
-  buildQidianCommentPanelHtml(url: string): string {
-    const endpoint = JSON.stringify(url || '');
-    return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" ` +
-      `content="width=device-width,initial-scale=1,maximum-scale=1"><style>` +
-      `:root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;padding:12px 12px 28px;` +
-      `font-family:system-ui,-apple-system,sans-serif;background:transparent;color:#202124}` +
-      `#status{padding:24px 8px;text-align:center;color:#777}.summary{margin:0 0 12px;padding:10px 12px;` +
-      `border-radius:12px;background:rgba(128,128,128,.12);font-size:14px;color:#666}` +
-      `.item{padding:14px 4px;border-bottom:1px solid rgba(128,128,128,.2)}.head{display:flex;` +
-      `align-items:center;gap:9px;margin-bottom:8px}.avatar{width:34px;height:34px;border-radius:50%;object-fit:cover;` +
-      `background:#ddd}.name{font-weight:650;font-size:14px}.meta{margin-left:auto;color:#888;font-size:12px}` +
-      `.text{font-size:16px;line-height:1.65;white-space:pre-wrap;word-break:break-word}` +
-      `.stats{margin-top:8px;color:#888;font-size:12px}.media{display:block;max-width:100%;max-height:360px;` +
-      `margin-top:10px;border-radius:10px}audio{width:100%;margin-top:10px}` +
-      `@media(prefers-color-scheme:dark){body{color:#e6e6e6}.summary{color:#aaa;background:rgba(255,255,255,.08)}}` +
-      `</style></head><body><div id="status">正在加载评论…</div><div id="summary" class="summary" ` +
-      `style="display:none"></div><div id="list"></div><script>` +
-      `(function(){var endpoint=${endpoint};var status=document.getElementById('status');` +
-      `var list=document.getElementById('list');var summary=document.getElementById('summary');` +
-      `function value(o,keys){for(var i=0;i<keys.length;i++){var v=o&&o[keys[i]];` +
-      `if(v!==undefined&&v!==null&&String(v)!=='')return v}return ''}` +
-      `function addText(parent,cls,text){var el=document.createElement('div');el.className=cls;` +
-      `el.textContent=String(text||'');parent.appendChild(el);return el}` +
-      `fetch(endpoint,{cache:'no-store'}).then(function(r){return r.text()}).then(function(raw){` +
-      `var root=JSON.parse(String(raw||'{}').replace(/^\\uFEFF/,''));if(Number(root.code||0)!==0)` +
-      `throw new Error(root.message||'评论接口返回异常');var data=root.data||{};var comments=data.comments||[];` +
-      `var total=Number(data.total||comments.length||0);status.style.display='none';summary.style.display='block';` +
-      `summary.textContent=(total?('共 '+total+' 条评论'):'暂无评论');if(!comments.length)return;` +
-      `comments.forEach(function(c){c=c||{};var item=document.createElement('div');item.className='item';` +
-      `var head=document.createElement('div');head.className='head';var user=c.user_info||c.UserInfo||{};` +
-      `var avatar=value(user,['user_avatar','UserHeadIcon','Avatar']);if(avatar){var img=document.createElement('img');` +
-      `img.className='avatar';img.src=String(avatar);head.appendChild(img)}else{var blank=document.createElement('div');` +
-      `blank.className='avatar';head.appendChild(blank)}addText(head,'name',value(user,['user_name','UserName','Name'])||'书友');` +
-      `addText(head,'meta',(c.floor?('#'+c.floor+' · '):'')+(c.create_timestamp?` +
-      `new Date(Number(c.create_timestamp)).toLocaleString():''));item.appendChild(head);` +
-      `addText(item,'text',value(c,['text','ReviewContent','Content','content'])||'');` +
-      `var image=value(c,['image_url','ImageUrl','imageUrl']);if(image){var media=document.createElement('img');` +
-      `media.className='media';media.src=String(image);item.appendChild(media)}` +
-      `var audio=value(c,['audio_url','AudioUrl','audioUrl']);if(audio){var player=document.createElement('audio');` +
-      `player.controls=true;player.src=String(audio);item.appendChild(player)}` +
-      `var digg=Number(c.digg_count||c.DiggCount||0),reply=Number(c.reply_count||c.ReplyCount||0);` +
-      `addText(item,'stats',(digg?'赞 '+digg+'  ':'')+(reply?'回复 '+reply:''));list.appendChild(item)});` +
-      `}).catch(function(e){status.textContent='评论加载失败：'+(e&&e.message?e.message:String(e))});})();` +
-      `</script></body></html>`;
   }
 
   readerCommentPanelHeight(): number {

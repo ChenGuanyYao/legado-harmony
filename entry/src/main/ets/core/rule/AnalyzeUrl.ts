@@ -363,7 +363,6 @@ export class AnalyzeUrl {
       const cookie = VerificationSupport.sourceCookieHeader(this.source, this.config.url);
       if (cookie) merged['Cookie'] = cookie;
     }
-    this.applyUrlBoundCsrfCookie(merged, this.config.url);
     if (this.config.method === 'POST' && this.config.body && !this.findHeader(merged, 'content-type')) {
       merged['Content-Type'] = this.looksLikeStructuredBody(this.config.body) && this.config.body.trim().startsWith('{') ?
         'application/json; charset=utf-8' : 'application/x-www-form-urlencoded';
@@ -419,15 +418,22 @@ export class AnalyzeUrl {
       const comma = url.indexOf(',');
       if (comma < 0) throw new Error('invalid data url');
       const meta = url.substring(5, comma);
-      const payload = url.substring(comma + 1);
-      if (maxResponseBytes && this.estimatedDataUrlBytes(payload, /;base64(?:;|$)/i.test(meta)) > maxResponseBytes) {
+      const rawPayload = url.substring(comma + 1);
+      // Legado permits an optional request/options object after a base64 data payload, for example:
+      // data:;base64,<payload>,{"type":"..."}.  That object belongs to the source rule and is not
+      // part of the base64 body.  Decode only the source-supplied payload so data URLs can travel
+      // through the ordinary rule pipeline without any site-specific interpretation here.
+      const base64 = /;base64(?:;|$)/i.test(meta);
+      const optionIndex = base64 ? rawPayload.indexOf(',') : -1;
+      const payload = optionIndex >= 0 ? rawPayload.substring(0, optionIndex) : rawPayload;
+      if (maxResponseBytes && this.estimatedDataUrlBytes(payload, base64) > maxResponseBytes) {
         return {
           url: url, statusCode: 0, headers: { 'Content-Type': meta }, body: '', success: false,
           error: `response too large: >${maxResponseBytes}`
         };
       }
       let body = '';
-      if (/;base64(?:;|$)/i.test(meta)) {
+      if (base64) {
         const bytes = new util.Base64Helper().decodeSync(payload);
         body = util.TextDecoder.create('utf-8').decodeWithStream(bytes, { stream: false });
       } else {
@@ -437,35 +443,6 @@ export class AnalyzeUrl {
     } catch (e) {
       return { url: url, statusCode: 0, headers: {}, body: '', success: false, error: String(e) };
     }
-  }
-
-  private applyUrlBoundCsrfCookie(headers: Record<string, string>, url: string): void {
-    const host = this.urlHost(url);
-    if (!host || !(host === 'qidian.com' || host.endsWith('.qidian.com'))) return;
-    const tokenMatch = /[?&]_csrfToken=([^&#]*)/i.exec(url || '');
-    if (!tokenMatch || !tokenMatch[1]) return;
-    let token = tokenMatch[1];
-    try {
-      token = decodeURIComponent(token);
-    } catch (_) {
-    }
-    if (!token) return;
-    const key = this.headerName(headers, 'cookie') || 'Cookie';
-    const parts: string[] = [];
-    let replaced = false;
-    for (const rawPart of String(headers[key] || '').split(';')) {
-      const part = rawPart.trim();
-      if (!part) continue;
-      const index = part.indexOf('=');
-      if (index > 0 && part.substring(0, index).trim() === '_csrfToken') {
-        parts.push(`_csrfToken=${token}`);
-        replaced = true;
-      } else {
-        parts.push(part);
-      }
-    }
-    if (!replaced) parts.push(`_csrfToken=${token}`);
-    headers[key] = parts.join('; ');
   }
 
   private headerName(headers: Record<string, string>, name: string): string {
@@ -560,23 +537,9 @@ export class AnalyzeUrl {
   }
 
   private buildFallbackUrls(url: string): string[] {
-    const urls: string[] = [];
-    if (!url.startsWith('http://') && !url.startsWith('https://')) return urls;
-
-    if (url.startsWith('https://')) {
-      urls.push('http://' + url.substring('https://'.length));
-    }
-
-    const mirror = url.replace(/^(https?:\/\/)www\.([^/]+)/, (_: string, scheme: string, host: string) => {
-      return `${scheme}www.x${host}`;
-    });
-    if (mirror !== url && !urls.includes(mirror)) urls.push(mirror);
-
-    if (mirror.startsWith('https://')) {
-      const httpMirror = 'http://' + mirror.substring('https://'.length);
-      if (!urls.includes(httpMirror)) urls.push(httpMirror);
-    }
-    return urls;
+    // A reader must not invent mirrors or silently downgrade HTTPS.  Alternate endpoints are
+    // executed only when the imported source explicitly declares them in its own rule/script.
+    return [];
   }
 
   private isUsableResponse(resp: HttpResponse): boolean {

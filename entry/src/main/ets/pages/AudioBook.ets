@@ -1264,10 +1264,6 @@ struct AudioBookPage {
         data['error'] || data['message'] || data['msg'] || '').trim();
       if (message) return `音频接口未返回可播放地址：${message}`;
     } catch (_) {}
-    if ((this.book?.originName || '').includes('番茄听书') ||
-      (this.book?.originName || '').includes('番茄畅听')) {
-      return '书山聚合未返回可播放音频，请检查登录状态或更换音色后重试';
-    }
     return '正文规则没有返回有效音频地址';
   }
 

@@ -14,7 +14,6 @@ import { BookTypeSupport } from './BookTypeSupport';
 import { BookSourceRuntimeRouter, SourceRuntimeStage } from './BookSourceRuntimeRouter';
 import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceStageWebRuntime';
 import { BookSourceStageRuleSupport } from './BookSourceStageRuleSupport';
-import { BookSourceShuqiSupport } from './BookSourceShuqiSupport';
 import { RuleExecutionService } from '../rule/RuleExecutionService';
 import { RuleBatchExecutionRequest, RuleBatchExecutionResult, RuleFieldRequest } from '../rule/RuleExecutionModels';
 import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
@@ -64,38 +63,13 @@ export class ExploreCoordinator {
     return options;
   }
 
-  async getEntries(platform: string = '番茄', sourceUrl: string = ''): Promise<ExploreEntry[]> {
+  async getEntries(platform: string = '', sourceUrl: string = ''): Promise<ExploreEntry[]> {
     this.noticeMessage = '';
     const sources = await appDb.getEnabledBookSourcesForExplore();
     const entries: ExploreEntry[] = [];
     for (const source of sources) {
       if (!source.enabledExplore || !source.exploreUrl) continue;
       if (sourceUrl && source.bookSourceUrl !== sourceUrl) continue;
-      if (BookSourceDataUrlSupport.sourceUsesGyExplore(source)) {
-        const dataUrlEntries = await BookSourceDataUrlSupport.getExploreEntries(this.http, platform, '小说', '男频', source);
-        for (const item of dataUrlEntries) {
-          entries.push({
-            title: item.title,
-            url: item.url,
-            sourceUrl: source.bookSourceUrl,
-            sourceName: source.bookSourceName
-          });
-        }
-        continue;
-      }
-      if (BookSourceShuqiSupport.canHandle(source)) {
-        const items = await BookSourceShuqiSupport.getExploreMenuItems(this.http, source);
-        for (const item of items) {
-          entries.push({
-            title: item.title,
-            url: item.url,
-            sourceUrl: source.bookSourceUrl,
-            sourceName: source.bookSourceName
-          });
-        }
-        if (items.length === 0) this.noticeMessage = '书旗分类接口未返回可用菜单';
-        continue;
-      }
       if (!source.variable && this.requiresSourceVariable(source)) {
         const hint = (source.variableComment || '').trim();
         this.noticeMessage = hint ? `请先在书源编辑中填写书源变量：${hint}` :
@@ -119,9 +93,6 @@ export class ExploreCoordinator {
     if (!source) return [];
     try {
       VerificationSupport.clearVerification();
-      if (BookSourceDataUrlSupport.sourceUsesGyExplore(source)) {
-        return await BookSourceDataUrlSupport.explore(this.http, source, entry.url, page);
-      }
       const au = new AnalyzeUrl(source, this.http);
       const reqUrl = await this.buildUrl(source, entry.url, page);
       if (!reqUrl || /^\s*@?js:/i.test(reqUrl) || !/^https?:\/\//i.test(reqUrl)) {
@@ -146,15 +117,15 @@ export class ExploreCoordinator {
         return [];
       }
 
-      const shuqiBooks = this.parseShuqiExploreBooks(source, resp.body);
-      if (shuqiBooks.length > 0) return shuqiBooks;
-
       const baseUrl = BookUrlResolver.effectiveBase(resp, reqUrl, source.bookSourceUrl);
       const rule = new AnalyzeRule(resp.body, baseUrl);
       this.seedSourceVariables(rule.getContext(), source);
+      const encodedVariables = EncodedSourceUrl.scalarVariables(reqUrl);
+      for (const key in encodedVariables) rule.getContext().put(key, encodedVariables[key]);
       const exploreRule = this.effectiveExploreRule(source);
       const stageItems = await BookSourceStageRuleSupport.getElements(source, resp.body, baseUrl,
-        exploreRule.bookList || '', SourceRuntimeStage.EXPLORE);
+        exploreRule.bookList || '', SourceRuntimeStage.EXPLORE, '', 8 * 1024 * 1024,
+        16 * 1024 * 1024, encodedVariables);
       const items = stageItems === null ? rule.getElements(exploreRule.bookList || '') : stageItems;
       if (items.length === 0) this.noticeMessage = '发现接口已有响应，但列表规则未匹配到内容';
       console.info('[ExploreCoordinator] parsed list:', source.bookSourceName, 'rule:', exploreRule.bookList, 'count:', items.length);
@@ -180,6 +151,7 @@ export class ExploreCoordinator {
         fieldRequest.contextValues['host'] = sourceBackendHost;
         fieldRequest.contextValues['backend'] = sourceBackendHost;
       }
+      for (const key in encodedVariables) fieldRequest.contextValues[key] = encodedVariables[key];
       fieldRequest.timeoutMs = 30000;
       let fieldBatch = new RuleBatchExecutionResult();
       try {
@@ -504,8 +476,6 @@ export class ExploreCoordinator {
   }
 
   private async buildUrl(source: BookSource, url: string, page: number): Promise<string> {
-    const shuqiUrl = BookSourceShuqiSupport.buildExploreUrl(source, url, page);
-    if (shuqiUrl) return shuqiUrl;
     const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.URL,
       `${source.jsLib || ''}\n${url || ''}`);
     const isFullJsUrl = /^\s*@?js:/i.test(url || '');
@@ -548,33 +518,6 @@ export class ExploreCoordinator {
     return BookUrlResolver.resolve(fallback, source.bookSourceUrl) || fallback;
   }
 
-  private parseShuqiExploreBooks(source: BookSource, body: string): SearchBook[] {
-    const records = BookSourceShuqiSupport.parseBookRecords(source, body, false);
-    const books: SearchBook[] = [];
-    for (const record of records) {
-      const book = new SearchBook();
-      book.name = String(record['bookName'] || record['title'] || '').trim();
-      book.author = String(record['authorName'] || record['author'] || '').trim();
-      book.bookUrl = BookSourceShuqiSupport.buildBookInfoUrl(source, record);
-      if (!book.name || !book.bookUrl) continue;
-      book.coverUrl = String(record['imgUrl'] || record['cover'] || '').trim();
-      book.intro = String(record['desc'] || '').trim();
-      const category = String(record['className'] || record['category'] || '').trim();
-      const hasSearchStatus = record['status'] !== undefined && record['status'] !== null;
-      const rawState = String(hasSearchStatus ? record['status'] : record['state']);
-      const state = hasSearchStatus ? (rawState === '0' ? '连载' : '完结') :
-        (rawState === '1' ? '连载' : (rawState ? '完结' : ''));
-      book.kind = [category, state].filter((value: string): boolean => !!value).join(',');
-      book.wordCount = String(record['wordCount'] || record['words'] || '').trim();
-      book.variable = JSON.stringify(record);
-      book.origin = source.bookSourceUrl;
-      book.originName = source.bookSourceName;
-      BookTypeSupport.applySearchBookType(book, source);
-      books.push(book);
-    }
-    return books;
-  }
-
   private applySourceTemplate(url: string, source: BookSource): string {
     return (url || '')
       .replace(/\{\{\s*source\.bookSourceUrl\s*\}\}/g, source.bookSourceUrl || '')
@@ -595,8 +538,7 @@ export class ExploreCoordinator {
   }
 
   private async fetchEncodedDataUrl(url: string, source: BookSource): Promise<{ url: string, statusCode: number, headers: Record<string, string>, body: string, success: boolean, error?: string }> {
-    const root = await EncodedSourceUrl.requestJsonForDataUrl(this.http, url,
-      BookSourceDataUrlSupport.sourceBackendHost(source));
+    const root = await EncodedSourceUrl.requestJsonForDataUrl(this.http, url, source);
     if (!root) {
       return { url: url, statusCode: 0, headers: {}, body: '', success: false, error: 'encoded data url request failed' };
     }

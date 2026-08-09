@@ -4,7 +4,7 @@ export class CoverUrlNormalizer {
     if (!value) {
       return '';
     }
-    return CoverUrlNormalizer.normalizeQingtianDownloadProxy(value);
+    return value;
   }
 
   static prefer(primary: string, fallback: string): string {
@@ -25,13 +25,5 @@ export class CoverUrlNormalizer {
       return [normalized, value];
     }
     return [value];
-  }
-
-  private static normalizeQingtianDownloadProxy(value: string): string {
-    const match = value.match(/^https?:\/\/([a-z0-9-]+)\.qingtian618\.com(\/downloadImg\?[\s\S]*)$/i);
-    if (!match || !match[1] || !match[2]) {
-      return value;
-    }
-    return `http://${match[1]}.gyks.cf${match[2]}`;
   }
 }

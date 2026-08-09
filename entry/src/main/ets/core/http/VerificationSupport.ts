@@ -15,8 +15,7 @@ export class VerificationSupport {
       sample.includes('cookie 验证') || sample.includes('Cookie 验证') ||
       sample.includes('安全验证') || sample.includes('滑动验证') ||
       sample.includes('禁用cookie功能') || sample.includes('禁用 cookie 功能') ||
-      sample.includes('开启后重新访问') || sample.includes('findlogin.jsp') ||
-      sample.includes('fxlogin.chaoxing.com');
+      sample.includes('开启后重新访问') || sample.includes('findlogin.jsp');
   }
 
   static canBrowserVerify(rule: string): boolean {
@@ -79,7 +78,6 @@ export class VerificationSupport {
   }
 
   static resolveBookSourceLoginUrl(source: BookSource): string {
-    if (this.isShuqiGatewaySource(source)) return 'https://t.shuqi.com/';
     const loginUrl = this.cleanUrl(source.loginUrl || '');
     if (this.isHttpUrl(loginUrl)) return loginUrl;
 
@@ -122,7 +120,6 @@ export class VerificationSupport {
   }
 
   static pickVerificationUrl(source: BookSource, requestUrl: string, rule?: string): string {
-    if (this.isShuqiGatewaySource(source)) return 'https://t.shuqi.com/';
     const fromRule = this.pickStartBrowserUrl(rule || '') ||
       this.pickStartBrowserUrl(source.searchUrl || '') ||
       this.pickStartBrowserUrl(source.bookInfoRule?.init || '') ||
@@ -167,11 +164,6 @@ export class VerificationSupport {
       this.canBrowserVerify(source.contentRule?.content || '');
   }
 
-  private static isShuqiGatewaySource(source: BookSource): boolean {
-    const raw = `${source.bookSourceUrl || ''}\n${source.jsLib || ''}\n${source.loginUrl || ''}`;
-    return /ocean\.shuqireader\.com/i.test(raw) && /shuqi_token|sq_h5_gateway/i.test(raw);
-  }
-
   private static hasLoginEntry(source: BookSource): boolean {
     const loginUrl = this.cleanUrl(source.loginUrl || '');
     return !!loginUrl && (loginUrl.startsWith('http://') || loginUrl.startsWith('https://')) &&
@@ -192,7 +184,7 @@ export class VerificationSupport {
     const sample = body.substring(0, Math.min(body.length, 4000)).toLowerCase();
     return sample.includes('请先登录') || sample.includes('请登录后') ||
       sample.includes('登录后再') || sample.includes('cookie功能') ||
-      sample.includes('findlogin.jsp') || sample.includes('fxlogin.chaoxing.com') ||
+      sample.includes('findlogin.jsp') ||
       sample.includes('name="uname"') || sample.includes("name='uname'") ||
       sample.includes('name="username"') || sample.includes("name='username'") ||
       sample.includes('type="password"') || sample.includes("type='password'");
@@ -268,17 +260,10 @@ export class VerificationSupport {
     const existing = CookieStore.getCookie(requestUrl);
     const loginUrl = this.cleanUrl(source.loginUrl || '');
     const loginCookie = CookieStore.getCookie(loginUrl) || CookieStore.getCookie(this.originOf(loginUrl));
-    const relatedCookie = this.sourceRelatedCookieHeader(source, requestUrl, loginUrl);
     const requestHost = this.hostOf(requestUrl);
-    const sourceHost = this.hostOf(source.bookSourceUrl || '');
     const loginHost = this.hostOf(loginUrl);
-    const baseCookie = this.mergeCookieHeaders(existing, relatedCookie);
-    if (!loginCookie) return this.withSourceRequiredCookies(source, requestUrl, baseCookie);
-    if (!requestHost || !loginHost) return this.withSourceRequiredCookies(source, requestUrl, baseCookie);
-    if (requestHost === loginHost || requestHost === sourceHost || this.isFanqieRelatedHost(requestHost, source)) {
-      return this.withSourceRequiredCookies(source, requestUrl, this.mergeCookieHeaders(baseCookie, loginCookie));
-    }
-    return this.withSourceRequiredCookies(source, requestUrl, baseCookie);
+    if (!loginCookie || !requestHost || !loginHost || !this.hostsShareSite(requestHost, loginHost)) return existing;
+    return this.mergeCookieHeaders(existing, loginCookie);
   }
 
   static syncLoginCookiesToSourceHosts(sourceUrl: string, loginUrl: string, currentUrl: string): void {
@@ -286,8 +271,7 @@ export class VerificationSupport {
       currentUrl,
       loginUrl,
       this.originOf(currentUrl),
-      this.originOf(loginUrl),
-      'https://fanqienovel.com'
+      this.originOf(loginUrl)
     ].filter((item: string) => this.isHttpUrl(item));
     let fromUrl = '';
     for (const item of fromUrls) {
@@ -302,29 +286,15 @@ export class VerificationSupport {
       sourceUrl,
       this.originOf(sourceUrl),
       loginUrl,
-      this.originOf(loginUrl),
-      ...this.requiredCookieTargets(sourceUrl, loginUrl, currentUrl),
-      'https://fanqienovel.com',
-      'https://novel.snssdk.com',
-      'https://api5-normal-sinfonlineb.fqnovel.com'
-    ].filter((item: string) => this.isHttpUrl(item));
+      this.originOf(loginUrl)
+    ].filter((item: string, index: number, array: string[]) =>
+      this.isHttpUrl(item) && array.indexOf(item) === index &&
+      this.hostsShareSite(this.hostOf(fromUrl), this.hostOf(item)));
     for (const target of targets) {
       CookieStore.copyCookies(fromUrl, target);
       CookieStore.copyCookies(fromUrl, `${target}/`);
-      CookieStore.copyCookies(fromUrl, `${target}/api`);
-      CookieStore.copyCookies(fromUrl, `${target}/content`);
-      CookieStore.copyCookies(fromUrl, `${target}/info`);
     }
-    this.seedRequiredCookies(sourceUrl, loginUrl, currentUrl);
     CookieStore.saveAsync();
-  }
-
-  private static withSourceRequiredCookies(source: BookSource, requestUrl: string, cookie: string): string {
-    let value = cookie || '';
-    if (this.isChaoxingSource(source, requestUrl) && !/(^|;\s*)cookiecheck=/.test(value)) {
-      value = value ? `${value}; cookiecheck=true` : 'cookiecheck=true';
-    }
-    return value;
   }
 
   private static mergeCookieHeaders(primary: string, secondary: string): string {
@@ -340,38 +310,6 @@ export class VerificationSupport {
     return Object.keys(values).map((key: string) => `${key}=${values[key]}`).join('; ');
   }
 
-  private static sourceRelatedCookieHeader(source: BookSource, requestUrl: string, loginUrl: string): string {
-    if (!this.isChaoxingSource(source, requestUrl)) return '';
-    let merged = '';
-    for (const target of this.requiredCookieTargets(source.bookSourceUrl || '', loginUrl, requestUrl)) {
-      merged = this.mergeCookieHeaders(merged, CookieStore.getCookie(target));
-      merged = this.mergeCookieHeaders(merged, CookieStore.getCookie(`${target}/`));
-    }
-    return merged;
-  }
-
-  private static seedRequiredCookies(sourceUrl: string, loginUrl: string, currentUrl: string): void {
-    const raw = `${sourceUrl || ''}\n${loginUrl || ''}\n${currentUrl || ''}`.toLowerCase();
-    if (!raw.includes('chaoxing.com')) return;
-    for (const target of this.requiredCookieTargets(sourceUrl, loginUrl, currentUrl)) {
-      CookieStore.setCookies(target, 'cookiecheck=true; Path=/');
-      CookieStore.setCookies(`${target}/`, 'cookiecheck=true; Path=/');
-    }
-  }
-
-  private static requiredCookieTargets(sourceUrl: string, loginUrl: string, currentUrl: string): string[] {
-    const raw = `${sourceUrl || ''}\n${loginUrl || ''}\n${currentUrl || ''}`.toLowerCase();
-    if (!raw.includes('chaoxing.com')) return [];
-    return [
-      'https://chaoxing.com',
-      'https://qikan.chaoxing.com',
-      'https://fxlogin.chaoxing.com',
-      'https://passport2.chaoxing.com',
-      this.originOf(sourceUrl || ''),
-      this.originOf(loginUrl || ''),
-      this.originOf(currentUrl || '')
-    ].filter((item: string, index: number, array: string[]) => this.isHttpUrl(item) && array.indexOf(item) === index);
-  }
 
   private static shouldPreferLoginUrl(source: BookSource, requestUrl: string): boolean {
     const cleanRequest = this.cleanUrl(requestUrl || '');
@@ -391,16 +329,21 @@ export class VerificationSupport {
       clean.includes('format=json') || clean.endsWith('.json');
   }
 
-  private static isFanqieRelatedHost(host: string, source: BookSource): boolean {
-    const raw = `${source.bookSourceUrl || ''}\n${source.loginUrl || ''}\n${source.searchUrl || ''}\n${source.exploreUrl || ''}`.toLowerCase();
-    return raw.includes('fanqie') || raw.includes('fq-book') || raw.includes('snssdk') ||
-      host.includes('fanqie') || host.includes('fqnovel') || host.includes('snssdk') || host.includes('fq-book');
+
+  private static hostsShareSite(first: string, second: string): boolean {
+    if (!first || !second) return false;
+    if (first === second || first.endsWith(`.${second}`) || second.endsWith(`.${first}`)) return true;
+    return this.siteKey(first) === this.siteKey(second);
   }
 
-  private static isChaoxingSource(source: BookSource, requestUrl: string): boolean {
-    const raw = `${requestUrl || ''}\n${source.bookSourceUrl || ''}\n${source.loginUrl || ''}\n` +
-      `${source.searchUrl || ''}\n${source.exploreUrl || ''}`.toLowerCase();
-    return raw.includes('chaoxing.com');
+  private static siteKey(host: string): string {
+    const value = (host || '').toLowerCase();
+    if (!value || /^\d+(?:\.\d+){3}$/.test(value) || value === 'localhost') return value;
+    const labels = value.split('.').filter((item: string): boolean => !!item);
+    if (labels.length <= 2) return value;
+    const suffix = labels.slice(-2).join('.');
+    const multi = /^(?:com|net|org|gov|edu)\.cn$|^(?:com|net|org)\.hk$|^co\.(?:uk|jp|kr|nz)$|^com\.au$/;
+    return labels.slice(multi.test(suffix) ? -3 : -2).join('.');
   }
 
   private static hostOf(url: string): string {

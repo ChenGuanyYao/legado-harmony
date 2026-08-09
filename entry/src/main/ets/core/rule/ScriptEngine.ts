@@ -1120,7 +1120,6 @@ export class ScriptEngine {
     const trimmed = (code || '').trim();
     if (/^Clean\(\s*result\s*\)\s*;?$/.test(trimmed)) return this.cleanJsLibText(value);
     if (/^T\(\s*result\s*\)\s*;?$/.test(trimmed)) return this.cleanJsLibText(value);
-    if (/^Cover\(\s*result\s*\)\s*;?$/.test(trimmed)) return this.coverFromArticleId(value);
     const hostFunction = this.evalHostFunctionCall(trimmed, value, env);
     if (hostFunction !== null) return hostFunction;
     if (trimmed.includes('Base()')) {
@@ -1244,8 +1243,6 @@ export class ScriptEngine {
     if (!value) return '';
     const cleanCall = value.match(/^(?:Clean|T)\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$/);
     if (cleanCall) return this.cleanJsLibText(vars[cleanCall[1]] || '');
-    const coverCall = value.match(/^Cover\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$/);
-    if (coverCall) return this.coverFromArticleId(vars[coverCall[1]] || '');
     const sourceCall = this.evalSourceCall(value, env);
     if (sourceCall !== null) return sourceCall;
     const cacheCall = this.evalCacheCall(value, env);
@@ -1414,12 +1411,6 @@ export class ScriptEngine {
     const base = (env.getSourceKey() || env.baseUrl || '')
       .match(/^(https?:\/\/[^/]+)/);
     return base ? base[1] : '';
-  }
-
-  private coverFromArticleId(value: string): string {
-    const id = (value || '').replace(/\D/g, '');
-    if (!id) return '';
-    return `https://pic.cooks.tw/${Math.floor(Number(id) / 1000)}/${id}/${id}s.jpg`;
   }
 
   private cleanJsLibText(value: string): string {

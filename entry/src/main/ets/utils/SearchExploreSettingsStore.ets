@@ -14,7 +14,7 @@ export class SearchExploreSettings {
   selectedSourceGroupsRaw: string = '';
   sourceSortRaw: string = '';
   exploreSourceUrl: string = '';
-  explorePlatform: string = '番茄';
+  explorePlatform: string = '';
 }
 
 export class SearchExploreSettingsStore {
@@ -70,7 +70,7 @@ export class SearchExploreSettingsStore {
     settings.exploreSourceUrl = await SearchExploreSettingsStore.getString(
       store, SearchExploreSettingsStore.KEY_EXPLORE_SOURCE_URL, '');
     settings.explorePlatform = await SearchExploreSettingsStore.getString(
-      store, SearchExploreSettingsStore.KEY_EXPLORE_PLATFORM, '番茄');
+      store, SearchExploreSettingsStore.KEY_EXPLORE_PLATFORM, '');
     SearchExploreSettingsStore.cachedSettings = SearchExploreSettingsStore.clone(settings);
     return settings;
   }
@@ -183,7 +183,7 @@ export class SearchExploreSettingsStore {
     settings.selectedSourceGroupsRaw = source.selectedSourceGroupsRaw;
     settings.sourceSortRaw = source.sourceSortRaw;
     settings.exploreSourceUrl = source.exploreSourceUrl;
-    settings.explorePlatform = source.explorePlatform || '番茄';
+    settings.explorePlatform = source.explorePlatform || '';
     return settings;
   }
 

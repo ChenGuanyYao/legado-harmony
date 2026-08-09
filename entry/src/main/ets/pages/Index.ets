@@ -7228,7 +7228,7 @@ struct ExplorePage {
   @State status: string = '';
   @State verificationUrl: string = '';
   @State verificationTitle: string = '';
-  @StorageLink('explorePlatform') selectedPlatform: string = '番茄';
+  @StorageLink('explorePlatform') selectedPlatform: string = '';
   @StorageLink('exploreSourceUrl') selectedSourceUrl: string = '';
   @StorageLink('bookSourceExploreRefreshNonce') @Watch('onExploreRefreshRequested')
   bookSourceExploreRefreshNonce: number = 0;
@@ -8397,7 +8397,7 @@ struct ExplorePage {
       return;
     }
     if (!this.platformNames.includes(this.selectedPlatform)) {
-      this.selectedPlatform = this.platformNames.length > 0 ? this.platformNames[0] : '番茄';
+      this.selectedPlatform = this.platformNames.length > 0 ? this.platformNames[0] : '';
       AppStorage.setOrCreate('explorePlatform', this.selectedPlatform);
       this.saveExploreSelection();
     }

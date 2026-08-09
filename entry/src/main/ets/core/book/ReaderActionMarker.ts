@@ -42,12 +42,6 @@ export class ReaderActionMarker {
     return `${ReaderActionMarker.PREFIX}P|${fields.join('|')}|${modeCode}${ReaderActionMarker.SUFFIX}`;
   }
 
-  /** Compatibility for source converters and already compiled call sites. */
-  static createShuqiComment(label: string, bookId: string, chapterId: string,
-    paragraphId: string, mode: string = 'paragraph'): string {
-    return this.createProviderComment('shuqi-comments', label, bookId, chapterId, paragraphId, mode);
-  }
-
   static parse(value: string): ReaderActionData | null {
     const text = (value || '').trim();
     const prefix = text.startsWith(ReaderActionMarker.PREFIX) ? ReaderActionMarker.PREFIX :
@@ -72,22 +66,6 @@ export class ReaderActionMarker {
           `${encodeURIComponent(chapterId)}/${encodeURIComponent(paragraphId)}?mode=` +
           `${fields[6] === 'c' ? 'chapterTitle' : 'paragraph'}`;
         data.title = fields[6] === 'c' ? '章评' : '段评';
-        return data;
-      }
-      if (encoded.startsWith('S|')) {
-        const fields = encoded.split('|');
-        if (fields.length !== 6) return null;
-        const label = decodeURIComponent(fields[1] || '') || '段评';
-        const bookId = decodeURIComponent(fields[2] || '');
-        const chapterId = decodeURIComponent(fields[3] || '');
-        const paragraphId = decodeURIComponent(fields[4] || '');
-        if (!bookId || !chapterId || !paragraphId) return null;
-        const data = new ReaderActionData();
-        data.label = label;
-        data.url = `legado-shuqi-comment://${encodeURIComponent(bookId)}/` +
-          `${encodeURIComponent(chapterId)}/${encodeURIComponent(paragraphId)}?mode=` +
-          `${fields[5] === 'c' ? 'chapterTitle' : 'paragraph'}`;
-        data.title = fields[5] === 'c' ? '章评' : '段评';
         return data;
       }
       const record = JSON.parse(decodeURIComponent(encoded)) as Record<string, Object>;

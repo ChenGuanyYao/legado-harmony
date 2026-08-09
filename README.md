@@ -2,7 +2,7 @@
 
 开源轻页是一个面向 HarmonyOS NEXT 的本地阅读应用实验项目，使用 ArkTS / ArkUI 开发，目标是在手机、平板与 PC/2in1 上提供书架、搜索、发现、书源管理、阅读排版、朗读和个性化设置等完整阅读器体验。
 
-当前版本：`3.5.806`。项目包名为 `io.legado.read`，支持 phone、tablet 和 PC/2in1，当前以用户自行导入、且具备合法使用权限的书源规则为数据入口。
+项目包名为 `io.legado.read`，支持 phone、tablet 和 PC/2in1；版本号以 `AppScope/app.json5` 为准。应用只以用户自行导入、且具备合法使用权限的书源规则为数据入口。
 
 ## 合规说明
 
@@ -47,8 +47,8 @@
 - 支持书源编辑、保存、返回时未保存变更提示。
 - 支持逐源校验，并区分“通过、失败、无结果、需要验证、暂时异常”，避免把账号问题或临时网络故障当成规则损坏。
 - 登录面板支持文本、密码、开关、选择项和按钮；可持久化控件状态，并执行 HTTP、Cookie、加密、网页等待、搜索跳转和发现刷新等动作。
-- 支持登录检测 JS、内置验证页、跨域 Cookie 同步和分阶段 ArkWeb JavaScript 兼容层，便于排查搜索、发现、详情、目录和正文规则。
-- 针对 `data:`/Base64 编码地址、聚合协议、镜像后端、封面回退和跨域 Cookie 提供兼容通道；普通书源仍沿用通用解析路径。
+- 支持登录检测 JS、内置验证页、同站点 Cookie 同步和分阶段 ArkWeb JavaScript 兼容层，便于排查搜索、发现、详情、目录和正文规则。
+- 支持书源明确声明的 `data:`/Base64 数据和通用请求元数据；应用不会内置候选后端、镜像地址、第三方密钥或按站点名称补造请求。
 
 ### 阅读
 
@@ -57,8 +57,8 @@
 - 支持阅读过程中的章节预缓存，默认开启并预缓存下一章，可自定义预缓存章节数或关闭。
 - 阅读设置中的排版滑块、朗读倍速滑块、目录选中态等强调色与全局强调色联动。
 - 支持自定义字体、封面图库、正文替换规则、书签和沉浸式阅读布局。
-- 支持漫画连续全宽阅读，以及带请求头、Cookie 或受限 AES 解密的远程图片。
-- 正文快捷协议只负责请求和解密，之后统一执行交互后处理；可恢复段评、本章说、神评论、图片和视频/媒体动作。交互标记不会进入朗读文本。
+- 支持漫画连续全宽阅读，以及书源明确提供请求头、Cookie 或解码规则的远程图片。
+- 支持书源正文中明确给出的网页操作、图片和媒体标记；交互标记不会进入朗读文本。
 
 ### 朗读与有声书
 
@@ -114,12 +114,12 @@ entry/src/main/ets
 - `ReadBookEngine`：阅读状态、目录缓存、正文加载和阅读页协作。
 - `AnalyzeUrl`：URL 模板、请求方法、请求头、请求体、Cookie 注入和编码规则解析。
 - `AnalyzeRule`：JSONPath、CSS、链式规则、XPath、正则替换、`<js>` 规则和主机函数兼容。
-- `JsRuntime` / `JsEngine` / `ScriptEngine`：书源规则 JavaScript 的 ArkTS 兼容运行层和专用兜底实现。
+- `JsRuntime` / `JsEngine` / `ScriptEngine`：书源规则 JavaScript 的 ArkTS 兼容运行层和通用语法兜底。
 - `BookSourceRuntimeRouter` / `BookSourceStageWebRuntime`：按搜索、发现、详情、目录和正文阶段路由复杂 JavaScript，并通过受控桥接执行网络、Cookie、source、book 和 cache 操作。
 - `BookSourceLoginWebRuntime`：登录面板的真实 JavaScript 运行环境，以及浏览器等待、WebView、Cookie、加密和状态持久化桥接。
 - `CookieStore` / `VerificationSupport`：Cookie 持久化、WebView Cookie 同步、登录页跳转和验证状态管理。
-- `BookSourceDataUrlSupport` / `EncodedSourceUrl`：特殊书源地址、编码地址和聚合源兼容。
-- `BookSourceInteractionPostProcessor` / `ReaderActionMarker`：段评、本章说、神评论和媒体动作的统一正文后处理。
+- `BookSourceDataUrlSupport` / `EncodedSourceUrl`：书源显式编码数据和通用请求描述解析，不包含内容站点或聚合后端列表。
+- `BookSourceInteractionPostProcessor` / `ReaderActionMarker`：保留书源产出的正文，以及处理正文中显式给出的通用网页动作。
 - `SystemTtsReader` / `HttpTtsReader` / `RemoteAudioPlayback`：系统 TTS、自定义 HTTP TTS、远程有声书和音频会话。
 - `AppDatabase`：书源、书籍、章节、搜索历史和本地设置存储。
 
@@ -139,8 +139,8 @@ entry/src/main/ets
 - `<js>` / `@js:` 混合执行：简单表达式走轻量引擎，数组函数、模板字符串、`try`、`Set/Map` 等复杂语义按阶段路由到 ArkWeb；失败时只在无副作用条件下回退旧路径。
 - 常见 `java.xxx`、`source.xxx`、`book.xxx`、`cache.xxx` 和 `cookie.xxx` 主机函数，包括网络请求、变量/登录信息、Base64、Hex、摘要、URL/HTML 编解码、对称加密和 Cookie 操作。
 - 动态 `loginUi`、登录按钮状态、`startBrowserAwait`、登录页 WebView 脚本、验证码/验证页跳转和跨地址 Cookie 同步。
-- 普通文本、漫画和有声书类型识别；编码 `data:` 目录/正文协议和音色参数持久化。
-- 正文交互标记、段评/神评论/本章说、图片和媒体动作，以及朗读文本净化。
+- 普通文本、漫画和有声书类型识别；标准 `data:`/Base64 数据解码和书源变量持久化。
+- 正文中的显式网页操作、图片和媒体标记，以及朗读文本净化。
 - 搜索、发现、详情、目录、正文链路的调试日志和离线规则验证基础。
 
 
@@ -148,6 +148,8 @@ entry/src/main/ets
 
 - DevEco Studio
 - HarmonyOS SDK `6.1.0(23)`
+
+提交书源执行层改动前，可运行 `node scripts/neutral-source-engine-check.mjs`，检查是否重新引入固定内容接口、默认凭据或已移除的平台适配器。该检查只用于代码回归，不能替代授权审查或法律意见。
 - ArkTS / ArkUI
 - hvigor
 

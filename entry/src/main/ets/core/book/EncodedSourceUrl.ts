@@ -1,6 +1,7 @@
 import { util } from '@kit.ArkTS';
 import { HttpClient } from '../http/HttpClient';
-import { CookieStore } from '../http/CookieStore';
+import { AnalyzeUrl } from '../rule/AnalyzeUrl';
+import { BookSource } from '../../model/data/Book';
 
 export type EncodedJsonValue = string | number | boolean | Object | null;
 export type EncodedJsonMap = Record<string, EncodedJsonValue>;
@@ -14,27 +15,6 @@ export class EncodedSourcePayload {
 }
 
 export class EncodedSourceUrl {
-  static readonly DEFAULT_HOSTS: string[] = [
-    'http://219.154.201.122:5006',
-    'https://api.langge.cf',
-    'https://v2.czyl.cf',
-    'https://20.langge.tk',
-    'https://v4.czyl.cf',
-    'https://v5.czyl.cf',
-    'https://v7.czyl.cf',
-    'https://v8.czyl.cf',
-    'https://v9.czyl.cf',
-    'https://v10.czyl.cf',
-    'https://v1.gyks.cf',
-    'https://v2.gyks.cf',
-    'https://v3.gyks.cf',
-    'https://v4.gyks.cf',
-    'https://v5.gyks.cf',
-    'https://v6.gyks.cf',
-    'https://v7.gyks.cf',
-    'http://101.35.133.34:8888'
-  ];
-
   static isEncodedDataUrl(url: string): boolean {
     const value = url || '';
     return value.startsWith('data:;base64,') ||
@@ -53,8 +33,8 @@ export class EncodedSourceUrl {
     const split = EncodedSourceUrl.splitPayload(rest);
     const jsonText = EncodedSourceUrl.base64Decode(split[0]);
     payload.text = jsonText;
-    if (prefix.type === 'shushanContent') {
-      payload.data = EncodedSourceUrl.parseLegacyShushanContentData(jsonText);
+    if (prefix.type === 'content') {
+      payload.data = EncodedSourceUrl.parseQueryData(jsonText);
     } else {
       try {
         payload.data = EncodedSourceUrl.asMap(JSON.parse(jsonText) as Object);
@@ -79,96 +59,35 @@ export class EncodedSourceUrl {
   static canHandle(url: string): boolean {
     const payload = EncodedSourceUrl.decode(url);
     if (!payload) return false;
-    return payload.type === 'gysearch' || payload.type === 'gydetail' ||
-      payload.type === 'gycatalog' || payload.type === 'gycontent' ||
-      payload.type === 'qingtian' || payload.type === 'qingtian2' || payload.type === 'qingtian3' ||
-      payload.type === 'mybxs' || payload.type === 'mybxc' ||
-      payload.type === 'shushanDetail' || payload.type === 'shushanCatalog' || payload.type === 'shushanContent';
+    const requestUrl = EncodedSourceUrl.str(payload.options['url']) ||
+      EncodedSourceUrl.str(payload.data['requestUrl']);
+    return payload.type === 'request' && /^https?:\/\//i.test(requestUrl);
   }
 
-  static async requestJsonForDataUrl(http: HttpClient, url: string, preferredHost?: string, maxResponseBytes?: number):
+  static async requestJsonForDataUrl(http: HttpClient, url: string, source: BookSource,
+    maxResponseBytes?: number):
     Promise<EncodedJsonMap | null> {
     const payload = EncodedSourceUrl.decode(url);
     if (!payload) return null;
-    return await EncodedSourceUrl.requestJsonForPayload(http, payload, preferredHost, maxResponseBytes);
+    return await EncodedSourceUrl.requestJsonForPayload(http, payload, source, maxResponseBytes);
   }
 
-  static async requestContentJsonForDataUrl(http: HttpClient, url: string, preferredHost: string,
-    includeParagraphReviews: boolean, includeGodComments: boolean = false,
-    runtimeToneId: string = '', runtimeVersion: string = ''): Promise<EncodedJsonMap | null> {
-    const payload = EncodedSourceUrl.decode(url);
-    if (!payload) return null;
-    const req = EncodedSourceUrl.buildRequest(payload);
-    if (!req.path) return null;
-    const path = includeParagraphReviews && req.path === '/content' ? '/content?review=1' : req.path;
-    let body = includeGodComments && req.body ? `${req.body}&god=true` : req.body;
-    if (runtimeToneId && (payload.type === 'gycontent' || payload.type === 'qingtian3')) {
-      const encodedToneId = encodeURIComponent(runtimeToneId);
-      const encodedVariable = encodeURIComponent(JSON.stringify({ custom: runtimeToneId }));
-      body = EncodedSourceUrl.upsertFormField(body, 'tone_id', encodedToneId);
-      body = EncodedSourceUrl.upsertFormField(body, 'variable', encodedVariable);
-    }
-    if (runtimeVersion && (payload.type === 'gycontent' || payload.type === 'qingtian3')) {
-      body = EncodedSourceUrl.upsertFormField(body, 'version', encodeURIComponent(runtimeVersion));
-    }
-    return await EncodedSourceUrl.requestJson(http, path, req.method, body, preferredHost || req.host);
-  }
-
-  private static upsertFormField(body: string, key: string, encodedValue: string): string {
-    const fields = (body || '').split('&').filter((field: string) => !!field);
-    const prefix = `${key}=`;
-    let replaced = false;
-    const result = fields.map((field: string) => {
-      if (!field.startsWith(prefix)) return field;
-      replaced = true;
-      return `${prefix}${encodedValue}`;
-    });
-    if (!replaced) result.push(`${prefix}${encodedValue}`);
-    return result.join('&');
-  }
-
-  static async requestJsonForPayload(http: HttpClient, payload: EncodedSourcePayload, preferredHost?: string,
+  static async requestJsonForPayload(http: HttpClient, payload: EncodedSourcePayload, source: BookSource,
     maxResponseBytes?: number):
     Promise<EncodedJsonMap | null> {
     const req = EncodedSourceUrl.buildRequest(payload);
     if (!req.path) return null;
-    return await EncodedSourceUrl.requestJson(http, req.path, req.method, req.body, preferredHost || req.host,
-      undefined, maxResponseBytes);
-  }
-
-  static buildSearchUrl(keyword: string, page: number = 1, tab: string = '小说', source: string = '全部',
-    disabledSources: string = '0'): string {
-    return EncodedSourceUrl.encode({
-      key: keyword,
-      tab: tab,
-      sourcesKey: source,
-      page: String(page),
-      disabled_sources: disabledSources || '0'
-    }, 'gysearch');
-  }
-
-  static buildDetailUrl(bookId: string, source: string, tab: string, tocUrl: string = '', host: string = ''): string {
-    return EncodedSourceUrl.encode({
-      book_id: bookId,
-      sources: source,
-      source: source,
-      tab: tab || '小说',
-      url: tocUrl,
-      toc_url: tocUrl,
-      host: host
-    }, 'gydetail');
-  }
-
-  static buildCatalogUrl(data: EncodedJsonMap, host: string = ''): string {
-    const copy: EncodedJsonMap = { ...data };
-    if (host) copy['host'] = host;
-    return EncodedSourceUrl.encode(copy, 'gycatalog');
-  }
-
-  static buildContentUrl(data: EncodedJsonMap, host: string = ''): string {
-    const copy: EncodedJsonMap = { ...data };
-    if (host) copy['host'] = host;
-    return EncodedSourceUrl.encode(copy, 'gycontent');
+    const options: Record<string, Object> = { method: req.method };
+    if (req.body) options['body'] = req.body;
+    if (Object.keys(req.headers).length > 0) options['headers'] = req.headers;
+    const response = await new AnalyzeUrl(source, http).fetch(`${req.path},${JSON.stringify(options)}`,
+      maxResponseBytes);
+    if (!response.success || !response.body) return null;
+    try {
+      return EncodedSourceUrl.asMap(JSON.parse(response.body) as Object);
+    } catch (_) {
+      return null;
+    }
   }
 
   static encode(data: EncodedJsonMap, type: string): string {
@@ -182,63 +101,9 @@ export class EncodedSourceUrl {
     return `data:;base64,${encoded},${options}`;
   }
 
-  static async requestJson(http: HttpClient, path: string, method: string = 'GET', body?: string, preferredHost?: string,
-    extraHeaders?: Record<string, string>, maxResponseBytes?: number):
-    Promise<EncodedJsonMap | null> {
-    const hosts = EncodedSourceUrl.hosts(preferredHost);
-    for (const host of hosts) {
-      const resp = await http.execute({
-        url: `${host}${path}`,
-        method: method,
-        headers: {
-          'Accept': 'application/json, text/plain, */*',
-          'Content-Type': 'application/x-www-form-urlencoded',
-          ...EncodedSourceUrl.buildCookieHeaders(host),
-          ...(extraHeaders || {})
-        },
-        body: body,
-        maxResponseBytes: maxResponseBytes
-      });
-      if (!resp.success || !resp.body) continue;
-      try {
-        return EncodedSourceUrl.asMap(JSON.parse(resp.body) as Object);
-      } catch (_) {
-      }
-    }
-    return null;
-  }
-
   static str(value: EncodedJsonValue | undefined): string {
     if (value === undefined || value === null) return '';
     return String(value).trim();
-  }
-
-  static hostFromData(data: EncodedJsonMap): string {
-    return EncodedSourceUrl.str(data['host']) || EncodedSourceUrl.str(data['gyHost']);
-  }
-
-  static hostFromUrl(url: string): string {
-    const match = (url || '').match(/^(https?:\/\/[^/]+)/);
-    return match ? match[1] : '';
-  }
-
-  static getLoginUrl(host?: string): string {
-    return `${host || EncodedSourceUrl.DEFAULT_HOSTS[0]}/login`;
-  }
-
-  static syncCookiesAcrossHosts(fromUrl: string): void {
-    if (!fromUrl) return;
-    const fromHost = EncodedSourceUrl.hostFromUrl(fromUrl) || fromUrl;
-    const cookie = CookieStore.getCookie(fromUrl) || CookieStore.getCookie(fromHost);
-    if (!cookie) return;
-    for (const host of EncodedSourceUrl.relatedHosts(fromHost)) {
-      if (!host.startsWith('http')) continue;
-      CookieStore.setCookies(host, cookie);
-      CookieStore.setCookies(`${host}/login`, cookie);
-      CookieStore.setCookies(`${host}/user`, cookie);
-      CookieStore.setCookies(`${host}/content`, cookie);
-    }
-    CookieStore.saveAsync();
   }
 
   static asMap(value: Object | undefined | null): EncodedJsonMap {
@@ -246,154 +111,55 @@ export class EncodedSourceUrl {
     return value as EncodedJsonMap;
   }
 
-  static asArray(value: EncodedJsonValue | undefined): Object[] {
-    if (!Array.isArray(value)) return [];
-    return value as Object[];
-  }
-
-  private static buildRequest(payload: EncodedSourcePayload): { path: string, method: string, body: string, host: string } {
-    const data = payload.data;
-    const host = EncodedSourceUrl.hostFromData(data) || EncodedSourceUrl.str(payload.options['host']);
-    if (payload.type === 'mybxs') {
-      const bookId = payload.text || EncodedSourceUrl.str(data['book_id']) || EncodedSourceUrl.str(data['bookId']);
-      return {
-        path: `/bx/detail?book_id=${encodeURIComponent(bookId)}`,
-        method: 'GET',
-        body: '',
-        host: host
-      };
-    }
-    if (payload.type === 'mybxc') {
-      const parts = (payload.text || '').split('/');
-      const bookId = parts[0] || EncodedSourceUrl.str(data['book_id']) || EncodedSourceUrl.str(data['bookId']);
-      const chapterId = parts[1] || EncodedSourceUrl.str(data['chapter_id']) || EncodedSourceUrl.str(data['chapterId']);
-      return {
-        path: `/bx/content?book_id=${encodeURIComponent(bookId)}&chapter_id=${encodeURIComponent(chapterId)}`,
-        method: 'GET',
-        body: '',
-        host: host
-      };
-    }
-    if (payload.type === 'gysearch') {
-      const key = EncodedSourceUrl.str(data['key']);
-      const tab = EncodedSourceUrl.str(data['tab']) || '小说';
-      const source = EncodedSourceUrl.str(data['sourcesKey']) || EncodedSourceUrl.str(data['source']) || '全部';
-      const page = EncodedSourceUrl.str(data['page']) || '1';
-      const disabled = EncodedSourceUrl.str(data['disabled_sources']) || '0';
-      return {
-        path: `/search?title=${encodeURIComponent(key)}&tab=${encodeURIComponent(tab)}` +
-          `&source=${encodeURIComponent(source)}&page=${encodeURIComponent(page)}` +
-          `&disabled_sources=${encodeURIComponent(disabled)}`,
-        method: 'GET',
-        body: '',
-        host: host
-      };
-    }
-    if (payload.type === 'gydetail' || payload.type === 'qingtian') {
-      const bookId = EncodedSourceUrl.str(data['book_id']) || EncodedSourceUrl.str(data['bookId']);
-      const source = EncodedSourceUrl.str(data['sources']) || EncodedSourceUrl.str(data['source']);
-      const tab = EncodedSourceUrl.str(data['tab']) || '小说';
-      return {
-        path: `/detail?book_id=${encodeURIComponent(bookId)}&source=${encodeURIComponent(source)}` +
-          `&tab=${encodeURIComponent(tab)}`,
-        method: 'GET',
-        body: '',
-        host: host
-      };
-    }
-    if (payload.type === 'gycatalog' || payload.type === 'qingtian2') {
-      const bookId = EncodedSourceUrl.str(data['book_id']) || EncodedSourceUrl.str(data['bookId']);
-      const source = EncodedSourceUrl.str(data['sources']) || EncodedSourceUrl.str(data['source']);
-      const tab = EncodedSourceUrl.str(data['tab']) || '小说';
-      const variable = encodeURIComponent('{"custom":""}');
-      return {
-        path: `/catalog?book_id=${encodeURIComponent(bookId)}&source=${encodeURIComponent(source)}` +
-          `&tab=${encodeURIComponent(tab)}&variable=${variable}`,
-        method: 'POST',
-        body: 'html=',
-        host: host
-      };
-    }
-    if (payload.type === 'gycontent' || payload.type === 'qingtian3') {
-      const itemId = EncodedSourceUrl.str(data['item_id']) || EncodedSourceUrl.str(data['itemId']);
-      const source = EncodedSourceUrl.str(data['sources']) || EncodedSourceUrl.str(data['source']);
-      const tab = EncodedSourceUrl.str(data['tab']) || '小说';
-      const bookId = EncodedSourceUrl.str(data['book_id']) || EncodedSourceUrl.str(data['bookId']);
-      const variable = EncodedSourceUrl.str(data['variable']) || '{"custom":""}';
-      const body = `html=&item_id=${encodeURIComponent(itemId)}&source=${encodeURIComponent(source)}` +
-        `&tab=${encodeURIComponent(tab)}&tone_id=4&variable=${encodeURIComponent(variable)}&version=4.11.5.1` +
-        (bookId ? `&book_id=${encodeURIComponent(bookId)}` : '');
-      return {
-        path: '/content',
-        method: 'POST',
-        body: body,
-        host: host
-      };
-    }
-    return { path: '', method: 'GET', body: '', host: host };
-  }
-
-  private static hosts(preferredHost?: string): string[] {
-    const hosts: string[] = [];
-    if (preferredHost) return [preferredHost];
-    for (const host of EncodedSourceUrl.DEFAULT_HOSTS) {
-      if (!hosts.includes(host)) hosts.push(host);
-    }
-    return hosts;
-  }
-
-  private static buildCookieHeaders(host: string): Record<string, string> {
-    const qttoken = EncodedSourceUrl.findCookieValue(host, 'qttoken');
-    if (!qttoken) return {};
-    const deviceId = EncodedSourceUrl.findCookieValue(host, 'deviceId');
-    return {
-      'Cookie': `qttoken=${qttoken}${deviceId ? `;deviceId=${deviceId}` : ''};`
-    };
-  }
-
-  private static findCookieValue(host: string, name: string): string {
-    const urls = [host, `${host}/login`, `${host}/user`, `${host}/content`];
-    for (const url of urls) {
-      const cookie = CookieStore.getCookie(url);
-      const value = EncodedSourceUrl.cookieValue(cookie, name);
-      if (value) return value;
-    }
-    for (const otherHost of EncodedSourceUrl.relatedHosts(host)) {
-      const cookie = CookieStore.getCookie(otherHost);
-      const value = EncodedSourceUrl.cookieValue(cookie, name);
-      if (value) return value;
-    }
-    return '';
-  }
-
-  private static relatedHosts(host: string): string[] {
-    const value = (host || '').toLowerCase();
-    const hosts: string[] = [];
-    const isGuangYu = value.includes('gyks.cf');
-    const isDaHuiLang = value.includes('219.154.201.122') || value.includes('langge') ||
-      value.includes('czyl') || value.includes('101.35.133.34');
-    for (const item of EncodedSourceUrl.DEFAULT_HOSTS) {
-      const low = item.toLowerCase();
-      if (isGuangYu && low.includes('gyks.cf')) {
-        hosts.push(item);
-      } else if (isDaHuiLang && (low.includes('219.154.201.122') || low.includes('langge') ||
-        low.includes('czyl') || low.includes('101.35.133.34'))) {
-        hosts.push(item);
+  /** Scalar metadata remains source data; callers may expose it to rules without interpreting it. */
+  static scalarVariables(url: string): Record<string, string> {
+    const result: Record<string, string> = {};
+    const payload = EncodedSourceUrl.decode(url || '');
+    if (!payload) return result;
+    result['encodedPayload'] = payload.text || '';
+    for (const record of [payload.data, payload.options]) {
+      for (const key in record) {
+        const value = record[key];
+        if (value === undefined || value === null || typeof value === 'object') continue;
+        result[key] = String(value);
       }
     }
-    if (hosts.length === 0 && host) hosts.push(host);
-    return hosts;
+    if (payload.type) result['type'] = payload.type;
+    return result;
   }
 
-  private static cookieValue(cookie: string, name: string): string {
-    if (!cookie) return '';
-    for (const item of cookie.split(';')) {
-      const pair = item.trim();
-      const eq = pair.indexOf('=');
-      if (eq <= 0) continue;
-      if (pair.substring(0, eq).trim() === name) return pair.substring(eq + 1).trim();
+  private static buildRequest(payload: EncodedSourcePayload): {
+    path: string, method: string, body: string, headers: Record<string, string>
+  } {
+    const data = payload.data;
+    const requestUrl = EncodedSourceUrl.str(payload.options['url']) || EncodedSourceUrl.str(data['requestUrl']);
+    if (payload.type !== 'request' || !/^https?:\/\//i.test(requestUrl)) {
+      return { path: '', method: 'GET', body: '', headers: {} };
     }
-    return '';
+    const method = (EncodedSourceUrl.str(payload.options['method']) ||
+      EncodedSourceUrl.str(data['method']) || 'GET').toUpperCase();
+    const body = EncodedSourceUrl.str(payload.options['body']) || EncodedSourceUrl.str(data['body']);
+    const headers = EncodedSourceUrl.headerMap(payload.options['headers'] || data['headers']);
+    return { path: requestUrl, method: method, body: body, headers: headers };
+  }
+
+  private static headerMap(value: EncodedJsonValue | undefined): Record<string, string> {
+    let source: Object | null = value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+    if (!source && typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value) as Object;
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) source = parsed;
+      } catch (_) {}
+    }
+    const result: Record<string, string> = {};
+    if (!source) return result;
+    const record = source as Record<string, Object>;
+    for (const key in record) {
+      if (record[key] !== undefined && record[key] !== null && typeof record[key] !== 'object') {
+        result[key] = String(record[key]);
+      }
+    }
+    return result;
   }
 
   private static splitPayload(rest: string): string[] {
@@ -405,18 +171,18 @@ export class EncodedSourceUrl {
   private static dataUrlPrefix(url: string): { prefix: string, type: string } {
     if ((url || '').startsWith('data:;base64,')) return { prefix: 'data:;base64,', type: '' };
     if ((url || '').startsWith('data:detailsUrl;base64,')) {
-      return { prefix: 'data:detailsUrl;base64,', type: 'shushanDetail' };
+      return { prefix: 'data:detailsUrl;base64,', type: 'details' };
     }
     if ((url || '').startsWith('data:catalogUrl;base64,')) {
-      return { prefix: 'data:catalogUrl;base64,', type: 'shushanCatalog' };
+      return { prefix: 'data:catalogUrl;base64,', type: 'catalog' };
     }
     if ((url || '').startsWith('data:contentUrl;base64,')) {
-      return { prefix: 'data:contentUrl;base64,', type: 'shushanContent' };
+      return { prefix: 'data:contentUrl;base64,', type: 'content' };
     }
     return { prefix: '', type: '' };
   }
 
-  private static parseLegacyShushanContentData(text: string): EncodedJsonMap {
+  private static parseQueryData(text: string): EncodedJsonMap {
     const data: EncodedJsonMap = { url: text || '' };
     const query = (text || '').startsWith('chapter?') ? (text || '').substring('chapter?'.length) : (text || '');
     for (const item of query.split('&')) {

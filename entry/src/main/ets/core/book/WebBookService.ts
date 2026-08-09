@@ -4,7 +4,6 @@ import { AnalyzeUrl } from '../rule/AnalyzeUrl';
 import { AnalyzeRule } from '../rule/AnalyzeRule';
 import { RuleContext } from '../rule/RuleContext';
 import { util } from '@kit.ArkTS';
-import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { VerificationSupport } from '../http/VerificationSupport';
 import { EncodedSourceUrl } from './EncodedSourceUrl';
 import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
@@ -20,7 +19,6 @@ import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceS
 import { ReaderActionMarker } from './ReaderActionMarker';
 import { BookSourceInteractionPostProcessor } from './BookSourceInteractionPostProcessor';
 import { CookieStore } from '../http/CookieStore';
-import { BookSourceShuqiSupport } from './BookSourceShuqiSupport';
 import { RuleExecutionService } from '../rule/RuleExecutionService';
 import { RuleBatchExecutionRequest, RuleFieldRequest } from '../rule/RuleExecutionModels';
 import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
@@ -29,12 +27,6 @@ import { BookSourceAudioWebRuntime } from './BookSourceAudioWebRuntime';
 class ContentPageData {
   content: string = '';
   nextUrl: string = '';
-}
-
-class QtqdContentData {
-  handled: boolean = false;
-  audio: boolean = false;
-  content: string = '';
 }
 
 export class WebBookService {
@@ -48,9 +40,6 @@ export class WebBookService {
     if (BookSourceDataUrlSupport.isEncodedSource(book.bookUrl)) {
       return await BookSourceDataUrlSupport.getBookInfo(this.http, source, book);
     }
-    const sourceApiBook = await this.tryGetSourceApiBookInfo(source, book);
-    if (sourceApiBook) return sourceApiBook;
-    await BookSourceShuqiSupport.ensureAuthorization(this.http, source);
     console.log('[WS] getBookInfo, URL:', book.bookUrl);
     const au = new AnalyzeUrl(source, this.http);
     const resp = EncodedSourceUrl.canHandle(book.bookUrl) ?
@@ -121,8 +110,7 @@ export class WebBookService {
     book.latestChapterTitle = BookFieldSanitizer.prefer(fieldValues['lastChapter'] || '', book.latestChapterTitle);
     book.wordCount = BookFieldSanitizer.prefer(fieldValues['wordCount'] || '', book.wordCount);
 
-    const nativeShuqiTocUrl = BookSourceShuqiSupport.buildTocUrl(source, content);
-    const tocUrl = nativeShuqiTocUrl || fieldValues['tocUrl'] || '';
+    const tocUrl = fieldValues['tocUrl'] || '';
     if (tocUrl) book.tocUrl = this.repairUrlWithBookId(tocUrl, book.bookUrl);
 
     // 保存变量
@@ -155,38 +143,7 @@ export class WebBookService {
   }
 
   private resolveTocUrl(source: BookSource, book: Book): string {
-    const current = book.tocUrl || book.bookUrl;
-    const fanqieUrl = this.buildFanqieDirectoryUrl(source, book);
-    if (!fanqieUrl) return current;
-    if (!current || this.isBookInfoUrl(current) || this.isBadFanqieDirectoryUrl(current)) {
-      book.tocUrl = fanqieUrl;
-      return fanqieUrl;
-    }
-    return current;
-  }
-
-  private buildFanqieDirectoryUrl(source: BookSource, book: Book): string {
-    const chapterListRule = source.tocRule?.chapterList || '';
-    const infoTocRule = source.bookInfoRule?.tocUrl || '';
-    if (!chapterListRule.includes('chapterListWithVolume') && !infoTocRule.includes('fanqienovel.com/api/reader/directory/detail')) {
-      return '';
-    }
-    const id = this.extractQueryParam(book.tocUrl || '', 'bookId') || this.extractQueryParam(book.tocUrl || '', 'book_id') ||
-      this.extractQueryParam(book.bookUrl || '', 'book_id') || this.extractQueryParam(book.bookUrl || '', 'bookId') ||
-      this.extractQueryParam(book.bookUrl || '', 'id') || this.extractBookId(book.bookUrl || '');
-    if (!id) return '';
-    return `https://fanqienovel.com/api/reader/directory/detail?bookId=${encodeURIComponent(id)}`;
-  }
-
-  private isBookInfoUrl(url: string): boolean {
-    if (!url) return false;
-    return /\/info(?:[?#]|$)/.test(url) && (!!this.extractQueryParam(url, 'book_id') || !!this.extractQueryParam(url, 'bookId'));
-  }
-
-  private isBadFanqieDirectoryUrl(url: string): boolean {
-    if (!url.includes('fanqienovel.com/api/reader/directory/detail')) return false;
-    const bookId = this.extractQueryParam(url, 'bookId') || this.extractQueryParam(url, 'book_id');
-    return !bookId || bookId.includes('{{') || bookId.includes('$');
+    return book.tocUrl || book.bookUrl;
   }
 
   private repairUrlWithBookId(url: string, bookUrl: string): string {
@@ -220,20 +177,11 @@ export class WebBookService {
     if (BookSourceDataUrlSupport.isEncodedSource(book.tocUrl) || BookSourceDataUrlSupport.isEncodedSource(book.bookUrl)) {
       return await BookSourceDataUrlSupport.getChapterList(this.http, source, book);
     }
-    const qtqdChapters = await this.tryBuildQtqdChapterList(source, book);
-    if (qtqdChapters.length > 0) return qtqdChapters;
-    const sourceApiChapters = await this.tryBuildSourceApiChapterList(source, book);
-    if (sourceApiChapters.length > 0) return sourceApiChapters;
-    await BookSourceShuqiSupport.ensureAuthorization(this.http, source);
     console.log('[WS] getChapterList, tocUrl:', book.tocUrl);
     const tocUrl = this.resolveTocUrl(source, book);
     const au = new AnalyzeUrl(source, this.http);
     let resp = EncodedSourceUrl.canHandle(tocUrl) ?
       await this.fetchEncodedDataUrl(tocUrl, source) : await au.fetch(tocUrl);
-    if ((resp.statusCode >= 400 || !resp.success || !resp.body) && this.shouldFallbackChaoxingToc(source, tocUrl, book.bookUrl)) {
-      console.warn('[WS] Chaoxing toc api failed, fallback to detail page:', tocUrl);
-      resp = await au.fetch(book.bookUrl);
-    }
     if (!resp.success || !resp.body) return [];
     const ctx = new RuleContext();
     ctx.loadFromJson(book.variable);
@@ -261,11 +209,10 @@ export class WebBookService {
         firstBaseUrl = baseUrl;
         const runtimeInput = this.stageDataUrlInput(tocRule.chapterList, currentUrl, currentResp.body);
         const runtimeList = await this.runStageRule(source, book, tocRule.chapterList,
-          runtimeInput, baseUrl, SourceRuntimeStage.TOC);
+          runtimeInput, baseUrl, SourceRuntimeStage.TOC, null, EncodedSourceUrl.scalarVariables(currentUrl));
         if (runtimeList) {
           const runtimeChapters = await this.parseStageChapterList(source, book, runtimeList, baseUrl);
           if (runtimeChapters.length > 0) {
-            BookSourceShuqiSupport.attachChapterMetadata(source, book, runtimeChapters, currentResp.body);
             return runtimeChapters;
           }
           AppStorage.setOrCreate('bookSourceStageLastError',
@@ -273,11 +220,6 @@ export class WebBookService {
         } else if (this.stageRuleCode(tocRule.chapterList || '')) {
           const lastError = AppStorage.get<string>('bookSourceStageLastError') || '';
           if (!lastError) AppStorage.setOrCreate('bookSourceStageLastError', '目录脚本返回空结果');
-        }
-        const specialChapters = await this.tryBuildSpecialChapterList(source, book, currentResp.body);
-        if (specialChapters.length > 0) {
-          book.variable = ctx.toPersistentJson();
-          return specialChapters;
         }
       }
       const pageChapters = await this.parseChapterPage(source, book, currentResp.body, baseUrl, ctx, chapters.length);
@@ -300,9 +242,6 @@ export class WebBookService {
 
     book.variable = ctx.toPersistentJson();
     if (chapters.length > 0) return chapters;
-
-    const chaoxingDetailChapter = this.tryBuildChaoxingDetailChapter(source, book, firstBody, firstBaseUrl);
-    if (chaoxingDetailChapter.length > 0) return chaoxingDetailChapter;
 
     const fallbackChapters = this.tryBuildGenericChapterList(book, firstBody, firstBaseUrl);
     if (fallbackChapters.length > 0) return fallbackChapters;
@@ -369,7 +308,7 @@ export class WebBookService {
         rawUrl = rawUrl.replace(/\s*\+\s*/g, '').replace(/^['"]|['"]$/g, '').trim();
       }
       const resolvedChapterUrl = this.resolveVars(BookUrlResolver.resolve(rawUrl, baseUrl), ctx);
-      chap.url = this.normalizeChaoxingUrl(source, this.repairUrlWithBookId(resolvedChapterUrl, book.bookUrl));
+      chap.url = this.repairUrlWithBookId(resolvedChapterUrl, book.bookUrl);
       chap.bookUrl = book.bookUrl;
       chap.index = startIndex + i;
       chap.isVip = values['isVip'] === 'true';
@@ -385,34 +324,6 @@ export class WebBookService {
   }
 
   async getContent(source: BookSource, book: Book, chapter: BookChapter): Promise<string> {
-    const qtqdContent = await this.tryGetQtqdContent(source, book, chapter);
-    if (qtqdContent.handled) {
-      if (qtqdContent.audio) return qtqdContent.content.trim();
-      const interactiveContent = await BookSourceInteractionPostProcessor.process(source, book, chapter,
-        qtqdContent.content);
-      const qtqdContext = new RuleContext();
-      qtqdContext.loadFromJson(book.variable);
-      this.seedBookVariables(qtqdContext, book.bookUrl);
-      this.seedSourceVariables(qtqdContext, source);
-      this.seedChapterVariables(qtqdContext, chapter);
-      return await this.normalizeReaderContent(source,
-        this.applyContentReplaceRule(interactiveContent, source.contentRule.replaceRegex, qtqdContext, chapter),
-        this.getChapterBaseUrl(chapter, book, source));
-    }
-    const sourceApiContent = await this.tryGetSourceApiContent(source, book, chapter);
-    if (sourceApiContent.handled) {
-      if (sourceApiContent.audio) return sourceApiContent.content.trim();
-      const interactiveContent = await BookSourceInteractionPostProcessor.process(source, book, chapter,
-        sourceApiContent.content);
-      const sourceApiContext = new RuleContext();
-      sourceApiContext.loadFromJson(book.variable);
-      this.seedBookVariables(sourceApiContext, book.bookUrl);
-      this.seedSourceVariables(sourceApiContext, source);
-      this.seedChapterVariables(sourceApiContext, chapter);
-      return await this.normalizeReaderContent(source,
-        this.applyContentReplaceRule(interactiveContent, source.contentRule.replaceRegex, sourceApiContext, chapter),
-        chapter.url || book.tocUrl || book.bookUrl || source.bookSourceUrl);
-    }
     if (BookSourceDataUrlSupport.isEncodedSource(chapter.url)) {
       const shortcutContent = await BookSourceDataUrlSupport.getContent(this.http, source, book, chapter);
       const shortcutAudio = source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
@@ -452,32 +363,10 @@ export class WebBookService {
       // with the synchronous compatibility engine is precisely the path that can trigger AppFreeze.
       return '';
     }
-    const normalizedContentUrl = this.normalizeChaoxingUrl(source, chapter.url);
-    if (normalizedContentUrl !== chapter.url) {
-      chapter.url = normalizedContentUrl;
-    }
     console.log('[WS] getContent, url:', chapter.url);
-    const specialContent = await this.tryGetSpecialContent(source, chapter);
-    if (specialContent) {
-      const specialCtx = new RuleContext();
-      specialCtx.loadFromJson(book.variable);
-      this.seedBookVariables(specialCtx, book.bookUrl);
-      this.seedSourceVariables(specialCtx, source);
-      this.seedChapterVariables(specialCtx, chapter);
-      const interactiveContent = await BookSourceInteractionPostProcessor.process(source, book, chapter,
-        specialContent);
-      return await this.normalizeReaderContent(source,
-        this.applyContentReplaceRule(interactiveContent, source.contentRule.replaceRegex, specialCtx, chapter), chapter.url);
-    }
     const au = new AnalyzeUrl(source, this.http);
     let resp = EncodedSourceUrl.canHandle(chapter.url) ?
       await this.fetchEncodedDataUrl(chapter.url, source) : await au.fetch(chapter.url);
-    if ((!resp.success || !resp.body) && this.shouldRetryChaoxingHttps(source, chapter.url)) {
-      const httpsUrl = this.normalizeChaoxingUrl(source, chapter.url);
-      console.warn('[WS] Chaoxing content http failed, retry https:', httpsUrl);
-      resp = await au.fetch(httpsUrl);
-      chapter.url = httpsUrl;
-    }
     console.log('[WS] getContent resp:', resp.success, 'len:', resp.body.length);
     if (!resp.success || !resp.body) return '';
     const ctx = new RuleContext();
@@ -569,10 +458,6 @@ export class WebBookService {
       const fallbackContent = this.tryExtractReadableContentFromHtml(body);
       if (fallbackContent) content = fallbackContent;
     }
-    if ((!content || this.isBadExtractedContent(content)) && this.isChaoxingSource(source, chapter.url)) {
-      const chaoxingContent = this.tryExtractChaoxingDetailContent(book, body);
-      if (chaoxingContent) content = chaoxingContent;
-    }
     if (!content && imageRuleValues.length === 0) return data;
     content = this.applyContentReplaceRule(content, contentRule.replaceRegex, ctx, chapter);
     data.content = await this.normalizeReaderContent(source, content, baseUrl, imageRuleValues);
@@ -619,8 +504,7 @@ export class WebBookService {
   }
 
   private async fetchEncodedDataUrl(url: string, source: BookSource): Promise<{ url: string, statusCode: number, headers: Record<string, string>, body: string, success: boolean, error?: string }> {
-    const root = await EncodedSourceUrl.requestJsonForDataUrl(this.http, url,
-      BookSourceDataUrlSupport.sourceBackendHost(source));
+    const root = await EncodedSourceUrl.requestJsonForDataUrl(this.http, url, source);
     if (!root) {
       return { url: url, statusCode: 0, headers: {}, body: '', success: false, error: 'encoded data url request failed' };
     }
@@ -635,97 +519,6 @@ export class WebBookService {
     VerificationSupport.requestVerification(verifyUrl, `${source.bookSourceName} 验证`, source);
     console.warn('[WS] source needs browser verification:', source.bookSourceName, verifyUrl);
     return true;
-  }
-
-  private shouldFallbackChaoxingToc(source: BookSource, tocUrl: string, bookUrl: string): boolean {
-    if (!bookUrl || !this.isChaoxingSource(source, tocUrl || bookUrl)) return false;
-    return (tocUrl || '').includes('/api/book/getChapters');
-  }
-
-  private isChaoxingSource(source: BookSource, requestUrl: string): boolean {
-    const raw = `${requestUrl || ''}\n${source.bookSourceUrl || ''}\n${source.loginUrl || ''}\n` +
-      `${source.searchUrl || ''}\n${source.exploreUrl || ''}`.toLowerCase();
-    return raw.includes('chaoxing.com');
-  }
-
-  private normalizeChaoxingUrl(source: BookSource, url: string): string {
-    if (!url || !this.isChaoxingSource(source, url)) return url;
-    return url.replace(/^http:\/\/((?:qikan|www)\.chaoxing\.com)(?=\/)/i, 'https://$1');
-  }
-
-  private shouldRetryChaoxingHttps(source: BookSource, url: string): boolean {
-    return /^http:\/\/(?:qikan|www)\.chaoxing\.com\//i.test(url || '') && this.isChaoxingSource(source, url);
-  }
-
-  private tryBuildChaoxingDetailChapter(source: BookSource, book: Book, body: string, baseUrl: string): BookChapter[] {
-    if (!this.isChaoxingSource(source, book.bookUrl || baseUrl) || !body || !book.bookUrl.includes('/detail_')) return [];
-    if (!this.looksLikeChaoxingDetailPage(body)) return [];
-    const chapter = new BookChapter();
-    chapter.title = this.cleanChapterTitle(book.latestChapterTitle || book.name || '详情');
-    chapter.url = this.normalizeChaoxingUrl(source, book.bookUrl);
-    chapter.bookUrl = book.bookUrl;
-    chapter.index = 0;
-    chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'baseUrl', chapter.url);
-    console.log('[WS] Chaoxing detail fallback chapter:', chapter.title, chapter.url);
-    return chapter.title && chapter.url ? [chapter] : [];
-  }
-
-  private looksLikeChaoxingDetailPage(body: string): boolean {
-    const sample = (body || '').substring(0, Math.min(body.length, 200000));
-    return sample.includes('qikan.chaoxing.com') || sample.includes('chaoxing.com') ||
-      sample.includes('超星') || sample.includes('读秀') || sample.includes('文献') ||
-      /\/detail_[A-Za-z0-9]+/.test(sample);
-  }
-
-  private tryExtractChaoxingDetailContent(book: Book, body: string): string {
-    if (!body) return '';
-    const title = this.cleanInlineText(book.name || this.extractFirstMetaContent(body, ['citation_title', 'DC.title']) ||
-      this.extractTitleText(body));
-    const author = this.cleanInlineText(book.author || this.extractFirstMetaContent(body, ['citation_author', 'DC.creator']));
-    const abstractText = this.cleanInlineText(this.extractChaoxingField(body, ['摘要', '简介', '内容提要']) ||
-      this.extractFirstMetaContent(body, ['description', 'DC.description']));
-    const keywords = this.cleanInlineText(this.extractChaoxingField(body, ['关键词', '关键字']) ||
-      this.extractFirstMetaContent(body, ['keywords', 'citation_keywords']));
-    const sourceName = this.cleanInlineText(this.extractChaoxingField(body, ['来源', '刊名', '期刊']) ||
-      this.extractFirstMetaContent(body, ['citation_journal_title']));
-    const year = this.cleanInlineText(this.extractChaoxingField(body, ['年份', '出版日期']) ||
-      this.extractFirstMetaContent(body, ['citation_publication_date', 'DC.date']));
-
-    const lines: string[] = [];
-    if (title) lines.push(title);
-    if (author) lines.push(`作者：${author}`);
-    if (sourceName) lines.push(`来源：${sourceName}`);
-    if (year) lines.push(`日期：${year}`);
-    if (keywords) lines.push(`关键词：${keywords}`);
-    if (abstractText) lines.push(`摘要：${abstractText}`);
-    if (lines.length <= 1) return '';
-    lines.push('该超星条目未解析到可直接阅读的全文，已显示详情页信息。');
-    return lines.join('\n\n');
-  }
-
-  private extractFirstMetaContent(body: string, names: string[]): string {
-    for (const name of names) {
-      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const re = new RegExp(`<meta\\b[^>]*(?:name|property)\\s*=\\s*["']${escaped}["'][^>]*content\\s*=\\s*["']([\\s\\S]*?)["'][^>]*>`, 'i');
-      const match = body.match(re);
-      if (match && match[1]) return this.decodeHtmlEntities(match[1]);
-    }
-    return '';
-  }
-
-  private extractTitleText(body: string): string {
-    const match = (body || '').match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-    return match && match[1] ? this.decodeHtmlEntities(match[1]).replace(/[-_].*$/, '') : '';
-  }
-
-  private extractChaoxingField(body: string, labels: string[]): string {
-    for (const label of labels) {
-      const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const re = new RegExp(`${escaped}\\s*[：:]\\s*</?[^>]*>??\\s*([\\s\\S]{0,800}?)(?:</p>|</li>|</div>|<br\\s*/?>|\\n)`, 'i');
-      const match = (body || '').match(re);
-      if (match && match[1]) return this.decodeHtmlEntities(match[1].replace(/<[^>]+>/g, ' '));
-    }
-    return '';
   }
 
   private isBadExtractedContent(content: string): boolean {
@@ -1126,12 +919,9 @@ export class WebBookService {
     return await this.materializeReaderImageMarkers(source, normalized);
   }
 
-  private convertReaderNativeActions(source: BookSource, content: string, baseUrl: string): string {
+  private convertReaderNativeActions(_source: BookSource, content: string, _baseUrl: string): string {
     if (!content) return content;
-    let value = content.replace(/<img\b[^>]*>/gi, (tag: string): string => {
-      return this.readerActionMarkerFromLegacyImage(source, tag, baseUrl) || tag;
-    });
-    value = value.replace(/<p\b[^>]*>\s*<img\b([^>]*\bident\s*=\s*["'][^"']+["'][^>]*)\/?\s*>\s*<\/p>/gi,
+    let value = content.replace(/<p\b[^>]*>\s*<img\b([^>]*\bident\s*=\s*["'][^"']+["'][^>]*)\/?\s*>\s*<\/p>/gi,
       (_all: string, attrs: string): string => {
         const identMatch = /\bident\s*=\s*["']([^"']+)["']/i.exec(attrs || '');
         const url = this.decodeHtmlEntities(identMatch && identMatch[1] ? identMatch[1] : '');
@@ -1167,166 +957,10 @@ export class WebBookService {
     if (!url) return '';
     const rawTitle = this.decodeHtmlEntities(actionMatch && actionMatch[4] ? actionMatch[4] : '');
     const count = this.decodeHtmlEntities(countMatch && countMatch[1] ? countMatch[1] : '');
-    const isQidianComment = /\/qidian_full_api\.php\?/i.test(url) &&
-      /[?&]action=(?:paragraph_(?:comments|image_comments|audio_comments)|chapter_comments)(?:&|$)/i.test(url);
-    const isComment = /\/comments(?:[/?#]|$)|\/idea_comment(?:[/?#]|$)|\/get_review(?:[/?#]|$)/i.test(url) ||
-      isQidianComment;
+    const isComment = /\/comments(?:[/?#]|$)|\/idea_comment(?:[/?#]|$)|\/get_review(?:[/?#]|$)/i.test(url);
     const title = isComment ? (rawTitle ? `段评 · ${rawTitle}` : '段评') : (rawTitle || '打开');
     const label = isComment ? (count ? `段评 ${count}` : '段评') : (count ? `${title} ${count}` : title);
     return ReaderActionMarker.create(label, url, title);
-  }
-
-  /**
-   * Older Legado-compatible sources attach a JavaScript click action to an SVG data URL. The
-   * reader image pipeline deliberately strips those options, so translate the well-known
-   * paragraph-comment action into a native marker before normal image handling runs.
-   */
-  private readerActionMarkerFromLegacyImage(source: BookSource, tag: string, baseUrl: string): string {
-    const rawSource = this.decodeHtmlEntities(this.findReaderImageAttribute(tag));
-    const optionIndex = this.readerImageOptionIndex(rawSource);
-    if (optionIndex < 0) return '';
-    const rawOptions = rawSource.substring(optionIndex + 1).trim();
-    let options: Record<string, Object> = {};
-    try {
-      options = JSON.parse(rawOptions) as Record<string, Object>;
-    } catch (_) {
-      return '';
-    }
-    const action = String(options['click'] || options['js'] || '');
-    const svgText = this.decodeLegacySvg(rawSource.substring(0, optionIndex));
-    const shuqiMarker = this.readerActionMarkerFromShuqiLegacyAction(source, action, svgText);
-    if (shuqiMarker) return shuqiMarker;
-    const actionMatch = /\b((?:fq)?(?:android)?showCmt)\s*\(\s*['"]?([^,'"\s)]+)['"]?\s*,\s*['"]?([^,'"\s)]+)['"]?\s*,\s*['"]?([^,'"\s)]+)['"]?/i.exec(action);
-    if (!actionMatch || !actionMatch[2] || !actionMatch[3] || !actionMatch[4]) return '';
-    const host = this.readerActionHost(source, baseUrl);
-    if (!host) return '';
-    const isFanqie = /^fq/i.test(actionMatch[1] || '');
-    const bookId = encodeURIComponent(actionMatch[2]);
-    const chapterId = encodeURIComponent(actionMatch[3]);
-    const paragraphId = encodeURIComponent(actionMatch[4]);
-    let url = `${host}/comments?bookId=${bookId}&chapterId=${chapterId}&paragraphId=${paragraphId}`;
-    if (isFanqie) url += '&source=fanqie';
-
-    const kind = /作家说/.test(svgText) ? '作家说评论' :
-      (/本章说/.test(svgText) ? '本章说' : (/热评|热门评论|神评论/.test(svgText) ? '神评论' : '段评'));
-    const countMatch = /<text\b[^>]*>([^<>]{1,20})<\/text>/gi;
-    let count = '';
-    let textMatch: RegExpExecArray | null;
-    while ((textMatch = countMatch.exec(svgText)) !== null) {
-      const candidate = this.decodeHtmlEntities(textMatch[1] || '').trim();
-      if (/^\d{1,4}$/.test(candidate)) count = candidate;
-    }
-    const label = count && kind === '段评' ? `${kind} ${count}` : kind;
-    const marker = ReaderActionMarker.create(label, url, kind);
-    if (!marker) return '';
-    // Rich chapter/author cards retain their artwork and receive a native action beside it.
-    return kind === '段评' ? marker : `${tag}\n${marker}`;
-  }
-
-  private readerActionMarkerFromShuqiLegacyAction(source: BookSource, action: string, svgText: string): string {
-    const call = /\b(showSqComments|showSqChapterComments)\s*\(/i.exec(action || '');
-    if (!call || call.index < 0) return '';
-    const openIndex = (action || '').indexOf('(', call.index);
-    const args = this.parseLegacyJavaScriptCallArguments(action || '', openIndex);
-    if (args.length < 3 || !args[0] || !args[1] || !args[2]) return '';
-    const mode = /^showSqChapterComments$/i.test(call[1] || '') ? 'chapterTitle' : 'paragraph';
-    const count = this.readerLegacySvgCommentCount(svgText);
-    const kind = mode === 'chapterTitle' ? '章评' : '段评';
-    const label = count ? `${kind} ${count}` : kind;
-    return ReaderActionMarker.createProviderComment('shuqi-comments', label, args[0], args[1], args[2], mode);
-  }
-
-  private parseLegacyJavaScriptCallArguments(script: string, openIndex: number): string[] {
-    if (openIndex < 0 || script.charAt(openIndex) !== '(') return [];
-    const result: string[] = [];
-    let index = openIndex + 1;
-    while (index < script.length && result.length < 8) {
-      while (index < script.length && /[\s,]/.test(script.charAt(index))) index++;
-      if (index >= script.length || script.charAt(index) === ')') break;
-      const quote = script.charAt(index);
-      let value = '';
-      if (quote === '"' || quote === "'") {
-        index++;
-        while (index < script.length) {
-          const char = script.charAt(index++);
-          if (char === '\\' && index < script.length) {
-            const escaped = script.charAt(index++);
-            if (escaped === 'n') value += '\n';
-            else if (escaped === 'r') value += '\r';
-            else if (escaped === 't') value += '\t';
-            else value += escaped;
-          } else if (char === quote) {
-            break;
-          } else {
-            value += char;
-          }
-        }
-      } else {
-        const start = index;
-        while (index < script.length && script.charAt(index) !== ',' && script.charAt(index) !== ')') index++;
-        value = script.substring(start, index).trim();
-      }
-      result.push(value);
-      while (index < script.length && /\s/.test(script.charAt(index))) index++;
-      if (script.charAt(index) === ',') index++;
-      else if (script.charAt(index) === ')') break;
-    }
-    return result;
-  }
-
-  private readerLegacySvgCommentCount(svgText: string): string {
-    const countRegex = /<text\b[^>]*>([^<>]{1,20})<\/text>/gi;
-    let count = '';
-    let match: RegExpExecArray | null;
-    while ((match = countRegex.exec(svgText || '')) !== null) {
-      const candidate = this.decodeHtmlEntities(match[1] || '').trim();
-      if (/^(?:999\+?|\d{1,4})$/.test(candidate)) count = candidate;
-    }
-    return count;
-  }
-
-  private bookSourceLoginInfoValue(source: BookSource, key: string): string {
-    try {
-      const record = JSON.parse(source.loginInfo || '{}') as Record<string, Object>;
-      const value = record[key];
-      if (value !== undefined && value !== null && typeof value !== 'object') return String(value).trim();
-    } catch (_) {}
-    return '';
-  }
-
-  private decodeLegacySvg(dataUrl: string): string {
-    const match = /^data:image\/svg\+xml;base64,([^,]+)/i.exec(dataUrl || '');
-    if (!match || !match[1]) return '';
-    try {
-      const bytes = new util.Base64Helper().decodeSync(match[1]);
-      return util.TextDecoder.create('utf-8').decodeWithStream(bytes, { stream: false });
-    } catch (_) {
-      return '';
-    }
-  }
-
-  private readerActionHost(source: BookSource, baseUrl: string): string {
-    let preferred = '';
-    try {
-      const loginInfo = JSON.parse(source.loginInfo || '{}') as Record<string, Object>;
-      const rawRuntime = loginInfo['__legadoHarmonyRuntime'];
-      let runtime: Record<string, Object> = {};
-      if (typeof rawRuntime === 'string') {
-        runtime = JSON.parse(rawRuntime || '{}') as Record<string, Object>;
-      } else if (rawRuntime && typeof rawRuntime === 'object' && !Array.isArray(rawRuntime)) {
-        runtime = rawRuntime as Record<string, Object>;
-      }
-      const rawSource = runtime['source'];
-      if (rawSource && typeof rawSource === 'object' && !Array.isArray(rawSource)) {
-        const sourceState = rawSource as Record<string, Object>;
-        preferred = String(sourceState['qd_base'] || '');
-      }
-    } catch (_) {
-      preferred = '';
-    }
-    const candidate = preferred || baseUrl || source.bookSourceUrl || '';
-    const origin = /^https?:\/\/[^/]+/i.exec(candidate);
-    return origin && origin[0] ? origin[0].replace(/\/+$/, '') : '';
   }
 
   private async materializeReaderImageMarkers(source: BookSource, content: string): Promise<string> {
@@ -1518,7 +1152,8 @@ export class WebBookService {
   }
 
   private async runStageRule(source: BookSource, book: Book, rawRule: string, content: string,
-    baseUrl: string, stage: string, chapter: BookChapter | null = null): Promise<string> {
+    baseUrl: string, stage: string, chapter: BookChapter | null = null,
+    variables: Record<string, string> = {}): Promise<string> {
     const code = this.stageRuleCode(rawRule);
     if (!code) return '';
     const decision = BookSourceRuntimeRouter.decide(stage, `${source.jsLib || ''}\n${code}`);
@@ -1541,6 +1176,7 @@ export class WebBookService {
     request.content = content || '';
     request.contextContent = '';
     request.baseUrl = baseUrl || book.bookUrl || source.bookSourceUrl;
+    request.variables = { ...variables, ...(chapter ? EncodedSourceUrl.scalarVariables(chapter.url) : {}) };
     try {
       const result = await runtime.execute(request);
       return result.value || '';
@@ -1589,166 +1225,6 @@ export class WebBookService {
         .filter((item: string): boolean => !!item);
     } catch (_) {
       return [];
-    }
-  }
-
-  private async tryBuildSourceApiChapterList(source: BookSource, book: Book): Promise<BookChapter[]> {
-    const apiBase = this.sourceApiBase(source);
-    const tocScript = source.tocRule?.chapterList || '';
-    if (!apiBase || !tocScript.includes('requestApiUrl') || !tocScript.includes('/catalog')) return [];
-    const payload = EncodedSourceUrl.decode(book.tocUrl || '');
-    if (!payload || !payload.text) return [];
-    const novelId = payload.text.trim();
-    const type = String(payload.options['type'] || 'novel').trim() || 'novel';
-    const catalogValue = await this.fetchSourceApiData(source, apiBase, `/${type}/catalog`, {
-      novelId: novelId
-    });
-    if (!Array.isArray(catalogValue)) return [];
-
-    const cachedIds = new Set<string>();
-    const cacheValue = await this.fetchSourceApiData(source, apiBase, `/${type}/cache`, {
-      novelId: novelId
-    });
-    if (Array.isArray(cacheValue)) {
-      for (const cacheItem of cacheValue as Object[]) {
-        if (!cacheItem || typeof cacheItem !== 'object' || Array.isArray(cacheItem)) continue;
-        const cacheRecord = cacheItem as Record<string, Object>;
-        const cacheId = String(cacheRecord['chapId'] || cacheRecord['chapterId'] || cacheRecord['id'] || '');
-        if (cacheId) cachedIds.add(cacheId);
-      }
-    }
-
-    const chapters: BookChapter[] = [];
-    for (const volumeItem of catalogValue as Object[]) {
-      if (!volumeItem || typeof volumeItem !== 'object' || Array.isArray(volumeItem)) continue;
-      const volume = volumeItem as Record<string, Object>;
-      const rawChapters = volume['chapters'];
-      const chapterValues = Array.isArray(rawChapters) ? rawChapters as Object[] : [volumeItem];
-      for (const chapterItem of chapterValues) {
-        if (!chapterItem || typeof chapterItem !== 'object' || Array.isArray(chapterItem)) continue;
-        const record = chapterItem as Record<string, Object>;
-        const chapterId = String(record['chapId'] || record['chapterId'] || record['id'] || '');
-        const chapterName = String(record['chapName'] || record['chapterName'] || record['name'] || record['title'] || '');
-        if (!chapterId || !chapterName) continue;
-        const isVip = record['isVip'] === true || String(record['isVip'] || '') === 'true';
-        const isBuy = record['isBuy'] === true || record['isPay'] === true ||
-          String(record['isBuy'] || record['isPay'] || '') === 'true';
-        const cached = cachedIds.has(chapterId);
-        const chapter = new BookChapter();
-        chapter.title = this.cleanChapterTitle((isVip ? (isBuy ? ' 🔑 ' : cached ? ' 🍋 ' : '') : '') + chapterName);
-        chapter.url = `data:;base64,${this.base64Encode(chapterId)},{"type":"${type}","novelId":"${novelId}"}`;
-        chapter.bookUrl = book.bookUrl;
-        chapter.index = chapters.length;
-        chapter.isVip = isVip && !cached;
-        chapter.isPay = isBuy;
-        const displayTime = String(record['displayTime'] || record['updateTime'] || '');
-        const charCount = String(record['charCount'] || record['wordCount'] || '');
-        if (displayTime || charCount) {
-          chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'updateTime',
-            `${displayTime}${displayTime && charCount ? ' | ' : ''}${charCount}${charCount ? '字' : ''}`);
-        }
-        chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'baseUrl', chapter.url);
-        chapters.push(chapter);
-      }
-    }
-    if (chapters.length > 0) {
-      if (type === 'novel') book.type = 8;
-      else if (type === 'audio') book.type = 32;
-      else if (type === 'comic') book.type = 64;
-      AppStorage.setOrCreate('bookSourceStageLastError', '');
-    }
-    return chapters;
-  }
-
-  private async tryGetSourceApiBookInfo(source: BookSource, book: Book): Promise<Book | null> {
-    const apiBase = this.sourceApiBase(source);
-    if (!apiBase || !book.bookUrl.startsWith(apiBase)) return null;
-    const pathMatch = book.bookUrl.match(/\/(novel|audio|comic)\/info(?:\?|$)/);
-    if (!pathMatch) return null;
-    const type = String(pathMatch[1] || 'novel');
-    const novelId = this.extractQueryParam(book.bookUrl, 'novelId') ||
-      this.extractQueryParam(book.bookUrl, 'bookId') || this.extractQueryParam(book.bookUrl, 'id');
-    if (!novelId) return null;
-    const value = await this.fetchSourceApiData(source, apiBase, `/${type}/info`, { novelId: novelId });
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-    const data = value as Record<string, Object>;
-    book.name = String(data['name'] || data['bookName'] || book.name || '');
-    book.author = String(data['author'] || data['writer'] || book.author || '');
-    book.coverUrl = String(data['cover'] || data['coverUrl'] || book.coverUrl || '');
-    book.intro = BookFieldSanitizer.prefer(String(data['desc'] || data['intro'] || ''), book.intro);
-    book.kind = BookFieldSanitizer.prefer([data['status'], data['category'], data['subCategory'], data['tag']]
-      .map((entry: Object): string => String(entry || '').trim()).filter((entry: string): boolean => !!entry)
-      .join(' '), book.kind);
-    book.latestChapterTitle = BookFieldSanitizer.prefer(String(data['lastChapter'] ||
-      data['latestChapterTitle'] || ''), book.latestChapterTitle);
-    book.wordCount = BookFieldSanitizer.prefer(String(data['wordsCount'] || data['wordCount'] || ''), book.wordCount);
-    const resolvedId = String(data['id'] || data['novelId'] || novelId);
-    const resolvedType = String(data['type'] || type);
-    book.tocUrl = `data:;base64,${this.base64Encode(resolvedId)},{"type":"${resolvedType}"}`;
-    if (resolvedType === 'novel') book.type = 8;
-    else if (resolvedType === 'audio') book.type = 32;
-    else if (resolvedType === 'comic') book.type = 64;
-    AppStorage.setOrCreate('bookSourceStageLastError', '');
-    return book;
-  }
-
-  private async tryGetSourceApiContent(source: BookSource, book: Book,
-    chapter: BookChapter): Promise<QtqdContentData> {
-    const result = new QtqdContentData();
-    const apiBase = this.sourceApiBase(source);
-    const contentScript = source.contentRule?.content || '';
-    if (!apiBase || !contentScript.includes('requestApiUrl') || !contentScript.includes('/chap')) return result;
-    const payload = EncodedSourceUrl.decode(chapter.url || '');
-    if (!payload || !payload.text) return result;
-    const type = String(payload.options['type'] || '').trim();
-    const novelId = String(payload.options['novelId'] || '').trim();
-    if (!type || !novelId || type === 'volume') return result;
-    const dataValue = await this.fetchSourceApiData(source, apiBase, `/${type}/chap`, {
-      novelId: novelId,
-      chapId: payload.text.trim()
-    });
-    if (!dataValue || typeof dataValue !== 'object' || Array.isArray(dataValue)) return result;
-    const data = dataValue as Record<string, Object>;
-    result.handled = true;
-    result.audio = type === 'audio';
-    if (type === 'audio') result.content = String(data['url'] || data['audioUrl'] || '');
-    else if (type === 'comic') {
-      const images = data['images'];
-      result.content = Array.isArray(images) ? (images as Object[]).map((value: Object): string =>
-        `<img src="${String(value || '')}">`).join('\n') : '';
-    } else {
-      result.content = String(data['content'] || data['text'] || '');
-    }
-    return result;
-  }
-
-  private sourceApiBase(source: BookSource): string {
-    const library = source.jsLib || '';
-    if (!/function\s+getApiUrl\s*\(|function\s+requestApiUrl\s*\(/.test(library)) return '';
-    const match = library.match(/\b(?:const|let|var)\s+api\s*=\s*['"](https?:\/\/[^'"]+)['"]/);
-    return match ? String(match[1] || '').replace(/\/$/, '') : '';
-  }
-
-  private async fetchSourceApiData(source: BookSource, apiBase: string, path: string,
-    params: Record<string, string>): Promise<Object | null> {
-    const query: string[] = [];
-    for (const key in params) {
-      const value = params[key];
-      if (value !== '') query.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
-    }
-    const option = JSON.stringify({
-      method: 'GET',
-      headers: { authorization: `Bearer ${source.variable || ''}` }
-    });
-    const response = await new AnalyzeUrl(source, this.http).fetch(`${apiBase}${path}?${query.join('&')},${option}`);
-    if (!response.success || !response.body) return null;
-    try {
-      const root = JSON.parse(response.body) as Record<string, Object>;
-      const message = String(root['msg'] || root['message'] || '');
-      if (message && message !== 'success') return null;
-      return root['data'] || null;
-    } catch (_) {
-      return null;
     }
   }
 
@@ -1846,7 +1322,7 @@ export class WebBookService {
     let content = '';
     let baseUrl = chapter.url || book.bookUrl || source.bookSourceUrl;
     const payload = EncodedSourceUrl.decode(chapter.url);
-    if (payload && (payload.type === 'qtqd' || this.ruleExpectsHexDataUrlInput(rawRule))) {
+    if (payload && this.ruleExpectsHexDataUrlInput(rawRule)) {
       content = this.textToHex(payload.text);
     } else {
       const response = await new AnalyzeUrl(source, this.http).fetch(chapter.url);
@@ -1996,6 +1472,8 @@ export class WebBookService {
     ctx.put('chapter.url', chapter.url || '');
     ctx.put('chapter.index', String(chapter.index));
     ctx.put('chapterTitle', chapter.title || '');
+    const encodedVariables = EncodedSourceUrl.scalarVariables(chapter.url);
+    for (const key in encodedVariables) ctx.put(key, encodedVariables[key]);
   }
 
   private urlWithoutFragment(url: string): string {
@@ -2053,455 +1531,5 @@ export class WebBookService {
       }
     }
     return '';
-  }
-
-  private async tryBuildSpecialChapterList(source: BookSource, book: Book, body: string): Promise<BookChapter[]> {
-    const fanqieVolumeChapters = this.tryBuildFanqieVolumeChapterList(source, book, body);
-    if (fanqieVolumeChapters.length > 0) return fanqieVolumeChapters;
-
-    if (!source.tocRule.chapterList.includes('allItemIds') && !source.tocRule.chapterList.includes('directory/detail')) {
-      return [];
-    }
-    try {
-      const root = JSON.parse(body) as Record<string, Object>;
-      const data = root['data'] as Record<string, Object>;
-      const ids = data?.['allItemIds'] as Object[];
-      if (!Array.isArray(ids) || ids.length === 0) return [];
-
-      const chapters: BookChapter[] = [];
-      for (let i = 0; i < ids.length; i += 100) {
-        const part = ids.slice(i, Math.min(i + 100, ids.length)).map(v => String(v)).join(',');
-        const detailUrl = `https://novel.snssdk.com/api/novel/book/directory/detail/v1/?item_ids=${part}`;
-        const detailHeaders: Record<string, string> = {};
-        const detailCookie = VerificationSupport.sourceCookieHeader(source, detailUrl);
-        if (detailCookie) detailHeaders['Cookie'] = detailCookie;
-        const resp = await this.http.execute({
-          url: detailUrl,
-          method: 'GET',
-          headers: detailHeaders
-        });
-        if (this.requestVerificationIfNeeded(source, resp.url || source.bookSourceUrl, resp.body, resp.statusCode, source.tocRule.chapterList)) {
-          return [];
-        }
-        if (!resp.success || !resp.body) continue;
-        const detail = JSON.parse(resp.body) as Record<string, Object>;
-        const list = detail['data'] as Object[];
-        if (!Array.isArray(list)) continue;
-        for (const item of list) {
-          const rec = item as Record<string, Object>;
-          const itemId = String(rec['item_id'] || rec['id'] || '');
-          if (!itemId) continue;
-          const chapter = new BookChapter();
-          chapter.title = this.cleanChapterTitle(String(rec['title'] || `第${chapters.length + 1}章`));
-          chapter.url = `data:;base64,${this.base64Encode(itemId)},{"type":"pyfqc"}`;
-          chapter.bookUrl = book.bookUrl;
-          chapter.index = chapters.length;
-          chapters.push(chapter);
-        }
-      }
-      return chapters;
-    } catch (e) {
-      console.warn('[WS] 特殊目录拼装失败:', e);
-      return [];
-    }
-  }
-
-  /**
-   * Some Legado sources generate their whole catalog in a JavaScript-only rule and encode each
-   * chapter as a `type: qtqd` data URL. Keep that protocol usable even when the shared ArkWeb
-   * runtime is temporarily unavailable after a page navigation.
-   */
-  private async tryBuildQtqdChapterList(source: BookSource, book: Book): Promise<BookChapter[]> {
-    const tocScript = source.tocRule?.chapterList || '';
-    if (!tocScript.includes('/catalog') || !tocScript.includes('qtqd') || !tocScript.includes('bookId')) return [];
-
-    const location = book.tocUrl || book.bookUrl || '';
-    const bookId = this.extractQueryParam(location, 'bookId') || this.extractQueryParam(location, 'book_id') ||
-      this.extractQueryParam(book.bookUrl || '', 'bookId') || this.extractQueryParam(book.bookUrl || '', 'book_id');
-    const host = this.qtqdBackendHost(source, location || book.bookUrl);
-    if (!bookId || !host) return [];
-
-    const account = this.qtqdSourceSection(source.variable, '账户设置');
-    const settings = this.qtqdSourceSection(source.variable, '书源设置');
-    const key = String(account['key'] || '');
-    const dttoken = String(account['dttoken'] || '');
-    const midpage = String(settings['彩蛋章节'] ?? 'true').toLowerCase() !== 'false';
-    let requestUrl = `${host}/catalog?cached=true&bookId=${encodeURIComponent(bookId)}`;
-    if (tocScript.includes('midpage=')) requestUrl += `&midpage=${midpage ? 'true' : 'false'}`;
-    const safeCatalogUrl = requestUrl;
-    requestUrl += `&key=${encodeURIComponent(key)}&device=harmony&dttoken=${encodeURIComponent(dttoken)}`;
-
-    try {
-      const response = await new AnalyzeUrl(source, this.http).fetch(requestUrl, 8 * 1024 * 1024);
-      if (!response.success || !response.body) return [];
-      const root = JSON.parse(response.body) as Record<string, Object>;
-      const data = root['Data'];
-      if (!data || typeof data !== 'object' || Array.isArray(data)) return [];
-      const recordsValue = (data as Record<string, Object>)['Chapters'];
-      if (!Array.isArray(recordsValue)) return [];
-
-      const cleanLocks = String(settings['净化目录标题'] ?? 'false').toLowerCase() !== 'false';
-      const audio = source.bookSourceType === 1 || (source.contentRule?.content || '').includes('/chapter/tts');
-      const chapters: BookChapter[] = [];
-      const records = recordsValue as Object[];
-      for (const value of records) {
-        if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
-        const record = value as Record<string, Object>;
-        const chapterId = String(record['C'] ?? '');
-        if (!(Number(chapterId) > 0 || chapterId.includes('_'))) continue;
-        let title = String(record['N'] || '');
-        if (cleanLocks) title = title.replace(/🔒|🔑/g, '');
-        title = this.cleanChapterTitle(title || `第${chapters.length + 1}章`);
-        if (!title) continue;
-
-        const payload: Record<string, Object> = {
-          bookId: bookId,
-          timestamp: record['T'] ?? 0,
-          id: record['C'] ?? chapterId,
-          v: Number(record['V'] || 0) === 1,
-          index: record['index'] ?? chapters.length
-        };
-        if (audio) payload['t'] = 1;
-        const chapter = new BookChapter();
-        chapter.title = title;
-        chapter.url = EncodedSourceUrl.encodeRaw(JSON.stringify(payload), 'qtqd');
-        chapter.bookUrl = book.bookUrl;
-        chapter.index = chapters.length;
-        chapter.isVip = Number(record['V'] || 0) === 1;
-        chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'baseUrl', safeCatalogUrl);
-        const updateTime = `${record['cached'] === true ? '🔅 ' : ''}${String(record['T'] || '')}` +
-          `${record['W'] === undefined ? '' : ` ${String(record['W'])}字`}`;
-        if (updateTime.trim()) {
-          chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'updateTime', updateTime.trim());
-        }
-        chapters.push(chapter);
-      }
-      if (chapters.length > 0) {
-        console.info('[WS] qtqd native catalog:', chapters.length, 'from:', book.name || book.bookUrl);
-      }
-      return chapters;
-    } catch (error) {
-      console.warn('[WS] qtqd native catalog failed, keep scripted path:', source.bookSourceName, error);
-      return [];
-    }
-  }
-
-  private async tryGetQtqdContent(source: BookSource, book: Book, chapter: BookChapter): Promise<QtqdContentData> {
-    const result = new QtqdContentData();
-    const payload = EncodedSourceUrl.decode(chapter.url);
-    if (!payload || payload.type !== 'qtqd') return result;
-    result.handled = true;
-
-    const data = payload.data;
-    const bookId = EncodedSourceUrl.str(data['bookId']) || EncodedSourceUrl.str(data['book_id']);
-    const chapterId = EncodedSourceUrl.str(data['id']) || EncodedSourceUrl.str(data['chapterId']);
-    const timestamp = EncodedSourceUrl.str(data['timestamp']);
-    const index = EncodedSourceUrl.str(data['index']);
-    const isVip = String(data['v'] || '').toLowerCase() === 'true' || String(data['v'] || '') === '1';
-    const contentScript = source.contentRule?.content || '';
-    result.audio = String(data['t'] || '') === '1' || source.bookSourceType === 1 ||
-      contentScript.includes('/chapter/tts');
-    const host = this.qtqdBackendHost(source, book.bookUrl || book.tocUrl);
-    if (!bookId || !chapterId || !host) {
-      result.content = result.audio ? '' : '企点章节参数不完整，请刷新目录后重试。';
-      return result;
-    }
-
-    const account = this.qtqdSourceSection(source.variable, '账户设置');
-    const settings = this.qtqdSourceSection(source.variable, '书源设置');
-    const key = this.qtqdCredential(source, host, account, 'key');
-    const dttoken = this.qtqdCredential(source, host, account, 'dttoken');
-    const para = this.qtqdBooleanSetting(settings, '段评开关', true) ? '1' : '0';
-    const god = this.qtqdBooleanSetting(settings, '神评论', true) ? 'true' : 'false';
-    const img = this.qtqdBooleanSetting(settings, '文内配图', true) ? '1' : '0';
-    const chapterComments = this.qtqdBooleanSetting(settings, '本章说', true);
-    const path = result.audio ? '/chapter/tts' : (isVip ? '/chapter/vip' : '/chapter/free');
-    let requestUrl = `${host}${path}?bookId=${encodeURIComponent(bookId)}` +
-      `&chapterId=${encodeURIComponent(chapterId)}&para=${para}&god=${god}&img=${img}` +
-      `&timestamp=${encodeURIComponent(timestamp)}`;
-    if (isVip && index) requestUrl += `&index=${encodeURIComponent(index)}`;
-    if (result.audio) requestUrl += `&type=${encodeURIComponent(book.getVariable('custom') || '6001')}`;
-    requestUrl += `&key=${encodeURIComponent(key)}&device=harmony&dttoken=${encodeURIComponent(dttoken)}`;
-
-    try {
-      const response = await new AnalyzeUrl(source, this.http).fetch(requestUrl, 8 * 1024 * 1024);
-      if (!response.body) {
-        result.handled = false;
-        return result;
-      }
-      const root = JSON.parse(response.body) as Record<string, Object>;
-      if (result.audio) {
-        const audioData = root['data'];
-        if (audioData && typeof audioData === 'object' && !Array.isArray(audioData)) {
-          result.content = String((audioData as Record<string, Object>)['playUrl'] || '');
-        }
-      } else {
-        result.content = String(root['content'] || '');
-      }
-      if (result.content) {
-        if (!result.audio) {
-          result.content = this.normalizeQtqdInteractionUrls(result.content, host);
-          const videoUrl = this.qtqdAbsoluteUrl(host, String(root['videoUrl'] || ''));
-          if (videoUrl) {
-            const videoMarker = ReaderActionMarker.create('播放视频', videoUrl, '视频');
-            if (videoMarker) result.content += `\n${videoMarker}`;
-          }
-          if (chapterComments && !chapterId.includes('_')) {
-            const commentUrl = `${host}/chapterComments?bookId=${encodeURIComponent(bookId)}` +
-              `&chapterId=${encodeURIComponent(chapterId)}`;
-            const commentMarker = ReaderActionMarker.create('本章说', commentUrl, '本章说');
-            if (commentMarker) result.content += `\n${commentMarker}`;
-          }
-        }
-        return result;
-      }
-
-      const message = String(root['message'] || root['Message'] || '');
-      if (!response.success || response.statusCode === 401 || message.includes('登录')) {
-        result.content = result.audio ? '' : '请先在企点书源登录面板填写密钥和口令，然后刷新本章。';
-      } else if (/JSON\.parse\s*\(\s*undefined\s*\)/i.test(message)) {
-        result.content = result.audio ? '' : '企点正文接口返回异常，请刷新本章重试。';
-      } else {
-        result.content = result.audio ? '' : (message || '企点正文暂时不可用，请稍后刷新本章。');
-      }
-      return result;
-    } catch (error) {
-      console.warn('[WS] qtqd native content failed, keep scripted path:', source.bookSourceName, error);
-      result.handled = false;
-      result.content = '';
-      return result;
-    }
-  }
-
-  private qtqdBooleanSetting(settings: Record<string, Object>, key: string, fallback: boolean): boolean {
-    if (settings[key] === undefined || settings[key] === null || String(settings[key]).trim() === '') return fallback;
-    const value = String(settings[key]).trim().toLowerCase();
-    return value !== 'false' && value !== '0' && value !== 'off' && value !== '❌';
-  }
-
-  private qtqdCredential(source: BookSource, host: string, account: Record<string, Object>, key: string): string {
-    const stored = String(account[key] || '');
-    if (stored) return stored;
-    try {
-      const loginInfo = JSON.parse(source.loginInfo || '{}') as Record<string, Object>;
-      const direct = String(loginInfo[key] || '');
-      if (direct) return direct;
-    } catch (_) {}
-    return CookieStore.getCookieValue(host, key);
-  }
-
-  private normalizeQtqdInteractionUrls(content: string, host: string): string {
-    return (content || '').replace(/(\bident\s*=\s*)(["'])([^"']*)\2/gi,
-      (_all: string, prefix: string, quote: string, rawUrl: string): string => {
-        const url = this.qtqdAbsoluteUrl(host, this.decodeHtmlEntities(rawUrl || ''));
-        const escaped = url.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-        return `${prefix}${quote}${escaped}${quote}`;
-      });
-  }
-
-  private qtqdAbsoluteUrl(host: string, rawUrl: string): string {
-    const url = (rawUrl || '').trim();
-    if (!url) return '';
-    if (/^https?:\/\//i.test(url)) return url;
-    if (url.startsWith('//')) return `${host.startsWith('http://') ? 'http:' : 'https:'}${url}`;
-    return `${host.replace(/\/$/, '')}/${url.replace(/^\/+/, '')}`;
-  }
-
-  private qtqdBackendHost(source: BookSource, location: string): string {
-    const scriptMatch = (source.jsLib || '').match(/\b(?:const|let|var)\s+sb\s*=\s*['"](https?:\/\/[^'"/]+(?:\:\d+)?)['"]/);
-    if (scriptMatch && scriptMatch[1]) return scriptMatch[1].replace(/\/$/, '');
-    const locationMatch = (location || '').match(/^(https?:\/\/[^/]+)/);
-    if (locationMatch && locationMatch[1] && /\/detail(?:[?#]|$)/.test(location || '')) return locationMatch[1];
-    return '';
-  }
-
-  private qtqdSourceSection(raw: string, section: string): Record<string, Object> {
-    try {
-      const value = JSON.parse(raw || '{}') as Record<string, Object>;
-      const nested = value[section];
-      if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
-        return nested as Record<string, Object>;
-      }
-    } catch (_) {}
-    return {};
-  }
-
-  private tryBuildFanqieVolumeChapterList(source: BookSource, book: Book, body: string): BookChapter[] {
-    if (!source.tocRule.chapterList.includes('chapterListWithVolume')) return [];
-    try {
-      const root = JSON.parse(body) as Record<string, Object>;
-      const data = root['data'] as Record<string, Object>;
-      const volumeList = data?.['chapterListWithVolume'] as Object[];
-      if (!Array.isArray(volumeList) || volumeList.length === 0) return [];
-
-      const chapters: BookChapter[] = [];
-      const base = BookUrlResolver.cleanBaseUrl(source.bookSourceUrl);
-      for (const volume of volumeList) {
-        if (!Array.isArray(volume)) continue;
-        for (const item of volume) {
-          const rec = item as Record<string, Object>;
-          const itemId = String(rec['itemId'] || rec['item_id'] || rec['id'] || '');
-          if (!itemId) continue;
-          const chapter = new BookChapter();
-          chapter.title = this.cleanChapterTitle(String(rec['title'] || `第${chapters.length + 1}章`));
-          chapter.url = `${base}/content?item_id=${encodeURIComponent(itemId)}`;
-          chapter.bookUrl = book.bookUrl;
-          chapter.index = chapters.length;
-          chapter.isVip = String(rec['isVip'] || rec['is_vip'] || '') === 'true';
-          chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'baseUrl', chapter.url);
-          chapters.push(chapter);
-        }
-      }
-      if (chapters.length > 0) {
-        console.log('[WS] 番茄卷目录拼装:', chapters.length, 'from:', book.name || book.bookUrl);
-      }
-      return chapters;
-    } catch (e) {
-      console.warn('[WS] 番茄卷目录拼装失败:', e);
-      return [];
-    }
-  }
-
-  private async tryGetSpecialContent(source: BookSource, chapter: BookChapter): Promise<string> {
-    const signedContent = await this.tryGetJsLibSignedContent(source, chapter);
-    if (signedContent) return signedContent;
-    if (!chapter.url.startsWith('data:;base64,') || !source.contentRule.content.includes('item_id')) {
-      return '';
-    }
-    try {
-      const idPart = chapter.url.substring('data:;base64,'.length).split(',')[0];
-      const itemId = this.base64Decode(idPart);
-      const contentUrl = `${source.bookSourceUrl.replace(/##[\s\S]*$/, '')}/content?item_id=${encodeURIComponent(itemId)}&key=`;
-      const headers: Record<string, string> = {
-        'Accept': 'application/json, text/plain, */*',
-        'Content-Type': 'application/json'
-      };
-      const cookie = VerificationSupport.sourceCookieHeader(source, contentUrl);
-      if (cookie) headers['Cookie'] = cookie;
-      const resp = await this.http.execute({
-        url: contentUrl,
-        method: 'GET',
-        headers: headers
-      });
-      if (this.requestVerificationIfNeeded(source, resp.url || chapter.url, resp.body, resp.statusCode, source.contentRule.content)) {
-        return '';
-      }
-      if (!resp.success || !resp.body) return '';
-      const json = JSON.parse(resp.body) as Record<string, Object>;
-      const data = json['data'] as Record<string, Object>;
-      return String(data?.['content'] || '');
-    } catch (e) {
-      console.warn('[WS] 特殊正文获取失败:', e);
-      return '';
-    }
-  }
-
-  private async tryGetJsLibSignedContent(source: BookSource, chapter: BookChapter): Promise<string> {
-    const script = source.jsLib || '';
-    if (!chapter.url.includes('chapter_ids=') || !chapter.url.includes('nid=') ||
-      !script.includes('requestKey') || !script.includes('digestHex')) return '';
-    try {
-      const nid = this.extractQueryParam(chapter.url, 'nid');
-      const chapterIds = this.extractQueryParam(chapter.url, 'chapter_ids');
-      if (!nid || !chapterIds) return '';
-      const version = this.extractJsLiteral(script, 'ver') || 'android_02050803';
-      const salt = this.extractJsLiteral(script, 'f');
-      if (!salt) return '';
-      const timestamp = String(Math.floor(Date.now() / 1000));
-      const digest = this.digestHex(`chapter_ids=${chapterIds}&nid=${nid}${timestamp}${version}${salt}`, 'SHA256');
-      const range = script.match(/digestHex\([\s\S]*?\)\.substring\(\s*(\d+)\s*,\s*(\d+)\s*\)/);
-      const start = range ? parseInt(range[1]) : 10;
-      const end = range ? parseInt(range[2]) : 42;
-      const requestKey = digest.substring(start, end);
-      if (!requestKey) return '';
-
-      const token = this.extractLoginToken(source.loginHeader || '');
-      const headers: Record<string, string> = {
-        'User-Agent': this.extractHeaderLiteral(script, 'User-Agent') ||
-          'chang pei yue du/2.5.8.3 (Android 13; HarmonyOS; Mobile)',
-        'randStr': timestamp,
-        'version': version,
-        'requestKey': requestKey,
-        'client': this.extractHeaderLiteral(script, 'client') || 'android',
-        'imei': this.extractHeaderLiteral(script, 'imei') || '455321005bc9cd38',
-        'referer': this.extractHeaderLiteral(script, 'referer') || source.bookSourceUrl,
-        'token': token
-      };
-      const response = await this.http.execute({ url: chapter.url, method: 'GET', headers: headers });
-      if (!response.success || !response.body) return '';
-      const root = JSON.parse(response.body) as Object;
-      return this.deepStringValue(root, 'content');
-    } catch (e) {
-      console.warn('[WS] JS 签名正文请求失败:', e);
-      return '';
-    }
-  }
-
-  private extractJsLiteral(script: string, name: string): string {
-    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const match = script.match(new RegExp(`\\b${escaped}\\s*=\\s*(["'])([\\s\\S]*?)\\1`));
-    return match ? match[2] : '';
-  }
-
-  private extractHeaderLiteral(script: string, name: string): string {
-    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const match = script.match(new RegExp(`["']?${escaped}["']?\\s*:\\s*(["'])([\\s\\S]*?)\\1`, 'i'));
-    return match ? match[2] : '';
-  }
-
-  private extractLoginToken(loginHeader: string): string {
-    const value = (loginHeader || '').trim().replace(/^&/, '');
-    if (!value) return '';
-    try {
-      const data = JSON.parse(value) as Record<string, Object>;
-      return String(data['token'] || '');
-    } catch (_) {
-      return '';
-    }
-  }
-
-  private digestHex(input: string, algorithm: string): string {
-    const digest = cryptoFramework.createMd(algorithm);
-    digest.updateSync({ data: new util.TextEncoder().encodeInto(input) });
-    const result = digest.digestSync().data;
-    let hex = '';
-    for (let i = 0; i < result.length; i++) hex += result[i].toString(16).padStart(2, '0');
-    return hex;
-  }
-
-  private deepStringValue(value: Object, key: string): string {
-    if (!value || typeof value !== 'object') return '';
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        const found = this.deepStringValue(item as Object, key);
-        if (found) return found;
-      }
-      return '';
-    }
-    const record = value as Record<string, Object>;
-    if (record[key] !== undefined && record[key] !== null) return String(record[key]);
-    for (const name in record) {
-      const found = this.deepStringValue(record[name], key);
-      if (found) return found;
-    }
-    return '';
-  }
-
-  private base64Encode(input: string): string {
-    try {
-      const e = new util.TextEncoder();
-      return new util.Base64Helper().encodeToStringSync(e.encodeInto(input));
-    } catch (_) {
-      return input;
-    }
-  }
-
-  private base64Decode(input: string): string {
-    try {
-      const data = new util.Base64Helper().decodeSync(input);
-      return util.TextDecoder.create('utf-8').decodeWithStream(data, { stream: false });
-    } catch (_) {
-      return input;
-    }
   }
 }

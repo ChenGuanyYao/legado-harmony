@@ -14,7 +14,8 @@ export class BookSourceStageRuleSupport {
   static async getElements(source: BookSource, content: string, baseUrl: string,
     rawRule: string, stage: string = SourceRuntimeStage.SEARCH, ownerId: string = '',
     maxResponseBytes: number = 8 * 1024 * 1024,
-    maxTotalResponseBytes: number = 16 * 1024 * 1024): Promise<string[] | null> {
+    maxTotalResponseBytes: number = 16 * 1024 * 1024,
+    variables: Record<string, string> = {}): Promise<string[] | null> {
     const embedded = this.splitEmbeddedRule(rawRule || '');
     if (!embedded || !embedded.code || (!embedded.baseRule && !embedded.trailingRule)) return null;
     const decision = BookSourceRuntimeRouter.decide(stage, `${source.jsLib || ''}\n${embedded.code}`);
@@ -28,6 +29,7 @@ export class BookSourceStageRuleSupport {
       request.content = content || '';
       request.contextContent = content || '';
       request.baseUrl = baseUrl || source.bookSourceUrl;
+      request.variables = variables;
       request.code = embedded.code;
       request.ownerId = ownerId;
       request.maxResponseBytes = Math.min(request.maxResponseBytes, maxResponseBytes);
@@ -62,6 +64,7 @@ export class BookSourceStageRuleSupport {
     request.content = JSON.stringify(values);
     request.contextContent = content || '';
     request.baseUrl = baseUrl || source.bookSourceUrl;
+    request.variables = variables;
     request.code = embedded.code;
     request.ownerId = ownerId;
     request.maxResponseBytes = Math.min(request.maxResponseBytes, maxResponseBytes);

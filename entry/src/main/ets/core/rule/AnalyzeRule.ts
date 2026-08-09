@@ -439,15 +439,6 @@ export class AnalyzeRule {
     }
     const baseReplace = this.evalBaseUrlReplace(expr);
     if (baseReplace) return baseReplace;
-    if (expr.includes('vipreader.qidian.com/chapter')) {
-      let bid = '';
-      const bidMatch = this.baseUrl.match(/\d+/);
-      if (bidMatch) bid = bidMatch[0];
-      let data: Record<string, Object> | null = null;
-      try { data = JSON.parse(sourceJson) as Record<string, Object>; } catch (_) {}
-      const cid = data ? String((data as Record<string, Object>)['$3'] || (data as Record<string, Object>)['id'] || '') : '';
-      if (bid && cid) return `https://vipreader.qidian.com/chapter/${bid}/${cid}/`;
-    }
     // 处理 java.aesBase64DecodeToString 调用（前缀形式，常用于内容解密）
     const aesIdx = expr.indexOf('java.aesBase64DecodeToString');
     if (aesIdx >= 0) {
@@ -2018,7 +2009,6 @@ export class AnalyzeRule {
     const trimmed = jsCode.trim();
     if (/^Clean\(\s*result\s*\)\s*;?$/.test(trimmed)) return this.cleanJsLibText(value);
     if (/^T\(\s*result\s*\)\s*;?$/.test(trimmed)) return this.cleanJsLibText(value);
-    if (/^Cover\(\s*result\s*\)\s*;?$/.test(trimmed)) return this.coverFromArticleId(value);
     if (trimmed.includes('Base()')) {
       const vars: Record<string, string> = { result: value, baseUrl: this.baseUrl };
       const cacheGet = trimmed.match(/cache\.getFromMemory\(\s*['"]([^'"]+)['"]\s*\)/);
@@ -2047,8 +2037,6 @@ export class AnalyzeRule {
     if (!value) return '';
     const cleanCall = value.match(/^(?:Clean|T)\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$/);
     if (cleanCall) return this.cleanJsLibText(vars[cleanCall[1]] || '');
-    const coverCall = value.match(/^Cover\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$/);
-    if (coverCall) return this.coverFromArticleId(vars[coverCall[1]] || '');
     value = value.replace(/\bBase\(\)/g, `'${this.extractBaseFunctionHost()}'`);
     value = value.replace(/\bString\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)/g, (_: string, key: string) => {
       return `'${(vars[key] || '').replace(/'/g, "\\'")}'`;
@@ -2099,12 +2087,6 @@ export class AnalyzeRule {
     const base = (this.ctx.get('source.bookSourceUrl') || this.ctx.get('bookSourceUrl') || this.baseUrl || '')
       .match(/^(https?:\/\/[^/]+)/);
     return base ? base[1] : '';
-  }
-
-  private coverFromArticleId(value: string): string {
-    const id = (value || '').replace(/\D/g, '');
-    if (!id) return '';
-    return `https://pic.cooks.tw/${Math.floor(Number(id) / 1000)}/${id}/${id}s.jpg`;
   }
 
   private cleanJsLibText(value: string): string {

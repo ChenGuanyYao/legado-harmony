@@ -5,7 +5,6 @@ import { CoverUrlNormalizer } from '../../utils/CoverUrlNormalizer';
 import { LocalChapterContentLoader } from './LocalChapterContentLoader';
 import { ReaderActionMarker } from './ReaderActionMarker';
 import { BookSourceInteractionPostProcessor } from './BookSourceInteractionPostProcessor';
-import { BookSourceShuqiSupport } from './BookSourceShuqiSupport';
 
 export class ReadBookEngine {
   private static inst: ReadBookEngine | null = null;
@@ -60,18 +59,12 @@ export class ReadBookEngine {
 
     // 检查缓存章节是否有未解析的变量（旧版本残留）
     const hasBrokenUrls = book.origin !== 'local' && this.chapters.some(c => this.isBrokenChapterUrl(c.url));
-    const needsShuqiMetadata = !!this.source &&
-      BookSourceShuqiSupport.needsChapterMetadataRefresh(this.source, this.chapters);
-
-    if (hasBrokenUrls || needsShuqiMetadata ||
+    if (hasBrokenUrls ||
       (this.chapters.length === 0 && this.source && book.origin !== 'local')) {
       if (hasBrokenUrls) {
         console.log('[RE] 检测到过期缓存，清除并重新获取');
         await appDb.deleteBookChapters(book.bookUrl);
         this.chapters = [];
-      }
-      if (needsShuqiMetadata) {
-        console.log('[RE] 书旗章节缺少评论定位信息，刷新目录');
       }
       console.log('[RE] no valid chapters, refreshing toc...');
       await this.refreshToc();

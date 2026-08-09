@@ -3673,11 +3673,8 @@ struct BookSourcePage {
   }
 
   sourceLoginCompatibilityDefault(source: BookSource, item: BookSourceLoginItem): string {
-    const sourceIdentity = `${source.bookSourceUrl || ''}\n${source.bookSourceName || ''}\n${source.jsLib || ''}`;
-    const itemName = (item.name || '').replace(/\s+/g, '');
-    if (/(?:shuqireader\.com|书旗)/i.test(sourceIdentity) && /书旗评论API(?:Key|密钥)/i.test(itemName)) {
-      return 'tongrenshuqi134679';
-    }
+    // Login values and API credentials must come from the user/imported source. The application
+    // never supplies a service-specific default credential.
     return '';
   }
 
