@@ -20,11 +20,13 @@ export struct BookSourceStageRuntimeHost {
     BookSourceStageWebRuntime.get().clearResetHandler(previous);
     BookSourceStageWebRuntime.get().detach(previous);
     this.mounted = false;
+    // Keep the unmounted state for at least one render frame. A zero-delay callback can be
+    // coalesced with the preceding state change, leaving the retired Web controller in place.
     setTimeout(() => {
       this.controller = new webview.WebviewController();
       this.mounted = true;
       this.resetScheduled = false;
-    }, 0);
+    }, 50);
   }
 
   build() {

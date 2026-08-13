@@ -23,6 +23,8 @@ import { CloudSyncSettingsStore } from '../account/CloudSyncSettingsStore';
 import { CloudSyncCoordinator } from '../account/CloudSyncCoordinator';
 import { CloudSyncChangeTracker } from '../account/CloudSyncChangeTracker';
 import { StartupCoverTextStore } from '../utils/StartupCoverTextStore';
+import { QuickJsDiagnostics } from '../core/script/QuickJsDiagnostics';
+import { TlsTrustStore } from '../core/http/TlsTrustStore';
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
 
@@ -57,6 +59,9 @@ export default class EntryAbility extends UIAbility {
     AccountSessionStore.initializeStorage();
     CloudSyncSettingsStore.initializeStorage();
     CloudSyncChangeTracker.initializeStorage();
+    TlsTrustStore.load(this.context).catch((e: Error) => {
+      hilog.warn(0x0000, 'testTag', 'Load TLS trust settings failed: %{public}s', JSON.stringify(e));
+    });
     hilog.info(0x0000, 'testTag', 'StartupTrace onCreate %{public}d', Date.now());
     PersistentStorage.persistProp('appThemeMode', 'system');
     AppThemeModeStore.load(this.context).then((mode: string) => {
@@ -252,6 +257,7 @@ export default class EntryAbility extends UIAbility {
     this.deferredStartupScheduled = true;
     // Let the first frame commit before registering a potentially large custom font file.
     setTimeout(() => {
+      QuickJsDiagnostics.runStartupSelfTest();
       this.readerBootstrapPromise
         .then(() => ReaderFontBootstrap.registerFromSettings(
           this.context, null, 'ability-after-first-content'))

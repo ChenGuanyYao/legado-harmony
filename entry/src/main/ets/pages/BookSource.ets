@@ -7,12 +7,14 @@ import { SearchCoordinator, SearchProgress, SearchSourceResult } from '../core/b
 import { syncSystemBars } from '../utils/SystemBars';
 import { SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
 import picker from '@ohos.file.picker';
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { VerificationSupport } from '../core/http/VerificationSupport';
 import { CookieStore } from '../core/http/CookieStore';
+import { TlsTrustStore } from '../core/http/TlsTrustStore';
 import { BookSourceGroupStore } from '../utils/BookSourceGroupStore';
 import { ResponsiveManagerListLayout } from '../utils/ResponsiveManagerListLayout';
 import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
@@ -33,6 +35,11 @@ import {
 } from '../core/book/BookSourceRuntimeRouter';
 import { AnalyzeUrl } from '../core/rule/AnalyzeUrl';
 import { ExploreResultCache } from '../utils/ExploreResultCache';
+import {
+  ExploreReadingValidationProgress,
+  ExploreReadingValidationResult,
+  ExploreReadingValidator
+} from '../core/book/ExploreReadingValidator';
 
 const BOOK_SOURCE_IMPORT_FILE_LIMIT_BYTES = 25 * 1024 * 1024;
 const BOOK_SOURCE_IMPORT_TIMEOUT_MS = 20000;
@@ -155,8 +162,11 @@ struct BookSourcePage {
   @State checkTemporaryErrorCount: number = 0;
   @State checkBadUrls: string[] = [];
   @State checkResultDetails: string[] = [];
+  @State checkTlsTrustHosts: string[] = [];
+  @State checkTlsRetrySourceUrls: string[] = [];
   @State checkStatus: string = '';
   @State checkInvalidAction: string = 'none';
+  @State checkValidationMode: string = 'search';
   @State checkAutoHandledCount: number = 0;
   @State checkBackgroundMode: boolean = false;
   @State webImportActive: boolean = false;
@@ -164,6 +174,7 @@ struct BookSourcePage {
   private hasShownOnce: boolean = false;
   private sourceOrderSaving: boolean = false;
   private checkCoordinator: SearchCoordinator | null = null;
+  private checkExploreValidator: ExploreReadingValidator | null = null;
   private checkTaskSerial: number = 0;
   private checkNotificationLastAt: number = 0;
   private checkBackgroundRunning: boolean = false;
@@ -954,7 +965,7 @@ struct BookSourcePage {
                 .margin({ bottom: 12 })
             }
 
-            Text(this.checkStatus || (this.isCheckingSources ? '准备中...' : this.checkSummaryText()))
+            Text(this.checkDialogStatusText())
               .fontSize(14)
               .fontColor(this.secondaryTextColor())
               .width('100%')
@@ -1002,13 +1013,6 @@ struct BookSourcePage {
             }
 
             if (!this.isCheckingSources) {
-              Text(this.checkResultText())
-                .fontSize(14)
-                .fontColor(this.secondaryTextColor())
-                .width('100%')
-                .textAlign(TextAlign.Center)
-                .margin({ bottom: 12 })
-
               if (this.checkResultDetails.length > 0) {
                 Scroll() {
                   Column() {
@@ -1033,6 +1037,20 @@ struct BookSourcePage {
                 .borderRadius(8)
                 .margin({ bottom: 16 })
                 .scrollBar(BarState.Auto)
+              }
+
+              if (this.checkTlsTrustHosts.length > 0) {
+                Button(`信任证书并重试（${this.checkTlsTrustHosts.length} 个主机）`, { type: ButtonType.Normal })
+                  .width('100%')
+                  .height(42)
+                  .borderRadius(10)
+                  .fontSize(13)
+                  .backgroundColor('#B26A00')
+                  .fontColor('#FFFFFF')
+                  .margin({ bottom: 10 })
+                  .onClick(() => {
+                    this.trustCheckCertificateHostsAndRetry();
+                  })
               }
 
               Row({ space: 8 }) {
@@ -1112,6 +1130,10 @@ struct BookSourcePage {
             this.startWebImportDownload();
           })
       }
+
+      // Full source-rule scripts need a host owned by this visible route. The host can rebuild
+      // itself between large user libraries without depending on the hidden home page lifecycle.
+      BookSourceStageRuntimeHost()
 
       // Keep one JS runtime mounted for the lifetime of this page. Creating a new
       // controller for every click can fire onControllerAttached before about:blank
@@ -1376,7 +1398,7 @@ struct BookSourcePage {
           .padding({ left: 12, right: 12 })
           .textAlign(TextAlign.Start)
 
-        this.popupActionItem($r('sys.symbol.checkmark_circle'), '校验所选', this.primaryTextColor(), () => {
+        this.popupActionItem($r('sys.symbol.checkmark_shield'), '校验所选', this.primaryTextColor(), () => {
           this.showMoreActionDialog = false;
           this.checkSelectedSources();
         })
@@ -1632,14 +1654,24 @@ struct BookSourcePage {
           .fontColor(this.primaryTextColor())
           .width('100%')
 
-        Text('只有明确的请求或规则错误会标记为失败并参与自动处理；无结果、需要验证和暂时异常不会被禁用或删除。')
+        Text(this.checkValidationMode === 'exploreReading' ?
+          '逐源运行发现、详情、目录与首个非付费章节。登录、验证、VIP 或付费内容只会提示用户处理。' :
+          '只有明确的请求或规则错误会标记为失败并参与自动处理；无结果、需要验证和暂时异常不会被禁用或删除。')
           .fontSize(13)
           .fontColor(this.secondaryTextColor())
           .width('100%')
 
-        this.checkActionOption('仅校验', '记录各类校验状态，校验完成后再手动处理', 'none')
-        this.checkActionOption('自动禁用', '仅禁用明确失败的书源，可稍后重新启用', 'disable')
-        this.checkActionOption('自动删除', '仅删除明确失败的书源，此操作不可恢复', 'delete', true)
+        Row({ space: 8 }) {
+          this.checkModeOption('search', '搜索能力')
+          this.checkModeOption('exploreReading', '发现/阅读链路')
+        }
+        .width('100%')
+
+        if (this.checkValidationMode === 'search') {
+          this.checkActionOption('仅校验', '记录各类校验状态，校验完成后再手动处理', 'none')
+          this.checkActionOption('自动禁用', '仅禁用明确失败的书源，可稍后重新启用', 'disable')
+          this.checkActionOption('自动删除', '仅删除明确失败的书源，此操作不可恢复', 'delete', true)
+        }
 
         Row({ space: 10 }) {
           Button('取消')
@@ -1654,10 +1686,12 @@ struct BookSourcePage {
           Button('开始校验')
             .layoutWeight(1)
             .height(42)
-            .backgroundColor(this.checkInvalidAction === 'delete' ? '#B71C1C' : this.buttonColor())
+            .backgroundColor(this.checkValidationMode === 'search' && this.checkInvalidAction === 'delete' ?
+              '#B71C1C' : this.buttonColor())
             .fontColor('#FFFFFF')
             .onClick(() => {
-              this.startCheckEnabledSources(this.checkInvalidAction);
+              this.startCheckEnabledSources(this.checkValidationMode === 'exploreReading' ?
+                'none' : this.checkInvalidAction);
             })
         }
         .width('100%')
@@ -1677,6 +1711,22 @@ struct BookSourcePage {
     }
     .width('100%')
     .height('100%')
+  }
+
+  @Builder
+  checkModeOption(value: string, label: string) {
+    Text(label)
+      .fontSize(13)
+      .fontColor(this.checkValidationMode === value ? '#FFFFFF' : this.primaryTextColor())
+      .layoutWeight(1)
+      .height(38)
+      .textAlign(TextAlign.Center)
+      .borderRadius(10)
+      .backgroundColor(this.checkValidationMode === value ? this.buttonColor() : this.inputColor())
+      .onClick(() => {
+        this.checkValidationMode = value;
+        if (value === 'exploreReading') this.checkInvalidAction = 'none';
+      })
   }
 
   @Builder
@@ -1733,6 +1783,10 @@ struct BookSourcePage {
         }
         this.contextActionItem($r('sys.symbol.checkmark_shield'), '校验', this.primaryTextColor(),
           () => this.checkActionSource())
+        if (this.actionSourceTlsTrusted()) {
+          this.contextActionItem($r('sys.symbol.checkmark_shield'), '取消证书信任', '#B26A00',
+            () => this.revokeActionSourceTlsTrust())
+        }
         this.contextActionItem($r('sys.symbol.pin'), this.actionSourcePinned() ? '取消置顶' : '置顶',
           this.primaryTextColor(), () => this.toggleActionSourcePinned())
         this.contextActionItem($r('sys.symbol.chevron_down'), '置底', this.primaryTextColor(),
@@ -3513,11 +3567,32 @@ struct BookSourcePage {
     return source ? source.isPinned : false;
   }
 
+  actionSourceTlsTrusted(): boolean {
+    const source = this.actionSource();
+    return source ? TlsTrustStore.isTrustedUrl(source.bookSourceUrl) : false;
+  }
+
   sourceActionMenuHeight(): number {
+    const trustHeight = this.actionSourceTlsTrusted() ? 44 : 0;
     if (this.actionSourceLocked()) {
-      return this.actionSourceNeedsLogin() ? 320 : 276;
+      return (this.actionSourceNeedsLogin() ? 320 : 276) + trustHeight;
     }
-    return this.actionSourceNeedsLogin() ? 496 : 452;
+    return (this.actionSourceNeedsLogin() ? 496 : 452) + trustHeight;
+  }
+
+  async revokeActionSourceTlsTrust(): Promise<void> {
+    const source = this.actionSource();
+    if (!source) return;
+    const host = TlsTrustStore.hostFromUrl(source.bookSourceUrl);
+    this.closeSourceActions();
+    if (!host) return;
+    try {
+      await TlsTrustStore.revokeHost(getContext(this) as common.UIAbilityContext, host);
+      promptAction.showToast({ message: `已恢复 ${host} 的严格证书校验` });
+    } catch (e) {
+      console.error('取消证书信任失败:', e);
+      promptAction.showToast({ message: '取消证书信任失败' });
+    }
   }
 
   async toggleActionSourcePinned(): Promise<void> {
@@ -5053,7 +5128,9 @@ struct BookSourcePage {
     }
 
     const taskSerial = ++this.checkTaskSerial;
-    this.checkInvalidAction = action === 'disable' || action === 'delete' ? action : 'none';
+    const validationMode = this.checkValidationMode;
+    this.checkInvalidAction = validationMode === 'search' && (action === 'disable' || action === 'delete') ?
+      action : 'none';
     this.showCheckOptionsDialog = false;
     this.showCheckDialog = true;
     this.isCheckingSources = true;
@@ -5067,9 +5144,12 @@ struct BookSourcePage {
     this.checkTemporaryErrorCount = 0;
     this.checkBadUrls = [];
     this.checkResultDetails = [];
+    this.checkTlsTrustHosts = [];
+    this.checkTlsRetrySourceUrls = [];
     this.resetCheckedSourceUiUpdates();
     this.checkAutoHandledCount = 0;
-    this.checkStatus = `准备校验 ${targetSources.length} 个书源`;
+    this.checkStatus = validationMode === 'exploreReading' ?
+      `准备检查 ${targetSources.length} 个书源的发现/阅读链路` : `准备校验 ${targetSources.length} 个书源`;
     this.checkNotificationLastAt = 0;
     this.checkCancelAgent = null;
     await this.ensureBookSourceCheckCancelSubscriber();
@@ -5078,30 +5158,51 @@ struct BookSourcePage {
     }
 
     try {
-      const coordinator = new SearchCoordinator(SearchExploreSettingsStore.getSearchConcurrency());
-      this.checkCoordinator = coordinator;
-      await coordinator.search(BOOK_SOURCE_CHECK_KEYWORD, (progress: SearchProgress) => {
-        if (taskSerial !== this.checkTaskSerial || !this.isCheckingSources) {
-          return;
-        }
-        this.checkDone = progress.done;
-        this.checkTotal = progress.total;
-        this.checkStatus = this.formatCheckProgressStatus(progress);
-        if (this.checkBackgroundMode) {
-          this.publishBookSourceCheckProgress(false).catch((e: Error) => {
-            console.warn('更新书源校验通知失败:', e);
-          });
-        }
-      }, {
-        onSourceComplete: async (source: BookSource, result: SearchSourceResult) => {
+      if (validationMode === 'exploreReading') {
+        const validator = new ExploreReadingValidator();
+        this.checkExploreValidator = validator;
+        await validator.validateSources(targetSources, (progress: ExploreReadingValidationProgress): void => {
           if (taskSerial !== this.checkTaskSerial || !this.isCheckingSources) {
             return;
           }
-          await this.handleCheckedSourceCompletion(source, result);
-        },
-        targetSources: targetSources,
-        validationOnly: true
-      });
+          this.checkDone = progress.done;
+          this.checkTotal = progress.total;
+          this.checkStatus = `${progress.sourceName} · ${progress.stage}（${progress.done}/${progress.total}）`;
+          if (this.checkBackgroundMode) {
+            this.publishBookSourceCheckProgress(false).catch((e: Error) => {
+              console.warn('更新书源发现/阅读校验通知失败:', e);
+            });
+          }
+        }, async (source: BookSource, result: ExploreReadingValidationResult): Promise<void> => {
+          if (taskSerial !== this.checkTaskSerial || !this.isCheckingSources) return;
+          await this.handleExploreReadingCompletion(source, result);
+        });
+      } else {
+        const coordinator = new SearchCoordinator(SearchExploreSettingsStore.getSearchConcurrency());
+        this.checkCoordinator = coordinator;
+        await coordinator.search(BOOK_SOURCE_CHECK_KEYWORD, (progress: SearchProgress) => {
+          if (taskSerial !== this.checkTaskSerial || !this.isCheckingSources) {
+            return;
+          }
+          this.checkDone = progress.done;
+          this.checkTotal = progress.total;
+          this.checkStatus = this.formatCheckProgressStatus(progress);
+          if (this.checkBackgroundMode) {
+            this.publishBookSourceCheckProgress(false).catch((e: Error) => {
+              console.warn('更新书源校验通知失败:', e);
+            });
+          }
+        }, {
+          onSourceComplete: async (source: BookSource, result: SearchSourceResult) => {
+            if (taskSerial !== this.checkTaskSerial || !this.isCheckingSources) {
+              return;
+            }
+            await this.handleCheckedSourceCompletion(source, result);
+          },
+          targetSources: targetSources,
+          validationOnly: true
+        });
+      }
 
       if (taskSerial !== this.checkTaskSerial) {
         return;
@@ -5124,6 +5225,7 @@ struct BookSourcePage {
       this.flushCheckedSourceUiUpdates();
       const finishedInBackground = this.checkBackgroundMode;
       this.checkCoordinator = null;
+      this.checkExploreValidator = null;
       this.isCheckingSources = false;
       if (this.checkInvalidAction !== 'none') {
         await this.loadSources();
@@ -5148,6 +5250,10 @@ struct BookSourcePage {
     if (this.checkCoordinator) {
       this.checkCoordinator.cancel();
       this.checkCoordinator = null;
+    }
+    if (this.checkExploreValidator) {
+      this.checkExploreValidator.cancel();
+      this.checkExploreValidator = null;
     }
     this.flushCheckedSourceUiUpdates();
     this.isCheckingSources = false;
@@ -5347,8 +5453,19 @@ struct BookSourcePage {
     }
   }
 
-  async handleCheckedSourceCompletion(source: BookSource, result: SearchSourceResult): Promise<void> {
+  async handleExploreReadingCompletion(source: BookSource, result: ExploreReadingValidationResult): Promise<void> {
+    const compatibleResult: SearchSourceResult = {
+      books: [],
+      validationStatus: result.validationStatus,
+      reason: result.reason
+    };
+    await this.handleCheckedSourceCompletion(source, compatibleResult, true);
+  }
+
+  async handleCheckedSourceCompletion(source: BookSource, result: SearchSourceResult,
+    includePassedDetail: boolean = false): Promise<void> {
     source.validationStatus = result.validationStatus;
+    this.recordCertificateTrustCandidate(source, result.reason || '');
     try {
       await AppDatabase.getInstance().updateBookSourceValidationStatus(
         source.bookSourceUrl, source.validationStatus);
@@ -5356,7 +5473,7 @@ struct BookSourcePage {
       console.error('保存书源校验状态失败:', source.bookSourceName, e);
     }
     let detail = '';
-    if (source.validationStatus !== BookSource.VALIDATION_PASSED) {
+    if (source.validationStatus !== BookSource.VALIDATION_PASSED || includePassedDetail) {
       const sourceName = source.bookSourceName || source.bookSourceUrl;
       detail = result.reason ?
         `${sourceName}：${this.sourceValidationStatusLabel(source.validationStatus)}（${result.reason}）` :
@@ -5467,6 +5584,56 @@ struct BookSourcePage {
 
   checkSummaryText(): string {
     return `已校验 ${this.checkTotal} 个书源${this.checkAutoActionSummary()}`;
+  }
+
+  checkDialogStatusText(): string {
+    if (this.isCheckingSources) return this.checkStatus || '准备中...';
+    if (/^校验(?:失败|已取消)/.test(this.checkStatus || '')) return this.checkStatus;
+    return this.checkResultText();
+  }
+
+  recordCertificateTrustCandidate(source: BookSource, reason: string): void {
+    if (!TlsTrustStore.isRemoteValidationSupported()) return;
+    const host = TlsTrustStore.certificateErrorHost(reason, source.bookSourceUrl);
+    if (!host || TlsTrustStore.isTrustedHost(host)) return;
+    if (!this.checkTlsTrustHosts.includes(host)) {
+      this.checkTlsTrustHosts = [...this.checkTlsTrustHosts, host];
+    }
+    if (!this.checkTlsRetrySourceUrls.includes(source.bookSourceUrl)) {
+      this.checkTlsRetrySourceUrls = [...this.checkTlsRetrySourceUrls, source.bookSourceUrl];
+    }
+  }
+
+  async trustCheckCertificateHostsAndRetry(): Promise<void> {
+    if (this.isCheckingSources || this.checkTlsTrustHosts.length === 0) return;
+    const hosts = [...this.checkTlsTrustHosts];
+    const retryUrls = new Set<string>(this.checkTlsRetrySourceUrls);
+    const confirmation = await promptAction.showDialog({
+      title: '信任证书风险提示',
+      message: `系统无法验证以下主机的身份：\n${hosts.join('\n')}\n\n` +
+        '继续后，仅在本设备上对这些精确主机跳过证书校验。连接可能被冒充或监听；只有在你确认书源和网络可信时才继续。',
+      buttons: [
+        { text: '保持安全', color: this.subTextColor() },
+        { text: '信任并重试', color: '#B26A00' }
+      ]
+    });
+    if (confirmation.index !== 1) return;
+    try {
+      await TlsTrustStore.trustHosts(getContext(this) as common.UIAbilityContext, hosts);
+      const allSources = await AppDatabase.getInstance().getAllBookSources();
+      const retrySources = allSources.filter((source: BookSource) => retryUrls.has(source.bookSourceUrl));
+      if (retrySources.length === 0) {
+        promptAction.showToast({ message: '已保存证书信任，但原书源已不存在' });
+        this.checkTlsTrustHosts = [];
+        this.checkTlsRetrySourceUrls = [];
+        return;
+      }
+      promptAction.showToast({ message: `已仅信任 ${hosts.length} 个主机，正在重新校验` });
+      await this.startCheckSources(retrySources, 'none');
+    } catch (e) {
+      console.error('保存证书信任失败:', e);
+      promptAction.showToast({ message: '保存证书信任失败' });
+    }
   }
 
   formatCheckProgressStatus(progress: SearchProgress): string {

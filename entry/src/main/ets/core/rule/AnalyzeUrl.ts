@@ -15,6 +15,7 @@ export interface UrlConfig {
   type: string;
   useWebView: boolean;
   webJs: string;
+  bodyJs: string;
   rawBody: boolean;
 }
 
@@ -22,10 +23,13 @@ export class AnalyzeUrl {
   private config: UrlConfig;
   private source: BookSource | null;
   private client: HttpClient;
+  private runtimeSourceHeaders: Record<string, string>;
 
-  constructor(source: BookSource | null, client: HttpClient) {
+  constructor(source: BookSource | null, client: HttpClient,
+    runtimeSourceHeaders: Record<string, string> = {}) {
     this.source = source;
     this.client = client;
+    this.runtimeSourceHeaders = runtimeSourceHeaders;
     this.config = this.emptyConfig('');
   }
 
@@ -37,7 +41,10 @@ export class AnalyzeUrl {
     url = this.stripLeadingJs(url);
 
     // 1. 解析 URL 选项 JSON: url,{"method":"POST","body":"...","headers":{...}}
-    const optIndex = this.findOptionIndex(url);
+    // Everything after the first comma in a data URL is payload. In particular, source rules may
+    // append their own metadata object after a base64 payload and consume it in a later rule stage.
+    // Treating that object as HTTP request options strips source-owned data before the rule runs.
+    const optIndex = url.startsWith('data:') ? -1 : this.findOptionIndex(url);
     if (optIndex > 0) {
       const optStr = url.substring(optIndex + 1).trim();
       url = url.substring(0, optIndex);
@@ -94,6 +101,10 @@ export class AnalyzeUrl {
       if (opt['type']) this.config.type = String(opt['type']);
       if (opt['webView'] !== undefined) this.config.useWebView = String(opt['webView']).toLowerCase() !== 'false';
       if (opt['webJs']) this.config.webJs = String(opt['webJs']);
+      // Some Legado-compatible sources use a harmless placeholder URL and produce the actual
+      // response body in a post-request script.  Keep that script as source-owned data; the
+      // coordinator executes it in the same bounded runtime used by the other rule stages.
+      if (opt['bodyJs']) this.config.bodyJs = String(opt['bodyJs']);
       if (opt['rawBody'] !== undefined) this.config.rawBody = String(opt['rawBody']).toLowerCase() !== 'false';
     } catch (e) {
       // 正则保底提取
@@ -103,6 +114,8 @@ export class AnalyzeUrl {
       if (b) this.config.body = b[2];
       const c = optStr.match(/['"]?charset['"]?\s*:\s*(['"])([\s\S]*?)\1/i);
       if (c) this.config.charset = c[2];
+      const bodyJs = optStr.match(/['"]?bodyJs['"]?\s*:\s*(['"])([\s\S]*?)\1/i);
+      if (bodyJs) this.config.bodyJs = bodyJs[2];
       const rawBody = optStr.match(/['"]?rawBody['"]?\s*:\s*(true|false)/i);
       if (rawBody) this.config.rawBody = rawBody[1].toLowerCase() === 'true';
     }
@@ -156,6 +169,13 @@ export class AnalyzeUrl {
     // validation can succeed inside the script while the following AJAX request is anonymous.
     if (this.shouldApplyLoginHeaders(requestUrl)) {
       this.mergeSourceHeaderText(headers, this.source.loginHeader || '');
+    }
+    // Complex source scripts can compute their header rule using functions from jsLib and the
+    // current login state. The bounded stage runtime evaluates that source-owned expression and
+    // passes only its scalar result here. URL-local explicit headers still win during fetch.
+    for (const key of Object.keys(this.runtimeSourceHeaders)) {
+      const name = String(key || '').trim();
+      if (name) headers[name] = String(this.runtimeSourceHeaders[key] || '');
     }
     return headers;
   }
@@ -215,6 +235,28 @@ export class AnalyzeUrl {
   private mergeSourceHeaderText(target: Record<string, string>, raw: string): void {
     const text = (raw || '').trim();
     if (!text) return;
+    // Legado permits a header rule such as `@js: JSON.stringify({...})`. Most imported sources
+    // use that form only to combine literal credentials with the WebView user agent. Resolve that
+    // safe, declarative subset here so every native request receives the same headers; arbitrary
+    // source JavaScript remains in the bounded stage runtime.
+    if (/^@?js\s*:/i.test(text)) {
+      const property = /["']([^"']+)["']\s*:\s*(?:(["'])((?:\\.|(?!\2)[\s\S])*?)\2|java\.getWebViewUA\s*\(\s*\))/g;
+      let match: RegExpExecArray | null;
+      let found = false;
+      while ((match = property.exec(text)) !== null) {
+        const name = (match[1] || '').trim();
+        if (!name) continue;
+        let value = match[3] || '';
+        if (!match[2]) {
+          value = 'Mozilla/5.0 (Linux; HarmonyOS) AppleWebKit/537.36 Mobile Safari/537.36';
+        } else {
+          value = value.replace(/\\([\\"'])/g, '$1');
+        }
+        target[name] = value;
+        found = true;
+      }
+      if (found) return;
+    }
     try {
       const parsed = this.parseLooseObject(text);
       if (parsed) {
@@ -326,10 +368,11 @@ export class AnalyzeUrl {
     const value = (text || '').trim();
     if (!value.startsWith('{') || !value.endsWith('}')) return null;
     try {
-      return JSON.parse(this.normalizeLooseJson(value)) as Record<string, Object>;
-    } catch (_) {
-      return null;
-    }
+      // Preserve valid JSON verbatim. Rewriting single-quoted fragments first can corrupt a
+      // double-quoted JavaScript option whose body legitimately contains apostrophes.
+      return JSON.parse(value) as Record<string, Object>;
+    } catch (_) {}
+    try { return JSON.parse(this.normalizeLooseJson(value)) as Record<string, Object>; } catch (_) { return null; }
   }
 
   private normalizeLooseJson(text: string): string {
@@ -435,7 +478,17 @@ export class AnalyzeUrl {
       let body = '';
       if (base64) {
         const bytes = new util.Base64Helper().decodeSync(payload);
-        body = util.TextDecoder.create('utf-8').decodeWithStream(bytes, { stream: false });
+        if (optionIndex >= 0) {
+          // Legado's synthetic data URL form appends a source-owned options object. Its rule
+          // pipeline exposes the decoded bytes as a hexadecimal string, which the following
+          // user rule commonly consumes with java.hexDecodeToString(result). Standard data URLs
+          // without that object retain normal UTF-8 semantics.
+          for (let index = 0; index < bytes.length; index++) {
+            body += Number(bytes[index]).toString(16).padStart(2, '0');
+          }
+        } else {
+          body = util.TextDecoder.create('utf-8').decodeWithStream(bytes, { stream: false });
+        }
       } else {
         body = decodeURIComponent(payload);
       }
@@ -509,7 +562,7 @@ export class AnalyzeUrl {
   private emptyConfig(url: string): UrlConfig {
     return {
       url: url, method: 'GET', body: '', charset: '', headers: {}, sourceHeaders: {},
-      retry: 0, type: '', useWebView: false, webJs: '', rawBody: false
+      retry: 0, type: '', useWebView: false, webJs: '', bodyJs: '', rawBody: false
     };
   }
 

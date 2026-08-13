@@ -48,6 +48,7 @@ export class RuleExecutionService {
       token.throwIfCancelled();
       const deadlineAt = startedAt + Math.max(500, request.timeoutMs || 15000);
       const slice = CooperativeScheduler.createTimeSlice(request.uiSliceMs);
+      const itemChunkSize = Math.max(4, Math.min(Math.round(request.itemChunkSize || 16), 64));
       const fullJsValues: Record<string, string[]> = {};
 
       for (const field of request.fields) {
@@ -65,6 +66,11 @@ export class RuleExecutionService {
       }
 
       for (let itemIndex = 0; itemIndex < request.contents.length; itemIndex++) {
+        if (itemIndex > 0 && itemIndex % itemChunkSize === 0) {
+          await CooperativeScheduler.yieldToNextUiFrame();
+          result.yieldedCount++;
+          token.throwIfCancelled();
+        }
         if (await slice.checkpoint(token)) result.yieldedCount++;
         this.throwIfDeadlineExceeded(deadlineAt, request.stage);
         const content = request.contents[itemIndex] || '';
@@ -81,6 +87,11 @@ export class RuleExecutionService {
             const fieldStartedAt = Date.now();
             if (field.listResult) {
               itemValues[field.name] = JSON.stringify(analyzer.getStringList(field.rule));
+            } else if (field.joinMatches) {
+              itemValues[field.name] = analyzer.getStringList(field.rule)
+                .map((value: string): string => value.trim())
+                .filter((value: string): boolean => !!value)
+                .join('\n\n');
             } else {
               itemValues[field.name] = field.resolveUrl ? analyzer.getString(field.rule, true) :
                 analyzer.analyzeFirst(field.rule);
@@ -119,7 +130,7 @@ export class RuleExecutionService {
     token.throwIfCancelled();
     const runtime = BookSourceStageWebRuntime.get();
     if (!runtime.isAvailable()) {
-      const available = await runtime.waitUntilAvailable(1000);
+      const available = await runtime.waitUntilAvailable(5000);
       if (!available) throw new Error('完整脚本运行环境未就绪');
     }
     const runtimeRequest = new StageWebRuntimeRequest();
@@ -137,10 +148,12 @@ export class RuleExecutionService {
     runtimeRequest.baseUrl = request.baseUrl || request.source.bookSourceUrl;
     runtimeRequest.variables = request.contextValues;
     runtimeRequest.ownerId = request.ownerId;
-    runtimeRequest.code = `const __fieldItems=JSON.parse(result||'[]');const __fieldCode=${JSON.stringify(code)};` +
+    runtimeRequest.code = `const __fieldItems=JSON.parse(result||'[]');const __fieldCodeTemplate=${JSON.stringify(code)};` +
       `const __fieldList=${field.listResult ? 'true' : 'false'};` +
       `JSON.stringify(__fieldItems.map(function(__fieldItem){java.__setContextContent(__fieldItem);` +
-      `try{const __fieldValue=eval(__fieldCode);if(__fieldValue==null)return '';` +
+      `try{const $=__fieldItem;const __fieldCode=__fieldCodeTemplate.replace(/\\{\\{([\\s\\S]*?)\\}\\}/g,` +
+      `function(_all,__expr){try{const __inner=eval(__expr);return __inner==null?'':String(__inner);}catch(__innerError){return '';}});` +
+      `const __fieldValue=eval(__fieldCode);if(__fieldValue==null)return '';` +
       `return __fieldList?JSON.stringify(Array.isArray(__fieldValue)?__fieldValue:[__fieldValue]):String(__fieldValue);}` +
       `catch(__fieldError){return '';}}));`;
     const runtimeResult = await runtime.execute(runtimeRequest);

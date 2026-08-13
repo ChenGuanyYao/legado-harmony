@@ -10,7 +10,7 @@ import { EncodedSourceUrl } from './EncodedSourceUrl';
 import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
 import { BookUrlResolver } from './BookUrlResolver';
 import { BookSourceScriptRunner } from './BookSourceScriptRunner';
-import { BookTypeSupport } from './BookTypeSupport';
+import { BookSourceMetadataSupport } from './BookSourceMetadataSupport';
 import { BookSourceRuntimeRouter, SourceRuntimeStage } from './BookSourceRuntimeRouter';
 import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceStageWebRuntime';
 import { BookSourceStageRuleSupport } from './BookSourceStageRuleSupport';
@@ -24,6 +24,7 @@ export interface ExploreEntry {
   url: string;
   sourceUrl: string;
   sourceName: string;
+  groupTitle?: string;
 }
 
 export interface ExploreSourceOption {
@@ -33,14 +34,36 @@ export interface ExploreSourceOption {
   platforms: string[];
 }
 
+export interface ExploreFilterGroup {
+  title: string;
+  options: string[];
+  selected: string;
+}
+
 interface ExploreUrlItem {
   title?: string;
   url?: string;
+  name?: string;
+  type?: string;
+  chars?: Object[];
+  default?: Object;
+  action?: string;
+}
+
+class ExplorePlatformSelector {
+  labels: string[] = [];
+  values: string[] = [];
+  actions: string[] = [];
+  parameter: string = '';
+  mode: string = '';
+  currentLabel: string = '';
 }
 
 export class ExploreCoordinator {
   private http: HttpClient = new HttpClient(10000);
   private noticeMessage: string = '';
+  private platformSelectors: Record<string, ExplorePlatformSelector> = {};
+  private filterSelectors: Record<string, ExplorePlatformSelector[]> = {};
 
   getNoticeMessage(): string {
     return this.noticeMessage;
@@ -51,13 +74,19 @@ export class ExploreCoordinator {
     const options: ExploreSourceOption[] = [];
     for (const source of sources) {
       if (!source.enabledExplore || !source.exploreUrl) continue;
+      let platforms: string[] = [];
+      const loginSelector = this.parseLoginPlatformSelector(source);
+      if (!this.usesNativeExploreFilters(source) && loginSelector.labels.length > 0) {
+        this.platformSelectors[source.bookSourceUrl] = loginSelector;
+        platforms = loginSelector.labels;
+      } else if (BookSourceDataUrlSupport.sourceUsesGyExplore(source)) {
+        platforms = await BookSourceDataUrlSupport.getExplorePlatforms(this.http, source);
+      }
       options.push({
         sourceName: source.bookSourceName,
         sourceUrl: source.bookSourceUrl,
         sourceGroup: (source.bookSourceGroup || '').trim(),
-        platforms: BookSourceDataUrlSupport.sourceUsesGyExplore(source) ?
-          await BookSourceDataUrlSupport.getExplorePlatforms(this.http, source) :
-          []
+        platforms: platforms
       });
     }
     return options;
@@ -81,13 +110,13 @@ export class ExploreCoordinator {
         console.warn('[ExploreCoordinator] skip source without explore rules:', source.bookSourceName);
         continue;
       }
-      const parsed = await this.parseExploreUrl(source);
+      const parsed = await this.parseExploreUrl(source, platform);
       entries.push(...parsed);
     }
     return entries;
   }
 
-  async explore(entry: ExploreEntry, page: number = 1): Promise<SearchBook[]> {
+  async explore(entry: ExploreEntry, page: number = 1, maxItems: number = 0): Promise<SearchBook[]> {
     this.noticeMessage = '';
     const source = await appDb.getBookSource(entry.sourceUrl);
     if (!source) return [];
@@ -95,13 +124,24 @@ export class ExploreCoordinator {
       VerificationSupport.clearVerification();
       const au = new AnalyzeUrl(source, this.http);
       const reqUrl = await this.buildUrl(source, entry.url, page);
-      if (!reqUrl || /^\s*@?js:/i.test(reqUrl) || !/^https?:\/\//i.test(reqUrl)) {
+      if (!reqUrl || /^\s*@?js:/i.test(reqUrl) ||
+        (!/^https?:\/\//i.test(reqUrl) && !/^data:/i.test(reqUrl))) {
+        console.warn('[ExploreCoordinator] invalid explore request:', source.bookSourceName,
+          'entry:', (entry.url || '').substring(0, 600), 'built:', (reqUrl || '').substring(0, 600));
         this.noticeMessage = '发现地址脚本未能生成有效请求地址';
         return [];
       }
       console.info('[ExploreCoordinator] explore:', `${entry.sourceName}/${entry.title}`, reqUrl);
-      const resp = EncodedSourceUrl.canHandle(reqUrl) ?
+      let resp = EncodedSourceUrl.canHandle(reqUrl) ?
         await this.fetchEncodedDataUrl(reqUrl, source) : await au.fetch(reqUrl);
+      const bodyJs = au.getConfig().bodyJs || '';
+      if (bodyJs) {
+        const scriptedBody = await this.executeResponseBodyScript(source, bodyJs, resp.body || '',
+          resp.url || reqUrl, page);
+        if (scriptedBody) {
+          resp = { ...resp, body: scriptedBody, success: true, statusCode: 200 };
+        }
+      }
       console.info('[ExploreCoordinator] response:', resp.statusCode, 'len:', resp.body?.length || 0, 'url:', resp.url);
       if (VerificationSupport.shouldRequestBrowserVerification(source, resp.body, resp.statusCode, entry.url)) {
         const verifyUrl = VerificationSupport.pickVerificationUrl(source, reqUrl, entry.url);
@@ -117,6 +157,14 @@ export class ExploreCoordinator {
         return [];
       }
 
+      const declaredFailure = this.responseFailureMessage(resp.body);
+      if (declaredFailure) {
+        const loginHint = (source.loginUrl || source.loginUi || '').trim() ? '，可能需要重新登录' : '';
+        this.noticeMessage = `发现接口返回失败${loginHint}：${declaredFailure}`;
+        console.warn('[ExploreCoordinator] response declared failure:', source.bookSourceName, declaredFailure);
+        return [];
+      }
+
       const baseUrl = BookUrlResolver.effectiveBase(resp, reqUrl, source.bookSourceUrl);
       const rule = new AnalyzeRule(resp.body, baseUrl);
       this.seedSourceVariables(rule.getContext(), source);
@@ -129,13 +177,16 @@ export class ExploreCoordinator {
       const items = stageItems === null ? rule.getElements(exploreRule.bookList || '') : stageItems;
       if (items.length === 0) this.noticeMessage = '发现接口已有响应，但列表规则未匹配到内容';
       console.info('[ExploreCoordinator] parsed list:', source.bookSourceName, 'rule:', exploreRule.bookList, 'count:', items.length);
+      // Capability validation only needs a representative book. Avoid parsing a 100+ item page
+      // synchronously when the caller explicitly supplies a small validation limit.
+      const parseItems = maxItems > 0 ? items.slice(0, Math.max(1, maxItems)) : items;
       const books: SearchBook[] = [];
       const sourceBackendHost = BookSourceDataUrlSupport.sourceBackendHost(source);
       const fieldRequest = new RuleBatchExecutionRequest();
       fieldRequest.source = source;
       fieldRequest.stage = SourceRuntimeStage.EXPLORE;
       fieldRequest.ownerId = `explore_${Date.now()}_${source.bookSourceUrl}`;
-      fieldRequest.contents = items;
+      fieldRequest.contents = parseItems;
       fieldRequest.baseUrl = baseUrl || source.bookSourceUrl;
       fieldRequest.fields = [
         new RuleFieldRequest('name', exploreRule.name || ''),
@@ -166,9 +217,9 @@ export class ExploreCoordinator {
       }
       const parsingSlice = CooperativeScheduler.createTimeSlice();
 
-      for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+      for (let itemIndex = 0; itemIndex < parseItems.length; itemIndex++) {
         if (itemIndex > 0) await parsingSlice.checkpoint();
-        const item = items[itemIndex];
+        const item = parseItems[itemIndex];
         const ir = new AnalyzeRule(item, baseUrl);
         this.seedSourceVariables(ir.getContext(), source);
         if (sourceBackendHost) {
@@ -189,8 +240,7 @@ export class ExploreCoordinator {
         book.variable = itemIndex < fieldBatch.contextValues.length ? fieldBatch.contextValues[itemIndex] :
           ir.getContext().toPersistentJson();
         book.origin = source.bookSourceUrl;
-        book.originName = source.bookSourceName;
-        BookTypeSupport.applySearchBookType(book, source);
+        BookSourceMetadataSupport.applySearchBook(source, book, [book.bookUrl]);
 
         if (book.name && book.bookUrl && !books.some(b => b.bookUrl === book.bookUrl && b.origin === book.origin)) {
           books.push(book);
@@ -198,11 +248,11 @@ export class ExploreCoordinator {
       }
       if (books.length > 0) {
         console.info('[ExploreCoordinator] first book:', books[0].name, books[0].bookUrl);
-      } else if (items.length > 0) {
+      } else if (parseItems.length > 0) {
         this.noticeMessage = '发现列表已匹配，但书名或详情地址解析失败';
         console.warn('[ExploreCoordinator] list matched but no valid book:', source.bookSourceName,
           'nameRule:', exploreRule.name, 'urlRule:', exploreRule.bookUrl,
-          'firstItem:', items[0].substring(0, Math.min(items[0].length, 240)));
+          'firstItem:', parseItems[0].substring(0, Math.min(parseItems[0].length, 240)));
       }
       return books;
     } catch (e) {
@@ -213,14 +263,39 @@ export class ExploreCoordinator {
     }
   }
 
-  private async parseExploreUrl(source: BookSource): Promise<ExploreEntry[]> {
+  getDiscoveredPlatforms(sourceUrl: string): string[] {
+    const selector = this.platformSelectors[sourceUrl];
+    return selector ? selector.labels.slice() : [];
+  }
+
+  getDiscoveredFilters(sourceUrl: string): ExploreFilterGroup[] {
+    const selectors = this.filterSelectors[sourceUrl] || [];
+    return selectors.map((selector: ExplorePlatformSelector): ExploreFilterGroup => ({
+      title: selector.parameter || '',
+      options: selector.labels.slice(),
+      selected: selector.currentLabel
+    }));
+  }
+
+  async applyExploreFilter(sourceUrl: string, title: string, selection: string): Promise<boolean> {
+    const source = await appDb.getBookSource(sourceUrl);
+    if (!source) return false;
+    const selectors = this.filterSelectors[sourceUrl] || [];
+    const selector = selectors.find((item: ExplorePlatformSelector): boolean => item.parameter === title);
+    if (!selector || !selection || selector.currentLabel === selection) return !!selector;
+    return await this.executeExploreSelector(source, selector, selection);
+  }
+
+  private async parseExploreUrl(source: BookSource, platform: string = ''): Promise<ExploreEntry[]> {
     const entries: ExploreEntry[] = [];
     const raw = source.exploreUrl.trim();
     if (!raw) return entries;
 
-    if (raw.startsWith('@js:') || raw.startsWith('js:')) {
+    if (raw.startsWith('@js:') || raw.startsWith('js:') || /^<js>[\s\S]*<\/js>$/i.test(raw)) {
+      await this.applyExplorePlatform(source, platform);
       const scriptItems = await this.evaluateExploreScript(raw, source);
       if (scriptItems.length > 0) {
+        this.captureExploreSelectors(source, scriptItems);
         this.appendExploreItems(entries, scriptItems, source);
         return entries;
       }
@@ -260,7 +335,8 @@ export class ExploreCoordinator {
         title: title,
         url: url,
         sourceUrl: source.bookSourceUrl,
-        sourceName: source.bookSourceName
+        sourceName: source.bookSourceName,
+        groupTitle: ''
       });
     }
     return entries;
@@ -275,7 +351,9 @@ export class ExploreCoordinator {
   }
 
   private async evaluateExploreScript(raw: string, source: BookSource): Promise<ExploreUrlItem[]> {
-    const code = raw.replace(/^\s*@?js:\s*/, '');
+    const code = raw.trim()
+      .replace(/^\s*@?js:\s*/i, '')
+      .replace(/^<js>\s*|\s*<\/js>$/gi, '');
     const runtime = BookSourceStageWebRuntime.get();
     if (!runtime.isAvailable()) await runtime.waitUntilAvailable(1000);
     if (runtime.isAvailable()) {
@@ -368,12 +446,137 @@ export class ExploreCoordinator {
         continue;
       }
       entries.push({
-        title: entryTitle,
+        title: groupTitle ? title : entryTitle,
         url: url,
         sourceUrl: source.bookSourceUrl,
-        sourceName: source.bookSourceName
+        sourceName: source.bookSourceName,
+        groupTitle: groupTitle
       });
     }
+  }
+
+  private captureExploreSelectors(source: BookSource, items: ExploreUrlItem[]): void {
+    const discovered: ExplorePlatformSelector[] = [];
+    for (const item of items) {
+      const title = String(item.title || item.name || '').trim();
+      if (String(item.type || '').toLowerCase() !== 'select' ||
+        !/模式|类型|频道|平台|来源|源站/.test(title) || /线路/.test(title)) continue;
+      const chars = Array.isArray(item.chars) ? item.chars : [];
+      const selector = new ExplorePlatformSelector();
+      for (const rawValue of chars) {
+        let label = '';
+        let value = '';
+        if (rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)) {
+          const record = rawValue as Record<string, Object>;
+          label = String(record['name'] || record['title'] || record['label'] || record['value'] || '').trim();
+          value = String(record['value'] || record['key'] || label).trim();
+        } else {
+          label = String(rawValue || '').trim();
+          value = label;
+        }
+        if (!label || selector.labels.includes(label)) continue;
+        selector.labels.push(label);
+        selector.values.push(value);
+        selector.actions.push('');
+      }
+      if (selector.labels.length === 0) continue;
+      const action = String(item.action || '');
+      const parameter = action.match(/show\s*\([^,]+,\s*['"]([^'"]+)['"]\s*\)/i);
+      // parameter is the persistent source-variable key. The visible title is retained
+      // separately in `actions` so native UI can show the same hierarchy as the source.
+      selector.parameter = title;
+      selector.mode = selector.parameter ? 'show' : '';
+      selector.actions = [parameter ? parameter[1] : ''];
+      const defaultValue = String(item.default || '').trim();
+      const defaultIndex = selector.values.indexOf(defaultValue);
+      selector.currentLabel = defaultIndex >= 0 ? selector.labels[defaultIndex] : defaultValue;
+      if (!selector.actions[0]) continue;
+      discovered.push(selector);
+      if (/平台|来源|源站/.test(title)) this.platformSelectors[source.bookSourceUrl] = selector;
+    }
+    if (discovered.length > 0) this.filterSelectors[source.bookSourceUrl] = discovered;
+  }
+
+  private parseLoginPlatformSelector(source: BookSource): ExplorePlatformSelector {
+    const selector = new ExplorePlatformSelector();
+    const loginCode = source.loginUrl || '';
+    const block = loginCode.match(/(?:var|let|const)\s+sourceList\s*=\s*\[([\s\S]*?)\]\s*;/);
+    if (!block) return selector;
+    const objects = block[1].match(/\{[^{}]*\}/g) || [];
+    for (const raw of objects) {
+      const action = this.looseProperty(raw, 'n');
+      const value = this.looseProperty(raw, 'v');
+      const label = this.looseProperty(raw, 'm') || value;
+      if (!/^sou\d+$/i.test(action) || !value || !label) continue;
+      selector.labels.push(label);
+      selector.values.push(value);
+      selector.actions.push(action);
+    }
+    if (selector.labels.length === 0) return selector;
+    selector.mode = 'loginAction';
+    try {
+      const parsed = JSON.parse(source.variable || '[]') as Object;
+      const config = Array.isArray(parsed) ? parsed[0] as Record<string, Object> : parsed as Record<string, Object>;
+      const currentValue = config ? String(config['source'] || '') : '';
+      const currentIndex = selector.values.indexOf(currentValue);
+      selector.currentLabel = currentIndex >= 0 ? selector.labels[currentIndex] : selector.labels[0];
+    } catch (_) {
+      selector.currentLabel = selector.labels[0];
+    }
+    return selector;
+  }
+
+  private looseProperty(raw: string, key: string): string {
+    // Imported source lists commonly use unquoted keys immediately after the opening brace,
+    // for example `{n:"sou1",v:"番茄小说",m:"番茄小说"}`.
+    const match = raw.match(new RegExp(`(?:^|[,{\\s])${key}\\s*:\\s*(["'])([\\s\\S]*?)\\1`));
+    return match ? (match[2] || '').trim() : '';
+  }
+
+  private async applyExplorePlatform(source: BookSource, platform: string): Promise<void> {
+    const selector = this.platformSelectors[source.bookSourceUrl];
+    if (!selector || !platform || selector.currentLabel === platform) return;
+    await this.executeExploreSelector(source, selector, platform);
+  }
+
+  private async executeExploreSelector(source: BookSource, selector: ExplorePlatformSelector,
+    selection: string): Promise<boolean> {
+    const index = selector.labels.indexOf(selection);
+    if (index < 0) return false;
+    const runtime = BookSourceStageWebRuntime.get();
+    if (!runtime.isAvailable() && !await runtime.waitUntilAvailable(5000)) return false;
+    const request = new StageWebRuntimeRequest();
+    request.applyStageBudget(SourceRuntimeStage.EXPLORE);
+    request.source = source;
+    request.baseUrl = source.bookSourceUrl;
+    const variableKey = selector.actions.length > 0 ? selector.actions[0] : '';
+    if (selector.mode === 'show' && variableKey) {
+      request.code = `if(typeof show==='function'){show(${JSON.stringify(selector.values[index])},` +
+        `${JSON.stringify(variableKey)});}'';`;
+    } else if (selector.mode === 'loginAction' && selector.actions[index]) {
+      const action = selector.actions[index];
+      request.code = `${source.loginUrl || ''}\n;if(typeof globalThis[${JSON.stringify(action)}]==='function')` +
+        `{globalThis[${JSON.stringify(action)}]();}'';`;
+    } else {
+      return false;
+    }
+    try {
+      await runtime.execute(request);
+      selector.currentLabel = selection;
+      console.info('[ExploreCoordinator] native explore filter switched:', source.bookSourceName,
+        selector.parameter, selection);
+      return true;
+    } catch (error) {
+      console.warn('[ExploreCoordinator] native explore filter switch failed:', source.bookSourceName,
+        selector.parameter, selection, error);
+      return false;
+    }
+  }
+
+  private usesNativeExploreFilters(source: BookSource): boolean {
+    const script = `${source.exploreUrl || ''}\n${source.jsLib || ''}`;
+    return /createFilter\s*\([\s\S]{0,80}(?:模式|类型|平台|来源|源站)/.test(script) ||
+      /type\s*:\s*['"]select['"]/.test(source.exploreUrl || '');
   }
 
   private parseLooseExploreItems(raw: string): ExploreUrlItem[] {
@@ -471,17 +674,18 @@ export class ExploreCoordinator {
 
   private isPersonalExploreUrl(title: string, url: string): boolean {
     const value = `${title || ''}\n${url || ''}`.toLowerCase();
-    return value.includes('我的书架') || value.includes('bookshelf') || value.includes('/user/') ||
-      value.includes('/login');
+    return value.includes('个人中心') || value.includes('我的书架') || value.includes('bookshelf') ||
+      value.includes('book_shelf') || value.includes('/user/') || value.includes('/login');
   }
 
   private async buildUrl(source: BookSource, url: string, page: number): Promise<string> {
+    url = this.applyLegacyPageAlternative(url, page);
     const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.URL,
       `${source.jsLib || ''}\n${url || ''}`);
-    const isFullJsUrl = /^\s*@?js:/i.test(url || '');
+    const isFullJsUrl = /^\s*@?js:/i.test(url || '') || /^\s*<js>[\s\S]*<\/js>\s*$/i.test(url || '');
     const requiresStageRuntime = isFullJsUrl || (url.includes('{{') && decision.runtime === 'arkweb');
     const runtime = BookSourceStageWebRuntime.get();
-    if (requiresStageRuntime && !runtime.isAvailable()) await runtime.waitUntilAvailable(1000);
+    if (requiresStageRuntime && !runtime.isAvailable()) await runtime.waitUntilAvailable(5000);
     if (requiresStageRuntime && runtime.isAvailable()) {
       const request = new StageWebRuntimeRequest();
       request.applyStageBudget(SourceRuntimeStage.EXPLORE);
@@ -489,7 +693,9 @@ export class ExploreCoordinator {
       request.baseUrl = source.bookSourceUrl;
       request.variables = { page: String(page), pageIndex: String(page) };
       if (isFullJsUrl) {
-        request.code = (url || '').replace(/^\s*@?js:\s*/i, '');
+        request.code = (url || '').trim()
+          .replace(/^@?js:\s*/i, '')
+          .replace(/^<js>\s*|\s*<\/js>$/gi, '');
       } else {
         const template = JSON.stringify(url || '');
         request.code = `const __exploreTemplate=${template};result=__exploreTemplate.replace(/\\{\\{([\\s\\S]*?)\\}\\}/g,` +
@@ -497,7 +703,7 @@ export class ExploreCoordinator {
       }
       try {
         const result = await runtime.execute(request);
-        if (result.value) return result.value;
+        if (result.value) return this.applyLegacyPageAlternative(result.value, page);
       } catch (error) {
         console.warn('[ExploreCoordinator] stage runtime URL failed:', source.bookSourceName, error);
       }
@@ -516,6 +722,62 @@ export class ExploreCoordinator {
     const fallback = js.evalTemplate(this.applySourceTemplate(url, source))
       .replace(/\{\{[^}]+\}\}/g, String(page));
     return BookUrlResolver.resolve(fallback, source.bookSourceUrl) || fallback;
+  }
+
+  /** Legado page-one shorthand: `<first-page,following-pages>`. */
+  private applyLegacyPageAlternative(url: string, page: number): string {
+    return (url || '').replace(/<([^<>]*),([^<>]*)>/g,
+      (match: string, firstPage: string, followingPages: string): string => {
+        if (match.includes('(') || !/\{\{\s*page(?:Index)?\b/i.test(match)) return match;
+        return page <= 1 ? firstPage : followingPages;
+      });
+  }
+
+  private async executeResponseBodyScript(source: BookSource, code: string, body: string,
+    baseUrl: string, page: number): Promise<string> {
+    const runtime = BookSourceStageWebRuntime.get();
+    if (!runtime.isAvailable()) await runtime.waitUntilAvailable(5000);
+    if (!runtime.isAvailable()) {
+      this.noticeMessage = '发现响应脚本运行环境未就绪';
+      return '';
+    }
+    const request = new StageWebRuntimeRequest();
+    request.applyStageBudget(SourceRuntimeStage.EXPLORE);
+    request.source = source;
+    request.code = code || '';
+    request.content = body || '';
+    request.baseUrl = baseUrl || source.bookSourceUrl;
+    request.variables = { page: String(page), pageIndex: String(page) };
+    try {
+      const result = await runtime.execute(request);
+      return result.value || '';
+    } catch (error) {
+      console.warn('[ExploreCoordinator] bodyJs failed:', source.bookSourceName, error);
+      this.noticeMessage = `发现响应脚本执行失败：${error instanceof Error ? error.message : String(error)}`;
+      return '';
+    }
+  }
+
+  /** Avoid treating a small API error object as a one-item book list. */
+  private responseFailureMessage(body: string): string {
+    const value = (body || '').trim();
+    if (!value.startsWith('{') || value.length > 4096) return '';
+    try {
+      const record = JSON.parse(value) as Record<string, Object>;
+      const message = String(record['msg'] || record['message'] || record['error'] || '').trim();
+      if (!message || !/失败|错误|异常|未登录|请登录|无权限|拒绝|invalid|error|fail/i.test(message)) return '';
+      const meaningfulKeys = ['data', 'list', 'records', 'items', 'books', 'result'];
+      for (const key of meaningfulKeys) {
+        const field = record[key];
+        if (Array.isArray(field) && field.length > 0) return '';
+        if (field && typeof field === 'object' && !Array.isArray(field) && Object.keys(field as Record<string, Object>).length > 0) {
+          return '';
+        }
+      }
+      return message.substring(0, 160);
+    } catch (_) {
+      return '';
+    }
   }
 
   private applySourceTemplate(url: string, source: BookSource): string {

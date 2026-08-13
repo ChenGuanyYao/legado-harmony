@@ -11,7 +11,7 @@ import { EncodedSourceUrl } from './EncodedSourceUrl';
 import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
 import { BookUrlResolver } from './BookUrlResolver';
 import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
-import { BookTypeSupport } from './BookTypeSupport';
+import { BookSourceMetadataSupport } from './BookSourceMetadataSupport';
 import { BookSourceRuntimeRouter, SourceRuntimeStage } from './BookSourceRuntimeRouter';
 import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceStageWebRuntime';
 import { BookSourceStageRuleSupport } from './BookSourceStageRuleSupport';
@@ -411,7 +411,6 @@ export class SearchCoordinator {
         }
         book.variable = itemIndex < fieldBatch.contextValues.length ? fieldBatch.contextValues[itemIndex] :
           ir.getContext().toPersistentJson();
-        BookTypeSupport.applySearchBookType(book, source);
         // 如果解析后仍含 JSONPath 表达式，直接从 item 提取
         if (!book.bookUrl || book.bookUrl.startsWith('$') || book.bookUrl.includes('$._id') || book.bookUrl.includes('$..')) {
           // 尝试常见字段
@@ -441,7 +440,7 @@ export class SearchCoordinator {
           }
         }
         book.origin = source.bookSourceUrl;
-        book.originName = source.bookSourceName;
+        BookSourceMetadataSupport.applySearchBook(source, book, [book.bookUrl]);
         book.bookSourceComment = source.bookSourceComment;
         book.customOrder = source.customOrder;
         book.weight = source.weight;
@@ -836,7 +835,15 @@ export class SearchCoordinator {
     const searchUrl = source.searchUrl;
     const baseUrl = source.bookSourceUrl;
     if (!searchUrl) return `${baseUrl}/search?q={{key}}`;
-    const isFullJsSearchUrl = /^\s*@?js:/i.test(searchUrl);
+    const isFullJsSearchUrl = this.isFullJsUrl(searchUrl);
+    // A plain URL whose template uses only built-in deterministic expressions does not need the
+    // source's unrelated jsLib. Keeping it on the lightweight path avoids both semantic pollution
+    // from top-level library state and unnecessary ArkWeb compilation.
+    if (!isFullJsSearchUrl && this.isLightweightUrlTemplate(searchUrl)) {
+      let lightweightUrl = this.applySourceTemplate(searchUrl, source);
+      lightweightUrl = js.evalTemplate(lightweightUrl).replace(/\{\{[^}]+\}\}/g, '');
+      if (lightweightUrl) return lightweightUrl;
+    }
     const searchRuntimeDecision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.SEARCH,
       `${source.jsLib || ''}\n${searchUrl}`);
     const requiresStageRuntime = isFullJsSearchUrl ||
@@ -879,13 +886,13 @@ export class SearchCoordinator {
   private async tryBuildStageRuntimeSearchUrl(source: BookSource, keyword: string,
     validationOnly: boolean): Promise<string> {
     const rawSearchUrl = source.searchUrl || '';
-    const isFullJsUrl = /^\s*@?js:/i.test(rawSearchUrl);
+    const isFullJsUrl = this.isFullJsUrl(rawSearchUrl);
     const hostCode = `${source.jsLib || ''}\n${source.searchUrl || ''}`;
     const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.SEARCH, hostCode);
     if (!isFullJsUrl && decision.runtime !== 'arkweb') return '';
     const runtime = BookSourceStageWebRuntime.get();
     if (!runtime.isAvailable()) {
-      const available = await runtime.waitUntilAvailable(1000);
+      const available = await runtime.waitUntilAvailable(5000);
       if (!available) return '';
     }
     const request = new StageWebRuntimeRequest();
@@ -908,7 +915,7 @@ export class SearchCoordinator {
     if (isFullJsUrl) {
       // A full-JS URL must run as code. Treating it as a template returns the literal "@js:..."
       // text, so AnalyzeUrl never sees request options such as an Authorization header.
-      request.code = rawSearchUrl.replace(/^\s*@?js:\s*/i, '');
+      request.code = this.unwrapFullJsUrl(rawSearchUrl);
     } else {
       const template = JSON.stringify(rawSearchUrl);
       request.code = `const __searchTemplate=${template};result=__searchTemplate.replace(/\\{\\{([\\s\\S]*?)\\}\\}/g,` +
@@ -928,6 +935,40 @@ export class SearchCoordinator {
       .replace(/\{\{\s*source\.bookSourceUrl\s*\}\}/g, source.bookSourceUrl || '')
       .replace(/\{\{\s*source\.bookSourceName\s*\}\}/g, source.bookSourceName || '')
       .replace(/\{\{\s*source\.bookSourceGroup\s*\}\}/g, source.bookSourceGroup || '');
+  }
+
+  private isFullJsUrl(value: string): boolean {
+    const raw = (value || '').trim();
+    return /^@?js:/i.test(raw) || /^<js>[\s\S]*<\/js>$/i.test(raw);
+  }
+
+  private unwrapFullJsUrl(value: string): string {
+    return (value || '').trim()
+      .replace(/^@?js:\s*/i, '')
+      .replace(/^<js>\s*|\s*<\/js>$/gi, '');
+  }
+
+  private isLightweightUrlTemplate(value: string): boolean {
+    const raw = value || '';
+    if (!raw.includes('{{')) return true;
+    const allowedCalls = [
+      'Date.now', 'Math.round', 'Math.floor', 'Math.ceil', 'String',
+      'encodeURIComponent', 'encodeURI', 'java.urlEncode', 'java.encodeURI',
+      'java.base64Encode', 'java.base64EncodeToString', 'java.base64Decode',
+      'java.base64DecodeToString', 'java.hexEncodeToString', 'java.hexDecodeToString'
+    ];
+    const expression = /\{\{([\s\S]*?)\}\}/g;
+    let match: RegExpExecArray | null;
+    while ((match = expression.exec(raw)) !== null) {
+      const code = match[1] || '';
+      if (/=>|\b(?:let|const|var|return|if|try|new)\b/.test(code)) return false;
+      const call = /\b([A-Za-z_$][A-Za-z0-9_$]*(?:\.[A-Za-z_$][A-Za-z0-9_$]*)*)\s*\(/g;
+      let callMatch: RegExpExecArray | null;
+      while ((callMatch = call.exec(code)) !== null) {
+        if (!allowedCalls.includes(callMatch[1] || '')) return false;
+      }
+    }
+    return true;
   }
 
   private seedSourceVariables(ctx: RuleContext, source: BookSource): void {

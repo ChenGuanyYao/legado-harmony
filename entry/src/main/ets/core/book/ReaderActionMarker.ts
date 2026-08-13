@@ -13,6 +13,7 @@ export class ReaderActionMatch {
 
 /** A persisted reader marker for source-provided actions such as paragraph comments. */
 export class ReaderActionMarker {
+  static readonly SOURCE_SCRIPT_SCHEME: string = 'legado-source-action:';
   static readonly PREFIX: string = '[[LEGADO_READER_ACTION_V3:';
   static readonly LEGACY_PREFIX: string = '[[LEGADO_READER_ACTION_V2:';
   static readonly ORIGINAL_PREFIX: string = '[[LEGADO_READER_ACTION:';
@@ -25,6 +26,23 @@ export class ReaderActionMarker {
     data.title = (title || '').trim();
     if (!data.url) return '';
     return `${ReaderActionMarker.PREFIX}${encodeURIComponent(JSON.stringify(data))}${ReaderActionMarker.SUFFIX}`;
+  }
+
+  /** Persist a user-triggered action supplied by the imported source without interpreting it. */
+  static createSourceScript(label: string, script: string, title: string = ''): string {
+    const code = (script || '').trim();
+    if (!code || code.length > 4096) return '';
+    return this.create(label, `${this.SOURCE_SCRIPT_SCHEME}${encodeURIComponent(code)}`, title);
+  }
+
+  static sourceScript(url: string): string {
+    const value = (url || '').trim();
+    if (!value.startsWith(this.SOURCE_SCRIPT_SCHEME)) return '';
+    try {
+      return decodeURIComponent(value.substring(this.SOURCE_SCRIPT_SCHEME.length));
+    } catch (_) {
+      return '';
+    }
   }
 
   /** Compact provider action. Secrets and repeated endpoint data stay in the provider, outside measured text. */

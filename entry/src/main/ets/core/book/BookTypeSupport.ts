@@ -12,12 +12,21 @@ export class BookTypeSupport {
     if (source.bookSourceType === 1) return this.AUDIO;
     if (source.bookSourceType === 2) return this.IMAGE;
     if (source.bookSourceType === 3) return this.TEXT | this.WEB_FILE;
+    // Imported sources occasionally omit bookSourceType even though their primary content rule
+    // explicitly selects image elements.  Infer image mode from that rule shape, not from a site
+    // name or host, so the same capability remains useful for any user-supplied comic source.
+    const contentRule = source.contentRule ? String(source.contentRule.content || '') : '';
+    if (/@(?:img|image)@(?:html|src|data-src|href)\b/i.test(contentRule) ||
+      /(?:^|[.#@])(?:img|image)(?:\[[^\]]*\])?@(?:html|src|data-src|href)\b/i.test(contentRule)) {
+      return this.IMAGE;
+    }
     return 0;
   }
 
   static typeFromTab(tab: string): number {
     const value = String(tab || '').trim().toLowerCase();
-    if (value === 'audio' || value === 'listen' || value === 'audiobook' || value === '听书' || value === '音频') {
+    if (value === 'audio' || value === 'listen' || value === 'audiobook' || value === '听书' || value === '音频' ||
+      value === '有声' || value === '畅听') {
       return this.AUDIO;
     }
     if (value === 'comic' || value === 'image' || value === 'manga' || value === '漫画') return this.IMAGE;
@@ -25,14 +34,16 @@ export class BookTypeSupport {
     return 0;
   }
 
-  static applySearchBookType(book: SearchBook, source: BookSource | null, tab: string = ''): void {
-    const resolved = this.typeFromTab(tab) || this.typeFromVariable(book.variable) || this.typeFromSource(source);
+  static applySearchBookType(book: SearchBook, source: BookSource | null, tab: string = '', identity: string = ''): void {
+    const resolved = this.typeFromTab(tab) || this.typeFromIdentity(identity, book.kind) ||
+      this.typeFromVariable(book.variable) || this.typeFromSource(source);
     if (resolved) book.type = resolved;
   }
 
-  static applyBookType(book: Book, source: BookSource | null = null, tab: string = ''): void {
+  static applyBookType(book: Book, source: BookSource | null = null, tab: string = '', identity: string = ''): void {
     if (book.origin === 'local') return;
-    const resolved = this.typeFromTab(tab) || this.typeFromVariable(book.variable) || this.typeFromSource(source) ||
+    const resolved = this.typeFromTab(tab) || this.typeFromIdentity(identity, book.kind) ||
+      this.typeFromVariable(book.variable) || this.typeFromSource(source) ||
       this.typeFromIdentity(book.originName, book.kind);
     if (resolved) book.type = resolved;
   }
@@ -66,7 +77,7 @@ export class BookTypeSupport {
 
   private static typeFromIdentity(originName: string, kind: string): number {
     const value = `${originName || ''}\n${kind || ''}`;
-    if (/听书|有声|音频|audiobook/i.test(value)) return this.AUDIO;
+    if (/听书|畅听|有声|音频|audiobook|audio/i.test(value)) return this.AUDIO;
     if (/漫画|漫改|comic|manga/i.test(value)) return this.IMAGE;
     return 0;
   }

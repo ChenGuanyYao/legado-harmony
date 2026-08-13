@@ -1,9 +1,33 @@
-# Legado Harmony 书源开发文档
+# Legado Harmony 书源开发指南
 
-> 适用范围：`legado-harmony` `3.5.806` 当前书源实现（2026-08-03 工作区）。
-> 本文描述的是本项目**已经实现并实际调用**的规则，而不是 Android「阅读」全部规则的等价清单。导入其他项目的书源时，应特别留意[兼容性与当前限制](#13-兼容性与当前限制)。
+本文面向为开源轻页编写、迁移和调试书源的开发者，描述项目当前代码中**已经实现并实际调用**的规则能力。
 
-## 1. 书源是什么
+| 项目 | 信息 |
+| --- | --- |
+| 适用项目 | `legado-harmony` |
+| 适用版本 | `3.6.818`（以 `AppScope/app.json5` 为准） |
+| 最后核对 | 2026-08-11 |
+| 文档性质 | 当前实现参考，不是 Android「阅读」全部规则的等价清单 |
+
+> [!IMPORTANT]
+> 示例只使用 `example.com`、本地测试服务和虚构数据。请勿向公共仓库提交真实站点的私有接口、账号、Cookie、Token、设备标识或未获授权的内容规则。
+
+## 阅读路线
+
+- **第一次编写书源**：从[快速入门](#快速入门)开始，再阅读[数据格式与请求](#数据格式与请求)、[规则语法](#规则语法)和[各阶段规则](#各阶段规则)。
+- **迁移 Android 阅读书源**：重点阅读 [JavaScript 兼容层](#javascript-兼容层)、[登录与网页验证](#登录cookie-与网页验证)和[兼容性与迁移](#兼容性与迁移)。
+- **定位运行问题**：直接查看[开发与验证](#开发与验证)中的验收清单、故障表和批量校验状态。
+- **扩展应用能力**：从[实现索引](#实现索引)进入对应 ArkTS 模块。
+
+文档中的能力状态按以下口径描述：
+
+- **已支持/已使用**：当前通用执行链已经读取并产生实际行为。
+- **可导入/可编辑**：字段能保存和导出，但不代表通用执行链会消费。
+- **部分兼容**：仅覆盖文中列出的语法、阶段或受控桥接，不应推断为完整 Android、Java、WebView 或浏览器环境。
+
+## 快速入门
+
+### 书源与执行模型
 
 书源是一份 JSON 配置。它告诉应用：
 
@@ -42,7 +66,7 @@
 - JSON 元素会被序列化为 JSON 字符串，HTML 元素会保留该元素的完整 HTML；
 - 所以子规则通常从 `$.字段` 或元素内部的 CSS 选择器开始，而不必重复列表的完整路径。
 
-## 2. 最小可用书源
+### 最小可用书源
 
 下面是一个 JSON API 书源骨架。实际开发时优先从这种小配置开始，先跑通“搜索 → 详情 → 目录 → 正文”，再补发现和可选字段。
 
@@ -109,7 +133,9 @@
 
 搜索阶段目前固定使用第 1 页，因此 `{{page}}` 在搜索地址中为 `1`；发现页会传入实际页码。
 
-## 3. JSON 顶层结构与导入格式
+## 数据格式与请求
+
+### 导入格式与持久化
 
 应用支持四种常见导入外壳：
 
@@ -156,7 +182,7 @@
 
 字段以顶层分号分隔，字段名和值以第一个 `=` 分隔。复杂 JS、正则或包含分号的值更容易产生歧义，不建议新书源使用此格式。
 
-## 4. 顶层字段
+### 顶层字段
 
 | JSON 字段 | 编辑器名称 | 类型/默认值 | 当前作用 |
 | --- | --- | --- | --- |
@@ -190,9 +216,9 @@
 
 原始 JSON 中的其他未知字段会被保留，但只有进入模型、规则组或专用兼容层的字段才会影响执行。
 
-## 5. URL 与 HTTP 请求规则
+### URL 与 HTTP 请求
 
-### 5.1 相对地址
+#### 相对地址
 
 请求地址可以是：
 
@@ -206,7 +232,7 @@
 
 为了避免不同阶段对“普通相对路径”的基准处理差异，书源地址建议只写站点根地址，业务请求和规则生成的 URL 优先写 `/` 开头的根相对地址；尤其是详情规则的 `tocUrl`，不要依赖 `chapters/list` 这类无前导斜杠的路径。
 
-### 5.2 搜索变量
+#### 搜索变量
 
 搜索地址可使用：
 
@@ -230,7 +256,7 @@
 
 避免对 `{{key}}` 再手工 URL 编码，否则可能双重编码。目标站要求 GBK/GB2312 时，使用 `searchKeyRaw` 配合 `charset`。
 
-### 5.3 发现变量与分类格式
+#### 发现变量与分类格式
 
 发现页支持 `{{page}}` 和 `{{pageIndex}}`。最稳定的配置是一行一个分类：
 
@@ -251,7 +277,7 @@
 
 数组中没有 `url` 的条目会成为后续条目的分组标题。指向“我的书架”、用户页或登录页的个人入口会被过滤。
 
-### 5.4 URL 选项对象
+#### URL 选项对象
 
 在 URL 后追加逗号和对象可配置请求：
 
@@ -282,7 +308,7 @@ POST 还有一种简写：地址以 `@` 开头，`?` 后内容作为 body。
 
 表单 body 会编码为空格使用 `+` 的形式。未显式提供 `Content-Type` 时：JSON 对象 body 使用 `application/json; charset=utf-8`，其他 body 使用 `application/x-www-form-urlencoded`。
 
-### 5.5 请求头
+#### 请求头
 
 推荐 JSON：
 
@@ -309,7 +335,7 @@ URL 内还支持：
 
 合并顺序是“书源全局请求头 → 本次请求头”，因此本次请求头优先。若未显式设置 Cookie，应用会按请求地址从登录/验证 Cookie 存储中补充。
 
-## 6. 通用解析语法
+## 规则语法
 
 一个字段规则通常由三部分构成：
 
@@ -319,7 +345,7 @@ URL 内还支持：
 
 并非每部分都必须存在。执行顺序是先提取，再执行 `@js:` 后处理，最后执行 `##` 正则替换。尽量让规则保持单一职责，复杂转换分成 `init`、字段提取和净化三步。
 
-### 6.1 JSONPath
+### JSONPath
 
 JSON 响应优先使用 JSONPath：
 
@@ -351,7 +377,7 @@ $.items[?(@.name =~ /小说/i)]
 
 `@.field` 会按当前 JSON 对象的 `$.field` 处理。JSON 内容中还允许 `.field` 或简单裸字段 `field`，但推荐显式写 `$.field`，可读性和可移植性更好。`@json:路径` 可以强制按 JSONPath 解析。
 
-### 6.2 CSS 选择器
+### CSS 选择器
 
 HTML 响应优先使用 CSS 风格规则：
 
@@ -400,7 +426,7 @@ li:nth-of-type(2)
 
 选择器解析由项目内轻量解析器完成，并非完整浏览器 DOM/CSS 引擎。不要依赖复杂嵌套伪类、`an+b` 形式的 `nth-child`、伪元素或现代 CSS 全集。单个 HTML 响应超过 4 MiB 时，列表 CSS/正则解析会受保护性限制；大接口优先使用 JSONPath 或缩小响应。
 
-### 6.3 基础 XPath
+### 基础 XPath
 
 支持一部分可转换为 CSS 的 XPath：
 
@@ -414,7 +440,7 @@ li:nth-of-type(2)
 
 支持属性相等、`contains(@attr, ...)`、`starts-with(@attr, ...)`、文本包含、数字位置、`last()`、属性存在以及末尾 `/@attr`、`/text()`。复杂轴、函数、变量和完整 XPath 表达式不受支持；新源推荐 JSONPath 或 CSS。
 
-### 6.4 组合规则
+### 组合规则
 
 | 运算符 | 行为 | 示例 |
 | --- | --- | --- |
@@ -424,7 +450,7 @@ li:nth-of-type(2)
 
 分隔符在引号、圆括号、方括号和花括号内不会拆分，因此 JSONPath 过滤器中的 `&&`、`||` 可以正常使用。
 
-### 6.5 模板拼接
+### 模板拼接
 
 双花括号会在当前元素中求值：
 
@@ -453,7 +479,7 @@ https://cdn.example.com/{{$.cover}}
 
 详情、目录、正文阶段还会注入 `book.bookUrl`、`bookUrl`，并尽量从详情 URL 提取 `book`、`book_id`、`id`。
 
-### 6.6 正则提取与替换
+### 正则提取与替换
 
 字段后处理使用：
 
@@ -479,7 +505,7 @@ $.status##^1$##连载
 
 直接正则的兼容行为较特殊，稳定书源更适合用 CSS/JSONPath 提取后再用 `##` 净化。
 
-### 6.7 上下文变量 `@put` / `@get`
+### 上下文变量 `@put` / `@get`
 
 可以在规则中保存并读取字符串变量：
 
@@ -493,7 +519,7 @@ $.status##^1$##连载
 
 注意：列表中的每个搜索/发现元素会创建自己的规则上下文，搜索得到的变量会写入该书籍；目录中的章节共用书籍上下文。避免用相同键保存会在章节之间互相覆盖的临时值。
 
-### 6.8 JavaScript 兼容层
+### JavaScript 兼容层
 
 规则支持以下形态：
 
@@ -536,7 +562,7 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 
 能力路由会分析 `java`、`source`、`cache` 和 `cookie` 方法，并在登录动作失败时提示缺少的桥接方法。复杂源仍应逐阶段实机验证；书源中的私有函数、接口和凭据始终属于该书源配置，不会成为应用内置 API。
 
-### 6.9 编码 `data:` 地址与显式请求
+### 编码 `data:` 地址与显式请求
 
 应用支持标准 `data:` 文本以及 `data:;base64,<负载>,{...}` 形式。Base64 负载和尾部选项会分别解析，避免把请求选项误当成正文。
 
@@ -550,9 +576,9 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 
 需要加密、摘要、Cookie、音频或图片处理时，应把相应逻辑和有权使用的参数明确写在书源规则中。`BookSourceInteractionPostProcessor` 不再识别具体平台，只保留规则已经产出的正文。
 
-## 7. 各阶段规则字段
+## 各阶段规则
 
-### 7.1 搜索规则 `ruleSearch`
+### 搜索规则 `ruleSearch`
 
 当前要让书源参与搜索，至少必须配置：`searchUrl`、`bookList`、`name`、`bookUrl`。
 
@@ -572,13 +598,13 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 
 主页面中的搜索组件在书架、发现、搜索和“我的”之间切换时不会主动清空结果；发起下一次搜索或清除单书源模式时才重置。本行为是页面会话缓存，不是长期数据库搜索快照，应用进程结束后不保证恢复。
 
-### 7.2 发现规则 `ruleExplore`
+### 发现规则 `ruleExplore`
 
 至少需要：`exploreUrl`、`bookList`、`name`、`bookUrl`。字段语义与搜索相同。发现链会读取 `wordCount`，并按“来源 + 详情 URL”去重。
 
 当 `ruleExplore` 为 `null`、空数组、空对象或缺少必要字段时，会自动回退到 `ruleSearch`。`exploreUrl` 以 `@js:` / `js:` 开头时会交给受限脚本引擎执行，结果应为分类对象数组的 JSON 字符串；脚本运行具有操作次数、数组大小、代码长度和输出长度限制。
 
-### 7.3 详情规则 `ruleBookInfo`
+### 详情规则 `ruleBookInfo`
 
 详情请求地址来自搜索/发现的 `bookUrl`。
 
@@ -597,7 +623,7 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 
 `init` 返回的是字符串。如果 JSONPath 命中对象，会被序列化成 JSON，因此后续仍可用 JSONPath；如果 CSS 命中元素，建议显式用 `@html` 保留 HTML。
 
-### 7.4 目录规则 `ruleToc`
+### 目录规则 `ruleToc`
 
 | 字段 | 必需 | 当前用途 |
 | --- | --- | --- |
@@ -612,7 +638,7 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 
 目录规则产生的顺序就是阅读目录顺序。负索引、切片或 CSS 位置规则可用于排除卷名、广告项。章节标题会清理多余空白。
 
-### 7.5 正文规则 `ruleContent`
+### 正文规则 `ruleContent`
 
 | 字段 | 当前用途 |
 | --- | --- |
@@ -651,7 +677,9 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 带参数或 `imageDecode` 的图片由应用 HTTP 客户端携带 Cookie/白名单请求头下载，在最多 20 MiB 的限制内完成解密并写入应用缓存，再以本地文件交给阅读器。单章图片按最多 4 路并发处理。
 
-## 8. HTML 书源示例
+## 示例与特殊场景
+
+### HTML 书源示例
 
 假设搜索页结构：
 
@@ -711,7 +739,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 当当前元素本身就是 `<a>` 时，`text` 和 `href` 可直接操作当前元素；也可以写 `@text`、`@href` 风格，但推荐在可读性更高时写完整选择器。
 
-## 9. JSON API 书源示例解析
+### JSON API 开发要点
 
 公开仓库不提供指向真实第三方站点的完整可导入书源。开发和测试时，请使用 `https://example.com`、本地测试服务器或开发者自行控制且明确获得授权的服务，并使用虚构数据验证以下能力：
 
@@ -724,7 +752,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 完整字段骨架见本文末尾的模板；模板故意不包含可用的真实站点地址、接口、凭据或内容规则。
 
-## 10. 登录、Cookie 与网页验证
+### 登录、Cookie 与网页验证
 
 应用会综合 HTTP 状态、响应内容、规则中的验证提示以及登录字段判断是否需要网页验证。常见流程：
 
@@ -735,7 +763,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 5. Cookie 同步到书源请求；
 6. 返回后重试原操作。
 
-### 10.1 `loginUi` 控件
+#### `loginUi` 控件
 
 静态 `loginUi` 通常是控件数组，当前识别：
 
@@ -751,7 +779,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 `loginUi` 也可以是动态 `@js:`/`<js>` 脚本，返回控件数组 JSON。动态控件生成和按钮动作均有超时、输出大小和网络响应限制。
 
-### 10.2 登录动作 ArkWeb 桥
+#### 登录动作 ArkWeb 桥
 
 登录动作使用独立 ArkWeb 运行环境，不会让搜索或正文自动改走登录页面。当前桥接包括：
 
@@ -768,7 +796,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 请求规则中的 `<js>startBrowserAwait(...)`、`getVerificationCode(...)` 等提示也可触发验证逻辑，但不是完整 Android WebView/Activity API。需要账号口令签名、动态参数或复杂验证码的网站，必须实机确认；部分已知站点在项目代码中有专用适配，不能据此推断所有同类源都通用支持。
 
-### 10.3 有声书登录与音色
+### 有声书源与音色
 
 有声书源可通过 `bookSourceType: 1`、书籍 `type` 的音频位或编码协议元数据标记。正文规则应最终返回一个可播放的 HTTP/HTTPS 音频地址，或由已适配协议返回包含音频地址的 JSON。播放页支持：
 
@@ -782,9 +810,9 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 不要把账号、密码、长期 Token 直接提交到公共书源 JSON。优先通过登录页获取短期 Cookie，或仅在本机编辑 `loginHeader`。
 
-## 11. 开发与调试流程
+## 开发与验证
 
-### 11.1 先在浏览器/抓包工具确认接口
+### 先确认接口
 
 记录每一阶段：
 
@@ -798,7 +826,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 优先选择站点公开且稳定的 JSON 接口；HTML 结构常改，复杂 JS 签名和反爬验证的维护成本最高。
 
-### 11.2 按阶段增量开发
+### 按阶段增量开发
 
 1. 只写顶层字段、`searchUrl` 和 `ruleSearch`；确保至少出现一条有书名、有详情 URL 的结果。
 2. 写 `ruleBookInfo`；确认详情信息和 `tocUrl` 正确。
@@ -807,7 +835,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 5. 最后复制/调整搜索规则为发现规则，补充分类和分页。
 6. 再处理登录、Cookie、字符集、加密和 JS 兼容表达式。
 
-### 11.3 在应用内验证
+### 应用内验收清单
 
 书源可从文件或 URL 导入，也可在“我的 → 书源管理 → 新建书源”逐字段填写。完整验收清单：
 
@@ -834,7 +862,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 运行应用时，搜索、发现和 WebBook 服务会输出包含 `[SC]`、`[ExploreCoordinator]`、`[WS]` 的日志，可重点查看：最终 URL、状态码、响应长度、列表命中数量和第一条结果。
 
-### 11.4 常见故障定位
+### 常见故障定位
 
 | 现象 | 优先检查 |
 | --- | --- |
@@ -858,7 +886,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 | CSS 在小页面可用、大页面失效 | HTML 超过 4 MiB 保护阈值；寻找 JSON API 或减少响应。 |
 | Android 阅读中可用、此处不可用 | 查看该阶段是否路由 ArkWeb、是否调用未映射 `java/source/cache/cookie` 方法、浏览器直连网络、复杂 XPath/CSS 或未消费字段。 |
 
-### 11.5 批量书源校验状态
+### 批量书源校验状态
 
 书源管理中的校验不是简单的“成功/失败”二值：
 
@@ -872,7 +900,14 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 校验模式使用更保守的限制：并发 1、单响应 512 KiB、单条可执行规则 32 KiB、书源脚本配置 512 KiB，并拒绝高风险嵌套正则。日常搜索允许更大的响应和聚合脚本，因此“校验失败：配置过大”不必然等于日常链路完全不能运行，但仍应缩小测试脚本或按阶段验证。401/403 应归类为“需要验证”，不应批量禁用或删除。
 
-## 12. 编写质量建议
+校验完成后，结果面板提供两类处理方式：
+
+- **批量禁用**：只对明确失败的书源执行，锁定书源不会被自动处理；
+- **删除失败项**：批量删除明确失败的书源，锁定书源会被跳过。
+
+“无结果”“需要验证”和“暂时异常”不会自动进入失败项，避免因为测试关键字、登录状态或临时网络问题误删书源。校验进度只展示已校验数量、状态和自动处理结果，不以“命中 X 本”作为用户可见结论。
+
+### 编写质量建议
 
 - 只使用目标站授权或允许访问的内容，并遵守服务条款、版权和访问频率限制。
 - `bookSourceUrl` 使用稳定的站点根地址，不要把搜索参数当作唯一键。
@@ -885,9 +920,9 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 - 提交公共书源前删除 Cookie、Token、账号、设备标识和调试接口。
 - 在备注中说明源类型、登录要求、已知限制和维护日期。
 
-## 13. 兼容性与当前限制
+## 兼容性与迁移
 
-### 13.1 字段能力矩阵
+### 字段能力矩阵
 
 | 状态 | 字段/能力 |
 | --- | --- |
@@ -897,11 +932,11 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 | 模型或紧凑格式存在，但通用导入/UI/执行不完整 | `chapterListAddition`、`payAction`、`bookListRule` 等。 |
 | 不应假定与 Android 版等价 | 任意 Java/Android 类导入、全部 `java.*` API、浏览器直连网络、任意 WebView DOM 抓取、完整 XPath/CSS、付费购买动作及非白名单二进制解码流程。 |
 
-### 13.2 实现中的通用兜底
+### 通用兜底边界
 
 当前项目只保留与站点无关的容错，例如清理模板残留、解析标准相对 URL、从通用字段回退详情地址、提取可读 HTML 和处理明确的编码数据。应用不会根据站点名称或私有接口提供自动修复；书源应完整声明请求和解析规则。
 
-### 13.3 与 Android 阅读书源互导
+### 与 Android 阅读书源互导
 
 导入 Android 阅读书源时建议：
 
@@ -914,7 +949,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 7. 对普通书、漫画、有声书和段评分别验证正文后处理与播放器；
 8. 不以“导入成功”或“校验通过”作为全链路兼容的证明。
 
-## 14. 完整模板
+## 完整模板
 
 下面模板列出当前可导入的主要字段，复制后删除不需要的项：
 
@@ -1005,7 +1040,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 ]
 ```
 
-## 15. 实现索引
+## 实现索引
 
 需要继续扩展规则能力时，可从这些实现入口核对：
 
@@ -1028,3 +1063,9 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 - 书籍类型识别：`entry/src/main/ets/core/book/BookTypeSupport.ts`
 - 有声书页面与后台播放：`entry/src/main/ets/pages/AudioBook.ets`、`entry/src/main/ets/utils/RemoteAudioPlayback.ets`、`entry/src/main/ets/utils/ReaderTtsFloatingSession.ets`
 - 数据库存储：`entry/src/main/ets/model/data/AppDatabase.ts`
+
+书源校验与批量处理入口：
+
+- 书源管理页及导入、校验、批量操作：`entry/src/main/ets/pages/BookSource.ets`
+- 校验状态和后台校验任务：`BookSource.ets` 中的 `startCheckSources`、`bookSourceCheckProgressText`、`deleteFailedCheckedSources`
+- 规则执行快照与阅读交互桥接：`entry/src/main/ets/core/book/BookSourceRuntimeSnapshot.ts`、`entry/src/main/ets/core/book/ReaderInteractionProvider.ts`

@@ -101,6 +101,7 @@ export class BookSourceLoginWebRuntime {
       `getSource:function(){return this;},` +
       `getVariable:function(){return S.variable||'';},` +
       `setVariable:function(v){S.variable=String(v??'');return S.variable;},` +
+      `refreshExplore:function(){refreshExplore=true;return true;},` +
       `put:function(k,v){sourceData[String(k??'')]=v;return v;},get:function(k){k=String(k??'');` +
       `return Object.prototype.hasOwnProperty.call(sourceData,k)?sourceData[k]:'';},` +
       `getLoginHeader:function(){return S.loginHeader||'';},` +
@@ -149,6 +150,13 @@ export class BookSourceLoginWebRuntime {
       `function webView(u,j){const request=JSON.stringify({url:String(u??''),script:String(j??'')});` +
       `const key='webview:'+request;if(Object.prototype.hasOwnProperty.call(S.responses,key))return S.responses[key]??'';` +
       `if(!pendingWebView)pendingWebView=request;return '';}` +
+      `function requestSpec(method,u,b,h){const options={method:String(method||'GET').toUpperCase()};` +
+      `if(b!==undefined&&b!==null)options.body=typeof b==='string'?b:JSON.stringify(b);` +
+      `if(h&&typeof h==='object')options.headers=h;return String(u??'')+','+JSON.stringify(options);}` +
+      `function responseObject(v){v=String(v??'');let body='';` +
+      `if(Object.prototype.hasOwnProperty.call(S.responses,v))body=S.responses[v]??'';else if(!pending)pending=v;` +
+      `return {body:function(){return body;},code:function(){return body?200:599;},` +
+      `isSuccessful:function(){return !!body;},headers:function(){return {};},toString:function(){return body;}};}` +
       `function cryptoOp(transformation,key,iv,method,data){const request=JSON.stringify({` +
       `transformation:String(transformation??''),key:Array.isArray(key)?key:String(key??''),` +
       `iv:Array.isArray(iv)?iv:String(iv??''),method:method,data:Array.isArray(data)?data:String(data??'')});` +
@@ -183,6 +191,8 @@ export class BookSourceLoginWebRuntime {
       `const java={` +
       `ajax:function(v){v=String(v??'');if(Object.prototype.hasOwnProperty.call(S.responses,v))return S.responses[v];` +
       `if(!pending)pending=v;return '{"code":599,"message":"pending","data":null}';},` +
+      `ajaxAll:function(v){const list=Array.isArray(v)?v:[v];return list.map(responseObject);},` +
+      `post:function(u,b,h){return responseObject(requestSpec('POST',u,b,h));},` +
       `put:function(k,v){vars[k]=v;return v;},get:function(k){` +
       `return Object.prototype.hasOwnProperty.call(vars,k)?vars[k]:null;},` +
       `toast:function(v){toast=String(v??'');return toast;},longToast:function(v){toast=String(v??'');return toast;},` +
@@ -210,7 +220,11 @@ export class BookSourceLoginWebRuntime {
       `qread:function(){return '0';},log:function(){diagnostic=Array.from(arguments).map(function(v){return String(v??'');}).join(' ');` +
       `return diagnostic;},logType:function(){diagnostic=Array.from(arguments).map(function(v){return String(v??'');}).join(' ');` +
       `return diagnostic;},` +
-      `refreshExplore:function(){refreshExplore=true;return true;},` +
+      `refreshExplore:function(){refreshExplore=true;return true;},refreshBookToc:function(){return true;},` +
+      `refreshContent:function(){return true;},upConfig:function(){return true;},` +
+      `getString:function(k){k=String(k??'').replace(/^\$\.?/,'');let v=loginMap;` +
+      `for(const p of k.split('.').filter(Boolean)){if(v===null||v===undefined)return '';v=v[p];}` +
+      `return typeof v==='string'?v:JSON.stringify(v??'');},` +
       `searchBook:function(k){searchKeyword=String(k??'');return searchKeyword;},getWebViewUA:function(){return navigator.userAgent;},` +
       `timeFormat:function(v){try{return new Date(v).toISOString().replace('T',' ').replace('Z','');}` +
       `catch(e){return String(v??'');}},timeFormatUTC:function(v){try{return new Date(v).toISOString();}` +
@@ -337,13 +351,18 @@ export class BookSourceLoginWebRuntime {
 
   private static extractFunctions(script: string): LoginScriptFunction[] {
     const result: LoginScriptFunction[] = [];
+    // Search a same-length lexical mask instead of the raw source. Aggregation sources often
+    // embed browser scripts/HTML containing text such as `function foo(` inside quoted strings.
+    // Treating those bytes as declarations removes unrelated spans and produces an invalid
+    // action library even though the imported JavaScript itself is valid.
+    const searchable = this.maskFunctionSearchText(script || '');
     const regex = /\bfunction\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*\(/g;
     let match: RegExpExecArray | null;
-    while ((match = regex.exec(script || '')) !== null) {
+    while ((match = regex.exec(searchable)) !== null) {
       const parametersOpen = regex.lastIndex - 1;
       const parametersClose = this.findMatchingDelimiter(script, parametersOpen, '(', ')');
       if (parametersClose < 0) {
-        const invalid = this.invalidFunctionBlock(script, match[1] || '', match.index, regex.lastIndex);
+        const invalid = this.invalidFunctionBlock(script, searchable, match[1] || '', match.index, regex.lastIndex);
         result.push(invalid);
         regex.lastIndex = invalid.end;
         continue;
@@ -351,7 +370,7 @@ export class BookSourceLoginWebRuntime {
       let bodyOpen = parametersClose + 1;
       while (bodyOpen < script.length && /\s/.test(script.charAt(bodyOpen))) bodyOpen++;
       if (script.charAt(bodyOpen) !== '{') {
-        const invalid = this.invalidFunctionBlock(script, match[1] || '', match.index, regex.lastIndex);
+        const invalid = this.invalidFunctionBlock(script, searchable, match[1] || '', match.index, regex.lastIndex);
         result.push(invalid);
         regex.lastIndex = invalid.end;
         continue;
@@ -361,7 +380,7 @@ export class BookSourceLoginWebRuntime {
         // A damaged, unrelated source function must not poison every loginUi button. Isolate it
         // up to the next named declaration; if the button needs it, the action gets a clear
         // missing-function error instead of a parser failure in unrelated code.
-        const invalid = this.invalidFunctionBlock(script, match[1] || '', match.index, regex.lastIndex);
+        const invalid = this.invalidFunctionBlock(script, searchable, match[1] || '', match.index, regex.lastIndex);
         result.push(invalid);
         regex.lastIndex = invalid.end;
         continue;
@@ -377,16 +396,94 @@ export class BookSourceLoginWebRuntime {
     return result;
   }
 
-  private static invalidFunctionBlock(script: string, name: string, start: number, searchFrom: number): LoginScriptFunction {
+  private static invalidFunctionBlock(script: string, searchable: string, name: string, start: number,
+    searchFrom: number): LoginScriptFunction {
     const nextRegex = /\bfunction\s+[A-Za-z_$][A-Za-z0-9_$]*\s*\(/g;
     nextRegex.lastIndex = Math.max(searchFrom, start + 1);
-    const next = nextRegex.exec(script);
+    const next = nextRegex.exec(searchable);
     const block = new LoginScriptFunction();
     block.name = name;
     block.start = start;
     block.end = next ? next.index : script.length;
     block.source = '';
     return block;
+  }
+
+  /** Masks strings, comments and regex literals while preserving every source offset. */
+  private static maskFunctionSearchText(script: string): string {
+    let result = '';
+    let quote = '';
+    let lineComment = false;
+    let blockComment = false;
+    let regexLiteral = false;
+    let regexClass = false;
+    for (let index = 0; index < script.length; index++) {
+      const current = script.charAt(index);
+      const next = index + 1 < script.length ? script.charAt(index + 1) : '';
+      const masked = current === '\n' || current === '\r' ? current : ' ';
+      if (lineComment) {
+        if (current === '\n' || current === '\r') lineComment = false;
+        result += masked;
+        continue;
+      }
+      if (blockComment) {
+        if (current === '*' && next === '/') {
+          blockComment = false;
+          result += '  ';
+          index++;
+        } else {
+          result += masked;
+        }
+        continue;
+      }
+      if (quote) {
+        if (current === '\\') {
+          result += ' ';
+          if (index + 1 < script.length) {
+            result += next === '\n' || next === '\r' ? next : ' ';
+            index++;
+          }
+        } else {
+          if (current === quote) quote = '';
+          result += masked;
+        }
+        continue;
+      }
+      if (regexLiteral) {
+        if (current === '\\') {
+          result += ' ';
+          if (index + 1 < script.length) {
+            result += next === '\n' || next === '\r' ? next : ' ';
+            index++;
+          }
+        } else {
+          if (current === '[') regexClass = true;
+          else if (current === ']') regexClass = false;
+          else if (current === '/' && !regexClass) regexLiteral = false;
+          result += masked;
+        }
+        continue;
+      }
+      if (current === '/' && next === '/') {
+        lineComment = true;
+        result += '  ';
+        index++;
+      } else if (current === '/' && next === '*') {
+        blockComment = true;
+        result += '  ';
+        index++;
+      } else if (current === '/' && this.isRegexLiteralStart(script, index)) {
+        regexLiteral = true;
+        regexClass = false;
+        result += ' ';
+      } else if (current === '\'' || current === '"' || current === '`') {
+        quote = current;
+        result += ' ';
+      } else {
+        result += current;
+      }
+    }
+    return result;
   }
 
   private static findMatchingDelimiter(script: string, start: number, open: string, close: string): number {

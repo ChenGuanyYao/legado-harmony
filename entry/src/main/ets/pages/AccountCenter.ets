@@ -55,6 +55,8 @@ struct AccountCenterPage {
   @State cropOffsetX: number = 0;
   @State cropOffsetY: number = 0;
   @State processingCrop: boolean = false;
+  @State viewportWidth: number = 0;
+  @State viewportHeight: number = 0;
   private cropPanOriginX: number = 0;
   private cropPanOriginY: number = 0;
   private readonly cropBoxSize: number = 280;
@@ -112,6 +114,16 @@ struct AccountCenterPage {
     .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .onAreaChange((_oldValue: Area, newValue: Area) => {
+      const width = this.areaDimension(newValue.width);
+      const height = this.areaDimension(newValue.height);
+      if (width > 0 && Math.abs(width - this.viewportWidth) >= 1) {
+        this.viewportWidth = width;
+      }
+      if (height > 0 && Math.abs(height - this.viewportHeight) >= 1) {
+        this.viewportHeight = height;
+      }
+    })
   }
 
   async initialize(): Promise<void> {
@@ -932,7 +944,7 @@ struct AccountCenterPage {
         }, (product: RechargeProduct) => product.productId)
       }
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .columnsTemplate('1fr 1fr')
+      .columnsTemplate(this.rechargeColumnsTemplate())
       .columnsGap(10)
       .rowsGap(10)
       .width('100%')
@@ -1025,5 +1037,17 @@ struct AccountCenterPage {
 
   dividerColor(): string {
     return this.appDarkMode ? '#2CFFFFFF' : '#16000000';
+  }
+
+  rechargeColumnsTemplate(): string {
+    return this.viewportWidth > this.viewportHeight ? '1fr 1fr 1fr' : '1fr 1fr';
+  }
+
+  areaDimension(value: Length): number {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : 0;
+    }
+    const parsed = Number.parseFloat(`${value}`);
+    return Number.isFinite(parsed) ? parsed : 0;
   }
 }

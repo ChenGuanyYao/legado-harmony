@@ -77,12 +77,12 @@ export struct ReaderThemeBackground {
         Row() {
           Blank()
             .layoutWeight(1)
-          Image(ThemeAssetRegistry.readerBackgroundDecoration(this.backgroundAssetId))
+          Image(ThemeAssetRegistry.readerBackgroundTrailingDecoration(this.backgroundAssetId))
             .width(this.decorationSize())
             .height(this.decorationSize())
             .objectFit(ImageFit.Contain)
             .syncLoad(true)
-            .rotate({ angle: 180 })
+            .rotate({ angle: ThemeAssetRegistry.readerBackgroundTrailingRotation(this.backgroundAssetId) })
             .draggable(false)
         }
         .width('100%')

@@ -147,6 +147,10 @@ export class AnalyzeRule {
     }
 
     if (this.isJsonContent() && effective.startsWith('.') && !effective.startsWith('..')) {
+      // Legado treats a root-relative filter as applying to the first nested array whose
+      // items satisfy it. APIs commonly wrap that array in data/books or similar objects.
+      const nestedFilterValues = this.evalTopLevelArrayFilter(effective);
+      if (nestedFilterValues.length > 0) return this.jsonPathArrayToStrings(nestedFilterValues);
       const jsonV = this.evalJsonPath('$' + effective);
       if (Array.isArray(jsonV)) return this.jsonPathArrayToStrings(jsonV as Object[]);
       if (jsonV !== undefined && jsonV !== null) return [this.jsonValueToString(jsonV)];
@@ -1006,6 +1010,62 @@ export class AnalyzeRule {
       }
     }
     return lastValue;
+  }
+
+  private evalTopLevelArrayFilter(rule: string): Object[] {
+    const value = (rule || '').trim();
+    if (!/^\.\s*\[\?\([\s\S]+\)\]$/.test(value)) return [];
+    try {
+      const root = JSON.parse(this.content || '{}') as Object;
+      if (!root || typeof root !== 'object') return [];
+      const filterPath = '$' + value.substring(1);
+      const existenceMatch = value.match(/^\.\s*\[\?\(\s*@((?:\.[A-Za-z0-9_$-]+)+)\s*\)\]$/);
+      const existenceParts = existenceMatch ? existenceMatch[1].substring(1).split('.') : [];
+      const result: Object[] = [];
+      const pending: Object[] = [root];
+      let pendingIndex = 0;
+      let visited = 0;
+      while (pendingIndex < pending.length && visited < 20000 && result.length < 5000) {
+        const candidate = pending[pendingIndex++];
+        visited++;
+        if (Array.isArray(candidate)) {
+          const values = JsonPathEvaluator.evaluate(candidate, filterPath);
+          for (const item of values) {
+            result.push(item);
+            if (result.length >= 5000) break;
+          }
+          if (values.length === 0 && existenceParts.length > 0) {
+            for (const item of candidate as Object[]) {
+              let current: Object | undefined = item;
+              for (const part of existenceParts) {
+                if (!current || typeof current !== 'object' || Array.isArray(current)) {
+                  current = undefined;
+                  break;
+                }
+                current = (current as Record<string, Object>)[part];
+              }
+              if (current !== undefined && current !== null) result.push(item);
+              if (result.length >= 5000) break;
+            }
+          }
+          // Once an array satisfies the filter it is the intended list. Avoid returning
+          // nested properties from the same records as duplicate list entries.
+          if (result.length > 0) continue;
+          for (const item of candidate as Object[]) {
+            if (item && typeof item === 'object') pending.push(item);
+          }
+          continue;
+        }
+        const record = candidate as Record<string, Object>;
+        for (const key of Object.keys(record)) {
+          const child = record[key];
+          if (child && typeof child === 'object') pending.push(child);
+        }
+      }
+      return result;
+    } catch (_) {
+      return [];
+    }
   }
 
   private evalGeneratedChapterListJs(code: string): string {

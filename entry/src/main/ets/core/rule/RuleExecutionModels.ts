@@ -12,13 +12,15 @@ export class RuleFieldRequest {
   rule: string = '';
   resolveUrl: boolean = false;
   listResult: boolean = false;
+  joinMatches: boolean = false;
 
   constructor(name: string = '', rule: string = '', resolveUrl: boolean = false,
-    listResult: boolean = false) {
+    listResult: boolean = false, joinMatches: boolean = false) {
     this.name = name;
     this.rule = rule;
     this.resolveUrl = resolveUrl;
     this.listResult = listResult;
+    this.joinMatches = joinMatches;
   }
 }
 
@@ -35,6 +37,7 @@ export class RuleBatchExecutionRequest {
   priority: number = RuleExecutionPriority.VISIBLE;
   timeoutMs: number = 15000;
   uiSliceMs: number = 6;
+  itemChunkSize: number = 16;
   readerActionMode: boolean = false;
 }
 

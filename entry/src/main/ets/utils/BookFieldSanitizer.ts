@@ -44,6 +44,7 @@ export class BookFieldSanitizer {
   static isUnresolved(value: string): boolean {
     const text = (value || '').trim();
     if (!text) return true;
+    if (/^(?:undefined|null)$/i.test(text)) return true;
     return text.includes('{{') || text.includes('}}') || text.includes('@js:') || text.includes('java.') ||
       text.includes('result.replace') || /(^|[^\w])\$\.\.?[A-Za-z_]/.test(text);
   }

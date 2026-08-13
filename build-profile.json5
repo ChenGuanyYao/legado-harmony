@@ -97,6 +97,19 @@
           ]
         }
       ]
+    },
+    {
+      "name": "quickjs",
+      "srcPath": "./quickjs",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default",
+            "release"
+          ]
+        }
+      ]
     }
   ]
 }

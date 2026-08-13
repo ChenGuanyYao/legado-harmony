@@ -14,7 +14,7 @@ import { HdsTabs, hdsMaterial } from '@kit.UIDesignKit';
 import { Book, BookChapter, BookGroup, BookSource, SearchBook, SearchKeyword } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { SearchCoordinator, SearchCallback, SearchProgress } from '../core/book/SearchCoordinator';
-import { ExploreCoordinator, ExploreEntry, ExploreSourceOption } from '../core/book/ExploreCoordinator';
+import { ExploreCoordinator, ExploreEntry, ExploreFilterGroup, ExploreSourceOption } from '../core/book/ExploreCoordinator';
 import { BookSourceStageWebRuntime } from '../core/book/BookSourceStageWebRuntime';
 import { ReadBookEngine } from '../core/book/ReadBookEngine';
 import { SearchBookResultList } from '../components/book/SearchBookResultList';
@@ -264,11 +264,12 @@ struct Index {
     const previous = this.stageRuntimeController;
     BookSourceStageWebRuntime.get().detach(previous);
     this.stageRuntimeMounted = false;
+    // Let ArkUI commit the unmounted branch before constructing the replacement controller.
     setTimeout(() => {
       this.stageRuntimeController = new webview.WebviewController();
       this.stageRuntimeMounted = true;
       this.stageRuntimeResetScheduled = false;
-    }, 0);
+    }, 50);
   }
 
   onSingleSourceSearchRequested(): void {
@@ -7201,6 +7202,7 @@ struct ExplorePage {
   @State exploreSourceGroups: string[] = [];
   @State activeExploreSourceGroup: string = '__all__';
   @State platformNames: string[] = [];
+  @State exploreFilters: ExploreFilterGroup[] = [];
   @State sourceNames: string[] = [];
   @State selectedSourceName: string = '';
   @State selectedIndex: number = 0;
@@ -7338,9 +7340,23 @@ struct ExplorePage {
         this.selectedPlatform = platformOverride;
       }
       this.normalizeSelectedPlatform();
-      const entries = await this.coordinator.getEntries(this.selectedPlatform, this.getSelectedSourceUrl());
+      const entries = await this.coordinator.getEntries(
+        this.platformNames.length > 0 ? this.selectedPlatform : '', this.getSelectedSourceUrl());
       if (!this.isCurrentExploreLoad(loadVersion)) return;
       this.entries = entries;
+      const dynamicPlatforms = this.coordinator.getDiscoveredPlatforms(this.selectedSourceUrl);
+      const inferredGroups = this.getEntryGroupNames(entries);
+      const activeOption = this.getSelectedSourceOption();
+      this.exploreFilters = this.coordinator.getDiscoveredFilters(this.selectedSourceUrl);
+      if (activeOption && this.exploreFilters.length > 0) {
+        activeOption.platforms = [];
+      } else if (activeOption && dynamicPlatforms.length > 0) {
+        activeOption.platforms = dynamicPlatforms;
+      } else if (activeOption && activeOption.platforms.length === 0 && inferredGroups.length > 1) {
+        activeOption.platforms = inferredGroups;
+      }
+      this.platformNames = this.getSelectedSourcePlatforms();
+      this.normalizeSelectedPlatform();
       if (this.entries.length > 0) {
         this.selectedIndex = 0;
         await this.loadBooks(loadVersion, forceRefresh);
@@ -7600,7 +7616,36 @@ struct ExplorePage {
       .padding({ left: 16, right: 16, top: this.statusBarHeight })
       .alignItems(VerticalAlign.Center)
 
-      if (this.platformNames.length > 0) {
+      if (this.exploreFilters.length > 0) {
+        ForEach(this.exploreFilters, (filter: ExploreFilterGroup) => {
+          Scroll() {
+            Row({ space: 8 }) {
+              Text(`${filter.title}：`)
+                .fontSize(13)
+                .fontColor(this.secondaryTextColor())
+              ForEach(filter.options, (name: string) => {
+                Text(name)
+                  .fontSize(13)
+                  .fontColor(filter.selected === name ? '#FFFFFF' : this.primaryTextColor())
+                  .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+                  .backgroundColor(filter.selected === name ? this.accentColor() : this.glassCardColor())
+                  .borderRadius(18)
+                  .border({ width: filter.selected === name ? 0 : 1, color: this.glassBorderColor() })
+                  .onClick(() => {
+                    this.switchExploreFilter(filter.title, name);
+                  })
+              }, (name: string): string => `${filter.title}:${name}`)
+            }
+            .padding({ left: 16, right: 16 })
+          }
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .width('100%')
+          .height(48)
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
+        }, (filter: ExploreFilterGroup): string =>
+          `${filter.title}:${filter.selected}:${filter.options.join('|')}`)
+      } else if (this.platformNames.length > 0) {
         Scroll() {
           Row({ space: 8 }) {
             ForEach(this.platformNames, (name: string) => {
@@ -7854,7 +7899,7 @@ struct ExplorePage {
           } else {
             ForEach(this.getFilteredExploreSourceOptions(), (option: ExploreSourceOption) => {
               Row() {
-                Text(option.sourceName || '未命名书源')
+                Text(this.exploreSourceDisplayName(option))
                   .fontSize(16)
                   .fontFamily(this.readerActiveFontFamily)
                   .fontColor(option.sourceUrl === this.selectedSourceUrl ? this.accentColor() : this.primaryTextColor())
@@ -7903,7 +7948,7 @@ struct ExplorePage {
                     this.openExploreSourceActions(option, event);
                   })
               )
-            })
+            }, (option: ExploreSourceOption): string => option.sourceUrl || option.sourceName)
           }
         }
         .width('100%')
@@ -8316,6 +8361,15 @@ struct ExplorePage {
     });
   }
 
+  exploreSourceDisplayName(option: ExploreSourceOption): string {
+    const name = option.sourceName || '未命名书源';
+    const duplicateCount = this.sourceOptions.filter((candidate: ExploreSourceOption): boolean =>
+      (candidate.sourceName || '未命名书源') === name).length;
+    if (duplicateCount <= 1) return name;
+    const sourceKey = (option.sourceUrl || '无地址').replace(/^https?:\/\//i, '').replace(/\/$/, '');
+    return `${name} · ${sourceKey}`;
+  }
+
   buildExploreSourceGroups(): string[] {
     const groups: string[] = [];
     for (const option of this.sourceOptions) {
@@ -8358,6 +8412,21 @@ struct ExplorePage {
     AppStorage.setOrCreate('explorePlatform', platform);
     this.saveExploreSelection();
     this.loadEntries(platform);
+  }
+
+  async switchExploreFilter(title: string, selection: string): Promise<void> {
+    if (this.isLoading || !this.selectedSourceUrl) return;
+    this.status = `正在切换${title}到 ${selection}...`;
+    this.books = [];
+    this.isLoading = true;
+    const applied = await this.coordinator.applyExploreFilter(this.selectedSourceUrl, title, selection);
+    this.isLoading = false;
+    if (!applied) {
+      this.status = `${title}切换失败`;
+      return;
+    }
+    this.selectedPlatform = '';
+    await this.loadEntries('', true);
   }
 
   switchExploreSource(option: ExploreSourceOption): void {
@@ -8550,13 +8619,29 @@ struct ExplorePage {
   }
 
   getActiveEntries(): ExploreEntry[] {
-    if (!this.selectedSourceUrl) return this.entries;
-    return this.entries.filter(entry => entry.sourceUrl === this.selectedSourceUrl);
+    const sourceEntries = !this.selectedSourceUrl ? this.entries :
+      this.entries.filter(entry => entry.sourceUrl === this.selectedSourceUrl);
+    if (!this.selectedPlatform) return sourceEntries;
+    const hasSelectedGroup = sourceEntries.some((entry: ExploreEntry): boolean =>
+      (entry.groupTitle || '') === this.selectedPlatform);
+    return hasSelectedGroup ? sourceEntries.filter((entry: ExploreEntry): boolean =>
+      (entry.groupTitle || '') === this.selectedPlatform) : sourceEntries;
+  }
+
+  getEntryGroupNames(entries: ExploreEntry[]): string[] {
+    const names: string[] = [];
+    for (const entry of entries) {
+      const name = (entry.groupTitle || '').trim();
+      if (name && !names.includes(name)) names.push(name);
+    }
+    return names;
   }
 
   exploreTopOverlayHeight(): number {
     let height = this.statusBarHeight + 56;
-    if (this.platformNames.length > 0) {
+    if (this.exploreFilters.length > 0) {
+      height += this.exploreFilters.length * 48;
+    } else if (this.platformNames.length > 0) {
       height += 48;
     }
     if (this.getActiveEntries().length > 0) {

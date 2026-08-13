@@ -145,12 +145,32 @@ export class ThemeAssetRegistry {
       case ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_DARK:
         return $r('app.media.reader_decor_qingluan_water_dark');
       case ThemeAssetRegistry.BACKGROUND_CAT_PIPI_LIGHT:
-        return $r('app.media.reader_decor_cat_pipi_light');
+        return $r('app.media.reader_decor_cat_pipi_light_v2');
       case ThemeAssetRegistry.BACKGROUND_CAT_PIPI_DARK:
-        return $r('app.media.reader_decor_cat_pipi_dark');
+        return $r('app.media.reader_decor_cat_pipi_dark_v2');
       default:
         return '';
     }
+  }
+
+  static readerBackgroundTrailingDecoration(assetId: string): ResourceStr {
+    switch (ThemeAssetRegistry.normalizeBackgroundAssetId(assetId)) {
+      case ThemeAssetRegistry.BACKGROUND_CAT_PIPI_LIGHT:
+        return $r('app.media.reader_decor_cat_pipi_trailing_light_v2');
+      case ThemeAssetRegistry.BACKGROUND_CAT_PIPI_DARK:
+        return $r('app.media.reader_decor_cat_pipi_trailing_dark_v2');
+      default:
+        return ThemeAssetRegistry.readerBackgroundDecoration(assetId);
+    }
+  }
+
+  static readerBackgroundTrailingRotation(assetId: string): number {
+    const normalized = ThemeAssetRegistry.normalizeBackgroundAssetId(assetId);
+    if (normalized === ThemeAssetRegistry.BACKGROUND_CAT_PIPI_LIGHT ||
+      normalized === ThemeAssetRegistry.BACKGROUND_CAT_PIPI_DARK) {
+      return 0;
+    }
+    return 180;
   }
 
   static readerBackgroundBorderColor(assetId: string): string {
@@ -270,7 +290,7 @@ export class ThemeAssetRegistry {
       case ThemeIds.MOON_CRANE: return $r('app.media.theme_startup_moon_crane');
       case ThemeIds.SWORD_FROST: return $r('app.media.theme_startup_sword_frost');
       case ThemeIds.QINGLUAN_WATER: return $r('app.media.theme_startup_qingluan_water');
-      case ThemeIds.CAT_PIPI: return $r('app.media.theme_startup_cat_pipi');
+      case ThemeIds.CAT_PIPI: return $r('app.media.theme_startup_cat_pipi_v2');
       default: return $r('app.media.theme_startup_classic_blue');
     }
   }
@@ -323,9 +343,9 @@ export class ThemeAssetRegistry {
         $r('app.media.theme_cover_qingluan_water_05'), $r('app.media.theme_cover_qingluan_water_06')
       ];
       case ThemeIds.CAT_PIPI: return [
-        $r('app.media.theme_cover_cat_pipi_01'), $r('app.media.theme_cover_cat_pipi_02'),
-        $r('app.media.theme_cover_cat_pipi_03'), $r('app.media.theme_cover_cat_pipi_04'),
-        $r('app.media.theme_cover_cat_pipi_05'), $r('app.media.theme_cover_cat_pipi_06')
+        $r('app.media.theme_cover_cat_pipi_v2_01'), $r('app.media.theme_cover_cat_pipi_v2_02'),
+        $r('app.media.theme_cover_cat_pipi_v2_03'), $r('app.media.theme_cover_cat_pipi_v2_04'),
+        $r('app.media.theme_cover_cat_pipi_v2_05'), $r('app.media.theme_cover_cat_pipi_v2_06')
       ];
       default: return [$r('app.media.theme_cover_classic_blue')];
     }

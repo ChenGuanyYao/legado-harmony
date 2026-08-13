@@ -1,6 +1,7 @@
 import http from '@ohos.net.http';
 import { util } from '@kit.ArkTS';
 import { CookieStore } from './CookieStore';
+import { TlsTrustStore } from './TlsTrustStore';
 
 export interface HttpRequest {
   url: string;
@@ -52,6 +53,24 @@ export class HttpClient {
     if (!req.url || req.url.trim() === '') {
       return { url: '', statusCode: 0, headers: {}, body: '', success: false, error: 'empty url' };
     }
+    const response = await this.executeWithProtocol(req, false);
+    if (!response.success && this.shouldRetryWithHttp1(req.url, response.error || '')) {
+      console.info('[HttpClient] HTTP/2 failed; retrying once with HTTP/1.1:', this.hostForLog(req.url));
+      return await this.executeWithProtocol(req, true);
+    }
+    if (!response.success && this.shouldRetryTimeout(req, response.error || '')) {
+      const retryTimeout = Math.min(30000, Math.max(this.timeout * 2, 15000));
+      console.info('[HttpClient] idempotent request timed out; retrying once:', this.hostForLog(req.url));
+      return await this.executeWithProtocol({
+        ...req,
+        connectTimeout: Math.max(req.connectTimeout || 0, retryTimeout),
+        readTimeout: Math.max(req.readTimeout || 0, retryTimeout)
+      }, true);
+    }
+    return response;
+  }
+
+  private async executeWithProtocol(req: HttpRequest, forceHttp1: boolean): Promise<HttpResponse> {
     const client = http.createHttp();
     this.activeClients.add(client);
     let responseTooLarge = false;
@@ -92,15 +111,18 @@ export class HttpClient {
         let responseCode = 0;
         let streamError = '';
         try {
-          responseCode = await client.requestInStream(req.url, {
+          const options: http.HttpRequestOptions = {
             method: method,
             header: headers,
             extraData: requestData,
             connectTimeout: req.connectTimeout || this.timeout,
             readTimeout: req.readTimeout || this.timeout
-          });
+          };
+          this.applyTlsTrust(options, req.url);
+          if (forceHttp1) options.usingProtocol = http.HttpProtocol.HTTP1_1;
+          responseCode = await client.requestInStream(req.url, options);
         } catch (error) {
-          streamError = this.describeError(error as Object);
+          streamError = this.decorateTlsError(req.url, this.describeError(error as Object));
         } finally {
           client.off('headersReceive', onHeadersReceive);
           client.off('dataReceive', onDataReceive);
@@ -127,14 +149,17 @@ export class HttpClient {
         return streamedResponse;
       }
 
-      const resp = await client.request(req.url, {
+      const options: http.HttpRequestOptions = {
         method: method,
         header: headers,
         extraData: requestData,
         connectTimeout: req.connectTimeout || this.timeout,
         readTimeout: req.readTimeout || this.timeout,
         expectDataType: http.HttpDataType.ARRAY_BUFFER
-      });
+      };
+      this.applyTlsTrust(options, req.url);
+      if (forceHttp1) options.usingProtocol = http.HttpProtocol.HTTP1_1;
+      const resp = await client.request(req.url, options);
 
       const responseHeaders = (resp.header || {}) as Record<string, string>;
       return this.buildResponse(req, resp.responseCode, responseHeaders, resp.result);
@@ -146,7 +171,7 @@ export class HttpClient {
         body: '',
         success: false,
         error: responseTooLarge ? `response too large: >${req.maxResponseBytes}` :
-          this.describeError(e as Object)
+          this.decorateTlsError(req.url, this.describeError(e as Object))
       };
     } finally {
       this.activeClients.delete(client);
@@ -159,6 +184,16 @@ export class HttpClient {
     if (!req.url || req.url.trim() === '') {
       return { url: '', statusCode: 0, headers: {}, data: new Uint8Array(), success: false, error: 'empty url' };
     }
+    const response = await this.executeBinaryWithProtocol(req, maxResponseBytes, false);
+    if (!response.success && this.shouldRetryWithHttp1(req.url, response.error || '')) {
+      console.info('[HttpClient] binary HTTP/2 failed; retrying once with HTTP/1.1:', this.hostForLog(req.url));
+      return await this.executeBinaryWithProtocol(req, maxResponseBytes, true);
+    }
+    return response;
+  }
+
+  private async executeBinaryWithProtocol(req: HttpRequest, maxResponseBytes: number,
+    forceHttp1: boolean): Promise<HttpBinaryResponse> {
     const client = http.createHttp();
     this.activeClients.add(client);
     try {
@@ -166,14 +201,17 @@ export class HttpClient {
       const requestData = this.requestData(req);
       const cookie = req.useCookieJar === false ? '' : CookieStore.getCookie(req.url);
       if (cookie && !headers['Cookie']) headers['Cookie'] = cookie;
-      const resp = await client.request(req.url, {
+      const options: http.HttpRequestOptions = {
         method: this.resolveMethod(req.method),
         header: headers,
         extraData: requestData,
         connectTimeout: req.connectTimeout || this.timeout,
         readTimeout: req.readTimeout || this.timeout,
         expectDataType: http.HttpDataType.ARRAY_BUFFER
-      });
+      };
+      this.applyTlsTrust(options, req.url);
+      if (forceHttp1) options.usingProtocol = http.HttpProtocol.HTTP1_1;
+      const resp = await client.request(req.url, options);
       const responseHeaders = (resp.header || {}) as Record<string, string>;
       const setCookie = this.findHeader(responseHeaders, 'set-cookie');
       if (setCookie) {
@@ -207,7 +245,7 @@ export class HttpClient {
         headers: {},
         data: new Uint8Array(),
         success: false,
-        error: this.describeError(e as Object)
+        error: this.decorateTlsError(req.url, this.describeError(e as Object))
       };
     } finally {
       this.activeClients.delete(client);
@@ -348,5 +386,33 @@ export class HttpClient {
   private isReadableErrorText(value: string): boolean {
     const text = (value || '').trim().toLowerCase();
     return !!text && !text.includes('[object object]') && text !== 'object object' && text !== '{}';
+  }
+
+  private shouldRetryWithHttp1(url: string, error: string): boolean {
+    if (!/^https:\/\//i.test(url || '')) return false;
+    return /2300016|2300999|http\/?2|http2|framing layer|curl(?:_|\s*)code\s*[=:]?\s*92/i.test(error || '');
+  }
+
+  private shouldRetryTimeout(req: HttpRequest, error: string): boolean {
+    const method = (req.method || 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') return false;
+    return /2300028|operation\s+timeout|timed?\s*out|timeout/i.test(error || '');
+  }
+
+  private applyTlsTrust(options: http.HttpRequestOptions, url: string): void {
+    if (TlsTrustStore.isRemoteValidationSupported() && TlsTrustStore.isTrustedUrl(url)) {
+      options.remoteValidation = 'skip';
+    }
+  }
+
+  private decorateTlsError(url: string, error: string): string {
+    if (!TlsTrustStore.isCertificateError(error) || /证书主机\s*[：:]/.test(error || '')) return error;
+    const host = TlsTrustStore.hostFromUrl(url);
+    return host ? `证书校验失败（证书主机：${host}）：${error}` : error;
+  }
+
+  private hostForLog(url: string): string {
+    const match = (url || '').match(/^https?:\/\/([^/:?#]+)/i);
+    return match && match[1] ? match[1] : '(unknown host)';
   }
 }

@@ -44,6 +44,8 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ReaderThemeBackground } from '../components/ReaderThemeBackground';
 import { ReaderPageCurlPainter } from '../components/ReaderPageCurlPainter';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
+import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from '../core/book/BookSourceStageWebRuntime';
+import { SourceRuntimeStage } from '../core/book/BookSourceRuntimeRouter';
 import { TtsSettings, TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ReaderFontHelper, ReaderFontItem } from '../utils/ReaderFontHelper';
 import { ReaderFontBootstrap } from '../utils/ReaderFontBootstrap';
@@ -77,6 +79,7 @@ const READER_ADJACENT_PAGINATION_PREVIEW_PAGE_COUNT = 2;
 const READER_PAGINATION_BATCH_DELAY_MS = 64;
 const READER_INTERACTIVE_PAGINATION_BATCH_DELAY_MS = 140;
 const READER_PAGINATION_BUSY_RETRY_DELAY_MS = 48;
+const READER_DOUBLE_PAGE_DIVIDER_WIDTH = 1;
 
 interface ReadTextSlice {
   text: string;
@@ -7570,8 +7573,10 @@ struct ReadBookPage {
   }
 
   getReaderPaginationBottomInfoBarHeight(): number {
-    // 扩展模式允许正文使用完整的底部视口；普通模式只预留页脚自身高度。
-    return this.readerExtendToStatusBar ? 0 : this.getReaderBottomInfoBarHeight();
+    if (this.readerExtendToStatusBar) return 0;
+    // 下边距本身已经属于正文外区域，应先用它容纳页脚，不能再无条件叠加一份 24vp。
+    // 只有用户把下边距设得比页脚更小时才补足差额，以免页码覆盖最后一行。
+    return Math.max(0, this.getReaderBottomInfoBarHeight() - Math.max(0, this.readerMarginBottom));
   }
 
   getReaderBottomInfoBarVisualOffsetY(): number {
@@ -7715,6 +7720,30 @@ struct ReadBookPage {
     return this.readerFontSize + Math.max(0, this.readerLineHeight);
   }
 
+  getReaderPageColumnWidth(): number {
+    if (!this.isLandscapeDoublePageActive()) return Math.max(1, this.pageViewWidth);
+    // The divider participates in Row layout. Measuring each leaf as exactly half of the spread makes
+    // pagination up to 0.5vp wider than the real Text node and can wrap one extra line at render time.
+    return Math.max(1, (this.pageViewWidth - READER_DOUBLE_PAGE_DIVIDER_WIDTH) / 2);
+  }
+
+  getReaderAdaptiveLetterSpacing(): number {
+    const availableWidth = Math.max(1,
+      this.getReaderPageColumnWidth() - this.readerMarginLeft - this.readerMarginRight);
+    try {
+      const widthPx = vp2px(availableWidth);
+      // ArkUI ultimately lays a component out on physical pixels, while graphics.text accepts a floating
+      // constraint. Distribute only the discarded sub-pixel fraction across a typical line. JUSTIFY still
+      // performs the visible horizontal alignment; this tiny non-positive correction keeps both breakers
+      // on the same line without changing the user's chosen font size.
+      const snappedWidthPx = Math.floor(widthPx);
+      const charsPerLine = Math.max(8, Math.floor(availableWidth / Math.max(1, this.readerFontSize)));
+      return Math.max(-0.08, Math.min(0, px2fp((snappedWidthPx - widthPx) / charsPerLine)));
+    } catch (_) {
+      return 0;
+    }
+  }
+
   getReaderPageLineSpacing(pageLineHeight: number = this.getEffectiveReaderLineHeight()): number {
     return Math.max(0, pageLineHeight - this.readerFontSize);
   }
@@ -7724,7 +7753,7 @@ struct ReadBookPage {
   }
 
   getMeasuredReaderParagraphBoundarySpacingPx(): number {
-    const boundaryPx = this.toMeasurePx(this.getReaderParagraphBoundarySpacing());
+    const boundaryPx = this.toMeasureNonNegativePx(this.getReaderParagraphBoundarySpacing());
     // Separate Text/Blank nodes are rounded independently by ArkUI. Model the average half-vp
     // boundary rounding only when paragraph spacing actually splits ordinary paragraphs into nodes.
     return boundaryPx + (this.readerParagraphSpacing > 0 ? this.toMeasurePx(0.5) : 0);
@@ -7746,7 +7775,7 @@ struct ReadBookPage {
     const horizontalPadding = this.readerMarginLeft + this.readerMarginRight;
     const verticalPadding = this.readerMarginTop + this.getReaderContentBottomPadding() +
       this.getReaderPaginationBottomInfoBarHeight() + this.getReaderPaginationRenderGuardHeight();
-    const columnWidth = this.isLandscapeDoublePageActive() ? this.pageViewWidth / 2 : this.pageViewWidth;
+    const columnWidth = this.getReaderPageColumnWidth();
     const availableWidth = Math.max(1, columnWidth - horizontalPadding);
     const availableHeight = Math.max(1, this.getReaderPaginationViewportHeight() - verticalPadding);
     const cacheKey = `${chapterIndex}_${pageIndex}_${resolvedStart}_${this.pageViewWidth}_${availableHeight}_` +
@@ -7770,7 +7799,9 @@ struct ReadBookPage {
     if (paragraphs.length > 1) {
       measuredHeightPx += this.getMeasuredReaderParagraphBoundarySpacingPx() * (paragraphs.length - 1);
     }
-    const remainingHeightPx = Math.max(0, availableHeightPx - measuredHeightPx);
+    // Preserve only a sub-pixel rounding allowance. A fixed vp guard visibly shrinks the user-defined
+    // text rectangle, while no allowance at all can put the last antialiased row fractionally outside it.
+    const remainingHeightPx = Math.max(0, availableHeightPx - measuredHeightPx - 0.5);
     let adaptiveLineHeight = baseLineHeight;
     // All spacing is placed strictly between text lines. Internal text gaps and paragraph boundaries
     // are the only adjustable positions; fixed action/image rows retain their measured height.
@@ -12887,13 +12918,13 @@ struct ReadBookPage {
   }
 
   getReaderPaginationHeightTolerancePx(): number {
-    return 1;
+    return 0;
   }
 
   getReaderPaginationRenderGuardHeight(): number {
-    // 这不是安全区预留。ArkUI 会把多个 Text/Blank 的 vp 高度分别取整，长页累计约 1–2 vp；
-    // 在分页测量中抵消这部分取整误差，避免最后一行被屏幕边缘裁掉。
-    return 2;
+    // 用户设置的上下边距就是正文边界，不能再暗中扣除固定 vp。测量与渲染的亚像素差异由
+    // 自适应行距保留的 0.5px 处理，不牺牲一整行或额外的可见留白。
+    return 0;
   }
 
   getReaderTextParagraphs(text: string): ReaderTextParagraph[] {
@@ -13009,7 +13040,7 @@ struct ReadBookPage {
         const lineBottomsPx: number[] = [];
         const renderedLineBoxPx = this.getRenderedReaderParagraphLineBoxPx(text, chapterIndex,
           documentSource, absoluteStart);
-        const renderedLineSpacingPx = this.toMeasurePx(Math.max(0, this.readerLineHeight));
+        const renderedLineSpacingPx = this.toMeasureNonNegativePx(Math.max(0, this.readerLineHeight));
         for (let index = 0; index < nativeMetrics.length; index++) {
           const metric = nativeMetrics[index];
           lineEnds.push(metric.endIndex);
@@ -13040,6 +13071,7 @@ struct ReadBookPage {
         fontSize: fallbackStyle.fontSize,
         fontFamily: fallbackStyle.fontFamily,
         lineHeight: this.getEffectiveReaderLineHeight(),
+        letterSpacing: this.getReaderAdaptiveLetterSpacing(),
       fontWeight: FontWeight.Normal,
       textAlign: TextAlign.JUSTIFY,
       wordBreak: WordBreak.BREAK_WORD
@@ -13123,6 +13155,7 @@ struct ReadBookPage {
       // line spacing and margins are vp. Keeping those conversions separate is essential on devices
       // whose font scale is not 1.0; vp2px(fontSize) otherwise overestimates every page substantially.
       fontSize: this.toMeasureFontPx(fontSize),
+      letterSpacing: this.toMeasureFontOffsetPx(this.getReaderAdaptiveLetterSpacing()),
       fontFamilies: [fontFamily || this.getBodyReaderFontFamily()],
       fontWeight: graphicsText.FontWeight.W400,
       halfLeading: false,
@@ -13144,7 +13177,7 @@ struct ReadBookPage {
       // Keep native page measurement on the same bounded breaker as the ArkUI Text nodes.
       breakStrategy: graphicsText.BreakStrategy.GREEDY,
       trailingSpaceOptimized: true,
-      lineSpacing: this.toMeasurePx(Math.max(0, this.readerLineHeight)),
+      lineSpacing: this.toMeasureNonNegativePx(Math.max(0, this.readerLineHeight)),
       includeFontPadding: false
     };
     const builder = new graphicsText.ParagraphBuilder(paragraphStyle, graphicsText.FontCollection.getGlobalInstance());
@@ -13300,6 +13333,15 @@ struct ReadBookPage {
     }
   }
 
+  toMeasureNonNegativePx(value: number): number {
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    try {
+      return Math.max(0, vp2px(value));
+    } catch (_) {
+      return Math.max(0, value);
+    }
+  }
+
   getRenderedReaderParagraphLineBoxPx(text: string, chapterIndex: number,
     documentSource: string = text, absoluteStart: number = 0): number {
     // ArkUI's actual glyph row is slightly taller than the configured fp size even with font padding
@@ -13331,6 +13373,15 @@ struct ReadBookPage {
       return Math.max(1, fp2px(value));
     } catch (_) {
       return this.toMeasurePx(value);
+    }
+  }
+
+  toMeasureFontOffsetPx(value: number): number {
+    if (!Number.isFinite(value) || value === 0) return 0;
+    try {
+      return fp2px(value);
+    } catch (_) {
+      return value;
     }
   }
 
@@ -14044,7 +14095,7 @@ struct ReadBookPage {
         .height('100%')
 
         Blank()
-          .width(1)
+          .width(READER_DOUBLE_PAGE_DIVIDER_WIDTH)
           .height('88%')
           .backgroundColor(this.getSubTextColor())
           .opacity(0.22)
@@ -14091,7 +14142,7 @@ struct ReadBookPage {
         .height('100%')
 
         Blank()
-          .width(1)
+          .width(READER_DOUBLE_PAGE_DIVIDER_WIDTH)
           .height('88%')
           .backgroundColor(this.getSubTextColor())
           .opacity(0.22)
@@ -14364,6 +14415,7 @@ struct ReadBookPage {
     .halfLeading(false)
     .includeFontPadding(false)
     .fontColor(this.getTextColor())
+    .letterSpacing(this.getReaderAdaptiveLetterSpacing())
     .textAlign(TextAlign.JUSTIFY)
     .wordBreak(WordBreak.BREAK_WORD)
     .lineBreakStrategy(LineBreakStrategy.GREEDY)
@@ -14491,6 +14543,9 @@ struct ReadBookPage {
       .halfLeading(false)
       .includeFontPadding(false)
       .fontColor(this.getTextColor())
+      .letterSpacing(this.getReaderAdaptiveLetterSpacing())
+      .textAlign(TextAlign.JUSTIFY)
+      .wordBreak(WordBreak.BREAK_WORD)
       .lineBreakStrategy(LineBreakStrategy.GREEDY)
       .copyOption(CopyOptions.LocalDevice)
       .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
@@ -14530,6 +14585,7 @@ struct ReadBookPage {
         .halfLeading(false)
         .includeFontPadding(false)
         .fontColor(this.getTextColor())
+        .letterSpacing(this.getReaderAdaptiveLetterSpacing())
         .textAlign(TextAlign.JUSTIFY)
         .wordBreak(WordBreak.BREAK_WORD)
         .lineBreakStrategy(LineBreakStrategy.GREEDY)
@@ -14667,6 +14723,7 @@ struct ReadBookPage {
     .halfLeading(false)
     .includeFontPadding(false)
     .fontColor(this.getTextColor())
+    .letterSpacing(this.getReaderAdaptiveLetterSpacing())
     .textAlign(TextAlign.JUSTIFY)
     .wordBreak(WordBreak.BREAK_WORD)
     .lineBreakStrategy(LineBreakStrategy.GREEDY)
@@ -14762,7 +14819,7 @@ struct ReadBookPage {
   }
 
   readerInlineActionExpectedWidth(): number {
-    const spreadWidth = this.isLandscapeDoublePageActive() ? this.pageViewWidth / 2 : this.pageViewWidth;
+    const spreadWidth = this.getReaderPageColumnWidth();
     return Math.max(1, spreadWidth - this.readerMarginLeft - this.readerMarginRight);
   }
 
@@ -15098,6 +15155,10 @@ struct ReadBookPage {
     if (action && source) {
       action.url = ReaderInteractionProviderRegistry.expandAction(source, action.url);
     }
+    if (action && source && ReaderActionMarker.sourceScript(action.url)) {
+      this.openReaderSourceScriptAction(source, action, marker);
+      return;
+    }
     if (!action || !/^https?:\/\//i.test(action.url)) {
       promptAction.showToast({ message: '书源操作地址无效' });
       return;
@@ -15130,13 +15191,54 @@ struct ReadBookPage {
     });
   }
 
+  async openReaderSourceScriptAction(source: BookSource, action: ReaderActionData, marker: string): Promise<void> {
+    const code = ReaderActionMarker.sourceScript(action.url);
+    if (!code || !this.book) {
+      promptAction.showToast({ message: '书源操作无效' });
+      return;
+    }
+    const runtime = BookSourceStageWebRuntime.get();
+    if (!await runtime.waitUntilAvailable(5000)) {
+      promptAction.showToast({ message: '书源脚本运行环境未就绪' });
+      return;
+    }
+    const request = new StageWebRuntimeRequest();
+    request.applyStageBudget(SourceRuntimeStage.CONTENT);
+    request.source = source;
+    request.book = this.book;
+    request.chapter = this.chapters.length > 0 ? this.chapters[this.clampChapterIndex(this.currentChapterIndex)] : null;
+    request.baseUrl = request.chapter?.url || this.book.bookUrl || source.bookSourceUrl;
+    request.code = code;
+    request.readerActionMode = true;
+    request.maxRequestCount = 3;
+    request.maxResponseBytes = 2 * 1024 * 1024;
+    request.maxTotalResponseBytes = 3 * 1024 * 1024;
+    this.readerSourceActionOpenedAt = Date.now();
+    try {
+      const result = await runtime.execute(request);
+      const target = (result.requestedUrl || '').trim();
+      if (!/^https?:\/\//i.test(target)) {
+        promptAction.showToast({ message: '书源操作未返回有效地址' });
+        this.readerSourceActionOpenedAt = 0;
+        return;
+      }
+      VerificationSupport.requestVerification(target, action.title || action.label || '段评', source);
+      this.openReaderCommentPanel(target, action.title || action.label || '段评', marker,
+        result.requestedHtml || '');
+    } catch (error) {
+      this.readerSourceActionOpenedAt = 0;
+      const message = error instanceof Error ? error.message : String(error || '');
+      promptAction.showToast({ message: `评论加载失败${message ? `：${message}` : ''}` });
+    }
+  }
+
   isReaderCommentAction(action: ReaderActionData): boolean {
     const metadata = `${action.label || ''}\n${action.title || ''}`;
     if (/段评|章评|神评论|评论|本章说/.test(metadata)) return true;
     return /\/(?:get_review|get_para_review|para_idea)(?:[/?#]|$)|[?&](?:review|comment)=/i.test(action.url || '');
   }
 
-  openReaderCommentPanel(url: string, title: string, marker: string): void {
+  openReaderCommentPanel(url: string, title: string, marker: string, sourceHtml: string = ''): void {
     const normalizedUrl = (url || '').trim();
     if (!/^https?:\/\//i.test(normalizedUrl)) {
       promptAction.showToast({ message: '评论地址无效' });
@@ -15152,7 +15254,12 @@ struct ReadBookPage {
     this.readerCommentPanelHeightRatio = 0.6;
     this.readerCommentPanelDragStartRatio = 0.6;
     const providerPanel = ReaderInteractionProviderRegistry.buildPanel(normalizedUrl);
-    if (providerPanel) {
+    if (sourceHtml) {
+      this.readerCommentPanelHtmlLoaded = false;
+      this.readerCommentPanelHtml = sourceHtml;
+      this.readerCommentPanelBaseUrl = normalizedUrl;
+      this.readerCommentPanelUrl = 'about:blank';
+    } else if (providerPanel) {
       this.readerCommentPanelHtmlLoaded = false;
       this.readerCommentPanelHtml = providerPanel.html;
       this.readerCommentPanelBaseUrl = providerPanel.baseUrl;
@@ -15316,6 +15423,7 @@ struct ReadBookPage {
     .halfLeading(false)
     .includeFontPadding(false)
     .fontColor(this.getTextColor())
+    .letterSpacing(this.getReaderAdaptiveLetterSpacing())
     .textAlign(TextAlign.JUSTIFY)
     .wordBreak(WordBreak.BREAK_WORD)
     .lineBreakStrategy(LineBreakStrategy.GREEDY)
@@ -15514,6 +15622,7 @@ struct ReadBookPage {
     .halfLeading(false)
     .includeFontPadding(false)
     .fontColor(this.getTextColor())
+    .letterSpacing(this.getReaderAdaptiveLetterSpacing())
     .textAlign(TextAlign.JUSTIFY)
     .wordBreak(WordBreak.BREAK_WORD)
     .lineBreakStrategy(LineBreakStrategy.GREEDY)
@@ -16422,7 +16531,7 @@ struct ReadBookPage {
     const horizontalPadding = this.readerMarginLeft + this.readerMarginRight;
     const verticalPadding = this.readerMarginTop + this.getReaderContentBottomPadding() +
       this.getReaderPaginationBottomInfoBarHeight() + this.getReaderPaginationRenderGuardHeight();
-    const columnWidth = this.isLandscapeDoublePageActive() ? this.pageViewWidth / 2 : this.pageViewWidth;
+    const columnWidth = this.getReaderPageColumnWidth();
     const availableWidth = Math.max(1, columnWidth - horizontalPadding);
     const availableHeight = Math.max(1, this.getReaderPaginationViewportHeight() - verticalPadding);
     const measuredAvailableHeight = this.toMeasurePx(availableHeight) + this.getReaderPaginationHeightTolerancePx();
@@ -16521,7 +16630,7 @@ struct ReadBookPage {
   buildReaderPaginationCacheKey(chapterIndex: number, source: string): string {
     // Bump whenever page-boundary semantics change. Reusing offsets produced before action-marker-aware
     // pagination can make a valid comment marker appear as raw text even though the chapter body is unchanged.
-    return `reader_page_v32_${chapterIndex}_${this.pageViewWidth}_${this.getReaderPaginationViewportHeight()}_` +
+    return `reader_page_v34_${chapterIndex}_${this.pageViewWidth}_${this.getReaderPaginationViewportHeight()}_` +
       `${this.readerExtendToStatusBar}_${this.isLandscapeDoublePageActive()}_${this.readerTypographyCacheIdentity()}_` +
       `${source.length}_${this.hashText(source)}`;
   }
@@ -16596,7 +16705,15 @@ struct ReadBookPage {
     // chapters continue through the cooperative scheduler instead of measuring many pages in one ArkUI turn.
     const visibleSpreadSize = this.isLandscapeDoublePageActive() ? 2 : 1;
     const initialBatchSize = Math.min(visibleSpreadSize, Math.max(1, initialPageCount));
-    this.appendReaderPaginationBatch(result, chapterIndex, initialBatchSize);
+    // appendReaderPaginationBatch yields after its time budget once it has produced at least one page.
+    // On a slower first layout that can leave a double-page spread with only its left page until the
+    // next interaction publishes more pagination. Complete the small visible spread here; background
+    // pagination remains cooperative and incremental for everything after it.
+    while (!result.complete && result.pages.length < initialBatchSize) {
+      const previousPageCount = result.pages.length;
+      this.appendReaderPaginationBatch(result, chapterIndex, initialBatchSize - previousPageCount);
+      if (result.pages.length <= previousPageCount) break;
+    }
     return result;
   }
 
@@ -16613,7 +16730,7 @@ struct ReadBookPage {
     const horizontalPadding = this.readerMarginLeft + this.readerMarginRight;
     const verticalPadding = this.readerMarginTop + this.getReaderContentBottomPadding() +
       this.getReaderPaginationBottomInfoBarHeight() + this.getReaderPaginationRenderGuardHeight();
-    const columnWidth = this.isLandscapeDoublePageActive() ? this.pageViewWidth / 2 : this.pageViewWidth;
+    const columnWidth = this.getReaderPageColumnWidth();
     const availableWidth = Math.max(1, columnWidth - horizontalPadding);
     const availableHeight = Math.max(1, this.getReaderPaginationViewportHeight() - verticalPadding);
     const measuredHeight = this.toMeasurePx(availableHeight) + this.getReaderPaginationHeightTolerancePx();
@@ -16715,6 +16832,9 @@ struct ReadBookPage {
   publishCurrentReaderPagination(result: ReaderPaginationResult): void {
     if (this.currentChapterIndex < 0 || this.pagedContentText !== result.source) return;
     const pendingRestore = this.pendingRestorePageIndex;
+    const secondaryPageIndex = this.currentPageIndex + 1;
+    const shouldRefreshCompletedSpread = this.isLandscapeDoublePageActive() &&
+      secondaryPageIndex >= this.contentPages.length && secondaryPageIndex < result.pages.length;
     this.contentPages = [...result.pages];
     this.contentPageStarts = [...result.starts];
     this.contentPageEnds = [...result.ends];
@@ -16722,6 +16842,10 @@ struct ReadBookPage {
     this.readerInitialPageReady = this.pendingRestorePageIndex < 0;
     if (pendingRestore >= 0 && this.pendingRestorePageIndex < 0) {
       this.setCurrentPageText(this.contentPages[this.currentPageIndex] || '');
+    } else if (shouldRefreshCompletedSpread) {
+      // The current page surface is keyed by its render version. Merely replacing contentPages updates
+      // counters, but a retained ForEach surface can keep the formerly empty right page until a turn.
+      this.refreshReaderTextRender();
     }
     const restoredPendingPosition = pendingRestore >= 0 && this.pendingRestorePageIndex < 0;
     if (this.isReaderContinuousScrollSurfaceActive()) {

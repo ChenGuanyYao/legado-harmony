@@ -46,7 +46,8 @@ export class BookSourceRuntimeRouter {
   static readonly BRIDGE_VERSION: number = 1;
 
   private static readonly FULL_JAVA_METHODS: string[] = [
-    'ajax', 'put', 'get', 'toast', 'longToast', 'startBrowser', 'startBrowserAwait',
+    'ajax', 'ajaxAll', 'post', 'put', 'get', 'getString', 'toast', 'longToast',
+    'startBrowser', 'startBrowserAwait',
     'startBrowserDp', 'showBrowser', 'showReadingBrowser', 'open', 'openUrl',
     'base64Encode', 'base64EncodeToString', 'base64Decode', 'base64DecodeToString',
     'base64DecodeToByteArray', 'base64UrlEncode', 'base64UrlDecode',
@@ -55,7 +56,8 @@ export class BookSourceRuntimeRouter {
     'md5Encode', 'md5Encode16', 'md5Encode32',
     'androidId', 'deviceID', 'randomUUID', 'getCookie', 'lang', 'log', 'logType',
     'getWebViewUA', 'timeFormat', 'timeFormatUTC', 'strToBytes', 'bytesToStr', 'evalJS',
-    'createSymmetricCrypto', 'reLoginView', 'refreshExplore', 'searchBook', 'upLoginData', 'webView'
+    'createSymmetricCrypto', 'reLoginView', 'refreshExplore', 'refreshBookToc', 'refreshContent',
+    'searchBook', 'upConfig', 'upLoginData', 'webView'
   ];
 
   private static readonly EMULATED_JAVA_METHODS: string[] = [
@@ -65,7 +67,7 @@ export class BookSourceRuntimeRouter {
   private static readonly SOURCE_METHODS: string[] = [
     'getKey', 'getTag', 'getSource', 'getVariable', 'setVariable', 'getLoginHeader',
     'putLoginHeader', 'removeLoginHeader', 'getLoginHeaderMap', 'getLoginInfo', 'getLoginInfoMap',
-    'putLoginInfo', 'removeLoginInfo', 'getHeaderMap', 'get', 'put'
+    'putLoginInfo', 'removeLoginInfo', 'getHeaderMap', 'get', 'put', 'refreshExplore'
   ];
 
   private static readonly CACHE_METHODS: string[] = [
@@ -77,7 +79,7 @@ export class BookSourceRuntimeRouter {
   ];
 
   private static readonly SIDE_EFFECT_METHODS: string[] = [
-    'ajax', 'connect', 'get', 'post', 'head', 'put', 'setVariable', 'putLoginHeader',
+    'ajax', 'ajaxAll', 'connect', 'get', 'post', 'head', 'put', 'setVariable', 'putLoginHeader',
     'removeLoginHeader', 'putLoginInfo', 'removeLoginInfo', 'setCookie', 'replaceCookie', 'removeCookie',
     'startBrowser', 'startBrowserAwait',
     'open', 'openUrl', 'showBrowser', 'showReadingBrowser'

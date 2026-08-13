@@ -1,0 +1,144 @@
+import { JSBoundedExecutionResult, JSContext, JSRuntimeOptions } from '@devzeng/quickjs';
+import { QuickJsRuntimeMode, QuickJsRuntimeStatus } from './QuickJsRuntimeStatus';
+
+export class QuickJsExpressionResult {
+  success: boolean = false;
+  value: string = '';
+  error: string = '';
+  timedOut: boolean = false;
+  elapsedMs: number = 0;
+}
+
+/**
+ * Sandboxed pure-expression runner used by the migration router.
+ *
+ * It deliberately exposes no network, Cookie, filesystem or platform bridge. Host actions remain
+ * on the existing audited path and will later be represented by an explicit action journal.
+ */
+export class QuickJsScriptRuntime {
+  private static readonly MAX_SCRIPT_LENGTH: number = 4096;
+  private static readonly MAX_BINDING_COUNT: number = 64;
+  private static readonly MAX_BINDING_BYTES: number = 128 * 1024;
+
+  static isPureExpressionCandidate(expression: string): boolean {
+    const code = QuickJsScriptRuntime.normalizeExpression(expression);
+    if (!code || code.length > QuickJsScriptRuntime.MAX_SCRIPT_LENGTH) return false;
+    if (/[;{}]/.test(code)) return false;
+    if (/(^|[^=!<>])=(?!=|>)/.test(code)) return false;
+    if (/\+\+|--/.test(code)) return false;
+    if (/\b(?:var|let|const|function|class|while|for|do|switch|try|catch|throw|return|await|yield|import|export|delete|new)\b/.test(code)) return false;
+    if (/\b(?:java|cookie|source|book|chapter|fetch|request|webView|WebView|Packages|android|crypto|eval|Function|globalThis|performance)\b/.test(code)) return false;
+    if (/\bDate\b|Math\.random\s*\(/.test(code)) return false;
+    return true;
+  }
+
+  static evaluateExpression(expression: string,
+    variables: Record<string, number | string | boolean>, timeoutMs: number = 80): QuickJsExpressionResult {
+    const output = new QuickJsExpressionResult();
+    const code = QuickJsScriptRuntime.normalizeExpression(expression);
+    if (!QuickJsScriptRuntime.isPureExpressionCandidate(code)) {
+      output.error = 'not-pure-expression';
+      return output;
+    }
+    const keys = Object.keys(variables);
+    if (keys.length > QuickJsScriptRuntime.MAX_BINDING_COUNT) {
+      output.error = 'too-many-bindings';
+      return output;
+    }
+    let bindingBytes = 0;
+    const declarations: string[] = [];
+    for (let index = 0; index < keys.length; index++) {
+      const key = keys[index];
+      bindingBytes += key.length + String(variables[key]).length;
+      if (QuickJsScriptRuntime.isSafeIdentifier(key)) {
+        declarations.push(`const ${key}=__bindings[${JSON.stringify(key)}]`);
+      }
+    }
+    if (bindingBytes > QuickJsScriptRuntime.MAX_BINDING_BYTES) {
+      output.error = 'bindings-too-large';
+      return output;
+    }
+
+    const options = new JSRuntimeOptions();
+    options.memoryLimitBytes = 16 * 1024 * 1024;
+    options.stackLimitBytes = 512 * 1024;
+    const context = new JSContext(options);
+    try {
+      context.setObject(variables, '__legadoBindings');
+      const wrapped = `(function(){const __bindings=globalThis.__legadoBindings;` +
+        `${declarations.join(';')};return (${code});})()`;
+      const result = context.evaluateBounded(wrapped, 'book-source-pure-expression.js',
+        Math.max(10, Math.min(250, timeoutMs)), 8);
+      QuickJsScriptRuntime.copyResult(result, output);
+    } catch (error) {
+      output.error = QuickJsScriptRuntime.errorMessage(error);
+    } finally {
+      context.release();
+    }
+    return output;
+  }
+
+  private static normalizeExpression(expression: string): string {
+    return (expression || '').trim().replace(/^return\s+/, '').replace(/;\s*$/, '').trim();
+  }
+
+  private static isSafeIdentifier(key: string): boolean {
+    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)) return false;
+    return !/^(?:break|case|catch|class|const|continue|debugger|default|delete|do|else|export|extends|finally|for|function|if|import|in|instanceof|let|new|return|super|switch|this|throw|try|typeof|var|void|while|with|yield|await|enum|implements|interface|package|private|protected|public|static)$/.test(key);
+  }
+
+  private static copyResult(source: JSBoundedExecutionResult, target: QuickJsExpressionResult): void {
+    target.success = source.success;
+    target.value = source.value;
+    target.error = source.error;
+    target.timedOut = source.timedOut;
+    target.elapsedMs = source.elapsedMs;
+  }
+
+  private static errorMessage(error: Object): string {
+    if (error instanceof Error) return error.message;
+    return String(error);
+  }
+}
+
+/** Bounded shadow comparison. The legacy value always remains authoritative in SHADOW mode. */
+export class QuickJsShadowComparator {
+  private static readonly MAX_SAMPLES: number = 64;
+  private static samples: number = 0;
+  private static samplesByFingerprint: Record<string, number> = {};
+
+  static compare(expression: string, variables: Record<string, string>, legacyValue: string): void {
+    if (!QuickJsRuntimeStatus.isHealthy() ||
+      QuickJsRuntimeStatus.getMode() !== QuickJsRuntimeMode.SHADOW ||
+      QuickJsShadowComparator.samples >= QuickJsShadowComparator.MAX_SAMPLES ||
+      !QuickJsScriptRuntime.isPureExpressionCandidate(expression)) {
+      return;
+    }
+    const submitter = QuickJsRuntimeStatus.getShadowSubmitter();
+    if (!submitter) return;
+    const fingerprint = QuickJsShadowComparator.fingerprint(expression);
+    const fingerprintSamples = QuickJsShadowComparator.samplesByFingerprint[fingerprint] || 0;
+    // A second observation catches value-dependent coercion while preserving room for other rules.
+    if (fingerprintSamples >= 2) return;
+    const bindings: Record<string, number | string | boolean> = {};
+    const keys = Object.keys(variables);
+    for (let index = 0; index < keys.length; index++) {
+      const key = keys[index];
+      const value = variables[key] || '';
+      bindings[key] = /^-?(?:\d+\.?\d*|\.\d+)$/.test(value) ? Number(value) : value;
+    }
+    const sample = QuickJsShadowComparator.samples + 1;
+    if (!submitter.submit(expression, JSON.stringify(bindings), legacyValue, fingerprint, sample)) return;
+    QuickJsShadowComparator.samplesByFingerprint[fingerprint] = fingerprintSamples + 1;
+    QuickJsShadowComparator.samples = sample;
+  }
+
+  private static fingerprint(value: string): string {
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index++) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16).padStart(8, '0');
+  }
+}

@@ -11,6 +11,7 @@ class ExploreCacheEntry {
 }
 
 class ExploreCachePayload {
+  version: number = 2;
   entries: ExploreCacheEntry[] = [];
 }
 
@@ -22,6 +23,7 @@ export class ExploreCacheHit {
 }
 
 export class ExploreResultCache {
+  private static readonly SCHEMA_VERSION: number = 2;
   private static readonly STORE_NAME: string = 'explore_result_cache';
   private static readonly CACHE_KEY: string = 'entries';
   private static readonly TTL_MS: number = 24 * 60 * 60 * 1000;
@@ -91,7 +93,8 @@ export class ExploreResultCache {
     if (typeof value !== 'string' || !value) return new ExploreCachePayload();
     try {
       const payload = JSON.parse(value) as ExploreCachePayload;
-      if (payload && Array.isArray(payload.entries)) return payload;
+      if (payload && Number(payload.version) === ExploreResultCache.SCHEMA_VERSION &&
+        Array.isArray(payload.entries)) return payload;
     } catch (e) {
       console.warn('读取发现内容缓存失败:', e);
     }

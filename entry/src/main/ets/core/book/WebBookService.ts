@@ -23,6 +23,7 @@ import { RuleExecutionService } from '../rule/RuleExecutionService';
 import { RuleBatchExecutionRequest, RuleFieldRequest } from '../rule/RuleExecutionModels';
 import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
 import { BookSourceAudioWebRuntime } from './BookSourceAudioWebRuntime';
+import { BookSourceMetadataSupport } from './BookSourceMetadataSupport';
 
 class ContentPageData {
   content: string = '';
@@ -37,6 +38,10 @@ export class WebBookService {
   }
 
   async getBookInfo(source: BookSource, book: Book): Promise<Book> {
+    // Imported rules may build the virtual detail URL while the field batch is still executing.
+    // Preserve its request data and bridge the SearchBook identity that is already known.
+    book.bookUrl = EncodedSourceUrl.repairBookName(book.bookUrl, book.name, 'details');
+    BookSourceMetadataSupport.applyBook(source, book, [book.bookUrl]);
     if (BookSourceDataUrlSupport.isEncodedSource(book.bookUrl)) {
       return await BookSourceDataUrlSupport.getBookInfo(this.http, source, book);
     }
@@ -59,7 +64,10 @@ export class WebBookService {
     let content = resp.body;
     const infoRule = source.bookInfoRule;
     if (infoRule.init) {
-      let initResult = await this.runStageRule(source, book, infoRule.init, content, baseUrl,
+      // Data URLs are virtual rule payloads. Their scripts often branch on baseUrl before
+      // requesting the real detail endpoint, so preserve that virtual URL for the script.
+      const stageBaseUrl = EncodedSourceUrl.decode(book.bookUrl) ? book.bookUrl : baseUrl;
+      let initResult = await this.runStageRule(source, book, infoRule.init, content, stageBaseUrl,
         SourceRuntimeStage.BOOK_INFO);
       if (!initResult && !this.stageRuleCode(infoRule.init)) {
         const ir = new AnalyzeRule(content, baseUrl, ctx);
@@ -100,17 +108,29 @@ export class WebBookService {
     } finally {
       RuleExecutionService.get().clearOwner(fieldRequest.ownerId);
     }
-    book.name = fieldValues['name'] || book.name;
-    book.author = fieldValues['author'] || book.author;
+    book.name = BookFieldSanitizer.prefer(fieldValues['name'] || '', book.name);
+    book.author = BookFieldSanitizer.prefer(fieldValues['author'] || '', book.author);
     const infoCoverUrl = BookSourceDataUrlSupport.normalizeCoverUrl(source,
       fieldValues['coverUrl'] || '', baseUrl);
     book.coverUrl = book.coverUrl || infoCoverUrl;
     book.intro = BookFieldSanitizer.prefer(fieldValues['intro'] || '', book.intro);
+    if (!book.intro) {
+      book.intro = BookFieldSanitizer.clean(this.detailFallbackText(content,
+        ['desc', 'intro', 'description', 'abstract', 'summary']));
+    }
     book.kind = BookFieldSanitizer.prefer(fieldValues['kind'] || '', book.kind);
     book.latestChapterTitle = BookFieldSanitizer.prefer(fieldValues['lastChapter'] || '', book.latestChapterTitle);
     book.wordCount = BookFieldSanitizer.prefer(fieldValues['wordCount'] || '', book.wordCount);
 
-    const tocUrl = fieldValues['tocUrl'] || '';
+    // A few source-defined detail scripts build the catalog data URL in the same field batch
+    // that updates book metadata. Their script runtime mutates the shared Book object, while the
+    // per-field result object remains the original detail JSON. If that yields an incomplete
+    // virtual catalog identity, merge only the missing scalar metadata from the source-defined
+    // detail payload. Endpoints and request behavior remain entirely owned by the imported rule.
+    const bridgedTocUrl = this.bridgeVirtualCatalogMetadata(fieldValues['tocUrl'] || '', book.bookUrl,
+      ['book_id', 'item_id', 'source', 'sources', 'tab', 'url', 'toc_url', 'book_name', 'author',
+        'abstract', 'thumb_url']);
+    const tocUrl = EncodedSourceUrl.repairCatalogBookName(bridgedTocUrl, book.name);
     if (tocUrl) book.tocUrl = this.repairUrlWithBookId(tocUrl, book.bookUrl);
 
     // 保存变量
@@ -121,7 +141,33 @@ export class WebBookService {
       book.tocUrl = this.fallbackTocUrl(book.bookUrl, infoRule.tocUrl, baseUrl);
     }
 
+    // Detail rules commonly add the definitive tab only to their catalog URL. Apply it after the
+    // rule has finished so the details page and the following reader route agree on media type.
+    BookSourceMetadataSupport.applyBook(source, book, [book.bookUrl, book.tocUrl]);
+
     return book;
+  }
+
+  private detailFallbackText(content: string, keys: string[]): string {
+    const value = (content || '').trim();
+    if (!value || (!value.startsWith('{') && !value.startsWith('['))) return '';
+    try {
+      const parsed = JSON.parse(value) as Object;
+      const record = Array.isArray(parsed) ?
+        (parsed.length > 0 && parsed[0] && typeof parsed[0] === 'object' ?
+          parsed[0] as Record<string, Object> : null) :
+        (parsed && typeof parsed === 'object' ? parsed as Record<string, Object> : null);
+      if (!record) return '';
+      for (const key of keys) {
+        const field = record[key];
+        if (field !== undefined && field !== null && typeof field !== 'object') {
+          const text = String(field).trim();
+          if (text) return text;
+        }
+      }
+    } catch (_) {
+    }
+    return '';
   }
 
   private fallbackTocUrl(bookUrl: string, tocRule: string, baseUrl: string): string {
@@ -172,10 +218,13 @@ export class WebBookService {
     return '';
   }
 
-  async getChapterList(source: BookSource, book: Book): Promise<BookChapter[]> {
+  async getChapterList(source: BookSource, book: Book, maxChapters: number = 0): Promise<BookChapter[]> {
     AppStorage.setOrCreate('bookSourceStageLastError', '');
+    BookSourceMetadataSupport.applyBook(source, book, [book.bookUrl, book.tocUrl]);
+    const chapterLimit = maxChapters > 0 ? Math.max(1, Math.round(maxChapters)) : 0;
     if (BookSourceDataUrlSupport.isEncodedSource(book.tocUrl) || BookSourceDataUrlSupport.isEncodedSource(book.bookUrl)) {
-      return await BookSourceDataUrlSupport.getChapterList(this.http, source, book);
+      const encodedChapters = await BookSourceDataUrlSupport.getChapterList(this.http, source, book);
+      return chapterLimit > 0 ? encodedChapters.slice(0, chapterLimit) : encodedChapters;
     }
     console.log('[WS] getChapterList, tocUrl:', book.tocUrl);
     const tocUrl = this.resolveTocUrl(source, book);
@@ -208,10 +257,11 @@ export class WebBookService {
         firstBody = currentResp.body;
         firstBaseUrl = baseUrl;
         const runtimeInput = this.stageDataUrlInput(tocRule.chapterList, currentUrl, currentResp.body);
+        const stageBaseUrl = EncodedSourceUrl.decode(currentUrl) ? currentUrl : baseUrl;
         const runtimeList = await this.runStageRule(source, book, tocRule.chapterList,
-          runtimeInput, baseUrl, SourceRuntimeStage.TOC, null, EncodedSourceUrl.scalarVariables(currentUrl));
+          runtimeInput, stageBaseUrl, SourceRuntimeStage.TOC, null, EncodedSourceUrl.scalarVariables(currentUrl));
         if (runtimeList) {
-          const runtimeChapters = await this.parseStageChapterList(source, book, runtimeList, baseUrl);
+          const runtimeChapters = await this.parseStageChapterList(source, book, runtimeList, baseUrl, chapterLimit);
           if (runtimeChapters.length > 0) {
             return runtimeChapters;
           }
@@ -222,14 +272,19 @@ export class WebBookService {
           if (!lastError) AppStorage.setOrCreate('bookSourceStageLastError', '目录脚本返回空结果');
         }
       }
-      const pageChapters = await this.parseChapterPage(source, book, currentResp.body, baseUrl, ctx, chapters.length);
+      const remainingLimit = chapterLimit > 0 ? Math.max(0, chapterLimit - chapters.length) : 0;
+      if (chapterLimit > 0 && remainingLimit === 0) break;
+      const pageChapters = await this.parseChapterPage(source, book, currentResp.body, baseUrl, ctx,
+        chapters.length, remainingLimit);
       for (const chapter of pageChapters) {
         const chapterKey = this.urlWithoutFragment(chapter.url);
         if (seenChapterUrls.has(chapterKey)) continue;
         seenChapterUrls.add(chapterKey);
         chapter.index = chapters.length;
         chapters.push(chapter);
+        if (chapterLimit > 0 && chapters.length >= chapterLimit) break;
       }
+      if (chapterLimit > 0 && chapters.length >= chapterLimit) break;
       if (!tocRule.nextTocUrl) break;
       const nextUrl = await this.executeSingleRuleField(source, book, null, tocRule.nextTocUrl,
         currentResp.body, baseUrl, SourceRuntimeStage.TOC, ctx, true);
@@ -244,19 +299,42 @@ export class WebBookService {
     if (chapters.length > 0) return chapters;
 
     const fallbackChapters = this.tryBuildGenericChapterList(book, firstBody, firstBaseUrl);
-    if (fallbackChapters.length > 0) return fallbackChapters;
+    if (fallbackChapters.length > 0) {
+      return chapterLimit > 0 ? fallbackChapters.slice(0, chapterLimit) : fallbackChapters;
+    }
     return chapters;
   }
 
+  private bridgeVirtualCatalogMetadata(tocUrl: string, detailUrl: string, allowedKeys: string[]): string {
+    const tocPayload = EncodedSourceUrl.decode(tocUrl || '');
+    const detailPayload = EncodedSourceUrl.decode(detailUrl || '');
+    if (!tocPayload || !detailPayload || !tocPayload.type || !/catalog/i.test(tocPayload.type)) return tocUrl;
+    let changed = false;
+    for (const key of allowedKeys) {
+      const current = tocPayload.data[key];
+      const fallback = detailPayload.data[key];
+      if ((current === undefined || current === null || String(current).trim() === '') &&
+        fallback !== undefined && fallback !== null && typeof fallback !== 'object' && String(fallback).trim()) {
+        tocPayload.data[key] = fallback;
+        changed = true;
+      }
+    }
+    if (!changed) return tocUrl;
+    const type = tocPayload.type || String(tocPayload.options['type'] || 'catalog');
+    return EncodedSourceUrl.encode(tocPayload.data, type);
+  }
+
   private async parseChapterPage(source: BookSource, book: Book, body: string, baseUrl: string,
-    ctx: RuleContext, startIndex: number): Promise<BookChapter[]> {
+    ctx: RuleContext, startIndex: number, maxItems: number = 0): Promise<BookChapter[]> {
     const tocRule = source.tocRule;
     // A complete list script has already been attempted through ArkWeb by getChapterList. Never
     // retry it synchronously when it returned no usable chapters.
     if (this.stageRuleCode(tocRule.chapterList || '')) return [];
     const rule = new AnalyzeRule(body, baseUrl, ctx);
-    const items = rule.getElements(tocRule.chapterList || '');
-    console.log('[WS] getChapterList page items:', items.length, 'from resp:', body.length);
+    const matchedItems = rule.getElements(tocRule.chapterList || '');
+    const items = maxItems > 0 ? matchedItems.slice(0, maxItems) : matchedItems;
+    console.log('[WS] getChapterList page items:', matchedItems.length, 'processing:', items.length,
+      'from resp:', body.length);
     const chapters: BookChapter[] = [];
     if (items.length === 0) return chapters;
     const fieldRequest = new RuleBatchExecutionRequest();
@@ -271,6 +349,7 @@ export class WebBookService {
       new RuleFieldRequest('chapterName', tocRule.chapterName || ''),
       new RuleFieldRequest('chapterUrl', tocRule.chapterUrl || ''),
       new RuleFieldRequest('isVip', tocRule.isVip || ''),
+      new RuleFieldRequest('isPay', tocRule.isPay || ''),
       new RuleFieldRequest('updateTime', tocRule.updateTime || '')
     ];
     fieldRequest.timeoutMs = 30000;
@@ -307,11 +386,14 @@ export class WebBookService {
         });
         rawUrl = rawUrl.replace(/\s*\+\s*/g, '').replace(/^['"]|['"]$/g, '').trim();
       }
-      const resolvedChapterUrl = this.resolveVars(BookUrlResolver.resolve(rawUrl, baseUrl), ctx);
+      const virtualPayload = this.ruleExpectsHexDataUrlInput(source.contentRule.content || '') ?
+        this.extractVirtualChapterPayload(rawUrl) : '';
+      const resolvedChapterUrl = this.resolveVars(virtualPayload || BookUrlResolver.resolve(rawUrl, baseUrl), ctx);
       chap.url = this.repairUrlWithBookId(resolvedChapterUrl, book.bookUrl);
       chap.bookUrl = book.bookUrl;
       chap.index = startIndex + i;
-      chap.isVip = values['isVip'] === 'true';
+      chap.isVip = this.ruleBoolean(values['isVip'] || '');
+      chap.isPay = this.ruleBoolean(values['isPay'] || '');
       chap.variable = BookUrlResolver.setVariableJson(chap.variable, 'baseUrl', baseUrl);
       const updateTime = values['updateTime'] || '';
       if (updateTime) {
@@ -324,6 +406,9 @@ export class WebBookService {
   }
 
   async getContent(source: BookSource, book: Book, chapter: BookChapter): Promise<string> {
+    // Validation and reader diagnostics must describe the current content request, not a
+    // stale error left by a previous catalog/script stage.
+    AppStorage.setOrCreate('bookSourceStageLastError', '');
     if (BookSourceDataUrlSupport.isEncodedSource(chapter.url)) {
       const shortcutContent = await BookSourceDataUrlSupport.getContent(this.http, source, book, chapter);
       const shortcutAudio = source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
@@ -368,7 +453,21 @@ export class WebBookService {
     let resp = EncodedSourceUrl.canHandle(chapter.url) ?
       await this.fetchEncodedDataUrl(chapter.url, source) : await au.fetch(chapter.url);
     console.log('[WS] getContent resp:', resp.success, 'len:', resp.body.length);
-    if (!resp.success || !resp.body) return '';
+    if (!resp.success) {
+      const status = Number(resp.statusCode || 0);
+      const detail = String(resp.error || '').trim();
+      if (status === 401 || status === 403) {
+        AppStorage.setOrCreate('bookSourceStageLastError', `正文请求需要登录、验证或授权（HTTP ${status}）`);
+      } else if (status === 408 || status === 425 || status === 429 || status >= 500 || status === 0) {
+        AppStorage.setOrCreate('bookSourceStageLastError',
+          `正文网络请求暂时失败${status > 0 ? `（HTTP ${status}）` : ''}${detail ? `：${detail}` : ''}`);
+      } else {
+        AppStorage.setOrCreate('bookSourceStageLastError',
+          `正文请求失败（HTTP ${status}）${detail ? `：${detail}` : ''}`);
+      }
+      return '';
+    }
+    if (!resp.body) return '';
     const ctx = new RuleContext();
     ctx.loadFromJson(book.variable);
     this.seedBookVariables(ctx, book.bookUrl);
@@ -425,7 +524,10 @@ export class WebBookService {
     fieldRequest.baseUrl = baseUrl;
     fieldRequest.contextValues = ctx.toPersistentRecord();
     fieldRequest.fields = [
-      new RuleFieldRequest('content', directContent ? '' : (contentRule.content || '')),
+      // A text chapter selector commonly matches one node per paragraph. Content is the one
+      // scalar field where all matches are meaningful; ordinary title/URL fields still use the
+      // first match exactly as before.
+      new RuleFieldRequest('content', directContent ? '' : (contentRule.content || ''), false, false, true),
       new RuleFieldRequest('nextContentUrl', contentRule.nextContentUrl || '', true),
       new RuleFieldRequest('images', contentRule.images || '', false, true)
     ];
@@ -921,7 +1023,8 @@ export class WebBookService {
 
   private convertReaderNativeActions(_source: BookSource, content: string, _baseUrl: string): string {
     if (!content) return content;
-    let value = content.replace(/<p\b[^>]*>\s*<img\b([^>]*\bident\s*=\s*["'][^"']+["'][^>]*)\/?\s*>\s*<\/p>/gi,
+    let value = this.convertReaderImageScriptActions(content);
+    value = value.replace(/<p\b[^>]*>\s*<img\b([^>]*\bident\s*=\s*["'][^"']+["'][^>]*)\/?\s*>\s*<\/p>/gi,
       (_all: string, attrs: string): string => {
         const identMatch = /\bident\s*=\s*["']([^"']+)["']/i.exec(attrs || '');
         const url = this.decodeHtmlEntities(identMatch && identMatch[1] ? identMatch[1] : '');
@@ -944,6 +1047,38 @@ export class WebBookService {
         const marker = this.readerActionMarkerFromCommentAttributes(comment[1] || '');
         return `${text}${marker}\n`;
       });
+  }
+
+  /**
+   * Android-style Legado sources can render a clickable data-image whose trailing source options
+   * contain a click/js expression. Convert that expression into a deferred reader action. The
+   * expression is executed only after the user taps it, in the same bounded source runtime.
+   */
+  private convertReaderImageScriptActions(content: string): string {
+    return (content || '').replace(/<img\b[^>]*>/gi, (tag: string): string => {
+      const data = /data:image\/[A-Za-z0-9.+-]+;base64,([A-Za-z0-9+/=]+),(\{[\s\S]*\})/i.exec(tag);
+      if (!data || !data[2]) return tag;
+      const action = /["'](?:click|js)["']\s*:\s*(["'])([\s\S]*?)\1(?:\s*,|\s*})/i.exec(data[2]);
+      if (!action || !action[2]) return tag;
+      const count = this.readerDataImageLabel(data[1] || '');
+      const label = count ? `段评 ${count}` : '段评';
+      const marker = ReaderActionMarker.createSourceScript(label, this.decodeHtmlEntities(action[2]), '段评');
+      return marker ? `${marker}\n` : tag;
+    });
+  }
+
+  private readerDataImageLabel(encoded: string): string {
+    try {
+      const bytes = new util.Base64Helper().decodeSync(encoded || '');
+      const svg = util.TextDecoder.create('utf-8').decodeWithStream(bytes, { stream: false });
+      const labels = svg.match(/<text\b[^>]*>([^<]{1,24})<\/text>/gi) || [];
+      for (const item of labels) {
+        const text = this.decodeHtmlEntities(item.replace(/<[^>]+>/g, '')).trim();
+        if (/^(?:\d+|99\+)$/.test(text)) return text;
+      }
+    } catch (_) {
+    }
+    return '';
   }
 
   private readerActionMarkerFromCommentAttributes(attrs: string): string {
@@ -1179,7 +1314,15 @@ export class WebBookService {
     request.variables = { ...variables, ...(chapter ? EncodedSourceUrl.scalarVariables(chapter.url) : {}) };
     try {
       const result = await runtime.execute(request);
-      return result.value || '';
+      let value = result.value || '';
+      const trailingRule = this.stageTrailingRule(rawRule);
+      if (value && trailingRule) {
+        const transformed = this.applyStageTrailingRule(value, trailingRule, request.baseUrl);
+        console.info('[WS] stage trailing rule:', stage, trailingRule,
+          'input:', value.length, 'output:', transformed.length);
+        value = transformed;
+      }
+      return value;
     } catch (error) {
       console.warn('[WS] stage runtime failed:', source.bookSourceName, stage, error);
       const message = error instanceof Error ? error.message : String(error || '');
@@ -1236,8 +1379,37 @@ export class WebBookService {
     return '';
   }
 
+  private stageTrailingRule(rawRule: string): string {
+    const raw = (rawRule || '').trim();
+    if (!raw.toLowerCase().startsWith('<js>')) return '';
+    const closeIndex = raw.toLowerCase().indexOf('</js>');
+    if (closeIndex < 0) return '';
+    const trailing = raw.substring(closeIndex + 5).trim();
+    if (!trailing || trailing.startsWith('##') || /^@?js:/i.test(trailing)) return '';
+    return trailing;
+  }
+
+  private applyStageTrailingRule(value: string, trailingRule: string, baseUrl: string): string {
+    // Scalar extraction normally returns the first match, but a stage pipeline must preserve
+    // an array selected by a simple JSONPath (for example a complete catalog in $.data).
+    if (/^\$(?:\.[A-Za-z_$][A-Za-z0-9_$-]*)+$/.test(trailingRule)) {
+      try {
+        let current = JSON.parse(value || '{}') as Object;
+        const parts = trailingRule.substring(2).split('.');
+        for (const part of parts) {
+          if (!current || typeof current !== 'object' || Array.isArray(current)) return '';
+          current = (current as Record<string, Object>)[part];
+        }
+        if (current === undefined || current === null) return '';
+        return typeof current === 'string' ? current as string : JSON.stringify(current);
+      } catch (_) {
+      }
+    }
+    return new AnalyzeRule(value, baseUrl).getString(trailingRule);
+  }
+
   private async parseStageChapterList(source: BookSource, book: Book, raw: string,
-    baseUrl: string): Promise<BookChapter[]> {
+    baseUrl: string, maxItems: number = 0): Promise<BookChapter[]> {
     let values: Object[] = [];
     try {
       const parsed = JSON.parse(raw || '[]') as Object;
@@ -1253,6 +1425,7 @@ export class WebBookService {
       if (!value || typeof value !== 'object' || Array.isArray(value)) continue;
       records.push(value as Record<string, Object>);
       items.push(JSON.stringify(value));
+      if (maxItems > 0 && items.length >= maxItems) break;
     }
     if (items.length === 0) return chapters;
     const ctx = new RuleContext();
@@ -1294,7 +1467,10 @@ export class WebBookService {
       const title = this.cleanChapterTitle(fields['chapterName'] || String(record['title'] || ''));
       let url = fields['chapterUrl'] || String(record['url'] || '');
       if (!title || isVolume || !url) continue;
-      if (!url.startsWith('data:')) url = BookUrlResolver.resolve(url, baseUrl);
+      const virtualPayload = this.ruleExpectsHexDataUrlInput(source.contentRule.content || '') ?
+        this.extractVirtualChapterPayload(url) : '';
+      if (virtualPayload) url = virtualPayload;
+      else if (!url.startsWith('data:')) url = BookUrlResolver.resolve(url, baseUrl);
       const chapter = new BookChapter();
       chapter.title = title;
       chapter.url = url;
@@ -1321,9 +1497,17 @@ export class WebBookService {
     if (!await runtime.waitUntilAvailable()) return '';
     let content = '';
     let baseUrl = chapter.url || book.bookUrl || source.bookSourceUrl;
+    const virtualChapterPayload = this.extractVirtualChapterPayload(chapter.url);
+    console.info('[WS] stage content input:', source.bookSourceName,
+      virtualChapterPayload ? `virtual(${virtualChapterPayload.length})` : `url(${(chapter.url || '').length})`);
     const payload = EncodedSourceUrl.decode(chapter.url);
     if (payload && this.ruleExpectsHexDataUrlInput(rawRule)) {
       content = this.textToHex(payload.text);
+    } else if (this.ruleExpectsHexDataUrlInput(rawRule) && virtualChapterPayload) {
+      // Aggregating sources often return a chapter identity such as
+      // `book_id=...&item_id=...`. It is rule input, not a relative web address. Legado exposes
+      // this value to the content script as bytes; mirror that contract without interpreting it.
+      content = this.textToHex(virtualChapterPayload);
     } else {
       const response = await new AnalyzeUrl(source, this.http).fetch(chapter.url);
       if (!response.success || !response.body) return '';
@@ -1436,6 +1620,27 @@ export class WebBookService {
     return /\bjava\s*\.\s*hexDecodeToString\s*\(\s*(?:String\s*\(\s*)?result\b/.test(rawRule || '');
   }
 
+  private extractVirtualChapterPayload(url: string): string {
+    const value = (url || '').trim();
+    if (!value) return '';
+    // Recover legacy cached values produced by concatenating a virtual data: base directly with
+    // the chapter payload (there may be no slash between the metadata object and the first key).
+    const appended = /(?:^|[}\/])((?:[A-Za-z_$][\w$.-]*=[^&\s]*)(?:&[A-Za-z_$][\w$.-]*=[^&\s]*)*)$/.exec(value);
+    if (appended && appended[1]) return appended[1];
+    let candidate = value;
+    const slash = value.lastIndexOf('/');
+    const tail = slash >= 0 ? value.substring(slash + 1) : '';
+    if (/^(?:[A-Za-z_$][\w$.-]*=[^\s]*)(?:&[A-Za-z_$][\w$.-]*=[^\s]*)*$/.test(tail)) return tail;
+    if (/^https?:/i.test(value)) candidate = tail;
+    if (/^(?:[A-Za-z_$][\w$.-]*=[^\s]*)(?:&[A-Za-z_$][\w$.-]*=[^\s]*)*$/.test(candidate)) {
+      return candidate;
+    }
+    if (!/^(?:https?:|data:|\/|\.\/|\.\.\/)/i.test(candidate) &&
+      ((candidate.startsWith('{') && candidate.endsWith('}')) ||
+        (candidate.startsWith('[') && candidate.endsWith(']')))) return candidate;
+    return '';
+  }
+
   private textToHex(value: string): string {
     const bytes = new util.TextEncoder().encodeInto(value || '');
     let result = '';
@@ -1448,6 +1653,13 @@ export class WebBookService {
     return url.replace(/@get:\{(\w+)\}/g, (_: string, key: string) => {
       return ctx.get(key);
     });
+  }
+
+  private ruleBoolean(value: string): boolean {
+    const normalized = String(value || '').trim().toLowerCase();
+    return normalized === 'true' || normalized === '1' || normalized === 'yes' ||
+      normalized === 'vip' || normalized === 'pay' || normalized === 'paid' ||
+      normalized === '付费' || normalized === '收费';
   }
 
   private getChapterBaseUrl(chapter: BookChapter, book: Book, source: BookSource): string {

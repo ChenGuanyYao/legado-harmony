@@ -65,7 +65,16 @@ export class CooperativeScheduler {
   }
 
   static async yieldToEventLoop(): Promise<void> {
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    // A zero-delay timer may be coalesced into the same native timer task on HarmonyOS and does
+    // not reliably reset the foreground watchdog. One millisecond creates a real scheduling gap.
+    await new Promise<void>((resolve) => setTimeout(resolve, 1));
+  }
+
+  static async yieldToNextUiFrame(): Promise<void> {
+    // Long catalog batches can keep promise continuations inside one native uv_timer_task even
+    // though they contain short zero/one-millisecond yields. Crossing a frame boundary gives
+    // ArkUI and the foreground watchdog an observable scheduling gap.
+    await new Promise<void>((resolve) => setTimeout(resolve, 16));
   }
 
   static reportSynchronousOperation(label: string, elapsedMs: number, detail: string = ''): void {

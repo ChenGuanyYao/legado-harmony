@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="480" viewBox="0 0 480 480">
+  <!-- A quiet wash of morning light, kept in the corner so body text stays clear. -->
+  <path d="M0 0h270C205 31 159 76 126 130 91 187 49 224 0 245Z" fill="#F2E2D2" fill-opacity=".42"/>
+  <path d="M10 154V30q0-20 20-20h132" fill="none" stroke="#C46F45" stroke-opacity=".26" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M10 174c58 0 83-18 111-55" fill="none" stroke="#587E73" stroke-opacity=".20" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Pipi peeks over an open book: large ears, white blaze and calico patches. -->
+  <path d="M42 74 54 23l39 35c13-6 29-6 42 0l40-35 10 52c13 13 20 31 18 50-3 39-36 66-78 66s-75-27-78-66c-2-19 4-37 15-51Z"
+    fill="#F8EEE4" fill-opacity=".78" stroke="#773A2C" stroke-opacity=".38" stroke-width="3" stroke-linejoin="round"/>
+  <path d="m55 39 25 25-31 28Z" fill="#D99086" fill-opacity=".30"/>
+  <path d="m172 39-25 25 32 28Z" fill="#D99086" fill-opacity=".30"/>
+  <path d="M49 78c14-12 31-20 48-23-4 19 1 39 15 53-27 6-49-2-63-30Z" fill="#C46F45" fill-opacity=".25"/>
+  <path d="M138 57c17 4 32 12 43 25-6 19-17 31-35 36 5-23 2-43-8-61Z" fill="#352B27" fill-opacity=".18"/>
+  <path d="M111 58c-7 24-7 48 2 71l14-20 15 20c9-23 8-47 1-71-10-4-22-4-32 0Z" fill="#FFFCF7" fill-opacity=".90"/>
+  <path d="M82 115c9-7 20-7 29 0M143 115c9-7 20-7 29 0" fill="none" stroke="#352B27" stroke-opacity=".56" stroke-width="4" stroke-linecap="round"/>
+  <path d="m127 126-7 6 7 5 7-5Z" fill="#D99086" fill-opacity=".72"/>
+  <path d="M127 137c-1 9-7 13-15 13m15-13c1 9 7 13 15 13" fill="none" stroke="#773A2C" stroke-opacity=".42" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M104 135H61m42 9-45 8m92-17h43m-42 9 45 8" fill="none" stroke="#773A2C" stroke-opacity=".24" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Open book protects the illustration from becoming a cartoon sticker. -->
+  <path d="M25 176c33-17 70-17 102 4 32-21 69-21 103-4l-6 65c-34-11-66-6-97 13-31-19-63-24-97-13Z"
+    fill="#FFF9F0" fill-opacity=".86" stroke="#C46F45" stroke-opacity=".34" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M127 181v73M40 191c28-9 54-5 76 8m-78 14c29-8 54-3 77 10m99-32c-28-9-54-5-76 8m78 14c-29-8-54-3-77 10"
+    fill="none" stroke="#806E65" stroke-opacity=".22" stroke-width="2" stroke-linecap="round"/>
+  <path d="M128 254c21 25 51 39 78 23 21-12 21-39 2-47-16-7-30 8-22 21 7 12 29 7 42-5"
+    fill="none" stroke="#C46F45" stroke-opacity=".40" stroke-width="7" stroke-linecap="round"/>
+  <path d="M128 254v52" fill="none" stroke="#D99086" stroke-opacity=".34" stroke-width="5" stroke-linecap="round"/>
+  <path d="m128 306-10-13h20Z" fill="#D99086" fill-opacity=".40"/>
+
+  <!-- A sparse paw trail finishes the diagonal without entering the reading area. -->
+  <g fill="#D99086" fill-opacity=".34">
+    <ellipse cx="51" cy="304" rx="10" ry="12" transform="rotate(-24 51 304)"/>
+    <circle cx="31" cy="288" r="5"/><circle cx="44" cy="281" r="5"/><circle cx="59" cy="283" r="5"/>
+    <ellipse cx="92" cy="343" rx="8" ry="10" transform="rotate(-24 92 343)"/>
+    <circle cx="76" cy="330" r="4"/><circle cx="87" cy="325" r="4"/><circle cx="99" cy="328" r="4"/>
+  </g>
+  <g fill="#C46F45" fill-opacity=".22">
+    <circle cx="215" cy="49" r="4"/><circle cx="235" cy="70" r="2.5"/><circle cx="250" cy="38" r="2"/>
+  </g>
+</svg>

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="480" viewBox="0 0 480 480">
+  <path d="M480 480H205c73-38 119-88 151-149 28-53 68-92 124-117Z" fill="#F2E2D2" fill-opacity=".44"/>
+  <path d="M470 326v124q0 20-20 20H318" fill="none" stroke="#C46F45" stroke-opacity=".26" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M470 306c-58 0-83 18-111 55" fill="none" stroke="#587E73" stroke-opacity=".20" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Pipi curls up beside the last line, like a quiet reading companion. -->
+  <path d="M286 377c0-52 42-91 98-91 47 0 82 31 82 76 0 57-50 91-114 79-42-8-66-29-66-64Z"
+    fill="#F8EEE4" fill-opacity=".76" stroke="#773A2C" stroke-opacity=".36" stroke-width="3"/>
+  <path d="M296 365c10-42 47-69 91-69-4 23-18 46-40 63-17 13-34 17-51 6Z" fill="#C46F45" fill-opacity=".25"/>
+  <path d="M389 298c32 3 58 25 67 55-26 9-48 4-65-16-11-13-12-26-2-39Z" fill="#352B27" fill-opacity=".18"/>
+  <path d="M301 358 287 318l42 20m85-30 33-24-4 45" fill="#F8EEE4" fill-opacity=".80" stroke="#773A2C" stroke-opacity=".34" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M369 325c-18 8-32 23-37 43 21-5 40-5 58 1-2-19-9-34-21-44Z" fill="#FFFCF7" fill-opacity=".86"/>
+  <path d="M330 375c7-5 15-5 22 0m35 0c7-5 15-5 22 0" fill="none" stroke="#352B27" stroke-opacity=".50" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="m370 384-6 5 6 5 6-5Z" fill="#D99086" fill-opacity=".70"/>
+  <path d="M370 394c-1 7-6 10-12 10m12-10c1 7 6 10 12 10" fill="none" stroke="#773A2C" stroke-opacity=".40" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M292 411c-24 15-25 42-2 51 31 13 74-3 92-30 12-18 7-38-8-42-13-3-22 11-15 21 7 10 25 4 35-8"
+    fill="none" stroke="#C46F45" stroke-opacity=".40" stroke-width="7" stroke-linecap="round"/>
+
+  <path d="M252 429c34-12 70-10 104 8 34-18 70-20 104-8l-5 35c-34-8-66-4-99 12-33-16-65-20-99-12Z"
+    fill="#FFF9F0" fill-opacity=".88" stroke="#C46F45" stroke-opacity=".32" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M356 438v38M270 443c26-5 50-1 73 9m99-9c-26-5-50-1-73 9" fill="none" stroke="#806E65" stroke-opacity=".20" stroke-width="2" stroke-linecap="round"/>
+
+  <g fill="#D99086" fill-opacity=".32">
+    <ellipse cx="250" cy="331" rx="9" ry="11" transform="rotate(26 250 331)"/>
+    <circle cx="232" cy="316" r="4.5"/><circle cx="244" cy="309" r="4.5"/><circle cx="258" cy="311" r="4.5"/>
+  </g>
+  <g fill="#C46F45" fill-opacity=".20"><circle cx="425" cy="251" r="4"/><circle cx="447" cy="269" r="2.5"/><circle cx="454" cy="239" r="2"/></g>
+</svg>

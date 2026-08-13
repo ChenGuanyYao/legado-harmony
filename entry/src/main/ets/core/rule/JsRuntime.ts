@@ -2,6 +2,7 @@ import { util } from '@kit.ArkTS';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { CookieStore } from '../http/CookieStore';
 import { JsonPathEvaluator } from './JsonPathEvaluator';
+import { QuickJsShadowComparator } from '../script/QuickJsScriptRuntime';
 
 export class JsRuntime {
   private vars: Record<string, string> = {};
@@ -25,12 +26,19 @@ export class JsRuntime {
   evaluate(expression: string, result: string = ''): string {
     this.vars['result'] = result;
     this.setJsonContext(result);
-    return this.evalExpr(expression.replace(/^\s*(?:return\s+)?/, '').replace(/;\s*$/, ''));
+    const legacyValue = this.evalExpr(expression.replace(/^\s*(?:return\s+)?/, '').replace(/;\s*$/, ''));
+    QuickJsShadowComparator.compare(expression, this.vars, legacyValue);
+    return legacyValue;
   }
 
   evalTemplate(tpl: string): string {
     if (!tpl.includes('{{')) return tpl;
-    return tpl.replace(/\{\{([\s\S]*?)\}\}/g, (_: string, expr: string) => this.evalExpr(expr.trim()));
+    return tpl.replace(/\{\{([\s\S]*?)\}\}/g, (_: string, expr: string) => {
+      const expression = expr.trim();
+      const legacyValue = this.evalExpr(expression);
+      QuickJsShadowComparator.compare(expression, this.vars, legacyValue);
+      return legacyValue;
+    });
   }
 
   private evalExpr(expr: string): string {
@@ -109,7 +117,11 @@ export class JsRuntime {
         expr = expr.replace(new RegExp('\\b' + k + '\\b', 'g'), replacement);
       }
 
-      if (/^[\d\s+\-*/%.()]+$/.test(expr)) {
+      const truncateMatch = expr.match(/^~~\(([\s\S]+)\)$/);
+      if (truncateMatch && truncateMatch[1]) {
+        return String(Math.trunc(this.evalNumber(truncateMatch[1])));
+      }
+      if (/^[\d\s+\-*/%.()eE]+$/.test(expr)) {
         return String(this.evalNumber(expr));
       }
 
@@ -370,10 +382,13 @@ export class JsRuntime {
       const ch = text.charAt(i);
       if ((ch >= '0' && ch <= '9') || ch === '.' ||
         (ch === '-' && (i === 0 || this.isOperator(text.charAt(i - 1)) || text.charAt(i - 1) === '('))) {
-        let j = i + 1;
-        while (j < text.length && /[\d.]/.test(text.charAt(j))) j++;
-        values.push(Number(text.substring(i, j)));
-        i = j;
+        const numberMatch = text.substring(i).match(/^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+\-]?\d+)?/);
+        if (!numberMatch || !numberMatch[0]) {
+          i++;
+          continue;
+        }
+        values.push(Number(numberMatch[0]));
+        i += numberMatch[0].length;
         continue;
       }
       if (ch === '(') ops.push(ch);

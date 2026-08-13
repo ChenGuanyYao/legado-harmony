@@ -17,10 +17,7 @@ export class EncodedSourcePayload {
 export class EncodedSourceUrl {
   static isEncodedDataUrl(url: string): boolean {
     const value = url || '';
-    return value.startsWith('data:;base64,') ||
-      value.startsWith('data:detailsUrl;base64,') ||
-      value.startsWith('data:catalogUrl;base64,') ||
-      value.startsWith('data:contentUrl;base64,');
+    return value.startsWith('data:;base64,') || /^data:[A-Za-z][A-Za-z0-9_-]*;base64,/.test(value);
   }
 
   static decode(url: string): EncodedSourcePayload | null {
@@ -101,6 +98,33 @@ export class EncodedSourceUrl {
     return `data:;base64,${encoded},${options}`;
   }
 
+  /**
+   * Some imported rules construct a virtual detail or catalog URL before the ordinary book fields have
+   * been committed. Keep the source-defined request intact, but supply the already known book
+   * name when the encoded identity is missing. This is metadata bridging only: the app still
+   * executes the imported source's catalog rule and does not know any site endpoint or protocol.
+   */
+  static repairBookName(url: string, bookName: string, expectedType: string = ''): string {
+    const payload = EncodedSourceUrl.decode(url || '');
+    const fallback = EncodedSourceUrl.str(bookName);
+    if (!payload || (expectedType && payload.type !== expectedType) || !fallback ||
+      /^(?:undefined|null)$/i.test(fallback)) return url;
+    const current = EncodedSourceUrl.str(payload.data['name']);
+    if (current && current.toLowerCase() !== 'undefined' && current.toLowerCase() !== 'null') return url;
+
+    const prefix = EncodedSourceUrl.dataUrlPrefix(url);
+    if (!prefix.prefix) return url;
+    const rest = url.substring(prefix.prefix.length);
+    const split = EncodedSourceUrl.splitPayload(rest);
+    payload.data['name'] = fallback;
+    const encoded = EncodedSourceUrl.base64Encode(JSON.stringify(payload.data));
+    return `${prefix.prefix}${encoded}${split[1] ? `,${split[1]}` : ''}`;
+  }
+
+  static repairCatalogBookName(url: string, bookName: string): string {
+    return EncodedSourceUrl.repairBookName(url, bookName, 'catalog');
+  }
+
   static str(value: EncodedJsonValue | undefined): string {
     if (value === undefined || value === null) return '';
     return String(value).trim();
@@ -170,14 +194,12 @@ export class EncodedSourceUrl {
 
   private static dataUrlPrefix(url: string): { prefix: string, type: string } {
     if ((url || '').startsWith('data:;base64,')) return { prefix: 'data:;base64,', type: '' };
-    if ((url || '').startsWith('data:detailsUrl;base64,')) {
-      return { prefix: 'data:detailsUrl;base64,', type: 'details' };
-    }
-    if ((url || '').startsWith('data:catalogUrl;base64,')) {
-      return { prefix: 'data:catalogUrl;base64,', type: 'catalog' };
-    }
-    if ((url || '').startsWith('data:contentUrl;base64,')) {
-      return { prefix: 'data:contentUrl;base64,', type: 'content' };
+    const named = /^data:([A-Za-z][A-Za-z0-9_-]*);base64,/.exec(url || '');
+    if (named && named[0] && named[1]) {
+      const declared = named[1].replace(/Url$/i, '').toLowerCase();
+      const type = declared === 'details' ? 'details' :
+        (declared === 'catalog' ? 'catalog' : (declared === 'content' ? 'content' : declared));
+      return { prefix: named[0], type: type };
     }
     return { prefix: '', type: '' };
   }
