@@ -11,7 +11,7 @@ class ExploreCacheEntry {
 }
 
 class ExploreCachePayload {
-  version: number = 2;
+  version: number = 3;
   entries: ExploreCacheEntry[] = [];
 }
 
@@ -23,7 +23,10 @@ export class ExploreCacheHit {
 }
 
 export class ExploreResultCache {
-  private static readonly SCHEMA_VERSION: number = 2;
+  // v3 invalidates entries created before source-script cookie/auth refresh was
+  // supported. Those entries may contain short-lived signed book URLs which
+  // can still render in discovery but fail when the user opens the detail page.
+  private static readonly SCHEMA_VERSION: number = 3;
   private static readonly STORE_NAME: string = 'explore_result_cache';
   private static readonly CACHE_KEY: string = 'entries';
   private static readonly TTL_MS: number = 24 * 60 * 60 * 1000;

@@ -244,7 +244,10 @@ export class WebBookService {
     let currentResp = resp;
     let firstBody = resp.body;
     let firstBaseUrl = BookUrlResolver.effectiveBase(resp, tocUrl, book.bookUrl || source.bookSourceUrl);
-    for (let page = 0; page < 100; page++) {
+    // Pagination is already protected by seenPageUrls and the optional chapterLimit. The old
+    // 100-page ceiling truncated long novels at roughly 2,000 chapters (20 chapters/page).
+    // Keep a generous abuse guard while allowing common 4,000–10,000 chapter catalogs.
+    for (let page = 0; page < 1000; page++) {
       if (!currentResp.success || !currentResp.body) break;
       const pageKey = this.urlWithoutFragment(currentResp.url || currentUrl);
       if (seenPageUrls.has(pageKey)) break;
@@ -1503,6 +1506,11 @@ export class WebBookService {
     const payload = EncodedSourceUrl.decode(chapter.url);
     if (payload && this.ruleExpectsHexDataUrlInput(rawRule)) {
       content = this.textToHex(payload.text);
+    } else if (payload) {
+      // A source-defined data URL is an opaque chapter descriptor. Legado exposes its decoded
+      // identity to the content script; it must never be sent to the native HTTP client as if it
+      // were a remote URL. Keep baseUrl unchanged so scripts can still read the full descriptor.
+      content = payload.text || virtualChapterPayload || chapter.url;
     } else if (this.ruleExpectsHexDataUrlInput(rawRule) && virtualChapterPayload) {
       // Aggregating sources often return a chapter identity such as
       // `book_id=...&item_id=...`. It is rule input, not a relative web address. Legado exposes
@@ -1617,7 +1625,13 @@ export class WebBookService {
   }
 
   private ruleExpectsHexDataUrlInput(rawRule: string): boolean {
-    return /\bjava\s*\.\s*hexDecodeToString\s*\(\s*(?:String\s*\(\s*)?result\b/.test(rawRule || '');
+    const rule = rawRule || '';
+    if (/\bjava\s*\.\s*hexDecodeToString\s*\(\s*(?:String\s*\(\s*)?result\b/.test(rule)) return true;
+    // Packed source scripts commonly rename `result` before calling the decoder. The content
+    // field still receives the same Legado byte-string contract, so presence of the decoder in
+    // an executable JS content rule is the reliable capability signal.
+    return /\bhexDecodeToString\b/.test(rule) &&
+      /(?:<js>|@js:|\beval\s*\()/i.test(rule);
   }
 
   private extractVirtualChapterPayload(url: string): string {

@@ -62,6 +62,7 @@ export struct SearchBookResultList {
   private coverCache: Map<string, string> = new Map<string, string>();
   onOpenBook: SearchBookAction = (_book: SearchBook) => {};
   onToggleShelf: SearchBookAction = (_book: SearchBook) => {};
+  onNeedMetadata: SearchBookAction = (_book: SearchBook) => {};
   onReachEnd: () => void = () => {};
 
   aboutToAppear(): void {
@@ -138,6 +139,11 @@ export struct SearchBookResultList {
             this.onOpenBook(book);
           })
         }
+        .onAppear(() => {
+          if (!this.safeText(book.author, '') || (this.showResultCover && !this.safeText(book.coverUrl, ''))) {
+            this.onNeedMetadata(book);
+          }
+        })
       }, (book: SearchBook) => this.itemKey(book))
 
       if (this.showLoadingMore) {

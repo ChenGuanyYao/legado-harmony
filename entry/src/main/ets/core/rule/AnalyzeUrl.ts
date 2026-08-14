@@ -416,7 +416,9 @@ export class AnalyzeUrl {
       headers: merged,
       body: this.config.body,
       charset: this.config.charset,
-      useCookieJar: this.source ? this.source.enabledCookieJar !== false : true
+      useCookieJar: this.source ? this.source.enabledCookieJar !== false : true,
+      useWebView: this.config.useWebView,
+      webJs: this.config.webJs || undefined
     };
     if (this.config.rawBody && this.config.body) {
       const charset = this.normalizeCharset(this.config.charset || 'utf-8');

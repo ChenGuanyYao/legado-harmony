@@ -141,10 +141,18 @@ export class BookDisplayHelper {
     const pieces = normalized.split(',');
     for (const piece of pieces) {
       const tag = piece.trim();
-      if (tag && !target.includes(tag)) {
+      // Some aggregate sources put an update timestamp, a play count or an internal id in
+      // `kind`.  Those values have no label once rendered as a tag and used to show up as chips
+      // such as "1928748800".  Keep meaningful short numeric values (for example a 9.4 score),
+      // but do not expose an unlabelled long integer as a category.
+      if (tag && !BookDisplayHelper.isUnlabelledLongNumber(tag) && !target.includes(tag)) {
         target.push(tag);
       }
     }
+  }
+
+  private static isUnlabelledLongNumber(value: string): boolean {
+    return /^\d{7,}$/.test(value);
   }
 
   private static extractLastUpdateText(raw: string): string {

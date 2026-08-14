@@ -8,6 +8,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 import { SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
+import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
 import picker from '@ohos.file.picker';
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
@@ -322,6 +323,7 @@ struct BookSourcePage {
 
   build() {
     Stack({ alignContent: Alignment.BottomEnd }) {
+      WebBookFetchRuntimeHost()
       Column() {
         Column() {
           Row() {
@@ -4309,6 +4311,10 @@ struct BookSourcePage {
       this.snapshotLoginRuntimeRequestCookie(step.pendingAjax);
       const response = await this.fetchLoginRuntimeRequest(requestSource, step.pendingAjax);
       if (!this.loginRuntimeActive) return;
+      if (!response.success && response.statusCode === 521) {
+        this.finishLoginRuntime(null, '接口请求失败（HTTP 521）：服务端源站当前离线，请稍后重试');
+        return;
+      }
       if (!response.success && !response.body) {
         this.finishLoginRuntime(null, response.error || `HTTP ${response.statusCode}`);
         return;
@@ -4525,7 +4531,15 @@ struct BookSourcePage {
 
   snapshotLoginRuntimeRequestCookie(requestUrl: string): void {
     const match = (requestUrl || '').match(/^https?:\/\/[^\s,]+/i);
-    if (match && match[0]) this.snapshotLoginRuntimeCookie(match[0]);
+    if (!match || !match[0]) return;
+    const url = match[0];
+    this.snapshotLoginRuntimeCookie(url);
+    if (!this.loginRuntimeCookieUrls.includes(url)) this.loginRuntimeCookieUrls.push(url);
+    const origin = url.match(/^(https?:\/\/[^/?#]+)/i);
+    if (origin && origin[1] && !this.loginRuntimeCookieUrls.includes(origin[1])) {
+      this.snapshotLoginRuntimeCookie(origin[1]);
+      this.loginRuntimeCookieUrls.push(origin[1]);
+    }
   }
 
   rollbackLoginRuntimeCookies(): void {

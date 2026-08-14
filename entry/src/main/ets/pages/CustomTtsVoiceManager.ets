@@ -423,6 +423,24 @@ struct CustomTtsVoiceManagerPage {
     this.saveVoiceEditDraft();
   }
 
+  openCreateVoiceDialog(): void {
+    FormDraftStore.removePersistent(getContext(this), 'custom_tts:edit');
+    this.editingVoiceId = '';
+    this.editName = '';
+    this.editUrl = '';
+    this.editContentType = '';
+    this.editConcurrentRate = '';
+    this.editLoginUrl = '';
+    this.editLoginUi = '';
+    this.editLoginCheckJs = '';
+    this.editHeader = '';
+    this.editJsLib = '';
+    this.editJsEngine = '';
+    this.editEnabledCookieJar = false;
+    this.showEditDialog = true;
+    this.saveVoiceEditDraft();
+  }
+
   closeEditDialog(): void {
     this.showEditDialog = false;
     this.editingVoiceId = '';
@@ -505,6 +523,27 @@ struct CustomTtsVoiceManagerPage {
       return;
     }
     const targetId = this.editingVoiceId;
+    if (!targetId) {
+      const voice = new HttpTTS();
+      voice.id = Date.now();
+      voice.name = name;
+      voice.url = url;
+      voice.contentType = this.editContentType.trim();
+      voice.concurrentRate = this.editConcurrentRate.trim();
+      voice.loginUrl = this.editLoginUrl.trim();
+      voice.loginUi = this.editLoginUi.trim();
+      voice.loginCheckJs = this.editLoginCheckJs.trim();
+      voice.header = this.editHeader.trim();
+      voice.jsLib = this.editJsLib.trim() || this.editJsEngine.trim();
+      voice.jsEngine = this.editJsEngine.trim() || voice.jsLib;
+      voice.enabledCookieJar = this.editEnabledCookieJar;
+      voice.lastUpdateTime = Date.now();
+      this.voices = [...this.voices, voice];
+      this.saveSettings();
+      this.closeEditDialog();
+      promptAction.showToast({ message: '已新建音色' });
+      return;
+    }
     this.voices = this.voices.map((voice: HttpTTS) => {
       if (String(voice.id) === targetId) {
         voice.name = name;
@@ -1164,6 +1203,10 @@ struct CustomTtsVoiceManagerPage {
         })
 
       Column() {
+        this.addVoiceMenuItem('手动新建', () => {
+          this.showAddDialog = false;
+          this.openCreateVoiceDialog();
+        })
         this.addVoiceMenuItem('从 URL 导入', () => {
           this.showAddDialog = false;
           this.importUrl = '';
@@ -1268,7 +1311,7 @@ struct CustomTtsVoiceManagerPage {
   editVoiceDialog() {
     Column() {
       Column() {
-        Text('编辑自定义音色')
+        Text(this.editingVoiceId ? '编辑自定义音色' : '新建自定义音色')
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())

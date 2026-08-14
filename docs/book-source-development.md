@@ -295,8 +295,8 @@
 | `headers` | 本次请求头；同名项覆盖书源全局请求头。 |
 | `retry` | 响应不可用时的额外重试次数。 |
 | `type` | 会被解析并保存到请求配置，当前 HTTP 执行链没有额外分支行为。 |
-| `webView` | 会被解析为布尔值，当前通用请求仍走 HTTP 客户端。 |
-| `webJs` | 会被解析并保存，当前通用请求不会执行。 |
+| `webView` | 为 `true` 时，GET/POST 请求交给隐藏 ArkWeb，沿用书源 URL、Cookie 与 UA（GET 也传入额外 Header），等待页面脚本渲染稳定后返回 DOM。 |
+| `webJs` | 与 `webView: true` 配合，在已加载页面上下文执行；有效返回值作为响应正文，否则使用页面 DOM。 |
 
 选项对象支持单引号、无引号键和尾逗号等宽松写法，但推荐使用标准 JSON，减少转义差异。
 
@@ -928,9 +928,9 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 | --- | --- |
 | 通用链已实际使用 | 搜索/发现的列表、书名、作者、封面、简介、分类、最新章节、详情 URL；`jsLib` URL 构建和持久化源变量；分阶段 ArkWeb；动态登录输入/开关/选择/按钮、同站点 Cookie、书源内加密、浏览器等待；详情 `init`、书籍字段、目录 URL；目录列表、章节名、章节 URL、下一页、VIP、更新时间；正文内容、图片、图片请求头、书源规则内图片解码、漫画模式、下一页、净化正则和 JS；普通书/漫画/有声书类型；书源请求限流。 |
 | 编码数据已实际使用 | 标准 `data:` 文本、Base64 负载，以及带明确 HTTP(S) URL 的通用 `type: "request"` 请求描述。应用不提供平台协议、候选后端或站点专用转换。 |
-| 可导入/编辑，但通用链目前未消费 | 详情 `updateTime`；目录 `isPay`；正文 `title`；非登录请求的 `webView`、`webJs` URL 选项。 |
+| 可导入/编辑，但通用链目前未消费 | 详情 `updateTime`；目录 `isPay`；正文 `title`。 |
 | 模型或紧凑格式存在，但通用导入/UI/执行不完整 | `chapterListAddition`、`payAction`、`bookListRule` 等。 |
-| 不应假定与 Android 版等价 | 任意 Java/Android 类导入、全部 `java.*` API、浏览器直连网络、任意 WebView DOM 抓取、完整 XPath/CSS、付费购买动作及非白名单二进制解码流程。 |
+| 不应假定与 Android 版等价 | 任意 Java/Android 类导入、全部 `java.*` API、完整 XPath/CSS、付费购买动作、交互式验证码自动处理及非白名单二进制解码流程。 |
 
 ### 通用兜底边界
 
@@ -944,7 +944,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 2. 删除当前不需要的字段，先验证最小链路；
 3. 将复杂 XPath 改为 JSONPath/CSS；
 4. 简单 JS 优先改为模板或 `##`；确需完整语义时确认该阶段已路由 ArkWeb，且只调用已桥接主机方法；
-5. 普通搜索/目录/正文的 WebView 抓取仍优先改成 HTTP 接口；登录动作可使用已支持的 `startBrowserAwait`/`java.webView`；
+5. 普通 HTTP 可直接完成时优先使用 HTTP；页面必须执行脚本时可在该 URL 选项设置 `webView: true`，交互式验证码仍通过验证页由用户完成；
 6. 对登录、Cookie、加密源逐项实机验证；
 7. 对普通书、漫画、有声书和段评分别验证正文后处理与播放器；
 8. 不以“导入成功”或“校验通过”作为全链路兼容的证明。

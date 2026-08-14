@@ -25,6 +25,13 @@ export class VerificationSupport {
   }
 
   static shouldRequestBrowserVerification(source: BookSource, body: string, statusCode: number, rule?: string): boolean {
+    // A JSON API authentication error is not an HTML browser challenge. Opening ArkWeb for
+    // responses such as {"message":"...","status":"10003"} hides the real credential
+    // problem and cannot repair it. Likewise Cloudflare 521 means its origin is unavailable,
+    // not that the client has a challenge to complete.
+    if (this.isStructuredApiResponse(body) || statusCode === 521) {
+      return false;
+    }
     if (statusCode >= 200 && statusCode < 300 && this.looksLikeExpectedListResponse(source, body)) {
       return false;
     }
@@ -44,6 +51,19 @@ export class VerificationSupport {
       return true;
     }
     return !this.looksLikeApiSource(source);
+  }
+
+  private static isStructuredApiResponse(body: string): boolean {
+    const value = (body || '').trim();
+    if (!value || value.length > 64 * 1024 ||
+      !((value.startsWith('{') && value.endsWith('}')) ||
+        (value.startsWith('[') && value.endsWith(']')))) return false;
+    try {
+      const parsed = JSON.parse(value) as Object;
+      return parsed !== null && typeof parsed === 'object';
+    } catch (_) {
+      return false;
+    }
   }
 
   static requestVerification(url: string, title: string, source?: BookSource): void {

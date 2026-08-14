@@ -14,6 +14,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { SearchBookShelfHelper } from '../utils/SearchBookShelfHelper';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
+import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
 
 @Entry
 @Component
@@ -93,6 +94,7 @@ struct SearchBookDetailPage {
 
   build() {
     Stack() {
+      WebBookFetchRuntimeHost()
       Column() {
         Scroll() {
           Column() {

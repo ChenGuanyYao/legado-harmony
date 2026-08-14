@@ -107,7 +107,11 @@ export class BookSourceLoginWebRuntime {
       `getLoginHeader:function(){return S.loginHeader||'';},` +
       `putLoginHeader:function(v){S.loginHeader=String(v??'');return S.loginHeader;},` +
       `removeLoginHeader:function(){S.loginHeader='';return '';},` +
-      `getLoginHeaderMap:function(){try{return JSON.parse(S.loginHeader||'{}');}catch(e){return null;}},` +
+      `getLoginHeaderMap:function(){if(!S.loginHeader)return null;let v;try{v=JSON.parse(S.loginHeader);}catch(e){return null;}` +
+      `if(!v||typeof v!=='object'||Array.isArray(v)||Object.keys(v).length===0)return null;for(const k of Object.keys(v)){` +
+      `const m=String(v[k]??'').match(/^Bearer\\s+([A-Za-z0-9_-]+)\\.([A-Za-z0-9_-]+)\\./i);if(!m)continue;try{` +
+      `let p=m[2].replace(/-/g,'+').replace(/_/g,'/');while(p.length%4)p+='=';const d=JSON.parse(b64d(p)||'{}');` +
+      `if(Number(d.exp||0)>0&&Number(d.exp)*1000<=Number(S.fixedNow)+30000)return null;}catch(e){}}return v;},` +
       `getHeaderMap:function(){try{return JSON.parse(S.sourceHeader||'{}');}catch(e){return {};}} ,` +
       `getLoginInfoMap:function(){return loginMap;},` +
       `getLoginInfo:function(k){return arguments.length?(k?loginMap[k]||'':''):JSON.stringify(loginMap);},` +
@@ -153,10 +157,17 @@ export class BookSourceLoginWebRuntime {
       `function requestSpec(method,u,b,h){const options={method:String(method||'GET').toUpperCase()};` +
       `if(b!==undefined&&b!==null)options.body=typeof b==='string'?b:JSON.stringify(b);` +
       `if(h&&typeof h==='object')options.headers=h;return String(u??'')+','+JSON.stringify(options);}` +
+      `function specUrl(v){v=String(v??'');const i=v.indexOf(',{');return i>0?v.substring(0,i):v;}` +
+      `function responseCookieList(v){const ignored={path:1,domain:1,expires:1,'max-age':1,secure:1,httponly:1,samesite:1,priority:1};` +
+      `const values=[];const seen={};const re=/(?:^|[;,\\r\\n]\\s*)([A-Za-z0-9_.-]+)=([^;,\\r\\n]*)/g;let m;` +
+      `while((m=re.exec(String(v??'')))!==null){const n=m[1],k=n.toLowerCase();if(ignored[k]||seen[k])continue;` +
+      `seen[k]=1;values.push(n+'='+String(m[2]??'').trim());}return values.join(', ');}` +
       `function responseObject(v){v=String(v??'');let body='';` +
       `if(Object.prototype.hasOwnProperty.call(S.responses,v))body=S.responses[v]??'';else if(!pending)pending=v;` +
       `return {body:function(){return body;},code:function(){return body?200:599;},` +
-      `isSuccessful:function(){return !!body;},headers:function(){return {};},toString:function(){return body;}};}` +
+      `isSuccessful:function(){return !!body;},headers:function(){return {};},cookies:function(){const u=specUrl(v);` +
+      `const c=responseCookieList(cookieData[u]);return {toString:function(){return c;},size:function(){return c?c.split(',').length:0;}};},` +
+      `toString:function(){return body;}};}` +
       `function cryptoOp(transformation,key,iv,method,data){const request=JSON.stringify({` +
       `transformation:String(transformation??''),key:Array.isArray(key)?key:String(key??''),` +
       `iv:Array.isArray(iv)?iv:String(iv??''),method:method,data:Array.isArray(data)?data:String(data??'')});` +
@@ -193,7 +204,8 @@ export class BookSourceLoginWebRuntime {
       `if(!pending)pending=v;return '{"code":599,"message":"pending","data":null}';},` +
       `ajaxAll:function(v){const list=Array.isArray(v)?v:[v];return list.map(responseObject);},` +
       `post:function(u,b,h){return responseObject(requestSpec('POST',u,b,h));},` +
-      `put:function(k,v){vars[k]=v;return v;},get:function(k){` +
+      `put:function(k,v){vars[k]=v;return v;},get:function(k,h){if(arguments.length>1)` +
+      `return responseObject(requestSpec('GET',k,null,h));k=String(k??'');` +
       `return Object.prototype.hasOwnProperty.call(vars,k)?vars[k]:null;},` +
       `toast:function(v){toast=String(v??'');return toast;},longToast:function(v){toast=String(v??'');return toast;},` +
       `upLoginData:function(v){if(v&&typeof v==='object')Object.keys(v).forEach(function(k){` +

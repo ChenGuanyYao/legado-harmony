@@ -2371,7 +2371,7 @@ export class AnalyzeRule {
       return prefix + this.jsonValueToString(v);
     });
 
-    const jsIndex = result.indexOf('@js:');
+    const jsIndex = this.findTopLevelProcessor(result, '@js:');
     if (jsIndex > 0) {
       result = result.substring(0, jsIndex);
     }
@@ -2439,13 +2439,13 @@ export class AnalyzeRule {
 
   private stripProcessor(rule: string): string {
     // 先去除 @js: 后缀（如 $.path@js:java.aesBase64DecodeToString(...)）
-    const jsSuf = rule.indexOf('@js:');
+    const jsSuf = this.findTopLevelProcessor(rule, '@js:');
     let effective = rule;
     if (jsSuf > 0) {
       effective = rule.substring(0, jsSuf);
     }
 
-    const i = effective.indexOf('##');
+    const i = this.findTopLevelProcessor(effective, '##');
     if (i < 0) return effective;
 
     // @put: 和 @get: 标记
@@ -2453,6 +2453,24 @@ export class AnalyzeRule {
       return rule; // 保留完整规则，由上层处理
     }
     return effective.substring(0, i);
+  }
+
+  private findTopLevelProcessor(rule: string, marker: string): number {
+    let templateDepth = 0;
+    for (let i = 0; i <= rule.length - marker.length; i++) {
+      if (rule.substring(i, i + 2) === '{{') {
+        templateDepth++;
+        i++;
+        continue;
+      }
+      if (rule.substring(i, i + 2) === '}}' && templateDepth > 0) {
+        templateDepth--;
+        i++;
+        continue;
+      }
+      if (templateDepth === 0 && rule.substring(i, i + marker.length) === marker) return i;
+    }
+    return -1;
   }
 
   private applyProcessor(value: string, rule: string): string {
@@ -2468,9 +2486,9 @@ export class AnalyzeRule {
     // JS segment before parsing the replacement rule so its code cannot leak into
     // the replacement text (or consume a following `##` segment).
     let replacementRule = rule;
-    const jsIndex = rule.indexOf('@js:');
+    const jsIndex = this.findTopLevelProcessor(rule, '@js:');
     if (jsIndex > 0) {
-      const replacementIndex = rule.indexOf('##');
+      const replacementIndex = this.findTopLevelProcessor(rule, '##');
       let jsCode = '';
       if (replacementIndex > jsIndex) {
         jsCode = rule.substring(jsIndex + 4, replacementIndex).trim();
@@ -2503,8 +2521,20 @@ export class AnalyzeRule {
   private splitReplacementRule(rule: string): string[] {
     const parts: string[] = [];
     let start = 0;
+    let templateDepth = 0;
     for (let i = 0; i < rule.length - 1; i++) {
-      if (rule.charAt(i) === '#' && rule.charAt(i + 1) === '#' && rule.charAt(i - 1) !== '\\') {
+      if (rule.substring(i, i + 2) === '{{') {
+        templateDepth++;
+        i++;
+        continue;
+      }
+      if (rule.substring(i, i + 2) === '}}' && templateDepth > 0) {
+        templateDepth--;
+        i++;
+        continue;
+      }
+      if (templateDepth === 0 && rule.charAt(i) === '#' && rule.charAt(i + 1) === '#' &&
+        rule.charAt(i - 1) !== '\\') {
         parts.push(rule.substring(start, i).replace(/\\##/g, '##'));
         start = i + 2;
         i++;

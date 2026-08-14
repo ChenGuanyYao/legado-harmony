@@ -19,6 +19,7 @@ import { BookSourceStageWebRuntime } from '../core/book/BookSourceStageWebRuntim
 import { ReadBookEngine } from '../core/book/ReadBookEngine';
 import { SearchBookResultList } from '../components/book/SearchBookResultList';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
 import { syncSystemSafeAreas } from '../utils/SystemBars';
 import { RecentReadShortcut } from '../utils/RecentReadShortcut';
 import { BookDisplayHelper } from '../utils/BookDisplayHelper';
@@ -156,6 +157,33 @@ class ShelfTileEntryDataSource implements IDataSource {
     this.entries = [...entries];
     for (const listener of this.listeners) listener.onDataReloaded();
   }
+}
+
+class ExploreSourceOptionDataSource implements IDataSource {
+  private options: ExploreSourceOption[] = [];
+  private listeners: DataChangeListener[] = [];
+
+  totalCount(): number { return this.options.length; }
+  getData(index: number): ExploreSourceOption { return this.options[index]; }
+
+  registerDataChangeListener(listener: DataChangeListener): void {
+    if (!this.listeners.includes(listener)) this.listeners.push(listener);
+  }
+
+  unregisterDataChangeListener(listener: DataChangeListener): void {
+    const index = this.listeners.indexOf(listener);
+    if (index >= 0) this.listeners.splice(index, 1);
+  }
+
+  replace(options: ExploreSourceOption[]): void {
+    this.options = options.slice();
+    for (const listener of this.listeners) listener.onDataReloaded();
+  }
+}
+
+class ExploreMetadataTask {
+  book: SearchBook = new SearchBook();
+  loadVersion: number = 0;
 }
 
 @Entry
@@ -468,6 +496,7 @@ struct Index {
             BookSourceStageWebRuntime.get().setReady(true, this.stageRuntimeController);
           })
       }
+      WebBookFetchRuntimeHost()
     }
     .width('100%')
     .height('100%')
@@ -1482,6 +1511,7 @@ struct BookshelfPage {
   private openingBookOriginY: number = 0;
   private networkCoverCoordinator: SearchCoordinator | null = null;
   private networkCoverSearchToken: number = 0;
+  private shelfLoadSerial: number = 0;
   private activeShelfGroupRestored: boolean = false;
   private localBookIntroMigrationQueue: Book[] = [];
   private localBookIntroMigrationRunning: boolean = false;
@@ -1573,33 +1603,51 @@ struct BookshelfPage {
     this.refreshShelfCoverCache(this.books);
   }
 
-  async loadBooks() {
-    this.isLoading = true;
+  async loadBooks(forceDataSourceReload: boolean = false): Promise<void> {
+    const loadSerial = ++this.shelfLoadSerial;
+    // Returning from the reader refreshes shelf metadata. Do not cover an already-rendered shelf
+    // with the initial loading placeholder; that one-frame replacement is perceived as a flash.
+    const needsInitialPlaceholder = this.allBooks.length === 0;
+    if (needsInitialPlaceholder) this.isLoading = true;
     try {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
       const loadedBooks = SearchExplorePendingBook.filterShelfBooks(await db.getAllBooks());
-      this.allBooks = loadedBooks;
-      this.shelfGroups = await db.getCustomBookGroups();
+      const loadedGroups = await db.getCustomBookGroups();
+      if (loadSerial !== this.shelfLoadSerial) return;
       if (!this.activeShelfGroupRestored) {
         try {
           this.activeShelfGroupId = await BookshelfStateStore.loadActiveGroupId(getContext(this));
         } catch (e) {
           console.warn('恢复书架分组状态失败:', e);
         }
+        if (loadSerial !== this.shelfLoadSerial) return;
         this.activeShelfGroupRestored = true;
       }
+      // Commit the complete snapshot together. In particular, never expose a new expanded card while the retained
+      // LazyForEach data source still contains entries from the previous shelf generation.
+      this.allBooks = loadedBooks;
+      this.shelfGroups = loadedGroups;
       if (this.activeShelfGroupId > 0 && !this.shelfGroups.some((group: BookGroup) => group.groupId === this.activeShelfGroupId)) {
         this.activeShelfGroupId = 0;
       }
       this.applyShelfScope();
+      this.reloadShelfDataSources(forceDataSourceReload);
       this.refreshShelfCoverCache(this.books);
       this.scheduleLocalBookIntroMigration(loadedBooks);
     } catch (e) {
-      console.error('加载书籍失败:', e);
+      if (loadSerial === this.shelfLoadSerial) console.error('加载书籍失败:', e);
     } finally {
-      this.isLoading = false;
+      if (needsInitialPlaceholder && loadSerial === this.shelfLoadSerial) this.isLoading = false;
     }
+  }
+
+  reloadShelfDataSources(force: boolean = false): void {
+    this.shelfTileEntriesCacheKey = '';
+    this.shelfTileEntriesCache = [];
+    this.shelfListBooksSource.replace(this.books, force);
+    this.shelfTileBooksSource.replace(this.getTileBooksWithoutLatest(this.books), force);
+    this.shelfTileEntriesSource.replace(this.getSortedTileRootEntries(this.books), force);
   }
 
   scheduleLoadBooks(): void {
@@ -3983,10 +4031,10 @@ struct BookshelfPage {
       !this.shelfGroups.some((group: BookGroup) => group.groupId === book.group));
   }
 
-  getLatestReadTileBook(): Book | null {
+  getLatestReadTileBook(books: Book[] = this.books): Book | null {
     let latest: Book | null = null;
     let latestReadTime = 0;
-    this.booksForShelfScope(this.shelfScope).forEach((book: Book) => {
+    books.forEach((book: Book) => {
       const readTime = this.getBookReadTime(book);
       if (readTime > latestReadTime) {
         latest = book;
@@ -3996,8 +4044,8 @@ struct BookshelfPage {
     return latest;
   }
 
-  getLatestReadTileBooks(): Book[] {
-    const latest = this.getLatestReadTileBook();
+  getLatestReadTileBooks(books: Book[] = this.books): Book[] {
+    const latest = this.getLatestReadTileBook(books);
     return latest ? [latest] : [];
   }
 
@@ -4005,12 +4053,21 @@ struct BookshelfPage {
     return this.isTileLayout() && this.activeShelfGroupId === 0 && !this.isBookMultiSelect;
   }
 
-  getTileBooksWithoutLatest(books: Book[]): Book[] {
+  getTileBooksWithoutLatest(books: Book[], latest: Book | null = this.getLatestReadTileBook(books)): Book[] {
+    const uniqueBooks: Book[] = [];
+    const seenBookUrls = new Set<string>();
+    books.forEach((book: Book) => {
+      const bookUrl = (book.bookUrl || '').trim();
+      if (bookUrl && seenBookUrls.has(bookUrl)) return;
+      if (bookUrl) seenBookUrls.add(bookUrl);
+      uniqueBooks.push(book);
+    });
     if (!this.shouldShowLatestExpandedTileBook()) {
-      return books;
+      return uniqueBooks;
     }
-    const latestBookUrl = this.getLatestReadTileBook()?.bookUrl || '';
-    return latestBookUrl ? books.filter((book: Book) => book.bookUrl !== latestBookUrl) : books;
+    const latestBookUrl = (latest?.bookUrl || '').trim();
+    return latestBookUrl ?
+      uniqueBooks.filter((book: Book) => (book.bookUrl || '').trim() !== latestBookUrl) : uniqueBooks;
   }
 
   getTileFolderGroups(books: Book[] = this.books): BookGroup[] {
@@ -4024,7 +4081,13 @@ struct BookshelfPage {
   }
 
   getSortedTileRootEntries(books: Book[] = this.books, mode: string = this.sortMode): ShelfTileSortEntry[] {
+    // The expanded recent-read card and the ordinary grid must be derived from the same snapshot.
+    // Reading-page return updates allBooks/books in separate reactive assignments; consulting allBooks here used
+    // to let the new expanded card coexist with the old ordinary entry for one retained data-source generation.
+    const latestBook = this.getLatestReadTileBook(books);
+    const latestBookUrl = (latestBook?.bookUrl || '').trim();
     const cacheKey = `${mode}_${this.shelfScope}_${this.activeShelfGroupId}_${this.isBookMultiSelect ? '1' : '0'}_` +
+      `${latestBookUrl}_` +
       `${books.map((book: Book) => `${book.bookUrl}:${book.name}:${this.getBookReadTime(book)}:${this.getBookAddTime(book)}:` +
         `${book.group}`).join('|')}_` +
       `${this.shelfGroups.map((group: BookGroup) => `${group.groupId}:${group.groupName}`).join('|')}`;
@@ -4033,7 +4096,7 @@ struct BookshelfPage {
     }
     const entries: ShelfTileSortEntry[] = [];
     const ungroupedBooks = this.getTileBooksWithoutLatest(books.filter((book: Book) => book.group <= 0 ||
-      !this.shelfGroups.some((group: BookGroup) => group.groupId === book.group)));
+      !this.shelfGroups.some((group: BookGroup) => group.groupId === book.group)), latestBook);
     ungroupedBooks.forEach((book: Book, index: number) => {
       const entry = new ShelfTileSortEntry();
       entry.kind = 'book';
@@ -4176,7 +4239,7 @@ struct BookshelfPage {
       .columnEnd(this.shelfTileColumnCount() - 1)
 
       if (this.shouldShowLatestExpandedTileBook()) {
-        ForEach(this.getLatestReadTileBooks(), (book: Book) => {
+        ForEach(this.getLatestReadTileBooks(this.books), (book: Book) => {
         GridItem() {
           this.shelfTileExpandedBook(book)
         }
@@ -4602,6 +4665,17 @@ struct BookshelfPage {
     this.openingBookOpacity = 1;
     this.openingBookBackdropOpacity = 1;
     this.openingBookCoverAngle = -118;
+
+    // The bookshelf route is retained under the reader. Refresh its database snapshot while the opaque close-book
+    // animation is covering the grid, then force retained LazyForEach sources to adopt that snapshot. No loading
+    // placeholder or empty list is shown, so the user sees one continuous return animation instead of a shelf flash.
+    if (this.loadTimer >= 0) {
+      clearTimeout(this.loadTimer);
+      this.loadTimer = -1;
+    }
+    this.loadBooks(true).catch((error: Error) => {
+      console.warn('返回书架时无感刷新失败:', error);
+    });
 
     this.openingBookTurnTimer = setTimeout(() => {
       this.openingBookTurnTimer = -1;
@@ -5479,10 +5553,11 @@ struct BookshelfPage {
     try {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
-      const engine = ReadBookEngine.get();
+      const engine = ReadBookEngine.createBackgroundWorker();
       await engine.openBook(book);
       await engine.syncChapterCacheDates();
-      if (token !== this.cacheTocLoadToken || this.cacheTargetBook?.bookUrl !== book.bookUrl) {
+      if (token !== this.cacheTocLoadToken || this.cacheTargetBook?.bookUrl !== book.bookUrl ||
+        engine.book?.bookUrl !== book.bookUrl) {
         return false;
       }
       const chapters = [...engine.chapters];
@@ -6183,10 +6258,10 @@ struct BookshelfPage {
     this.activeCacheBookUrl = this.cacheTargetBook.bookUrl || '';
     this.isCaching = true;
     try {
-      const engine = ReadBookEngine.get();
-      if (engine.book?.bookUrl !== this.cacheTargetBook.bookUrl) {
-        await engine.openBook(this.cacheTargetBook);
-      }
+      const targetBook = this.cacheTargetBook;
+      const engine = ReadBookEngine.createBackgroundWorker();
+      await engine.openBook(targetBook);
+      if (engine.book?.bookUrl !== targetBook.bookUrl) throw new Error('缓存书籍会话已失效');
       const chapter = this.cacheChapters[index];
       this.cacheStatus = chapter ? `正在缓存：${chapter.title}` : '正在缓存章节...';
       const ok = await engine.cacheChapter(index);
@@ -6270,7 +6345,7 @@ struct BookshelfPage {
     try {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
-      const engine = ReadBookEngine.get();
+      const engine = ReadBookEngine.createBackgroundWorker();
       const shelfBooks = [...this.books];
       for (const shelfBook of shelfBooks) {
         if (!shelfBook.bookUrl || LocalBookService.isLocalBook(shelfBook) || !shelfBook.canUpdate) {
@@ -7199,10 +7274,13 @@ struct ExplorePage {
   @Prop @Watch('onActiveChanged') isActive: boolean = false;
   @State entries: ExploreEntry[] = [];
   @State sourceOptions: ExploreSourceOption[] = [];
+  private exploreSourceDataSource: ExploreSourceOptionDataSource = new ExploreSourceOptionDataSource();
   @State exploreSourceGroups: string[] = [];
   @State activeExploreSourceGroup: string = '__all__';
   @State platformNames: string[] = [];
   @State exploreFilters: ExploreFilterGroup[] = [];
+  @State exploreFilterDrafts: ExploreFilterGroup[] = [];
+  @State showExploreFilterPanel: boolean = false;
   @State sourceNames: string[] = [];
   @State selectedSourceName: string = '';
   @State selectedIndex: number = 0;
@@ -7255,6 +7333,11 @@ struct ExplorePage {
   private exploreLoadVersion: number = 0;
   private exploreContentLoadedAt: number = 0;
   private explorePage: number = 1;
+  private exploreMetadataQueue: ExploreMetadataTask[] = [];
+  private exploreMetadataQueued: Set<string> = new Set<string>();
+  private exploreMetadataInFlight: Set<string> = new Set<string>();
+  private exploreMetadataUnavailable: Set<string> = new Set<string>();
+  private exploreMetadataActive: number = 0;
 
   aboutToAppear() {
     if (this.isActive) {
@@ -7266,6 +7349,7 @@ struct ExplorePage {
     if (this.isActive) {
       this.ensureLoaded();
     } else {
+      this.closeExploreFilterPanel();
       if (this.showExploreSourcePicker) {
         this.showExploreSourcePicker = false;
         this.clearExploreSourceFilter();
@@ -7329,6 +7413,7 @@ struct ExplorePage {
         this.activeExploreSourceGroup = '__all__';
       }
       this.sourceNames = this.sourceOptions.map((option: ExploreSourceOption) => option.sourceName);
+      this.refreshExploreSourceDataSource();
       const restoredOption = this.sourceOptions.find((option: ExploreSourceOption) =>
         option.sourceUrl === previousSourceUrl) ||
         this.sourceOptions.find((option: ExploreSourceOption) => option.sourceName === previousSourceName) ||
@@ -7617,34 +7702,14 @@ struct ExplorePage {
       .alignItems(VerticalAlign.Center)
 
       if (this.exploreFilters.length > 0) {
-        ForEach(this.exploreFilters, (filter: ExploreFilterGroup) => {
-          Scroll() {
-            Row({ space: 8 }) {
-              Text(`${filter.title}：`)
-                .fontSize(13)
-                .fontColor(this.secondaryTextColor())
-              ForEach(filter.options, (name: string) => {
-                Text(name)
-                  .fontSize(13)
-                  .fontColor(filter.selected === name ? '#FFFFFF' : this.primaryTextColor())
-                  .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-                  .backgroundColor(filter.selected === name ? this.accentColor() : this.glassCardColor())
-                  .borderRadius(18)
-                  .border({ width: filter.selected === name ? 0 : 1, color: this.glassBorderColor() })
-                  .onClick(() => {
-                    this.switchExploreFilter(filter.title, name);
-                  })
-              }, (name: string): string => `${filter.title}:${name}`)
-            }
-            .padding({ left: 16, right: 16 })
-          }
-          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-          .width('100%')
-          .height(48)
-          .scrollable(ScrollDirection.Horizontal)
-          .scrollBar(BarState.Off)
-        }, (filter: ExploreFilterGroup): string =>
-          `${filter.title}:${filter.selected}:${filter.options.join('|')}`)
+        if (this.useCompactExploreFilters()) {
+          this.compactExploreFilterBar()
+        } else {
+          ForEach(this.exploreFilters, (filter: ExploreFilterGroup) => {
+            this.inlineExploreFilterRow(filter)
+          }, (filter: ExploreFilterGroup): string =>
+            `${filter.title}:${filter.selected}:${filter.options.join('|')}`)
+        }
       } else if (this.platformNames.length > 0) {
         Scroll() {
           Row({ space: 8 }) {
@@ -7662,6 +7727,8 @@ struct ExplorePage {
             })
           }
           .padding({ left: 16, right: 16 })
+          .constraintSize({ minWidth: '100%' })
+          .justifyContent(FlexAlign.Start)
         }
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
@@ -7770,6 +7837,9 @@ struct ExplorePage {
           onToggleShelf: (book: SearchBook) => {
             this.toggleSearchBookShelf(book);
           },
+          onNeedMetadata: (book: SearchBook) => {
+            this.requestExploreMetadata(book);
+          },
           onReachEnd: () => {
             this.loadMoreExploreBooks();
           }
@@ -7836,6 +7906,20 @@ struct ExplorePage {
         this.exploreSourceDropdown()
       }
 
+      if (this.showExploreFilterPanel && this.useCompactExploreFilters()) {
+        Column()
+          .width('100%')
+          .height('100%')
+          .position({ x: 0, y: this.compactExploreFilterPanelTop() })
+          .backgroundColor(this.appDarkMode ? '#4D000000' : '#26000000')
+          .zIndex(7)
+          .onClick(() => {
+            this.closeExploreFilterPanel();
+          })
+
+        this.exploreFilterPanel()
+      }
+
       if (this.showExploreSourceActionMenu) {
         this.exploreSourceActionMenu()
       }
@@ -7887,17 +7971,20 @@ struct ExplorePage {
     Column() {
       this.exploreSourceGroupBar()
 
-      Scroll(this.exploreSourceScroller) {
+      if (this.getFilteredExploreSourceOptions().length === 0) {
         Column() {
-          if (this.getFilteredExploreSourceOptions().length === 0) {
             Text(this.activeExploreSourceGroup === '__all__' ? '没有匹配的书源' : '当前分组没有匹配的书源')
               .fontSize(14)
               .fontColor(this.secondaryTextColor())
               .width('100%')
               .height(52)
               .textAlign(TextAlign.Center)
-          } else {
-            ForEach(this.getFilteredExploreSourceOptions(), (option: ExploreSourceOption) => {
+        }
+        .width('100%')
+      } else {
+        List({ scroller: this.exploreSourceScroller, space: 0 }) {
+          LazyForEach(this.exploreSourceDataSource, (option: ExploreSourceOption) => {
+            ListItem() {
               Row() {
                 Text(this.exploreSourceDisplayName(option))
                   .fontSize(16)
@@ -7948,18 +8035,16 @@ struct ExplorePage {
                     this.openExploreSourceActions(option, event);
                   })
               )
-            }, (option: ExploreSourceOption): string => option.sourceUrl || option.sourceName)
-          }
+            }
+          }, (option: ExploreSourceOption): string => option.sourceUrl || option.sourceName)
         }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
+        .constraintSize({ maxHeight: 320 })
+        .scrollBar(BarState.Auto)
+        .cachedCount(8)
+        .onAppear(() => { setTimeout(() => this.scrollExploreSourceToCurrent(), 0); })
       }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .constraintSize({ maxHeight: 320 })
-      .scrollBar(BarState.Auto)
-      .onAppear(() => {
-        setTimeout(() => this.scrollExploreSourceToCurrent(), 0);
-      })
     }
     .width(this.exploreSourceDropdownWidth())
     .padding(8)
@@ -8204,6 +8289,7 @@ struct ExplorePage {
     this.exploreSourceFilterInput = '';
     this.exploreSourceFilterKeyword = '';
     this.activeExploreSourceGroup = '__all__';
+    this.refreshExploreSourceDataSource();
     this.showExploreSourcePicker = true;
   }
 
@@ -8234,6 +8320,7 @@ struct ExplorePage {
 
   applyExploreSourceFilter(): void {
     this.exploreSourceFilterKeyword = this.exploreSourceFilterInput.trim().toLowerCase();
+    this.refreshExploreSourceDataSource();
     if (this.sourceOptions.length > 0) {
       this.showExploreSourcePicker = true;
     }
@@ -8242,6 +8329,7 @@ struct ExplorePage {
   clearExploreSourceFilter(): void {
     this.exploreSourceFilterInput = '';
     this.exploreSourceFilterKeyword = '';
+    this.refreshExploreSourceDataSource();
   }
 
   openExploreSourceActions(option: ExploreSourceOption, event?: GestureEvent): void {
@@ -8361,6 +8449,10 @@ struct ExplorePage {
     });
   }
 
+  refreshExploreSourceDataSource(): void {
+    this.exploreSourceDataSource.replace(this.getFilteredExploreSourceOptions());
+  }
+
   exploreSourceDisplayName(option: ExploreSourceOption): string {
     const name = option.sourceName || '未命名书源';
     const duplicateCount = this.sourceOptions.filter((candidate: ExploreSourceOption): boolean =>
@@ -8387,6 +8479,7 @@ struct ExplorePage {
   selectExploreSourceGroup(groupKey: string): void {
     if (groupKey === '__all__' || this.exploreSourceGroups.includes(groupKey)) {
       this.activeExploreSourceGroup = groupKey;
+      this.refreshExploreSourceDataSource();
     }
   }
 
@@ -8398,6 +8491,7 @@ struct ExplorePage {
     const targetIndex = Math.max(0, Math.min(groups.length - 1, currentIndex + direction));
     if (targetIndex !== currentIndex) {
       this.activeExploreSourceGroup = groups[targetIndex];
+      this.refreshExploreSourceDataSource();
     }
   }
 
@@ -8416,6 +8510,7 @@ struct ExplorePage {
 
   async switchExploreFilter(title: string, selection: string): Promise<void> {
     if (this.isLoading || !this.selectedSourceUrl) return;
+    this.closeExploreFilterPanel();
     this.status = `正在切换${title}到 ${selection}...`;
     this.books = [];
     this.isLoading = true;
@@ -8434,6 +8529,7 @@ struct ExplorePage {
       return;
     }
     this.selectedSourceName = option.sourceName;
+    this.closeExploreFilterPanel();
     this.selectedSourceUrl = option.sourceUrl;
     this.platformNames = this.getSelectedSourcePlatforms();
     this.normalizeSelectedPlatform();
@@ -8447,8 +8543,95 @@ struct ExplorePage {
 
   beginExploreLoad(): number {
     this.exploreLoadVersion++;
+    this.exploreMetadataQueue = [];
+    this.exploreMetadataQueued.clear();
+    this.exploreMetadataUnavailable.clear();
     this.isLoading = true;
     return this.exploreLoadVersion;
+  }
+
+  requestExploreMetadata(book: SearchBook): void {
+    if (!book || (!book.bookUrl || !book.origin) || (book.author && book.coverUrl)) return;
+    const key = this.exploreMetadataKey(book);
+    if (!key || this.exploreMetadataQueued.has(key) || this.exploreMetadataInFlight.has(key) ||
+      this.exploreMetadataUnavailable.has(key)) return;
+    const task = new ExploreMetadataTask();
+    task.book = book;
+    task.loadVersion = this.exploreLoadVersion;
+    this.exploreMetadataQueue.push(task);
+    this.exploreMetadataQueued.add(key);
+    this.drainExploreMetadataQueue();
+  }
+
+  private drainExploreMetadataQueue(): void {
+    while (this.exploreMetadataActive < 3 && this.exploreMetadataQueue.length > 0) {
+      const task = this.exploreMetadataQueue.shift();
+      if (!task) return;
+      const key = this.exploreMetadataKey(task.book);
+      this.exploreMetadataQueued.delete(key);
+      if (!key || task.loadVersion !== this.exploreLoadVersion || this.exploreMetadataInFlight.has(key)) continue;
+      this.exploreMetadataInFlight.add(key);
+      this.exploreMetadataActive++;
+      this.enrichExploreMetadata(task).catch((error: Object): void => {
+        console.warn('[ExploreMetadata] detail enrichment failed:', task.book.originName || task.book.origin,
+          error instanceof Error ? error.message : String(error || 'unknown error'));
+      }).finally((): void => {
+        this.exploreMetadataInFlight.delete(key);
+        this.exploreMetadataActive = Math.max(0, this.exploreMetadataActive - 1);
+        this.drainExploreMetadataQueue();
+      });
+    }
+  }
+
+  private async enrichExploreMetadata(task: ExploreMetadataTask): Promise<void> {
+    if (task.loadVersion !== this.exploreLoadVersion) return;
+    const source = await AppDatabase.getInstance().getBookSource(task.book.origin);
+    if (!source || task.loadVersion !== this.exploreLoadVersion) return;
+    const needsAuthor = !task.book.author && !!(source.bookInfoRule.author || '').trim();
+    const needsCover = !task.book.coverUrl && !!(source.bookInfoRule.coverUrl || '').trim();
+    const key = this.exploreMetadataKey(task.book);
+    if (!needsAuthor && !needsCover) {
+      this.exploreMetadataUnavailable.add(key);
+      return;
+    }
+
+    const detail = new Book();
+    detail.bookUrl = task.book.bookUrl;
+    detail.tocUrl = task.book.tocUrl;
+    detail.origin = task.book.origin;
+    detail.originName = task.book.originName;
+    detail.name = task.book.name;
+    detail.author = task.book.author;
+    detail.kind = task.book.kind;
+    detail.coverUrl = task.book.coverUrl;
+    detail.intro = task.book.intro;
+    detail.latestChapterTitle = task.book.latestChapterTitle;
+    detail.wordCount = task.book.wordCount;
+    detail.type = task.book.type;
+    detail.variable = task.book.variable;
+    const enriched = await new WebBookService().getBookInfo(source, detail);
+    if (task.loadVersion !== this.exploreLoadVersion) return;
+    const index = this.books.findIndex((item: SearchBook): boolean =>
+      item.origin === task.book.origin && item.bookUrl === task.book.bookUrl);
+    if (index < 0) return;
+    const current = this.books[index];
+    let changed = false;
+    if (!current.author && enriched.author) {
+      current.author = BookFieldSanitizer.clean(enriched.author);
+      changed = !!current.author || changed;
+    }
+    if (!current.coverUrl && enriched.coverUrl) {
+      current.coverUrl = CoverUrlNormalizer.normalize(enriched.coverUrl);
+      changed = !!current.coverUrl || changed;
+    }
+    if (changed) this.books = this.books.slice();
+    if ((!needsAuthor || !!current.author) && (!needsCover || !!current.coverUrl)) {
+      this.exploreMetadataUnavailable.add(key);
+    }
+  }
+
+  private exploreMetadataKey(book: SearchBook): string {
+    return `${book.origin || ''}|${book.bookUrl || ''}`;
   }
 
   isCurrentExploreLoad(loadVersion: number): boolean {
@@ -8640,7 +8823,7 @@ struct ExplorePage {
   exploreTopOverlayHeight(): number {
     let height = this.statusBarHeight + 56;
     if (this.exploreFilters.length > 0) {
-      height += this.exploreFilters.length * 48;
+      height += this.useCompactExploreFilters() ? 48 : this.exploreFilters.length * 48;
     } else if (this.platformNames.length > 0) {
       height += 48;
     }
@@ -8651,6 +8834,273 @@ struct ExplorePage {
       height += 40;
     }
     return height;
+  }
+
+  useCompactExploreFilters(): boolean {
+    return this.exploreFilters.length > 2;
+  }
+
+  copyExploreFilterGroups(filters: ExploreFilterGroup[]): ExploreFilterGroup[] {
+    const copies: ExploreFilterGroup[] = [];
+    for (const filter of filters) {
+      copies.push({
+        title: filter.title,
+        options: filter.options.slice(),
+        selected: filter.selected
+      });
+    }
+    return copies;
+  }
+
+  openExploreFilterPanel(): void {
+    this.exploreFilterDrafts = this.copyExploreFilterGroups(this.exploreFilters);
+    this.showExploreFilterPanel = true;
+  }
+
+  closeExploreFilterPanel(): void {
+    this.showExploreFilterPanel = false;
+    this.exploreFilterDrafts = [];
+  }
+
+  toggleExploreFilterPanel(): void {
+    if (this.showExploreFilterPanel) {
+      this.closeExploreFilterPanel();
+    } else {
+      this.openExploreFilterPanel();
+    }
+  }
+
+  selectExploreFilterDraft(title: string, selection: string): void {
+    const next: ExploreFilterGroup[] = [];
+    for (const filter of this.exploreFilterDrafts) {
+      next.push({
+        title: filter.title,
+        options: filter.options.slice(),
+        selected: filter.title === title ? selection : filter.selected
+      });
+    }
+    this.exploreFilterDrafts = next;
+  }
+
+  async applyExploreFilterDrafts(): Promise<void> {
+    const drafts = this.copyExploreFilterGroups(this.exploreFilterDrafts);
+    const changed: ExploreFilterGroup[] = [];
+    for (const draft of drafts) {
+      const applied = this.exploreFilters.find((filter: ExploreFilterGroup): boolean =>
+        filter.title === draft.title);
+      if (applied && applied.selected !== draft.selected) changed.push(draft);
+    }
+    this.closeExploreFilterPanel();
+    if (changed.length === 0 || this.isLoading || !this.selectedSourceUrl) return;
+
+    this.status = '正在应用筛选条件...';
+    this.books = [];
+    this.isLoading = true;
+    const failedTitles: string[] = [];
+    for (const filter of changed) {
+      const applied = await this.coordinator.applyExploreFilter(
+        this.selectedSourceUrl, filter.title, filter.selected);
+      if (!applied) failedTitles.push(filter.title);
+    }
+    this.isLoading = false;
+    this.selectedPlatform = '';
+    await this.loadEntries('', true);
+    if (failedTitles.length > 0) {
+      this.status = `${failedTitles.join('、')}筛选条件应用失败`;
+    }
+  }
+
+  compactExploreFilterPanelTop(): number {
+    return this.statusBarHeight + 56 + 48;
+  }
+
+  compactExploreFilterPanelHeight(): number {
+    const desired = 58 + this.exploreFilters.length * 62;
+    const available = Math.max(160, this.exploreViewportHeight - this.compactExploreFilterPanelTop() - 20);
+    return Math.min(desired, Math.min(420, available));
+  }
+
+  @Builder
+  inlineExploreFilterRow(filter: ExploreFilterGroup) {
+    Scroll() {
+      Row({ space: 8 }) {
+        Text(`${filter.title}：`)
+          .fontSize(13)
+          .fontColor(this.secondaryTextColor())
+          .flexShrink(0)
+        ForEach(filter.options, (name: string) => {
+          this.exploreFilterOptionChip(filter, name)
+        }, (name: string): string => `${filter.title}:${name}`)
+      }
+      .padding({ left: 16, right: 16 })
+      .constraintSize({ minWidth: '100%' })
+      .justifyContent(FlexAlign.Start)
+    }
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .width('100%')
+    .height(48)
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
+  }
+
+  @Builder
+  compactExploreFilterBar() {
+    Row({ space: 7 }) {
+      Scroll() {
+        Row({ space: 7 }) {
+          ForEach(this.exploreFilters, (filter: ExploreFilterGroup) => {
+            Text(`${filter.title} · ${filter.selected || '未选'}`)
+              .fontSize(12)
+              .fontColor(this.primaryTextColor())
+              .height(30)
+              .maxLines(1)
+              .padding({ left: 11, right: 11 })
+              .borderRadius(15)
+              .backgroundColor(this.glassCardColor())
+              .border({ width: 1, color: this.glassBorderColor() })
+              .onClick(() => {
+                this.toggleExploreFilterPanel();
+              })
+          }, (filter: ExploreFilterGroup): string => `${filter.title}:${filter.selected}`)
+        }
+        .constraintSize({ minWidth: '100%' })
+        .justifyContent(FlexAlign.Start)
+      }
+      .layoutWeight(1)
+      .height(40)
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+
+      Row({ space: 4 }) {
+        SymbolGlyph($r('sys.symbol.gearshape'))
+          .fontSize(16)
+          .fontColor([this.showExploreFilterPanel ? '#FFFFFF' : this.primaryTextColor()])
+        Text('筛选')
+          .fontSize(12)
+          .fontColor(this.showExploreFilterPanel ? '#FFFFFF' : this.primaryTextColor())
+      }
+      .height(32)
+      .padding({ left: 10, right: 10 })
+      .borderRadius(16)
+      .backgroundColor(this.showExploreFilterPanel ? this.accentColor() : this.inputColor())
+      .flexShrink(0)
+      .onClick(() => {
+        this.toggleExploreFilterPanel();
+      })
+    }
+    .width('100%')
+    .height(48)
+    .padding({ left: 16, right: 16 })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      this.toggleExploreFilterPanel();
+    })
+  }
+
+  @Builder
+  exploreFilterOptionChip(filter: ExploreFilterGroup, name: string) {
+    Text(name)
+      .fontSize(13)
+      .fontColor(filter.selected === name ? '#FFFFFF' : this.primaryTextColor())
+      .height(32)
+      .maxLines(1)
+      .padding({ left: 12, right: 12 })
+      .backgroundColor(filter.selected === name ? this.accentColor() : this.glassCardColor())
+      .borderRadius(16)
+      .border({ width: filter.selected === name ? 0 : 1, color: this.glassBorderColor() })
+      .onClick(() => {
+        if (filter.selected !== name) this.switchExploreFilter(filter.title, name);
+      })
+  }
+
+  @Builder
+  exploreFilterDraftOptionChip(filter: ExploreFilterGroup, name: string) {
+    Text(name)
+      .fontSize(13)
+      .fontColor(filter.selected === name ? '#FFFFFF' : this.primaryTextColor())
+      .height(32)
+      .maxLines(1)
+      .padding({ left: 12, right: 12 })
+      .backgroundColor(filter.selected === name ? this.accentColor() : this.glassCardColor())
+      .borderRadius(16)
+      .border({ width: filter.selected === name ? 0 : 1, color: this.glassBorderColor() })
+      .onClick(() => {
+        if (filter.selected !== name) this.selectExploreFilterDraft(filter.title, name);
+      })
+  }
+
+  @Builder
+  exploreFilterPanel() {
+    Column() {
+      Row() {
+        Text('筛选条件')
+          .fontSize(15)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.primaryTextColor())
+          .layoutWeight(1)
+        Text('完成')
+          .fontSize(13)
+          .fontColor(this.accentColor())
+          .padding({ left: 12, right: 4, top: 8, bottom: 8 })
+          .onClick(() => {
+            this.applyExploreFilterDrafts();
+          })
+      }
+      .width('100%')
+      .height(44)
+      .padding({ left: 14, right: 10 })
+
+      Scroll() {
+        Column() {
+          ForEach(this.exploreFilterDrafts, (filter: ExploreFilterGroup) => {
+            Row({ space: 8 }) {
+              Text(filter.title)
+                .fontSize(12)
+                .fontColor(this.secondaryTextColor())
+                .width(46)
+                .maxLines(1)
+                .textAlign(TextAlign.Start)
+
+              Scroll() {
+                Row({ space: 8 }) {
+                  ForEach(filter.options, (name: string) => {
+                    this.exploreFilterDraftOptionChip(filter, name)
+                  }, (name: string): string => `${filter.title}:${name}`)
+                }
+                .constraintSize({ minWidth: '100%' })
+                .justifyContent(FlexAlign.Start)
+              }
+              .layoutWeight(1)
+              .height(44)
+              .scrollable(ScrollDirection.Horizontal)
+              .scrollBar(BarState.Off)
+              .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+            }
+            .width('100%')
+            .height(54)
+            .padding({ left: 14, right: 14 })
+          }, (filter: ExploreFilterGroup): string =>
+            `${filter.title}:${filter.selected}:${filter.options.join('|')}`)
+        }
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .scrollBar(BarState.Auto)
+    }
+    .width('calc(100% - 32vp)')
+    .height(this.compactExploreFilterPanelHeight())
+    .position({ x: 16, y: this.compactExploreFilterPanelTop() })
+    .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
+    .clip(true)
+    .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
+    .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
+    .border({ width: ThemeRuntime.glassBorderWidth('overlay'),
+      color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'overlay') })
+    .shadow({ radius: ThemeRuntime.glassShadowRadius('overlay'),
+      color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'overlay'),
+      offsetX: ThemeRuntime.glassShadowOffsetX('overlay'), offsetY: ThemeRuntime.glassShadowOffsetY('overlay') })
+    .zIndex(8)
   }
 
   resultListBottomInset(): number {

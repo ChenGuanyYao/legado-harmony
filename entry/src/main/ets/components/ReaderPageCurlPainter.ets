@@ -40,27 +40,14 @@ export class ReaderPageCurlPainter {
 
   draw(context: CanvasRenderingContext2D, front: image.PixelMap, back: image.PixelMap,
     canvasWidth: number, canvasHeight: number, progress: number, direction: number,
-    doublePage: boolean, darkMode: boolean, topInset: number = 0): void {
+    doublePage: boolean, darkMode: boolean): void {
     const width = Math.max(1, canvasWidth);
     const height = Math.max(1, canvasHeight);
     const leafWidth = doublePage ? width / 2 : width;
     const safeProgress = Math.max(0, Math.min(1, progress));
-    const safeTopInset = Math.max(0, Math.min(height - 1, topInset));
     context.clearRect(0, 0, width, height);
     context.imageSmoothingEnabled = true;
     context.save();
-    if (safeTopInset > 0) {
-      // When body extension is disabled the status-bar wallpaper belongs to the stationary reader
-      // background, not to the turning sheet. Keeping the curl out of this area also prevents the
-      // snapshot texture from exposing an anti-aliased seam along the safe-area boundary.
-      context.beginPath();
-      context.moveTo(0, safeTopInset);
-      context.lineTo(width, safeTopInset);
-      context.lineTo(width, height);
-      context.lineTo(0, height);
-      context.closePath();
-      context.clip();
-    }
     if (safeProgress <= 0.001) {
       const startX = doublePage && direction > 0 ? leafWidth : 0;
       context.drawImage(front, startX, 0, leafWidth, height);

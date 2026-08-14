@@ -69,10 +69,11 @@ export class HttpTtsReader {
   private currentClients: http.HttpRequest[] = [];
   private consecutiveErrors: number = 0;
   private loginPromptedAt: Record<string, number> = {};
+  private protectedCachePaths: Map<string, number> = new Map<string, number>();
 
   async play(voice: HttpTTS, text: string, speed: number = 1): Promise<void> {
     const audio = await this.synthesize(voice, text, speed);
-    await this.writeAudio(audio);
+    await this.writeAudioRecovering(voice, text, speed, audio);
     await this.drain();
   }
 
@@ -83,6 +84,9 @@ export class HttpTtsReader {
       const audio = await this.synthesizeWithRetry(voice, text, normalizedSpeed, generation);
       this.assertGeneration(generation);
       this.consecutiveErrors = 0;
+      if (audio.filePath) {
+        this.retainCacheFile(audio.filePath);
+      }
       return audio.filePath ? audio : this.applyLocalSpeed(audio, normalizedSpeed);
     } catch (error) {
       if (this.isCancelledError(error as Error) || generation !== this.generation) {
@@ -102,7 +106,11 @@ export class HttpTtsReader {
 
   async writeAudio(audio: HttpTtsAudio, onPlaybackStart?: (durationMs: number) => void): Promise<void> {
     if (audio.filePath) {
-      await this.avPlayer.play(audio.filePath, audio.speed || 1, onPlaybackStart);
+      try {
+        await this.avPlayer.play(audio.filePath, audio.speed || 1, onPlaybackStart);
+      } finally {
+        this.releaseCacheFile(audio.filePath);
+      }
       return;
     }
     if (onPlaybackStart) {
@@ -111,6 +119,22 @@ export class HttpTtsReader {
       onPlaybackStart(durationMs);
     }
     await this.pcmPlayer.write(audio.pcm, audio.sampleRate);
+  }
+
+  async writeAudioRecovering(voice: HttpTTS, text: string, speed: number, audio: HttpTtsAudio,
+    onPlaybackStart?: (durationMs: number) => void): Promise<void> {
+    try {
+      await this.writeAudio(audio, onPlaybackStart);
+    } catch (error) {
+      if (!audio.filePath || !this.isMissingCacheFileError(error as Error)) {
+        throw error as Error;
+      }
+      // The system may clear cache files between prefetch and playback. Remove the stale
+      // reservation and synthesize only the affected sentence again instead of aborting TTS.
+      this.deleteCacheFile(audio.filePath);
+      const replacement = await this.synthesize(voice, text, speed);
+      await this.writeAudio(replacement, onPlaybackStart);
+    }
   }
 
   async writeTimedPcm(audio: HttpTtsAudio, cues: PcmPlaybackCue[]): Promise<void> {
@@ -142,6 +166,7 @@ export class HttpTtsReader {
     this.generation++;
     const clients = this.currentClients.slice();
     this.currentClients = [];
+    this.protectedCachePaths.clear();
     for (const client of clients) {
       try {
         client.destroy();
@@ -243,7 +268,9 @@ export class HttpTtsReader {
       }
       this.assertGeneration(generation);
       this.writeCacheFile(cachePath, buffer);
-      this.pruneCache();
+      // listFileSync order is not an age order. Exclude the freshly written file so
+      // pruning cannot delete the same file that is about to be returned.
+      this.pruneCache(cachePath);
       return this.audioFromFile(cachePath, contentType, speed);
     } finally {
       this.currentClients = this.currentClients.filter((item: http.HttpRequest) => item !== client);
@@ -729,16 +756,20 @@ export class HttpTtsReader {
     }
   }
 
-  private pruneCache(): void {
+  private pruneCache(excludedPath: string = ''): void {
     const dir = this.cacheDir();
     if (!dir) return;
     try {
       const files = fs.listFileSync(dir).filter((name: string) => !!name);
       if (files.length <= HttpTtsReader.MAX_CACHE_FILES) return;
       const removeCount = files.length - HttpTtsReader.MAX_CACHE_FILES;
-      for (let i = 0; i < removeCount; i++) {
+      let removed = 0;
+      for (let i = 0; i < files.length && removed < removeCount; i++) {
+        const filePath = `${dir}/${files[i]}`;
+        if (filePath === excludedPath || (this.protectedCachePaths.get(filePath) || 0) > 0) continue;
         try {
-          fs.unlinkSync(`${dir}/${files[i]}`);
+          fs.unlinkSync(filePath);
+          removed++;
         } catch (_) {
         }
       }
@@ -770,6 +801,35 @@ export class HttpTtsReader {
     } catch (_) {
       return false;
     }
+  }
+
+  private deleteCacheFile(path: string): void {
+    if (!path) return;
+    try {
+      if (fs.accessSync(path)) fs.unlinkSync(path);
+    } catch (_) {
+    }
+  }
+
+  private retainCacheFile(path: string): void {
+    if (!path) return;
+    this.protectedCachePaths.set(path, (this.protectedCachePaths.get(path) || 0) + 1);
+  }
+
+  private releaseCacheFile(path: string): void {
+    if (!path) return;
+    const count = this.protectedCachePaths.get(path) || 0;
+    if (count <= 1) {
+      this.protectedCachePaths.delete(path);
+    } else {
+      this.protectedCachePaths.set(path, count - 1);
+    }
+  }
+
+  private isMissingCacheFileError(error: Error): boolean {
+    const message = `${error?.message || error || ''}`.toLowerCase();
+    return message.includes('13900002') || message.includes('no such file') ||
+      message.includes('open failed') || message.includes('enoent');
   }
 
   private responseBuffer(result: string | Object): ArrayBuffer {

@@ -22,6 +22,7 @@ export class ReadBookEngine {
   private chapterLoading: Map<number, Promise<string>> = new Map();
   private readonly chapterCacheLimit: number = 7;
   private preloadGeneration: number = 0;
+  private bookGeneration: number = 0;
   private sourceInteractionIdentity: string = '';
   private static readonly SOURCE_INTERACTION_IDENTITY_KEY: string = '__readerSourceInteractionIdentity';
 
@@ -37,6 +38,7 @@ export class ReadBookEngine {
   }
 
   async openBook(book: Book): Promise<void> {
+    const generation = ++this.bookGeneration;
     console.log('[RE] openBook:', book.name, 'origin:', book.origin);
     this.book = book;
     this.curIdx = book.durChapterIndex;
@@ -48,13 +50,18 @@ export class ReadBookEngine {
     this.source = null;
 
     if (book.origin && book.origin !== 'local') {
-      this.source = await appDb.getBookSource(book.origin);
+      const source = await appDb.getBookSource(book.origin);
+      if (!this.isCurrentBookSession(generation, book.bookUrl)) return;
+      this.source = source;
       console.log('[RE] source loaded:', this.source ? this.source.bookSourceName : 'none');
     }
 
-    await this.initializeSourceInteractionIdentity();
+    await this.initializeSourceInteractionIdentity(generation, book);
+    if (!this.isCurrentBookSession(generation, book.bookUrl)) return;
 
-    this.chapters = await appDb.getBookChapters(book.bookUrl);
+    const cachedChapters = await appDb.getBookChapters(book.bookUrl);
+    if (!this.isCurrentBookSession(generation, book.bookUrl)) return;
+    this.chapters = cachedChapters;
     console.log('[RE] cached chapters:', this.chapters.length);
 
     // 检查缓存章节是否有未解析的变量（旧版本残留）
@@ -64,26 +71,31 @@ export class ReadBookEngine {
       if (hasBrokenUrls) {
         console.log('[RE] 检测到过期缓存，清除并重新获取');
         await appDb.deleteBookChapters(book.bookUrl);
+        if (!this.isCurrentBookSession(generation, book.bookUrl)) return;
         this.chapters = [];
       }
       console.log('[RE] no valid chapters, refreshing toc...');
-      await this.refreshToc();
+      await this.refreshToc(generation);
     }
   }
 
-  async refreshToc(): Promise<void> {
+  async refreshToc(expectedGeneration: number = this.bookGeneration): Promise<void> {
     if (!this.book || !this.source) return;
+    const sessionBook = this.book;
+    const sessionSource = this.source;
+    const sessionBookUrl = sessionBook.bookUrl;
     console.log('[RE] refreshToc start');
     this.isLoading = true;
     try {
-      const oldBook = this.book;
+      const oldBook = sessionBook;
       const oldTocUrl = oldBook.tocUrl;
       const oldLatestChapter = oldBook.latestChapterTitle;
       const oldCoverUrl = oldBook.coverUrl;
       const canReuseResolvedInfo = !!oldBook.tocUrl && oldBook.lastCheckTime > 0 &&
         Date.now() - oldBook.lastCheckTime < 2 * 60 * 1000;
       if (!canReuseResolvedInfo) {
-        const infoBook = await this.webBook.getBookInfo(this.source, this.book);
+        const infoBook = await this.webBook.getBookInfo(sessionSource, sessionBook);
+        if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
         this.book = infoBook;
         this.book.lastCheckTime = Date.now();
         this.book.coverUrl = CoverUrlNormalizer.prefer(oldCoverUrl, this.book.coverUrl);
@@ -96,27 +108,41 @@ export class ReadBookEngine {
         this.book.tocUrl = oldTocUrl;
       }
 
-      const chapters = await this.webBook.getChapterList(this.source, this.book);
+      const resolvedBook = this.book;
+      if (!resolvedBook || !this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
+      const chapters = await this.webBook.getChapterList(sessionSource, resolvedBook);
+      if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
       console.log('[RE] getChapterList done, count:', chapters.length);
       if (chapters.length > 0) {
-        await appDb.updateBook(this.book);
-        await appDb.deleteBookChapters(this.book.bookUrl);
+        const targetBook = this.book;
+        await appDb.updateBook(targetBook);
+        if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
+        await appDb.deleteBookChapters(targetBook.bookUrl);
+        if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
         await appDb.insertBookChapters(chapters);
+        if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
         this.chapters = chapters;
         this.chapterCache.clear();
         this.chapterLoading.clear();
-        await this.syncChapterCacheDates();
-        this.book.totalChapterNum = chapters.length;
-        this.book.latestChapterTitle = chapters[chapters.length - 1].title;
-        await appDb.updateBook(this.book);
+        await this.syncChapterCacheDates(expectedGeneration, sessionBookUrl);
+        if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
+        targetBook.totalChapterNum = chapters.length;
+        targetBook.latestChapterTitle = chapters[chapters.length - 1].title;
+        await appDb.updateBook(targetBook);
       } else {
         this.book.latestChapterTitle = this.book.latestChapterTitle || oldLatestChapter;
         this.book.tocUrl = this.book.tocUrl || oldTocUrl;
         console.warn('[RE] refreshToc returned no chapters, keep existing chapters:', this.chapters.length);
       }
     } finally {
-      this.isLoading = false;
+      if (this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) {
+        this.isLoading = false;
+      }
     }
+  }
+
+  private isCurrentBookSession(generation: number, bookUrl: string): boolean {
+    return generation === this.bookGeneration && !!this.book && this.book.bookUrl === bookUrl;
   }
 
   private preserveReadingState(target: Book, source: Book): void {
@@ -199,6 +225,9 @@ export class ReadBookEngine {
   private async fetchContent(idx: number): Promise<string> {
     if (idx < 0 || idx >= this.chapters.length || !this.book) return '';
 
+    const generation = this.bookGeneration;
+    const sessionBook = this.book;
+    const sessionBookUrl = sessionBook.bookUrl;
     const chapter = this.chapters[idx];
     if (this.chapterCache.has(idx)) {
       const memoryContent = this.chapterCache.get(idx)!;
@@ -208,7 +237,8 @@ export class ReadBookEngine {
     }
     if (this.chapterLoading.has(idx)) return await this.chapterLoading.get(idx)!;
 
-    const cached = await appDb.getCachedChapterContent(this.book.bookUrl, idx);
+    const cached = await appDb.getCachedChapterContent(sessionBookUrl, idx);
+    if (!this.isCurrentBookSession(generation, sessionBookUrl)) return '';
     if (cached && !this.isInvalidChapterContent(cached)) {
       this.putChapterCache(idx, cached);
       chapter.cacheDate = chapter.cacheDate || Date.now();
@@ -216,19 +246,20 @@ export class ReadBookEngine {
     }
 
     if (this.book.origin === 'local') {
-      const task = LocalChapterContentLoader.load(this.book, chapter)
+      let task: Promise<string>;
+      task = LocalChapterContentLoader.load(sessionBook, chapter)
         .then((text: string) => {
-          if (text) {
-            this.putChapterCache(idx, text);
-            chapter.cacheDate = Date.now();
-            appDb.saveCachedChapterContent(this.book!.bookUrl, chapter, text).catch((err: Error) => {
-              console.error('[RE] save local chapter cache failed:', idx, err);
-            });
-          }
+          if (!this.isCurrentBookSession(generation, sessionBookUrl)) return '';
+          if (!text) return text;
+          this.putChapterCache(idx, text);
+          chapter.cacheDate = Date.now();
+          appDb.saveCachedChapterContent(sessionBookUrl, chapter, text).catch((err: Error) => {
+            console.error('[RE] save local chapter cache failed:', idx, err);
+          });
           return text;
         })
         .finally(() => {
-          this.chapterLoading.delete(idx);
+          if (this.chapterLoading.get(idx) === task) this.chapterLoading.delete(idx);
         });
       this.chapterLoading.set(idx, task);
       return await task;
@@ -236,33 +267,37 @@ export class ReadBookEngine {
 
     if (!this.source) return '';
 
-    await this.refreshSourceForContent();
-    const task = this.webBook.getContent(this.source, this.book, chapter)
+    await this.refreshSourceForContent(generation, sessionBookUrl);
+    if (!this.isCurrentBookSession(generation, sessionBookUrl) || !this.source) return '';
+    const sessionSource = this.source;
+    let task: Promise<string>;
+    task = this.webBook.getContent(sessionSource, sessionBook, chapter)
       .then((text: string) => {
-        if (text) {
-          if (!this.isInvalidChapterContent(text)) {
-            this.putChapterCache(idx, text);
-            chapter.cacheDate = Date.now();
-            appDb.saveCachedChapterContent(this.book!.bookUrl, chapter, text).catch((err: Error) => {
-              console.error('[RE] save chapter cache failed:', idx, err);
-            });
-          }
+        if (!this.isCurrentBookSession(generation, sessionBookUrl)) return '';
+        if (text && !this.isInvalidChapterContent(text)) {
+          this.putChapterCache(idx, text);
+          chapter.cacheDate = Date.now();
+          appDb.saveCachedChapterContent(sessionBookUrl, chapter, text).catch((err: Error) => {
+            console.error('[RE] save chapter cache failed:', idx, err);
+          });
         }
         return text;
       })
       .finally(() => {
-        this.chapterLoading.delete(idx);
+        if (this.chapterLoading.get(idx) === task) this.chapterLoading.delete(idx);
       });
     this.chapterLoading.set(idx, task);
     return await task;
   }
 
-  private async refreshSourceForContent(): Promise<void> {
+  private async refreshSourceForContent(expectedGeneration: number = this.bookGeneration,
+    expectedBookUrl: string = this.book?.bookUrl || ''): Promise<void> {
     if (!this.book || !this.source || !this.book.origin || this.book.origin === 'local') {
       return;
     }
-    const latestSource = await appDb.getBookSource(this.book.origin);
-    if (latestSource) {
+    const origin = this.book.origin;
+    const latestSource = await appDb.getBookSource(origin);
+    if (latestSource && this.isCurrentBookSession(expectedGeneration, expectedBookUrl)) {
       this.source = latestSource;
     }
   }
@@ -289,11 +324,13 @@ export class ReadBookEngine {
     return !!text;
   }
 
-  async syncChapterCacheDates(): Promise<void> {
+  async syncChapterCacheDates(expectedGeneration: number = this.bookGeneration,
+    expectedBookUrl: string = this.book?.bookUrl || ''): Promise<void> {
     if (!this.book || this.chapters.length === 0) {
       return;
     }
-    const cacheDates = await appDb.getBookChapterCacheDateMap(this.book.bookUrl);
+    const cacheDates = await appDb.getBookChapterCacheDateMap(expectedBookUrl);
+    if (!this.isCurrentBookSession(expectedGeneration, expectedBookUrl)) return;
     for (const chapter of this.chapters) {
       chapter.cacheDate = cacheDates.get(chapter.index) || 0;
     }
@@ -311,7 +348,11 @@ export class ReadBookEngine {
 
   async refreshSourceInteractionState(): Promise<boolean> {
     if (!this.book || !this.source || !this.book.origin || this.book.origin === 'local') return false;
-    const latestSource = await appDb.getBookSource(this.book.origin);
+    const generation = this.bookGeneration;
+    const sessionBook = this.book;
+    const sessionBookUrl = sessionBook.bookUrl;
+    const latestSource = await appDb.getBookSource(sessionBook.origin);
+    if (!this.isCurrentBookSession(generation, sessionBookUrl)) return false;
     if (!latestSource) return false;
     const nextIdentity = this.buildSourceInteractionIdentity(latestSource);
     this.source = latestSource;
@@ -321,26 +362,32 @@ export class ReadBookEngine {
     this.chapterLoading.clear();
     this.content = '';
     this.preloadGeneration++;
-    await appDb.deleteBookCachedContent(this.book.bookUrl);
-    this.book.putVariable(ReadBookEngine.SOURCE_INTERACTION_IDENTITY_KEY, nextIdentity);
-    await appDb.updateBook(this.book, false);
+    await appDb.deleteBookCachedContent(sessionBookUrl);
+    if (!this.isCurrentBookSession(generation, sessionBookUrl)) return false;
+    sessionBook.putVariable(ReadBookEngine.SOURCE_INTERACTION_IDENTITY_KEY, nextIdentity);
+    await appDb.updateBook(sessionBook, false);
+    if (!this.isCurrentBookSession(generation, sessionBookUrl)) return false;
     console.info('[RE] source interaction settings changed, chapter cache cleared:',
       this.source.bookSourceName);
     return true;
   }
 
-  private async initializeSourceInteractionIdentity(): Promise<void> {
-    if (!this.book || !this.source || this.book.origin === 'local') {
+  private async initializeSourceInteractionIdentity(expectedGeneration: number = this.bookGeneration,
+    expectedBook: Book | null = this.book): Promise<void> {
+    if (!expectedBook || !this.source || expectedBook.origin === 'local') {
       this.sourceInteractionIdentity = '';
       return;
     }
+    const expectedBookUrl = expectedBook.bookUrl;
     const nextIdentity = this.buildSourceInteractionIdentity(this.source);
-    const storedIdentity = this.book.getVariable(ReadBookEngine.SOURCE_INTERACTION_IDENTITY_KEY);
+    const storedIdentity = expectedBook.getVariable(ReadBookEngine.SOURCE_INTERACTION_IDENTITY_KEY);
     this.sourceInteractionIdentity = nextIdentity;
     if (storedIdentity === nextIdentity) return;
-    await appDb.deleteBookCachedContent(this.book.bookUrl);
-    this.book.putVariable(ReadBookEngine.SOURCE_INTERACTION_IDENTITY_KEY, nextIdentity);
-    await appDb.updateBook(this.book, false);
+    await appDb.deleteBookCachedContent(expectedBookUrl);
+    if (!this.isCurrentBookSession(expectedGeneration, expectedBookUrl)) return;
+    expectedBook.putVariable(ReadBookEngine.SOURCE_INTERACTION_IDENTITY_KEY, nextIdentity);
+    await appDb.updateBook(expectedBook, false);
+    if (!this.isCurrentBookSession(expectedGeneration, expectedBookUrl)) return;
     console.info('[RE] source interaction cache identity initialized:', this.source.bookSourceName);
   }
 

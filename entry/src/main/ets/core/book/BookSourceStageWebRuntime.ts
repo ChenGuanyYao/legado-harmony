@@ -188,7 +188,7 @@ export class BookSourceStageWebRuntime {
   }
 
   isAvailable(): boolean {
-    return !!this.controller && this.ready;
+    return this.findReadyController() !== null;
   }
 
   execute(request: StageWebRuntimeRequest): Promise<StageWebRuntimeResult> {
@@ -243,7 +243,7 @@ export class BookSourceStageWebRuntime {
   }
 
   private startNext(): void {
-    if (this.running || !this.controller || !this.ready || this.tasks.length === 0) return;
+    if (this.running || !this.findReadyController() || this.tasks.length === 0) return;
     const task = this.tasks.shift();
     if (!task) return;
     this.queuedBytes = Math.max(0, this.queuedBytes - task.estimatedBytes);
@@ -352,6 +352,7 @@ export class BookSourceStageWebRuntime {
           throw new Error('书源脚本累计响应过大');
         }
         responses[step.pendingAjax] = responseBody;
+        this.captureResponseCookies(cookies, step.pendingAjax, response.url || '', response.headers);
         continue;
       }
       if (step.errorMessage) throw new Error(this.smallApiError(lastResponseBody) || step.errorMessage);
@@ -419,15 +420,56 @@ export class BookSourceStageWebRuntime {
     }
   }
 
+  private captureResponseCookies(target: Record<string, string>, requestSpec: string,
+    responseUrl: string, responseHeaders: Record<string, string>): void {
+    const urls: string[] = [];
+    const requestUrl = this.requestUrlFromSpec(requestSpec);
+    for (const value of [requestUrl, responseUrl]) {
+      const clean = (value || '').trim();
+      if (!clean || !/^https?:\/\//i.test(clean) || urls.includes(clean)) continue;
+      urls.push(clean);
+      const origin = clean.match(/^(https?:\/\/[^/?#]+)/i);
+      if (origin && origin[1] && !urls.includes(origin[1])) urls.push(origin[1]);
+    }
+    let setCookie = '';
+    for (const key of Object.keys(responseHeaders || {})) {
+      if (key.toLowerCase() === 'set-cookie') {
+        setCookie = String(responseHeaders[key] || '');
+        break;
+      }
+    }
+    for (const url of urls) target[url] = setCookie || CookieStore.getCookie(url);
+  }
+
+  private requestUrlFromSpec(spec: string): string {
+    const value = (spec || '').trim();
+    const optionAt = value.indexOf(',{');
+    return optionAt > 0 ? value.substring(0, optionAt).trim() : value;
+  }
+
   private ensureNotCancelled(request: StageWebRuntimeRequest): void {
     if (request.ownerId && this.cancelledOwners.has(request.ownerId)) {
       throw new Error('书源脚本任务已取消');
     }
   }
 
-  private runJavaScript(script: string): Promise<string> {
-    const controller = this.controller;
-    if (!controller || !this.ready) return Promise.reject(new Error('书源脚本运行环境未就绪'));
+  private async runJavaScript(script: string): Promise<string> {
+    let controller = this.findReadyController();
+    // A routed detail page can mount its hidden Web host while the Index host is still alive.
+    // During onControllerAttached -> onPageBegin -> onPageEnd, `this.controller` temporarily
+    // points at an unready controller although another attached controller is usable. Also, the
+    // database refresh at the start of a task gives that lifecycle race a chance to happen after
+    // the queue has already accepted the task. Resolve a ready attached controller at the actual
+    // execution point and wait for remount/recycle recovery when none is ready.
+    if (!controller) {
+      const available = await this.waitUntilAvailable(5000);
+      if (available) controller = this.findReadyController();
+    }
+    if (!controller) throw new Error('书源脚本运行环境未就绪');
+    return this.runJavaScriptOnController(controller, script);
+  }
+
+  private runJavaScriptOnController(controller: webview.WebviewController, script: string): Promise<string> {
     return new Promise<string>((resolve, reject) => {
       let completed = false;
       const timer = setTimeout(() => {
@@ -450,6 +492,15 @@ export class BookSourceStageWebRuntime {
           reject(error);
         });
     });
+  }
+
+  private findReadyController(): webview.WebviewController | null {
+    if (this.controller && this.readyControllers.has(this.controller)) return this.controller;
+    for (let index = this.controllers.length - 1; index >= 0; index--) {
+      const candidate = this.controllers[index];
+      if (this.readyControllers.has(candidate)) return candidate;
+    }
+    return null;
   }
 
   /** A timed-out renderer must not receive the next queued script. Rebuild the hidden Web host first. */
@@ -654,11 +705,15 @@ export class BookSourceStageWebRuntime {
       `replaceCookie:function(k,v){k=String(k??'');v=String(v??'');cookieData[k]=v;cookieOps.push({operation:'replace',url:k,value:v,name:''});return v;},` +
       `removeCookie:function(k,n){k=String(k??'');n=String(n??'');cookieOps.push({operation:'remove',url:k,value:'',name:n});` +
       `cookieData[k]='';return true;}};` +
+      `function loginHeaderMap(){if(!S.sourceLoginHeader)return null;let v;try{v=JSON.parse(S.sourceLoginHeader);}catch(e){return null;}` +
+      `if(!v||typeof v!=='object'||Array.isArray(v)||Object.keys(v).length===0)return null;for(const k of Object.keys(v)){` +
+      `const m=String(v[k]??'').match(/^Bearer\\s+([A-Za-z0-9_-]+)\\.([A-Za-z0-9_-]+)\\./i);if(!m)continue;try{` +
+      `let p=m[2].replace(/-/g,'+').replace(/_/g,'/');while(p.length%4)p+='=';const d=JSON.parse(b64d(p)||'{}');` +
+      `if(Number(d.exp||0)>0&&Number(d.exp)*1000<=Number(S.fixedNow)+30000)return null;}catch(e){}}return v;}` +
       `const source={bookSourceUrl:S.sourceUrl,bookSourceName:S.sourceName,header:S.sourceHeader,loginUrl:S.sourceLoginUrl||'',` +
       `getKey:function(){return S.sourceUrl;},getTag:function(){return S.sourceName;},getSource:function(){return this;},` +
       `getLoginHeader:function(){return S.sourceLoginHeader||'';},` +
-      `getLoginHeaderMap:function(){if(!S.sourceLoginHeader)return {};try{const v=JSON.parse(S.sourceLoginHeader);` +
-      `return v&&typeof v==='object'?v:{};}catch(e){return {};}},` +
+      `getLoginHeaderMap:loginHeaderMap,` +
       `putLoginHeader:function(v){S.sourceLoginHeader=typeof v==='string'?v:JSON.stringify(v??'');return S.sourceLoginHeader;},` +
       `removeLoginHeader:function(){S.sourceLoginHeader='';return '';},` +
       `getHeaderMap:function(){try{return JSON.parse(S.sourceHeader||'{}');}catch(e){return {};}} ,` +
@@ -672,6 +727,10 @@ export class BookSourceStageWebRuntime {
       `const book=Object.assign({},S.bookState||{});book.type=Number(S.bookType||book.type||0);` +
       `book.getVariable=function(k){return bookData[String(k??'')]??'';};` +
       `book.putVariable=function(k,v){bookData[String(k??'')]=String(v??'');return v;};` +
+      `book.setVariable=book.putVariable;book.setUseReplaceRule=function(v){` +
+      `if(!this.readConfig||typeof this.readConfig!=='object')this.readConfig={};` +
+      `this.readConfig.useReplaceRule=!!v;return !!v;};` +
+      `if(!book.readConfig||typeof book.readConfig!=='object')book.readConfig={};` +
       `Object.defineProperty(book,'variable',{configurable:true,get:function(){return JSON.stringify(bookData);},` +
       `set:function(v){let next={};try{next=JSON.parse(String(v||'{}'));}catch(e){}for(const k of Object.keys(bookData))delete bookData[k];` +
       `if(next&&typeof next==='object')Object.assign(bookData,next);}});book.abstract=book.intro||book.abstract||'';` +
@@ -684,10 +743,17 @@ export class BookSourceStageWebRuntime {
       `function stableDeviceId(){let value=String(javaData.__legadoHarmonyDeviceId||'').trim();` +
       `if(!/^[0-9a-f]{16}$/i.test(value)){value='';for(let i=0;i<16;i++)value+=Math.floor(Math.random()*16).toString(16);` +
       `javaData.__legadoHarmonyDeviceId=value;}return value;}` +
+      `function specUrl(v){v=String(v??'');const i=v.indexOf(',{');return i>0?v.substring(0,i):v;}` +
+      `function responseCookieList(v){const ignored={path:1,domain:1,expires:1,'max-age':1,secure:1,httponly:1,samesite:1,priority:1};` +
+      `const values=[];const seen={};const re=/(?:^|[;,\\r\\n]\\s*)([A-Za-z0-9_.-]+)=([^;,\\r\\n]*)/g;let m;` +
+      `while((m=re.exec(String(v??'')))!==null){const n=m[1],k=n.toLowerCase();if(ignored[k]||seen[k])continue;` +
+      `seen[k]=1;values.push(n+'='+String(m[2]??'').trim());}return values.join(', ');}` +
       `function responseObject(v){v=String(v??'');let body='';` +
       `if(Object.prototype.hasOwnProperty.call(S.responses,v))body=S.responses[v]??'';else if(!pending)pending=v;` +
       `return {body:function(){return body;},code:function(){return body?200:599;},` +
-      `isSuccessful:function(){return !!body;},headers:function(){return {};},toString:function(){return body;}};}` +
+      `isSuccessful:function(){return !!body;},headers:function(){return {};},cookies:function(){const u=specUrl(v);` +
+      `const c=responseCookieList(cookieData[u]);return {toString:function(){return c;},size:function(){return c?c.split(',').length:0;}};},` +
+      `toString:function(){return body;}};}` +
       `function requestSpec(method,u,b,h){const options={method:String(method||'GET').toUpperCase()};` +
       `if(b!==undefined&&b!==null)options.body=typeof b==='string'?b:JSON.stringify(b);` +
       `if(h&&typeof h==='object')options.headers=h;return String(u??'')+','+JSON.stringify(options);}` +
@@ -704,7 +770,8 @@ export class BookSourceStageWebRuntime {
       `ajaxAll:function(v){const list=Array.isArray(v)?v:[v];return list.map(responseObject);},` +
       `post:function(u,b,h){return responseObject(requestSpec('POST',u,b,h));},` +
       `put:function(k,v){javaData[String(k??'')]=v;return v;},` +
-      `get:function(k){k=String(k??'');return Object.prototype.hasOwnProperty.call(javaData,k)?javaData[k]:null;},` +
+      `get:function(k,h){if(arguments.length>1)return responseObject(requestSpec('GET',k,null,h));` +
+      `k=String(k??'');return Object.prototype.hasOwnProperty.call(javaData,k)?javaData[k]:null;},` +
       `log:function(v){return v===undefined?'':v;},logType:function(v){return v===undefined?'':v;},` +
       `toast:function(v){toast=String(v??'');return toast;},longToast:function(v){toast=String(v??'');return toast;},` +
       `androidId:stableDeviceId,deviceID:function(){if(S.readerActionMode)return stableDeviceId();` +

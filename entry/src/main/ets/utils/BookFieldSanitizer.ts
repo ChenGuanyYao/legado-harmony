@@ -5,13 +5,17 @@ export class BookFieldSanitizer {
   }
 
   static clean(value: string): string {
-    const text = (value || '').trim();
+    // A combined selector + JS rule may produce useful text even when one optional template
+    // expression is unsupported or absent. Remove those isolated placeholders before deciding
+    // whether the whole field is unresolved; never expose the rule expression itself.
+    const text = (value || '').replace(/\{\{[\s\S]*?\}\}/g, '').trim();
     if (!text || BookFieldSanitizer.isUnresolved(text)) {
       return '';
     }
     const cleaned = text
       .replace(/&nbsp;/gi, ' ')
       .replace(/&lrm;/gi, '')
+      .replace(/&shy;/gi, '')
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<[^>]+>/g, '')
       .replace(/\n{3,}/g, '\n\n')

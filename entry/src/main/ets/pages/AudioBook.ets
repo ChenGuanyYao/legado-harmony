@@ -17,6 +17,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
 import { BookSourceAudioWebRuntimeHost } from '../components/BookSourceAudioWebRuntimeHost';
+import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
 
 class AudioBookPlaybackListener implements RemoteAudioPlaybackListener {
   private readonly stateCallback: (state: string) => void;
@@ -217,6 +218,7 @@ struct AudioBookPage {
       }
       BookSourceStageRuntimeHost()
       BookSourceAudioWebRuntimeHost()
+      WebBookFetchRuntimeHost()
     }
     .width('100%')
     .height('100%')
@@ -734,8 +736,9 @@ struct AudioBookPage {
       this.book = storedBook;
       this.speed = this.savedSpeed(storedBook);
       const engine = ReadBookEngine.get();
+      const requestedBookUrl = storedBook.bookUrl;
       await engine.openBook(storedBook);
-      if (serial !== this.loadingSerial) return;
+      if (serial !== this.loadingSerial || engine.book?.bookUrl !== requestedBookUrl) return;
       this.book = engine.book || storedBook;
       BookTypeSupport.applyBookType(this.book, this.source);
       if (BookTypeSupport.isAudio(this.book) && this.book.type !== BookTypeSupport.AUDIO) {

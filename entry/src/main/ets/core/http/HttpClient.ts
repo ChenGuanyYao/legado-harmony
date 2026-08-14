@@ -2,6 +2,7 @@ import http from '@ohos.net.http';
 import { util } from '@kit.ArkTS';
 import { CookieStore } from './CookieStore';
 import { TlsTrustStore } from './TlsTrustStore';
+import { WebBookFetchRuntime } from '../book/WebBookFetchRuntime';
 
 export interface HttpRequest {
   url: string;
@@ -15,6 +16,8 @@ export interface HttpRequest {
   readTimeout?: number;
   contentType?: string;
   maxResponseBytes?: number;
+  useWebView?: boolean;
+  webJs?: string;
 }
 
 export interface HttpResponse {
@@ -52,6 +55,25 @@ export class HttpClient {
   async execute(req: HttpRequest): Promise<HttpResponse> {
     if (!req.url || req.url.trim() === '') {
       return { url: '', statusCode: 0, headers: {}, body: '', success: false, error: 'empty url' };
+    }
+    if (req.useWebView) {
+      const runtime = WebBookFetchRuntime.get();
+      // Only wait for the hidden ArkWeb host to attach. A busy host is healthy: fetch() queues
+      // subsequent requests and runs them in order instead of misreporting it as "not ready".
+      const attached = await runtime.waitUntilAttached(8000);
+      if (!attached) {
+        return { url: req.url, statusCode: 0, headers: {}, body: '', success: false,
+          error: 'WebView 抓取环境未挂载，请重新进入当前页面' };
+      }
+      return await runtime.fetch({
+        url: req.url,
+        method: req.method,
+        headers: { ...this.defaultHeaders, ...req.headers },
+        body: req.body,
+        webJs: req.webJs,
+        timeoutMs: Math.max(req.connectTimeout || 0, req.readTimeout || 0, this.timeout),
+        maxResponseBytes: req.maxResponseBytes
+      });
     }
     const response = await this.executeWithProtocol(req, false);
     if (!response.success && this.shouldRetryWithHttp1(req.url, response.error || '')) {

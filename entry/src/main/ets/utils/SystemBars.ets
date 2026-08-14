@@ -34,13 +34,16 @@ export function syncSystemSafeAreas(mainWindow: window.Window): void {
       navigationArea.bottomRect.height,
       gestureArea.bottomRect.height
     ));
-    AppStorage.setOrCreate('statusBarHeight', topHeight > 0 ? topHeight : 32);
+    // A zero top avoid area is valid in landscape, free-form windows and on devices whose
+    // system bar is not attached to the top edge. Treating it as a failed query leaves a
+    // permanent 32vp strip in full-screen readers.
+    AppStorage.setOrCreate('statusBarHeight', topHeight);
     AppStorage.setOrCreate('navBarHeight', bottomHeight > 0 ? bottomHeight : 0);
     registerSafeAreaListener(mainWindow);
   } catch (err) {
     console.error('同步系统安全区失败:', err);
-    AppStorage.setOrCreate('statusBarHeight', 32);
-    AppStorage.setOrCreate('navBarHeight', 0);
+    AppStorage.setOrCreate('statusBarHeight', AppStorage.get<number>('statusBarHeight') ?? 0);
+    AppStorage.setOrCreate('navBarHeight', AppStorage.get<number>('navBarHeight') ?? 0);
   }
 }
 

@@ -1,4 +1,5 @@
 import { Book, BookChapter, BookSource } from '../../model/data/Book';
+import { BookSourceRuntimeSnapshotStore } from './BookSourceRuntimeSnapshot';
 
 /**
  * Reader content is returned exactly as produced by the imported source rules. The application
@@ -15,7 +16,9 @@ export class BookSourceInteractionPostProcessor {
   }
 
   static interactionCacheIdentity(source: BookSource): string {
-    return '';
+    // Source login panels persist feature switches in variable/loginInfo. Include their complete compact
+    // snapshot identity so returning from the panel invalidates chapter content fetched under the old state.
+    return BookSourceRuntimeSnapshotStore.get(source).signature;
   }
 
   static async process(source: BookSource, book: Book | null, chapter: BookChapter,

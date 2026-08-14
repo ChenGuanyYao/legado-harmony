@@ -1073,7 +1073,7 @@ export class SystemTtsReader {
       this.fillCustomAudioJobs(generation, voice, jobs);
       this.currentFocusAudioReceived = true;
       this.queueCurrentChunkFocusOnAudio(generation);
-      await this.httpReader.writeAudio(result.audio);
+      await this.httpReader.writeAudioRecovering(voice, job.text, this.getTtsSpeed(), result.audio);
       if (this.readGeneration !== generation || !this.active) {
         return;
       }

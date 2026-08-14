@@ -88,7 +88,9 @@ struct StartupPage {
       return;
     }
     if (this.hasPendingBookSourceImport()) {
-      await router.replaceUrl({ url: 'pages/BookSource' });
+      // Keep a real home route under the external-import page so Back returns to the app.
+      await router.replaceUrl({ url: 'pages/Index' });
+      await router.pushUrl({ url: 'pages/BookSource' });
       return;
     }
     if (!RecentReadShortcut.isPending()) {

@@ -1,4 +1,5 @@
 import { webview } from '@kit.ArkWeb';
+import { util } from '@kit.ArkTS';
 
 export class CookieStore {
   static getCookie(url: string): string {
@@ -6,7 +7,7 @@ export class CookieStore {
     for (const target of this.targetUrls(url)) {
       try {
         const value = webview.WebCookieManager.fetchCookieSync(target) || '';
-        if (value) return value;
+        if (value) return this.withoutExpiredJwtCookies(value);
       } catch (_) {
       }
     }
@@ -110,6 +111,41 @@ export class CookieStore {
     }
     values.push(cookies.substring(start).trim());
     return values.filter(v => v.length > 0);
+  }
+
+  /**
+   * WebCookieManager can retain a session cookie after the JWT carried by that cookie has
+   * expired. Sending it again may prevent an authentication bootstrap endpoint from issuing a
+   * replacement. Filter only self-describing JWT cookie values whose `exp` is unequivocally in
+   * the past; opaque cookies and malformed values are preserved unchanged.
+   */
+  private static withoutExpiredJwtCookies(cookies: string): string {
+    const valid: string[] = [];
+    for (const item of (cookies || '').split(';')) {
+      const pair = item.trim();
+      const separator = pair.indexOf('=');
+      if (separator <= 0) continue;
+      const value = pair.substring(separator + 1).trim();
+      if (this.isExpiredJwt(value)) continue;
+      valid.push(pair);
+    }
+    return valid.join('; ');
+  }
+
+  private static isExpiredJwt(value: string): boolean {
+    const segments = (value || '').split('.');
+    if (segments.length !== 3 || !segments[1]) return false;
+    try {
+      let payload = segments[1].replace(/-/g, '+').replace(/_/g, '/');
+      while (payload.length % 4 !== 0) payload += '=';
+      const bytes = new util.Base64Helper().decodeSync(payload);
+      const text = util.TextDecoder.create('utf-8').decodeWithStream(bytes, { stream: false });
+      const parsed = JSON.parse(text) as Record<string, Object>;
+      const expiresAt = Number(parsed['exp'] || 0) * 1000;
+      return Number.isFinite(expiresAt) && expiresAt > 0 && expiresAt <= Date.now();
+    } catch (_) {
+      return false;
+    }
   }
 
   private static targetUrls(url: string): string[] {

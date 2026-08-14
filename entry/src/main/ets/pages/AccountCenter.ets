@@ -943,11 +943,12 @@ struct AccountCenterPage {
           }
         }, (product: RechargeProduct) => product.productId)
       }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .columnsTemplate(this.rechargeColumnsTemplate())
       .columnsGap(10)
       .rowsGap(10)
       .width('100%')
+      .height(this.rechargeGridHeight())
+      .enableScrollInteraction(false)
     }
     .width('100%')
     .padding(16)
@@ -1041,6 +1042,19 @@ struct AccountCenterPage {
 
   rechargeColumnsTemplate(): string {
     return this.viewportWidth > this.viewportHeight ? '1fr 1fr 1fr' : '1fr 1fr';
+  }
+
+  rechargeColumnCount(): number {
+    return this.viewportWidth > this.viewportHeight ? 3 : 2;
+  }
+
+  rechargeRowCount(): number {
+    return Math.max(1, Math.ceil(this.products.length / this.rechargeColumnCount()));
+  }
+
+  rechargeGridHeight(): number {
+    const rows = this.rechargeRowCount();
+    return rows * 98 + Math.max(0, rows - 1) * 10;
   }
 
   areaDimension(value: Length): number {

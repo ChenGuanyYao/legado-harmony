@@ -53,9 +53,15 @@ export class RuleExecutionService {
 
       for (const field of request.fields) {
         const code = this.extractStandaloneJsCode(field.rule);
-        if (code === null) continue;
+        const postProcessor = code === null ? this.extractPostProcessorJs(field.rule) : null;
+        if (code === null && postProcessor === null) continue;
         try {
-          fullJsValues[field.name] = await this.executeFullJsFieldBatch(request, field, code, token);
+          if (code !== null) {
+            fullJsValues[field.name] = await this.executeFullJsFieldBatch(request, field, code, token);
+          } else if (postProcessor !== null) {
+            fullJsValues[field.name] = await this.executePostProcessorJsFieldBatch(request, field,
+              postProcessor.baseRule, postProcessor.code, token);
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error || '完整脚本执行失败');
           result.errors.push(`${field.name}: ${message}`);
@@ -148,19 +154,96 @@ export class RuleExecutionService {
     runtimeRequest.baseUrl = request.baseUrl || request.source.bookSourceUrl;
     runtimeRequest.variables = request.contextValues;
     runtimeRequest.ownerId = request.ownerId;
-    runtimeRequest.code = `const __fieldItems=JSON.parse(result||'[]');const __fieldCodeTemplate=${JSON.stringify(code)};` +
+    // Android Legado accepts a common field-script idiom where the script builds `let info = ...`
+    // and a final conditional statement has no completion value.  A plain WebView eval returns
+    // undefined in that case.  Bind that well-known intro accumulator to the surrounding field
+    // scope so it can be used only as a fallback; an explicit eval result (including <usehtml>)
+    // still wins.  This is rule-language compatibility and is not tied to any source or site.
+    // Prefer the top-level template accumulator. Some rules also have a nested helper containing
+    // `let info = ""`; capturing that local variable would leave the actual intro accumulator
+    // scoped inside eval and produce an empty result.
+    const introInfoDeclaration = /\b(?:let|const|var)\s+info\s*=\s*(?=`)/;
+    const capturesIntroInfo = field.name === 'intro' && introInfoDeclaration.test(code);
+    const compatibleCode = capturesIntroInfo ?
+      code.replace(/\b(?:let|const|var)\s+(?=info\s*=\s*`)/, '') : code;
+    runtimeRequest.code = `const __fieldItems=JSON.parse(result||'[]');const __fieldCodeTemplate=${JSON.stringify(compatibleCode)};` +
       `const __fieldList=${field.listResult ? 'true' : 'false'};` +
       `JSON.stringify(__fieldItems.map(function(__fieldItem){java.__setContextContent(__fieldItem);` +
-      `try{const $=__fieldItem;const __fieldCode=__fieldCodeTemplate.replace(/\\{\\{([\\s\\S]*?)\\}\\}/g,` +
+      `try{const $=__fieldItem;let info;const __fieldCode=__fieldCodeTemplate.replace(/\\{\\{([\\s\\S]*?)\\}\\}/g,` +
       `function(_all,__expr){try{const __inner=eval(__expr);return __inner==null?'':String(__inner);}catch(__innerError){return '';}});` +
-      `const __fieldValue=eval(__fieldCode);if(__fieldValue==null)return '';` +
+      `let __fieldValue=eval(__fieldCode);` +
+      `${capturesIntroInfo ? `if(__fieldValue==null&&info!=null)__fieldValue=info;` : ''}` +
+      `if(__fieldValue==null)return '';` +
       `return __fieldList?JSON.stringify(Array.isArray(__fieldValue)?__fieldValue:[__fieldValue]):String(__fieldValue);}` +
-      `catch(__fieldError){return '';}}));`;
+      `catch(__fieldError){return '__LEGADO_FIELD_ERROR__'+String((__fieldError&&__fieldError.name?` +
+      `__fieldError.name+': ':'')+((__fieldError&&__fieldError.message)||__fieldError||'脚本执行失败'));}}));`;
     const runtimeResult = await runtime.execute(runtimeRequest);
     token.throwIfCancelled();
     const parsed = JSON.parse(runtimeResult.value || '[]') as Object;
     if (!Array.isArray(parsed)) throw new Error('完整脚本批量结果格式错误');
-    return (parsed as Object[]).map((value: Object): string => String(value || ''));
+    const values = (parsed as Object[]).map((value: Object): string => String(value || ''));
+    const fieldError = values.find((value: string): boolean => value.startsWith('__LEGADO_FIELD_ERROR__'));
+    if (fieldError) throw new Error(fieldError.substring('__LEGADO_FIELD_ERROR__'.length));
+    return values;
+  }
+
+  /**
+   * Android-style combined rules first extract/template a value and then run an `@js:` suffix
+   * with that value exposed as `result`. Keep the original item as the JSON/path context (`$`,
+   * `src`, java.getString) while the full script runs in the bounded host runtime.
+   */
+  private async executePostProcessorJsFieldBatch(request: RuleBatchExecutionRequest, field: RuleFieldRequest,
+    baseRule: string, code: string, token: CooperativeCancellationToken): Promise<string[]> {
+    const baseValues: string[] = [];
+    for (let index = 0; index < request.contents.length; index++) {
+      token.throwIfCancelled();
+      const analyzer = new AnalyzeRule(request.contents[index] || '', request.baseUrl);
+      this.seedSourceVariables(analyzer.getContext(), request.source, request.contextValues);
+      baseValues.push(field.listResult ? JSON.stringify(analyzer.getStringList(baseRule)) :
+        (field.joinMatches ? analyzer.getStringList(baseRule).map((value: string): string => value.trim())
+          .filter((value: string): boolean => !!value).join('\n\n') : analyzer.analyzeFirst(baseRule)));
+    }
+
+    const runtime = BookSourceStageWebRuntime.get();
+    if (!runtime.isAvailable()) {
+      const available = await runtime.waitUntilAvailable(5000);
+      if (!available) throw new Error('完整脚本运行环境未就绪');
+    }
+    const runtimeRequest = new StageWebRuntimeRequest();
+    runtimeRequest.applyStageBudget(request.stage);
+    runtimeRequest.source = request.source;
+    runtimeRequest.book = request.book;
+    runtimeRequest.chapter = request.chapter;
+    runtimeRequest.readerActionMode = request.readerActionMode;
+    runtimeRequest.content = JSON.stringify(request.contents.map((item: string): Object | string => {
+      try { return JSON.parse(item) as Object; } catch (_) { return item; }
+    }));
+    runtimeRequest.contextContent = '';
+    runtimeRequest.baseUrl = request.baseUrl || request.source.bookSourceUrl;
+    runtimeRequest.variables = request.contextValues;
+    runtimeRequest.ownerId = request.ownerId;
+    runtimeRequest.code = `const __postItems=JSON.parse(result||'[]');` +
+      `const __postBases=${JSON.stringify(baseValues)};const __postTemplate=${JSON.stringify(code)};` +
+      `JSON.stringify(__postItems.map(function(__postItem,__postIndex){java.__setContextContent(__postItem);` +
+      `try{const $=__postItem;const __postSource=typeof __postItem==='string'?__postItem:JSON.stringify(__postItem);` +
+      `globalThis.src=__postSource;globalThis.result=String(__postBases[__postIndex]||'').replace(` +
+      `/\\{\\{([\\s\\S]*?)\\}\\}/g,function(_all,__expr){try{const __inner=eval(__expr);` +
+      `return __inner==null?'':String(__inner);}catch(__baseInnerError){return '';}});` +
+      `const __postCode=__postTemplate.replace(/\\{\\{([\\s\\S]*?)\\}\\}/g,function(_all,__expr){` +
+      `try{const __inner=eval(__expr);return __inner==null?'':String(__inner);}catch(__innerError){return '';}});` +
+      `const __postValue=eval(__postCode);if(__postValue==null)return String(globalThis.result||'');` +
+      `return ${field.listResult ? `JSON.stringify(Array.isArray(__postValue)?__postValue:[__postValue])` :
+        `String(__postValue)`};}catch(__postError){return '__LEGADO_FIELD_ERROR__'+` +
+      `String((__postError&&__postError.name?__postError.name+': ':'')+` +
+      `((__postError&&__postError.message)||__postError||'脚本执行失败'));}}));`;
+    const runtimeResult = await runtime.execute(runtimeRequest);
+    token.throwIfCancelled();
+    const parsed = JSON.parse(runtimeResult.value || '[]') as Object;
+    if (!Array.isArray(parsed)) throw new Error('完整脚本批量结果格式错误');
+    const values = (parsed as Object[]).map((value: Object): string => String(value || ''));
+    const fieldError = values.find((value: string): boolean => value.startsWith('__LEGADO_FIELD_ERROR__'));
+    if (fieldError) throw new Error(fieldError.substring('__LEGADO_FIELD_ERROR__'.length));
+    return values;
   }
 
   private extractStandaloneJsCode(rule: string): string | null {
@@ -168,6 +251,33 @@ export class RuleExecutionService {
     const tagged = value.match(/^<js>([\s\S]*?)<\/js>$/i);
     if (tagged) return (tagged[1] || '').trim();
     if (/^@?js:/i.test(value)) return value.replace(/^@?js:\s*/i, '');
+    return null;
+  }
+
+  private extractPostProcessorJs(rule: string): { baseRule: string, code: string } | null {
+    const value = rule || '';
+    let templateDepth = 0;
+    for (let index = 0; index < value.length - 3; index++) {
+      if (value.substring(index, index + 2) === '{{') {
+        templateDepth++;
+        index++;
+        continue;
+      }
+      if (value.substring(index, index + 2) === '}}' && templateDepth > 0) {
+        templateDepth--;
+        index++;
+        continue;
+      }
+      if (templateDepth === 0 && value.substring(index, index + 4).toLowerCase() === '@js:') {
+        const baseRule = value.substring(0, index).trimEnd();
+        const code = value.substring(index + 4).trim();
+        // Replacement processors following JS need an additional ordered stage. Leave those on
+        // the legacy path until that stage is represented explicitly rather than guessing where
+        // JavaScript string literals end.
+        if (!baseRule || !code || code.includes('##')) return null;
+        return { baseRule: baseRule, code: code };
+      }
+    }
     return null;
   }
 

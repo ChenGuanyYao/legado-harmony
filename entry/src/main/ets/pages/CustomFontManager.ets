@@ -210,7 +210,7 @@ struct CustomFontManagerPage {
       const context = getContext(this);
       const dir = `${context.filesDir}/reader_fonts`;
       await this.ensureDir(dir);
-      const sourceName = this.fileNameFromUri(sourceUri);
+      const sourceName = await this.resolvePickedFontName(sourceUri);
       const destName = await this.uniqueFontFileName(dir, this.asciiStoredFontName(sourceName, Date.now()));
       const destPath = `${dir}/${destName}`;
       const copySource = sourceUri.startsWith('/') ? fileUri.getUriFromPath(sourceUri) : sourceUri;
@@ -451,9 +451,43 @@ struct CustomFontManagerPage {
   }
 
   fileNameFromUri(uri: string): string {
-    const decoded = decodeURIComponent(uri || '');
+    const withoutQuery = String(uri || '').split('?')[0].split('#')[0];
+    const decoded = decodeURIComponent(withoutQuery);
     const index = Math.max(decoded.lastIndexOf('/'), decoded.lastIndexOf('\\'));
     return index >= 0 ? decoded.substring(index + 1) : decoded || '自定义字体';
+  }
+
+  async resolvePickedFontName(uri: string): Promise<string> {
+    let file: fs.File | null = null;
+    try {
+      file = await fs.open(uri, fs.OpenMode.READ_ONLY);
+      const name = String(file.name || '').trim();
+      if (name && this.isFontFile(name)) return name;
+    } catch (_) {
+    } finally {
+      if (file) {
+        try { await fs.close(file); } catch (_) {}
+      }
+    }
+    const queryName = this.uriQueryFileName(uri);
+    return queryName || this.fileNameFromUri(uri);
+  }
+
+  uriQueryFileName(uri: string): string {
+    const queryIndex = String(uri || '').indexOf('?');
+    if (queryIndex < 0) return '';
+    const parts = String(uri).substring(queryIndex + 1).split('&');
+    for (const part of parts) {
+      const separator = part.indexOf('=');
+      if (separator < 0) continue;
+      const key = part.substring(0, separator).toLowerCase();
+      if (key !== 'displayname' && key !== 'filename' && key !== 'name') continue;
+      try {
+        const value = decodeURIComponent(part.substring(separator + 1)).trim();
+        if (value && this.isFontFile(value)) return value;
+      } catch (_) {}
+    }
+    return '';
   }
 
   hasCustomFont(fonts: ReaderCustomFontItem[], familyName: string, filePath: string): boolean {

@@ -129,14 +129,16 @@ export class BookSourceRuntimeSnapshotStore {
   private static buildSignature(source: BookSource): string {
     const login = source.loginInfo || '';
     const variable = source.variable || '';
-    return `${source.lastUpdateTime || 0}:${login.length}:${variable.length}:` +
-      `${this.edgeSample(login)}:${this.edgeSample(variable)}`;
+    return `${source.lastUpdateTime || 0}:${this.textSignature(login)}:${this.textSignature(variable)}`;
   }
 
-  private static edgeSample(value: string): string {
-    if (!value) return '';
-    const edgeLength = Math.min(24, value.length);
-    return `${value.substring(0, edgeLength)}|${value.substring(value.length - edgeLength)}`;
+  private static textSignature(value: string): string {
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index++) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `${value.length}:${(hash >>> 0).toString(16)}`;
   }
 }
 
@@ -144,9 +146,11 @@ export class BookSourceSettingValue {
   static state(value: Object | string | undefined | null): number {
     const normalized = String(value ?? '').trim().toLowerCase();
     if (normalized === 'on' || normalized === 'true' || normalized === '1' || normalized === 'yes' ||
-      normalized === 'enabled' || normalized === '✅' || normalized === '☑' || normalized === '☑️') return 1;
+      normalized === 'enabled' || normalized === '开' || normalized === '开启' || normalized === '打开' ||
+      normalized === '已开启' || normalized === '✅' || normalized === '☑' || normalized === '☑️') return 1;
     if (normalized === 'off' || normalized === 'false' || normalized === '0' || normalized === 'no' ||
-      normalized === 'disabled' || normalized === '❌' || normalized === '🔳' || normalized === '☐') return -1;
+      normalized === 'disabled' || normalized === '关' || normalized === '关闭' || normalized === '已关闭' ||
+      normalized === '❌' || normalized === '🔳' || normalized === '☐') return -1;
     return 0;
   }
 }
