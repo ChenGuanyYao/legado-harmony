@@ -28,31 +28,3 @@ export class ReaderV2GestureRouter {
     return result;
   }
 }
-
-export class ReaderV2SelectionController {
-  start: number = -1;
-  end: number = -1;
-  active: boolean = false;
-
-  begin(wordRange: number[]): void {
-    if (wordRange.length < 2 || wordRange[1] <= wordRange[0]) {
-      this.clear();
-      return;
-    }
-    this.start = wordRange[0];
-    this.end = wordRange[1];
-    this.active = true;
-  }
-
-  moveHandle(offset: number, leading: boolean): void {
-    if (!this.active || offset < 0) return;
-    if (leading) this.start = Math.min(offset, this.end - 1);
-    else this.end = Math.max(offset, this.start + 1);
-  }
-
-  clear(): void {
-    this.start = -1;
-    this.end = -1;
-    this.active = false;
-  }
-}

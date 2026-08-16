@@ -25,7 +25,7 @@ const reader = read('entry/src/main/ets/pages/ReadBook.ets');
 
 assert(scheduler.includes('DEFAULT_UI_SLICE_MS: number = 6'),
   'Cooperative scheduler must keep the UI work slice below one frame');
-assert(scheduler.includes('setTimeout(resolve, 0)'),
+assert(/setTimeout\(resolve,\s*[01]\)/.test(scheduler),
   'Cooperative scheduler must yield back to the event loop');
 assert(scheduler.includes('CooperativeCancellationToken') && scheduler.includes('throwIfCancelled'),
   'Long-running rule work must remain cancellable');

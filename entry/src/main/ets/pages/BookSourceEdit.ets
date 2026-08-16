@@ -98,10 +98,20 @@ struct BookSourceEditPage {
 
     try {
       const db = AppDatabase.getInstance();
-      const existing = await db.getBookSource(this.source.bookSourceUrl);
+      await db.initWithContext(getContext(this));
+      const originalUrl = this.bookSourceUrl || this.source.bookSourceUrl;
+      const existing = await db.getBookSource(originalUrl);
+      if (originalUrl !== this.source.bookSourceUrl) {
+        const conflicting = await db.getBookSource(this.source.bookSourceUrl);
+        if (conflicting) {
+          promptAction.showToast({ message: '新的书源地址已存在，请更换地址后再保存' });
+          return;
+        }
+      }
+      this.synchronizeRawSourceJson();
       this.source.validationStatus = BookSource.VALIDATION_UNCHECKED;
       if (existing) {
-        await db.updateBookSource(this.source);
+        await db.updateBookSource(this.source, originalUrl);
       } else {
         await db.insertBookSource(this.source);
       }
@@ -311,6 +321,45 @@ struct BookSourceEditPage {
 
   markSourceSaved(): void {
     this.savedSourceSnapshot = this.sourceSnapshot();
+  }
+
+  /** Keep the lossless import snapshot aligned with manual edits, including fields cleared to an empty string. */
+  synchronizeRawSourceJson(): void {
+    let raw: Record<string, Object> = {};
+    try {
+      const parsed = JSON.parse(this.source.rawSourceJson || '{}') as Object;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        raw = parsed as Record<string, Object>;
+      }
+    } catch (_) {}
+    raw['bookSourceUrl'] = this.source.bookSourceUrl;
+    raw['bookSourceName'] = this.source.bookSourceName;
+    raw['bookSourceType'] = this.source.bookSourceType;
+    raw['bookSourceGroup'] = this.source.bookSourceGroup;
+    raw['bookSourceComment'] = this.source.bookSourceComment;
+    raw['loginUrl'] = this.source.loginUrl;
+    raw['loginUi'] = this.source.loginUi;
+    raw['loginCheckJs'] = this.source.loginCheckJs;
+    raw['loginHeader'] = this.source.loginHeader;
+    // Runtime login state is not a source-definition field and must not be copied into exports.
+    raw['loginInfo'] = '';
+    raw['bookUrlPattern'] = this.source.bookUrlPattern;
+    raw['searchUrl'] = this.source.searchUrl;
+    raw['exploreUrl'] = this.source.exploreUrl;
+    raw['jsLib'] = this.source.jsLib;
+    raw['header'] = this.source.header;
+    raw['variableComment'] = this.source.variableComment;
+    raw['variable'] = this.source.variable;
+    raw['enabledCookieJar'] = this.source.enabledCookieJar;
+    raw['enabled'] = this.source.enabled;
+    raw['enabledExplore'] = this.source.enabledExplore;
+    raw['weight'] = this.source.weight;
+    raw['ruleSearch'] = JSON.parse(JSON.stringify(this.source.searchRule || {})) as Object;
+    raw['ruleExplore'] = JSON.parse(JSON.stringify(this.source.exploreRule || {})) as Object;
+    raw['ruleBookInfo'] = JSON.parse(JSON.stringify(this.source.bookInfoRule || {})) as Object;
+    raw['ruleToc'] = JSON.parse(JSON.stringify(this.source.tocRule || {})) as Object;
+    raw['ruleContent'] = JSON.parse(JSON.stringify(this.source.contentRule || {})) as Object;
+    this.source.rawSourceJson = JSON.stringify(raw);
   }
 
   draftKey(): string {

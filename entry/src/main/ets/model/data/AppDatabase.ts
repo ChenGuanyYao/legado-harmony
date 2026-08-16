@@ -1122,10 +1122,12 @@ export class AppDatabase {
     return true;
   }
 
-  async updateBookSource(source: BookSource): Promise<void> {
+  async updateBookSource(source: BookSource, originalBookSourceUrl: string = ''): Promise<void> {
     if (!this.store) return;
-    if (await this.isBookSourceLocked(source.bookSourceUrl)) return;
+    const lookupUrl = originalBookSourceUrl || source.bookSourceUrl;
+    if (await this.isBookSourceLocked(lookupUrl)) return;
     const bucket: relationalStore.ValuesBucket = {
+      bookSourceUrl: source.bookSourceUrl,
       bookSourceName: source.bookSourceName,
       bookSourceType: source.bookSourceType,
       bookSourceGroup: source.bookSourceGroup,
@@ -1165,7 +1167,7 @@ export class AppDatabase {
     };
 
     const predicates = new relationalStore.RdbPredicates('book_sources');
-    predicates.equalTo('bookSourceUrl', source.bookSourceUrl);
+    predicates.equalTo('bookSourceUrl', lookupUrl);
     await this.store.update(bucket, predicates);
     CloudSyncChangeTracker.markBookSourceChanged();
   }

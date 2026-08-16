@@ -132,7 +132,7 @@ export class BookDisplayHelper {
   }
 
   private static appendTags(target: string[], raw: string): void {
-    const normalized = BookDisplayHelper.removeUpdateText(raw)
+    const normalized = (raw || '')
       .replace(/<[^>]+>/g, ' ')
       .replace(/&nbsp;/gi, ' ')
       .replace(/[|/;；、，,·•●▪]+/g, ',')
@@ -165,15 +165,6 @@ export class BookDisplayHelper {
     }
     const relativeMatch = value.match(/(?:刚刚|\d+\s*(?:秒|分钟|小时|天|周|月|年)前|昨日|昨天|今天|前天)/);
     return relativeMatch ? relativeMatch[0].replace(/\s+/g, '') : '';
-  }
-
-  private static removeUpdateText(raw: string): string {
-    return (raw || '')
-      .replace(/(?:最后更新|更新时间|更新于|更新)\s*[:：]?\s*\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}(?:日)?(?:\s+\d{1,2}[:：]\d{1,2}(?:[:：]\d{1,2})?)?/g, ' ')
-      .replace(/(?:最后更新|更新时间|更新于|更新)\s*[:：]?\s*(?:刚刚|\d+\s*(?:秒|分钟|小时|天|周|月|年)前|昨日|昨天|今天|前天)/g, ' ')
-      .replace(/\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}(?:日)?(?:\s+\d{1,2}[:：]\d{1,2}(?:[:：]\d{1,2})?)?/g, ' ')
-      .replace(/\b\d{1,2}[:：]\d{1,2}(?:[:：]\d{1,2})?\b/g, ' ')
-      .replace(/(?:刚刚|\d+\s*(?:秒|分钟|小时|天|周|月|年)前|昨日|昨天|今天|前天)/g, ' ');
   }
 
   private static cleanCoverList(covers: string[]): string[] {

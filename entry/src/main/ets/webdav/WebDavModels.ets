@@ -51,14 +51,6 @@ export class WebDavFileInfo {
   contentType: string = '';
 }
 
-export class WebDavBackupItem {
-  name: string = '';
-  relativePath: string = '';
-  size: number = 0;
-  createdAt: number = 0;
-  etag: string = '';
-}
-
 export class WebDavDownloadResult {
   path: string = '';
   size: number = 0;

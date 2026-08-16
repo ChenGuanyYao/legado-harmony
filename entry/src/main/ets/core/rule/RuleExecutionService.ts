@@ -94,10 +94,7 @@ export class RuleExecutionService {
             if (field.listResult) {
               itemValues[field.name] = JSON.stringify(analyzer.getStringList(field.rule));
             } else if (field.joinMatches) {
-              itemValues[field.name] = analyzer.getStringList(field.rule)
-                .map((value: string): string => value.trim())
-                .filter((value: string): boolean => !!value)
-                .join('\n\n');
+              itemValues[field.name] = analyzer.getString(field.rule);
             } else {
               itemValues[field.name] = field.resolveUrl ? analyzer.getString(field.rule, true) :
                 analyzer.analyzeFirst(field.rule);
@@ -200,8 +197,7 @@ export class RuleExecutionService {
       const analyzer = new AnalyzeRule(request.contents[index] || '', request.baseUrl);
       this.seedSourceVariables(analyzer.getContext(), request.source, request.contextValues);
       baseValues.push(field.listResult ? JSON.stringify(analyzer.getStringList(baseRule)) :
-        (field.joinMatches ? analyzer.getStringList(baseRule).map((value: string): string => value.trim())
-          .filter((value: string): boolean => !!value).join('\n\n') : analyzer.analyzeFirst(baseRule)));
+        (field.joinMatches ? analyzer.getString(baseRule) : analyzer.analyzeFirst(baseRule)));
     }
 
     const runtime = BookSourceStageWebRuntime.get();

@@ -40,7 +40,9 @@ export class AnalyzeRule {
   // === 主入口 ===
 
   getString(rule: string, isUrl: boolean = false): string {
-    const r = this.analyzeFirst(rule);
+    // Android Legado joins every non-URL match with a newline. URL rules are the
+    // exception: callers need one address, so only their first match is used.
+    const r = this.analyzeFirst(rule, !isUrl);
     return isUrl ? this.resolveUrl(r) : r;
   }
 
@@ -198,7 +200,7 @@ export class AnalyzeRule {
     return this.evalCss(effective);
   }
 
-  analyzeFirst(rule: string): string {
+  analyzeFirst(rule: string, joinMatches: boolean = true): string {
     if (!rule) return '';
     const originalRule = rule;
     const pureJs = rule.match(/^\s*<js>([\s\S]*?)<\/js>\s*$/i);
@@ -231,7 +233,7 @@ export class AnalyzeRule {
 
     // Resolve extraction fallbacks before JS-like expression heuristics. A suffix such as
     // `@js:'prefix' + result` belongs to the selected branch, not to the whole source body.
-    const combinedValue = this.analyzeCombinedFirst(rule);
+    const combinedValue = this.analyzeCombinedFirst(rule, joinMatches);
     if (combinedValue !== null) return combinedValue;
 
     if (!rule.includes('@js:') && rule.includes('result') && rule.includes('+')) {
@@ -260,11 +262,14 @@ export class AnalyzeRule {
       return this.applyProcessor(literalEffective, rule);
     }
 
-    const a = this.analyze(rule);
-    return a.length > 0 ? this.applyProcessor(a[0], originalRule) : '';
+    const values = this.analyze(rule)
+      .map((value: string): string => this.applyProcessor(value, originalRule))
+      .filter((value: string): boolean => value.length > 0);
+    if (values.length === 0) return '';
+    return joinMatches ? values.join('\n') : values[0];
   }
 
-  private analyzeCombinedFirst(rule: string): string | null {
+  private analyzeCombinedFirst(rule: string, joinMatches: boolean): string | null {
     if (rule.startsWith('@js:') || rule.startsWith('js:')) return null;
     const extractionRule = this.stripProcessor(rule);
     const orParts = this.splitCombinedRule(extractionRule, '||');
@@ -272,7 +277,7 @@ export class AnalyzeRule {
 
     const processorSuffix = rule.substring(extractionRule.length);
     for (const part of orParts) {
-      const value = this.analyzeFirst(part + processorSuffix);
+      const value = this.analyzeFirst(part + processorSuffix, joinMatches);
       if (this.isNonEmptyRuleValue(value)) return value;
     }
     return '';

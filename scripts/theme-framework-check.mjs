@@ -350,9 +350,9 @@ assert(readerSettingsPage.includes('this.typographyStepper()') &&
   readerSettingsPage.includes("{ value: '下边距' }") &&
   readerSettingsPage.includes('adjustCurrentTypographySetting'),
   'Reader typography dropdown/stepper does not expose all four margins');
-assert(reader.includes('this.readerMarginLeft + this.readerMarginRight') &&
-  reader.includes('this.readerMarginTop + this.getReaderContentBottomPadding()') &&
-  reader.includes('this.readerMarginBottom + this.getReaderContentBottomReserve()'),
+assert(reader.includes('this.getEffectiveReaderMarginLeft() + this.getEffectiveReaderMarginRight()') &&
+  reader.includes('this.getEffectiveReaderMarginTop() + this.getReaderContentBottomPadding()') &&
+  reader.includes('this.getEffectiveReaderMarginBottom() + this.getReaderContentBottomReserve()'),
   'Reader pagination does not account for configured margins');
 assert(reader.includes('.textAlign(TextAlign.JUSTIFY)') &&
   reader.includes('align: graphicsText.TextAlign.JUSTIFY'),

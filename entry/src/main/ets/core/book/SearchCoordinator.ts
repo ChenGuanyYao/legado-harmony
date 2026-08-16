@@ -492,10 +492,6 @@ export class SearchCoordinator {
     };
   }
 
-  private pendingVerificationMatchesSource(source: BookSource): boolean {
-    return (AppStorage.get<string>('pendingVerificationSourceUrl') || '') === source.bookSourceUrl;
-  }
-
   private validationHttpFailure(response: HttpResponse): SearchSourceResult {
     const statusCode = response.statusCode;
     if (statusCode === 401 || statusCode === 403) {
@@ -597,26 +593,6 @@ export class SearchCoordinator {
     book.variable = this.cleanJsonField(book.variable, 8192);
   }
 
-  private sanitizeSearchBooks(books: SearchBook[], limit: number, leanResult: boolean = false): SearchBook[] {
-    const cleaned: SearchBook[] = [];
-    const seen = new Set<string>();
-    for (const book of books || []) {
-      if (leanResult) this.stripLeanFieldValues(book);
-      this.sanitizeSearchBook(book);
-      if (!book.name || !book.bookUrl) continue;
-      const key = `${book.origin || ''}::${book.bookUrl || ''}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      cleaned.push(book);
-      if (cleaned.length >= limit) break;
-    }
-    return cleaned;
-  }
-
-  private stripLeanFields(books: SearchBook[]): void {
-    for (const book of books) this.stripLeanFieldValues(book);
-  }
-
   private stripLeanFieldValues(book: SearchBook): void {
     book.coverUrl = '';
     book.intro = '';
@@ -638,7 +614,7 @@ export class SearchCoordinator {
         ir.analyzeFirst('span.sr-only@text') || ir.analyzeFirst('.sr-only@text'));
     }
     if (!book.bookUrl) {
-      book.bookUrl = BookUrlResolver.resolve(ir.analyzeFirst('a@href') || ir.analyzeFirst('[href]@href'), baseUrl);
+      book.bookUrl = ir.getString('a@href', true) || ir.getString('[href]@href', true);
     }
   }
 
@@ -682,7 +658,7 @@ export class SearchCoordinator {
     if (jsIndex < 0) return '';
     const baseExpr = String(rule || '').substring(0, jsIndex).trim();
     const jsExpr = String(rule || '').substring(jsIndex + 4).trim();
-    const baseValue = ir.analyzeFirst(baseExpr);
+    const baseValue = ir.analyzeFirst(baseExpr, false);
     if (!baseValue) return '';
     const prefixMatch = jsExpr.match(/^["']([\s\S]*?)["']\s*\+\s*result(?:\s*\+\s*["']([\s\S]*?)["'])?$/);
     const suffixMatch = jsExpr.match(/^result\s*\+\s*["']([\s\S]*?)["']$/);
