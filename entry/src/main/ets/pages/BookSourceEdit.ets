@@ -31,8 +31,10 @@ struct BookSourceEditPage {
   @State sourceLoadedVersion: number = 0;
   @State savedSourceSnapshot: string = '';
   @State showUnsavedDialog: boolean = false;
+  @State showDraftConflictDialog: boolean = false;
   private sourceInitialized: boolean = false;
   private draftSaveTimerId: number = -1;
+  private conflictingDraftRaw: string = '';
 
   aboutToAppear() {
     this.syncBars();
@@ -52,15 +54,35 @@ struct BookSourceEditPage {
   }
 
   async initializeSourceForm(): Promise<void> {
-    // Keep the editor subtree out of the first render until either the draft or
-    // database value is ready. Otherwise TextInput is created with an empty
-    // value and ArkUI may retain that native editor when the model is replaced.
+    // Existing sources must be loaded before drafts. An import may have updated
+    // the database while an older unsaved draft still exists for the same URL.
+    // Restoring that draft first would hide the imported version and could save
+    // the old rules back over it without warning.
     this.isLoading = true;
     try {
+      if (this.bookSourceUrl) {
+        await this.loadSource();
+        const raw = await FormDraftStore.load(getContext(this), this.draftKey());
+        if (!raw) return;
+        try {
+          const draft = JSON.parse(raw) as BookSourceEditDraft;
+          if (!draft.sourceJson) {
+            FormDraftStore.removePersistent(getContext(this), this.draftKey());
+            return;
+          }
+          if (draft.savedSnapshot && draft.savedSnapshot === this.savedSourceSnapshot) {
+            this.restoreDraft(raw);
+            return;
+          }
+          this.conflictingDraftRaw = raw;
+          this.showDraftConflictDialog = true;
+        } catch (_) {
+          FormDraftStore.removePersistent(getContext(this), this.draftKey());
+        }
+        return;
+      }
       const restored = await this.restorePersistentDraft();
-      if (restored) return;
-      if (this.bookSourceUrl) await this.loadSource();
-      else this.markSourceSaved();
+      if (!restored) this.markSourceSaved();
     } finally {
       this.isLoading = false;
     }
@@ -296,6 +318,10 @@ struct BookSourceEditPage {
       if (this.showUnsavedDialog) {
         this.unsavedChangesDialog()
       }
+
+      if (this.showDraftConflictDialog) {
+        this.draftConflictDialog()
+      }
     }
     .width('100%')
     .height('100%')
@@ -422,6 +448,21 @@ struct BookSourceEditPage {
     FormDraftStore.removePersistent(getContext(this), this.draftKey());
   }
 
+  useImportedSourceInsteadOfDraft(): void {
+    this.conflictingDraftRaw = '';
+    this.showDraftConflictDialog = false;
+    this.clearDraft();
+  }
+
+  restoreConflictingDraft(): void {
+    const raw = this.conflictingDraftRaw;
+    this.conflictingDraftRaw = '';
+    this.showDraftConflictDialog = false;
+    if (!raw || !this.restoreDraft(raw)) {
+      promptAction.showToast({ message: '草稿已失效，已使用最新书源' });
+    }
+  }
+
   sourceSnapshot(): string {
     const parts: string[] = [];
     this.appendSnapshotPart(parts, this.source.bookSourceUrl);
@@ -490,6 +531,10 @@ struct BookSourceEditPage {
     this.appendSnapshotPart(parts, this.source.contentRule.replaceRegex);
     this.appendSnapshotPart(parts, this.source.contentRule.imageDecode);
     this.appendSnapshotPart(parts, this.source.contentRule.imageStyle);
+    // Cover imported fields that are not exposed by the editor as well. This
+    // makes a draft's base snapshot change whenever the database definition was
+    // replaced, instead of only when a visible input happened to change.
+    this.appendSnapshotPart(parts, JSON.stringify(this.source));
     return parts.join('');
   }
 
@@ -561,6 +606,59 @@ struct BookSourceEditPage {
     .justifyContent(FlexAlign.Center)
     .onClick(() => {
       this.showUnsavedDialog = false;
+    })
+  }
+
+  @Builder
+  draftConflictDialog() {
+    Column() {
+      Column() {
+        Text('书源已经更新')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .margin({ bottom: 10 })
+
+        Text('检测到这个书源有一份基于旧版本的未保存草稿。使用新版可保留刚导入的内容；恢复草稿后再次保存会覆盖新版。')
+          .fontSize(14)
+          .fontColor(this.secondaryTextColor())
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .margin({ bottom: 18 })
+
+        Button('使用导入的新版')
+          .width('100%')
+          .height(44)
+          .backgroundColor(this.buttonColor())
+          .fontColor('#FFFFFF')
+          .margin({ bottom: 10 })
+          .onClick(() => {
+            this.useImportedSourceInsteadOfDraft();
+          })
+
+        Button('恢复未保存草稿')
+          .width('100%')
+          .height(44)
+          .backgroundColor(this.inputColor())
+          .fontColor(this.primaryTextColor())
+          .onClick(() => {
+            this.restoreConflictingDraft();
+          })
+      }
+      .width('88%')
+      .padding(22)
+      .backgroundColor(this.cardColor())
+      .borderRadius(14)
+      .onClick(() => {
+      })
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('#80000000')
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => {
     })
   }
 

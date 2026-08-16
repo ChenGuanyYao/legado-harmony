@@ -236,6 +236,14 @@ struct ThemeColorSettingsPage {
       this.setSourceValue(sources, category, themeId);
       if (dark) settings.customDarkSources = sources;
       else settings.customLightSources = sources;
+      if (category === 'layout') {
+        const otherSources = AppThemeSettingsStore.cloneSources(
+          dark ? settings.customLightSources : settings.customDarkSources,
+          settings.customBaseThemeId);
+        this.setSourceValue(otherSources, category, themeId);
+        if (dark) settings.customLightSources = otherSources;
+        else settings.customDarkSources = otherSources;
+      }
       this.copyVariantOverrides(settings, BuiltinThemeRegistry.findById(themeId), dark, category);
       this.draftSettings = settings;
       this.lightSources = AppThemeSettingsStore.cloneSources(
@@ -299,6 +307,7 @@ struct ThemeColorSettingsPage {
   }
 
   sourceThemeId(category: string): string {
+    if (category === 'layout') return this.lightSources.layoutThemeId;
     const sources = this.currentSources();
     if (category === 'startup') return sources.startupThemeId;
     if (category === 'palette') return sources.paletteThemeId;
@@ -336,6 +345,7 @@ struct ThemeColorSettingsPage {
       this.lightSources, this.customBaseThemeId);
     settings.customDarkSources = AppThemeSettingsStore.cloneSources(
       this.darkSources, this.customBaseThemeId);
+    settings.customDarkSources.layoutThemeId = settings.customLightSources.layoutThemeId;
     settings.customLightAccentColor = this.lightAccentColor;
     settings.customDarkAccentColor = this.darkAccentColor;
     settings.customLightButtonColor = this.lightButtonColor;
@@ -565,7 +575,7 @@ struct ThemeColorSettingsPage {
       this.componentSourceRow('导航图标', '书架、发现、搜索和我的底部图标', 'navigation')
       this.componentSourceRow('书籍素材', '主题封面、书架边框和文件夹图案', 'book')
       this.componentSourceRow('字体', '主题自带的应用字体风格', 'typography')
-      this.componentSourceRow('阅读排版', '字号、行距、段距和页面边距', 'layout')
+      this.componentSourceRow('阅读排版（浅深共用）', '字号、行距、段距和页面边距', 'layout')
       this.componentSourceRow('圆角形状', '卡片、按钮、气泡等圆角尺寸', 'radius')
       this.componentSourceRow('磨砂效果', '模糊、透明度、边框和阴影参数', 'glass', false)
     }

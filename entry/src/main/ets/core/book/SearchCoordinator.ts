@@ -649,8 +649,31 @@ export class SearchCoordinator {
 
   private cleanUrlField(value: string, maxLength: number): string {
     const text = this.safeString(value).trim();
-    if (!text || BookFieldSanitizer.isUnresolved(text)) return '';
+    if (!text || this.isUnresolvedUrl(text)) return '';
     return text.length > maxLength ? text.substring(0, maxLength) : text;
+  }
+
+  private isUnresolvedUrl(value: string): boolean {
+    const text = (value || '').trim();
+    const optionIndex = text.indexOf(',{');
+    if (optionIndex <= 0) return BookFieldSanitizer.isUnresolved(text);
+    const target = text.substring(0, optionIndex).trim();
+    const optionText = text.substring(optionIndex + 1).trim();
+    try {
+      const options = JSON.parse(optionText) as Object;
+      if (!options || typeof options !== 'object' || Array.isArray(options)) {
+        return BookFieldSanitizer.isUnresolved(text);
+      }
+      // A valid Legado request URL commonly ends in nested JSON braces (`..."headers":{...}}`).
+      // Those braces are request syntax, not an unresolved `{{template}}`. Validate the actual
+      // target with the strict field sanitizer and inspect the parsed option text only for an
+      // opening template/executable expression that still needs evaluation.
+      return BookFieldSanitizer.isUnresolved(target) || optionText.includes('{{') ||
+        optionText.includes('@js:') || optionText.includes('java.') || optionText.includes('result.replace') ||
+        /(^|[^\w])\$\.\.?[A-Za-z_]/.test(optionText);
+    } catch (_) {
+      return BookFieldSanitizer.isUnresolved(text);
+    }
   }
 
   private cleanJsonField(value: string, maxLength: number): string {

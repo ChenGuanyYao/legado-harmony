@@ -24,31 +24,56 @@ class ReaderV2MeasuredBlock {
   }
 }
 
+/** Retains native paragraph measurements so pagination can continue in small UI-thread slices. */
+export class ReaderV2PaginationSession {
+  document: ReaderV2Document;
+  snapshot: ReaderV2LayoutSnapshot;
+  regexStyles: ReaderV2SpanStyleRange[];
+  pageSet: ReaderV2PageSet = new ReaderV2PageSet();
+  width: number = 0;
+  blockIndex: number = 0;
+  lineIndex: number = 0;
+  pageIndex: number = 0;
+  measuredBlock: ReaderV2MeasuredBlock | null = null;
+
+  constructor(document: ReaderV2Document, snapshot: ReaderV2LayoutSnapshot,
+    regexStyles: ReaderV2SpanStyleRange[]) {
+    this.document = document;
+    this.snapshot = snapshot;
+    this.regexStyles = regexStyles;
+    this.pageSet.documentIdentity = document.identity;
+    this.pageSet.layoutIdentity = snapshot.identity;
+    this.width = snapshot.columnRects.length > 0 ? snapshot.columnRects[0].width() : 0;
+    this.pageSet.complete = document.blocks.length === 0 || snapshot.columnRects.length === 0;
+  }
+}
+
 export class ReaderV2Paginator {
   static paginate(document: ReaderV2Document, snapshot: ReaderV2LayoutSnapshot,
     regexStyles: ReaderV2SpanStyleRange[] = []): ReaderV2PageSet {
-    const result = new ReaderV2PageSet();
-    result.documentIdentity = document.identity;
-    result.layoutIdentity = snapshot.identity;
-    if (document.blocks.length === 0 || snapshot.columnRects.length === 0) {
-      result.complete = true;
-      return result;
+    const session = ReaderV2Paginator.start(document, snapshot, regexStyles);
+    while (!session.pageSet.complete) {
+      const appended = ReaderV2Paginator.appendPages(session, 32);
+      if (appended <= 0) break;
     }
+    return session.pageSet;
+  }
 
-    const width = snapshot.columnRects[0].width();
-    const measured: ReaderV2MeasuredBlock[] = [];
-    for (const block of document.blocks) {
-      measured.push(ReaderV2Paginator.measureBlock(document, block, snapshot, regexStyles, width));
-    }
+  static start(document: ReaderV2Document, snapshot: ReaderV2LayoutSnapshot,
+    regexStyles: ReaderV2SpanStyleRange[] = []): ReaderV2PaginationSession {
+    return new ReaderV2PaginationSession(document, snapshot, regexStyles);
+  }
 
-    let blockIndex = 0;
-    let lineIndex = 0;
-    let pageIndex = 0;
-    while (blockIndex < measured.length) {
-      const columnIndex = pageIndex % snapshot.columnRects.length;
-      const column = snapshot.columnRects[columnIndex];
+  static appendPages(session: ReaderV2PaginationSession, maxPages: number): number {
+    const result = session.pageSet;
+    if (result.complete || maxPages <= 0 || session.snapshot.columnRects.length === 0) return 0;
+    const limit = Math.max(1, Math.round(maxPages));
+    let appended = 0;
+    while (session.blockIndex < session.document.blocks.length && appended < limit) {
+      const columnIndex = session.pageIndex % session.snapshot.columnRects.length;
+      const column = session.snapshot.columnRects[columnIndex];
       const page = new ReaderV2PageLayout();
-      page.pageIndex = pageIndex;
+      page.pageIndex = session.pageIndex;
       page.columnIndex = columnIndex;
       page.contentRect = new ReaderV2Rect(column.left, column.top, column.right, column.bottom);
       let y = column.top;
@@ -56,17 +81,23 @@ export class ReaderV2Paginator {
       let topInkGuardApplied = false;
       let mustEndPage = false;
 
-      while (blockIndex < measured.length && !mustEndPage) {
-        const current = measured[blockIndex];
+      while (session.blockIndex < session.document.blocks.length && !mustEndPage) {
+        let current = session.measuredBlock;
+        if (!current || current.block !== session.document.blocks[session.blockIndex]) {
+          current = ReaderV2Paginator.measureBlock(session.document, session.document.blocks[session.blockIndex],
+            session.snapshot, session.regexStyles, session.width);
+          session.measuredBlock = current;
+        }
         if (current.lines.length === 0) {
-          blockIndex++;
-          lineIndex = 0;
+          session.blockIndex++;
+          session.lineIndex = 0;
+          session.measuredBlock = null;
           continue;
         }
 
-        const startsNewBlock = lineIndex === 0;
-        const spacing = startsNewBlock && hasContent ? snapshot.paragraphSpacingPx : 0;
-        const firstLine = current.lines[lineIndex];
+        const startsNewBlock = session.lineIndex === 0;
+        const spacing = startsNewBlock && hasContent ? session.snapshot.paragraphSpacingPx : 0;
+        const firstLine = current.lines[session.lineIndex];
         if (!hasContent && !topInkGuardApplied) {
           // A zero user margin places the first logical line box on the page boundary. Some fonts (notably the
           // serif family used by several themes) paint one or two physical pixels above that logical box. The
@@ -83,19 +114,19 @@ export class ReaderV2Paginator {
         }
         y += spacing;
 
-        const fragmentFirstLine = lineIndex;
+        const fragmentFirstLine = session.lineIndex;
         const paragraphLineTop = current.lines[fragmentFirstLine].topHeight;
         let fragmentLastLine = fragmentFirstLine - 1;
         let fragmentBottom = paragraphLineTop;
-        while (lineIndex < current.lines.length) {
-          const line = current.lines[lineIndex];
+        while (session.lineIndex < current.lines.length) {
+          const line = current.lines[session.lineIndex];
           const relativeBottom = ReaderV2Paginator.lineBottom(line) - paragraphLineTop;
           if (y + relativeBottom > column.bottom + 0.01 && fragmentLastLine >= fragmentFirstLine) break;
           // A single oversized line still owns an otherwise empty page, preventing a pagination dead loop.
           if (y + relativeBottom > column.bottom + 0.01 && hasContent) break;
-          fragmentLastLine = lineIndex;
+          fragmentLastLine = session.lineIndex;
           fragmentBottom = ReaderV2Paginator.lineBottom(line);
-          lineIndex++;
+          session.lineIndex++;
           if (y + relativeBottom >= column.bottom - 0.01) break;
         }
 
@@ -104,21 +135,23 @@ export class ReaderV2Paginator {
           if (mustEndPage) continue;
           fragmentLastLine = fragmentFirstLine;
           fragmentBottom = ReaderV2Paginator.lineBottom(current.lines[fragmentFirstLine]);
-          lineIndex = fragmentFirstLine + 1;
+          session.lineIndex = fragmentFirstLine + 1;
         }
 
-        const fragment = ReaderV2Paginator.createFragment(document, current, blockIndex, fragmentFirstLine,
-          fragmentLastLine, column.left, y, paragraphLineTop, fragmentBottom, snapshot, regexStyles, width);
+        const fragment = ReaderV2Paginator.createFragment(session.document, current, session.blockIndex,
+          fragmentFirstLine, fragmentLastLine, column.left, y, paragraphLineTop, fragmentBottom,
+          session.snapshot, session.regexStyles, session.width);
         page.fragments.push(fragment);
-        ReaderV2Paginator.appendActionAreas(page, fragment, document.actions);
+        ReaderV2Paginator.appendActionAreas(page, fragment, session.document.actions);
         if (!hasContent) page.displayStart = fragment.displayStart;
         page.displayEnd = fragment.displayEnd;
         hasContent = true;
         y += fragmentBottom - paragraphLineTop;
 
-        if (lineIndex >= current.lines.length) {
-          blockIndex++;
-          lineIndex = 0;
+        if (session.lineIndex >= current.lines.length) {
+          session.blockIndex++;
+          session.lineIndex = 0;
+          session.measuredBlock = null;
         } else {
           mustEndPage = true;
         }
@@ -126,14 +159,16 @@ export class ReaderV2Paginator {
 
       if (!hasContent) break;
       ReaderV2Paginator.finalizePageSelection(page);
-      page.sourceStart = document.sourceOffsetForDisplay(page.displayStart);
-      page.sourceEnd = document.sourceOffsetForDisplay(page.displayEnd);
-      page.identity = `${document.identity}_${snapshot.identity}_${pageIndex}_${page.displayStart}_${page.displayEnd}`;
+      page.sourceStart = session.document.sourceOffsetForDisplay(page.displayStart);
+      page.sourceEnd = session.document.sourceOffsetForDisplay(page.displayEnd);
+      page.identity = `${session.document.identity}_${session.snapshot.identity}_${session.pageIndex}_` +
+        `${page.displayStart}_${page.displayEnd}`;
       result.pages.push(page);
-      pageIndex++;
+      session.pageIndex++;
+      appended++;
     }
-    result.complete = blockIndex >= measured.length;
-    return result;
+    result.complete = session.blockIndex >= session.document.blocks.length;
+    return appended;
   }
 
   private static measureBlock(document: ReaderV2Document, block: ReaderV2Block,

@@ -1394,16 +1394,22 @@ export class WebBookService {
 
   private applyStageTrailingRule(value: string, trailingRule: string, baseUrl: string): string {
     // Scalar extraction normally returns the first match, but a stage pipeline must preserve
-    // an array selected by a simple JSONPath (for example a complete catalog in $.data).
-    if (/^\$(?:\.[A-Za-z_$][A-Za-z0-9_$-]*)+$/.test(trailingRule)) {
+    // an array selected by a simple JSONPath (for example a complete catalog in $.data or
+    // $.[*]). AnalyzeRule#getString joins wildcard matches as text, which removes the outer
+    // JSON array and makes the following stage unable to deserialize the item list.
+    const normalizedRule = trailingRule.replace(/\.\[\*\]$/, '[*]');
+    const preserveArray = normalizedRule.endsWith('[*]');
+    const propertyRule = preserveArray ? normalizedRule.substring(0, normalizedRule.length - 3) : normalizedRule;
+    if (propertyRule === '$' || /^\$(?:\.[A-Za-z_$][A-Za-z0-9_$-]*)+$/.test(propertyRule)) {
       try {
         let current = JSON.parse(value || '{}') as Object;
-        const parts = trailingRule.substring(2).split('.');
+        const parts = propertyRule === '$' ? [] : propertyRule.substring(2).split('.');
         for (const part of parts) {
           if (!current || typeof current !== 'object' || Array.isArray(current)) return '';
           current = (current as Record<string, Object>)[part];
         }
         if (current === undefined || current === null) return '';
+        if (preserveArray && !Array.isArray(current)) return '';
         return typeof current === 'string' ? current as string : JSON.stringify(current);
       } catch (_) {
       }
@@ -1527,7 +1533,8 @@ export class WebBookService {
         if (mediaUrl) return mediaUrl;
       }
     }
-    return await this.runStageRule(source, book, rawRule, content, baseUrl, SourceRuntimeStage.CONTENT, chapter);
+    return await this.runStageRule(source, book, rawRule, content, baseUrl,
+      SourceRuntimeStage.CONTENT, chapter);
   }
 
   private resolvedAudioChapterUrl(source: BookSource, book: Book, chapter: BookChapter): string {

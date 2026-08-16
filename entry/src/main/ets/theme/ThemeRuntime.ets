@@ -396,7 +396,9 @@ export class ThemeRuntime {
 
   static readerLayout(darkMode: boolean = AppStorage.get<boolean>('appDarkMode') || false): ThemeReaderLayoutTokens {
     if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
-      return ThemeRuntime.customSourceTheme('layout', darkMode).readerLayout;
+      // Layout is a theme-level preference. Color mode may change the reader
+      // surface, but must not switch font size, spacing or page margins.
+      return ThemeRuntime.customSourceTheme('layout', false).readerLayout;
     }
     return ThemeRuntime.currentPack().readerLayout;
   }

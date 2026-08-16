@@ -381,7 +381,9 @@ export class AppThemeSettingsStore {
     const typographyTheme = BuiltinThemeRegistry.findById(active.typographyThemeId);
     const navigationTheme = BuiltinThemeRegistry.findById(active.navigationThemeId);
     const bookTheme = BuiltinThemeRegistry.findById(active.bookThemeId);
-    const layoutTheme = BuiltinThemeRegistry.findById(active.layoutThemeId);
+    // Reader typography/layout is shared by both color modes. Keep light as the
+    // canonical persisted source for backward-compatible custom-theme data.
+    const layoutTheme = BuiltinThemeRegistry.findById(light.layoutThemeId);
     const radiusTheme = BuiltinThemeRegistry.findById(active.radiusThemeId);
     const glassTheme = BuiltinThemeRegistry.findById(active.glassThemeId);
     theme.typography = typographyTheme.typography;
@@ -546,6 +548,7 @@ export class AppThemeSettingsStore {
       source.customLightSources, settings.customBaseThemeId);
     settings.customDarkSources = AppThemeSettingsStore.normalizeSources(
       source.customDarkSources, settings.customBaseThemeId);
+    settings.customDarkSources.layoutThemeId = settings.customLightSources.layoutThemeId;
     const defaults = AppThemeSettingsStore.defaultsForTheme(settings.themeId === ThemeIds.CUSTOM ?
       settings.customBaseThemeId : settings.themeId);
     settings.lightAccentColor = AppThemeSettingsStore.normalizeColor(
@@ -602,6 +605,7 @@ export class AppThemeSettingsStore {
       source.customLightSources, target.customBaseThemeId);
     target.customDarkSources = AppThemeSettingsStore.normalizeSources(
       source.customDarkSources, target.customBaseThemeId);
+    target.customDarkSources.layoutThemeId = target.customLightSources.layoutThemeId;
     target.customLightAccentColor = source.customLightAccentColor;
     target.customDarkAccentColor = source.customDarkAccentColor;
     target.customLightButtonColor = source.customLightButtonColor;

@@ -81,10 +81,11 @@ import {
 import { ReaderV2LayoutInput, ReaderV2LayoutSnapshot } from '../core/reader/ReaderV2LayoutSnapshot';
 import { ReaderV2PageFragment, ReaderV2PageLayout, ReaderV2PageSet, ReaderV2RegexBubbleSegment,
   ReaderV2SelectionRun } from '../core/reader/ReaderV2PageLayout';
-import { ReaderV2Paginator } from '../core/reader/ReaderV2Paginator';
+import { ReaderV2PaginationSession, ReaderV2Paginator } from '../core/reader/ReaderV2Paginator';
 import { ReaderV2Color, ReaderV2SpanStyleRange } from '../core/reader/ReaderV2Style';
 import { ReaderV2PageNodeController } from '../core/reader/ReaderV2RenderNode';
 import { ReaderV2GestureRouter, ReaderV2TapResult } from '../core/reader/ReaderV2Interaction';
+import { ReaderOpenTrace } from '../utils/ReaderOpenTrace';
 
 const TOC_WINDOW_PAGE_SIZE = 72;
 const FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS = 5000;
@@ -94,6 +95,8 @@ const READER_PAGINATION_BATCH_DELAY_MS = 64;
 const READER_INTERACTIVE_PAGINATION_BATCH_DELAY_MS = 56;
 const READER_PAGINATION_BUSY_RETRY_DELAY_MS = 48;
 const READER_DOUBLE_PAGE_DIVIDER_WIDTH = 1;
+const READER_PROGRESS_OFFSET_KEY = 'readProgressCharOffsetV2';
+const READER_PROGRESS_OFFSET_CHAPTER_KEY = 'readProgressCharOffsetChapterV2';
 const READER_PAGINATION_HEIGHT_SCALE_CACHE: Map<string, number> = new Map<string, number>();
 
 interface ReadTextSlice {
@@ -128,6 +131,7 @@ interface ReaderPaginationResult {
   ends: number[];
   cursor?: number;
   complete?: boolean;
+  v2Session?: ReaderV2PaginationSession;
 }
 
 interface ReaderParagraphMeasureFallback {
@@ -356,6 +360,7 @@ struct ReadBookPage {
   @State pageViewHeight: number = 0;
   @State readerBottomInfoBarMeasuredHeight: number = 0;
   @State readerInitialPageReady: boolean = false;
+  @State readerInitialOpening: boolean = true;
   @State readerComicMode: boolean = false;
   @State readerComicImageRatios: number[] = [];
   @State readerComicPaginationParsing: boolean = false;
@@ -428,6 +433,7 @@ struct ReadBookPage {
   private ttsAutoContinue: boolean = false;
   private ttsReadToken: number = 0;
   private ttsChapterSwitching: boolean = false;
+  private ttsChapterAdvanceError: string = '';
   private ttsLastMediaChapterCommandAt: number = 0;
   private ttsTextStartOffset: number = 0;
   private ttsLastFocusChunk: TtsChunk | null = null;
@@ -709,10 +715,9 @@ struct ReadBookPage {
   private readerEntryInitializing: boolean = true;
   private readerSettingsReloadSerial: number = 0;
   private returningFromReaderReplaceRules: boolean = false;
-  @State shelfOpeningEntryOpacity: number = 1;
-  @State shelfOpeningEntryScale: number = 1;
-  private shelfOpeningEntryTimer: number = -1;
   private openedWithShelfAnimation: boolean = false;
+  private shelfOpeningBookName: string = '';
+  private shelfOpeningBookWidth: number = 208;
   private readerScreenTimeoutTimerId: number = -1;
   private readerScreenTimeoutSerial: number = 0;
   private readerScreenOrientationSerial: number = 0;
@@ -735,32 +740,40 @@ struct ReadBookPage {
     this.updateVolumeKeySubscription();
     const params = router.getParams() as Record<string, string>;
     this.openedWithShelfAnimation = !!params && params['shelfBookOpening'] === 'true';
+    if (this.openedWithShelfAnimation) {
+      this.shelfOpeningBookName = params['shelfOpeningBookName'] || '';
+      const openingBookWidth = Number(params['shelfOpeningBookWidth']);
+      this.shelfOpeningBookWidth = Number.isFinite(openingBookWidth) ? Math.max(184, Math.min(228, openingBookWidth)) : 208;
+    }
     this.openedFromShortcut = !!params && params['shortcutEntry'] === 'true';
     this.shortcutReplacedPreviousPage = !!params && params['shortcutReplace'] === 'true';
-    if (this.openedWithShelfAnimation) {
-      this.shelfOpeningEntryOpacity = 0.86;
-      this.shelfOpeningEntryScale = 0.985;
-      this.shelfOpeningEntryTimer = setTimeout(() => {
-        this.shelfOpeningEntryTimer = -1;
-        animateTo({ duration: 260, curve: Curve.EaseOut }, () => {
-          this.shelfOpeningEntryOpacity = 1;
-          this.shelfOpeningEntryScale = 1;
-        });
-      }, 20);
-    }
     if (params && params['bookUrl']) {
       this.bookUrl = params['bookUrl'];
+      ReaderOpenTrace.beginIfNeeded(this.bookUrl);
+      ReaderOpenTrace.mark(this.bookUrl, 'reader-page-appear');
       this.isLoading = true;
       this.loadStatus = '正在加载...';
       this.resetReaderStateForBookLoad();
+      ReadBookEngine.get().prewarmOpen(this.bookUrl).catch((error: Error) => {
+        console.warn('[ReaderOpen] reader prewarm failed:', error);
+      });
     }
     try {
-      await this.loadReaderSettings();
-      this.readerReplaceRules = await ReaderReplaceRuleStore.load(getContext(this), true);
+      let initialReplaceRules: ReaderReplaceRule[] = [];
+      await Promise.all([
+        this.loadReaderSettings(),
+        ReaderReplaceRuleStore.load(getContext(this)).then((rules: ReaderReplaceRule[]): void => {
+          initialReplaceRules = rules;
+        })
+      ]);
+      this.readerReplaceRules = initialReplaceRules;
+      ReaderOpenTrace.mark(this.bookUrl, 'reader-settings-ready', `replaceRules=${initialReplaceRules.length}`);
       this.loadTtsSettingsAndVoices();
       if (this.bookUrl) {
         await this.loadBook();
-        await this.loadBookmarks();
+        this.loadBookmarks().catch((error: Error) => {
+          console.warn('读取书签失败:', error);
+        });
       }
     } finally {
       this.readerEntryInitializing = false;
@@ -919,6 +932,7 @@ struct ReadBookPage {
   }
 
   aboutToDisappear() {
+    AppStorage.setOrCreate<boolean>('shelfReaderDirectTransition', false);
     this.resetReaderScreenOrientation();
     ReaderProgressCheckpoint.detach(this.ttsFloatingSessionOwnerId);
     this.readerPageVisible = false;
@@ -945,10 +959,6 @@ struct ReadBookPage {
     this.flushPendingReaderLayoutChange(false);
     this.releaseReaderScreenTimeout();
     this.shortcutRoutingActive = false;
-    if (this.shelfOpeningEntryTimer >= 0) {
-      clearTimeout(this.shelfOpeningEntryTimer);
-      this.shelfOpeningEntryTimer = -1;
-    }
     this.flushPendingTtsSpeedSettings();
     this.cancelMirroredTtsManualPageTurn();
     this.flushReadingProgressCheckpoint();
@@ -1067,8 +1077,13 @@ struct ReadBookPage {
     try {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
-      
-      this.book = await db.getBook(this.bookUrl);
+      ReaderOpenTrace.mark(this.bookUrl, 'database-ready');
+
+      const engine = ReadBookEngine.get();
+      const preparedBook = engine.getPreparedBook(this.bookUrl);
+      this.book = preparedBook || await db.getBook(this.bookUrl);
+      ReaderOpenTrace.mark(this.bookUrl, 'book-record-ready',
+        preparedBook ? 'reused=true' : 'reused=false');
       if (loadSerial !== this.bookLoadSerial) {
         return;
       }
@@ -1078,10 +1093,12 @@ struct ReadBookPage {
         return;
       }
       const sourceForType = this.book.origin && this.book.origin !== 'local' ?
-        await db.getBookSource(this.book.origin) : null;
+        (engine.getPreparedSource(this.book.bookUrl, this.book.origin) || await db.getBookSource(this.book.origin)) :
+        null;
       BookTypeSupport.applyBookType(this.book, sourceForType);
       if (BookTypeSupport.isAudio(this.book)) {
         await db.updateBook(this.book, false);
+        ReaderOpenTrace.finish(this.bookUrl, 'redirect-audio-reader');
         await router.replaceUrl({
           url: 'pages/AudioBook',
           params: {
@@ -1112,12 +1129,14 @@ struct ReadBookPage {
         return;
       }
       if (Book.hasStartedReading(this.book)) {
-        await this.markBookRecentlyRead();
+        this.markBookRecentlyRead().catch((error: Error) => {
+          console.warn('更新最近阅读时间失败:', error);
+        });
       }
 
-      const engine = ReadBookEngine.get();
       const requestedBookUrl = this.book.bookUrl;
-      await engine.openBook(this.book);
+      await engine.openBook(this.book, sourceForType);
+      ReaderOpenTrace.mark(this.bookUrl, 'reader-engine-ready', `chapters=${engine.chapters.length}`);
       if (loadSerial !== this.bookLoadSerial || engine.book?.bookUrl !== requestedBookUrl) {
         return;
       }
@@ -1128,12 +1147,20 @@ struct ReadBookPage {
       const savedChapterIndex = activeTtsChapterIndex >= 0 ? activeTtsChapterIndex : engine.curIdx;
       this.currentChapterIndex = this.clampChapterIndex(savedChapterIndex);
       const savedPosition = this.currentChapterIndex === savedChapterIndex ? Math.max(0, engine.curPos) : 0;
-      this.pendingRestorePageIndex = savedPosition;
+      const savedOffset = activeTtsChapterIndex < 0 ?
+        this.savedReaderProgressOffset(this.book, this.currentChapterIndex) : -1;
+      if (savedOffset >= 0) {
+        this.readerTypographyRestoreOffset = savedOffset;
+        this.pendingRestorePageIndex = -1;
+      } else {
+        this.pendingRestorePageIndex = savedPosition;
+      }
       this.readerLightThemeIndex = ReaderThemeHelper.normalizeIndex(this.readerLightThemeIndex);
       this.readerDarkThemeIndex = ReaderThemeHelper.normalizeIndex(this.readerDarkThemeIndex);
 
       if (this.chapters.length > 0) {
         await this.loadContent();
+        ReaderOpenTrace.mark(this.bookUrl, 'reader-content-ready', `chapter=${this.currentChapterIndex}`);
         await this.syncMirroredTtsFocus();
       } else if (this.book.origin !== 'local' && this.book.origin) {
         this.setReaderContent(`《${this.book.name}》\n\n作者：${this.book.author || '未知'}\n来源：${this.book.originName || this.book.origin}\n\n正在尝试解析目录...`);
@@ -1218,6 +1245,7 @@ struct ReadBookPage {
     this.pageViewWidth = 0;
     this.pageViewHeight = 0;
     this.readerInitialPageReady = false;
+    this.readerInitialOpening = true;
     this.readerComicMode = false;
     this.readerComicImageRatios = [];
     this.clearReaderComicPaginationProgress();
@@ -1264,15 +1292,15 @@ struct ReadBookPage {
   }
 
   async loadContent(silent: boolean = false, targetChapterIndex: number = this.currentChapterIndex,
-    preferImmediatePagination: boolean = false) {
+    preferImmediatePagination: boolean = false): Promise<boolean> {
     if (this.chapters.length === 0) {
       this.setReaderContent(this.buildBookPreview());
       this.isLoading = false;
-      return;
+      return false;
     }
     
     const engine = ReadBookEngine.get();
-    if (engine.book?.bookUrl !== (this.book?.bookUrl || this.bookUrl)) return;
+    if (engine.book?.bookUrl !== (this.book?.bookUrl || this.bookUrl)) return false;
     const chapterIndex = this.clampChapterIndex(targetChapterIndex);
     const loadSerial = ++this.contentLoadSerial;
     const showLoading = !silent && !engine.hasCachedContent(chapterIndex);
@@ -1283,15 +1311,19 @@ struct ReadBookPage {
     try {
       const body = await engine.loadContent(chapterIndex);
       if (loadSerial !== this.contentLoadSerial) {
-        return;
+        return false;
       }
+      let loadedContent = await this.prepareReaderContentRules(body, chapterIndex);
+      ReaderOpenTrace.mark(this.bookUrl, 'content-preprocessed', `length=${loadedContent.length}`);
+      if (loadSerial !== this.contentLoadSerial) {
+        return false;
+      }
+      // Commit the chapter identity only after the asynchronous fetch and preprocessing both
+      // succeeded. A rejected/stale load must not leave the reader pointing at a new chapter
+      // while it still owns the previous chapter's content.
       this.currentChapterIndex = chapterIndex;
       this.closeReaderCommentPanel();
       this.readerComicImageRatios = [];
-      let loadedContent = await this.prepareReaderContentRules(body, chapterIndex);
-      if (loadSerial !== this.contentLoadSerial) {
-        return;
-      }
       if (body) {
         this.content = loadedContent;
         this.chapters = [...engine.chapters];
@@ -1310,14 +1342,19 @@ struct ReadBookPage {
         restoredPagination = await this.restorePersistedReaderPagination(loadedContent, chapterIndex);
       }
       if (loadSerial !== this.contentLoadSerial) {
-        return;
+        return false;
       }
       if (!restoredPagination) {
         this.paginateContent(loadedContent, chapterIndex);
       }
+      ReaderOpenTrace.mark(this.bookUrl, 'pagination-published',
+        `pages=${this.contentPages.length} restored=${restoredPagination}`);
       this.preloadReaderContent();
+      const publishedSource = this.pagedContentText || this.getPagedSourceText();
+      return !!body && this.currentChapterIndex === chapterIndex && publishedSource.length > 0;
     } catch (e) {
       console.error('加载内容失败:', e);
+      return false;
     } finally {
       if (loadSerial === this.contentLoadSerial && !silent) {
         this.isLoading = false;
@@ -1706,6 +1743,11 @@ struct ReadBookPage {
     });
   }
 
+  finishReaderInitialOpening(): void {
+    this.readerInitialOpening = false;
+    AppStorage.setOrCreate<boolean>('shelfReaderDirectTransition', false);
+  }
+
   shouldRenderPrimaryReaderContent(): boolean {
     return !this.isLoading || !!this.content;
   }
@@ -1725,6 +1767,9 @@ struct ReadBookPage {
   }
 
   getReaderLoadingText(): string {
+    if (this.readerInitialOpening) {
+      return '正在进入阅读…';
+    }
     if (this.pendingRestorePageIndex >= 0) {
       return '正在恢复阅读进度...';
     }
@@ -1737,13 +1782,50 @@ struct ReadBookPage {
   @Builder
   readerLoadingPanel() {
     Column() {
-      LoadingProgress()
-        .width(40)
-        .height(40)
-      Text(this.getReaderLoadingText())
-        .fontSize(14)
-        .fontColor('#999')
-        .margin({ top: 8 })
+      if (this.readerInitialOpening && this.openedWithShelfAnimation) {
+        Column() {
+        Text(this.book?.name || this.shelfOpeningBookName)
+          .fontSize(20)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.getTextColor())
+          .maxLines(2)
+          .textAlign(TextAlign.Center)
+          .margin({ left: 22, right: 22, top: 34, bottom: 14 })
+        Column() {
+          LoadingProgress()
+            .width(28)
+            .height(28)
+            .color(this.accentColor())
+          Text('正在进入阅读…')
+            .fontSize(13)
+            .fontColor(this.isReaderThemeDark() ? '#AEB4BE' : '#777777')
+            .margin({ top: 7 })
+        }
+        .margin({ bottom: 18 })
+        ForEach([0, 1, 2], (_line: number) => {
+          Divider()
+            .width('72%')
+            .color(this.isReaderThemeDark() ? '#24FFFFFF' : '#18000000')
+            .margin({ bottom: 17 })
+        })
+        }
+        .width(this.shelfOpeningBookWidth)
+        .height(this.shelfOpeningBookWidth / 0.735)
+        .backgroundColor(this.readerContentLayerColor())
+        .borderRadius(8)
+        .border({ width: ThemeRuntime.glassBorderWidth(), color: this.readerGlassBorderColor() })
+        .shadow({ radius: 24, color: this.isReaderThemeDark() ? '#90000000' : '#38000000', offsetX: 8, offsetY: 10 })
+      } else {
+        Column() {
+          LoadingProgress()
+            .width(40)
+            .height(40)
+          Text(this.getReaderLoadingText())
+            .fontSize(14)
+            .fontColor('#999')
+            .margin({ top: 8 })
+        }
+      }
     }
     .width('100%')
     .height('100%')
@@ -2010,6 +2092,12 @@ struct ReadBookPage {
     )
   }
 
+  pageTransition() {
+    if (this.openedWithShelfAnimation || AppStorage.get<boolean>('shelfReaderDirectTransition') === true) {
+      PageTransitionEnter({ type: RouteType.Push, duration: 0 })
+    }
+  }
+
   build() {
     Stack() {
       BookSourceStageRuntimeHost()
@@ -2211,8 +2299,6 @@ struct ReadBookPage {
     .width('100%')
     .height('100%')
     .backgroundColor(this.readerContentLayerColor())
-    .opacity(this.shelfOpeningEntryOpacity)
-    .scale({ x: this.shelfOpeningEntryScale, y: this.shelfOpeningEntryScale })
     .expandSafeArea([SafeAreaType.SYSTEM], this.getReaderSafeAreaEdges())
     .onTouch((event: TouchEvent) => {
       if (event.type === TouchType.Down) {
@@ -5412,6 +5498,7 @@ struct ReadBookPage {
     this.pendingRestorePageIndex = -1;
     this.readerTypographyRestoreOffset = -1;
     this.readerInitialPageReady = true;
+    this.finishReaderInitialOpening();
     this.setCurrentPageText(this.contentPages[this.currentPageIndex] || '');
     return true;
   }
@@ -6820,30 +6907,40 @@ struct ReadBookPage {
     const bookUrl = this.book?.bookUrl || this.bookUrl;
     this.tocSearchLoading = true;
     try {
-      const db = AppDatabase.getInstance();
-      await db.initWithContext(getContext(this));
-      const matches = await db.searchBookChapters(bookUrl, keyword);
-      const totalCount = await db.getBookChapterCount(bookUrl);
+      let matches: BookChapter[] = [];
+      let totalCount = this.chapters.length;
+      let searchSource = '内存';
+      if (this.chapters.length > 0) {
+        const normalizedKeyword = keyword.toLowerCase();
+        matches = this.chapters.filter((chapter: BookChapter) =>
+          (chapter.title || '').toLowerCase().includes(normalizedKeyword));
+      } else {
+        searchSource = '数据库';
+        const db = AppDatabase.getInstance();
+        await db.initWithContext(getContext(this));
+        matches = await db.searchBookChapters(bookUrl, keyword);
+        totalCount = await db.getBookChapterCount(bookUrl);
+      }
       if (requestSerial !== this.tocSearchRequestSerial || !this.tocSearchVisible) return;
       const indexes: number[] = [];
       for (const chapter of matches) {
         indexes.push(chapter.index);
       }
-      this.tocDatabaseChapterCount = Math.max(totalCount, this.chapters.length);
+      this.tocDatabaseChapterCount = totalCount;
       this.tocSearchChapterIndexes = indexes;
       this.tocVisibleChapters = matches;
       this.tocWindowStart = 0;
       this.tocSearchResultActive = true;
       this.tocFirstVisibleGlobalIndex = indexes.length > 0 ? indexes[0] : 0;
       this.tocVisibleItemCount = 1;
-      console.info(`[TOC] 数据库目录搜索: keyword=${keyword}, total=${totalCount}, matches=${matches.length}`);
+      console.info(`[TOC] ${searchSource}目录搜索: keyword=${keyword}, total=${totalCount}, matches=${matches.length}`);
       setTimeout(() => {
         if (matches.length > 0) {
           this.tocScroller.scrollToIndex(0, false, ScrollAlign.START);
         }
       }, 0);
     } catch (e) {
-      console.warn('数据库目录搜索失败:', e);
+      console.warn('目录搜索失败:', e);
       if (requestSerial === this.tocSearchRequestSerial) {
         promptAction.showToast({ message: '目录搜索失败' });
       }
@@ -7132,7 +7229,12 @@ struct ReadBookPage {
   }
 
   getReaderBottomInfoBarVisualOffsetY(): number {
-    return 0;
+    // Keep the footer glyphs clear of the physical bottom clip without changing pagination height.
+    try {
+      return -px2vp(2);
+    } catch (_) {
+      return -1;
+    }
   }
 
   readerFloatingBarBottomMargin(): number {
@@ -7901,6 +8003,20 @@ struct ReadBookPage {
     return this.pageViewWidth > 0 && this.pageViewHeight > 0 && this.contentPages.length > 0;
   }
 
+  savedReaderProgressOffset(book: Book | null, chapterIndex: number): number {
+    if (!book) return -1;
+    const chapterRaw = book.getVariable(READER_PROGRESS_OFFSET_CHAPTER_KEY);
+    const offsetRaw = book.getVariable(READER_PROGRESS_OFFSET_KEY);
+    if (!chapterRaw || !offsetRaw) return -1;
+    const storedChapter = Number(chapterRaw);
+    const storedOffset = Number(offsetRaw);
+    if (!Number.isFinite(storedChapter) || Math.round(storedChapter) !== chapterIndex ||
+      !Number.isFinite(storedOffset) || storedOffset < 0) {
+      return -1;
+    }
+    return Math.round(storedOffset);
+  }
+
   @Builder
   changeSourceDialog() {
     Column() {
@@ -8351,6 +8467,7 @@ struct ReadBookPage {
     const engine = ReadBookEngine.get();
     const chapterIndex = this.clampChapterIndex(this.currentChapterIndex);
     const pageIndex = Math.max(0, Math.min(this.currentPageIndex, Math.max(0, this.contentPages.length - 1)));
+    const characterOffset = Math.max(0, this.getPageStartOffset(pageIndex));
     if (!Book.hasStartedReading(this.book) && chapterIndex <= 0 && pageIndex <= 0) {
       if (engine.book?.bookUrl === this.book.bookUrl) {
         engine.curIdx = chapterIndex;
@@ -8369,6 +8486,8 @@ struct ReadBookPage {
     this.book.putVariable('lastReadTime', `${now}`);
     this.book.putVariable('readProgressChapterIndex', `${chapterIndex}`);
     this.book.putVariable('readProgressPageCount', `${this.currentChapterProgressPageCount()}`);
+    this.book.putVariable(READER_PROGRESS_OFFSET_KEY, `${characterOffset}`);
+    this.book.putVariable(READER_PROGRESS_OFFSET_CHAPTER_KEY, `${chapterIndex}`);
     this.book.putVariable('lastReadPageText', this.getShelfLastReadPageText(pageIndex));
     this.book.putVariable('lastReadPageImage', this.getShelfLastReadPageImage(pageIndex));
     // The old reader page can finish an asynchronous save after the next book has
@@ -8472,7 +8591,7 @@ struct ReadBookPage {
         .margin({ left: 12 })
     }
     .width('100%')
-    .padding({ left: 18, right: 18, top: 0, bottom: 0 })
+    .padding({ left: 28, right: 28, top: 0, bottom: 0 })
     .alignItems(VerticalAlign.Center)
     .backgroundColor(Color.Transparent)
     .translate({ y: this.getReaderBottomInfoBarVisualOffsetY() })
@@ -11365,28 +11484,65 @@ struct ReadBookPage {
       return;
     }
     if (!advanced) {
+      const errorMessage = this.ttsChapterAdvanceError;
       this.finishTtsReading();
+      if (errorMessage) {
+        promptAction.showToast({ message: errorMessage });
+      }
       return;
     }
     await this.startTtsReadingFromCurrentPosition(false);
   }
 
   async advanceTtsReadingToNextChapter(): Promise<boolean> {
+    this.ttsChapterAdvanceError = '';
     if (this.chapters.length === 0 || this.currentChapterIndex >= this.chapters.length - 1) {
       return false;
     }
     if (this.ttsChapterSwitching) {
       return false;
     }
+    const sourceChapterIndex = this.currentChapterIndex;
+    const sourcePageIndex = this.currentPageIndex;
+    const sourcePendingRestorePageIndex = this.pendingRestorePageIndex;
+    const targetChapterIndex = sourceChapterIndex + 1;
+    const handoffReadToken = this.ttsReadToken;
     this.ttsChapterSwitching = true;
     try {
       this.ttsAutoTurningPage = false;
       this.ttsPendingTargetPageIndex = -1;
       this.ttsPendingHighlightChunk = null;
       this.ttsPageTurnSerial++;
-      this.currentPageIndex = 0;
       this.pendingRestorePageIndex = 0;
-      await this.loadContent(true, this.currentChapterIndex + 1);
+      const loaded = await this.loadContent(true, targetChapterIndex);
+      if (!loaded || this.currentChapterIndex !== targetChapterIndex) {
+        // Roll back only while this automatic handoff still owns the TTS token. A concurrent
+        // explicit navigation owns its own chapter state and must not be overwritten here.
+        if (handoffReadToken === this.ttsReadToken) {
+          if (this.currentChapterIndex !== sourceChapterIndex) {
+            this.currentPageIndex = sourcePageIndex;
+            this.pendingRestorePageIndex = sourcePageIndex;
+            const restored = await this.loadContent(true, sourceChapterIndex);
+            if (!restored) {
+              console.warn(`[TTS] failed to restore source chapter after handoff failure: ` +
+                `source=${sourceChapterIndex}`);
+            }
+          }
+          if (this.currentChapterIndex === sourceChapterIndex) {
+            this.currentPageIndex = this.normalizeReaderSpreadPageIndex(
+              Math.min(sourcePageIndex, Math.max(0, this.contentPages.length - 1)));
+            this.pendingRestorePageIndex = sourcePendingRestorePageIndex;
+            this.syncCurrentPageText();
+          }
+        }
+        this.ttsChapterAdvanceError = '下一章正文加载失败，朗读已停止';
+        console.warn(`[TTS] automatic chapter handoff failed: source=${sourceChapterIndex},` +
+          `target=${targetChapterIndex},actual=${this.currentChapterIndex},loaded=${loaded}`);
+        return false;
+      }
+      this.currentPageIndex = 0;
+      this.pendingRestorePageIndex = -1;
+      this.syncCurrentPageText();
       this.persistTtsReadPosition(0, 0);
       await this.saveReadingProgress();
       this.updateTtsFloatingSession();
@@ -11660,8 +11816,8 @@ struct ReadBookPage {
       }
       this.currentPageIndex = 0;
       this.pendingRestorePageIndex = 0;
-      await this.loadContent(true, targetChapterIndex);
-      const switched = this.currentChapterIndex === targetChapterIndex;
+      const loaded = await this.loadContent(true, targetChapterIndex);
+      const switched = loaded && this.currentChapterIndex === targetChapterIndex;
       if (switched) {
         await this.saveReadingProgress();
       } else {
@@ -11712,8 +11868,8 @@ struct ReadBookPage {
       }
       this.currentPageIndex = 0;
       this.pendingRestorePageIndex = 0;
-      await this.loadContent(true, targetChapterIndex);
-      const switched = this.currentChapterIndex === targetChapterIndex;
+      const loaded = await this.loadContent(true, targetChapterIndex);
+      const switched = loaded && this.currentChapterIndex === targetChapterIndex;
       if (switched) {
         await this.saveReadingProgress();
       } else {
@@ -11763,8 +11919,8 @@ struct ReadBookPage {
       }
       this.currentPageIndex = normalizedPageIndex;
       this.pendingRestorePageIndex = normalizedPageIndex;
-      await this.loadContent(true, normalizedChapterIndex);
-      const switched = this.currentChapterIndex === normalizedChapterIndex;
+      const loaded = await this.loadContent(true, normalizedChapterIndex);
+      const switched = loaded && this.currentChapterIndex === normalizedChapterIndex;
       if (switched) {
         this.currentPageIndex = this.normalizeReaderSpreadPageIndex(
           Math.min(normalizedPageIndex, Math.max(0, this.contentPages.length - 1)));
@@ -13616,8 +13772,12 @@ struct ReadBookPage {
       return;
     }
     if (chapterIndex !== this.currentChapterIndex) {
-      await this.loadContent(true, chapterIndex);
+      const loaded = await this.loadContent(true, chapterIndex);
       if (serial !== this.mirroredTtsFocusSyncSerial) return;
+      if (!loaded || this.currentChapterIndex !== chapterIndex) {
+        this.clearMirroredTtsFocus();
+        return;
+      }
     }
     const source = this.pagedContentText || this.getPagedSourceText();
     if (!source || !Number.isFinite(this.globalTtsOffsetStart)) {
@@ -16751,29 +16911,68 @@ struct ReadBookPage {
   buildReaderV2Pagination(source: string, chapterIndex: number): ReaderPaginationResult {
     const snapshot = this.buildReaderV2Snapshot();
     const document = ReaderV2DocumentParser.parse(source, chapterIndex, this.getChapterTitle(chapterIndex));
-    const pageSet = ReaderV2Paginator.paginate(document, snapshot, this.buildReaderV2RegexStyles(document));
-    const pages: string[] = [];
-    const starts: number[] = [];
-    const ends: number[] = [];
-    for (let index = 0; index < pageSet.pages.length; index++) {
-      const page = pageSet.pages[index];
-      const start = index === 0 ? 0 : Math.max(starts[index - 1], page.sourceStart);
-      const nextStart = index + 1 < pageSet.pages.length ? pageSet.pages[index + 1].sourceStart : source.length;
-      const end = Math.max(start, Math.min(source.length, nextStart > start ? nextStart : page.sourceEnd));
-      page.sourceStart = start;
-      page.sourceEnd = end;
-      starts.push(start);
-      ends.push(end);
-      pages.push(source.substring(start, end));
+    const session = ReaderV2Paginator.start(document, snapshot, this.buildReaderV2RegexStyles(document));
+    while (!session.pageSet.complete) {
+      if (ReaderV2Paginator.appendPages(session, 32) <= 0) break;
     }
-    if (pages.length === 0 && source) {
-      pages.push(source);
-      starts.push(0);
-      ends.push(source.length);
+    const result: ReaderPaginationResult = {
+      source: source,
+      pages: [],
+      starts: [],
+      ends: [],
+      cursor: 0,
+      complete: session.pageSet.complete,
+      v2Session: session
+    };
+    this.registerReaderV2PaginationSession(source, chapterIndex, session);
+    this.syncReaderV2PaginationResult(result);
+    return result;
+  }
+
+  createIncrementalReaderV2Pagination(source: string, chapterIndex: number,
+    initialPageCount: number): ReaderPaginationResult {
+    const snapshot = this.buildReaderV2Snapshot();
+    const document = ReaderV2DocumentParser.parse(source, chapterIndex, this.getChapterTitle(chapterIndex));
+    const session = ReaderV2Paginator.start(document, snapshot, this.buildReaderV2RegexStyles(document));
+    const result: ReaderPaginationResult = {
+      source: source,
+      pages: [],
+      starts: [],
+      ends: [],
+      cursor: 0,
+      complete: session.pageSet.complete,
+      v2Session: session
+    };
+    this.registerReaderV2PaginationSession(source, chapterIndex, session);
+    const visibleSpreadSize = this.isLandscapeDoublePageActive() ? 2 : 1;
+    const requestedPageCount = chapterIndex === this.currentChapterIndex && this.pendingRestorePageIndex >= 0 ?
+      this.pendingRestorePageIndex + visibleSpreadSize :
+      Math.min(Math.max(1, initialPageCount), visibleSpreadSize);
+    const targetOffset = chapterIndex === this.currentChapterIndex ? this.readerTypographyRestoreOffset : -1;
+    let offsetCoveredAtPageCount = -1;
+    while (!result.complete) {
+      const previousPageCount = result.pages.length;
+      this.appendReaderV2PaginationBatch(result, chapterIndex, 1);
+      if (result.pages.length <= previousPageCount) break;
+      if (targetOffset >= 0 && result.ends.length > 0 &&
+        result.ends[result.ends.length - 1] > targetOffset && offsetCoveredAtPageCount < 0) {
+        offsetCoveredAtPageCount = result.pages.length;
+      }
+      const offsetReady = targetOffset < 0 || offsetCoveredAtPageCount > 0;
+      const offsetSpreadReady = offsetCoveredAtPageCount < 0 ||
+        result.pages.length >= offsetCoveredAtPageCount + visibleSpreadSize - 1;
+      if (result.pages.length >= requestedPageCount && offsetReady && offsetSpreadReady) break;
     }
+    ReaderOpenTrace.mark(this.bookUrl, 'v2-initial-window-ready',
+      `pages=${result.pages.length} complete=${result.complete} offset=${targetOffset}`);
+    return result;
+  }
+
+  registerReaderV2PaginationSession(source: string, chapterIndex: number,
+    session: ReaderV2PaginationSession): void {
     const key = this.buildReaderPaginationCacheKey(chapterIndex, source);
-    this.readerV2PageSetCache.set(key, pageSet);
-    this.readerV2DocumentCache.set(key, document);
+    this.readerV2PageSetCache.set(key, session.pageSet);
+    this.readerV2DocumentCache.set(key, session.document);
     while (this.readerV2PageSetCache.size > 8) {
       const oldest = this.readerV2PageSetCache.keys().next().value as string | undefined;
       if (!oldest) break;
@@ -16781,17 +16980,50 @@ struct ReadBookPage {
       this.readerV2DocumentCache.delete(oldest);
     }
     if (chapterIndex === this.currentChapterIndex) {
-      this.readerV2ActiveDocument = document;
-      this.readerV2ActiveSnapshot = snapshot;
+      this.readerV2ActiveDocument = session.document;
+      this.readerV2ActiveSnapshot = session.snapshot;
     }
-    return {
-      source: source,
-      pages: pages,
-      starts: starts,
-      ends: ends,
-      cursor: source.length,
-      complete: true
-    };
+  }
+
+  appendReaderV2PaginationBatch(result: ReaderPaginationResult, chapterIndex: number, maxPages: number): void {
+    const session = result.v2Session;
+    if (!session || result.complete || maxPages <= 0) return;
+    const startedAt = Date.now();
+    const appended = ReaderV2Paginator.appendPages(session, maxPages);
+    this.syncReaderV2PaginationResult(result);
+    CooperativeScheduler.reportSynchronousOperation('reader/v2-pagination-batch', Date.now() - startedAt,
+      `chapter=${chapterIndex},pages=${appended},total=${result.pages.length}`);
+  }
+
+  syncReaderV2PaginationResult(result: ReaderPaginationResult): void {
+    const session = result.v2Session;
+    if (!session) return;
+    const pageSet = session.pageSet;
+    const pages: string[] = [];
+    const starts: number[] = [];
+    const ends: number[] = [];
+    for (let index = 0; index < pageSet.pages.length; index++) {
+      const page = pageSet.pages[index];
+      const start = index === 0 ? 0 : Math.max(starts[index - 1], page.sourceStart);
+      const nextStart = index + 1 < pageSet.pages.length ? pageSet.pages[index + 1].sourceStart :
+        (pageSet.complete ? result.source.length : page.sourceEnd);
+      const end = Math.max(start, Math.min(result.source.length, nextStart > start ? nextStart : page.sourceEnd));
+      page.sourceStart = start;
+      page.sourceEnd = end;
+      starts.push(start);
+      ends.push(end);
+      pages.push(result.source.substring(start, end));
+    }
+    if (pages.length === 0 && result.source && pageSet.complete) {
+      pages.push(result.source);
+      starts.push(0);
+      ends.push(result.source.length);
+    }
+    result.pages = pages;
+    result.starts = starts;
+    result.ends = ends;
+    result.cursor = ends.length > 0 ? ends[ends.length - 1] : 0;
+    result.complete = pageSet.complete;
   }
 
   readerV2PageSet(chapterIndex: number, source: string): ReaderV2PageSet | null {
@@ -17328,7 +17560,7 @@ struct ReadBookPage {
     initialPageCount: number): ReaderPaginationResult {
     const text = source || '';
     if (text && this.shouldUseReaderLayoutV2(text)) {
-      return this.buildReaderV2Pagination(text, chapterIndex);
+      return this.createIncrementalReaderV2Pagination(text, chapterIndex, initialPageCount);
     }
     if (!text || this.pageViewWidth <= 0 || this.pageViewHeight <= 0) {
       const completeResult = this.paginateReaderSourceText(text, chapterIndex);
@@ -17368,6 +17600,10 @@ struct ReadBookPage {
     if (!text || this.pageViewWidth <= 0 || this.pageViewHeight <= 0) {
       result.complete = true;
       result.cursor = text.length;
+      return;
+    }
+    if (result.v2Session) {
+      this.appendReaderV2PaginationBatch(result, chapterIndex, maxPages);
       return;
     }
     const horizontalPadding = this.getEffectiveReaderMarginLeft() + this.getEffectiveReaderMarginRight();
@@ -17446,7 +17682,7 @@ struct ReadBookPage {
       const batchStartedAt = Date.now();
       // A pure comic page is already delimited by an image marker and requires no text measurement. Parse a small
       // group per idle slice so large comics finish promptly without turning the whole chapter into one UI task.
-      this.appendReaderPaginationBatch(result, chapterIndex, imageOnlyPagination ? 8 : 1);
+      this.appendReaderPaginationBatch(result, chapterIndex, imageOnlyPagination ? 8 : (result.v2Session ? 2 : 1));
       const batchElapsedMs = Math.max(0, Date.now() - batchStartedAt);
       if (result.complete) {
         this.publishCurrentReaderPagination(result);
@@ -17484,6 +17720,7 @@ struct ReadBookPage {
     this.contentPageEnds = [...result.ends];
     this.restorePendingPageIndex(result.complete === true);
     this.readerInitialPageReady = this.pendingRestorePageIndex < 0;
+    if (this.readerInitialPageReady) this.finishReaderInitialOpening();
     if (pendingRestore >= 0 && this.pendingRestorePageIndex < 0) {
       this.setCurrentPageText(this.contentPages[this.currentPageIndex] || '');
     } else if (shouldRefreshCompletedSpread) {
@@ -17527,22 +17764,46 @@ struct ReadBookPage {
   async restorePersistedReaderPagination(content: string, chapterIndex: number): Promise<boolean> {
     if (!content || !this.bookUrl || !this.hasPagedReaderArea()) return false;
     const source = this.buildPagedSourceText(chapterIndex, content);
-    // V2 PageLayout contains retained Paragraph geometry and hit-test indices that cannot be reconstructed from
-    // the legacy offsets-only database record. Build it once and then keep both boundaries and geometry in memory.
-    if (this.shouldUseReaderLayoutV2(source)) return false;
     const key = this.buildReaderPaginationCacheKey(chapterIndex, source);
     const record = await AppDatabase.getInstance().getReaderPaginationCache(this.bookUrl, chapterIndex, key);
     if (!record || record.starts.length !== record.ends.length) return false;
-    const pages: string[] = [];
+    const v2Layout = this.shouldUseReaderLayoutV2(source);
     let previousEnd = 0;
     for (let i = 0; i < record.starts.length; i++) {
       const start = record.starts[i];
       const end = record.ends[i];
       if (start < 0 || end <= start || end > source.length || start < previousEnd) return false;
-      pages.push(source.substring(start, end));
       previousEnd = end;
     }
-    if (pages.length === 0) return false;
+    if (record.starts.length === 0) return false;
+    if (v2Layout) {
+      // Native Paragraph objects cannot be serialized. Reuse the durable boundaries to locate the saved offset,
+      // rebuild only through that visible window, and let the retained V2 session finish the remaining pages later.
+      let targetPageIndex = Math.max(0, this.pendingRestorePageIndex);
+      if (this.readerTypographyRestoreOffset >= 0) {
+        const targetOffset = Math.min(source.length, this.readerTypographyRestoreOffset);
+        targetPageIndex = record.ends.length - 1;
+        for (let index = 0; index < record.ends.length; index++) {
+          if (targetOffset < record.ends[index]) {
+            targetPageIndex = index;
+            break;
+          }
+        }
+      }
+      targetPageIndex = Math.max(0, Math.min(targetPageIndex, record.ends.length - 1));
+      this.pendingRestorePageIndex = targetPageIndex;
+      const visibleSpreadSize = this.isLandscapeDoublePageActive() ? 2 : 1;
+      const result = this.getOrCreateReaderPagination(chapterIndex, source,
+        targetPageIndex + visibleSpreadSize);
+      this.applyReaderPaginationResult(result, content);
+      ReaderOpenTrace.mark(this.bookUrl, 'v2-boundary-cache-hit',
+        `pages=${record.ends.length} target=${targetPageIndex}`);
+      return true;
+    }
+    const pages: string[] = [];
+    for (let index = 0; index < record.starts.length; index++) {
+      pages.push(source.substring(record.starts[index], record.ends[index]));
+    }
     const result: ReaderPaginationResult = {
       source: source,
       pages: pages,
@@ -17715,6 +17976,7 @@ struct ReadBookPage {
   }
 
   applyReaderPaginationResult(result: ReaderPaginationResult, fallbackContent: string): void {
+    const initialPageWasReady = this.readerInitialPageReady;
     const pages: string[] = result.pages.length > 0 ? result.pages : [fallbackContent];
     if (!result.complete && this.pendingRestorePageIndex < 0 && this.currentPageIndex >= pages.length) {
       // Incremental pagination (especially chapters containing paragraph-comment markers) may initially expose
@@ -17741,6 +18003,10 @@ struct ReadBookPage {
     // Incremental pagination may initially contain only page one. Do not expose that temporary page while
     // the saved position is still waiting for enough page boundaries to be rebuilt.
     this.readerInitialPageReady = this.pendingRestorePageIndex < 0;
+    if (this.readerInitialPageReady) this.finishReaderInitialOpening();
+    if (!initialPageWasReady && this.readerInitialPageReady && this.bookUrl) {
+      ReaderOpenTrace.finish(this.bookUrl);
+    }
     this.syncReaderComicPageDataSource();
     this.scheduleReaderComicScrollRestore();
   }

@@ -5,7 +5,7 @@
 | 项目 | 信息 |
 | --- | --- |
 | 应用包名 | `io.legado.read` |
-| 当前版本 | `3.7.820`（以 `AppScope/app.json5` 为准） |
+| 当前版本 | `3.7.822`（以 `AppScope/app.json5` 为准） |
 | 支持设备 | `phone`、`tablet`、`2in1` |
 | 最低 API | HarmonyOS API 12 |
 | 目标 API | HarmonyOS API 23 |
@@ -62,6 +62,7 @@
 - 支持正文扩展至状态栏、书签、正文替换规则、章节评论和书源显式提供的网页交互标记。
 - 支持漫画连续全宽阅读，以及携带书源请求头、Cookie 或解码规则的远程图片。
 - 网页动作、图片和媒体标记不会混入朗读文本。
+- 阅读页已接入 V2 分页布局：使用原生段落测量、增量分页、正文动作区域、正则样式、文本选区和 TTS 高亮叠加；V2 不适用时仍保留现有分页路径。
 
 ### 朗读与有声书
 
@@ -128,6 +129,8 @@ legado-harmony/
 - `WebBookFetchRuntime`：处理书源显式声明的 `webView: true` / `webJs` 页面抓取。
 - `BookSourceLoginWebRuntime`：登录面板、WebView、Cookie、加密和状态持久化。
 - `SystemTtsReader` / `HttpTtsReader` / `RemoteAudioPlayback`：系统朗读、HTTP TTS 与有声书播放。
+- `ReaderV2Document` / `ReaderV2Paginator` / `ReaderV2RenderNode` / `ReaderV2Interaction`：阅读器 V2 文档建模、增量分页、原生选区、动作命中和朗读高亮。
+- `ReaderOpenTrace`：记录从书架点击到阅读首屏发布的阶段耗时，用于定位打开书籍慢或恢复异常。
 - `AppDatabase`：书源、书籍、章节、搜索历史、分页缓存和本地配置。
 
 ## 开发与构建
@@ -145,8 +148,8 @@ legado-harmony/
 | --- | --- |
 | 主模块 | `entry` |
 | 入口 Ability | `EntryAbility` |
-| `versionName` | `3.7.820` |
-| `versionCode` / `buildVersion` | `370820` |
+| `versionName` | `3.7.822` |
+| `versionCode` / `buildVersion` | `370822` |
 | `minAPIVersion` | `12` |
 | `targetAPIVersion` | `23` |
 | 权限 | `INTERNET`、`KEEP_BACKGROUND_RUNNING` |
@@ -215,6 +218,7 @@ node scripts/theme-framework-check.mjs
 | `[TTS]` / `[HttpTtsReader]` | 系统 TTS 与 HTTP TTS |
 | `[RemoteAudioPlayback]` | 有声书请求、预取和播放状态 |
 | `[QuickJS]` / `[QuickJSShadow]` | 原生运行时自检及纯表达式影子比对 |
+| `[ReaderOpen]` | 打开书籍、路由、首屏和分页阶段耗时 |
 
 建议按“搜索结果 → 详情地址 → 详情解析 → 目录 → 正文 → 发现”的顺序排查。遇到登录或验证码响应时，先在验证页完成登录并同步 Cookie，再重试相应链路。
 
@@ -228,6 +232,7 @@ node scripts/theme-framework-check.mjs
 - 私有评论、音频或聚合协议仍受服务授权、会话 Token 和接口变更影响。
 - 自定义 HTTP TTS 依赖第三方音源的授权方式、Cookie 和返回格式，无法保证全部兼容。
 - 当前正文体验以自研 ArkUI 阅读页为主，Reader Kit 深度能力仍在验证中。
+- 阅读器 V2 仍会根据正文结构、布局条件和运行时异常选择性启用；部分复杂内容可能回退到现有分页路径。
 - UI、主题和设置项仍在持续迭代。
 
 ## 文档

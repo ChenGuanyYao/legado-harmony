@@ -1,12 +1,14 @@
 # Legado Harmony 书源开发指南
 
+> 适用版本：`3.7.822`（2026-08-17）。本文以当前工作区代码为准；规则能力、字段消费方式和限制可能随版本继续调整。
+
 本文面向为开源轻页编写、迁移和调试书源的开发者，描述项目当前代码中**已经实现并实际调用**的规则能力。
 
 | 项目 | 信息 |
 | --- | --- |
 | 适用项目 | `legado-harmony` |
-| 适用版本 | `3.7.820`（以 `AppScope/app.json5` 为准） |
-| 最后核对 | 2026-08-16 |
+| 适用版本 | `3.7.822`（以 `AppScope/app.json5` 为准） |
+| 最后核对 | 2026-08-17 |
 | 文档性质 | 当前实现参考，不是 Android「阅读」全部规则的等价清单 |
 
 > [!IMPORTANT]
@@ -685,6 +687,7 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 | `replaceRegex` | 对提取后的正文做全局正则替换。 |
 | `title` | 可导入和编辑，当前正文返回链不读取。 |
 | `images` | 漫画图片提取规则；支持返回单个地址、地址列表或图片标签，相对地址会按章节响应地址补全。 |
+| `sourceRegex` | 有声书 WebView 媒体请求匹配规则；仅当目录 `chapterUrl` 的请求选项显式设置 `webView: true` 时，用于从页面资源中筛选最终音频 URL。 |
 | `nextContentUrl` | 正文下一页地址；逐页解析并拼接，遇到空地址、重复页、50 页或 8 MiB 正文上限时停止。 |
 | `imageDecode` | 图片二进制解密规则；当前允许受限的 AES-CBC-PKCS5/PKCS7 解密，不执行文件、进程或反射 API。 |
 | `imageStyle` | `FULL`、`comic`、`manga`、`webtoon` 会让阅读器优先使用连续全宽漫画模式。 |
@@ -923,7 +926,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 | 段评气泡存在但无法点击 | `ident` 必须是完整或可补全 URL，并包含正确书籍/章节 ID；同时检查段评开关、登录 Cookie 和后端返回。 |
 | 登录按钮脚本超时 | 检查动作是否等待未完成的网页、反复请求同一 URL、调用未映射的主机方法，或超过网络/脚本限制；错误提示中的“缺少兼容能力”优先处理。 |
 | 登录面板开关没有状态 | 新源使用 `type: "toggle"`/`"select"`、`chars` 和默认值；旧按钮式开关需确保动作把状态写入 `source`、`java` 或 `loginInfo`。 |
-| 有声书有目录但不能播放 | 正文规则必须返回最终音频 URL；检查登录、Token、音色代码是否真的进入请求，以及响应是否为 401/JSON 错误。 |
+| 有声书有目录但不能播放 | 确认 `chapterUrl` 已返回可播放地址；若使用页面抓取，确认其请求选项显式包含 `webView: true` 且 `sourceRegex` 能匹配页面媒体请求；同时检查登录、Token、音色代码和响应是否为 401/JSON 错误。 |
 | CSS 在小页面可用、大页面失效 | HTML 超过 4 MiB 保护阈值；寻找 JSON API 或减少响应。 |
 | Android 阅读中可用、此处不可用 | 查看该阶段是否路由 ArkWeb、是否调用未映射 `java/source/cache/cookie` 方法、浏览器直连网络、复杂 XPath/CSS 或未消费字段。 |
 
@@ -1079,6 +1082,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
       "content": "",
       "title": "",
       "images": "",
+      "sourceRegex": "",
       "nextContentUrl": "",
       "replaceRegex": "",
       "imageDecode": "",
@@ -1114,6 +1118,8 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 - 书籍类型识别：`entry/src/main/ets/core/book/BookTypeSupport.ts`
 - 有声书页面与后台播放：`entry/src/main/ets/pages/AudioBook.ets`、`entry/src/main/ets/utils/RemoteAudioPlayback.ets`、`entry/src/main/ets/utils/ReaderTtsFloatingSession.ets`
 - 数据库存储：`entry/src/main/ets/model/data/AppDatabase.ts`
+- 阅读器 V2 文档、分页和交互：`entry/src/main/ets/core/reader/ReaderV2Document.ets`、`ReaderV2Paginator.ets`、`ReaderV2RenderNode.ets`、`ReaderV2Interaction.ets`
+- 阅读打开链路追踪：`entry/src/main/ets/utils/ReaderOpenTrace.ts`
 
 书源校验与批量处理入口：
 

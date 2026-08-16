@@ -93,6 +93,8 @@ export class SystemTtsReader {
   private static readonly CLOUD_TTS_PREMIUM_FIRST_CHUNK_LENGTH: number = 50;
   private static readonly SYSTEM_TTS_START_BUFFER_SEGMENTS: number = 2;
   private static readonly SYSTEM_TTS_MAX_BUFFERED_SEGMENTS: number = 3;
+  private static readonly DIRECT_PLAY_COMPLETION_GRACE_MS: number = 5000;
+  private static readonly MAX_ESTIMATED_CHUNK_DURATION_MS: number = 45000;
   private engine: textToSpeech.TextToSpeechEngine | null = null;
   private pcmPlayer: TtsPcmAudioPlayer = new TtsPcmAudioPlayer();
   private httpReader: HttpTtsReader = new HttpTtsReader();
@@ -1571,7 +1573,8 @@ export class SystemTtsReader {
       // Direct playback may legitimately spend more than 12 seconds on a long
       // chunk. Firing the old fixed watchdog interrupted that audible chunk and
       // replayed/reordered it.
-      return Math.max(12000, Math.round(this.currentSpeakMinDuration + 3000));
+      return Math.max(12000,
+        Math.round(this.currentSpeakMinDuration + SystemTtsReader.DIRECT_PLAY_COMPLETION_GRACE_MS));
     }
     return 12000;
   }
@@ -1795,7 +1798,11 @@ export class SystemTtsReader {
     const punctuationMatches = value.match(/[，。！？；;,.!?、]/g);
     const punctuationCount = punctuationMatches ? punctuationMatches.length : 0;
     const speed = Math.max(0.5, Math.min(2, this.getTtsSpeed()));
-    return Math.max(450, Math.min(18000, (readableChars * 210 + punctuationCount * 120) / speed));
+    // System chunks can contain up to 60 characters. At 0.5x speed a punctuation-heavy
+    // chunk can legitimately exceed the previous 18-second ceiling, which made the
+    // lost-onComplete fallback advance while direct playback was still audible.
+    return Math.max(450, Math.min(SystemTtsReader.MAX_ESTIMATED_CHUNK_DURATION_MS,
+      (readableChars * 210 + punctuationCount * 120) / speed));
   }
 
   private getTtsPerson(): number {

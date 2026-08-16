@@ -376,15 +376,6 @@ export default class EntryAbility extends UIAbility {
     } catch (e) {
       hilog.warn(0x0000, 'testTag', 'Apply mode-dependent theme font failed: %{public}s', JSON.stringify(e));
     }
-    if (ThemeRuntime.currentThemeId() === 'custom') {
-      const layout = ThemeRuntime.readerLayout(darkMode);
-      ReaderSettingsStore.saveLayoutSettings(this.context, layout.fontSize, layout.lineHeight,
-        layout.paragraphSpacing, layout.marginLeft, layout.marginRight, layout.marginTop, layout.marginBottom)
-        .catch((e: Error) => {
-          hilog.warn(0x0000, 'testTag', 'Apply mode-dependent reader layout failed: %{public}s',
-            JSON.stringify(e));
-        });
-    }
   }
 
   private setApplicationColorMode(colorMode: number): void {

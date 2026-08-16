@@ -312,14 +312,12 @@ export class BookSourceStageWebRuntime {
       if (request.chapter && step.chapterImgUrl) {
         request.chapter.variable = this.setVariableValue(request.chapter.variable, 'imgUrl', step.chapterImgUrl);
       }
+      let nextCacheState: Record<string, string> = {};
       try {
-        cacheState = JSON.parse(step.cacheState || '{}') as Record<string, string>;
+        nextCacheState = JSON.parse(step.cacheState || '{}') as Record<string, string>;
       } catch (_) {
-        cacheState = {};
+        nextCacheState = {};
       }
-      cacheState = this.storeCache(sourceKey, cacheState);
-      request.source.loginInfo = this.mergeRuntimeState(request.source.loginInfo || '',
-        step.javaState, step.sourceState);
       this.applyCookieOperations(step.cookieOperations, appliedOperations);
       if (step.pendingCookie) {
         cookies[step.pendingCookie] = CookieStore.getCookie(step.pendingCookie);
@@ -339,7 +337,10 @@ export class BookSourceStageWebRuntime {
         if (!response.success && response.statusCode === 0) {
           throw new Error(response.error || '书源脚本网络请求失败');
         }
-        const responseBody = response.body || '';
+        // A UTF-8 BOM is transport metadata, not part of the JavaScript-facing response body.
+        // Some imported source helpers feed java.ajax() directly into JSON.parse(), where ArkWeb
+        // does not consistently discard U+FEFF. Normalize it once at the native bridge boundary.
+        const responseBody = (response.body || '').replace(/^\uFEFF/, '');
         lastResponseBody = responseBody;
         // ArkTS/ArkWeb exchange response bodies as UTF-16 strings. Count their in-memory
         // footprint instead of only character count so the cumulative guard remains useful.
@@ -356,6 +357,13 @@ export class BookSourceStageWebRuntime {
         continue;
       }
       if (step.errorMessage) throw new Error(this.smallApiError(lastResponseBody) || step.errorMessage);
+      // A pass that requests async work is speculative: java.ajax()/cookie/crypto return a
+      // placeholder and the complete script is evaluated again after the result arrives. Commit
+      // script cache/runtime state only after a pass finishes, otherwise a placeholder can poison
+      // the next evaluation (for example, caching an empty paragraph-comment summary).
+      cacheState = this.storeCache(sourceKey, nextCacheState);
+      request.source.loginInfo = this.mergeRuntimeState(request.source.loginInfo || '',
+        step.javaState, step.sourceState);
       const persistedBeforeSave = await AppDatabase.getInstance().getBookSource(request.source.bookSourceUrl);
       if (persistedBeforeSave) {
         // Empty state from a non-login task is never an explicit logout. Preserve a token/header
@@ -765,6 +773,17 @@ export class BookSourceStageWebRuntime {
       `function sourceHeaders(){const raw=String(S.sourceHeader||'').trim();if(!raw)return {};` +
       `if(/^@?js\\s*:/i.test(raw)){try{return headerObject((0,eval)(raw.replace(/^@?js\\s*:/i,'')));}catch(e){return {};}}` +
       `return headerObject(raw);}` +
+      `function browserDocument(h,p){let html=typeof h==='string'?h:'';const preload=typeof p==='string'?p:'';` +
+      `if(!preload)return html;const safe=preload.replace(/<\\/script/gi,'<\\\\/script');` +
+      `const bridge='<script>(function(){var memory={};var java=window.java||{ajax:function(u){` +
+      `var x=new XMLHttpRequest();x.open("GET",String(u||""),false);x.send(null);` +
+      `if(x.status!==0&&(x.status<200||x.status>=400))throw new Error("HTTP "+x.status);return x.responseText||"";},` +
+      `get:function(u){var b=this.ajax(u);return {body:function(){return b;}};},` +
+      `log:function(){},toast:function(){},longToast:function(){}};` +
+      `var cache=window.cache||{get:function(k){return memory[String(k)]||null;},` +
+      `put:function(k,v){memory[String(k)]=v;return v;},getMemory:function(k){return memory[String(k)]||null;},` +
+      `putMemory:function(k,v){memory[String(k)]=v;return v;}};'+safe+'})();<\\/script>';` +
+      `const head=html.match(/<head\\b[^>]*>/i);return head?html.replace(head[0],head[0]+bridge):bridge+html;}` +
       `const java={ajax:function(v){v=String(v??'');if(Object.prototype.hasOwnProperty.call(S.responses,v))return S.responses[v];` +
       `if(!pending){pending=v;pendingHeaders=JSON.stringify(sourceHeaders());}return '{}';},` +
       `ajaxAll:function(v){const list=Array.isArray(v)?v:[v];return list.map(responseObject);},` +
@@ -794,7 +813,7 @@ export class BookSourceStageWebRuntime {
       `startBrowser:function(u){url=String(u??'');return {body:function(){return '';}};},` +
       `startBrowserAwait:function(u){url=String(u??'');return {body:function(){return '';}};},` +
       `startBrowserDp:function(u){url=String(u??'');return {body:function(){return '';}};},` +
-      `showBrowser:function(u,h){url=String(u??'');browserHtml=typeof h==='string'?h:'';return {body:function(){return browserHtml;}};},` +
+      `showBrowser:function(u,h,p){url=String(u??'');browserHtml=browserDocument(h,p);return {body:function(){return browserHtml;}};},` +
       `showReadingBrowser:function(u){url=String(u??'');return {body:function(){return '';}};},` +
       `open:function(u){url=String(u??'');return url;},webView:function(){throw new Error('java.webView仅登录动作可用');},` +
       `getWebViewUA:function(){return 'Mozilla/5.0 (Linux; HarmonyOS) AppleWebKit/537.36 Mobile Safari/537.36';},` +

@@ -46,6 +46,7 @@ import { WebBookService } from '../core/book/WebBookService';
 import { ChangeSourceResultCache } from '../utils/ChangeSourceResultCache';
 import { BookFieldSanitizer } from '../utils/BookFieldSanitizer';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
+import { ReaderOpenTrace } from '../utils/ReaderOpenTrace';
 
 const SHELF_FULL_TEXT_CACHE_CANCEL_EVENT: string = 'com.legado.harmony.action.SHELF_FULL_TEXT_CACHE_CANCEL';
 const SHELF_FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS: number = 5000;
@@ -421,6 +422,12 @@ struct Index {
       await RecentReadShortcut.openPending(getContext(this));
     } catch (e) {
       console.error('打开最近阅读快捷项失败:', e);
+    }
+  }
+
+  pageTransition() {
+    if (AppStorage.get<boolean>('shelfReaderDirectTransition') === true) {
+      PageTransitionExit({ type: RouteType.Push, duration: 0 })
     }
   }
 
@@ -1044,6 +1051,7 @@ struct BookshelfPage {
   @State openingBookOpacity: number = 0;
   @State openingBookBackdropOpacity: number = 0;
   @State openingBookCoverAngle: number = 0;
+  @State openingBookWaiting: boolean = false;
   @State selectedBookUrls: string[] = [];
   @State showBookGroupPicker: boolean = false;
   @State groupPickerSingleBookUrl: string = '';
@@ -4276,7 +4284,9 @@ struct BookshelfPage {
     this.openingBookOpacity = 0;
     this.openingBookBackdropOpacity = 0;
     this.openingBookCoverAngle = 0;
+    this.openingBookWaiting = false;
     this.openingBook = book;
+    ReaderOpenTrace.begin(book.bookUrl);
 
     this.openingBookGrowTimer = setTimeout(() => {
       this.openingBookGrowTimer = -1;
@@ -4299,14 +4309,29 @@ struct BookshelfPage {
     }, 210);
 
     this.openingBookRouteTimer = setTimeout(() => {
-      this.openingBookRouteTimer = -1;
-      router.pushUrl({
-        url: 'pages/ReadBook',
-        params: { bookUrl: book.bookUrl, shelfBookOpening: 'true' }
-      }).catch((error: Error) => {
-        console.error('打开阅读页失败:', error);
-        this.cancelShelfBookOpening();
-      });
+      this.openingBookWaiting = true;
+      AppStorage.setOrCreate<boolean>('shelfReaderDirectTransition', true);
+      ReaderOpenTrace.mark(book.bookUrl, 'shelf-animation-finished');
+      // Commit a neutral surface before route creation can occupy the UI thread. The single loading prompt
+      // belongs to the reader page, so navigation cannot split it into two separate visual stages.
+      this.openingBookRouteTimer = setTimeout(() => {
+        this.openingBookRouteTimer = -1;
+        ReaderOpenTrace.mark(book.bookUrl, 'route-requested');
+        router.pushUrl({
+          url: 'pages/ReadBook',
+          params: {
+            bookUrl: book.bookUrl,
+            shelfBookOpening: 'true',
+            shelfOpeningBookName: book.name,
+            shelfOpeningBookWidth: String(this.openingBookWidth())
+          }
+        }).catch((error: Error) => {
+          AppStorage.setOrCreate<boolean>('shelfReaderDirectTransition', false);
+          console.error('打开阅读页失败:', error);
+          ReaderOpenTrace.cancel(book.bookUrl, 'route-failed');
+          this.cancelShelfBookOpening();
+        });
+      }, 96);
     }, 560);
   }
 
@@ -4319,6 +4344,7 @@ struct BookshelfPage {
     }
     this.clearShelfBookAnimationTimers();
     this.openingBook = targetBook;
+    this.openingBookWaiting = false;
     this.openingBookScale = 1.08;
     this.openingBookTranslateX = 0;
     this.openingBookTranslateY = 0;
@@ -4387,6 +4413,7 @@ struct BookshelfPage {
     this.openingBookOpacity = 0;
     this.openingBookBackdropOpacity = 0;
     this.openingBookCoverAngle = 0;
+    this.openingBookWaiting = false;
     this.openingBookOriginX = 0;
     this.openingBookOriginY = 0;
   }
@@ -4405,7 +4432,7 @@ struct BookshelfPage {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor(this.pageColor())
+        .backgroundColor(this.openingBookWaiting ? this.inputColor() : this.pageColor())
         .opacity(this.openingBookBackdropOpacity)
 
       Stack({ alignContent: Alignment.Center }) {
@@ -4416,9 +4443,23 @@ struct BookshelfPage {
             .fontColor(this.primaryTextColor())
             .maxLines(2)
             .textAlign(TextAlign.Center)
-            .margin({ left: 22, right: 22, top: 34, bottom: 28 })
+            .margin({ left: 22, right: 22, top: 34, bottom: this.openingBookWaiting ? 14 : 28 })
 
-          ForEach([0, 1, 2, 3, 4, 5, 6], (_line: number) => {
+          if (this.openingBookWaiting) {
+            Column() {
+              LoadingProgress()
+                .width(28)
+                .height(28)
+                .color(this.accentColor())
+              Text('正在进入阅读…')
+                .fontSize(13)
+                .fontColor(this.secondaryTextColor())
+                .margin({ top: 7 })
+            }
+            .margin({ bottom: 18 })
+          }
+
+          ForEach(this.openingBookWaiting ? [0, 1, 2] : [0, 1, 2, 3, 4, 5, 6], (_line: number) => {
             Divider()
               .width('72%')
               .color(this.appDarkMode ? '#24FFFFFF' : '#18000000')
@@ -4432,31 +4473,33 @@ struct BookshelfPage {
         .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
         .shadow({ radius: 24, color: this.appDarkMode ? '#90000000' : '#38000000', offsetX: 8, offsetY: 10 })
 
-        Stack({ alignContent: Alignment.Center }) {
-          this.coverView(book, '100%', '100%', ImageFit.Cover)
+        if (!this.openingBookWaiting) {
+          Stack({ alignContent: Alignment.Center }) {
+            this.coverView(book, '100%', '100%', ImageFit.Cover)
 
-          Column()
-            .width(8)
-            .height('100%')
-            .linearGradient({
-              angle: 0,
-              colors: [[this.appDarkMode ? '#66000000' : '#44000000', 0], ['#00000000', 1]]
-            })
-            .position({ x: 0, y: 0 })
+            Column()
+              .width(8)
+              .height('100%')
+              .linearGradient({
+                angle: 0,
+                colors: [[this.appDarkMode ? '#66000000' : '#44000000', 0], ['#00000000', 1]]
+              })
+              .position({ x: 0, y: 0 })
+          }
+          .width(this.openingBookWidth())
+          .height(this.openingBookHeight())
+          .borderRadius(8)
+          .rotate({
+            x: 0,
+            y: 1,
+            z: 0,
+            angle: this.openingBookCoverAngle,
+            centerX: 0,
+            centerY: '50%',
+            perspective: 900
+          })
+          .shadow({ radius: 20, color: '#55000000', offsetX: 5, offsetY: 8 })
         }
-        .width(this.openingBookWidth())
-        .height(this.openingBookHeight())
-        .borderRadius(8)
-        .rotate({
-          x: 0,
-          y: 1,
-          z: 0,
-          angle: this.openingBookCoverAngle,
-          centerX: 0,
-          centerY: '50%',
-          perspective: 900
-        })
-        .shadow({ radius: 20, color: '#55000000', offsetX: 5, offsetY: 8 })
       }
       .width(this.openingBookWidth())
       .height(this.openingBookHeight())
