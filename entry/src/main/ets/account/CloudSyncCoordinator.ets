@@ -152,6 +152,7 @@ class SearchPreferencesSyncPayload {
   showResultCover: boolean = true;
   useBookshelfCoverGallery: boolean = false;
   showResultTags: boolean = true;
+  aggregateSearchResults: boolean = true;
   promptAddToShelfOnBack: boolean = true;
   exactSearch: boolean = false;
   exactSearchMatchAuthor: boolean = true;
@@ -540,6 +541,7 @@ export class CloudSyncCoordinator {
     searchPreferences.showResultCover = searchSettings.showResultCover;
     searchPreferences.useBookshelfCoverGallery = searchSettings.useBookshelfCoverGallery;
     searchPreferences.showResultTags = searchSettings.showResultTags;
+    searchPreferences.aggregateSearchResults = searchSettings.aggregateSearchResults;
     searchPreferences.promptAddToShelfOnBack = searchSettings.promptAddToShelfOnBack;
     searchPreferences.exactSearch = searchSettings.exactSearch;
     searchPreferences.exactSearchMatchAuthor = searchSettings.exactSearchMatchAuthor;
@@ -892,6 +894,7 @@ export class CloudSyncCoordinator {
       searchSettings.showResultCover = remoteSearch.showResultCover !== false;
       searchSettings.useBookshelfCoverGallery = remoteSearch.useBookshelfCoverGallery === true;
       searchSettings.showResultTags = remoteSearch.showResultTags !== false;
+      searchSettings.aggregateSearchResults = remoteSearch.aggregateSearchResults !== false;
       searchSettings.promptAddToShelfOnBack = remoteSearch.promptAddToShelfOnBack !== false;
       searchSettings.exactSearch = remoteSearch.exactSearch === true;
       searchSettings.exactSearchMatchAuthor = remoteSearch.exactSearchMatchAuthor !== false;

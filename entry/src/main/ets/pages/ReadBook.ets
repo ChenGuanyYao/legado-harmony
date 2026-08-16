@@ -8647,7 +8647,7 @@ struct ReadBookPage {
             ForEach(this.changeSourceResults, (book: SearchBook) => {
               ListItem() {
                 Row() {
-                  Column() {
+                  Column({ space: 4 }) {
                     Text(book.originName || book.origin)
                       .fontSize(15)
                       .fontWeight(FontWeight.Bold)
@@ -8655,12 +8655,16 @@ struct ReadBookPage {
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
 
-                    Text(`${book.author || '作者未知'} ${book.latestChapterTitle || ''}`)
+                    Text(`作者：${book.author || '未知'}`)
                       .fontSize(12)
                       .fontColor(this.getSubTextColor())
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      .margin({ top: 4 })
+                    Text(`最新：${book.latestChapterTitle || '书源未提供'}`)
+                      .fontSize(12)
+                      .fontColor(this.getSubTextColor())
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
                   }
                   .layoutWeight(1)
                   .alignItems(HorizontalAlign.Start)

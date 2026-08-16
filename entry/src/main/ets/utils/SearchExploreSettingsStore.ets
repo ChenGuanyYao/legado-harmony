@@ -6,6 +6,7 @@ export class SearchExploreSettings {
   showResultCover: boolean = true;
   useBookshelfCoverGallery: boolean = false;
   showResultTags: boolean = true;
+  aggregateSearchResults: boolean = true;
   promptAddToShelfOnBack: boolean = true;
   exactSearch: boolean = false;
   exactSearchMatchAuthor: boolean = true;
@@ -21,6 +22,7 @@ export class SearchExploreSettingsStore {
   static readonly KEY_SHOW_RESULT_COVER: string = 'searchExploreShowResultCover';
   static readonly KEY_USE_BOOKSHELF_COVER_GALLERY: string = 'searchExploreUseBookshelfCoverGallery';
   static readonly KEY_SHOW_RESULT_TAGS: string = 'searchExploreShowResultTags';
+  static readonly KEY_AGGREGATE_SEARCH_RESULTS: string = 'searchExploreAggregateResults';
   static readonly KEY_PROMPT_ADD_TO_SHELF_ON_BACK: string = 'searchExplorePromptAddToShelfOnBack';
   static readonly KEY_EXACT_SEARCH: string = 'searchExploreExactSearch';
   static readonly KEY_EXACT_SEARCH_MATCH_AUTHOR: string = 'searchExploreExactSearchMatchAuthor';
@@ -48,6 +50,8 @@ export class SearchExploreSettingsStore {
       store, SearchExploreSettingsStore.KEY_USE_BOOKSHELF_COVER_GALLERY, false);
     settings.showResultTags = await SearchExploreSettingsStore.getBoolean(
       store, SearchExploreSettingsStore.KEY_SHOW_RESULT_TAGS, true);
+    settings.aggregateSearchResults = await SearchExploreSettingsStore.getBoolean(
+      store, SearchExploreSettingsStore.KEY_AGGREGATE_SEARCH_RESULTS, true);
     settings.promptAddToShelfOnBack = await SearchExploreSettingsStore.getBoolean(
       store, SearchExploreSettingsStore.KEY_PROMPT_ADD_TO_SHELF_ON_BACK, true);
     settings.exactSearch = await SearchExploreSettingsStore.getBoolean(
@@ -83,6 +87,7 @@ export class SearchExploreSettingsStore {
     await store.put(SearchExploreSettingsStore.KEY_SHOW_RESULT_COVER, settings.showResultCover);
     await store.put(SearchExploreSettingsStore.KEY_USE_BOOKSHELF_COVER_GALLERY, settings.useBookshelfCoverGallery);
     await store.put(SearchExploreSettingsStore.KEY_SHOW_RESULT_TAGS, settings.showResultTags);
+    await store.put(SearchExploreSettingsStore.KEY_AGGREGATE_SEARCH_RESULTS, settings.aggregateSearchResults);
     await store.put(SearchExploreSettingsStore.KEY_PROMPT_ADD_TO_SHELF_ON_BACK, settings.promptAddToShelfOnBack);
     await store.put(SearchExploreSettingsStore.KEY_EXACT_SEARCH, settings.exactSearch);
     await store.put(SearchExploreSettingsStore.KEY_EXACT_SEARCH_MATCH_AUTHOR, settings.exactSearchMatchAuthor);
@@ -123,6 +128,9 @@ export class SearchExploreSettingsStore {
       SearchExploreSettingsStore.KEY_USE_BOOKSHELF_COVER_GALLERY,
       settings.useBookshelfCoverGallery);
     AppStorage.setOrCreate(SearchExploreSettingsStore.KEY_SHOW_RESULT_TAGS, settings.showResultTags);
+    AppStorage.setOrCreate(
+      SearchExploreSettingsStore.KEY_AGGREGATE_SEARCH_RESULTS,
+      settings.aggregateSearchResults);
     AppStorage.setOrCreate(
       SearchExploreSettingsStore.KEY_PROMPT_ADD_TO_SHELF_ON_BACK,
       settings.promptAddToShelfOnBack);
@@ -175,6 +183,7 @@ export class SearchExploreSettingsStore {
     settings.showResultCover = source.showResultCover;
     settings.useBookshelfCoverGallery = source.useBookshelfCoverGallery;
     settings.showResultTags = source.showResultTags;
+    settings.aggregateSearchResults = source.aggregateSearchResults !== false;
     settings.promptAddToShelfOnBack = source.promptAddToShelfOnBack;
     settings.exactSearch = source.exactSearch;
     settings.exactSearchMatchAuthor = source.exactSearchMatchAuthor;
@@ -218,6 +227,7 @@ export class SearchExploreSettingsStore {
     return left.showResultCover !== right.showResultCover ||
       left.useBookshelfCoverGallery !== right.useBookshelfCoverGallery ||
       left.showResultTags !== right.showResultTags ||
+      left.aggregateSearchResults !== right.aggregateSearchResults ||
       left.promptAddToShelfOnBack !== right.promptAddToShelfOnBack ||
       left.exactSearch !== right.exactSearch ||
       left.exactSearchMatchAuthor !== right.exactSearchMatchAuthor ||

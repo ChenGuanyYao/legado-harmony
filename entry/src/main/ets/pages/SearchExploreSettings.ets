@@ -12,6 +12,7 @@ struct SearchExploreSettingsPage {
   @StorageLink('searchExploreShowResultCover') searchExploreShowResultCover: boolean = true;
   @StorageLink('searchExploreUseBookshelfCoverGallery') searchExploreUseBookshelfCoverGallery: boolean = false;
   @StorageLink('searchExploreShowResultTags') searchExploreShowResultTags: boolean = true;
+  @StorageLink('searchExploreAggregateResults') searchExploreAggregateResults: boolean = true;
   @StorageLink('searchExplorePromptAddToShelfOnBack') searchExplorePromptAddToShelfOnBack: boolean = true;
   @StorageLink('searchExploreExactSearch') searchExploreExactSearch: boolean = false;
   @StorageLink('searchExploreExactSearchMatchAuthor') searchExploreExactSearchMatchAuthor: boolean = true;
@@ -100,6 +101,11 @@ struct SearchExploreSettingsPage {
               this.searchExploreShowSearchProgress = value;
               this.onSettingChanged();
             })
+          this.switchItem('聚合同名结果', '开启后同名书籍合并展示，点击后查看各个书源结果',
+            this.searchExploreAggregateResults, (value: boolean) => {
+              this.searchExploreAggregateResults = value;
+              this.onSettingChanged();
+            })
           this.numberSettingItem('搜索并发数', '控制书籍检索、书源校验和换源同时并发请求的数量',
             this.searchExploreSearchConcurrency, 1, 12, (value: number) => {
               this.searchExploreSearchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(value);
@@ -136,6 +142,7 @@ struct SearchExploreSettingsPage {
       this.searchExploreShowResultCover = settings.showResultCover;
       this.searchExploreUseBookshelfCoverGallery = settings.useBookshelfCoverGallery;
       this.searchExploreShowResultTags = settings.showResultTags;
+      this.searchExploreAggregateResults = settings.aggregateSearchResults;
       this.searchExplorePromptAddToShelfOnBack = settings.promptAddToShelfOnBack;
       this.searchExploreExactSearch = settings.exactSearch;
       this.searchExploreExactSearchMatchAuthor = settings.exactSearchMatchAuthor;
@@ -174,6 +181,7 @@ struct SearchExploreSettingsPage {
       settings.showResultCover = this.searchExploreShowResultCover;
       settings.useBookshelfCoverGallery = this.searchExploreUseBookshelfCoverGallery;
       settings.showResultTags = this.searchExploreShowResultTags;
+      settings.aggregateSearchResults = this.searchExploreAggregateResults;
       settings.promptAddToShelfOnBack = this.searchExplorePromptAddToShelfOnBack;
       settings.exactSearch = this.searchExploreExactSearch;
       settings.exactSearchMatchAuthor = this.searchExploreExactSearchMatchAuthor;

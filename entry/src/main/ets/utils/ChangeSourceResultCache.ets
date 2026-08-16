@@ -3,13 +3,10 @@ import preferences from '@ohos.data.preferences';
 import { SearchBook } from '../model/data/Book';
 
 class ChangeSourceCacheEntry {
+  schemaVersion: number = 0;
   key: string = '';
   updatedAt: number = 0;
   results: SearchBook[] = [];
-}
-
-class ChangeSourceCachePayload {
-  entries: ChangeSourceCacheEntry[] = [];
 }
 
 class ChangeSourceCacheIndexEntry {
@@ -19,7 +16,7 @@ class ChangeSourceCacheIndexEntry {
 
 export class ChangeSourceResultCache {
   private static readonly STORE_NAME: string = 'change_source_result_cache';
-  private static readonly CACHE_KEY: string = 'entries';
+  private static readonly SCHEMA_VERSION: number = 2;
   private static readonly INDEX_KEY: string = 'entry_index_v2';
   private static readonly ENTRY_PREFIX: string = 'entry_v2_';
   private static readonly MAX_BOOKS: number = 30;
@@ -34,15 +31,7 @@ export class ChangeSourceResultCache {
     if (entry && Date.now() - entry.updatedAt <= ChangeSourceResultCache.MAX_AGE_MS) {
       return entry.results.map((item: SearchBook) => ChangeSourceResultCache.cloneSearchBook(item));
     }
-
-    // One-time compatibility read for caches written by the former monolithic payload.
-    const payload = await ChangeSourceResultCache.loadLegacyPayload(context);
-    const legacyKey = ChangeSourceResultCache.buildLegacyBookKey(bookName);
-    const legacyEntry = payload.entries.find((item: ChangeSourceCacheEntry) => item.key === legacyKey);
-    if (!legacyEntry || !Array.isArray(legacyEntry.results) ||
-      Date.now() - legacyEntry.updatedAt > ChangeSourceResultCache.MAX_AGE_MS) return [];
-    return legacyEntry.results.slice(0, ChangeSourceResultCache.MAX_RESULTS_PER_BOOK)
-      .map((item: SearchBook) => ChangeSourceResultCache.cloneSearchBook(item));
+    return [];
   }
 
   static async save(context: Context, bookName: string, results: SearchBook[], bookAuthor: string = ''): Promise<void> {
@@ -51,6 +40,7 @@ export class ChangeSourceResultCache {
       return;
     }
     const entry = new ChangeSourceCacheEntry();
+    entry.schemaVersion = ChangeSourceResultCache.SCHEMA_VERSION;
     entry.key = key;
     entry.updatedAt = Date.now();
     entry.results = results.slice(0, ChangeSourceResultCache.MAX_RESULTS_PER_BOOK)
@@ -69,23 +59,6 @@ export class ChangeSourceResultCache {
     }
     await store.put(ChangeSourceResultCache.INDEX_KEY, JSON.stringify(kept));
     await store.flush();
-  }
-
-  private static async loadLegacyPayload(context: Context): Promise<ChangeSourceCachePayload> {
-    const store = await preferences.getPreferences(context, ChangeSourceResultCache.STORE_NAME);
-    const value = await store.get(ChangeSourceResultCache.CACHE_KEY, '');
-    if (typeof value !== 'string' || !value) {
-      return new ChangeSourceCachePayload();
-    }
-    try {
-      const payload = JSON.parse(value) as ChangeSourceCachePayload;
-      if (payload && Array.isArray(payload.entries)) {
-        return payload;
-      }
-    } catch (e) {
-      console.warn('读取换源结果缓存失败:', e);
-    }
-    return new ChangeSourceCachePayload();
   }
 
   private static async loadIndex(context: Context): Promise<ChangeSourceCacheIndexEntry[]> {
@@ -115,7 +88,8 @@ export class ChangeSourceResultCache {
     if (!raw) return null;
     try {
       const parsed = JSON.parse(raw) as ChangeSourceCacheEntry;
-      if (!parsed || !Array.isArray(parsed.results)) return null;
+      if (!parsed || parsed.schemaVersion !== ChangeSourceResultCache.SCHEMA_VERSION ||
+        !Array.isArray(parsed.results)) return null;
       return parsed;
     } catch (_) {
       return null;
@@ -125,10 +99,6 @@ export class ChangeSourceResultCache {
   private static buildBookKey(bookName: string, bookAuthor: string): string {
     const normalized = `${ChangeSourceResultCache.normalize(bookName)}\n${ChangeSourceResultCache.normalize(bookAuthor)}`;
     return normalized.trim() ? ChangeSourceResultCache.hashKey(normalized) : '';
-  }
-
-  private static buildLegacyBookKey(bookName: string): string {
-    return (bookName || '').trim().replace(/\s+/g, '').toLowerCase();
   }
 
   private static normalize(value: string): string {
@@ -159,7 +129,7 @@ export class ChangeSourceResultCache {
     target.kind = '';
     target.coverUrl = '';
     target.intro = '';
-    target.latestChapterTitle = '';
+    target.latestChapterTitle = source.latestChapterTitle || '';
     target.wordCount = '';
     target.tocUrl = source.tocUrl || '';
     target.variable = source.variable || '';

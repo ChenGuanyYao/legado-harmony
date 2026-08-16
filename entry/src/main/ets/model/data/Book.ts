@@ -430,6 +430,9 @@ export class SearchBook {
   bookSourceComment: string = '';
   customOrder: number = 0;
   weight: number = 0;
+  /** Transient search-list metadata; never participates in source rule execution or persistence. */
+  aggregationKey: string = '';
+  aggregationCount: number = 1;
 }
 
 export class SearchKeyword {

@@ -23,6 +23,8 @@ export interface SearchProgress {
   done: number;
   total: number;
   results: SearchBook[];
+  /** 当前已返回结果的完整相关度排序快照；搜索过程中也可直接展示。 */
+  sortedResults?: SearchBook[];
   deltaResults?: SearchBook[];
   finished: boolean;
   status: string;
@@ -73,7 +75,16 @@ export interface SearchOptions {
 interface ScoredSearchBook {
   book: SearchBook;
   index: number;
-  score: number;
+  titleTier: number;
+  titleQuality: number;
+  authorTier: number;
+  authorQuality: number;
+  metadataQuality: number;
+}
+
+class SearchTextMatch {
+  tier: number = 0;
+  quality: number = 0;
 }
 
 export class SearchCoordinator {
@@ -159,9 +170,12 @@ export class SearchCoordinator {
       const finished = force || done >= sources.length;
       const deltaResults = finished ? [] : pendingDeltaResults;
       pendingDeltaResults = [];
+      const sortedResults = validationOnly ? [] : this.filterAndSortSearchResults(all, keyword, options);
+      displayResultCount = sortedResults.length;
       safeCallback({
         done: done, total: sources.length,
-        results: finished && !validationOnly ? this.filterAndSortSearchResults(all, keyword, options) : [],
+        results: finished ? sortedResults : [],
+        sortedResults: sortedResults,
         deltaResults: validationOnly ? [] : deltaResults,
         finished: finished,
         status: verifyUrl ?
@@ -197,14 +211,13 @@ export class SearchCoordinator {
           }
         }
         const remainingCapacity = Math.max(0, totalResultLimit - all.length);
-        const acceptedBooks = validationOnly ? [] : books.slice(0, remainingCapacity);
-        const displayBooks = this.filterSearchResults(acceptedBooks, keyword, options);
+        const displayBooks = validationOnly ? [] :
+          this.filterSearchResults(books, keyword, options).slice(0, remainingCapacity);
 
         done++;
-        displayResultCount += displayBooks.length;
         if (!validationOnly) {
           pendingDeltaResults.push(...displayBooks);
-          all.push(...acceptedBooks);
+          all.push(...displayBooks);
         }
         emitProgress();
       }
@@ -333,13 +346,15 @@ export class SearchCoordinator {
       fieldRequest.fields = [
         new RuleFieldRequest('name', searchRule.name || ''),
         new RuleFieldRequest('author', searchRule.author || ''),
-        new RuleFieldRequest('bookUrl', searchRule.bookUrl || '')
+        new RuleFieldRequest('bookUrl', searchRule.bookUrl || ''),
+        // 换源搜索同样需要展示各书源当前提供的最新章节。该字段通常与书名、作者
+        // 位于同一搜索结果节点中，保留它不会引入额外网络请求。
+        new RuleFieldRequest('lastChapter', searchRule.lastChapter || '')
       ];
       if (!options.leanResult) {
         fieldRequest.fields.push(new RuleFieldRequest('coverUrl', searchRule.coverUrl || ''));
         fieldRequest.fields.push(new RuleFieldRequest('intro', searchRule.intro || ''));
         fieldRequest.fields.push(new RuleFieldRequest('kind', searchRule.kind || ''));
-        fieldRequest.fields.push(new RuleFieldRequest('lastChapter', searchRule.lastChapter || ''));
         fieldRequest.fields.push(new RuleFieldRequest('wordCount', searchRule.wordCount || ''));
       }
       if (sourceBackendHost) {
@@ -559,15 +574,15 @@ export class SearchCoordinator {
     const normalizedKeyword = this.normalizeSearchText(keyword);
     if (!normalizedKeyword) return [...results];
     const scored: ScoredSearchBook[] = results.map((book: SearchBook, index: number): ScoredSearchBook => {
-      return {
-        book: book,
-        index: index,
-        score: this.searchRelevanceScore(book, normalizedKeyword)
-      };
+      return this.rankSearchBook(book, normalizedKeyword, index);
     });
     scored.sort((a: ScoredSearchBook, b: ScoredSearchBook): number => {
-      const scoreDiff = b.score - a.score;
-      if (scoreDiff !== 0) return scoreDiff;
+      // 书名匹配等级不可被作者、分类或简介的累计分反超。
+      if (a.titleTier !== b.titleTier) return b.titleTier - a.titleTier;
+      if (a.titleQuality !== b.titleQuality) return b.titleQuality - a.titleQuality;
+      if (a.authorTier !== b.authorTier) return b.authorTier - a.authorTier;
+      if (a.authorQuality !== b.authorQuality) return b.authorQuality - a.authorQuality;
+      if (a.metadataQuality !== b.metadataQuality) return b.metadataQuality - a.metadataQuality;
       const weightDiff = (b.book.weight || 0) - (a.book.weight || 0);
       if (weightDiff !== 0) return weightDiff;
       const orderDiff = (a.book.customOrder || 0) - (b.book.customOrder || 0);
@@ -597,7 +612,6 @@ export class SearchCoordinator {
     book.coverUrl = '';
     book.intro = '';
     book.kind = '';
-    book.latestChapterTitle = '';
     book.wordCount = '';
     book.bookSourceComment = '';
   }
@@ -690,46 +704,151 @@ export class SearchCoordinator {
     return current as Record<string, Object>;
   }
 
-  private searchRelevanceScore(book: SearchBook, normalizedKeyword: string): number {
-    let score = 0;
-    score += this.fieldMatchScore(this.normalizeSearchText(book.name), normalizedKeyword, 1200, 900, 700, 240);
-    score += this.fieldMatchScore(this.normalizeSearchText(book.author), normalizedKeyword, 260, 220, 180, 70);
-    score += this.fieldMatchScore(this.normalizeSearchText(book.kind), normalizedKeyword, 90, 70, 50, 20);
-    score += this.fieldMatchScore(this.normalizeSearchText(book.latestChapterTitle), normalizedKeyword, 50, 40, 30, 0);
-    score += this.fieldMatchScore(this.normalizeSearchText(book.intro), normalizedKeyword, 40, 30, 20, 0);
-    return score;
+  private rankSearchBook(book: SearchBook, normalizedKeyword: string, index: number): ScoredSearchBook {
+    const title = this.normalizeSearchText(book.name);
+    const author = this.normalizeSearchText(book.author);
+    const titleMatch = this.titleMatch(title, normalizedKeyword);
+    const authorMatch = this.textMatch(author, normalizedKeyword, true);
+    return {
+      book: book,
+      index: index,
+      titleTier: titleMatch.tier,
+      titleQuality: titleMatch.quality,
+      authorTier: authorMatch.tier,
+      authorQuality: authorMatch.quality,
+      metadataQuality: this.metadataMatchQuality(book, normalizedKeyword)
+    };
   }
 
-  private fieldMatchScore(value: string, keyword: string, exactScore: number, startsScore: number,
-    containsScore: number, looseScore: number): number {
-    if (!value || !keyword) return 0;
-    if (value === keyword) return exactScore;
-    if (value.startsWith(keyword)) return startsScore + this.shortTextBonus(value, keyword);
-    const index = value.indexOf(keyword);
-    if (index >= 0) {
-      return containsScore + Math.max(0, 80 - index) + this.shortTextBonus(value, keyword);
+  /**
+   * 书名等级：6 完全一致、5 去除版本标记后一致、4 前缀、3 连续包含、2 有序模糊。
+   * 任何较低等级都不能通过其他字段加分越级。
+   */
+  private titleMatch(value: string, keyword: string): SearchTextMatch {
+    const match = new SearchTextMatch();
+    if (!value || !keyword) return match;
+    if (value === keyword) {
+      match.tier = 6;
+      match.quality = 10000;
+      return match;
     }
-    return this.looseKeywordScore(value, keyword, looseScore);
+    const coreValue = this.normalizeCoreTitle(value);
+    const coreKeyword = this.normalizeCoreTitle(keyword);
+    if (coreValue && coreKeyword && coreValue === coreKeyword) {
+      match.tier = 5;
+      match.quality = 10000 - Math.min(3000, Math.abs(value.length - keyword.length) * 80);
+      return match;
+    }
+    const direct = this.textMatch(value, keyword, true);
+    if (direct.tier === 3) match.tier = 4;
+    else if (direct.tier === 2) match.tier = 3;
+    else if (direct.tier === 1) match.tier = 2;
+    match.quality = direct.quality;
+    return match;
   }
 
-  private shortTextBonus(value: string, keyword: string): number {
-    return Math.max(0, Math.min(80, 80 - Math.max(0, value.length - keyword.length) * 4));
+  /** 普通字段等级：4 完全一致、3 前缀、2 连续包含、1 有序模糊。 */
+  private textMatch(value: string, keyword: string, allowOrdered: boolean): SearchTextMatch {
+    const match = new SearchTextMatch();
+    if (!value || !keyword) return match;
+    if (value === keyword) {
+      match.tier = 4;
+      match.quality = 10000;
+      return match;
+    }
+    const lengthDelta = Math.max(0, value.length - keyword.length);
+    if (value.startsWith(keyword)) {
+      match.tier = 3;
+      match.quality = 9000 + Math.max(0, 1000 - lengthDelta * 40);
+      return match;
+    }
+    const directIndex = value.indexOf(keyword);
+    if (directIndex >= 0) {
+      match.tier = 2;
+      match.quality = 7000 + Math.max(0, 1000 - directIndex * 80 - lengthDelta * 25);
+      return match;
+    }
+    if (allowOrdered) {
+      const orderedQuality = this.orderedSubsequenceQuality(value, keyword);
+      if (orderedQuality > 0) {
+        match.tier = 1;
+        match.quality = orderedQuality;
+      }
+    }
+    return match;
   }
 
-  private looseKeywordScore(value: string, keyword: string, maxScore: number): number {
-    if (keyword.length <= 1 || maxScore <= 0) return 0;
-    let hitCount = 0;
+  /**
+   * 有序模糊匹配会消费真实字符位置，因此重复字符必须在候选文本中实际出现多次；
+   * 连续命中更高，缺字、间隔和额外文本会降低质量。
+   */
+  private orderedSubsequenceQuality(value: string, keyword: string): number {
+    if (!value || keyword.length <= 1) return 0;
+    let fromIndex = 0;
+    let matched = 0;
+    let firstIndex = -1;
+    let previousIndex = -1;
+    let gapCount = 0;
+    let currentRun = 0;
+    let longestRun = 0;
     for (let i = 0; i < keyword.length; i++) {
-      if (value.includes(keyword.charAt(i))) hitCount++;
+      const foundIndex = value.indexOf(keyword.charAt(i), fromIndex);
+      if (foundIndex < 0) continue;
+      if (firstIndex < 0) firstIndex = foundIndex;
+      if (previousIndex >= 0) {
+        if (foundIndex === previousIndex + 1) currentRun++;
+        else {
+          gapCount += Math.max(0, foundIndex - previousIndex - 1);
+          currentRun = 1;
+        }
+      } else {
+        currentRun = 1;
+      }
+      longestRun = Math.max(longestRun, currentRun);
+      previousIndex = foundIndex;
+      fromIndex = foundIndex + 1;
+      matched++;
     }
-    const ratio = hitCount / keyword.length;
-    if (ratio >= 0.8) return Math.floor(maxScore * ratio);
-    if (ratio >= 0.5) return Math.floor(maxScore * ratio * 0.5);
-    return 0;
+    const coverage = matched / keyword.length;
+    const minimumCoverage = keyword.length <= 3 ? 1 : 0.75;
+    if (matched < 2 || coverage < minimumCoverage) return 0;
+    const lengthPenalty = Math.abs(value.length - keyword.length) * 12;
+    const startPenalty = Math.max(0, firstIndex) * 30;
+    return Math.max(1, Math.floor(coverage * 6000 + longestRun * 180 - gapCount * 45 -
+      lengthPenalty - startPenalty));
+  }
+
+  private metadataMatchQuality(book: SearchBook, keyword: string): number {
+    const kindMatch = this.textMatch(this.normalizeSearchText(book.kind), keyword, false);
+    const introMatch = this.textMatch(this.normalizeSearchText(book.intro), keyword, false);
+    // 最新章节描述更新状态，不代表书籍本身相关度，故不参与排名。
+    return kindMatch.tier * 20000 + kindMatch.quality * 2 + introMatch.tier * 5000 + introMatch.quality;
+  }
+
+  private normalizeCoreTitle(value: string): string {
+    if (!value) return '';
+    let core = value;
+    const prefixes: string[] = ['已完结', '完结', '全本', '精品', '精校', '校对', '免费'];
+    const suffixes: string[] = ['无删减版', '完整版', '精校版', '校对版', '番外篇', '有声版', '听书版',
+      '全集', '全本', '完结', '番外'];
+    for (const prefix of prefixes) {
+      if (core.startsWith(prefix) && core.length >= prefix.length + 2) {
+        core = core.substring(prefix.length);
+        break;
+      }
+    }
+    for (const suffix of suffixes) {
+      if (core.endsWith(suffix) && core.length >= suffix.length + 2) {
+        core = core.substring(0, core.length - suffix.length);
+        break;
+      }
+    }
+    return core.length >= 2 ? core : value;
   }
 
   private normalizeSearchText(value: string): string {
     return (value || '').trim().toLowerCase()
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
       .replace(/\s+/g, '')
       .replace(/[《》【】\[\]（）()「」『』"“”'‘’.,，。:：;；!！?？、·_\-]/g, '');
   }
@@ -740,10 +859,14 @@ export class SearchCoordinator {
   }
 
   private filterSearchResults(results: SearchBook[], keyword: string, options: SearchOptions): SearchBook[] {
-    if (!options.exactMatch) {
-      return results;
-    }
     const normalizedKeyword = this.normalizeSearchText(keyword);
+    if (!normalizedKeyword) return results;
+    if (!options.exactMatch) {
+      return results.filter((book: SearchBook, index: number): boolean => {
+        const rank = this.rankSearchBook(book, normalizedKeyword, index);
+        return rank.titleTier > 0 || rank.authorTier > 0 || rank.metadataQuality > 0;
+      });
+    }
     return results.filter((book: SearchBook) => {
       if (this.normalizeSearchText(book.name) === normalizedKeyword) {
         return true;

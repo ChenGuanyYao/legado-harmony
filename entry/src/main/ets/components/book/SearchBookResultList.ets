@@ -127,7 +127,11 @@ export struct SearchBookResultList {
             .margin({ left: this.showResultCover ? 12 : 0 })
             .alignItems(HorizontalAlign.Start)
 
-            this.shelfActionButton(book)
+            if (book.aggregationCount > 1) {
+              this.aggregationIndicator(book)
+            } else {
+              this.shelfActionButton(book)
+            }
           }
           .width('100%')
           .padding(12)
@@ -140,7 +144,8 @@ export struct SearchBookResultList {
           })
         }
         .onAppear(() => {
-          if (!this.safeText(book.author, '') || (this.showResultCover && !this.safeText(book.coverUrl, ''))) {
+          if (book.aggregationCount <= 1 &&
+            (!this.safeText(book.author, '') || (this.showResultCover && !this.safeText(book.coverUrl, '')))) {
             this.onNeedMetadata(book);
           }
         })
@@ -202,6 +207,23 @@ export struct SearchBookResultList {
   }
 
   @Builder
+  aggregationIndicator(book: SearchBook) {
+    Column({ space: 3 }) {
+      Text(`${book.aggregationCount}`)
+        .fontSize(16)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.accentColor())
+      Text('结果')
+        .fontSize(11)
+        .fontColor(this.subTextColor)
+    }
+    .width(64)
+    .height(44)
+    .margin({ left: 12 })
+    .justifyContent(FlexAlign.Center)
+  }
+
+  @Builder
   shelfActionGlyph(book: SearchBook) {
     if (SearchBookShelfHelper.isBusy(book, this.busyBookKeys)) {
       SymbolGlyph($r('sys.symbol.hourglass'))
@@ -232,6 +254,9 @@ export struct SearchBookResultList {
   }
 
   sourceLine(book: SearchBook): string {
+    if (book.aggregationCount > 1) {
+      return `已聚合 ${book.aggregationCount} 个同名结果，点击展开`;
+    }
     return this.safeText(book.originName, '');
   }
 
@@ -330,6 +355,11 @@ export struct SearchBookResultList {
   }
 
   itemKey(book: SearchBook): string {
+    if (book.aggregationCount > 1 && book.aggregationKey) {
+      // LazyForEach reuses a child when its key is unchanged. Search results arrive incrementally,
+      // so include the current member count to rebuild the card when a group grows.
+      return `aggregation:${book.aggregationKey}:${book.aggregationCount}`;
+    }
     const key = SearchBookShelfHelper.keyOf(book);
     return `${key || this.safeText(book.bookUrl, '')}|${this.safeText(book.originName, '')}|${this.safeText(book.name, '')}`;
   }
