@@ -346,13 +346,15 @@ export class SearchCoordinator {
       fieldRequest.fields = [
         new RuleFieldRequest('name', searchRule.name || ''),
         new RuleFieldRequest('author', searchRule.author || ''),
-        new RuleFieldRequest('bookUrl', searchRule.bookUrl || ''),
+        new RuleFieldRequest('bookUrl',
+          this.applySimpleSourceUrlConstants(searchRule.bookUrl || '', source.jsLib || '')),
         // 换源搜索同样需要展示各书源当前提供的最新章节。该字段通常与书名、作者
         // 位于同一搜索结果节点中，保留它不会引入额外网络请求。
         new RuleFieldRequest('lastChapter', searchRule.lastChapter || '')
       ];
       if (!options.leanResult) {
-        fieldRequest.fields.push(new RuleFieldRequest('coverUrl', searchRule.coverUrl || ''));
+        fieldRequest.fields.push(new RuleFieldRequest('coverUrl',
+          this.applySimpleSourceUrlConstants(searchRule.coverUrl || '', source.jsLib || '')));
         fieldRequest.fields.push(new RuleFieldRequest('intro', searchRule.intro || ''));
         fieldRequest.fields.push(new RuleFieldRequest('kind', searchRule.kind || ''));
         fieldRequest.fields.push(new RuleFieldRequest('wordCount', searchRule.wordCount || ''));
@@ -940,6 +942,7 @@ export class SearchCoordinator {
     // from top-level library state and unnecessary ArkWeb compilation.
     if (!isFullJsSearchUrl && this.isLightweightUrlTemplate(searchUrl)) {
       let lightweightUrl = this.applySourceTemplate(searchUrl, source);
+      lightweightUrl = this.applySimpleSourceUrlConstants(lightweightUrl, source.jsLib || '');
       lightweightUrl = js.evalTemplate(lightweightUrl).replace(/\{\{[^}]+\}\}/g, '');
       if (lightweightUrl) return lightweightUrl;
     }
@@ -1034,6 +1037,21 @@ export class SearchCoordinator {
       .replace(/\{\{\s*source\.bookSourceUrl\s*\}\}/g, source.bookSourceUrl || '')
       .replace(/\{\{\s*source\.bookSourceName\s*\}\}/g, source.bookSourceName || '')
       .replace(/\{\{\s*source\.bookSourceGroup\s*\}\}/g, source.bookSourceGroup || '');
+  }
+
+  /** Resolve URL constants such as `const api = 'https://example.com'` without executing jsLib. */
+  private applySimpleSourceUrlConstants(url: string, jsLib: string): string {
+    if (!url.includes('{{') || !jsLib) return url;
+    const constants: Record<string, string> = {};
+    const declaration = /(?:^|[\r\n])\s*(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(['"])(https?:\/\/[^'"\r\n]+)\2\s*;?/g;
+    let match: RegExpExecArray | null;
+    while ((match = declaration.exec(jsLib)) !== null) {
+      const name = match[1] || '';
+      const value = match[3] || '';
+      if (name && value) constants[name] = value;
+    }
+    return url.replace(/\{\{\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\}\}/g,
+      (placeholder: string, name: string): string => constants[name] || placeholder);
   }
 
   private isFullJsUrl(value: string): boolean {

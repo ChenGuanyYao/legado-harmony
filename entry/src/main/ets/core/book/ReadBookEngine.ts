@@ -1,6 +1,7 @@
-import { Book, BookChapter, BookSource } from '../../model/data/Book';
+import { Book, BookChapter, BookSource, SearchBook } from '../../model/data/Book';
 import { appDb } from '../../model/data/AppDatabase';
 import { WebBookService } from './WebBookService';
+import { SearchCoordinator } from './SearchCoordinator';
 import { CoverUrlNormalizer } from '../../utils/CoverUrlNormalizer';
 import { LocalChapterContentLoader } from './LocalChapterContentLoader';
 import { ReaderActionMarker } from './ReaderActionMarker';
@@ -110,8 +111,18 @@ export class ReadBookEngine {
 
       const resolvedBook = this.book;
       if (!resolvedBook || !this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
-      const chapters = await this.webBook.getChapterList(sessionSource, resolvedBook);
+      let chapters = await this.webBook.getChapterList(sessionSource, resolvedBook);
       if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
+      if (chapters.length === 0) {
+        const recoveredBook = await this.tryRecoverStaleBookAddress(sessionSource, resolvedBook,
+          expectedGeneration, sessionBookUrl);
+        if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
+        if (recoveredBook) {
+          this.book = recoveredBook;
+          chapters = await this.webBook.getChapterList(sessionSource, recoveredBook);
+          if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
+        }
+      }
       console.log('[RE] getChapterList done, count:', chapters.length);
       if (chapters.length > 0) {
         const targetBook = this.book;
@@ -143,6 +154,97 @@ export class ReadBookEngine {
 
   private isCurrentBookSession(generation: number, bookUrl: string): boolean {
     return generation === this.bookGeneration && !!this.book && this.book.bookUrl === bookUrl;
+  }
+
+  /**
+   * Imported sources sometimes move their detail endpoint while books already on the shelf retain
+   * the old URL. If both the current detail/catalog attempt and the cached catalog URL fail, search
+   * the same source for an exact title match and use its current detail URL as the catalog entry.
+   * Keep the shelf bookUrl unchanged so reading progress, bookmarks and caches retain their identity.
+   */
+  private async tryRecoverStaleBookAddress(source: BookSource, staleBook: Book,
+    expectedGeneration: number, sessionBookUrl: string): Promise<Book | null> {
+    const keyword = (staleBook.name || '').trim();
+    if (!keyword || !this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return null;
+
+    try {
+      const coordinator = new SearchCoordinator(1);
+      const results = await coordinator.search(keyword, () => {}, {
+        exactMatch: true,
+        targetSources: [source],
+        maxResultsPerSource: 10,
+        maxTotalResults: 10,
+        stopAfterResults: 10
+      });
+      console.info('[RE] stale source recovery search:', results.length,
+        coordinator.getLastFailureReason());
+      if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return null;
+      const candidate = this.selectRecoveryCandidate(results, staleBook);
+      if (!candidate || !candidate.bookUrl || candidate.bookUrl === sessionBookUrl) return null;
+
+      const probe = this.buildRecoveryProbe(candidate, staleBook);
+      const resolved = await this.webBook.getBookInfo(source, probe);
+      if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return null;
+      const currentDetailUrl = resolved.bookUrl || candidate.bookUrl;
+      this.preserveReadingState(resolved, staleBook);
+      resolved.tocUrl = resolved.tocUrl || candidate.tocUrl || currentDetailUrl;
+      resolved.coverUrl = CoverUrlNormalizer.prefer(staleBook.coverUrl, resolved.coverUrl);
+      console.info('[RE] recovered stale source address:', sessionBookUrl, '->', currentDetailUrl);
+      return resolved;
+    } catch (error) {
+      console.warn('[RE] stale source address recovery failed:', error);
+      return null;
+    }
+  }
+
+  private selectRecoveryCandidate(results: SearchBook[], staleBook: Book): SearchBook | null {
+    const expectedName = this.normalizeBookIdentity(staleBook.name);
+    const expectedAuthor = this.normalizeBookIdentity(staleBook.author);
+    let titleMatch: SearchBook | null = null;
+    let authorlessMatch: SearchBook | null = null;
+    for (const candidate of results) {
+      if (this.normalizeBookIdentity(candidate.name) !== expectedName) continue;
+      if (!titleMatch) titleMatch = candidate;
+      const candidateAuthor = this.normalizeBookIdentity(candidate.author);
+      if (!expectedAuthor) return candidate;
+      if (candidateAuthor === expectedAuthor) return candidate;
+      if (!candidateAuthor && !authorlessMatch) authorlessMatch = candidate;
+    }
+    return expectedAuthor ? authorlessMatch : titleMatch;
+  }
+
+  private normalizeBookIdentity(value: string): string {
+    return (value || '').trim().toLowerCase()
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .replace(/\s+/g, '')
+      .replace(/[《》【】\[\]（）()「」『』"“”'‘’.,，。:：;；!！?？、·_\-]/g, '');
+  }
+
+  private buildRecoveryProbe(candidate: SearchBook, staleBook: Book): Book {
+    const probe = new Book();
+    probe.bookUrl = candidate.bookUrl;
+    probe.tocUrl = candidate.tocUrl;
+    probe.origin = staleBook.origin;
+    probe.originName = candidate.originName || staleBook.originName;
+    probe.name = candidate.name || staleBook.name;
+    probe.author = candidate.author || staleBook.author;
+    probe.kind = candidate.kind || staleBook.kind;
+    probe.coverUrl = CoverUrlNormalizer.prefer(staleBook.coverUrl, candidate.coverUrl);
+    probe.customCoverUrl = staleBook.customCoverUrl;
+    probe.intro = candidate.intro || staleBook.intro;
+    probe.customIntro = staleBook.customIntro;
+    probe.customTag = staleBook.customTag;
+    probe.type = candidate.type || staleBook.type;
+    probe.group = staleBook.group;
+    probe.latestChapterTitle = candidate.latestChapterTitle || staleBook.latestChapterTitle;
+    probe.wordCount = candidate.wordCount || staleBook.wordCount;
+    probe.canUpdate = staleBook.canUpdate;
+    probe.order = staleBook.order;
+    probe.originOrder = staleBook.originOrder;
+    probe.variable = candidate.variable || staleBook.variable;
+    probe.readConfig = staleBook.readConfig;
+    probe.syncTime = staleBook.syncTime;
+    return probe;
   }
 
   private preserveReadingState(target: Book, source: Book): void {

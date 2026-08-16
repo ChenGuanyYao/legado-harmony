@@ -155,7 +155,11 @@ export class ReaderV2Paginator {
       breakStrategy: graphicsText.BreakStrategy.GREEDY,
       trailingSpaceOptimized: true,
       lineSpacing: snapshot.lineSpacingPx,
-      includeFontPadding: false
+      // A paragraph is painted independently for every source block. With font padding disabled, glyph ink from
+      // some CJK families can extend above the first logical line box and be clipped by Paragraph itself. Later
+      // lines appear intact because their preceding line spacing provides bleed room. Include the native font
+      // padding so the first-row ink is part of the measured paragraph; pagination consumes the same metrics.
+      includeFontPadding: true
     };
     const builder = new graphicsText.ParagraphBuilder(paragraphStyle,
       graphicsText.FontCollection.getGlobalInstance());

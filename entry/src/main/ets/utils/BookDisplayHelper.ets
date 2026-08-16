@@ -132,7 +132,9 @@ export class BookDisplayHelper {
   }
 
   private static appendTags(target: string[], raw: string): void {
-    const normalized = (raw || '')
+    const protectedDateTimes: string[] = [];
+    const protectedRaw = BookDisplayHelper.protectDateTimes(raw || '', protectedDateTimes);
+    const normalized = protectedRaw
       .replace(/<[^>]+>/g, ' ')
       .replace(/&nbsp;/gi, ' ')
       .replace(/[|/;；、，,·•●▪]+/g, ',')
@@ -140,7 +142,7 @@ export class BookDisplayHelper {
       .replace(/\s+/g, ',');
     const pieces = normalized.split(',');
     for (const piece of pieces) {
-      const tag = piece.trim();
+      const tag = BookDisplayHelper.restoreDateTimes(piece.trim(), protectedDateTimes);
       // Some aggregate sources put an update timestamp, a play count or an internal id in
       // `kind`.  Those values have no label once rendered as a tag and used to show up as chips
       // such as "1928748800".  Keep meaningful short numeric values (for example a 9.4 score),
@@ -149,6 +151,29 @@ export class BookDisplayHelper {
         target.push(tag);
       }
     }
+  }
+
+  private static protectDateTimes(raw: string, protectedValues: string[]): string {
+    const labelledDateTime = /(?:最后更新|更新时间|更新于|更新)\s*[:：]?\s*\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}(?:日)?(?:[ T]\d{1,2}[:：]\d{1,2}(?:[:：]\d{1,2})?)?/g;
+    let result = raw.replace(labelledDateTime, (value: string): string =>
+      BookDisplayHelper.dateTimeMarker(value, protectedValues));
+    const dateTime = /\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}(?:日)?(?:[ T]\d{1,2}[:：]\d{1,2}(?:[:：]\d{1,2})?)?/g;
+    result = result.replace(dateTime, (value: string): string =>
+      BookDisplayHelper.dateTimeMarker(value, protectedValues));
+    return result;
+  }
+
+  private static dateTimeMarker(value: string, protectedValues: string[]): string {
+    const index = protectedValues.length;
+    protectedValues.push(value.replace(/\s+/g, ' ').trim());
+    return `\uE000${index}\uE001`;
+  }
+
+  private static restoreDateTimes(value: string, protectedValues: string[]): string {
+    return value.replace(/\uE000(\d+)\uE001/g, (marker: string, rawIndex: string): string => {
+      const index = Number(rawIndex);
+      return index >= 0 && index < protectedValues.length ? protectedValues[index] : marker;
+    }).trim();
   }
 
   private static isUnlabelledLongNumber(value: string): boolean {

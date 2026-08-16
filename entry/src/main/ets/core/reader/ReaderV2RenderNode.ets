@@ -78,7 +78,10 @@ class ReaderV2PageFrameNode extends FrameNode {
       absoluteEnd - fragment.displayStart);
     if (localEnd <= localStart) return;
     const boxes = fragment.paragraph.getRectsForRange({ start: localStart, end: localEnd },
-      graphicsText.RectWidthStyle.TIGHT, graphicsText.RectHeightStyle.MAX);
+      // MAX follows the full logical line box. With CJK font padding enabled that box contains
+      // noticeably more descent space, making the yellow focus appear shifted downward from the glyphs.
+      // Use the ink-tight vertical bounds so the focus remains visually centred on the spoken text.
+      graphicsText.RectWidthStyle.TIGHT, graphicsText.RectHeightStyle.TIGHT);
     const brush = new drawing.Brush();
     brush.setColor(color);
     canvas.attachBrush(brush);

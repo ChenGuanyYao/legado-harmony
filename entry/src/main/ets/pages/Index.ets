@@ -40,6 +40,7 @@ import { LocalBookService } from '../core/book/LocalBookService';
 import { CloudSyncSettingsStore } from '../account/CloudSyncSettingsStore';
 import { CloudSyncCoordinator } from '../account/CloudSyncCoordinator';
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
+import { ReaderTtsPlayerPanel } from '../components/ReaderTtsPlayerPanel';
 import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { WebBookService } from '../core/book/WebBookService';
 import { ChangeSourceResultCache } from '../utils/ChangeSourceResultCache';
@@ -222,32 +223,15 @@ struct Index {
   @StorageLink('globalTtsBookName') globalTtsBookName: string = '';
   @StorageLink('globalTtsChapterTitle') globalTtsChapterTitle: string = '';
   @StorageLink('globalTtsMode') globalTtsMode: string = '';
-  @StorageLink('globalTtsVoiceCode') globalTtsVoiceCode: string = '';
-  @StorageLink('globalTtsCover') globalTtsCover: ResourceStr = '';
-  @StorageLink('globalTtsCoverFrame') globalTtsCoverFrame: ResourceStr = '';
-  @StorageLink('globalTtsContent') globalTtsContent: string = '';
-  @StorageLink('globalTtsTextBefore') globalTtsTextBefore: string = '';
-  @StorageLink('globalTtsCurrentText') globalTtsCurrentText: string = '';
-  @StorageLink('globalTtsTextAfter') globalTtsTextAfter: string = '';
   @StorageLink('globalTtsChapterProgress') globalTtsChapterProgress: string = '';
-  @StorageLink('globalTtsAudioPositionMs') globalTtsAudioPositionMs: number = 0;
-  @StorageLink('globalTtsAudioDurationMs') globalTtsAudioDurationMs: number = 0;
-  @StorageLink('globalTtsSpeed') globalTtsSpeed: number = 1;
-  @StorageLink('globalTtsTimerMinutes') globalTtsTimerMinutes: number = 0;
-  @StorageLink('globalTtsTimerRemainingSeconds') globalTtsTimerRemainingSeconds: number = 0;
-  @StorageLink('globalTtsCanPrevious') globalTtsCanPrevious: boolean = false;
-  @StorageLink('globalTtsCanNext') globalTtsCanNext: boolean = false;
-  @StorageLink('globalTtsRevision') @Watch('onGlobalTtsRevisionChanged') globalTtsRevision: number = 0;
   @State showGlobalTtsPanel: boolean = false;
   @State showGlobalTtsCatalog: boolean = false;
-  @State globalTtsOptionsPanel: number = 0;
   @State globalTtsViewportWidth: number = 360;
   @State globalTtsViewportHeight: number = 720;
   @StorageLink('globalTtsCapsulePositionX') globalTtsCapsulePositionX: number = 16;
   @StorageLink('globalTtsCapsulePositionY') globalTtsCapsulePositionY: number = -1;
   private globalTtsDragOriginX: number = 0;
   private globalTtsDragOriginY: number = 0;
-  private globalTtsTextScroller: ListScroller = new ListScroller();
   private globalTtsCatalogScroller: ListScroller = new ListScroller();
   private globalTtsCatalogSource: FloatingCatalogDataSource = new FloatingCatalogDataSource();
 
@@ -339,12 +323,7 @@ struct Index {
   onGlobalTtsActiveChanged(): void {
     if (!this.globalTtsActive) {
       this.showGlobalTtsPanel = false;
-      this.globalTtsOptionsPanel = 0;
     }
-  }
-
-  onGlobalTtsRevisionChanged(): void {
-    if (this.showGlobalTtsPanel && this.globalTtsMode !== 'audio') this.scrollGlobalTtsTextToCurrent();
   }
 
   onBackPress(): boolean {
@@ -370,24 +349,12 @@ struct Index {
   }
 
   openGlobalTtsPanel(): void {
-    this.globalTtsOptionsPanel = 0;
     animateTo({ duration: 280, curve: Curve.Friction }, () => {
       this.showGlobalTtsPanel = true;
     });
-    this.scrollGlobalTtsTextToCurrent(false);
-  }
-
-  scrollGlobalTtsTextToCurrent(smooth: boolean = true): void {
-    setTimeout(() => {
-      if (!this.showGlobalTtsPanel) return;
-      try {
-        this.globalTtsTextScroller.scrollToIndex(1, smooth, ScrollAlign.CENTER);
-      } catch (_) {}
-    }, 0);
   }
 
   closeGlobalTtsPanel(): void {
-    this.globalTtsOptionsPanel = 0;
     this.showGlobalTtsCatalog = false;
     animateTo({ duration: 190, curve: Curve.EaseIn }, () => {
       this.showGlobalTtsPanel = false;
@@ -472,7 +439,18 @@ struct Index {
         this.globalTtsMiniPlayer()
       }
       if (this.globalTtsActive && this.showGlobalTtsPanel) {
-        this.globalTtsPlayerOverlay()
+        ReaderTtsPlayerPanel({
+          darkMode: this.appDarkMode,
+          accentColor: this.tabBarActiveColor(),
+          primaryTextColor: ThemeRuntime.primaryTextColor(this.appDarkMode),
+          subTextColor: ThemeRuntime.subTextColor(this.appDarkMode),
+          panelColor: ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'),
+          topInset: this.statusBarHeight,
+          bottomInset: this.navBarHeight,
+          viewportHeight: this.globalTtsViewportHeight,
+          onClose: () => this.closeGlobalTtsPanel(),
+          onOpenCatalog: () => this.openGlobalTtsCatalog()
+        })
       }
       if (this.globalTtsActive && this.showGlobalTtsPanel && this.showGlobalTtsCatalog) {
         this.globalTtsCatalogOverlay()
@@ -604,214 +582,6 @@ struct Index {
   }
 
   @Builder
-  globalTtsPlayerOverlay() {
-    Column({ space: 14 }) {
-      Row({ space: 11 }) {
-        Stack({ alignContent: Alignment.Center }) {
-          Circle().width(38).height(38).fill(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
-          SymbolGlyph($r('sys.symbol.speaker_wave_3'))
-            .fontSize(19)
-            .fontColor([this.tabBarActiveColor()])
-        }
-        Column({ space: 3 }) {
-          Text(this.globalTtsBookName || '快速朗读')
-            .fontSize(18)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-          Text(this.globalTtsChapterTitle || this.globalTtsChapterProgress)
-            .fontSize(11)
-            .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-        SymbolGlyph($r('sys.symbol.chevron_down'))
-          .fontSize(20)
-          .fontColor([ThemeRuntime.primaryTextColor(this.appDarkMode)])
-          .width(38)
-          .height(38)
-          .onClick(() => this.closeGlobalTtsPanel())
-      }
-      .width('100%')
-
-      Column({ space: 8 }) {
-        this.globalTtsPanelCover()
-        if (this.globalTtsMode === 'audio') {
-          Scroll() {
-            Text(this.globalTtsContent || '暂无书籍简介')
-              .fontSize(15)
-              .lineHeight(25)
-              .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
-              .width('100%')
-          }
-          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-          .layoutWeight(1)
-          .width('100%')
-          .padding({ left: 4, right: 4 })
-          .scrollBar(BarState.Auto)
-        } else {
-          List({ scroller: this.globalTtsTextScroller, space: 8 }) {
-            ListItem() {
-              Text(this.globalTtsTextBefore)
-                .fontSize(15)
-                .lineHeight(25)
-                .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
-                .width('100%')
-            }
-            ListItem() {
-              Text(this.globalTtsCurrentText || '正在准备当前朗读内容…')
-                .fontSize(16)
-                .fontWeight(FontWeight.Medium)
-                .lineHeight(26)
-                .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
-                .width('100%')
-                .padding({ left: 8, right: 8, top: 6, bottom: 6 })
-                .borderRadius(8)
-                .backgroundColor(this.appDarkMode ? '#24FFFFFF' : '#12000000')
-            }
-            ListItem() {
-              Text(this.globalTtsTextAfter)
-                .fontSize(15)
-                .lineHeight(25)
-                .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
-                .width('100%')
-            }
-          }
-          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-          .layoutWeight(1)
-          .width('100%')
-          .padding({ left: 4, right: 4 })
-          .scrollBar(BarState.Auto)
-        }
-      }
-      .layoutWeight(1)
-      .width('100%')
-      .padding(14)
-      .borderRadius(14)
-      .backgroundColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
-
-      if (this.globalTtsMode === 'audio') {
-        this.globalTtsAudioProgress()
-      }
-
-      Row() {
-        this.globalTtsControl($r('sys.symbol.timer'), this.globalTtsTimerMinutes > 0 ?
-          `${Math.max(1, Math.ceil(this.globalTtsTimerRemainingSeconds / 60))}分` : '定时', true,
-          () => this.globalTtsOptionsPanel = this.globalTtsOptionsPanel === 1 ? 0 : 1)
-        this.globalTtsControl($r('sys.symbol.arrow_left'), '上一章', this.globalTtsCanPrevious,
-          () => ReaderTtsFloatingSession.previous())
-        this.globalTtsPlaybackControl()
-        this.globalTtsControl($r('sys.symbol.arrow_right'), '下一章', this.globalTtsCanNext,
-          () => ReaderTtsFloatingSession.next())
-        this.globalTtsControl($r('sys.symbol.hourglass'), `${this.globalTtsSpeed.toFixed(1)}x`, true,
-          () => this.globalTtsOptionsPanel = this.globalTtsOptionsPanel === 2 ? 0 : 2)
-      }
-      .width('100%')
-
-      if (this.globalTtsOptionsPanel === 1) {
-        Row({ space: 6 }) {
-          this.globalTtsTimerChip(0, '关闭')
-          this.globalTtsTimerChip(15, '15分')
-          this.globalTtsTimerChip(30, '30分')
-          this.globalTtsTimerChip(60, '60分')
-          this.globalTtsTimerChip(90, '90分')
-          this.globalTtsTimerChip(120, '120分')
-        }
-        .width('100%')
-      } else if (this.globalTtsOptionsPanel === 2) {
-        Row({ space: 8 }) {
-          this.globalTtsSpeedChip(0.8)
-          this.globalTtsSpeedChip(1.0)
-          this.globalTtsSpeedChip(1.2)
-          this.globalTtsSpeedChip(1.5)
-          this.globalTtsSpeedChip(2.0)
-        }
-        .width('100%')
-      }
-
-      if (this.globalTtsMode === 'audio') {
-        Row({ space: 10 }) {
-          Button(`音色 · ${this.globalTtsVoiceCode || '4'}`)
-            .layoutWeight(1)
-            .height(40)
-            .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
-            .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
-            .onClick(() => ReaderTtsFloatingSession.openVoice())
-          Button('目录跳转')
-            .layoutWeight(1)
-            .height(40)
-            .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
-            .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
-            .onClick(() => this.openGlobalTtsCatalog())
-        }
-        .width('100%')
-      }
-
-      Button(this.globalTtsMode === 'audio' ? '停止听书' : '停止朗读')
-        .width('100%')
-        .height(42)
-        .borderRadius(12)
-        .fontColor('#FFFFFF')
-        .backgroundColor('#D94841')
-        .onClick(() => {
-          this.closeGlobalTtsPanel();
-          ReaderTtsFloatingSession.stop();
-        })
-    }
-    .width('100%')
-    .height('100%')
-    .padding({ left: 18, right: 18, top: this.statusBarHeight + 16, bottom: this.navBarHeight + 16 })
-    .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
-    .backdropBlur(ThemeRuntime.glassBlur('panel', 24))
-    .transition(this.globalTtsPanelTransition())
-  }
-
-  @Builder
-  globalTtsAudioProgress() {
-    Column({ space: 2 }) {
-      Slider({
-        value: this.globalTtsAudioPositionMs,
-        min: 0,
-        max: Math.max(1, this.globalTtsAudioDurationMs),
-        step: 1000
-      })
-        .width('100%')
-        .selectedColor(this.tabBarActiveColor())
-        .trackColor(ThemeRuntime.inputColor(this.appDarkMode))
-        .onChange((value: number, mode: SliderChangeMode) => {
-          this.globalTtsAudioPositionMs = value;
-          if (mode === SliderChangeMode.End || mode === SliderChangeMode.Click) {
-            ReaderTtsFloatingSession.seekAudio(value);
-          }
-        })
-      Row() {
-        Text(this.formatGlobalTtsAudioDuration(this.globalTtsAudioPositionMs))
-          .fontSize(11)
-          .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
-        Blank()
-        Text(this.formatGlobalTtsAudioDuration(this.globalTtsAudioDurationMs))
-          .fontSize(11)
-          .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
-      }
-      .width('100%')
-    }
-    .width('100%')
-  }
-
-  formatGlobalTtsAudioDuration(valueMs: number): string {
-    const totalSeconds = Math.max(0, Math.floor((valueMs || 0) / 1000));
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    const mm = minutes.toString().padStart(2, '0');
-    const ss = seconds.toString().padStart(2, '0');
-    return hours > 0 ? `${hours}:${mm}:${ss}` : `${minutes}:${ss}`;
-  }
-
-  @Builder
   globalTtsCatalogOverlay() {
     Stack({ alignContent: Alignment.Bottom }) {
       Column()
@@ -890,122 +660,6 @@ struct Index {
     .width('100%')
     .height('100%')
     .zIndex(80)
-  }
-
-  @Builder
-  globalTtsPlaybackControl() {
-    Column({ space: 6 }) {
-      Stack({ alignContent: Alignment.Center }) {
-        Circle()
-          .width(46)
-          .height(46)
-          .fill(this.tabBarActiveColor())
-        SymbolGlyph(this.globalTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
-          .id(`global_tts_panel_playback_${this.globalTtsPaused}`)
-          .fontSize(23)
-          .fontColor(['#FFFFFF'])
-      }
-      Text(this.globalTtsPaused ? '播放' : '暂停')
-        .fontSize(10)
-        .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
-    }
-    .layoutWeight(1)
-    .height(68)
-    .justifyContent(FlexAlign.Center)
-    .onClick(() => ReaderTtsFloatingSession.toggle())
-  }
-
-  @Builder
-  globalTtsPanelCover() {
-    Stack({ alignContent: Alignment.Center }) {
-      if (this.globalTtsCover) {
-        Image(this.globalTtsCover)
-          .width('100%')
-          .height('100%')
-          .objectFit(ImageFit.Contain)
-        if (this.globalTtsCoverFrame) {
-          Image(this.globalTtsCoverFrame)
-            .width('100%')
-            .height('100%')
-            .objectFit(ImageFit.Contain)
-        }
-      } else {
-        Column() {
-          Text(this.globalTtsBookName ? this.globalTtsBookName.substring(0, 1) : '书')
-            .fontSize(42)
-            .fontColor('#FFFFFF')
-        }
-        .width('58%')
-        .height('88%')
-        .constraintSize({ maxWidth: 260, maxHeight: 360 })
-        .borderRadius(10)
-        .backgroundColor(this.tabBarActiveColor())
-        .justifyContent(FlexAlign.Center)
-      }
-    }
-    .width('100%')
-    .height(Math.min(250, Math.max(130,
-      (this.globalTtsViewportHeight - this.statusBarHeight - this.navBarHeight) * 0.32)))
-    .padding(10)
-    .borderRadius(14)
-    .clip(true)
-  }
-
-  @Builder
-  globalTtsControl(icon: Resource, label: string, enabled: boolean, action: () => void,
-    primary: boolean = false) {
-    Column({ space: 6 }) {
-      Stack({ alignContent: Alignment.Center }) {
-        Circle()
-          .width(primary ? 46 : 38)
-          .height(primary ? 46 : 38)
-          .fill(primary ? this.tabBarActiveColor() : (this.appDarkMode ? '#24FFFFFF' : '#10000000'))
-        SymbolGlyph(icon)
-          .fontSize(primary ? 23 : 19)
-          .fontColor([enabled ? (primary ? '#FFFFFF' : ThemeRuntime.primaryTextColor(this.appDarkMode)) :
-            ThemeRuntime.subTextColor(this.appDarkMode)])
-      }
-      Text(label)
-        .fontSize(10)
-        .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
-    }
-    .layoutWeight(1)
-    .height(68)
-    .justifyContent(FlexAlign.Center)
-    .opacity(enabled ? 1 : 0.45)
-    .onClick(() => { if (enabled) action(); })
-  }
-
-  @Builder
-  globalTtsSpeedChip(value: number) {
-    Text(`${value.toFixed(1)}x`)
-      .fontSize(11)
-      .fontWeight(Math.abs(this.globalTtsSpeed - value) < 0.01 ? FontWeight.Bold : FontWeight.Regular)
-      .fontColor(Math.abs(this.globalTtsSpeed - value) < 0.01 ? '#FFFFFF' :
-        ThemeRuntime.primaryTextColor(this.appDarkMode))
-      .textAlign(TextAlign.Center)
-      .layoutWeight(1)
-      .height(30)
-      .borderRadius(15)
-      .backgroundColor(Math.abs(this.globalTtsSpeed - value) < 0.01 ? this.tabBarActiveColor() :
-        (this.appDarkMode ? '#20FFFFFF' : '#0D000000'))
-      .onClick(() => ReaderTtsFloatingSession.setSpeed(value))
-  }
-
-  @Builder
-  globalTtsTimerChip(minutes: number, label: string) {
-    Text(label)
-      .fontSize(11)
-      .fontWeight(this.globalTtsTimerMinutes === minutes ? FontWeight.Bold : FontWeight.Regular)
-      .fontColor(this.globalTtsTimerMinutes === minutes ? '#FFFFFF' :
-        ThemeRuntime.primaryTextColor(this.appDarkMode))
-      .textAlign(TextAlign.Center)
-      .layoutWeight(1)
-      .height(30)
-      .borderRadius(15)
-      .backgroundColor(this.globalTtsTimerMinutes === minutes ? this.tabBarActiveColor() :
-        (this.appDarkMode ? '#20FFFFFF' : '#0D000000'))
-      .onClick(() => ReaderTtsFloatingSession.setTimer(minutes))
   }
 
   supportsImmersiveTabs(): boolean {

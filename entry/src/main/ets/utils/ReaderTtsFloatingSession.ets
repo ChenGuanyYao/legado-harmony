@@ -5,7 +5,7 @@ export class ReaderTtsFloatingSession {
   private static stopAction: (() => Promise<void> | void) | null = null;
   private static previousAction: (() => void) | null = null;
   private static nextAction: (() => void) | null = null;
-  private static positionAction: ((chapterIndex: number, pageIndex: number) => void) | null = null;
+  private static positionAction: ((chapterIndex: number, pageIndex: number) => Promise<void> | void) | null = null;
   private static speedAction: ((value: number) => void) | null = null;
   private static timerAction: ((minutes: number) => void) | null = null;
   private static voiceAction: (() => void) | null = null;
@@ -14,6 +14,9 @@ export class ReaderTtsFloatingSession {
   private static audioCatalogTitles: string[] = [];
   private static audioCatalogIndex: number = 0;
   private static audioCatalogSelectAction: ((index: number) => void) | null = null;
+  private static ttsVoiceLabels: string[] = [];
+  private static ttsVoiceSelectedIndex: number = 0;
+  private static ttsVoiceSelectAction: ((index: number) => void) | null = null;
 
   static attach(ownerId: string, bookUrl: string, bookName: string, chapterTitle: string,
     paused: boolean, toggleAction: () => Promise<void>, pausedState: () => boolean,
@@ -61,11 +64,47 @@ export class ReaderTtsFloatingSession {
   }
 
   static configurePositionControl(ownerId: string,
-    positionAction: (chapterIndex: number, pageIndex: number) => void): void {
+    positionAction: (chapterIndex: number, pageIndex: number) => Promise<void> | void): void {
     if (!ReaderTtsFloatingSession.isOwner(ownerId)) {
       return;
     }
     ReaderTtsFloatingSession.positionAction = positionAction;
+  }
+
+  static configureTtsVoices(ownerId: string, labels: string[], selectedIndex: number,
+    selectAction: (index: number) => void): void {
+    if (!ReaderTtsFloatingSession.isOwner(ownerId)) return;
+    const nextLabels = labels.slice();
+    const nextIndex = Math.max(0, Math.min(Math.round(selectedIndex || 0), Math.max(0, nextLabels.length - 1)));
+    const labelsChanged = nextLabels.length !== ReaderTtsFloatingSession.ttsVoiceLabels.length ||
+      nextLabels.some((label: string, index: number) =>
+        label !== ReaderTtsFloatingSession.ttsVoiceLabels[index]);
+    const indexChanged = nextIndex !== ReaderTtsFloatingSession.ttsVoiceSelectedIndex;
+    ReaderTtsFloatingSession.ttsVoiceLabels = nextLabels;
+    ReaderTtsFloatingSession.ttsVoiceSelectedIndex = nextIndex;
+    ReaderTtsFloatingSession.ttsVoiceSelectAction = selectAction;
+    const voiceLabel = nextLabels[nextIndex] || '';
+    const labelChanged = AppStorage.get<string>('globalTtsVoiceCode') !== voiceLabel;
+    if (labelChanged) AppStorage.setOrCreate('globalTtsVoiceCode', voiceLabel);
+    if (labelsChanged || indexChanged || labelChanged) ReaderTtsFloatingSession.notifyVoiceChanged();
+  }
+
+  static ttsVoiceTitles(): string[] {
+    return ReaderTtsFloatingSession.ttsVoiceLabels.slice();
+  }
+
+  static ttsVoiceIndex(): number {
+    return ReaderTtsFloatingSession.ttsVoiceSelectedIndex;
+  }
+
+  static selectTtsVoice(index: number): void {
+    const target = Math.max(0, Math.min(Math.round(index || 0),
+      Math.max(0, ReaderTtsFloatingSession.ttsVoiceLabels.length - 1)));
+    ReaderTtsFloatingSession.ttsVoiceSelectedIndex = target;
+    AppStorage.setOrCreate('globalTtsVoiceCode', ReaderTtsFloatingSession.ttsVoiceLabels[target] || '');
+    const action = ReaderTtsFloatingSession.ttsVoiceSelectAction;
+    if (action) action(target);
+    ReaderTtsFloatingSession.notifyVoiceChanged();
   }
 
   static configureAudioControls(ownerId: string, voiceCode: string,
@@ -137,7 +176,7 @@ export class ReaderTtsFloatingSession {
   static updateDetails(ownerId: string, content: string, textBefore: string, currentText: string,
     textAfter: string, cover: ResourceStr, coverFrame: ResourceStr,
     chapterProgress: string, speed: number, timerMinutes: number, timerRemainingSeconds: number,
-    canPrevious: boolean, canNext: boolean): void {
+    canPrevious: boolean, canNext: boolean, progress: number = 0): void {
     if (!ReaderTtsFloatingSession.isOwner(ownerId)) {
       return;
     }
@@ -161,6 +200,10 @@ export class ReaderTtsFloatingSession {
     }
     if (AppStorage.get<string>('globalTtsChapterProgress') !== chapterProgress) {
       AppStorage.setOrCreate('globalTtsChapterProgress', chapterProgress);
+    }
+    const normalizedProgress = Math.max(0, Math.min(100, progress || 0));
+    if (AppStorage.get<number>('globalTtsProgress') !== normalizedProgress) {
+      AppStorage.setOrCreate('globalTtsProgress', normalizedProgress);
     }
     if (AppStorage.get<number>('globalTtsSpeed') !== speed) {
       AppStorage.setOrCreate('globalTtsSpeed', speed);
@@ -193,8 +236,7 @@ export class ReaderTtsFloatingSession {
     }
   }
 
-  static updatePosition(ownerId: string, chapterIndex: number, offsetStart: number, offsetEnd: number,
-    notifyObservers: boolean = true): void {
+  static updatePosition(ownerId: string, chapterIndex: number, offsetStart: number, offsetEnd: number): void {
     if (!ReaderTtsFloatingSession.isOwner(ownerId)) {
       return;
     }
@@ -205,9 +247,9 @@ export class ReaderTtsFloatingSession {
     AppStorage.setOrCreate('globalTtsChapterIndex', chapterIndex);
     AppStorage.setOrCreate('globalTtsOffsetStart', offsetStart);
     AppStorage.setOrCreate('globalTtsOffsetEnd', offsetEnd);
-    // While the owning reader is visible it already applies the chunk focus directly. Publishing
-    // a global revision would also wake the retained Index page and a second focus synchronizer.
-    if (notifyObservers) ReaderTtsFloatingSession.notifyChanged();
+    // A reopened reader is a separate mirror while the retained original page still owns TTS.
+    // Publish every changed range; page lifecycle overlap cannot be used to decide whether a mirror exists.
+    ReaderTtsFloatingSession.notifyChanged();
   }
 
   static isOwner(ownerId: string): boolean {
@@ -253,19 +295,26 @@ export class ReaderTtsFloatingSession {
     if (action) action();
   }
 
-  static jumpToPosition(chapterIndex: number, pageIndex: number): void {
+  static async jumpToPosition(chapterIndex: number, pageIndex: number): Promise<void> {
     const action = ReaderTtsFloatingSession.positionAction;
-    if (action) action(chapterIndex, pageIndex);
+    if (action) await Promise.resolve(action(chapterIndex, pageIndex));
   }
 
   static setSpeed(value: number): void {
+    const nextSpeed = Math.max(0.5, Math.min(2, Math.round((value || 1) * 10) / 10));
+    // The bookshelf retains its own host page. Publish the shared panel state before dispatching
+    // to the hidden reader owner so every mounted instance updates in the same UI turn.
+    AppStorage.setOrCreate('globalTtsSpeed', nextSpeed);
     const action = ReaderTtsFloatingSession.speedAction;
-    if (action) action(value);
+    if (action) action(nextSpeed);
   }
 
   static setTimer(minutes: number): void {
+    const nextMinutes = Math.max(0, Math.round(minutes || 0));
+    AppStorage.setOrCreate('globalTtsTimerMinutes', nextMinutes);
+    if (nextMinutes <= 0) AppStorage.setOrCreate('globalTtsTimerRemainingSeconds', 0);
     const action = ReaderTtsFloatingSession.timerAction;
-    if (action) action(minutes);
+    if (action) action(nextMinutes);
   }
 
   static async stopOther(ownerId: string): Promise<void> {
@@ -311,6 +360,9 @@ export class ReaderTtsFloatingSession {
     ReaderTtsFloatingSession.audioCatalogTitles = [];
     ReaderTtsFloatingSession.audioCatalogIndex = 0;
     ReaderTtsFloatingSession.audioCatalogSelectAction = null;
+    ReaderTtsFloatingSession.ttsVoiceLabels = [];
+    ReaderTtsFloatingSession.ttsVoiceSelectedIndex = 0;
+    ReaderTtsFloatingSession.ttsVoiceSelectAction = null;
     AppStorage.setOrCreate('globalTtsActive', false);
     AppStorage.setOrCreate('globalTtsPaused', false);
     AppStorage.setOrCreate('globalTtsBookUrl', '');
@@ -327,6 +379,7 @@ export class ReaderTtsFloatingSession {
     AppStorage.setOrCreate('globalTtsCurrentText', '');
     AppStorage.setOrCreate('globalTtsTextAfter', '');
     AppStorage.setOrCreate('globalTtsChapterProgress', '');
+    AppStorage.setOrCreate('globalTtsProgress', 0);
     AppStorage.setOrCreate('globalTtsSpeed', 1);
     AppStorage.setOrCreate('globalTtsTimerMinutes', 0);
     AppStorage.setOrCreate('globalTtsTimerRemainingSeconds', 0);
@@ -335,11 +388,17 @@ export class ReaderTtsFloatingSession {
     AppStorage.setOrCreate('globalTtsChapterIndex', -1);
     AppStorage.setOrCreate('globalTtsOffsetStart', -1);
     AppStorage.setOrCreate('globalTtsOffsetEnd', -1);
+    AppStorage.setOrCreate('globalTtsVoiceRevision', 0);
     ReaderTtsFloatingSession.notifyChanged();
   }
 
   private static notifyChanged(): void {
     const revision = AppStorage.get<number>('globalTtsRevision') || 0;
     AppStorage.setOrCreate('globalTtsRevision', revision + 1);
+  }
+
+  private static notifyVoiceChanged(): void {
+    const revision = AppStorage.get<number>('globalTtsVoiceRevision') || 0;
+    AppStorage.setOrCreate('globalTtsVoiceRevision', revision + 1);
   }
 }
