@@ -134,7 +134,7 @@ struct CustomFontManagerPage {
       }
       const fontItem = new ReaderCustomFontItem();
       fontItem.filePath = (item.filePath || '').trim();
-      fontItem.sourceName = (item.sourceName || '').trim() || this.fileNameFromUri(fontItem.filePath);
+      fontItem.sourceName = ReaderFontHelper.resolveDisplayName(item.sourceName, fontItem.filePath);
       fontItem.familyName = this.normalizedFontFamily(fontItem.filePath);
       if (fontItem.familyName && fontItem.filePath && !this.hasCustomFont(result, fontItem.familyName, fontItem.filePath)) {
         result.push(fontItem);
@@ -168,15 +168,19 @@ struct CustomFontManagerPage {
           this.readerFontFamily = familyName;
         }
         changed = true;
+      } else if (existingIndex >= 0) {
+        const displayName = ReaderFontHelper.resolveDisplayName(next[existingIndex].sourceName, filePath);
+        if (next[existingIndex].sourceName !== displayName) {
+          next[existingIndex].sourceName = displayName;
+          changed = true;
+        }
       } else if (familyName && !this.hasCustomFont(next, familyName, filePath)) {
         const oldPath = `${dir}/${name}`;
         const oldIndex = this.findCustomFontIndexByFilePath(next, oldPath);
         if (oldIndex >= 0) {
           next[oldIndex].familyName = familyName;
           next[oldIndex].filePath = filePath;
-          if (!next[oldIndex].sourceName || next[oldIndex].sourceName === name) {
-            next[oldIndex].sourceName = name;
-          }
+          next[oldIndex].sourceName = ReaderFontHelper.resolveDisplayName(next[oldIndex].sourceName, filePath);
           if (this.readerFontFilePath === oldPath) {
             this.readerFontFilePath = filePath;
             this.readerFontFamily = familyName;
@@ -187,7 +191,7 @@ struct CustomFontManagerPage {
         const item = new ReaderCustomFontItem();
         item.familyName = familyName;
         item.filePath = filePath;
-        item.sourceName = name;
+        item.sourceName = ReaderFontHelper.resolveDisplayName(name, filePath);
         next.push(item);
         changed = true;
       }
@@ -220,7 +224,7 @@ struct CustomFontManagerPage {
       const item = new ReaderCustomFontItem();
       item.familyName = familyName;
       item.filePath = destPath;
-      item.sourceName = sourceName;
+      item.sourceName = ReaderFontHelper.resolveDisplayName(sourceName, destPath);
       const next = this.customFonts.slice();
       next.push(item);
       this.saveCustomFonts(next);
@@ -355,7 +359,7 @@ struct CustomFontManagerPage {
     }
     const item = this.customFonts[index];
     this.readerFontFamily = item.familyName;
-    this.readerFontSourceName = item.sourceName || this.fileNameFromUri(item.filePath);
+    this.readerFontSourceName = ReaderFontHelper.resolveDisplayName(item.sourceName, item.filePath);
     this.readerFontMode = 'custom';
     this.saveFontSettings();
   }
@@ -458,19 +462,26 @@ struct CustomFontManagerPage {
   }
 
   async resolvePickedFontName(uri: string): Promise<string> {
+    const queryName = this.uriQueryFileName(uri);
+    if (queryName && !ReaderFontHelper.isInternalFontName(queryName)) {
+      return queryName;
+    }
+    const pathName = this.fileNameFromUri(uri);
+    if (this.isFontFile(pathName) && !ReaderFontHelper.isInternalFontName(pathName)) {
+      return pathName;
+    }
     let file: fs.File | null = null;
     try {
       file = await fs.open(uri, fs.OpenMode.READ_ONLY);
       const name = String(file.name || '').trim();
-      if (name && this.isFontFile(name)) return name;
+      if (name && this.isFontFile(name) && !ReaderFontHelper.isInternalFontName(name)) return name;
     } catch (_) {
     } finally {
       if (file) {
         try { await fs.close(file); } catch (_) {}
       }
     }
-    const queryName = this.uriQueryFileName(uri);
-    return queryName || this.fileNameFromUri(uri);
+    return queryName || pathName;
   }
 
   uriQueryFileName(uri: string): string {

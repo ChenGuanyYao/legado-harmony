@@ -11,10 +11,12 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
+ * Modified by the legado-harmony project in 2026 for QuickJS runtime integration.
  */
 
 import { JSValue } from './JSValue';
-import qjs from 'libquickjs.so';
+import qjs from './NativeQuickJs';
 
 export class JSRuntimeOptions {
   memoryLimitBytes: number = 64 * 1024 * 1024;

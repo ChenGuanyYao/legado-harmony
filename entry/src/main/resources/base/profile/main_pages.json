@@ -30,6 +30,7 @@
     "pages/ReaderReplaceRules",
     "pages/CoverGalleryManager",
     "pages/About",
+    "pages/OpenSourceLicenses",
     "pages/VerifyWeb"
   ]
 }

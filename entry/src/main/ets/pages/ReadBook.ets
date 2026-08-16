@@ -72,6 +72,18 @@ import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
 import { ReaderContentPreprocessor } from '../core/concurrency/ReaderContentPreprocessor';
 import { CooperativeScheduler } from '../core/concurrency/CooperativeScheduler';
+import {
+  ReaderV2Document,
+  ReaderV2DocumentParser,
+  ReaderV2SpeechText
+} from '../core/reader/ReaderV2Document';
+import { ReaderV2LayoutInput, ReaderV2LayoutSnapshot } from '../core/reader/ReaderV2LayoutSnapshot';
+import { ReaderV2PageFragment, ReaderV2PageLayout, ReaderV2PageSet, ReaderV2RegexBubbleSegment,
+  ReaderV2SelectionRun } from '../core/reader/ReaderV2PageLayout';
+import { ReaderV2Paginator } from '../core/reader/ReaderV2Paginator';
+import { ReaderV2Color, ReaderV2SpanStyleRange } from '../core/reader/ReaderV2Style';
+import { ReaderV2PageNodeController } from '../core/reader/ReaderV2RenderNode';
+import { ReaderV2GestureRouter, ReaderV2TapResult } from '../core/reader/ReaderV2Interaction';
 
 const TOC_WINDOW_PAGE_SIZE = 72;
 const FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS = 5000;
@@ -81,6 +93,7 @@ const READER_PAGINATION_BATCH_DELAY_MS = 64;
 const READER_INTERACTIVE_PAGINATION_BATCH_DELAY_MS = 56;
 const READER_PAGINATION_BUSY_RETRY_DELAY_MS = 48;
 const READER_DOUBLE_PAGE_DIVIDER_WIDTH = 1;
+const READER_PAGINATION_HEIGHT_SCALE_CACHE: Map<string, number> = new Map<string, number>();
 
 interface ReadTextSlice {
   text: string;
@@ -464,9 +477,26 @@ struct ReadBookPage {
   private contentPageEnds: number[] = [];
   private pagedContentText: string = '';
   private readerPaginationCache: Map<string, ReaderPaginationResult> = new Map();
+  private readerV2PageSetCache: Map<string, ReaderV2PageSet> = new Map<string, ReaderV2PageSet>();
+  private readerV2DocumentCache: Map<string, ReaderV2Document> = new Map<string, ReaderV2Document>();
+  private readerV2Controllers: Map<string, ReaderV2PageNodeController> =
+    new Map<string, ReaderV2PageNodeController>();
+  private readerV2SelectionStyledTextCache: Map<string, MutableStyledString> =
+    new Map<string, MutableStyledString>();
+  private readerV2ActiveDocument: ReaderV2Document | null = null;
+  private readerV2ActiveSnapshot: ReaderV2LayoutSnapshot | null = null;
+  private readerV2ActiveSpeechText: ReaderV2SpeechText | null = null;
+  private readerV2TtsSourceStart: number = -1;
+  private readerV2TtsSourceEnd: number = -1;
   private readerPreparedContentCache: Map<string, string> = new Map();
   private readerParagraphMetricsCache: Map<string, ReaderParagraphMetrics> = new Map();
   private readerAdaptiveLineHeightCache: Map<string, number> = new Map();
+  private readerPaginationHeightScaleIdentity: string = '';
+  private readerPaginationHeightScale: number = 1;
+  private readerPaginationHeightCalibrationResolvedIdentity: string = '';
+  private readerPaginationBottomFitTimerId: number = -1;
+  private readerPaginationBottomFitIdentity: string = '';
+  private readerPaginationBottomFitAttempts: number = 0;
   private cachedRegexRulesKey: string = '';
   private cachedRegexRules: ReaderRegexFontRule[] = [];
   private cachedDocumentRegexSource: string = '';
@@ -664,6 +694,7 @@ struct ReadBookPage {
   private lastLoggedReaderFontFamily: string = '';
   private readerFontChangeSerial: number = 0;
   private readerLayoutApplyTimerId: number = -1;
+  private readerLayoutStabilizeTimerId: number = -1;
   private readerExtendLayoutRefreshTimerId: number = -1;
   private readerBottomInfoBarMeasureTimerId: number = -1;
   private readerBottomInfoBarPendingHeight: number = 0;
@@ -908,9 +939,17 @@ struct ReadBookPage {
       clearTimeout(this.readerExtendLayoutRefreshTimerId);
       this.readerExtendLayoutRefreshTimerId = -1;
     }
+    if (this.readerLayoutStabilizeTimerId >= 0) {
+      clearTimeout(this.readerLayoutStabilizeTimerId);
+      this.readerLayoutStabilizeTimerId = -1;
+    }
     if (this.readerBottomInfoBarMeasureTimerId >= 0) {
       clearTimeout(this.readerBottomInfoBarMeasureTimerId);
       this.readerBottomInfoBarMeasureTimerId = -1;
+    }
+    if (this.readerPaginationBottomFitTimerId >= 0) {
+      clearTimeout(this.readerPaginationBottomFitTimerId);
+      this.readerPaginationBottomFitTimerId = -1;
     }
     this.readerBottomInfoBarPendingHeight = 0;
     this.readerExtendLayoutReadingOffset = -1;
@@ -5987,10 +6026,12 @@ struct ReadBookPage {
       Math.abs(height - this.getReaderBottomInfoBarHeight()) < 0.25) {
       return;
     }
-    const previousPaginationHeight = this.getReaderPaginationBottomInfoBarHeight();
+    const previousPaginationHeight = this.getReaderContentBottomReserve() +
+      this.getReaderPaginationBottomInfoBarHeight();
     const readingOffset = this.getCurrentPageStartOffset();
     this.readerBottomInfoBarMeasuredHeight = height;
-    const nextPaginationHeight = this.getReaderPaginationBottomInfoBarHeight();
+    const nextPaginationHeight = this.getReaderContentBottomReserve() +
+      this.getReaderPaginationBottomInfoBarHeight();
     if (Math.abs(previousPaginationHeight - nextPaginationHeight) < 0.25 ||
       !this.hasPagedReaderArea() || !this.content) {
       return;
@@ -6291,7 +6332,7 @@ struct ReadBookPage {
         const fontItem = new ReaderFontItem();
         fontItem.familyName = stableFamily;
         fontItem.filePath = item.filePath;
-        fontItem.sourceName = item.sourceName || this.fileNameFromPath(item.filePath);
+        fontItem.sourceName = ReaderFontHelper.resolveDisplayName(item.sourceName, item.filePath);
         ReaderFontHelper.registerFont(this.getUIContext(), fontItem);
         return;
       }
@@ -6518,7 +6559,7 @@ struct ReadBookPage {
         const next = new ReaderCustomFontItem();
         next.filePath = item.filePath === oldPath ? newPath : item.filePath;
         next.familyName = item.filePath === oldPath ? familyName : (item.familyName || ReaderFontHelper.normalizeFontFamily(next.filePath));
-        next.sourceName = item.sourceName || this.fileNameFromPath(next.filePath);
+        next.sourceName = ReaderFontHelper.resolveDisplayName(item.sourceName, next.filePath);
         data.fonts.push(next);
       }
       AppStorage.setOrCreate<string>('readerCustomFontsRaw', JSON.stringify(data));
@@ -7664,15 +7705,18 @@ struct ReadBookPage {
   }
 
   getReaderSafeAreaEdges(): SafeAreaEdge[] {
-    return this.isReaderComicModeActive() || this.readerExtendToStatusBar ||
-      this.hasBackgroundImage() || this.isStackPageTurnAnimation() || this.isSimulationPageTurnAnimation() ?
-      [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM] : [SafeAreaEdge.BOTTOM];
+    // Keep one stable full-screen coordinate system for every theme. Background artwork may cover the system
+    // bars, but its presence must never decide where正文 starts. Dynamically adding/removing TOP here left
+    // ArkUI with retained safe-area geometry after a theme switch (plain themes then painted under the status
+    // bar). The content column below owns the text inset explicitly.
+    return [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM];
   }
 
   getReaderPageTurnSurfaceSafeAreaEdges(): SafeAreaEdge[] {
-    // The root reader Stack already expands through both system bars in extended mode. Expanding the
-    // simulation child through TOP again offsets its text layer by one additional status-bar height.
-    return this.isSimulationPageTurnAnimation() && !this.readerExtendToStatusBar ?
+    // Simulation and stack paper always animate in the full-screen coordinate system. Their text layer owns
+    // the status-bar inset separately, so expanding the paper never changes正文 pagination.
+    return (this.isStackPageTurnAnimation() || this.isSimulationPageTurnAnimation()) &&
+      !this.readerExtendToStatusBar ?
       [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM] : [SafeAreaEdge.BOTTOM];
   }
 
@@ -7684,17 +7728,18 @@ struct ReadBookPage {
     if (this.readerExtendToStatusBar) {
       return 0;
     }
-    // 堆叠/仿真翻页的每一层会单独补偿顶部安全区，避免动画层与静态层坐标不一致。
+    // 仿真与叠页纸张都需要贯穿整个屏幕，因此只由动画页内部补偿文字坐标。普通、滑动和淡入
+    // 翻页则在正文容器上统一避让状态栏。
     if (this.isStackPageTurnAnimation() || this.isSimulationPageTurnAnimation()) {
       return 0;
     }
-    // 普通布局由系统安全区确定顶部起点。只有背景图要求根容器覆盖状态栏时才手动补偿。
-    return this.hasBackgroundImage() ? this.statusBarSafeHeight : 0;
+    return this.statusBarSafeHeight;
   }
 
   getReaderPageContentTopPadding(): number {
     return !this.readerExtendToStatusBar &&
-      (this.isStackPageTurnAnimation() || this.isSimulationPageTurnAnimation()) ? this.statusBarSafeHeight : 0;
+      (this.isStackPageTurnAnimation() || this.isSimulationPageTurnAnimation()) ?
+      this.statusBarSafeHeight : 0;
   }
 
   getTopControlSafePadding(): number {
@@ -7706,9 +7751,10 @@ struct ReadBookPage {
   }
 
   getReaderContentBottomReserve(): number {
-    // The text rectangle uses one explicit visual guard in both normal and full-screen modes. The footer is an
-    // overlay and the platform owns its navigation inset; neither one is silently added to the user's margin.
-    return 8;
+    // Keep exactly one bottom guard. Eight vp is sufficient when no footer is visible; otherwise the guard grows
+    // only to the footer's real one-line box so the final glyph row cannot be painted underneath it. Do not add
+    // the two values: the old footer + guard + line-remainder model was the source of the large hidden blank area.
+    return Math.max(8, this.getReaderBottomInfoBarHeight());
   }
 
   getReaderExtendedBottomSafeInset(): number {
@@ -7950,18 +7996,21 @@ struct ReadBookPage {
 
   getMeasuredReaderPageBodyHeightPx(metricsList: ReaderParagraphMetrics[], pageLineHeight: number,
     componentPixelAligned: boolean[] = []): number {
-    let heightPx = 0;
+    let paragraphHeightPx = 0;
+    let boundaryHeightPx = 0;
     for (let index = 0; index < metricsList.length; index++) {
-      heightPx += this.getMeasuredReaderParagraphComponentHeightPx(metricsList[index], pageLineHeight,
+      paragraphHeightPx += this.getMeasuredReaderParagraphComponentHeightPx(metricsList[index], pageLineHeight,
         componentPixelAligned[index] === true);
     }
     if (metricsList.length > 1) {
       for (let index = 0; index < metricsList.length - 1; index++) {
-        heightPx += this.getMeasuredReaderParagraphBoundarySpacingForLineHeightPx(pageLineHeight,
+        boundaryHeightPx += this.getMeasuredReaderParagraphBoundarySpacingForLineHeightPx(pageLineHeight,
           componentPixelAligned[index] === true || componentPixelAligned[index + 1] === true);
       }
     }
-    return heightPx;
+    const heightScale = this.getReaderPaginationHeightScale();
+    return paragraphHeightPx * heightScale +
+      boundaryHeightPx * (this.readerParagraphSpacing > 0 ? 1 : heightScale);
   }
 
   getReaderAdaptivePageLineHeight(text: string, chapterIndex: number, pageIndex: number,
@@ -8092,10 +8141,32 @@ struct ReadBookPage {
     this.invalidateReaderTypographyLayout();
     this.refreshReaderTextRender();
     this.paginateContent(this.content);
+    this.scheduleReaderLayoutStabilization(readingOffset);
     this.preloadNextChapterPaginationLater();
     this.saveReaderLayoutSettings();
     this.saveReadConfig();
     this.saveReadingProgress();
+  }
+
+  scheduleReaderLayoutStabilization(readingOffset: number): void {
+    if (this.readerLayoutStabilizeTimerId >= 0) clearTimeout(this.readerLayoutStabilizeTimerId);
+    const chapterIndex = this.currentChapterIndex;
+    const bookUrl = this.book?.bookUrl || this.bookUrl;
+    const identity = `${this.readerTypographyCacheIdentity()}_${this.pageViewWidth}_` +
+      `${this.getReaderPaginationViewportHeight()}_${this.readerExtendToStatusBar}`;
+    this.readerLayoutStabilizeTimerId = setTimeout(() => {
+      this.readerLayoutStabilizeTimerId = -1;
+      const currentIdentity = `${this.readerTypographyCacheIdentity()}_${this.pageViewWidth}_` +
+        `${this.getReaderPaginationViewportHeight()}_${this.readerExtendToStatusBar}`;
+      if (!this.readerPageVisible || this.currentChapterIndex !== chapterIndex ||
+        (this.book?.bookUrl || this.bookUrl) !== bookUrl || currentIdentity !== identity) return;
+      this.readerTypographyRestoreOffset = readingOffset;
+      this.invalidateReaderTypographyLayout();
+      this.refreshReaderTextRender();
+      this.paginateContent(this.content);
+      this.preloadNextChapterPaginationLater();
+      this.preloadPreviousChapterPaginationLater();
+    }, 80);
   }
 
   invalidateReaderTypographyLayout(): void {
@@ -8107,6 +8178,16 @@ struct ReadBookPage {
     this.adjacentPaginationPreloadSerial++;
     this.previousPaginationPreloadSerial++;
     this.readerPaginationCache.clear();
+    this.readerV2PageSetCache.clear();
+    this.readerV2DocumentCache.clear();
+    this.readerV2SelectionStyledTextCache.clear();
+    this.readerV2ActiveDocument = null;
+    this.readerV2ActiveSnapshot = null;
+    this.readerV2Controllers.clear();
+    const selectableKeys = Array.from(this.readerSelectableTextControllers.keys());
+    for (const key of selectableKeys) {
+      if (key.startsWith('reader_v2_native_page_')) this.readerSelectableTextControllers.delete(key);
+    }
     this.readerParagraphMetricsCache.clear();
     this.readerAdaptiveLineHeightCache.clear();
     this.pageTurnPreviewKey = '';
@@ -8213,12 +8294,7 @@ struct ReadBookPage {
     // A system-bar mode change rebuilds the safe-area geometry asynchronously. Stop and invalidate
     // every old curl surface immediately; otherwise a gesture started before the new area arrives can
     // combine the old wallpaper snapshot with the new text viewport for one visibly jumping frame.
-    this.finishPageTurnAnimation(false);
-    this.readerPaginationWorkSerial++;
-    this.adjacentPaginationPreloadSerial++;
-    this.readerPaginationCache.clear();
-    this.pageTurnPreviewKey = '';
-    this.pageTurnPreviewLoadingKey = '';
+    this.invalidateReaderTypographyLayout();
     this.refreshReaderTextRender();
 
     if (this.readerExtendLayoutRefreshTimerId >= 0) {
@@ -8233,32 +8309,44 @@ struct ReadBookPage {
       const restoreOffset = this.readerExtendLayoutReadingOffset >= 0 ?
         this.readerExtendLayoutReadingOffset : this.getCurrentPageStartOffset();
       this.readerExtendLayoutReadingOffset = -1;
-      this.readerPaginationCache.clear();
+      this.readerTypographyRestoreOffset = restoreOffset;
+      this.invalidateReaderTypographyLayout();
+      this.refreshReaderTextRender();
       this.paginateContent(this.content);
       this.currentPageIndex = this.normalizeReaderSpreadPageIndex(this.findPageIndexByOffset(restoreOffset));
       this.syncCurrentPageText();
+      this.scheduleReaderLayoutStabilization(restoreOffset);
       this.preloadNextChapterPaginationLater();
+      this.preloadPreviousChapterPaginationLater();
       this.saveReadingProgress();
     }, 80);
   }
 
   onReaderThemeChanged(): void {
+    const readingOffset = this.getCurrentPageStartOffset();
     this.hdsMaterialRenderBranch = !this.hdsMaterialRenderBranch;
     this.enterReaderImmersive();
-    this.readerPaginationCache.clear();
-    this.pageTurnPreviewKey = '';
+    this.readerTypographyRestoreOffset = readingOffset;
+    this.invalidateReaderTypographyLayout();
     this.refreshReaderTextRender();
     this.paginateContent(this.content);
+    this.scheduleReaderLayoutStabilization(readingOffset);
     this.saveReadingProgress();
     this.onTtsCoverSettingsChanged();
   }
 
   onReaderColorModeChanged(): void {
-    // 明暗切换只改变配色和背景，不重新执行整章文本测量与分页。
-    // 自定义主题若同时改变字体或排版，会通过 themeRevision / 阅读设置的监听单独触发重排。
+    const readingOffset = this.getCurrentPageStartOffset();
     this.hdsMaterialRenderBranch = !this.hdsMaterialRenderBranch;
     this.enterReaderImmersive();
+    // V2 retains native Paragraph paint data, including text/bubble colors and theme decoration geometry.
+    // Rebuild that retained page at the same reading offset; merely refreshing the ArkUI branch leaves the
+    // previous theme's paragraph snapshot alive until the book is reopened.
+    this.readerTypographyRestoreOffset = readingOffset;
+    this.invalidateReaderTypographyLayout();
     this.refreshReaderTextRender();
+    this.paginateContent(this.content);
+    this.scheduleReaderLayoutStabilization(readingOffset);
     if (this.showReaderCommentPanel) {
       this.syncReaderCommentPanelWebTheme();
     }
@@ -9658,6 +9746,12 @@ struct ReadBookPage {
     const y = point.y;
     const globalX: number = Number(point.x) + this.readerTapLayerGlobalX;
     const globalY: number = Number(point.y) + this.readerTapLayerGlobalY;
+    // TouchObject.x/y are reported in window coordinates on current HarmonyOS devices even when the listener is
+    // attached to the full-page interaction layer. V2 geometry is page-local, so derive that coordinate from the
+    // explicit window point and the measured interaction-layer origin. This also remains correct in split screen.
+    const readerLocalX = Number(point.windowX) - this.readerTapLayerGlobalX;
+    const readerLocalY = Number(point.windowY) - this.readerTapLayerGlobalY -
+      (!this.readerExtendToStatusBar ? this.statusBarSafeHeight : 0);
     if (event.type === TouchType.Down) {
       this.deferReaderPaginationForInteraction();
       // A fresh pointer stream must not inherit the short click guard from the previous source action.
@@ -9678,7 +9772,9 @@ struct ReadBookPage {
       this.slideResetSerial++;
       // An explicitly rendered action owns its exact hit region. Page-turn tap zones only run
       // when no action was hit, so justified line-end comments remain accessible near an edge.
-      const actionMarker = this.readerSourceActionAtPoint(globalX, globalY);
+      const actionMarker = this.shouldUseReaderLayoutV2(this.pagedContentText) ?
+        this.readerV2ActionAtLocalPoint(readerLocalX, readerLocalY) :
+        this.readerSourceActionAtPoint(globalX, globalY);
       if (actionMarker) {
         this.readerTouchActionMarker = actionMarker;
         this.beginReaderInteractiveAction();
@@ -9717,7 +9813,10 @@ struct ReadBookPage {
         const marker = this.readerTouchActionMarker;
         this.readerTouchActionMarker = '';
         this.beginReaderInteractiveAction();
-        if (this.readerSourceActionAtPoint(globalX, globalY) === marker) {
+        const releaseMarker = this.shouldUseReaderLayoutV2(this.pagedContentText) ?
+          this.readerV2ActionAtLocalPoint(readerLocalX, readerLocalY) :
+          this.readerSourceActionAtPoint(globalX, globalY);
+        if (releaseMarker === marker) {
           this.openReaderSourceAction(marker);
         }
       } else if (event.type === TouchType.Cancel) {
@@ -12708,13 +12807,17 @@ struct ReadBookPage {
 
   clearTtsHighlight(): void {
     if (!this.ttsDisplayText && this.ttsHighlightStart < 0 && this.ttsHighlightEnd < 0 &&
-      this.ttsTextStartOffset === 0) {
+      this.ttsTextStartOffset === 0 && this.readerV2TtsSourceStart < 0) {
       return;
     }
     this.ttsDisplayText = '';
     this.ttsHighlightStart = -1;
     this.ttsHighlightEnd = -1;
     this.ttsTextStartOffset = 0;
+    this.readerV2ActiveSpeechText = null;
+    this.readerV2TtsSourceStart = -1;
+    this.readerV2TtsSourceEnd = -1;
+    this.refreshReaderV2TtsOverlay();
     this.ttsHighlightRenderVersion++;
     this.scrollTtsPanelToCurrentSentence();
   }
@@ -12723,13 +12826,22 @@ struct ReadBookPage {
     const start = this.getCurrentPageStartOffset();
     this.ttsTextStartOffset = start;
     const source = this.pagedContentText || this.getPagedSourceText();
+    if (this.shouldUseReaderLayoutV2(source)) {
+      const document = this.readerV2Document(this.currentChapterIndex, source);
+      if (document) {
+        this.readerV2ActiveSpeechText = ReaderV2SpeechText.build(document, start);
+        return this.readerV2ActiveSpeechText.text;
+      }
+    }
+    this.readerV2ActiveSpeechText = null;
     return ReaderActionMarker.strip(LocalBookService.stripEpubImageMarkers(source.substring(start), true), true);
   }
 
   getTtsFocusBreakOffsets(textLength: number): number[] {
     const result: number[] = [];
     for (const pageStart of this.contentPageStarts) {
-      const offset = pageStart - this.ttsTextStartOffset;
+      const offset = this.readerV2ActiveSpeechText ? this.readerV2ActiveSpeechText.speechOffsetAt(pageStart) :
+        pageStart - this.ttsTextStartOffset;
       if (offset > 0 && offset < textLength) {
         result.push(offset);
       }
@@ -13072,7 +13184,8 @@ struct ReadBookPage {
       const paragraphEnd = start + paragraph.end;
       const independent = this.readerParagraphRendersAsIndependentComponent(paragraph.text);
       const beforeSpacing = index > 0 ? this.getMeasuredReaderParagraphBoundarySpacingForLineHeightPx(
-        this.getEffectiveReaderLineHeight(), previousIndependent || independent) : 0;
+        this.getEffectiveReaderLineHeight(), previousIndependent || independent) *
+        (this.readerParagraphSpacing > 0 ? 1 : this.getReaderPaginationHeightScale()) : 0;
       const paragraphHeight = this.measureReaderSingleParagraphHeight(paragraph.text, availableWidth,
         chapterIndex, source, paragraphStart);
       if (usedHeight + beforeSpacing + paragraphHeight <= availableHeight) {
@@ -13150,9 +13263,10 @@ struct ReadBookPage {
     chapterIndex: number, documentSource: string, absoluteStart: number): number {
     if (!text || availableHeight <= 0) return -1;
     const metrics = this.readerParagraphMetrics(text, availableWidth, chapterIndex, documentSource, absoluteStart);
+    const heightScale = this.getReaderPaginationHeightScale();
     let end = -1;
     for (let index = 0; index < metrics.lineEnds.length; index++) {
-      const lineBottom = metrics.lineBottomsPx[index] || metrics.heightPx;
+      const lineBottom = (metrics.lineBottomsPx[index] || metrics.heightPx) * heightScale;
       if (lineBottom > availableHeight) break;
       end = Math.max(end, metrics.lineEnds[index]);
     }
@@ -13236,7 +13350,7 @@ struct ReadBookPage {
       let end = -1;
       for (let i = 0; i < metrics.length; i++) {
         const metric = metrics[i];
-        if (metric.baseline + metric.descent > safeHeight) {
+        if ((metric.topHeight + metric.height) * this.getReaderPaginationHeightScale() > safeHeight) {
           break;
         }
         end = Math.max(end, metric.endIndex);
@@ -13267,9 +13381,11 @@ struct ReadBookPage {
   }
 
   getReaderPaginationRenderGuardHeight(): number {
-    // 用户设置的上下边距就是正文边界，不能再暗中扣除固定 vp。测量与渲染的亚像素差异由
-    // 自适应行距保留的 0.5px 处理，不牺牲一整行或额外的可见留白。
-    return 0;
+    // A merged Text is measured and rendered as one pixel-aligned box, so it needs no extra reserve. Visible
+    // paragraph spacing creates many independently rounded Text/Blank components; keep a tiny aggregate guard
+    // for that mode only. This prevents the observed 2-3px footer crossing without restoring the old full-line
+    // hidden reserve.
+    return this.readerParagraphSpacing > 0 ? 4 : 0;
   }
 
   getReaderTextParagraphs(text: string): ReaderTextParagraph[] {
@@ -13334,22 +13450,36 @@ struct ReadBookPage {
       return 0;
     }
     const paragraphs = this.getReaderTextParagraphs(text);
+    // With paragraph spacing disabled the renderer joins every ordinary/comment paragraph into one Text node.
+    // Measuring them as separate native Paragraph objects adds the paragraph engine's terminal line spacing at
+    // every newline, even though ArkUI's onlyBetweenLines mode adds it only once inside the merged component.
+    // Comment-heavy pages could therefore lose several real lines at the bottom despite a zero bottom margin.
+    const rendersAsOneText = this.readerParagraphSpacing <= 0 && paragraphs.length > 1 &&
+      paragraphs.every((paragraph: ReaderTextParagraph): boolean =>
+        !this.readerParagraphRendersAsIndependentComponent(paragraph.text));
+    if (rendersAsOneText) {
+      return this.measureReaderSingleParagraphHeight(text, availableWidth, chapterIndex, documentSource,
+        absoluteStart);
+    }
     if (paragraphs.length > 1) {
-      let totalHeight = 0;
+      let paragraphHeight = 0;
+      let boundaryHeight = 0;
       for (let index = 0; index < paragraphs.length; index++) {
         const paragraph = paragraphs[index];
         const independent = this.readerParagraphRendersAsIndependentComponent(paragraph.text);
         const metrics = this.readerParagraphMetrics(paragraph.text, availableWidth, chapterIndex,
           documentSource, absoluteStart + paragraph.start);
-        totalHeight += this.getMeasuredReaderParagraphComponentHeightPx(metrics,
+        paragraphHeight += this.getMeasuredReaderParagraphComponentHeightPx(metrics,
           this.getEffectiveReaderLineHeight(), independent);
         if (!paragraph.isLast) {
           const nextIndependent = this.readerParagraphRendersAsIndependentComponent(paragraphs[index + 1].text);
-          totalHeight += this.getMeasuredReaderParagraphBoundarySpacingForLineHeightPx(
+          boundaryHeight += this.getMeasuredReaderParagraphBoundarySpacingForLineHeightPx(
             this.getEffectiveReaderLineHeight(), independent || nextIndependent);
         }
       }
-      return totalHeight;
+      const heightScale = this.getReaderPaginationHeightScale();
+      return paragraphHeight * heightScale + boundaryHeight *
+        (this.readerParagraphSpacing > 0 ? 1 : heightScale);
     }
     return this.measureReaderSingleParagraphHeight(text, availableWidth, chapterIndex, documentSource, absoluteStart);
   }
@@ -13358,8 +13488,133 @@ struct ReadBookPage {
     chapterIndex: number = this.currentChapterIndex, documentSource: string = text,
     absoluteStart: number = 0): number {
     const metrics = this.readerParagraphMetrics(text, availableWidth, chapterIndex, documentSource, absoluteStart);
-    return this.getMeasuredReaderParagraphComponentHeightPx(metrics, this.getEffectiveReaderLineHeight(),
+    const rawHeight = this.getMeasuredReaderParagraphComponentHeightPx(metrics, this.getEffectiveReaderLineHeight(),
       this.readerParagraphRendersAsIndependentComponent(text));
+    return rawHeight * this.getReaderPaginationHeightScale();
+  }
+
+  getReaderPaginationHeightScale(): number {
+    const identity = this.readerPaginationHeightCalibrationIdentity();
+    if (identity !== this.readerPaginationHeightScaleIdentity) {
+      this.readerPaginationHeightScaleIdentity = identity;
+      this.readerPaginationHeightScale = READER_PAGINATION_HEIGHT_SCALE_CACHE.get(identity) || 1;
+      this.readerPaginationHeightCalibrationResolvedIdentity =
+        READER_PAGINATION_HEIGHT_SCALE_CACHE.has(identity) ? identity : '';
+    }
+    return Math.max(0.55, Math.min(1.15, this.readerPaginationHeightScale));
+  }
+
+  calibrateReaderPaginationHeightFromMergedText(paragraphs: ReaderTextParagraph[], chapterIndex: number,
+    pageStart: number, documentSource: string, pageLineHeight: number, area: Area): void {
+    const independentParagraphLayout = this.readerParagraphSpacing > 0;
+    if ((!independentParagraphLayout && paragraphs.length < 3) || pageStart < 0 || !documentSource) {
+      return;
+    }
+    if (independentParagraphLayout && (paragraphs.length !== 1 ||
+      this.shouldUseTitleStyle(paragraphs[0].text, chapterIndex))) return;
+    const identity = this.readerPaginationHeightCalibrationIdentity();
+    const currentScale = this.getReaderPaginationHeightScale();
+    if (this.readerPaginationHeightCalibrationResolvedIdentity === identity) return;
+    const width = this.parseAreaDimension(area.width);
+    const actualHeight = this.parseAreaDimension(area.height);
+    if (width <= 0 || actualHeight <= 0) return;
+
+    let rawParagraphHeightPx = 0;
+    let boundaryHeightPx = 0;
+    let previousIndependent = false;
+    for (let index = 0; index < paragraphs.length; index++) {
+      const paragraph = paragraphs[index];
+      const independent = this.readerParagraphRendersAsIndependentComponent(paragraph.text);
+      const metrics = this.readerParagraphMetrics(paragraph.text, width, chapterIndex, documentSource,
+        pageStart + paragraph.start);
+      rawParagraphHeightPx += this.getMeasuredReaderParagraphComponentHeightPx(metrics,
+        pageLineHeight, independent);
+      if (index > 0) {
+        boundaryHeightPx += this.getMeasuredReaderParagraphBoundarySpacingForLineHeightPx(
+          pageLineHeight, previousIndependent || independent);
+      }
+      previousIndependent = independent;
+    }
+    if (rawParagraphHeightPx <= 0) return;
+    const actualHeightPx = this.toMeasurePx(actualHeight);
+    const rawTotalHeightPx = rawParagraphHeightPx + boundaryHeightPx;
+    const targetScale = Math.max(0.55, Math.min(1.15, independentParagraphLayout ?
+      actualHeightPx / rawParagraphHeightPx : actualHeightPx / rawTotalHeightPx));
+    this.readerPaginationHeightCalibrationResolvedIdentity = identity;
+    if (!Number.isFinite(targetScale) || Math.abs(targetScale - currentScale) < 0.012) {
+      READER_PAGINATION_HEIGHT_SCALE_CACHE.set(identity, currentScale);
+      return;
+    }
+
+    this.readerPaginationHeightScale = targetScale;
+    READER_PAGINATION_HEIGHT_SCALE_CACHE.set(identity, targetScale);
+    console.warn(`[ReaderPaginationCalibration] actual=${Math.round(actualHeightPx)} ` +
+      `raw=${Math.round(rawTotalHeightPx)} lineHeight=${pageLineHeight.toFixed(2)} ` +
+      `scale=${targetScale.toFixed(4)}`);
+    const readingOffset = this.getCurrentPageStartOffset();
+    this.readerTypographyRestoreOffset = readingOffset;
+    this.readerPaginationWorkSerial++;
+    this.adjacentPaginationPreloadSerial++;
+    this.previousPaginationPreloadSerial++;
+    this.readerPaginationCache.clear();
+    this.readerAdaptiveLineHeightCache.clear();
+    this.pageTurnPreviewKey = '';
+    this.pageTurnPreviewLoadingKey = '';
+    this.refreshReaderTextRender();
+    this.paginateContent(this.content);
+  }
+
+  scheduleReaderPaginationBottomFitCalibration(paragraphs: ReaderTextParagraph[], chapterIndex: number,
+    pageStart: number, area: Area): void {
+    if (this.readerParagraphSpacing <= 0 || paragraphs.length !== 1 || !paragraphs[0].isLast ||
+      chapterIndex !== this.currentChapterIndex || pageStart < 0) return;
+    const globalTop = this.parseAreaDimension(area.globalPosition?.y ?? 0);
+    const actualHeight = this.parseAreaDimension(area.height);
+    if (actualHeight <= 0) return;
+    const actualBottom = globalTop + actualHeight;
+    const taskIdentity = `${this.readerPaginationHeightCalibrationIdentity()}_${chapterIndex}_${pageStart}`;
+    if (this.readerPaginationBottomFitTimerId >= 0) clearTimeout(this.readerPaginationBottomFitTimerId);
+    this.readerPaginationBottomFitTimerId = setTimeout(() => {
+      this.readerPaginationBottomFitTimerId = -1;
+      if (chapterIndex !== this.currentChapterIndex || pageStart !== this.getCurrentPageStartOffset()) return;
+      if (taskIdentity !== this.readerPaginationBottomFitIdentity) {
+        this.readerPaginationBottomFitIdentity = taskIdentity;
+        this.readerPaginationBottomFitAttempts = 0;
+      }
+      if (this.readerPaginationBottomFitAttempts >= 3) return;
+      const desiredBottom = this.readerCommentPageAreaTop + this.pageViewHeight -
+        this.getReaderContentBottomReserve();
+      const overflow = actualBottom - desiredBottom;
+      if (!Number.isFinite(overflow) || overflow <= 0.5) return;
+
+      const identity = this.readerPaginationHeightCalibrationIdentity();
+      const currentScale = this.getReaderPaginationHeightScale();
+      const correction = Math.max(0.02, Math.min(0.08, overflow / Math.max(1, this.pageViewHeight)));
+      const nextScale = Math.max(0.55, Math.min(1.15, currentScale + correction));
+      if (nextScale <= currentScale + 0.001) return;
+      this.readerPaginationBottomFitAttempts++;
+      this.readerPaginationHeightScale = nextScale;
+      this.readerPaginationHeightScaleIdentity = identity;
+      this.readerPaginationHeightCalibrationResolvedIdentity = identity;
+      READER_PAGINATION_HEIGHT_SCALE_CACHE.set(identity, nextScale);
+      console.warn(`[ReaderPaginationBottomFit] overflow=${overflow.toFixed(2)} ` +
+        `scale=${currentScale.toFixed(4)}->${nextScale.toFixed(4)}`);
+      const readingOffset = this.getCurrentPageStartOffset();
+      this.readerTypographyRestoreOffset = readingOffset;
+      this.readerPaginationWorkSerial++;
+      this.adjacentPaginationPreloadSerial++;
+      this.previousPaginationPreloadSerial++;
+      this.readerPaginationCache.clear();
+      this.readerAdaptiveLineHeightCache.clear();
+      this.pageTurnPreviewKey = '';
+      this.pageTurnPreviewLoadingKey = '';
+      this.refreshReaderTextRender();
+      this.paginateContent(this.content);
+    }, 180);
+  }
+
+  readerPaginationHeightCalibrationIdentity(): string {
+    return `${this.readerTypographyCacheIdentity()}_${this.readerParagraphCommentPaginationIdentity()}`;
   }
 
   readerParagraphMetrics(text: string, availableWidth: number,
@@ -13388,8 +13643,14 @@ struct ReadBookPage {
     }
     const measuredText = this.readerActionMeasurementText(text, documentSource, absoluteStart);
     try {
-      const paragraph = this.buildMeasuredReaderParagraph(text, availableWidth, chapterIndex,
-        documentSource, absoluteStart);
+      const layoutParagraphs = this.getReaderTextParagraphs(text);
+      const measureMergedText = this.readerParagraphSpacing <= 0 && layoutParagraphs.length > 1 &&
+        layoutParagraphs.every((paragraph: ReaderTextParagraph): boolean =>
+          !this.readerParagraphRendersAsIndependentComponent(paragraph.text));
+      const paragraph = measureMergedText ?
+        this.buildMeasuredMergedReaderParagraph(layoutParagraphs, availableWidth, chapterIndex, documentSource,
+          absoluteStart) :
+        this.buildMeasuredReaderParagraph(text, availableWidth, chapterIndex, documentSource, absoluteStart);
       const nativeMetrics = paragraph.getLineMetrics();
       if (nativeMetrics.length > 0) {
         const lineEnds: number[] = [];
@@ -13507,9 +13768,8 @@ struct ReadBookPage {
 
   buildReaderMeasureTextStyle(fontSize: number, fontFamily: string): graphicsText.TextStyle {
     return {
-      // ArkUI Text.fontSize(number) is expressed in fp and follows the system font scale. Widths,
-      // line spacing and margins are vp. Keeping those conversions separate is essential on devices
-      // whose font scale is not 1.0; vp2px(fontSize) otherwise overestimates every page substantially.
+      // ArkUI Text.fontSize(number) is expressed in fp. Keep font conversion separate from the vp geometry
+      // used by widths, margins and line spacing.
       fontSize: this.toMeasureFontPx(fontSize),
       letterSpacing: this.toMeasureFontOffsetPx(this.getReaderAdaptiveLetterSpacing()),
       fontFamilies: [fontFamily || this.getBodyReaderFontFamily()],
@@ -13541,6 +13801,35 @@ struct ReadBookPage {
     const paragraph = builder.build();
     paragraph.layoutSync(this.toMeasurePx(availableWidth));
     return paragraph;
+  }
+
+  buildMeasuredMergedReaderParagraph(paragraphs: ReaderTextParagraph[], availableWidth: number,
+    chapterIndex: number, documentSource: string, absoluteStart: number): graphicsText.Paragraph {
+    const bodyStyle = this.buildReaderMeasureTextStyle(this.readerFontSize, this.getBodyReaderFontFamily());
+    const paragraphStyle: graphicsText.ParagraphStyle = {
+      textStyle: bodyStyle,
+      align: graphicsText.TextAlign.JUSTIFY,
+      textDirection: graphicsText.TextDirection.LTR,
+      wordBreak: graphicsText.WordBreak.BREAK_WORD,
+      breakStrategy: graphicsText.BreakStrategy.GREEDY,
+      trailingSpaceOptimized: true,
+      lineSpacing: this.toMeasureNonNegativePx(Math.max(0, this.readerLineHeight)),
+      includeFontPadding: false
+    };
+    const builder = new graphicsText.ParagraphBuilder(paragraphStyle, graphicsText.FontCollection.getGlobalInstance());
+    for (let index = 0; index < paragraphs.length; index++) {
+      const paragraph = paragraphs[index];
+      if (index > 0) {
+        builder.pushStyle(bodyStyle);
+        builder.addText('\n');
+        builder.popStyle();
+      }
+      this.addMeasuredReaderText(builder, paragraph.text, chapterIndex, bodyStyle, documentSource,
+        absoluteStart + paragraph.start);
+    }
+    const result = builder.build();
+    result.layoutSync(this.toMeasurePx(availableWidth));
+    return result;
   }
 
   addMeasuredReaderText(builder: graphicsText.ParagraphBuilder, text: string, chapterIndex: number,
@@ -13819,13 +14108,13 @@ struct ReadBookPage {
   }
 
   resolveTtsChunkPageIndex(chunk: TtsChunk): number {
-    const absoluteStart = this.ttsTextStartOffset + chunk.start;
+    const absoluteStart = this.readerV2TtsSourceOffset(chunk.start);
     return this.findPageIndexByOffset(absoluteStart);
   }
 
   updateTtsChunkHighlight(chunk: TtsChunk, pageIndex: number): void {
-    const absoluteStart = this.ttsTextStartOffset + chunk.start;
-    const absoluteEnd = this.ttsTextStartOffset + chunk.end;
+    const absoluteStart = this.readerV2TtsSourceOffset(chunk.start);
+    const absoluteEnd = this.readerV2TtsSourceOffset(chunk.end);
     const pageStart = this.getPageStartOffset(pageIndex);
     const pageEnd = this.getPageEndOffset(pageIndex);
     const pageText = this.getPageText(pageIndex);
@@ -13837,6 +14126,9 @@ struct ReadBookPage {
     }
     this.ttsHighlightStart = Math.max(0, Math.min(absoluteStart - pageStart, pageText.length));
     this.ttsHighlightEnd = Math.max(this.ttsHighlightStart, Math.min(absoluteEnd, pageEnd) - pageStart);
+    this.readerV2TtsSourceStart = absoluteStart;
+    this.readerV2TtsSourceEnd = absoluteEnd;
+    this.refreshReaderV2TtsOverlay();
     this.persistTtsReadPosition(absoluteStart, absoluteEnd);
     this.ttsHighlightRenderVersion++;
   }
@@ -13898,10 +14190,14 @@ struct ReadBookPage {
     const start = Math.max(this.ttsTextStartOffset, Math.min(Math.round(absoluteStart), source.length));
     const end = Math.max(start, Math.min(Number.isFinite(absoluteEnd) ? Math.round(absoluteEnd) : start,
       source.length));
+    const chunkStart = this.readerV2ActiveSpeechText ?
+      this.readerV2ActiveSpeechText.speechOffsetAt(start) : start - this.ttsTextStartOffset;
+    const chunkEnd = this.readerV2ActiveSpeechText ?
+      this.readerV2ActiveSpeechText.speechOffsetAt(end) : end - this.ttsTextStartOffset;
     this.ttsLastFocusChunk = {
       text: source.substring(start, end),
-      start: start - this.ttsTextStartOffset,
-      end: end - this.ttsTextStartOffset
+      start: chunkStart,
+      end: chunkEnd
     };
     return true;
   }
@@ -13960,6 +14256,9 @@ struct ReadBookPage {
     this.ttsHighlightStart = Math.max(0, Math.min(absoluteStart - pageStart, pageText.length));
     this.ttsHighlightEnd = Math.max(this.ttsHighlightStart,
       Math.min(absoluteEnd, pageEnd) - pageStart);
+    this.readerV2TtsSourceStart = absoluteStart;
+    this.readerV2TtsSourceEnd = absoluteEnd;
+    this.refreshReaderV2TtsOverlay();
     this.ttsHighlightRenderVersion++;
   }
 
@@ -14179,7 +14478,8 @@ struct ReadBookPage {
         }
         .width('100%')
         .height('100%')
-        .padding({ top: this.getReaderPageContentTopPadding() })
+        .padding({ top: this.shouldUseReaderLayoutV2(this.pageTurnIncomingDocumentSource) ? 0 :
+          this.getReaderPageContentTopPadding() })
       }
       .width('100%')
       .height('100%')
@@ -14196,7 +14496,8 @@ struct ReadBookPage {
         }
         .width('100%')
         .height('100%')
-        .padding({ top: this.getReaderPageContentTopPadding() })
+        .padding({ top: this.shouldUseReaderLayoutV2(this.pagedContentText) ? 0 :
+          this.getReaderPageContentTopPadding() })
 
       }
       .width('100%')
@@ -14345,10 +14646,15 @@ struct ReadBookPage {
   readerSimulationCurrentHalfPage(text: string, pageIndex: number, renderVersion: number,
     ttsRenderVersion: number, identity: string, halfWidth: boolean = false) {
     Column() {
-      this.styledCurrentReaderText(text, this.getReaderContentBottomPadding(), this.currentChapterIndex,
-        ttsRenderVersion, renderVersion,
-        `${this.currentReaderPageRenderIdentity(renderVersion, ttsRenderVersion)}_simulation_${identity}`,
-        pageIndex)
+      if (this.shouldUseReaderLayoutV2(this.pagedContentText)) {
+        this.readerV2PageSurface(`simulation_current_${identity}`, this.currentChapterIndex,
+          pageIndex, this.pagedContentText)
+      } else {
+        this.styledCurrentReaderText(text, this.getReaderContentBottomPadding(), this.currentChapterIndex,
+          ttsRenderVersion, renderVersion,
+          `${this.currentReaderPageRenderIdentity(renderVersion, ttsRenderVersion)}_simulation_${identity}`,
+          pageIndex)
+      }
     }
     .width(halfWidth ? '50%' : '100%')
     .height('100%')
@@ -14361,9 +14667,14 @@ struct ReadBookPage {
   readerSimulationIncomingHalfPage(text: string, pageIndex: number, pageStart: number,
     renderVersion: number, identity: string, halfWidth: boolean = false) {
     Column() {
-      this.styledReaderText(text, this.getReaderContentBottomPadding(), this.pageTurnIncomingChapterIndex, 0,
-        renderVersion, `${this.incomingReaderPageRenderIdentity(renderVersion, text)}_simulation_${identity}`,
-        pageIndex, this.getEffectiveReaderMarginTop(), pageStart, this.pageTurnIncomingDocumentSource)
+      if (this.shouldUseReaderLayoutV2(this.pageTurnIncomingDocumentSource)) {
+        this.readerV2PageSurface(`simulation_incoming_${identity}`, this.pageTurnIncomingChapterIndex,
+          pageIndex, this.pageTurnIncomingDocumentSource)
+      } else {
+        this.styledReaderText(text, this.getReaderContentBottomPadding(), this.pageTurnIncomingChapterIndex, 0,
+          renderVersion, `${this.incomingReaderPageRenderIdentity(renderVersion, text)}_simulation_${identity}`,
+          pageIndex, this.getEffectiveReaderMarginTop(), pageStart, this.pageTurnIncomingDocumentSource)
+      }
     }
     .width(halfWidth ? '50%' : '100%')
     .height('100%')
@@ -14379,7 +14690,7 @@ struct ReadBookPage {
     }
     .width('100%')
     .height('100%')
-    .padding({ top: this.getReaderPageContentTopPadding() })
+    .padding({ top: this.shouldUseReaderLayoutV2(this.pagedContentText) ? 0 : this.getReaderPageContentTopPadding() })
     .id(`reader_current_${this.currentChapterIndex}_${this.currentPageIndex}_${this.displayPageRenderKey}_${renderVersion}_${ttsRenderVersion}`)
     .backgroundColor(this.readerContentLayerColor())
     .translate({ x: this.getCurrentPageTurnX(), y: this.getCurrentPageTurnY() + this.bookmarkPullOffsetY })
@@ -14393,7 +14704,7 @@ struct ReadBookPage {
     }
     .width('100%')
     .height('100%')
-    .padding({ top: this.getReaderPageContentTopPadding() })
+    .padding({ top: this.shouldUseReaderLayoutV2(this.pagedContentText) ? 0 : this.getReaderPageContentTopPadding() })
     .id(`reader_current_alt_${this.currentChapterIndex}_${this.currentPageIndex}_${this.displayPageRenderKey}_${renderVersion}_${ttsRenderVersion}`)
     .backgroundColor(this.readerContentLayerColor())
     .translate({ x: this.getCurrentPageTurnX(), y: this.getCurrentPageTurnY() + this.bookmarkPullOffsetY })
@@ -14411,7 +14722,8 @@ struct ReadBookPage {
       }
       .width('100%')
       .height('100%')
-      .padding({ top: this.getReaderPageContentTopPadding() })
+      .padding({ top: this.shouldUseReaderLayoutV2(this.pageTurnIncomingDocumentSource) ? 0 :
+        this.getReaderPageContentTopPadding() })
     }
     .width('100%')
     .height('100%')
@@ -14440,7 +14752,27 @@ struct ReadBookPage {
 
   @Builder
   readerCurrentPageLayer(renderVersion: number, text: string, ttsRenderVersion: number) {
-    if (this.isLandscapeDoublePageActive()) {
+    if (this.shouldUseReaderLayoutV2(this.pagedContentText)) {
+      if (this.isLandscapeDoublePageActive()) {
+        Row() {
+          this.readerV2PageSurface('current_left', this.currentChapterIndex,
+            this.currentPageIndex, this.pagedContentText, true)
+          Blank()
+            .width(READER_DOUBLE_PAGE_DIVIDER_WIDTH)
+            .height('88%')
+            .backgroundColor(this.getSubTextColor())
+            .opacity(0.22)
+          this.readerV2PageSurface('current_right', this.currentChapterIndex,
+            this.currentPageIndex + 1, this.pagedContentText, true)
+        }
+        .width('100%')
+        .height('100%')
+        .alignItems(VerticalAlign.Center)
+      } else {
+        this.readerV2PageSurface('current_single', this.currentChapterIndex,
+          this.currentPageIndex, this.pagedContentText)
+      }
+    } else if (this.isLandscapeDoublePageActive()) {
       Row() {
         Column() {
           this.styledCurrentReaderText(text, this.getReaderContentBottomPadding(), this.currentChapterIndex,
@@ -14486,7 +14818,27 @@ struct ReadBookPage {
 
   @Builder
   readerIncomingPageLayer(renderVersion: number, text: string) {
-    if (this.isLandscapeDoublePageActive()) {
+    if (this.shouldUseReaderLayoutV2(this.pageTurnIncomingDocumentSource)) {
+      if (this.isLandscapeDoublePageActive()) {
+        Row() {
+          this.readerV2PageSurface('incoming_left', this.pageTurnIncomingChapterIndex,
+            this.pageTurnIncomingPageIndex, this.pageTurnIncomingDocumentSource, true)
+          Blank()
+            .width(READER_DOUBLE_PAGE_DIVIDER_WIDTH)
+            .height('88%')
+            .backgroundColor(this.getSubTextColor())
+            .opacity(0.22)
+          this.readerV2PageSurface('incoming_right', this.pageTurnIncomingChapterIndex,
+            this.pageTurnIncomingPageIndex + 1, this.pageTurnIncomingDocumentSource, true)
+        }
+        .width('100%')
+        .height('100%')
+        .alignItems(VerticalAlign.Center)
+      } else {
+        this.readerV2PageSurface('incoming_single', this.pageTurnIncomingChapterIndex,
+          this.pageTurnIncomingPageIndex, this.pageTurnIncomingDocumentSource)
+      }
+    } else if (this.isLandscapeDoublePageActive()) {
       Row() {
         Column() {
           this.styledReaderText(text, this.getReaderContentBottomPadding(), this.pageTurnIncomingChapterIndex, 0,
@@ -14799,6 +15151,9 @@ struct ReadBookPage {
         newValue
       );
       this.rememberMergedReaderInlineSourceActionAreas(paragraphs, selectableKey, pageRenderIdentity, newValue);
+      this.calibrateReaderPaginationHeightFromMergedText(paragraphs, chapterIndex, pageStart, documentSource,
+        pageLineHeight, newValue);
+      this.scheduleReaderPaginationBottomFitCalibration(paragraphs, chapterIndex, pageStart, newValue);
     })
     .id(`reader_merged_${pageRenderIdentity}_${this.buildTextSliceKey(this.mergedReaderParagraphText(paragraphs))}`)
   }
@@ -15915,6 +16270,10 @@ struct ReadBookPage {
     const finger = event.fingerList[0];
     const globalX = Number(finger.globalX);
     const globalY = Number(finger.globalY);
+    if (this.shouldUseReaderLayoutV2(this.pagedContentText)) {
+      this.selectReaderV2TextAtGlobalPoint(globalX, globalY);
+      return;
+    }
     const currentIdentity = this.currentReaderPageRenderIdentity(this.pageRenderVersion,
       this.ttsHighlightRenderVersion);
     const continuousNovel = this.isReaderNovelContinuousScrollModeActive();
@@ -16902,6 +17261,452 @@ struct ReadBookPage {
     }
   }
 
+  shouldUseReaderLayoutV2(source: string = this.pagedContentText || this.content): boolean {
+    return !!source && !this.isReaderContinuousScrollSurfaceActive() &&
+      !LocalBookService.hasEpubImageMarkers(source) && !this.isReaderComicModeActive();
+  }
+
+  buildReaderV2Snapshot(): ReaderV2LayoutSnapshot {
+    const input = new ReaderV2LayoutInput();
+    input.viewportWidthPx = this.toMeasurePx(this.getReaderPageColumnWidth());
+    input.viewportHeightPx = this.toMeasurePx(this.getReaderPaginationViewportHeight());
+    // The measured reader viewport already begins below the status bar in normal mode. Immersive mode begins at
+    // screen y=0. Therefore both modes use local y=0 and must not subtract the status inset a second time.
+    input.safeTopPx = 0;
+    input.safeBottomPx = 0;
+    input.extendToStatusBar = this.readerExtendToStatusBar;
+    input.marginLeftPx = this.toMeasurePx(this.getEffectiveReaderMarginLeft());
+    input.marginRightPx = this.toMeasurePx(this.getEffectiveReaderMarginRight());
+    input.marginTopPx = this.toMeasurePx(this.getEffectiveReaderMarginTop());
+    input.marginBottomPx = this.toMeasurePx(this.getEffectiveReaderMarginBottom());
+    // Footer metadata is an overlay. The only non-user bottom reservation is one deterministic 8vp guard.
+    input.bottomGuardPx = this.toMeasurePx(8);
+    input.columnCount = 1;
+    input.columnGapPx = 0;
+    input.fontSizePx = this.toMeasureFontPx(this.readerFontSize);
+    input.titleFontSizePx = this.toMeasureFontPx(this.readerTitleFontSize);
+    input.lineSpacingPx = this.toMeasureNonNegativePx(this.readerLineHeight);
+    input.paragraphSpacingPx = this.toMeasureNonNegativePx(this.readerParagraphSpacing);
+    input.letterSpacingPx = this.toMeasureFontOffsetPx(this.getReaderAdaptiveLetterSpacing());
+    input.bodyFontFamily = this.getBodyReaderFontFamily();
+    input.titleFontFamily = this.getTitleReaderFontFamily();
+    input.textColor = ReaderV2Color.parse(this.getTextColor(), 0xFF202124);
+    input.commentTextColor = ReaderV2Color.parse(
+      this.readerSourceColorSetting('段评字体颜色', this.isReaderThemeDark() ? '#B8D6FF' : '#2A6FCC'),
+      this.isReaderThemeDark() ? 0xFFB8D6FF : 0xFF2A6FCC);
+    input.commentBackgroundColor = ReaderV2Color.parse(
+      this.readerSourceColorSetting('段评填充颜色', this.isReaderThemeDark() ? '#263A5066' : '#142A6FCC'),
+      this.isReaderThemeDark() ? 0x66263A50 : 0x142A6FCC);
+    const commentLarge = this.readerSourceSettingEnabled('气泡增大');
+    input.commentFontSizePx = this.toMeasureFontPx(commentLarge ?
+      Math.max(12, this.readerFontSize - 2) : Math.max(10, this.readerFontSize - 5));
+    input.commentRadiusPx = this.toMeasurePx(this.readerV2CommentRadius());
+    input.commentHitSlopXPx = this.toMeasurePx(8);
+    input.commentHitSlopYPx = this.toMeasurePx(6);
+    input.commentsEnabled = true;
+    input.regexEnabled = this.readerRegexFontEnabled;
+    input.styleIdentity = `${this.readerTypographyCacheIdentity()}_${this.readerParagraphCommentPaginationIdentity()}_` +
+      `${this.getBackgroundColor()}_${this.getTextColor()}`;
+    return ReaderV2LayoutSnapshot.create(input);
+  }
+
+  readerV2CommentRadius(): number {
+    const style = this.readerSourceSettingValue('段评样式') || '0';
+    if (style === '3' || style === '4') return 3;
+    if (style === '0' || style === '2') return 6;
+    return 9;
+  }
+
+  buildReaderV2RegexStyles(document: ReaderV2Document): ReaderV2SpanStyleRange[] {
+    if (!this.readerRegexFontEnabled || !document.displayText) return [];
+    const slices = this.getRegexTextSlices(document.displayText);
+    const result: ReaderV2SpanStyleRange[] = [];
+    for (const slice of slices) {
+      if (!slice.highlighted || slice.end <= slice.start) continue;
+      const resolved = this.resolvedRegexEmphasis(this.getRegexRuleBySlice(slice));
+      const style = new ReaderV2SpanStyleRange(slice.start, slice.end);
+      style.fontSizePx = this.toMeasureFontPx(this.getRegexSliceFontSize(slice));
+      style.fontFamily = this.getRegexSliceFontFamily(slice);
+      style.color = ReaderV2Color.parse(this.getStyledSliceFontColor(slice),
+        ReaderV2Color.parse(this.getTextColor(), 0xFF202124));
+      style.backgroundEnabled = resolved.backgroundEnabled;
+      style.backgroundColor = ReaderV2Color.parse(resolved.backgroundColor, 0x00000000);
+      style.radiusTopLeftPx = this.toMeasurePx(resolved.radiusTopLeft);
+      style.radiusTopRightPx = this.toMeasurePx(resolved.radiusTopRight);
+      style.radiusBottomRightPx = this.toMeasurePx(resolved.radiusBottomRight);
+      style.radiusBottomLeftPx = this.toMeasurePx(resolved.radiusBottomLeft);
+      style.shadowEnabled = resolved.textShadowRadius > 0;
+      style.shadowColor = ReaderV2Color.parse(resolved.textShadowColor, 0x00000000);
+      style.shadowRadiusPx = this.toMeasurePx(Math.max(0, resolved.textShadowRadius));
+      style.shadowOffsetXPx = this.toMeasurePx(Math.max(0, resolved.textShadowOffsetX));
+      style.shadowOffsetYPx = this.toMeasurePx(Math.max(0, resolved.textShadowOffsetY));
+      style.decorationEnabled = resolved.bubbleDecorationEnabled &&
+        ThemeAssetRegistry.hasRegexBubbleCap(resolved.bubbleStyleId);
+      style.decorationStyleId = style.decorationEnabled ? resolved.bubbleStyleId : '';
+      style.decorationSizePx = style.decorationEnabled ?
+        this.toMeasurePx(Math.max(15, Math.min(22, this.getRegexSliceFontSize(slice) * 0.72))) : 0;
+      result.push(style);
+    }
+    return result;
+  }
+
+  buildReaderV2Pagination(source: string, chapterIndex: number): ReaderPaginationResult {
+    const snapshot = this.buildReaderV2Snapshot();
+    const document = ReaderV2DocumentParser.parse(source, chapterIndex, this.getChapterTitle(chapterIndex));
+    const pageSet = ReaderV2Paginator.paginate(document, snapshot, this.buildReaderV2RegexStyles(document));
+    const pages: string[] = [];
+    const starts: number[] = [];
+    const ends: number[] = [];
+    for (let index = 0; index < pageSet.pages.length; index++) {
+      const page = pageSet.pages[index];
+      const start = index === 0 ? 0 : Math.max(starts[index - 1], page.sourceStart);
+      const nextStart = index + 1 < pageSet.pages.length ? pageSet.pages[index + 1].sourceStart : source.length;
+      const end = Math.max(start, Math.min(source.length, nextStart > start ? nextStart : page.sourceEnd));
+      page.sourceStart = start;
+      page.sourceEnd = end;
+      starts.push(start);
+      ends.push(end);
+      pages.push(source.substring(start, end));
+    }
+    if (pages.length === 0 && source) {
+      pages.push(source);
+      starts.push(0);
+      ends.push(source.length);
+    }
+    const key = this.buildReaderPaginationCacheKey(chapterIndex, source);
+    this.readerV2PageSetCache.set(key, pageSet);
+    this.readerV2DocumentCache.set(key, document);
+    while (this.readerV2PageSetCache.size > 8) {
+      const oldest = this.readerV2PageSetCache.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.readerV2PageSetCache.delete(oldest);
+      this.readerV2DocumentCache.delete(oldest);
+    }
+    if (chapterIndex === this.currentChapterIndex) {
+      this.readerV2ActiveDocument = document;
+      this.readerV2ActiveSnapshot = snapshot;
+    }
+    return {
+      source: source,
+      pages: pages,
+      starts: starts,
+      ends: ends,
+      cursor: source.length,
+      complete: true
+    };
+  }
+
+  readerV2PageSet(chapterIndex: number, source: string): ReaderV2PageSet | null {
+    if (!source) return null;
+    return this.readerV2PageSetCache.get(this.buildReaderPaginationCacheKey(chapterIndex, source)) || null;
+  }
+
+  readerV2Document(chapterIndex: number, source: string): ReaderV2Document | null {
+    if (!source) return null;
+    return this.readerV2DocumentCache.get(this.buildReaderPaginationCacheKey(chapterIndex, source)) || null;
+  }
+
+  readerV2Page(chapterIndex: number, pageIndex: number, source: string): ReaderV2PageLayout | null {
+    const pageSet = this.readerV2PageSet(chapterIndex, source);
+    if (!pageSet || pageIndex < 0 || pageIndex >= pageSet.pages.length) return null;
+    return pageSet.pages[pageIndex];
+  }
+
+  readerV2Controller(role: string, chapterIndex: number, pageIndex: number,
+    source: string): ReaderV2PageNodeController {
+    let controller = this.readerV2Controllers.get(role);
+    if (!controller) {
+      controller = new ReaderV2PageNodeController();
+      this.readerV2Controllers.set(role, controller);
+    }
+    const page = this.readerV2Page(chapterIndex, pageIndex, source);
+    controller.updatePage(page);
+    const document = this.readerV2Document(chapterIndex, source);
+    if (page && document && chapterIndex === this.currentChapterIndex &&
+      this.readerV2TtsSourceStart >= 0 && this.readerV2TtsSourceEnd > this.readerV2TtsSourceStart) {
+      controller.updateHighlight(document.displayOffsetForSource(this.readerV2TtsSourceStart),
+        document.displayOffsetForSource(this.readerV2TtsSourceEnd));
+    } else {
+      controller.updateHighlight(-1, -1);
+    }
+    controller.updateSelection(-1, -1);
+    return controller;
+  }
+
+  @Builder
+  readerV2PageSurface(role: string, chapterIndex: number, pageIndex: number, source: string,
+    halfWidth: boolean = false) {
+    Stack({ alignContent: Alignment.TopStart }) {
+      // Paint regex bubble decoration behind the native paragraph. The native paragraph then paints every glyph
+      // exactly once using the same baseline that was used for pagination, selection and TTS highlighting.
+      ForEach(this.readerV2PageFragments(chapterIndex, pageIndex, source),
+        (fragment: ReaderV2PageFragment, fragmentIndex: number) => {
+        ForEach(fragment.regexBubbleSegments, (segment: ReaderV2RegexBubbleSegment, segmentIndex: number) => {
+          this.readerV2RegexBubbleSegment(segment)
+        }, (_segment: ReaderV2RegexBubbleSegment, segmentIndex: number) =>
+          `${role}_${chapterIndex}_${pageIndex}_${fragmentIndex}_regex_bubble_${segmentIndex}`)
+      }, (fragment: ReaderV2PageFragment, fragmentIndex: number) =>
+        `${role}_${chapterIndex}_${pageIndex}_${fragment.blockId}_regex_${fragmentIndex}`)
+      NodeContainer(this.readerV2Controller(role, chapterIndex, pageIndex, source))
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.None)
+      if (role.startsWith('current_')) {
+        this.readerV2NativeSelectionPage(role, chapterIndex, pageIndex, source)
+      }
+    }
+    .width(halfWidth ? '50%' : '100%')
+    .height('100%')
+    .translate({ y: this.readerV2SurfaceTopOffset() })
+    .hitTestBehavior(HitTestMode.None)
+  }
+
+  readerV2PageFragments(chapterIndex: number, pageIndex: number, source: string): ReaderV2PageFragment[] {
+    const page = this.readerV2Page(chapterIndex, pageIndex, source);
+    return page ? page.fragments : [];
+  }
+
+  @Builder
+  readerV2RegexBubbleSegment(segment: ReaderV2RegexBubbleSegment) {
+    Row({ space: 0 }) {
+      if (segment.leading && segment.leadingCapWidthPx > 0.5) {
+        Image(ThemeAssetRegistry.regexBubbleCap(segment.styleId))
+          .width(px2vp(segment.leadingCapWidthPx))
+          .height(px2vp(segment.capSizePx))
+          .objectFit(ImageFit.Contain)
+      }
+      Blank()
+        .layoutWeight(1)
+      if (segment.trailing && segment.trailingCapWidthPx > 0.5) {
+        Image(ThemeAssetRegistry.regexBubbleCap(segment.styleId))
+          .width(px2vp(segment.trailingCapWidthPx))
+          .height(px2vp(segment.capSizePx))
+          .objectFit(ImageFit.Contain)
+          .rotate({ angle: 180 })
+      }
+    }
+    .alignItems(VerticalAlign.Center)
+    .width(px2vp(Math.max(1, segment.rect.width())))
+    .height(px2vp(Math.max(1, segment.rect.height())))
+    .backgroundColor(segment.backgroundColor)
+    .borderRadius({
+      topLeft: px2vp(segment.radiusTopLeftPx),
+      topRight: px2vp(segment.radiusTopRightPx),
+      bottomRight: px2vp(segment.radiusBottomRightPx),
+      bottomLeft: px2vp(segment.radiusBottomLeftPx)
+    })
+    .shadow(this.readerV2RegexBubbleShadow(segment))
+    .position({ x: px2vp(segment.rect.left), y: px2vp(segment.rect.top) })
+    .hitTestBehavior(HitTestMode.None)
+  }
+
+  readerV2RegexBubbleShadow(segment: ReaderV2RegexBubbleSegment): ShadowOptions {
+    if (!segment.shadowEnabled) return { radius: 0, color: Color.Transparent, offsetX: 0, offsetY: 0 };
+    return {
+      radius: px2vp(segment.shadowRadiusPx),
+      color: segment.shadowColor,
+      offsetX: px2vp(segment.shadowOffsetXPx),
+      offsetY: px2vp(segment.shadowOffsetYPx)
+    };
+  }
+
+  readerV2NativeSelectionKey(role: string, chapterIndex: number, pageIndex: number,
+    page: ReaderV2PageLayout): string {
+    return `reader_v2_native_page_${role}_${chapterIndex}_${pageIndex}_${page.identity}`;
+  }
+
+  readerV2SelectionStyledText(page: ReaderV2PageLayout): MutableStyledString {
+    const cacheKey = page.identity;
+    const cached = this.readerV2SelectionStyledTextCache.get(cacheKey);
+    if (cached) return cached;
+    const styles: StyleOptions[] = [];
+    for (let fragmentIndex = 0; fragmentIndex < page.fragments.length; fragmentIndex++) {
+      const fragment = page.fragments[fragmentIndex];
+      let runStart = fragment.selectionPageStart;
+      for (const run of fragment.selectionRuns) {
+        styles.push({
+          start: runStart,
+          length: run.text.length,
+          styledKey: StyledStringKey.FONT,
+          styledValue: new TextStyle({
+            fontSize: LengthMetrics.px(run.fontSizePx),
+            fontFamily: run.fontFamily || this.getBodyReaderFontFamily(),
+            fontWeight: run.bold ? 500 : 400,
+            fontColor: Color.Transparent
+          })
+        });
+        runStart += run.text.length;
+      }
+      const next = fragmentIndex + 1 < page.fragments.length ? page.fragments[fragmentIndex + 1] : null;
+      const paragraphGapPx = next ?
+        Math.max(0, next.paragraphY - fragment.paragraphY - fragment.paragraphHeight) : 0;
+      const paragraphLength = Math.max(0, fragment.selectionPageEnd - fragment.selectionPageStart) +
+        (next ? 1 : 0);
+      if (paragraphLength > 0) {
+        styles.push({
+          start: fragment.selectionPageStart,
+          length: paragraphLength,
+          styledKey: StyledStringKey.PARAGRAPH_STYLE,
+          styledValue: new ParagraphStyle({
+            textAlign: TextAlign.JUSTIFY,
+            wordBreak: WordBreak.BREAK_WORD,
+            paragraphSpacing: LengthMetrics.px(paragraphGapPx)
+          })
+        });
+      }
+    }
+    const styled = new MutableStyledString(page.selectionText, styles);
+    this.readerV2SelectionStyledTextCache.set(cacheKey, styled);
+    while (this.readerV2SelectionStyledTextCache.size > 16) {
+      const oldest = this.readerV2SelectionStyledTextCache.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.readerV2SelectionStyledTextCache.delete(oldest);
+    }
+    return styled;
+  }
+
+  readerV2NativeSelectionController(key: string, page: ReaderV2PageLayout): TextController {
+    const controller = this.readerSelectableTextController(key);
+    try {
+      controller.setStyledString(this.readerV2SelectionStyledText(page));
+    } catch (_) {
+    }
+    return controller;
+  }
+
+  @Builder
+  readerV2NativeSelectionPage(role: string, chapterIndex: number, pageIndex: number, source: string) {
+    if (this.readerV2Page(chapterIndex, pageIndex, source)) {
+      Text('', { controller: this.readerV2NativeSelectionController(
+        this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex,
+          this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout),
+        this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout) })
+    .lineSpacing(LengthMetrics.vp(px2vp((this.readerV2ActiveSnapshot || this.buildReaderV2Snapshot()).lineSpacingPx)),
+      { onlyBetweenLines: true })
+    .halfLeading(false)
+    .includeFontPadding(false)
+    .letterSpacing(px2vp((this.readerV2ActiveSnapshot || this.buildReaderV2Snapshot()).letterSpacingPx))
+    .textAlign(TextAlign.JUSTIFY)
+    .wordBreak(WordBreak.BREAK_WORD)
+    .lineBreakStrategy(LineBreakStrategy.GREEDY)
+    .copyOption(CopyOptions.LocalDevice)
+    .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
+    .width(px2vp((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionWidth))
+    .height(px2vp((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionHeight))
+    .position({
+      x: px2vp((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionX),
+      y: px2vp((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionY)
+    })
+    .hitTestBehavior(HitTestMode.None)
+    .onTextSelectionChange((_selectionStart: number, _selectionEnd: number) => {
+      this.readerTextSelectionUntil = Date.now() + 900;
+      this.suppressReaderTapClick = true;
+      this.readerTouchActive = false;
+      this.readerPanActive = false;
+    })
+      .id(`reader_v2_selection_${role}_${chapterIndex}_${pageIndex}`)
+      .onAppear(() => {
+        const page = this.readerV2Page(chapterIndex, pageIndex, source);
+        if (!page) return;
+        const key = this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex, page);
+        this.readerV2NativeSelectionController(key, page);
+      })
+    }
+  }
+
+  readerV2SurfaceTopOffset(): number {
+    // Simulation and stack paper expand through the status bar so their animation covers the screen. Text
+    // remains below the status bar unless the user explicitly enables正文 extension.
+    return !this.readerExtendToStatusBar &&
+      (this.isStackPageTurnAnimation() || this.isSimulationPageTurnAnimation()) ?
+      this.statusBarSafeHeight : 0;
+  }
+
+  readerV2ActionAtLocalPoint(xVp: number, yVp: number): string {
+    const located = this.readerV2LocatedPagePoint(xVp, yVp);
+    if (located.length < 4) return '';
+    const pageIndex = located[0];
+    const xPx = located[1];
+    const yPx = located[2];
+    const page = this.readerV2Page(this.currentChapterIndex, pageIndex, this.pagedContentText);
+    const snapshot = this.readerV2ActiveSnapshot || this.buildReaderV2Snapshot();
+    const hit: ReaderV2TapResult = ReaderV2GestureRouter.hitTest(page, snapshot, xPx, yPx);
+    return hit.kind === 'action' ? hit.marker : '';
+  }
+
+  readerV2LocatedPagePoint(xVp: number, yVp: number): number[] {
+    let pageIndex = this.currentPageIndex;
+    let localX = xVp;
+    if (this.isLandscapeDoublePageActive()) {
+      const dividerLeft = Math.max(0, (this.pageViewWidth - READER_DOUBLE_PAGE_DIVIDER_WIDTH) / 2);
+      if (xVp > dividerLeft + READER_DOUBLE_PAGE_DIVIDER_WIDTH) {
+        pageIndex++;
+        localX = xVp - dividerLeft - READER_DOUBLE_PAGE_DIVIDER_WIDTH;
+      }
+    }
+    return [pageIndex, this.toMeasurePx(localX), this.toMeasurePx(yVp), 1];
+  }
+
+  selectReaderV2TextAtGlobalPoint(globalX: number, globalY: number): void {
+    const localX = globalX - this.readerTapLayerGlobalX;
+    const localY = globalY - this.readerTapLayerGlobalY -
+      (!this.readerExtendToStatusBar ? this.statusBarSafeHeight : 0);
+    const located = this.readerV2LocatedPagePoint(localX, localY);
+    if (located.length < 4) return;
+    const pageIndex = located[0];
+    const role = this.isLandscapeDoublePageActive() ?
+      (pageIndex === this.currentPageIndex ? 'current_left' : 'current_right') : 'current_single';
+    const page = this.readerV2Page(this.currentChapterIndex, pageIndex, this.pagedContentText);
+    if (!page || !page.selectionText) return;
+    for (const fragment of page.fragments) {
+      if (!fragment.clipRect.contains(located[1], located[2])) continue;
+      try {
+        const key = this.readerV2NativeSelectionKey(role, this.currentChapterIndex, pageIndex, page);
+        const controller = this.readerSelectableTextController(key);
+        const layout = controller.getLayoutManager();
+        let position = layout.getGlyphPositionAtCoordinate(
+          located[1] - page.selectionX, located[2] - page.selectionY).position;
+        const text = page.selectionText;
+        position = Math.max(0, Math.min(text.length - 1, position));
+        while (position < text.length - 1 && /\s/.test(text.charAt(position))) position++;
+        while (position > 0 && /\s/.test(text.charAt(position))) position--;
+        let start = position;
+        let end = Math.min(text.length, position + 1);
+        const wordPattern = /[A-Za-z0-9_]/;
+        if (wordPattern.test(text.charAt(position))) {
+          while (start > 0 && wordPattern.test(text.charAt(start - 1))) start--;
+          while (end < text.length && wordPattern.test(text.charAt(end))) end++;
+        } else {
+          const code = text.charCodeAt(position);
+          if (code >= 0xDC00 && code <= 0xDFFF && start > 0) start--;
+          if (code >= 0xD800 && code <= 0xDBFF && end < text.length) end++;
+        }
+        this.readerTextSelectionUntil = Date.now() + 900;
+        this.suppressReaderTapClick = true;
+        this.readerTouchActive = false;
+        this.readerPanActive = false;
+        controller.setTextSelection(start, end, { menuPolicy: MenuPolicy.SHOW });
+      } catch (error) {
+        console.warn('V2 正文系统选区启动失败:', error);
+      }
+      return;
+    }
+  }
+
+  readerV2TtsSourceOffset(speechOffset: number): number {
+    return this.readerV2ActiveSpeechText ? this.readerV2ActiveSpeechText.sourceOffsetAt(speechOffset) :
+      this.ttsTextStartOffset + speechOffset;
+  }
+
+  refreshReaderV2TtsOverlay(): void {
+    const document = this.readerV2Document(this.currentChapterIndex, this.pagedContentText);
+    const start = document && this.readerV2TtsSourceStart >= 0 ?
+      document.displayOffsetForSource(this.readerV2TtsSourceStart) : -1;
+    const end = document && this.readerV2TtsSourceEnd > this.readerV2TtsSourceStart ?
+      document.displayOffsetForSource(this.readerV2TtsSourceEnd) : -1;
+    for (const controller of this.readerV2Controllers.values()) controller.updateHighlight(start, end);
+  }
+
   async exitReaderPage(): Promise<void> {
     if (this.readerExitProgressSaved) {
       return;
@@ -16956,6 +17761,9 @@ struct ReadBookPage {
     }
     if (LocalBookService.hasEpubImageMarkers(text)) {
       return this.paginateReaderImageSourceText(text, chapterIndex);
+    }
+    if (this.shouldUseReaderLayoutV2(text)) {
+      return this.buildReaderV2Pagination(text, chapterIndex);
     }
 
     const horizontalPadding = this.getEffectiveReaderMarginLeft() + this.getEffectiveReaderMarginRight();
@@ -17059,13 +17867,9 @@ struct ReadBookPage {
   }
 
   buildReaderPaginationCacheKey(chapterIndex: number, source: string): string {
-    // Bump whenever page-boundary semantics change. Reusing offsets produced before action-marker-aware
-    // pagination can make a valid comment marker appear as raw text even though the chapter body is unchanged.
-    const footerHeight = Math.round(this.getReaderPaginationBottomInfoBarHeight() * 100) / 100;
-    const extendedBottomInset = Math.round(this.getReaderExtendedBottomSafeInset() * 100) / 100;
-    return `reader_page_v50_${chapterIndex}_${this.pageViewWidth}_${this.getReaderPaginationViewportHeight()}_` +
+    const footerHeight = Math.round(this.getReaderBottomInfoBarHeight() * 100) / 100;
+    return `reader_page_v76_${chapterIndex}_${this.pageViewWidth}_${this.getReaderPaginationViewportHeight()}_` +
       `${footerHeight}_` +
-      `${extendedBottomInset}_` +
       `${this.readerExtendToStatusBar}_${this.isLandscapeDoublePageActive()}_${this.readerTypographyCacheIdentity()}_` +
       `${this.readerParagraphCommentPaginationIdentity()}_` +
       `${source.length}_${this.hashText(source)}`;
@@ -17123,6 +17927,9 @@ struct ReadBookPage {
   createIncrementalReaderPagination(source: string, chapterIndex: number,
     initialPageCount: number): ReaderPaginationResult {
     const text = source || '';
+    if (text && this.shouldUseReaderLayoutV2(text)) {
+      return this.buildReaderV2Pagination(text, chapterIndex);
+    }
     if (!text || this.pageViewWidth <= 0 || this.pageViewHeight <= 0) {
       const completeResult = this.paginateReaderSourceText(text, chapterIndex);
       completeResult.cursor = text.length;
@@ -17320,6 +18127,9 @@ struct ReadBookPage {
   async restorePersistedReaderPagination(content: string, chapterIndex: number): Promise<boolean> {
     if (!content || !this.bookUrl || !this.hasPagedReaderArea()) return false;
     const source = this.buildPagedSourceText(chapterIndex, content);
+    // V2 PageLayout contains retained Paragraph geometry and hit-test indices that cannot be reconstructed from
+    // the legacy offsets-only database record. Build it once and then keep both boundaries and geometry in memory.
+    if (this.shouldUseReaderLayoutV2(source)) return false;
     const key = this.buildReaderPaginationCacheKey(chapterIndex, source);
     const record = await AppDatabase.getInstance().getReaderPaginationCache(this.bookUrl, chapterIndex, key);
     if (!record || record.starts.length !== record.ends.length) return false;

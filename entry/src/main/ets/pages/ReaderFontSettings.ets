@@ -441,7 +441,7 @@ struct ReaderFontSettingsPage {
     const item = new ReaderFontItem();
     item.familyName = font.familyName || ReaderFontHelper.normalizeFontFamily(font.filePath);
     item.filePath = font.filePath;
-    item.sourceName = font.sourceName || ReaderFontHelper.fileNameFromPath(font.filePath);
+    item.sourceName = ReaderFontHelper.resolveDisplayName(font.sourceName, font.filePath);
     const result = ReaderFontHelper.registerFont(this.getUIContext(), item);
     return result.registered ? result.familyName : item.familyName;
   }

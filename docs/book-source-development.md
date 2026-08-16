@@ -5,8 +5,8 @@
 | 项目 | 信息 |
 | --- | --- |
 | 适用项目 | `legado-harmony` |
-| 适用版本 | `3.6.818`（以 `AppScope/app.json5` 为准） |
-| 最后核对 | 2026-08-11 |
+| 适用版本 | `3.7.820`（以 `AppScope/app.json5` 为准） |
+| 最后核对 | 2026-08-16 |
 | 文档性质 | 当前实现参考，不是 Android「阅读」全部规则的等价清单 |
 
 > [!IMPORTANT]
@@ -24,6 +24,18 @@
 - **已支持/已使用**：当前通用执行链已经读取并产生实际行为。
 - **可导入/可编辑**：字段能保存和导出，但不代表通用执行链会消费。
 - **部分兼容**：仅覆盖文中列出的语法、阶段或受控桥接，不应推断为完整 Android、Java、WebView 或浏览器环境。
+
+当前规则执行由几类职责不同的组件共同完成：
+
+| 组件 | 当前状态 | 负责范围 |
+| --- | --- | --- |
+| 原生选择器与规则解析器 | 正式执行 | JSONPath、CSS、基础 XPath、模板、正则、URL 和字段提取。 |
+| 轻量 JavaScript 兼容引擎 | 正式执行且结果有效 | 常见表达式、Android/Java 别名及已映射的 `java/source/book/cache/cookie` 主机函数。 |
+| 分阶段 ArkWeb | 按能力路由正式执行 | 搜索、发现、详情、目录、正文和登录中的复杂 ECMAScript，以及受控异步主机桥。 |
+| 隐藏 ArkWeb 请求传输 | 仅在 URL 显式配置时执行 | `webView: true` 的 HTTP(S) GET/POST 页面加载、DOM 返回及 `webJs`。 |
+| 原生 QuickJS | `SHADOW` 影子校验 | 启动自检通过后，对无副作用短纯表达式做限时比对；当前结果不替代轻量引擎结果。 |
+
+因此，“已经接入 QuickJS”不表示所有书源 JavaScript 都由 QuickJS 执行，也不表示选择器或 WebView 规则需要改写成 JavaScript。网络、Cookie、持久化、DOM 和应用对象仍必须经过对应的受控主机桥。
 
 ## 快速入门
 
@@ -277,6 +289,22 @@
 
 数组中没有 `url` 的条目会成为后续条目的分组标题。指向“我的书架”、用户页或登录页的个人入口会被过滤。
 
+这类分组会按两级结构显示：无 URL 的标题作为一级“源站/平台”，其后的有 URL 条目作为该站点内的二级分类。一级标题发生变化后，后续分类归入新的分组。例如：
+
+```json
+[
+  { "title": "示例源站 A", "url": "" },
+  { "title": "热门", "url": "/a/hot?page={{page}}" },
+  { "title": "完结", "url": "/a/finished?page={{page}}" },
+  { "title": "示例源站 B", "url": "" },
+  { "title": "新书", "url": "/b/new?page={{page}}" }
+]
+```
+
+动态发现脚本返回的 `select` 控件也可映射为原生筛选。控件标题需包含“模式、类型、频道、平台、来源、源站”之一，候选值来自 `chars`；使用 `show(值, '变量名')` 写入书源变量后，应用会重新执行该源的发现规则。线路选择不按源站层级处理。复杂脚本仍需逐源验证，不应只依赖标题推断。
+
+发现页会一次查询已启用书源的轻量元数据，以便排序、搜索和恢复选择；下拉菜单使用 `LazyForEach`，只为可见项创建 ArkUI 组件。这里的“按需加载”是界面虚拟化，不是把书源数据库拆成网络分页。
+
 #### URL 选项对象
 
 在 URL 后追加逗号和对象可配置请求：
@@ -295,10 +323,14 @@
 | `headers` | 本次请求头；同名项覆盖书源全局请求头。 |
 | `retry` | 响应不可用时的额外重试次数。 |
 | `type` | 会被解析并保存到请求配置，当前 HTTP 执行链没有额外分支行为。 |
-| `webView` | 为 `true` 时，GET/POST 请求交给隐藏 ArkWeb，沿用书源 URL、Cookie 与 UA（GET 也传入额外 Header），等待页面脚本渲染稳定后返回 DOM。 |
+| `webView` | 为 `true` 时，HTTP(S) GET/POST 请求交给隐藏 ArkWeb，沿用书源 URL、Cookie 与 UA（GET 也传入可用的额外 Header），等待页面脚本渲染稳定后返回 DOM。 |
 | `webJs` | 与 `webView: true` 配合，在已加载页面上下文执行；有效返回值作为响应正文，否则使用页面 DOM。 |
 
 选项对象支持单引号、无引号键和尾逗号等宽松写法，但推荐使用标准 JSON，减少转义差异。
+
+`webView` 请求在同一个隐藏 ArkWeb 中串行执行，默认约 20 秒超时（实现会把单次超时限制在 3～60 秒），最多排队 32 个任务。页面需达到 `document.readyState === 'complete'` 且 DOM 连续稳定后才返回。隐藏 ArkWeb 必须已随当前应用页面挂载；若提示“抓取环境未挂载”，重新进入搜索、发现或相关页面后重试。
+
+该选项只负责执行书源明确给出的页面请求，不会自动点击验证码、替用户选择不受信任证书、伪造浏览器指纹或保证通过所有反自动化挑战。需要用户交互的登录/验证仍应使用验证页或 `startBrowserAwait`，并遵守目标服务的授权与访问规则。
 
 POST 还有一种简写：地址以 `@` 开头，`?` 后内容作为 body。
 
@@ -530,12 +562,17 @@ $.status@js:result.replace(/1/g, "连载")
 js:表达式
 ```
 
-当前不是“只有一个受限表达式解释器”，而是两层执行体系：
+当前不是“所有代码统一交给一个 JavaScript 引擎”，而是按职责分层：
 
-1. **轻量规则引擎**：优先处理模板、简单表达式和常见 Android/Java 别名，启动成本低；
-2. **分阶段 ArkWeb 引擎**：能力路由器发现箭头函数、模板字符串、`try`、数组高阶函数、`Set/Map`、解构或较大脚本时，仅将相应阶段交给 ArkWeb 的真实 JavaScript 引擎。
+1. **轻量规则/JavaScript 兼容引擎**：正式处理模板、简单表达式和常见 Android/Java 别名，当前返回值直接参与书源执行；
+2. **分阶段 ArkWeb 引擎**：能力路由器发现箭头函数、模板字符串、`try`、数组高阶函数、`Set/Map`、解构或较大脚本时，仅将相应阶段交给 ArkWeb 的真实 JavaScript 引擎；
+3. **QuickJS 影子运行时**：应用启动后先做原生自检，再异步抽样执行可证明无主机副作用的短纯表达式，与轻量引擎结果比较。默认 `SHADOW` 模式下，QuickJS 结果只用于兼容性诊断，不改变书源输出。
 
 搜索、发现、详情、目录和正文分别路由，启用某一阶段的 ArkWeb 不会把所有书源或所有阶段一起改道。无副作用的失败可以回退轻量引擎；含网络、Cookie 或持久化写入的动作会避免双重执行。`jsLib` 中声明的顶层函数会暴露给当前阶段规则，并在下一书源执行前清理，防止跨源污染。
+
+QuickJS 影子候选当前限制为最多 4096 字符、最多 64 个绑定和 128 KiB 绑定数据，并使用 16 MiB 内存、512 KiB 栈及 10～250 ms 的受限执行。包含赋值、语句块、循环、函数/类声明、`new`、`Date`、随机数，或 `java/source/book/chapter/cookie/fetch/webView` 等主机对象的表达式不会进入 QuickJS。每个进程只抽样有限数量与有限重复次数，既有轻量引擎结果始终是当前权威结果。
+
+QuickJS 不能直接替代 JSONPath/CSS/XPath：选择器需要解析 HTML/JSON 节点和维护“当前元素”上下文，而 QuickJS 影子运行时故意不开放 DOM、网络、Cookie、文件或平台对象。需要这些能力时，应继续使用原生选择器、受控主机函数或分阶段 ArkWeb，而不是把规则整体转写为 JavaScript。
 
 轻量层和桥接层合计覆盖的常用能力包括：
 
@@ -592,7 +629,7 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 | `kind` | 否 | 单个书籍元素 | 分类/标签。 |
 | `lastChapter` | 否 | 单个书籍元素 | 最新章节标题。 |
 | `bookUrl` | 是 | 单个书籍元素 | 详情页；空地址的结果会被丢弃。 |
-| `wordCount` | 否 | 单个书籍元素 | 字段可导入，但当前常规搜索链没有赋值；可在详情规则补全。 |
+| `wordCount` | 否 | 单个书籍元素 | 搜索结果字数；常规搜索链会解析并写入结果，精简校验模式会省略该展示字段。 |
 
 每个源常规搜索最多保留 50 条有效结果，总搜索最多保留 1000 条，并按“来源 + URL”去重。搜索并发数最大为 12；后台结果每约 500 ms 合并一次，避免每条回调都打断列表手势，因此搜索未结束时仍可滑动已出现的结果。搜索会清理超长或异常字段；书名约 120 字符、作者约 120、简介约 1200、URL 约 2048 字符。
 
@@ -602,7 +639,7 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 
 至少需要：`exploreUrl`、`bookList`、`name`、`bookUrl`。字段语义与搜索相同。发现链会读取 `wordCount`，并按“来源 + 详情 URL”去重。
 
-当 `ruleExplore` 为 `null`、空数组、空对象或缺少必要字段时，会自动回退到 `ruleSearch`。`exploreUrl` 以 `@js:` / `js:` 开头时会交给受限脚本引擎执行，结果应为分类对象数组的 JSON 字符串；脚本运行具有操作次数、数组大小、代码长度和输出长度限制。
+当 `ruleExplore` 为 `null`、空数组、空对象或缺少必要字段时，会自动回退到 `ruleSearch`。`exploreUrl` 以 `@js:` / `js:` 开头时会按能力路由执行，结果应为分类对象数组的 JSON 字符串；简单表达式可由轻量引擎处理，完整脚本或带 `jsLib` 函数的模板可进入分阶段 ArkWeb。两条路径都有代码、输出、操作或响应大小限制。
 
 ### 详情规则 `ruleBookInfo`
 
@@ -630,9 +667,9 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 | `chapterList` | 是 | 在完整目录响应中选出章节元素。 |
 | `chapterName` | 建议 | 章节标题；空时自动使用“第 N 章”。 |
 | `chapterUrl` | 是 | 正文请求地址；空地址的章节会被丢弃。 |
-| `nextTocUrl` | 否 | 当前目录页的下一页地址；逐页请求、按章节 URL 去重，遇到空地址、重复页或 100 页上限时停止。 |
-| `isVip` | 否 | 只有解析结果严格等于字符串 `true` 时标记 VIP。 |
-| `isPay` | 否 | 可导入和编辑；普通目录链目前不写入 `BookChapter.isPay`，专用/编码协议可直接返回付费状态。 |
+| `nextTocUrl` | 否 | 当前目录页的下一页地址；逐页请求、按章节 URL 去重，遇到空地址、重复页或 1000 页保护上限时停止。全链路校验可另传章节抽样上限提前停止。 |
+| `isVip` | 否 | `true`、`1`、`yes`、`vip`、`pay`、`paid`、`付费`、`收费` 会标记为 VIP。 |
+| `isPay` | 否 | 普通目录链会按与 `isVip` 相同的布尔规则写入 `BookChapter.isPay`；直接返回完整章节数组的 ArkWeb 脚本仍需实机验证付费元数据。 |
 | `updateTime` | 否 | 通用目录和 ArkWeb 目录结果会解析，并保存到章节变量 `updateTime`。 |
 | `chapterListAddition` | 否 | 模型字段；当前导入映射和通用目录链未使用。 |
 
@@ -794,11 +831,13 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 `startBrowserAwait` 会暂停当前脚本，打开网页，用户点击完成后将页面返回值交回同一动作继续执行。浏览器关闭、取消、网络失败或脚本超时会结束执行并恢复按钮状态，不应永久停在“执行中”。用于“书源更新”的按钮可以打开源提供的更新页面；页面是否真正更新配置取决于该脚本是否返回并保存了新数据，不能仅凭打开网页判定更新成功。
 
-请求规则中的 `<js>startBrowserAwait(...)`、`getVerificationCode(...)` 等提示也可触发验证逻辑，但不是完整 Android WebView/Activity API。需要账号口令签名、动态参数或复杂验证码的网站，必须实机确认；部分已知站点在项目代码中有专用适配，不能据此推断所有同类源都通用支持。
+请求规则中的 `<js>startBrowserAwait(...)`、`getVerificationCode(...)` 等提示也可触发验证逻辑，但不是完整 Android WebView/Activity API。需要账号口令签名、动态参数或复杂验证码的网站，必须实机确认。应用不按站点名称提供私有接口适配，全部请求参数和解析逻辑应来自书源本身。
 
 ### 有声书源与音色
 
-有声书源可通过 `bookSourceType: 1`、书籍 `type` 的音频位或编码协议元数据标记。正文规则应最终返回一个可播放的 HTTP/HTTPS 音频地址，或由已适配协议返回包含音频地址的 JSON。播放页支持：
+有声书源可通过 `bookSourceType: 1`、书籍 `type` 的音频位，或书源明确提供的类型/标签元数据标记。正文规则应最终返回一个可播放的 HTTP/HTTPS 音频地址。若 `content` 为空或只是基础地址规则，目录中的 `chapterUrl` 可直接作为播放地址；签名流不要求具有音频文件扩展名。
+
+当目录的 `chapterUrl` 规则显式带有 `webView: true` 且直接地址不可播放时，应用可在隔离 ArkWeb 中加载书源给出的章节页，并从 `<audio>`、`<source>`、`<video>` 或页面资源中提取候选媒体 URL；失败后仍回退普通正文规则。该行为不包含站点专用接口或解密。播放页支持：
 
 - 播放/暂停、进度、倍速、上一章/下一章和目录跳转；
 - 定时停止；
@@ -888,14 +927,19 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 ### 批量书源校验状态
 
-书源管理中的校验不是简单的“成功/失败”二值：
+书源管理提供两种校验模式：
+
+- **搜索能力**：使用固定测试关键字检查搜索请求和最小结果字段，速度较快；只有该模式允许对“明确失败”项自动禁用或删除。
+- **发现/阅读链路**：逐源执行真实的“发现分类 → 最多前 8 个分类 → 最多 4 本候选书 → 详情 → 目录抽样 → 最多 3 个非 VIP/非付费章节”。目录最多抽样 32 章，并根据书籍类型确认正文非空、漫画至少有图片或有声书得到 HTTP(S) 播放地址。该模式只报告，不自动处理书源。
+
+校验不是简单的“成功/失败”二值：
 
 | 状态 | 含义 |
 | --- | --- |
-| 通过 | 搜索请求成功并解析出至少一条有效书籍。 |
+| 通过 | 搜索模式解析出至少一条有效书籍；或发现/阅读模式完整通过发现、详情、目录和内容样本。 |
 | 失败 | 缺少必要规则、明确的 4xx 请求错误、规则/选择器语法错误或预检判定不安全。 |
-| 无结果 | 请求和规则执行完成，但测试关键字没有有效书籍。 |
-| 需要验证 | HTTP 401/403，或响应被识别为登录/验证码页面。 |
+| 无结果 | 请求和规则执行完成，但测试关键字、发现分类或候选样本没有有效结果。 |
+| 需要验证 | HTTP 401/403，响应被识别为登录/验证码页面，或全链路样本只有 VIP/付费章节而无法安全测试。 |
 | 暂时异常 | 超时、取消、429、5xx、空响应、响应过大或其他暂时网络问题。 |
 
 校验模式使用更保守的限制：并发 1、单响应 512 KiB、单条可执行规则 32 KiB、书源脚本配置 512 KiB，并拒绝高风险嵌套正则。日常搜索允许更大的响应和聚合脚本，因此“校验失败：配置过大”不必然等于日常链路完全不能运行，但仍应缩小测试脚本或按阶段验证。401/403 应归类为“需要验证”，不应批量禁用或删除。
@@ -907,13 +951,15 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 “无结果”“需要验证”和“暂时异常”不会自动进入失败项，避免因为测试关键字、登录状态或临时网络问题误删书源。校验进度只展示已校验数量、状态和自动处理结果，不以“命中 X 本”作为用户可见结论。
 
+在 API 18 及以上设备上，若普通 HTTP 客户端明确报告证书校验错误，结果页可由用户选择仅信任报错的精确主机并重试。该例外只保存在本机，不扩展到子域、同级域名或重定向主机，并可从书源操作菜单撤销。跳过证书校验会增加连接被冒充或监听的风险，不能作为书源的默认配置，也不适用于隐藏 ArkWeb 的浏览器证书页面。
+
 ### 编写质量建议
 
 - 只使用目标站授权或允许访问的内容，并遵守服务条款、版权和访问频率限制。
 - `bookSourceUrl` 使用稳定的站点根地址，不要把搜索参数当作唯一键。
 - 规则尽量短、确定；优先明确 ID/class/JSON 字段，少用跨整页的贪婪正则。
 - 列表规则只负责选元素，字段规则只负责取字段，净化规则只负责清理文本。
-- 必填字段不要依赖兜底逻辑；应用中的站点特例主要用于兼容已有源，不是稳定 API。
+- 必填字段不要依赖兜底逻辑；应用不会按站点名称补造接口、参数或解密，通用容错也不是书源 API。
 - 请求头只保留必要项。伪造过多浏览器安全头可能比缺省更容易失效。
 - `replaceRegex` 从小到大增加，并用第一章、VIP 章、最后一章验证，避免误删全文。
 - 对 JSON 中的反斜杠进行双重转义。例如正则 `\s+` 在 JSON 字符串中写作 `"\\s+"`。
@@ -926,9 +972,10 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 | 状态 | 字段/能力 |
 | --- | --- |
-| 通用链已实际使用 | 搜索/发现的列表、书名、作者、封面、简介、分类、最新章节、详情 URL；`jsLib` URL 构建和持久化源变量；分阶段 ArkWeb；动态登录输入/开关/选择/按钮、同站点 Cookie、书源内加密、浏览器等待；详情 `init`、书籍字段、目录 URL；目录列表、章节名、章节 URL、下一页、VIP、更新时间；正文内容、图片、图片请求头、书源规则内图片解码、漫画模式、下一页、净化正则和 JS；普通书/漫画/有声书类型；书源请求限流。 |
+| 通用链已实际使用 | 搜索/发现的列表、书名、作者、封面、简介、分类、最新章节、字数、详情 URL；发现两级分组和动态原生筛选；`jsLib` URL 构建和持久化源变量；分阶段 ArkWeb；显式 `webView`/`webJs` 请求；动态登录输入/开关/选择/按钮、同站点 Cookie、书源内加密、浏览器等待；详情 `init`、书籍字段、目录 URL；目录列表、章节名、章节 URL、下一页、VIP、付费状态、更新时间；正文内容、图片、图片请求头、书源规则内图片解码、漫画模式、下一页、净化正则和 JS；普通书/漫画/有声书类型；书源请求限流。 |
+| 已接入但不改变正式结果 | QuickJS 启动自检和纯表达式 `SHADOW` 比对；当前不执行主机函数，也不替代轻量引擎、选择器或 ArkWeb。 |
 | 编码数据已实际使用 | 标准 `data:` 文本、Base64 负载，以及带明确 HTTP(S) URL 的通用 `type: "request"` 请求描述。应用不提供平台协议、候选后端或站点专用转换。 |
-| 可导入/编辑，但通用链目前未消费 | 详情 `updateTime`；目录 `isPay`；正文 `title`。 |
+| 可导入/编辑，但通用链目前未消费 | 详情 `updateTime`；正文 `title`。 |
 | 模型或紧凑格式存在，但通用导入/UI/执行不完整 | `chapterListAddition`、`payAction`、`bookListRule` 等。 |
 | 不应假定与 Android 版等价 | 任意 Java/Android 类导入、全部 `java.*` API、完整 XPath/CSS、付费购买动作、交互式验证码自动处理及非白名单二进制解码流程。 |
 
@@ -1051,8 +1098,10 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 - 通用规则解析：`entry/src/main/ets/core/rule/AnalyzeRule.ts`
 - JSONPath：`entry/src/main/ets/core/rule/JsonPathEvaluator.ts`
 - JS 兼容层：`entry/src/main/ets/core/rule/JsRuntime.ts`
+- QuickJS 影子运行时：`entry/src/main/ets/core/script/QuickJsScriptRuntime.ts`、`QuickJsRuntimeStatus.ts`、`QuickJsShadowExecutor.ets`
 - 分阶段运行路由：`entry/src/main/ets/core/book/BookSourceRuntimeRouter.ts`
 - 搜索/发现/详情/目录/正文 ArkWeb：`entry/src/main/ets/core/book/BookSourceStageWebRuntime.ts`
+- 显式 `webView` 请求：`entry/src/main/ets/core/book/WebBookFetchRuntime.ts`
 - 阶段规则识别：`entry/src/main/ets/core/book/BookSourceStageRuleSupport.ts`
 - 登录面板 ArkWeb：`entry/src/main/ets/core/book/BookSourceLoginWebRuntime.ts`
 - 搜索流程：`entry/src/main/ets/core/book/SearchCoordinator.ts`
@@ -1068,4 +1117,6 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 - 书源管理页及导入、校验、批量操作：`entry/src/main/ets/pages/BookSource.ets`
 - 校验状态和后台校验任务：`BookSource.ets` 中的 `startCheckSources`、`bookSourceCheckProgressText`、`deleteFailedCheckedSources`
+- 发现/阅读全链路校验：`entry/src/main/ets/core/book/ExploreReadingValidator.ts`
+- 用户控制的精确主机证书例外：`entry/src/main/ets/core/http/TlsTrustStore.ts`
 - 规则执行快照与阅读交互桥接：`entry/src/main/ets/core/book/BookSourceRuntimeSnapshot.ts`、`entry/src/main/ets/core/book/ReaderInteractionProvider.ts`

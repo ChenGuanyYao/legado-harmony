@@ -56,7 +56,7 @@ export class ReaderFontBootstrap {
     const fontItem = new ReaderFontItem();
     fontItem.familyName = settings.fontFamily || ReaderFontHelper.normalizeFontFamily(settings.fontFilePath);
     fontItem.filePath = settings.fontFilePath;
-    fontItem.sourceName = settings.fontSourceName || ReaderFontHelper.fileNameFromPath(settings.fontFilePath);
+    fontItem.sourceName = ReaderFontHelper.resolveDisplayName(settings.fontSourceName, settings.fontFilePath);
 
     const result = ReaderFontHelper.registerFont(uiContext, fontItem);
     if (!result.registered) {

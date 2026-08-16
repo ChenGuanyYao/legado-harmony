@@ -5,7 +5,7 @@
 | 项目 | 信息 |
 | --- | --- |
 | 应用包名 | `io.legado.read` |
-| 当前版本 | `3.6.818`（以 `AppScope/app.json5` 为准） |
+| 当前版本 | `3.7.820`（以 `AppScope/app.json5` 为准） |
 | 支持设备 | `phone`、`tablet`、`2in1` |
 | 最低 API | HarmonyOS API 12 |
 | 目标 API | HarmonyOS API 23 |
@@ -38,24 +38,27 @@
 
 - 对已启用书源执行并发搜索，增量展示结果，并支持停止搜索、精准搜索、作者匹配、分组筛选和单书源搜索。
 - 搜索链路包含异常地址过滤、模板残留清理、结果隔离与网页验证识别。
-- 发现页读取书源的站点、分类和榜单入口，支持书源切换、刷新、缓存与排序。
+- 发现页读取书源的站点、分类和榜单入口，支持“源站/平台 → 站内分类”的原生分层筛选、书源切换、刷新、缓存与排序。
+- 发现书源下拉列表按书源分组筛选，并通过 `LazyForEach` 按需创建可见列表项，避免大量书源同时创建组件。
 - 搜索和发现设置集中管理，并发数、展示项和书源启用状态可独立配置。
 
 ### 书源管理
 
-- 支持从 URL、剪贴板、本地 JSON 或文本文件导入书源。
+- 支持从 URL、剪贴板、本地 JSON 或文本文件导入书源，也可在系统“打开方式”中选择本应用处理 JSON 书源文件。
 - URL 导入可依次尝试应用 HTTP、明文 HTTP TCP、ArkWeb 下载和系统下载服务，并输出可读错误。
 - 导入时保留标准字段、原始 JSON、未知字段、登录配置与运行参数；导出时尽量保持往返完整性。
 - 支持编辑、分组、锁定、导出、删除，以及批量启用/禁用搜索与发现。
 - 支持校验单个或所选书源，并区分“通过、失败、无结果、需要验证、暂时异常”。明确失败项可批量禁用或删除。
+- 校验提供“搜索能力”和“发现/阅读链路”两种模式；后者使用与界面相同的发现、详情、目录和首个非付费章节链路，并分别验证文本、漫画图片或音频结果。
 - 校验进度聚焦已完成数量和状态，不使用“命中 X 本”作为规则有效性的判断。
+- API 18 及以上设备可在证书校验明确失败后，由用户按精确主机选择是否信任并重试；信任仅保存在本机、可撤销，默认仍执行严格证书校验。
 - 支持动态 `loginUi`、登录检测 JS、网页验证、同站点 Cookie 同步和登录状态持久化。
 
 ### 阅读
 
-- 支持书籍详情、章节目录、正文解析与本地章节缓存。
+- 支持书籍详情、分页章节目录、正文解析与本地章节缓存；`nextTocUrl` 具备重复页去重和 1000 页保护上限，可覆盖常见超长篇目录。
 - 支持字号、行距、段落间距、四周边距、自定义字体、背景、深色模式和沉浸式布局。
-- 支持横向滑动、仿真翻页、滚动阅读、横屏双页，以及章节间预览和预缓存。
+- 支持横向滑动、仿真翻页、滚动阅读、横屏双页，以及章节间预览和预缓存；双页以阅读区域实际宽度大于高度为启用条件，不只依赖设备类型，因此平板竖屏不会误启用。
 - 支持正文扩展至状态栏、书签、正文替换规则、章节评论和书源显式提供的网页交互标记。
 - 支持漫画连续全宽阅读，以及携带书源请求头、Cookie 或解码规则的远程图片。
 - 网页动作、图片和媒体标记不会混入朗读文本。
@@ -63,7 +66,7 @@
 ### 朗读与有声书
 
 - 支持系统 TTS、自定义 HTTP TTS、语速、定时停止、章节切换、后台朗读和系统媒体控制。
-- 可导入原版 `HttpTTS` JSON，并配置请求 URL、请求头、Content-Type、并发数、登录地址、脚本库和 Cookie jar。
+- 可导入原版 `HttpTTS` JSON，也可在应用内手动新建、编辑和排序自定义音色，并配置请求 URL、请求头、Content-Type、并发数、登录地址、脚本库和 Cookie jar。
 - 系统 TTS 与 HTTP TTS 优先通过 PCM 和 `AudioRenderer` 输出，并结合音频预取与播放状态保护提升连续性。
 - 有声书使用独立远程播放器，支持进度、倍速、目录跳转、定时停止和音色代码。
 - 有声书可在返回书架或进入后台后继续播放，并复用全局播放胶囊与 AVSession。锁屏媒体卡片由系统策略决定，应用无法强制使用音乐播放器样式。
@@ -72,7 +75,7 @@
 
 - 支持应用数据备份/恢复、WebDAV 和账号云同步。
 - 书源、书架、章节进度、阅读设置、主题、书架展示配置和 TTS 配置按各自策略保存。
-- 支持浅色/深色模式、主题包、按钮色、强调色、自定义字体、阅读背景、封面图库和应用图标。
+- 支持浅色/深色模式、主题包、按钮色、强调色、自定义字体、阅读背景、封面图库和应用图标；导入字体会保留或恢复可读的来源名称。
 - 正则字体支持文字强调、高亮色块、胶囊、纸笺、霓虹及主题专属样式。
 
 ## 书源规则兼容
@@ -80,8 +83,10 @@
 当前重点支持以下规则能力：
 
 - HTTP GET/POST、请求头、请求体、URL 模板、Cookie 注入和 `Set-Cookie` 保存。
+- URL 请求选项中的 `webView: true` 会显式改走隐藏 ArkWeb，等待页面稳定后返回 DOM；`webJs` 可在该页面上下文中生成最终响应。
 - JSONPath、CSS、基础 XPath、旧式链式规则、属性提取、规则分段和正则后处理。
-- `<js>` / `@js:` 混合规则；复杂 JavaScript 可按搜索、发现、详情、目录和正文阶段路由到受控 ArkWeb 环境。
+- `<js>` / `@js:` 混合规则；轻量兼容引擎负责常用表达式与主机函数，复杂 JavaScript 可按搜索、发现、详情、目录和正文阶段路由到受控 ArkWeb 环境。
+- 原生 QuickJS 已接入启动自检和纯表达式影子比对；当前默认 `SHADOW` 模式下仍以既有兼容引擎结果为准，不会重复执行网络、Cookie 或持久化动作。
 - 常见 `java.xxx`、`source.xxx`、`book.xxx`、`cache.xxx` 和 `cookie.xxx` 主机函数。
 - Base64、Hex、摘要、URL/HTML 编解码、对称加密和标准 `data:` 数据。
 - 动态登录面板、`startBrowserAwait`、登录页脚本、验证码跳转和跨地址 Cookie 同步。
@@ -119,6 +124,8 @@ legado-harmony/
 - `WebBookService` / `ReadBookEngine`：详情、目录、正文、缓存和阅读状态。
 - `AnalyzeUrl` / `AnalyzeRule`：请求描述、选择器、正则与脚本规则解析。
 - `BookSourceRuntimeRouter` / `BookSourceStageWebRuntime`：复杂 JavaScript 的分阶段运行与受控桥接。
+- `QuickJsScriptRuntime` / `QuickJsRuntimeStatus`：QuickJS 自检、资源限制和纯表达式影子比对。
+- `WebBookFetchRuntime`：处理书源显式声明的 `webView: true` / `webJs` 页面抓取。
 - `BookSourceLoginWebRuntime`：登录面板、WebView、Cookie、加密和状态持久化。
 - `SystemTtsReader` / `HttpTtsReader` / `RemoteAudioPlayback`：系统朗读、HTTP TTS 与有声书播放。
 - `AppDatabase`：书源、书籍、章节、搜索历史、分页缓存和本地配置。
@@ -138,8 +145,8 @@ legado-harmony/
 | --- | --- |
 | 主模块 | `entry` |
 | 入口 Ability | `EntryAbility` |
-| `versionName` | `3.6.818` |
-| `versionCode` / `buildVersion` | `360818` |
+| `versionName` | `3.7.820` |
+| `versionCode` / `buildVersion` | `370820` |
 | `minAPIVersion` | `12` |
 | `targetAPIVersion` | `23` |
 | 权限 | `INTERNET`、`KEEP_BACKGROUND_RUNNING` |
@@ -207,6 +214,7 @@ node scripts/theme-framework-check.mjs
 | `[InteractionPostProcessor]` | 评论、正文动作和媒体标记 |
 | `[TTS]` / `[HttpTtsReader]` | 系统 TTS 与 HTTP TTS |
 | `[RemoteAudioPlayback]` | 有声书请求、预取和播放状态 |
+| `[QuickJS]` / `[QuickJSShadow]` | 原生运行时自检及纯表达式影子比对 |
 
 建议按“搜索结果 → 详情地址 → 详情解析 → 目录 → 正文 → 发现”的顺序排查。遇到登录或验证码响应时，先在验证页完成登录并同步 Cookie，再重试相应链路。
 
@@ -214,7 +222,8 @@ node scripts/theme-framework-check.mjs
 
 - 书源兼容层不是完整的 Android Java/WebView 环境。
 - 分阶段 ArkWeb 只开放受控桥接；`fetch`、`XMLHttpRequest`、`WebSocket`、任意 Java 导入、文件、进程、反射和系统组件不会自动可用。
-- 非登录阶段的 `webView` / `webJs` 选项不会自动把普通请求切换为完整页面渲染抓取。
+- QuickJS 当前处于影子校验阶段，只接受无主机副作用的短纯表达式；选择器、网络、Cookie、书源变量和复杂阶段脚本仍由现有解析器或 ArkWeb 执行。
+- `webView: true` 仅支持书源明确给出的 HTTP(S) GET/POST 地址，并在已挂载隐藏 ArkWeb 的页面中串行执行；它不承诺自动通过交互式验证码、证书错误、浏览器指纹或所有反自动化挑战。
 - 依赖浏览器指纹、长期动态渲染、强反爬、付费权限或私有登录流程的站点不保证支持。
 - 私有评论、音频或聚合协议仍受服务授权、会话 Token 和接口变更影响。
 - 自定义 HTTP TTS 依赖第三方音源的授权方式、Cookie 和返回格式，无法保证全部兼容。
@@ -241,3 +250,9 @@ node scripts/theme-framework-check.mjs
 ## 许可证
 
 本项目采用 [GPL-3.0](LICENSE) 许可证。
+
+- 项目名称：开源轻页 / legado-harmony
+- 版权所有：Copyright © 2026 legado-harmony contributors
+- 源码地址：https://github.com/wip3l/legado-harmony
+
+项目包含的 QuickJS、ohos_quickjs 及 OpenHarmony/Huawei N-API 封装代码继续适用各自的 MIT 或 Apache-2.0 许可证，详见 [第三方开源软件声明](THIRD_PARTY_NOTICES.md)。相关完整许可文本同时打包进入 HAP，并可在应用“关于 → 开源许可”中查看。

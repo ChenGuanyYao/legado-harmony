@@ -1,9 +1,11 @@
 {
   "name": "entry",
-  "version": "3.6.815",
+  "version": "3.7.820",
   "description": "开源轻页主模块",
   "main": "Index.ets",
-  "author": "",
+  "author": "李其健",
+  "homepage": "https://github.com/wip3l/legado-harmony",
+  "repository": "https://github.com/wip3l/legado-harmony.git",
   "license": "GPL-3.0",
   "dependencies": {
     "@devzeng/quickjs": "file:../quickjs"

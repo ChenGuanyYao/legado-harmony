@@ -111,6 +111,7 @@ struct FontSettingsPage {
       const parsed = JSON.parse(raw) as ReaderCustomFontData | ReaderCustomFontItem[];
       const source = Array.isArray(parsed) ? parsed as ReaderCustomFontItem[] : ((parsed as ReaderCustomFontData).fonts || []);
       this.customFonts = this.cleanCustomFonts(source);
+      this.saveCustomFonts(this.customFonts);
     } catch (e) {
       this.customFonts = [];
     }
@@ -132,7 +133,7 @@ struct FontSettingsPage {
       }
       const fontItem = new ReaderCustomFontItem();
       fontItem.filePath = (item.filePath || '').trim();
-      fontItem.sourceName = (item.sourceName || '').trim() || this.fileNameFromUri(fontItem.filePath);
+      fontItem.sourceName = ReaderFontHelper.resolveDisplayName(item.sourceName, fontItem.filePath);
       fontItem.familyName = this.normalizedFontFamily(fontItem.filePath);
       if (fontItem.familyName && fontItem.filePath && !this.hasCustomFont(result, fontItem.familyName, fontItem.filePath)) {
         result.push(fontItem);
@@ -166,11 +167,17 @@ struct FontSettingsPage {
           this.readerFontFamily = familyName;
         }
         changed = true;
+      } else if (existingIndex >= 0) {
+        const displayName = ReaderFontHelper.resolveDisplayName(next[existingIndex].sourceName, filePath);
+        if (next[existingIndex].sourceName !== displayName) {
+          next[existingIndex].sourceName = displayName;
+          changed = true;
+        }
       } else if (familyName && !this.hasCustomFont(next, familyName, filePath)) {
         const item = new ReaderCustomFontItem();
         item.familyName = familyName;
         item.filePath = filePath;
-        item.sourceName = name;
+        item.sourceName = ReaderFontHelper.resolveDisplayName(name, filePath);
         next.push(item);
         changed = true;
       }
@@ -242,7 +249,7 @@ struct FontSettingsPage {
     }
     this.readerFontFamily = item.familyName;
     this.readerFontFilePath = item.filePath;
-    this.readerFontSourceName = item.sourceName || this.fileNameFromUri(item.filePath);
+    this.readerFontSourceName = ReaderFontHelper.resolveDisplayName(item.sourceName, item.filePath);
     this.applyApplicationFont(registeredFamily);
     this.saveFontSettings();
     promptAction.showToast({ message: `已选择字体：${this.readerFontSourceName}` });
@@ -280,7 +287,7 @@ struct FontSettingsPage {
     }
     const item = this.customFonts[index];
     this.readerFontFamily = item.familyName;
-    this.readerFontSourceName = item.sourceName || this.fileNameFromUri(item.filePath);
+    this.readerFontSourceName = ReaderFontHelper.resolveDisplayName(item.sourceName, item.filePath);
     this.readerFontMode = 'custom';
   }
 

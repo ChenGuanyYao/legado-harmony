@@ -1,8 +1,5 @@
-// Engine/Context Lifecycle
-export const createEngine: () => bigint;
-export const createEngineWithOptions: (memoryLimitBytes: number, stackLimitBytes: number) => bigint;
-export const releaseEngine: (engineHandle: bigint) => void;
-export const getGlobal: (engineHandle: bigint) => bigint;
+// Copyright (c) 2026 legado-harmony contributors
+// SPDX-License-Identifier: MIT
 
 export interface BoundedExecutionResult {
   success: boolean;
@@ -13,63 +10,79 @@ export interface BoundedExecutionResult {
   pendingJobs: number;
 }
 
-// Value Factory
-export const createUndefined: (engineHandle: bigint) => bigint;
-export const createNull: (engineHandle: bigint) => bigint;
-export const createBoolean: (engineHandle: bigint, value: boolean) => bigint;
-export const createNumber: (engineHandle: bigint, value: number) => bigint;
-export const createString: (engineHandle: bigint, value: string) => bigint;
-export const createObject: (engineHandle: bigint) => bigint;
-export const createArray: (engineHandle: bigint, length?: number) => bigint;
-export const createError: (engineHandle: bigint, code: string, message: string) => bigint;
-export const createDate: (engineHandle: bigint, timeMs: number) => bigint;
+/**
+ * Type surface of the object exported by libquickjs.so.
+ *
+ * Keep the native exports behind an interface instead of declaring dozens of top-level function-valued constants.
+ * DevEco's native implementation inspection cannot follow this module's napi_define_properties registration table
+ * and otherwise reports every valid export as "has no native implementation". Runtime loading is isolated in
+ * NativeQuickJs.ts, so this type-only declaration does not change the N-API ABI.
+ */
+export interface QuickJsNativeApi {
+  // Engine/Context Lifecycle
+  createEngine(): bigint;
+  createEngineWithOptions(memoryLimitBytes: number, stackLimitBytes: number): bigint;
+  releaseEngine(engineHandle: bigint): void;
+  getGlobal(engineHandle: bigint): bigint;
 
-// Value Type Checks
-export const isUndefined: (valueHandle: bigint) => boolean;
-export const isNull: (valueHandle: bigint) => boolean;
-export const isBoolean: (valueHandle: bigint) => boolean;
-export const isNumber: (valueHandle: bigint) => boolean;
-export const isString: (valueHandle: bigint) => boolean;
-export const isObject: (valueHandle: bigint) => boolean;
-export const isArray: (valueHandle: bigint) => boolean;
-export const isDate: (valueHandle: bigint) => boolean;
-export const isCallable: (valueHandle: bigint) => boolean;
-export const isError: (valueHandle: bigint) => boolean;
-export const isException: (valueHandle: bigint) => boolean;
+  // Value Factory
+  createUndefined(engineHandle: bigint): bigint;
+  createNull(engineHandle: bigint): bigint;
+  createBoolean(engineHandle: bigint, value: boolean): bigint;
+  createNumber(engineHandle: bigint, value: number): bigint;
+  createString(engineHandle: bigint, value: string): bigint;
+  createObject(engineHandle: bigint): bigint;
+  createArray(engineHandle: bigint, length?: number): bigint;
+  createError(engineHandle: bigint, code: string, message: string): bigint;
+  createDate(engineHandle: bigint, timeMs: number): bigint;
 
-// Value Conversion
-export const toBooleanValue: (valueHandle: bigint) => boolean;
-export const toNumberValue: (valueHandle: bigint) => number;
-export const toStringValue: (valueHandle: bigint) => string;
+  // Value Type Checks
+  isUndefined(valueHandle: bigint): boolean;
+  isNull(valueHandle: bigint): boolean;
+  isBoolean(valueHandle: bigint): boolean;
+  isNumber(valueHandle: bigint): boolean;
+  isString(valueHandle: bigint): boolean;
+  isObject(valueHandle: bigint): boolean;
+  isArray(valueHandle: bigint): boolean;
+  isDate(valueHandle: bigint): boolean;
+  isCallable(valueHandle: bigint): boolean;
+  isError(valueHandle: bigint): boolean;
+  isException(valueHandle: bigint): boolean;
 
-// Property Access
-export const getProperty: (engineHandle: bigint, objHandle: bigint, key: string) => bigint;
-export const setProperty: (engineHandle: bigint, objHandle: bigint, key: string, valueHandle: bigint) => boolean;
-export const hasProperty: (engineHandle: bigint, objHandle: bigint, key: string) => boolean;
-export const deleteProperty: (engineHandle: bigint, objHandle: bigint, key: string) => boolean;
-export const getPropertyNames: (engineHandle: bigint, objHandle: bigint) => bigint;
-export const getElement: (engineHandle: bigint, arrayHandle: bigint, index: number) => bigint;
-export const setElement: (engineHandle: bigint, arrayHandle: bigint, index: number, valueHandle: bigint) => boolean;
-export const getArrayLength: (engineHandle: bigint, arrayHandle: bigint) => number;
+  // Value Conversion
+  toBooleanValue(valueHandle: bigint): boolean;
+  toNumberValue(valueHandle: bigint): number;
+  toStringValue(valueHandle: bigint): string;
 
-// Function Call
-export const callFunction: (engineHandle: bigint, thisHandle: bigint, funcHandle: bigint, args: bigint[]) => bigint;
-export const construct: (engineHandle: bigint, constructorHandle: bigint, args: bigint[]) => bigint;
+  // Property Access
+  getProperty(engineHandle: bigint, objHandle: bigint, key: string): bigint;
+  setProperty(engineHandle: bigint, objHandle: bigint, key: string, valueHandle: bigint): boolean;
+  hasProperty(engineHandle: bigint, objHandle: bigint, key: string): boolean;
+  deleteProperty(engineHandle: bigint, objHandle: bigint, key: string): boolean;
+  getPropertyNames(engineHandle: bigint, objHandle: bigint): bigint;
+  getElement(engineHandle: bigint, arrayHandle: bigint, index: number): bigint;
+  setElement(engineHandle: bigint, arrayHandle: bigint, index: number, valueHandle: bigint): boolean;
+  getArrayLength(engineHandle: bigint, arrayHandle: bigint): number;
 
-// Comparison
-export const strictEquals: (valueHandle1: bigint, valueHandle2: bigint) => boolean;
-export const looseEquals: (valueHandle1: bigint, valueHandle2: bigint) => boolean;
-export const instanceOf: (valueHandle: bigint, constructorHandle: bigint) => boolean;
+  // Function Call
+  callFunction(engineHandle: bigint, thisHandle: bigint, funcHandle: bigint, args: bigint[]): bigint;
+  construct(engineHandle: bigint, constructorHandle: bigint, args: bigint[]): bigint;
 
-// Value Lifecycle
-export const addRef: (valueHandle: bigint) => void;
-export const release: (valueHandle: bigint) => void;
+  // Comparison
+  strictEquals(valueHandle1: bigint, valueHandle2: bigint): boolean;
+  looseEquals(valueHandle1: bigint, valueHandle2: bigint): boolean;
+  instanceOf(valueHandle: bigint, constructorHandle: bigint): boolean;
 
-// Script Evaluation
-export const evaluateScript: (engineHandle: bigint, script: string, sourceURL?: string) => bigint;
-export const evaluateBounded: (engineHandle: bigint, script: string, sourceURL: string,
-  timeoutMs: number, maxPendingJobs: number) => BoundedExecutionResult;
+  // Value Lifecycle
+  addRef(valueHandle: bigint): void;
+  release(valueHandle: bigint): void;
 
-// Error / Exception
-export const getException: (engineHandle: bigint) => bigint;
-export const throwException: (engineHandle: bigint, valueHandle: bigint) => bigint;
+  // Script Evaluation
+  evaluateScript(engineHandle: bigint, script: string, sourceURL?: string): bigint;
+  evaluateBounded(engineHandle: bigint, script: string, sourceURL: string,
+    timeoutMs: number, maxPendingJobs: number): BoundedExecutionResult;
+
+  // Error / Exception
+  getException(engineHandle: bigint): bigint;
+  throwException(engineHandle: bigint, valueHandle: bigint): bigint;
+}

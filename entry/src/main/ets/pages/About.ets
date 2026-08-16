@@ -58,8 +58,7 @@ struct AboutPage {
 
           this.feedbackCard()
 
-          this.infoCard('开源许可',
-            '本项目采用 GPL-3.0 许可证。使用、修改和分发时请遵守对应开源协议。')
+          this.licenseCard()
 
           this.infoCard('致谢',
             '感谢 @南破万卷墙 @一个人吃二二 @jueyaocaptain @茶安安安 @相思界 为App开发提出的建议和支持。')
@@ -176,6 +175,41 @@ struct AboutPage {
 
   pageColor(): string {
     return ThemeRuntime.pageColor(this.appDarkMode);
+  }
+
+  @Builder
+  licenseCard() {
+    Row() {
+      Column() {
+        Text('开源许可')
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+        Text('开源轻页采用 GPL-3.0 许可证，并包含适用 MIT、Apache-2.0 许可证的第三方组件。')
+          .fontSize(14)
+          .fontColor(this.secondaryTextColor())
+          .lineHeight(22)
+          .width('100%')
+          .margin({ top: 8 })
+        Text('查看主项目源码信息、版权声明和完整许可文本')
+          .fontSize(13)
+          .fontColor(this.accentColor())
+          .width('100%')
+          .margin({ top: 8 })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .padding(16)
+    .backgroundColor(this.cardColor())
+    .borderRadius(10)
+    .margin({ left: 16, right: 16, bottom: 12 })
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => {
+      router.pushUrl({ url: 'pages/OpenSourceLicenses' });
+    })
   }
 
   cardColor(): string {
