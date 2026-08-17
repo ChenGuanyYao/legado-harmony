@@ -107,7 +107,7 @@ export class SearchBookShelfHelper {
       existing.latestChapterTitle = BookFieldSanitizer.prefer(searchBook.latestChapterTitle, existing.latestChapterTitle);
       existing.wordCount = BookFieldSanitizer.prefer(searchBook.wordCount, existing.wordCount);
       SearchExplorePendingBook.clearPendingAddToShelf(existing);
-      await db.updateBook(existing);
+      await db.updateBook(existing, true, 'search_result_explicit_add_existing');
       SearchBookShelfHelper.markShelfChanged();
       promptAction.showToast({ message: '已在书架' });
       return new SearchBookShelfChange(searchKey, searchKey);
@@ -144,14 +144,14 @@ export class SearchBookShelfHelper {
         resolvedExisting.latestChapterTitle = BookFieldSanitizer.prefer(book.latestChapterTitle, resolvedExisting.latestChapterTitle);
         resolvedExisting.wordCount = BookFieldSanitizer.prefer(book.wordCount, resolvedExisting.wordCount);
         SearchExplorePendingBook.clearPendingAddToShelf(resolvedExisting);
-        await db.updateBook(resolvedExisting);
+        await db.updateBook(resolvedExisting, true, 'search_result_explicit_add_resolved');
         SearchBookShelfHelper.markShelfChanged();
         promptAction.showToast({ message: '已在书架' });
         return new SearchBookShelfChange(searchKey, resolvedKey);
       }
     }
 
-    await db.insertBook(book);
+    await db.insertBook(book, 'search_result_explicit_add');
     const shelfKey = resolvedKey || searchKey;
     SearchBookShelfHelper.markShelfChanged();
     promptAction.showToast({ message: '已加入书架' });
@@ -171,7 +171,7 @@ export class SearchBookShelfHelper {
     if (existing) {
       SearchBookShelfHelper.deleteBookCoverCache(context, existing);
     }
-    await db.deleteBook(existing?.bookUrl || searchBook.bookUrl);
+    await db.deleteBook(existing?.bookUrl || searchBook.bookUrl, 'search_result_explicit_remove');
     SearchBookShelfHelper.markShelfChanged();
     promptAction.showToast({ message: '已移出书架' });
     return new SearchBookShelfChange(key, key);

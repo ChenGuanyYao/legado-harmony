@@ -170,7 +170,10 @@ export class AppDataBackupService {
   static async createBackup(context: Context, selection: AppDataBackupSelection,
     password: string, onProgress?: (message: string, percent: number) => void):
     Promise<AppDataBackupExportResult> {
-    if ((password || '').length < 8) throw new Error('备份密码至少需要 8 个字符');
+    const encryptionPassword = password || '';
+    if (encryptionPassword && encryptionPassword.length < 8) {
+      throw new Error('备份密码至少需要 8 个字符');
+    }
     AppDataBackupService.reportProgress(onProgress, '正在读取应用数据...', 3);
     const db = AppDatabase.getInstance();
     await db.initWithContext(context);
@@ -200,7 +203,7 @@ export class AppDataBackupService {
     AppDataBackupService.reportProgress(onProgress, '正在检查可用空间...', 8);
     await AppDataBackupService.ensureEnoughTempSpace(context, selection, allBooks);
     await AppDataBackupService.ensureDir(payloadRoot);
-    await AppDataBackupService.ensureDir(envelopeRoot);
+    if (encryptionPassword) await AppDataBackupService.ensureDir(envelopeRoot);
     if (selection.bookshelf || selection.localBooks) {
       manifest.bookGroups = await db.getCustomBookGroups();
     }
@@ -286,26 +289,34 @@ export class AppDataBackupService {
         throw new Error(`压缩备份数据失败：${error instanceof Error ? error.message : String(error)}`);
       }
       await AppDataBackupService.removeDirectory(payloadRoot);
-      AppDataBackupService.reportProgress(onProgress, '正在加密备份...', 68);
-      const encryption = await BackupCrypto.encryptFile(innerArchivePath, encryptedPayloadPath, password,
-        (processed: number, total: number): void => {
-          const ratio = total > 0 ? processed / total : 1;
-          AppDataBackupService.reportProgress(onProgress, '正在加密备份...',
-            68 + Math.min(17, Math.floor(ratio * 17)));
-        });
-      AppDataBackupService.reportProgress(onProgress, '加密完成，正在清理中间文件...', 86);
-      await AppDataBackupService.removeFile(innerArchivePath);
-      await AppDataBackupService.writeText(`${envelopeRoot}/encryption.json`, JSON.stringify(encryption));
-      AppDataBackupService.reportProgress(onProgress, '正在封装备份文件...', 88);
-      try {
-        await zlib.compressFile(envelopeRoot, archivePath,
-          { level: zlib.CompressLevel.COMPRESS_LEVEL_NO_COMPRESSION });
+      if (encryptionPassword) {
+        AppDataBackupService.reportProgress(onProgress, '正在加密备份...', 68);
+        const encryption = await BackupCrypto.encryptFile(innerArchivePath, encryptedPayloadPath,
+          encryptionPassword, (processed: number, total: number): void => {
+            const ratio = total > 0 ? processed / total : 1;
+            AppDataBackupService.reportProgress(onProgress, '正在加密备份...',
+              68 + Math.min(17, Math.floor(ratio * 17)));
+          });
+        AppDataBackupService.reportProgress(onProgress, '加密完成，正在清理中间文件...', 86);
+        await AppDataBackupService.removeFile(innerArchivePath);
+        await AppDataBackupService.writeText(`${envelopeRoot}/encryption.json`, JSON.stringify(encryption));
+        AppDataBackupService.reportProgress(onProgress, '正在封装备份文件...', 88);
+        try {
+          await zlib.compressFile(envelopeRoot, archivePath,
+            { level: zlib.CompressLevel.COMPRESS_LEVEL_NO_COMPRESSION });
+          const archiveStat = await fs.stat(archivePath);
+          if (archiveStat.size <= 0) throw new Error('生成的归档文件为空');
+        } catch (error) {
+          throw new Error(`封装备份文件失败：${error instanceof Error ? error.message : String(error)}`);
+        }
+        await AppDataBackupService.removeDirectory(envelopeRoot);
+      } else {
+        AppDataBackupService.reportProgress(onProgress, '正在生成未加密备份...', 82);
+        await AppDataBackupService.copyFile(innerArchivePath, archivePath);
+        await AppDataBackupService.removeFile(innerArchivePath);
         const archiveStat = await fs.stat(archivePath);
         if (archiveStat.size <= 0) throw new Error('生成的归档文件为空');
-      } catch (error) {
-        throw new Error(`封装备份文件失败：${error instanceof Error ? error.message : String(error)}`);
       }
-      await AppDataBackupService.removeDirectory(envelopeRoot);
       archiveReady = true;
       AppDataBackupService.reportProgress(onProgress, '备份文件已生成', 96);
     } finally {
@@ -822,6 +833,7 @@ export class AppDataBackupService {
     rule.coverUrl = AppDataBackupService.ruleString(raw, 'coverUrl');
     rule.intro = AppDataBackupService.ruleString(raw, 'intro', 'desc');
     rule.kind = AppDataBackupService.ruleString(raw, 'kind');
+    rule.status = AppDataBackupService.ruleString(raw, 'status');
     rule.lastChapter = AppDataBackupService.ruleString(raw, 'lastChapter', 'lastchapter');
     rule.bookUrl = AppDataBackupService.ruleString(raw, 'bookUrl', 'bookurl');
     rule.wordCount = AppDataBackupService.ruleString(raw, 'wordCount', 'wordcount');
@@ -838,6 +850,7 @@ export class AppDataBackupService {
     rule.coverUrl = AppDataBackupService.ruleString(raw, 'coverUrl');
     rule.intro = AppDataBackupService.ruleString(raw, 'intro', 'desc');
     rule.kind = AppDataBackupService.ruleString(raw, 'kind');
+    rule.status = AppDataBackupService.ruleString(raw, 'status');
     rule.lastChapter = AppDataBackupService.ruleString(raw, 'lastChapter', 'lastchapter');
     rule.bookUrl = AppDataBackupService.ruleString(raw, 'bookUrl', 'bookurl');
     rule.wordCount = AppDataBackupService.ruleString(raw, 'wordCount', 'wordcount');
@@ -854,6 +867,7 @@ export class AppDataBackupService {
     rule.coverUrl = AppDataBackupService.ruleString(raw, 'coverUrl');
     rule.intro = AppDataBackupService.ruleString(raw, 'intro', 'desc');
     rule.kind = AppDataBackupService.ruleString(raw, 'kind');
+    rule.status = AppDataBackupService.ruleString(raw, 'status');
     rule.lastChapter = AppDataBackupService.ruleString(raw, 'lastChapter', 'lastchapter');
     rule.bookUrl = AppDataBackupService.ruleString(raw, 'bookUrl', 'bookurl');
     rule.wordCount = AppDataBackupService.ruleString(raw, 'wordCount', 'wordcount');

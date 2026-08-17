@@ -1,13 +1,13 @@
 # Legado Harmony 书源开发指南
 
-> 适用版本：`3.7.822`（2026-08-17）。本文以当前工作区代码为准；规则能力、字段消费方式和限制可能随版本继续调整。
+> 适用版本：`3.7.824`（2026-08-17）。本文以当前工作区代码为准；规则能力、字段消费方式和限制可能随版本继续调整。
 
 本文面向为开源轻页编写、迁移和调试书源的开发者，描述项目当前代码中**已经实现并实际调用**的规则能力。
 
 | 项目 | 信息 |
 | --- | --- |
 | 适用项目 | `legado-harmony` |
-| 适用版本 | `3.7.822`（以 `AppScope/app.json5` 为准） |
+| 适用版本 | `3.7.824`（以 `AppScope/app.json5` 为准） |
 | 最后核对 | 2026-08-17 |
 | 文档性质 | 当前实现参考，不是 Android「阅读」全部规则的等价清单 |
 
@@ -104,7 +104,8 @@
       "kind": "$.category",
       "lastChapter": "$.lastChapter",
       "bookUrl": "/book/{{$.id}}",
-      "wordCount": "$.wordCount"
+      "wordCount": "$.wordCount",
+      "status": "$.status"
     },
     "ruleExplore": {
       "bookList": "$.data.books[*]",
@@ -115,7 +116,8 @@
       "kind": "$.category",
       "lastChapter": "$.lastChapter",
       "bookUrl": "/book/{{$.id}}",
-      "wordCount": "$.wordCount"
+      "wordCount": "$.wordCount",
+      "status": "$.status"
     },
     "ruleBookInfo": {
       "init": "$.data",
@@ -177,6 +179,8 @@
 只有同时具有 `bookSourceUrl` 和 `bookSourceName` 的项目才会被写入数据库。`bookSourceUrl` 也是书源的唯一身份标识；修改它通常会被视为另一个书源。导入后会重新读取数据库并核对原始 JSON、脚本库、登录配置、各规则组和运行字段，避免“提示成功但复杂字段被截断或漏存”。
 
 应用同时保存导入对象的完整 `rawSourceJson`。已识别字段进入结构化数据库列；尚未映射的未来字段仍保留在原始对象中，导出时再与当前结构化值合并。因此“完整保存”不等于“所有未知字段都已具备执行语义”。
+
+规则组导出时也会先保留原始规则对象中的未知键，再覆盖当前结构化字段，减少编辑后扩展规则丢失。
 
 规则组推荐使用 Android 阅读常见的导出键名：
 
@@ -327,10 +331,13 @@
 | `type` | 会被解析并保存到请求配置，当前 HTTP 执行链没有额外分支行为。 |
 | `webView` | 为 `true` 时，HTTP(S) GET/POST 请求交给隐藏 ArkWeb，沿用书源 URL、Cookie 与 UA（GET 也传入可用的额外 Header），等待页面脚本渲染稳定后返回 DOM。 |
 | `webJs` | 与 `webView: true` 配合，在已加载页面上下文执行；有效返回值作为响应正文，否则使用页面 DOM。 |
+| `session` | 可选的通用会话规则；仅操作当前请求目标的 Cookie，并可在未声明 Referer 时按规则补充。详见下文。 |
 
 选项对象支持单引号、无引号键和尾逗号等宽松写法，但推荐使用标准 JSON，减少转义差异。
 
 `webView` 请求在同一个隐藏 ArkWeb 中串行执行，默认约 20 秒超时（实现会把单次超时限制在 3～60 秒），最多排队 32 个任务。页面需达到 `document.readyState === 'complete'` 且 DOM 连续稳定后才返回。隐藏 ArkWeb 必须已随当前应用页面挂载；若提示“抓取环境未挂载”，重新进入搜索、发现或相关页面后重试。
+
+页面宿主切换时，尚未完成的请求会迁移到新宿主继续执行，并忽略新宿主首次 `about:blank` 回调；请求超时后仍需按普通失败流程重试。
 
 该选项只负责执行书源明确给出的页面请求，不会自动点击验证码、替用户选择不受信任证书、伪造浏览器指纹或保证通过所有反自动化挑战。需要用户交互的登录/验证仍应使用验证页或 `startBrowserAwait`，并遵守目标服务的授权与访问规则。
 
@@ -367,7 +374,70 @@ URL 内还支持：
 /path@Header:{"Referer":"https://example.com/"}@End
 ```
 
-合并顺序是“书源全局请求头 → 本次请求头”，因此本次请求头优先。若未显式设置 Cookie，应用会按请求地址从登录/验证 Cookie 存储中补充。
+普通请求头的合并顺序是“书源全局请求头 → 本次请求头”，因此本次请求头优先。若未显式设置 Cookie，应用会按请求地址从登录/验证 Cookie 存储中补充。配置 `session` 后，Cookie 的最终优先级见下一节；已有 Referer 始终优先于 `session.referer`。
+
+#### 通用会话选项 `session`
+
+需要匿名会话、查询令牌与 Cookie 对照校验的接口，可在 URL 选项中显式声明 `session`。请求层不识别站点名称，也不会为任何平台内置 Cookie 名称或接口路径。
+
+```text
+/api/list?csrfToken={{csrf}},
+{"session":{"queryCookies":["csrfToken"],"generatedCookies":{"visitorId":"@uuid"},"referer":"origin"}}
+```
+
+完整结构如下，所有字段均可省略：
+
+```json
+{
+  "session": {
+    "queryCookies": {
+      "cookieToken": "queryToken"
+    },
+    "generatedCookies": {
+      "visitorId": "@timestamp_random"
+    },
+    "referer": "origin"
+  }
+}
+```
+
+支持字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `queryCookies` | 字符串、字符串数组，或 `{ "Cookie名": "查询参数名" }` 映射。读取本次 URL 的非空查询值并同步到当前目标域 Cookie；数组形式表示二者同名。 |
+| `generatedCookies` | `{ "Cookie名": "生成规则" }`。仅在当前目标域和显式 Cookie 请求头都缺少该 Cookie 时生成，并按一年有效期写入；支持 `@uuid`、`@timestamp_random`、`@random`，也可直接填写书源产生的值。 |
+| `referer` | `origin` 表示当前目标源，`request` 表示完整请求地址，也可填写书源明确给出的地址；已有 Referer 不会被覆盖。 |
+
+`queryCookies` 的映射方向固定为“Cookie 名 → URL 查询参数名”。例如：
+
+```json
+{
+  "session": {
+    "queryCookies": {
+      "csrfCookie": "csrfQuery"
+    }
+  }
+}
+```
+
+当请求地址包含 `?csrfQuery=abc` 时，本次请求会携带 `csrfCookie=abc`，同时写入当前目标域的 Cookie 容器。同名场景可简写为字符串或数组：
+
+```json
+{"session":{"queryCookies":"csrfToken"}}
+```
+
+```json
+{"session":{"queryCookies":["csrfToken","requestToken"]}}
+```
+
+Cookie 合并顺序为：当前目标域 Cookie 容器 → 书源/本次请求显式 Cookie → `queryCookies` 对应的查询值；`generatedCookies` 只补缺失项，不覆盖以上任何值。Cookie 名只接受字母、数字、下划线、点和连字符，查询参数不存在或值为空时不会写入。
+
+`session` 是显式会话操作：即使书源关闭了普通 Cookie Jar，只要本次 URL 仍声明 `session`，声明的会话规则就会执行。若请求必须完全无 Cookie，不要配置 `session`，也不要在请求头中声明 Cookie。
+
+会话规则只对声明它的这次请求生效，Cookie 读取和写入均以请求 URL 为作用域，不会从其他域复制；发生跨主机重定向时，Cookie、Authorization、Proxy-Authorization、Host、Origin 和 Referer 等目标相关请求头会先被移除，再由新目标自己的 Cookie 容器处理。同一主机内重定向会保留本次会话头。
+
+若接口需要签名、固定设备标识或服务端发放的会话值，应由书源脚本或登录流程取得，不能依赖 `generatedCookies` 猜测。历史书源如果曾依赖请求层自动补充某个平台的字段，应把相应名称和值迁移到 URL 的 `session`、`headers` 或登录脚本中；应用不再保留隐式站点规则。
 
 ## 规则语法
 
@@ -615,6 +685,8 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 - 把一个站点的 Cookie 自动复制到另一个站点；
 - 在规则之外实现第三方接口签名、付费内容解密或评论接口适配。
 
+请求层只提供 URL 选项中的通用 `session` 能力，且必须由书源显式声明。应用没有目标主机名单，不会因地址属于某个平台而自动补充 Cookie 名称、访客标识、Referer 或查询参数。
+
 需要加密、摘要、Cookie、音频或图片处理时，应把相应逻辑和有权使用的参数明确写在书源规则中。`BookSourceInteractionPostProcessor` 不再识别具体平台，只保留规则已经产出的正文。
 
 ## 各阶段规则
@@ -634,6 +706,7 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 | `lastChapter` | 否 | 单个书籍元素 | 最新章节标题。 |
 | `bookUrl` | 是 | 单个书籍元素 | 详情页；空地址的结果会被丢弃。 |
 | `wordCount` | 否 | 单个书籍元素 | 搜索结果字数；常规搜索链会解析并写入结果，精简校验模式会省略该展示字段。 |
+| `status` | 否 | 单个书籍元素 | 书籍状态/连载状态文本。 |
 
 每个源常规搜索最多保留 50 条有效结果，总搜索最多保留 1000 条，并按“来源 + URL”去重。搜索并发数最大为 12；后台结果每约 500 ms 合并一次，避免每条回调都打断列表手势，因此搜索未结束时仍可滑动已出现的结果。搜索会清理超长或异常字段；书名约 120 字符、作者约 120、简介约 1200、URL 约 2048 字符。
 
@@ -746,7 +819,8 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
   "kind": "",
   "lastChapter": "",
   "bookUrl": ".title@href",
-  "wordCount": ""
+  "wordCount": "",
+  "status": ""
 }
 ```
 
@@ -837,6 +911,8 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 `startBrowserAwait` 会暂停当前脚本，打开网页，用户点击完成后将页面返回值交回同一动作继续执行。浏览器关闭、取消、网络失败或脚本超时会结束执行并恢复按钮状态，不应永久停在“执行中”。用于“书源更新”的按钮可以打开源提供的更新页面；页面是否真正更新配置取决于该脚本是否返回并保存了新数据，不能仅凭打开网页判定更新成功。
 
 请求规则中的 `<js>startBrowserAwait(...)`、`getVerificationCode(...)` 等提示也可触发验证逻辑，但不是完整 Android WebView/Activity API。需要账号口令签名、动态参数或复杂验证码的网站，必须实机确认。应用不按站点名称提供私有接口适配，全部请求参数和解析逻辑应来自书源本身。
+
+登录动作会通过确定性脚本重放完成多次 `java.ajax` 和网页等待。Cookie 写入、替换和删除操作会记录并去重，避免重放时重复修改会话；脚本在 AJAX 前写入的 `source`/`loginInfo` 状态会合并到当前请求上下文。`getLoginInfo`/`getLoginInfoMap` 对空格、标点差异的键名做兼容，只有一个可用 Token 类字段时也可作为回退值。番茄网页登录中的应用启动链接会被验证页拦截，要求继续在网页环境完成登录。
 
 ### 有声书源与音色
 
@@ -977,16 +1053,16 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 | 状态 | 字段/能力 |
 | --- | --- |
-| 通用链已实际使用 | 搜索/发现的列表、书名、作者、封面、简介、分类、最新章节、字数、详情 URL；发现两级分组和动态原生筛选；`jsLib` URL 构建和持久化源变量；分阶段 ArkWeb；显式 `webView`/`webJs` 请求；动态登录输入/开关/选择/按钮、同站点 Cookie、书源内加密、浏览器等待；详情 `init`、书籍字段、目录 URL；目录列表、章节名、章节 URL、下一页、VIP、付费状态、更新时间；正文内容、图片、图片请求头、书源规则内图片解码、漫画模式、下一页、净化正则和 JS；普通书/漫画/有声书类型；书源请求限流。 |
+| 通用链已实际使用 | 搜索/发现的列表、书名、作者、封面、简介、分类、最新章节、字数、详情 URL；发现两级分组和动态原生筛选；`jsLib` URL 构建和持久化源变量；分阶段 ArkWeb；显式 `webView`/`webJs` 请求；动态登录输入/开关/选择/按钮、同站点 Cookie、幂等 Cookie 重放、浏览器等待；详情 `init`、书籍字段、目录 URL；目录列表、章节名、章节 URL、下一页、VIP、付费状态、更新时间；正文内容、图片、图片请求头、书源规则内图片解码、漫画模式、下一页、净化正则和 JS；普通书/漫画/有声书类型；书源请求限流。 |
 | 已接入但不改变正式结果 | QuickJS 启动自检和纯表达式 `SHADOW` 比对；当前不执行主机函数，也不替代轻量引擎、选择器或 ArkWeb。 |
-| 编码数据已实际使用 | 标准 `data:` 文本、Base64 负载，以及带明确 HTTP(S) URL 的通用 `type: "request"` 请求描述。应用不提供平台协议、候选后端或站点专用转换。 |
+| 编码数据已实际使用 | 标准 `data:` 文本、Base64 负载，以及带明确 HTTP(S) URL 的通用 `type: "request"` 请求描述。应用不提供平台协议、候选后端或站点专用会话补丁。 |
 | 可导入/编辑，但通用链目前未消费 | 详情 `updateTime`；正文 `title`。 |
 | 模型或紧凑格式存在，但通用导入/UI/执行不完整 | `chapterListAddition`、`payAction`、`bookListRule` 等。 |
 | 不应假定与 Android 版等价 | 任意 Java/Android 类导入、全部 `java.*` API、完整 XPath/CSS、付费购买动作、交互式验证码自动处理及非白名单二进制解码流程。 |
 
 ### 通用兜底边界
 
-当前项目只保留与站点无关的容错，例如清理模板残留、解析标准相对 URL、从通用字段回退详情地址、提取可读 HTML 和处理明确的编码数据。应用不会根据站点名称或私有接口提供自动修复；书源应完整声明请求和解析规则。
+当前项目只保留与站点无关的容错和显式能力，例如清理模板残留、解析标准相对 URL、从通用字段回退详情地址、提取可读 HTML、处理明确的编码数据，以及由书源声明的 `session` 会话规则。应用不会根据站点名称或私有接口提供自动修复；书源应完整声明请求和解析规则。
 
 ### 与 Android 阅读书源互导
 
@@ -1043,7 +1119,8 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
       "kind": "",
       "lastChapter": "",
       "bookUrl": "",
-      "wordCount": ""
+      "wordCount": "",
+      "status": ""
     },
     "ruleExplore": {
       "bookList": "",
@@ -1054,7 +1131,8 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
       "kind": "",
       "lastChapter": "",
       "bookUrl": "",
-      "wordCount": ""
+      "wordCount": "",
+      "status": ""
     },
     "ruleBookInfo": {
       "init": "",

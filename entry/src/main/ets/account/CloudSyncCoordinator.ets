@@ -53,6 +53,7 @@ import {
   CustomThemeScheme,
   CustomThemeSchemeStore
 } from '../utils/CustomThemeSchemeStore';
+import { BookIdentity } from '../utils/BookIdentity';
 
 class BookshelfSyncPayload {
   bookUrl: string = '';
@@ -78,6 +79,7 @@ class BookshelfSyncPayload {
   order: number = 0;
   originOrder: number = 0;
   readConfig: ReadConfig | null = null;
+  shelfModifiedTime: number = 0;
 }
 
 class ReadingProgressSyncPayload {
@@ -192,6 +194,7 @@ export class CloudSyncCoordinator {
   // operation envelope while staying well below the server's 2 MiB request limit.
   private static readonly MAX_BATCH_BYTES: number = 768 * 1024;
   private static readonly MAX_EXCHANGE_PAGES: number = 1000;
+  private static protectedLocalBooksDuringSync: number = 0;
 
   static async syncNow(context: Context, conflictPolicy: string = 'cloud'): Promise<CloudSyncRunResult> {
     if (CloudSyncCoordinator.running) {
@@ -303,6 +306,7 @@ export class CloudSyncCoordinator {
     const changeSnapshot: CloudSyncChangeSnapshot = CloudSyncChangeTracker.snapshot();
 
     const result = new CloudSyncRunResult();
+    CloudSyncCoordinator.protectedLocalBooksDuringSync = 0;
     settings.status = CloudSyncSettingsStore.STATUS_SYNCING;
     settings.errorMessage = '';
     await CloudSyncSettingsStore.saveRuntimeState(context, userId, settings.status,
@@ -344,6 +348,11 @@ export class CloudSyncCoordinator {
             context, db, response.changes || [], state, deviceId, settings);
         } finally {
           CloudSyncChangeTracker.endRemoteApply();
+        }
+        if (CloudSyncCoordinator.protectedLocalBooksDuringSync > 0) {
+          CloudSyncCoordinator.protectedLocalBooksDuringSync = 0;
+          // Keep the locally re-added shelf item pending after markSynced(changeSnapshot).
+          CloudSyncChangeTracker.markDataChanged();
         }
         result.uploaded += (response.acknowledgements || []).filter(
           (ack: CloudSyncAcknowledgement) => ack.accepted).length;
@@ -419,11 +428,12 @@ export class CloudSyncCoordinator {
     }
 
     const allBooks = await db.getAllBooks();
-    const onlineBooks = allBooks.filter((book: Book) => !!book.origin && book.origin !== 'local');
+    const onlineBooks = allBooks.filter((book: Book) =>
+      !!book.origin && book.origin !== 'local' && !book.pendingAddToShelf);
     const onlineBookUrls = new Set<string>();
     for (const book of onlineBooks) {
       onlineBookUrls.add(book.bookUrl);
-      const bookId = CloudSyncCoordinator.identity('book', `${book.origin}\n${book.bookUrl}`);
+      const bookId = CloudSyncCoordinator.identity('book', BookIdentity.cloudIdentityValue(book));
       const shelf = new BookshelfSyncPayload();
       shelf.bookUrl = book.bookUrl;
       shelf.tocUrl = book.tocUrl;
@@ -448,6 +458,7 @@ export class CloudSyncCoordinator {
       shelf.order = book.order;
       shelf.originOrder = book.originOrder;
       shelf.readConfig = book.readConfig;
+      shelf.shelfModifiedTime = book.shelfModifiedTime;
       result.push(CloudSyncCoordinator.entity('bookshelf_item', bookId, shelf, book.bookUrl));
 
       const progress = new ReadingProgressSyncPayload();
@@ -726,6 +737,14 @@ export class CloudSyncCoordinator {
       } else {
         conflicts++;
         const conflict = ack.conflict;
+        if (local.entityType === 'bookshelf_item' && !!local.payloadJson && conflict?.deleted === true) {
+          // A local row in the same outgoing batch is an explicit re-add. Keep it and advance to the
+          // tombstone revision; the next exchange will recreate it from that revision.
+          entityState.deleted = true;
+          entityState.contentHash = '';
+          CloudSyncCoordinator.protectedLocalBooksDuringSync++;
+          continue;
+        }
         await CloudSyncCoordinator.applyEntity(
           context,
           db,
@@ -735,7 +754,8 @@ export class CloudSyncCoordinator {
           conflict?.deleted === true ? 'delete' : 'upsert',
           conflict?.payload || null,
           state,
-          deviceId
+          deviceId,
+          0
         );
       }
     }
@@ -777,7 +797,8 @@ export class CloudSyncCoordinator {
         change.operation,
         change.payload,
         state,
-        deviceId
+        deviceId,
+        change.createdAt
       );
       applied++;
     }
@@ -793,12 +814,14 @@ export class CloudSyncCoordinator {
     operation: string,
     payload: Object | null,
     state: CloudSyncLocalState,
-    _deviceId: string
+    _deviceId: string,
+    changeCreatedAt: number = 0
   ): Promise<void> {
     const key = CloudSyncStateStore.entityKey(entityType, entityId);
     const entityState = state.entities[key] || new CloudSyncEntityState();
     if (operation === 'delete') {
-      await CloudSyncCoordinator.applyDelete(context, db, entityType, entityId, entityState);
+      await CloudSyncCoordinator.applyDelete(
+        context, db, entityType, entityId, entityState, changeCreatedAt);
       entityState.revision = revision;
       entityState.deleted = true;
       entityState.contentHash = '';
@@ -920,10 +943,24 @@ export class CloudSyncCoordinator {
     db: AppDatabase,
     entityType: string,
     entityId: string,
-    entityState: CloudSyncEntityState
+    entityState: CloudSyncEntityState,
+    changeCreatedAt: number = 0
   ): Promise<void> {
     if (entityType === 'bookshelf_item' && entityState.localKey) {
-      await db.deleteBook(entityState.localKey);
+      const localBook = await db.getBook(entityState.localKey);
+      if (localBook) {
+        const currentEntityId = CloudSyncCoordinator.identity(
+          'book', BookIdentity.cloudIdentityValue(localBook));
+        const remoteTime = changeCreatedAt > 0 && changeCreatedAt < 1000000000000 ?
+          changeCreatedAt * 1000 : changeCreatedAt;
+        if (currentEntityId !== entityId ||
+          (remoteTime > 0 && localBook.shelfModifiedTime > remoteTime)) {
+          CloudSyncCoordinator.protectedLocalBooksDuringSync++;
+          console.warn(`已忽略过期书架删除记录: ${localBook.bookUrl}`);
+          return;
+        }
+      }
+      await db.deleteBook(entityState.localKey, 'cloud_remote_delete');
     } else if (entityType === 'book_group' && entityState.localKey) {
       const groups = await db.getCustomBookGroups();
       const group = groups.find((item: BookGroup) => item.groupName === entityState.localKey);
@@ -984,9 +1021,14 @@ export class CloudSyncCoordinator {
     if (!payload.bookUrl || !payload.origin || payload.origin === 'local') {
       return;
     }
-    const existing = await db.getBook(payload.bookUrl);
+    const identityProbe = new Book();
+    identityProbe.bookUrl = payload.bookUrl;
+    identityProbe.origin = payload.origin;
+    const existing = await db.getBook(payload.bookUrl) ||
+      await db.getBookByIdentityKey(BookIdentity.keyOfBook(identityProbe));
     const book = existing || new Book();
-    book.bookUrl = payload.bookUrl;
+    // Keep the current local URL when only a rotating aggregation host changed.
+    book.bookUrl = existing?.bookUrl || payload.bookUrl;
     book.tocUrl = payload.tocUrl || '';
     book.origin = payload.origin;
     book.originName = payload.originName || '';
@@ -1008,6 +1050,10 @@ export class CloudSyncCoordinator {
     book.order = Math.floor(Number(payload.order) || 0);
     book.originOrder = Math.floor(Number(payload.originOrder) || 0);
     book.readConfig = payload.readConfig || null;
+    book.pendingAddToShelf = false;
+    book.shelfModifiedTime = Math.max(
+      existing?.shelfModifiedTime || 0,
+      Math.max(0, Math.floor(Number(payload.shelfModifiedTime) || 0)));
     if (payload.groupName) {
       const group = await CloudSyncCoordinator.restoreGroup(db, {
         name: payload.groupName,

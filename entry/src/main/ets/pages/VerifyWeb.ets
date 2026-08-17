@@ -128,6 +128,7 @@ struct VerifyWebPage {
   private browserPayloadLoaded: boolean = false;
   private browserPayloadInjected: boolean = false;
   private onlineBookSourceImportPending: boolean = false;
+  private fanqieAppLaunchNoticeShown: boolean = false;
   private readonly browserJavaBridge: BookSourceBrowserJavaBridge = new BookSourceBrowserJavaBridge(
     (): boolean => !!this.browserPayloadToken,
     (): string => this.currentUrl || this.browserPayloadBaseUrl || this.url,
@@ -238,7 +239,7 @@ struct VerifyWebPage {
         .onlineImageAccess(true)
         .imageAccess(true)
         .mixedMode(MixedMode.All)
-        .userAgent(this.mobileUserAgent)
+        .userAgent(this.browserUserAgent())
         .javaScriptProxy({
           object: this.browserJavaBridge,
           name: 'java',
@@ -317,6 +318,13 @@ struct VerifyWebPage {
     }
   }
 
+  browserUserAgent(): string {
+    // Keep verification pages consistent with the device form factor. Native-app launch links
+    // exposed by Fanqie's mobile page are filtered in handleBrowserLoadIntercept(), while its
+    // normal HTTPS page, passport requests and session cookies remain inside ArkWeb.
+    return this.mobileUserAgent;
+  }
+
   loadBrowserPayload(): void {
     if (this.browserPayloadLoaded || !this.browserPayloadHtml) return;
     this.browserPayloadLoaded = true;
@@ -348,6 +356,13 @@ struct VerifyWebPage {
     try {
       requestUrl = event?.data.getRequestUrl() || '';
     } catch (_) {}
+    if (this.shouldBlockFanqieAppLaunch(requestUrl)) {
+      if (!this.fanqieAppLaunchNoticeShown) {
+        this.fanqieAppLaunchNoticeShown = true;
+        this.showToastSafely('已阻止打开番茄客户端，请继续使用网页登录');
+      }
+      return true;
+    }
     const importUrl = this.parseOnlineBookSourceImportUrl(requestUrl);
     if (!importUrl) return false;
     if (!this.onlineBookSourceImportPending) {
@@ -359,6 +374,24 @@ struct VerifyWebPage {
       });
     }
     return true;
+  }
+
+  shouldBlockFanqieAppLaunch(requestUrl: string): boolean {
+    const target = String(requestUrl || '').trim();
+    if (!target || !this.isFanqieBrowserSession()) return false;
+    if (/^(?:sslocal|snssdk\d*|dragon\d*|intent|market|appmarket|hap):\/\//i.test(target)) {
+      return true;
+    }
+    // These HTTPS links are application-launch intermediaries, not web login endpoints. Block
+    // only during a Fanqie browser-await session so ordinary verification pages are unaffected.
+    return /^https?:\/\/(?:fqnovel\.ugurl\.cn|zlink\.toutiao\.com)(?:[\/:?#]|$)/i.test(target) ||
+      /^https?:\/\/reading\.snssdk\.com\/z\//i.test(target);
+  }
+
+  isFanqieBrowserSession(): boolean {
+    const targets = `${this.url}\n${this.currentUrl}\n` +
+      `${AppStorage.get<string>('pendingVerificationLoginUrl') || ''}`;
+    return /https?:\/\/(?:[^\/?#]+\.)?fanqienovel\.com(?:[\/:?#]|$)/i.test(targets);
   }
 
   parseOnlineBookSourceImportUrl(raw: string): string {

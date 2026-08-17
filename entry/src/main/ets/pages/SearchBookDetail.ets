@@ -15,6 +15,7 @@ import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { SearchBookShelfHelper } from '../utils/SearchBookShelfHelper';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
 import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
+import { BookUrlResolver } from '../core/book/BookUrlResolver';
 
 @Entry
 @Component
@@ -64,8 +65,10 @@ struct SearchBookDetailPage {
     this.syncBars();
     const params = router.getParams() as Record<string, string>;
     if (params) {
-      this.bookUrl = params['bookUrl'] || '';
-      this.tocUrl = params['tocUrl'] || '';
+      // Heal result caches produced by older builds that joined every matching descendant URL.
+      // Keeping this at the detail boundary also prevents malformed values from becoming shelf IDs.
+      this.bookUrl = BookUrlResolver.scalar(params['bookUrl'] || '');
+      this.tocUrl = BookUrlResolver.scalar(params['tocUrl'] || '');
       this.origin = params['origin'] || '';
       this.originName = params['originName'] || '';
       this.name = params['name'] || '';
@@ -279,7 +282,7 @@ struct SearchBookDetailPage {
   }
 
   async checkShelf(): Promise<void> {
-    const key = BookIdentity.keyOfUrl(this.bookUrl);
+    const key = BookIdentity.keyOfUrl(this.bookUrl, this.origin);
     const version = AppStorage.get<number>('shelfUpdateTime') || 0;
     if (this.shelfCheckPromise) return this.shelfCheckPromise;
     if (key && key === this.shelfCheckKey && version === this.shelfCheckVersion) return;
@@ -287,7 +290,7 @@ struct SearchBookDetailPage {
     this.shelfCheckPromise = task;
     try {
       await task;
-      this.shelfCheckKey = BookIdentity.keyOfUrl(this.bookUrl);
+      this.shelfCheckKey = BookIdentity.keyOfUrl(this.bookUrl, this.origin);
       this.shelfCheckVersion = AppStorage.get<number>('shelfUpdateTime') || 0;
     } finally {
       if (this.shelfCheckPromise === task) this.shelfCheckPromise = null;
@@ -304,12 +307,12 @@ struct SearchBookDetailPage {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
       const existing = await db.getBook(this.bookUrl) ||
-        await this.findShelfBookByKey(BookIdentity.keyOfUrl(this.bookUrl));
+        await this.findShelfBookByKey(BookIdentity.keyOfUrl(this.bookUrl, this.origin));
       if (existing) {
         const nextCoverUrl = CoverUrlNormalizer.prefer(this.coverUrl, existing.coverUrl);
         if (nextCoverUrl && existing.coverUrl !== nextCoverUrl) {
           existing.coverUrl = nextCoverUrl;
-          await db.updateBook(existing);
+          await db.updateBook(existing, true, 'detail_check_cover_update');
           AppStorage.setOrCreate('shelfUpdateTime', Date.now());
         }
       }
@@ -333,7 +336,7 @@ struct SearchBookDetailPage {
     try {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
-      const requestKey = BookIdentity.keyOfUrl(this.bookUrl);
+      const requestKey = BookIdentity.keyOfUrl(this.bookUrl, this.origin);
       const existing = await db.getBook(this.bookUrl) || await this.findShelfBookByKey(requestKey);
       if (existing) {
         const nextCoverUrl = CoverUrlNormalizer.prefer(this.coverUrl, existing.coverUrl);
@@ -345,7 +348,7 @@ struct SearchBookDetailPage {
         existing.latestChapterTitle = BookFieldSanitizer.prefer(this.latestChapterTitle, existing.latestChapterTitle);
         existing.wordCount = BookFieldSanitizer.prefer(this.wordCount, existing.wordCount);
         SearchExplorePendingBook.clearPendingAddToShelf(existing);
-        await db.updateBook(existing);
+        await db.updateBook(existing, true, 'explicit_add_existing');
         AppStorage.setOrCreate('shelfUpdateTime', Date.now());
         this.syncStateFromBook(existing);
         this.isInShelf = true;
@@ -400,7 +403,7 @@ struct SearchBookDetailPage {
         resolvedExisting.latestChapterTitle = BookFieldSanitizer.prefer(book.latestChapterTitle, resolvedExisting.latestChapterTitle);
         resolvedExisting.wordCount = BookFieldSanitizer.prefer(book.wordCount, resolvedExisting.wordCount);
         SearchExplorePendingBook.clearPendingAddToShelf(resolvedExisting);
-        await db.updateBook(resolvedExisting);
+        await db.updateBook(resolvedExisting, true, 'explicit_add_resolved_existing');
         AppStorage.setOrCreate('shelfUpdateTime', Date.now());
         this.syncStateFromBook(resolvedExisting);
         this.isInShelf = true;
@@ -410,7 +413,7 @@ struct SearchBookDetailPage {
       }
 
       SearchExplorePendingBook.clearPendingAddToShelf(book);
-      await db.insertBook(book);
+      await db.insertBook(book, 'explicit_add_from_detail');
       this.syncStateFromBook(book);
 
       this.isInShelf = true;
@@ -522,7 +525,7 @@ struct SearchBookDetailPage {
       await db.initWithContext(getContext(this));
       const pendingBook = await db.getBook(this.pendingAddToShelfBookUrl);
       if (SearchExplorePendingBook.isPendingAddToShelf(pendingBook)) {
-        await db.deleteBook(this.pendingAddToShelfBookUrl);
+        await db.deleteBook(this.pendingAddToShelfBookUrl, 'temporary_read_declined');
         AppStorage.setOrCreate('shelfUpdateTime', Date.now());
       }
     } catch (e) {
@@ -543,7 +546,7 @@ struct SearchBookDetailPage {
       const pendingBook = await db.getBook(this.pendingAddToShelfBookUrl);
       if (pendingBook) {
         SearchExplorePendingBook.clearPendingAddToShelf(pendingBook);
-        await db.updateBook(pendingBook);
+        await db.updateBook(pendingBook, true, 'temporary_read_kept');
         this.syncStateFromBook(pendingBook);
         this.isInShelf = true;
         this.promptAddToShelfAfterRead = false;
@@ -578,7 +581,7 @@ struct SearchBookDetailPage {
     try {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
-      const requestKey = BookIdentity.keyOfUrl(this.bookUrl);
+      const requestKey = BookIdentity.keyOfUrl(this.bookUrl, this.origin);
       const existing = await db.getBook(this.bookUrl) || await this.findShelfBookByKey(requestKey, true);
       if (existing) {
         let bookChanged = false;
@@ -596,7 +599,7 @@ struct SearchBookDetailPage {
           bookChanged = true;
         }
         if (bookChanged) {
-          await db.updateBook(existing);
+          await db.updateBook(existing, true, 'prepare_read_update_existing');
           AppStorage.setOrCreate('shelfUpdateTime', Date.now());
         }
         this.syncStateFromBook(existing);
@@ -616,7 +619,7 @@ struct SearchBookDetailPage {
       const resolvedExisting = await this.findShelfBookByKey(BookIdentity.keyOfBook(book), true);
       if (resolvedExisting) {
         if (this.mergeResolvedDetailIntoBook(resolvedExisting)) {
-          await db.updateBook(resolvedExisting);
+          await db.updateBook(resolvedExisting, true, 'prepare_read_update_resolved');
           AppStorage.setOrCreate('shelfUpdateTime', Date.now());
         }
         this.syncStateFromBook(resolvedExisting);
@@ -632,7 +635,7 @@ struct SearchBookDetailPage {
         return true;
       }
       SearchExplorePendingBook.markPendingAddToShelf(book);
-      await db.insertBook(book);
+      await db.insertBook(book, 'temporary_read_insert');
       this.syncStateFromBook(book);
       this.isInShelf = false;
       this.promptAddToShelfAfterRead = this.promptAddToShelfOnBackFromResult;

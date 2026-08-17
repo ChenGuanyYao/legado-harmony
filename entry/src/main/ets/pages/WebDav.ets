@@ -20,6 +20,7 @@ import { FormDraftStore } from '../utils/FormDraftStore';
 class WebDavFormDraft {
   connectionJson: string = '';
   tab: string = 'settings';
+  encryptBackup: boolean = false;
   includeLocalBooks: boolean = false;
   entryNameDraft: string = '';
 }
@@ -45,8 +46,13 @@ struct WebDavPage {
   @State busy: boolean = false;
   @State busyText: string = '';
   @State busyProgress: number = 0;
+  @State encryptBackup: boolean = false;
   @State backupPassword: string = '';
   @State includeLocalBooks: boolean = false;
+  @State showRestorePasswordDialog: boolean = false;
+  @State restorePassword: string = '';
+  @State restorePasswordError: string = '';
+  @State pendingRestoreSourcePath: string = '';
   @State showEntryActionMenu: boolean = false;
   @State actionEntryPath: string = '';
   @State contextMenuX: number = 16;
@@ -79,6 +85,10 @@ struct WebDavPage {
   }
 
   onBackPress(): boolean {
+    if (this.showRestorePasswordDialog) {
+      this.cancelRestorePassword();
+      return true;
+    }
     if (this.showEntryNameDialog) {
       this.closeEntryNameDialog();
       return true;
@@ -118,6 +128,10 @@ struct WebDavPage {
 
       if (this.showEntryNameDialog) {
         this.entryNameDialog()
+      }
+
+      if (this.showRestorePasswordDialog) {
+        this.restorePasswordDialog()
       }
 
       if (this.busy) {
@@ -390,27 +404,110 @@ struct WebDavPage {
   }
 
   @Builder
+  restorePasswordDialog() {
+    Column() {
+      Column({ space: 12 }) {
+        Text('输入备份密码')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+        Text('检测到该远端备份已加密，请输入创建备份时设置的密码。')
+          .fontSize(13)
+          .fontColor(this.subTextColor())
+          .width('100%')
+        TextInput({ text: this.restorePassword, placeholder: '输入备份密码' })
+          .type(InputType.Password)
+          .height(44)
+          .backgroundColor(this.softColor())
+          .onChange((value: string) => {
+            this.restorePassword = value;
+            this.restorePasswordError = '';
+          })
+        if (this.restorePasswordError) {
+          Text(this.restorePasswordError)
+            .fontSize(12)
+            .fontColor('#D9485F')
+            .width('100%')
+        }
+        Row({ space: 10 }) {
+          Button('取消')
+            .layoutWeight(1)
+            .height(40)
+            .fontColor(this.primaryTextColor())
+            .backgroundColor(this.softColor())
+            .onClick(() => this.cancelRestorePassword())
+          Button('继续恢复')
+            .layoutWeight(1)
+            .height(40)
+            .fontColor(Color.White)
+            .backgroundColor(this.accentColor())
+            .onClick(() => this.confirmRestorePassword())
+        }
+        .width('100%')
+      }
+      .width('86%')
+      .padding(20)
+      .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
+      .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
+      .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
+      .border({ width: ThemeRuntime.glassBorderWidth('overlay'),
+        color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'overlay') })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius('overlay'),
+        color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'overlay'),
+        offsetX: ThemeRuntime.glassShadowOffsetX('overlay'), offsetY: ThemeRuntime.glassShadowOffsetY('overlay') })
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('#66000000')
+    .justifyContent(FlexAlign.Center)
+  }
+
+  @Builder
   backupPanel() {
     Scroll() {
       Column({ space: 12 }) {
         if (!this.configured) {
-          this.emptyConfiguration('配置连接后，可以把加密应用备份保存到 WebDAV。')
+          this.emptyConfiguration('配置连接后，可以把应用备份保存到 WebDAV。')
         } else {
           Column({ space: 10 }) {
-            Text('备份加密密码')
-              .fontSize(15)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.primaryTextColor())
+            Row() {
+              Column({ space: 3 }) {
+                Text('加密备份')
+                  .fontSize(14)
+                  .fontColor(this.primaryTextColor())
+                Text(this.encryptBackup ? '使用密码加密，恢复时需要输入密码' : '默认关闭，备份文件不加密')
+                  .fontSize(11)
+                  .fontColor(this.subTextColor())
+              }
+              .layoutWeight(1)
+              .alignItems(HorizontalAlign.Start)
+              Toggle({ type: ToggleType.Switch, isOn: this.encryptBackup })
+                .selectedColor(this.accentColor())
+                .onChange((value: boolean) => {
+                  this.encryptBackup = value;
+                  this.scheduleFormDraftSave();
+                })
+            }
+            .width('100%')
+            if (this.encryptBackup) {
+              Column({ space: 6 }) {
+                Text('备份加密密码')
+                  .fontSize(13)
+                  .fontColor(this.subTextColor())
+                  .width('100%')
+                TextInput({ text: this.backupPassword, placeholder: '至少 8 个字符；请妥善保存' })
+                  .type(InputType.Password)
+                  .height(44)
+                  .backgroundColor(this.softColor())
+                  .onChange((value: string) => {
+                    this.backupPassword = value;
+                    this.scheduleFormDraftSave();
+                    this.scheduleDraftSecretSave();
+                  })
+              }
               .width('100%')
-            TextInput({ text: this.backupPassword, placeholder: '至少 8 个字符；恢复时仍需使用' })
-              .type(InputType.Password)
-              .height(44)
-              .backgroundColor(this.softColor())
-            .onChange((value: string) => {
-              this.backupPassword = value;
-              this.scheduleFormDraftSave();
-              this.scheduleDraftSecretSave();
-            })
+            }
             Row() {
               Column() {
                 Text('包含本地图书文件')
@@ -430,7 +527,7 @@ struct WebDavPage {
                 })
             }
             .width('100%')
-            Button('立即上传加密备份')
+            Button(this.encryptBackup ? '立即上传加密备份' : '立即上传备份')
               .width('100%')
               .height(44)
               .fontColor(Color.White)
@@ -646,6 +743,7 @@ struct WebDavPage {
       this.password = await WebDavSecretStore.password(getContext(this), this.draftPasswordId);
       this.tab = draft.tab || 'settings';
       this.backupPassword = await WebDavSecretStore.password(getContext(this), this.draftBackupPasswordId);
+      this.encryptBackup = draft.encryptBackup === true;
       this.includeLocalBooks = draft.includeLocalBooks === true;
       this.entryNameDraft = draft.entryNameDraft || '';
       this.configured = !!this.connection.id;
@@ -679,6 +777,7 @@ struct WebDavPage {
       const draft = new WebDavFormDraft();
       draft.connectionJson = JSON.stringify(this.connection);
       draft.tab = this.tab;
+      draft.encryptBackup = this.encryptBackup;
       draft.includeLocalBooks = this.includeLocalBooks;
       draft.entryNameDraft = this.entryNameDraft;
       FormDraftStore.persistSoon(getContext(this), 'webdav:form', JSON.stringify(draft));
@@ -694,6 +793,7 @@ struct WebDavPage {
     const draft = new WebDavFormDraft();
     draft.connectionJson = JSON.stringify(this.connection);
     draft.tab = this.tab;
+    draft.encryptBackup = this.encryptBackup;
     draft.includeLocalBooks = this.includeLocalBooks;
     draft.entryNameDraft = this.entryNameDraft;
     FormDraftStore.persist(getContext(this), 'webdav:form', JSON.stringify(draft));
@@ -1057,18 +1157,19 @@ struct WebDavPage {
 
   async uploadBackup(): Promise<void> {
     if (this.busy) return;
-    if (this.backupPassword.length < 8) {
+    if (this.encryptBackup && this.backupPassword.length < 8) {
       promptAction.showToast({ message: '备份加密密码至少需要 8 个字符' });
       return;
     }
+    const encryptionPassword = this.encryptBackup ? this.backupPassword : '';
     this.busy = true;
-    this.busyText = '正在生成加密备份...';
+    this.busyText = this.encryptBackup ? '正在生成加密备份...' : '正在生成备份...';
     this.busyProgress = 1;
     let archivePath = '';
     try {
       const selection = new AppDataBackupSelection();
       selection.localBooks = this.includeLocalBooks;
-      const backup = await AppDataBackupService.createBackup(getContext(this), selection, this.backupPassword,
+      const backup = await AppDataBackupService.createBackup(getContext(this), selection, encryptionPassword,
         (message: string, percent: number): void => {
           this.busyText = message;
           this.busyProgress = Math.floor(percent * 0.65);
@@ -1083,7 +1184,7 @@ struct WebDavPage {
           this.busyProgress = 66 + Math.min(33, Math.floor(ratio * 33));
         });
       this.busyProgress = 100;
-      promptAction.showToast({ message: 'WebDAV 备份上传完成' });
+      promptAction.showToast({ message: this.encryptBackup ? 'WebDAV 加密备份上传完成' : 'WebDAV 备份上传完成' });
       this.backups = await new WebDavClient(this.connection, this.password).listBackups();
     } catch (error) {
       promptAction.showToast({ message: `备份失败：${this.message(error)}` });
@@ -1097,10 +1198,6 @@ struct WebDavPage {
 
   async restoreBackup(entry: WebDavEntry): Promise<void> {
     if (this.busy) return;
-    if (!this.backupPassword) {
-      promptAction.showToast({ message: '请先输入该备份的加密密码' });
-      return;
-    }
     const confirmation = await promptAction.showDialog({
       title: '恢复 WebDAV 备份',
       message: '备份数据会合并到当前应用，相同书籍、书源和设置会更新。是否继续？',
@@ -1111,14 +1208,80 @@ struct WebDavPage {
     this.busyText = '正在下载备份...';
     this.busyProgress = 1;
     const sourcePath = `${getContext(this).tempDir}/webdav_restore_${Date.now()}.qingyebak`;
-    let session: AppDataBackupImportSession | null = null;
+    let keepSourceForPassword: boolean = false;
     try {
       await new WebDavClient(this.connection, this.password).downloadBackup(entry.relativePath, sourcePath,
         (received: number, total: number): void => {
           const ratio = total > 0 ? received / total : 0;
           this.busyProgress = 1 + Math.min(39, Math.floor(ratio * 39));
         });
-      const prepared = await AppDataBackupService.prepareImport(getContext(this), sourcePath, this.backupPassword,
+      const summary = await this.importDownloadedBackup(sourcePath, '');
+      this.busyProgress = 100;
+      promptAction.showToast({ message: `恢复完成：${summary}` });
+    } catch (error) {
+      if (this.isBackupPasswordRequired(error)) {
+        keepSourceForPassword = true;
+        this.pendingRestoreSourcePath = sourcePath;
+        this.restorePassword = '';
+        this.restorePasswordError = '';
+        this.showRestorePasswordDialog = true;
+      } else {
+        promptAction.showToast({ message: `恢复失败：${this.message(error)}` });
+      }
+    } finally {
+      if (!keepSourceForPassword) this.deleteRestoreSource(sourcePath);
+      this.busy = false;
+      this.busyText = '';
+      this.busyProgress = 0;
+    }
+  }
+
+  async confirmRestorePassword(): Promise<void> {
+    if (this.busy) return;
+    if (!this.restorePassword) {
+      this.restorePasswordError = '请输入备份密码';
+      return;
+    }
+    const sourcePath = this.pendingRestoreSourcePath;
+    if (!sourcePath || !fs.accessSync(sourcePath)) {
+      this.cancelRestorePassword();
+      promptAction.showToast({ message: '待恢复的备份文件已失效，请重新选择' });
+      return;
+    }
+    this.showRestorePasswordDialog = false;
+    this.restorePasswordError = '';
+    this.busy = true;
+    this.busyText = '正在解密备份...';
+    this.busyProgress = 41;
+    try {
+      const summary = await this.importDownloadedBackup(sourcePath, this.restorePassword);
+      this.busyProgress = 100;
+      this.deleteRestoreSource(sourcePath);
+      this.pendingRestoreSourcePath = '';
+      this.restorePassword = '';
+      promptAction.showToast({ message: `恢复完成：${summary}` });
+    } catch (error) {
+      this.restorePasswordError = this.message(error);
+      this.showRestorePasswordDialog = true;
+    } finally {
+      this.busy = false;
+      this.busyText = '';
+      this.busyProgress = 0;
+    }
+  }
+
+  cancelRestorePassword(): void {
+    this.showRestorePasswordDialog = false;
+    this.restorePassword = '';
+    this.restorePasswordError = '';
+    this.deleteRestoreSource(this.pendingRestoreSourcePath);
+    this.pendingRestoreSourcePath = '';
+  }
+
+  async importDownloadedBackup(sourcePath: string, password: string): Promise<string> {
+    let session: AppDataBackupImportSession | null = null;
+    try {
+      const prepared = await AppDataBackupService.prepareImport(getContext(this), sourcePath, password,
         (message: string, percent: number): void => {
           this.busyText = message;
           this.busyProgress = 41 + Math.floor(percent * 0.39);
@@ -1128,17 +1291,19 @@ struct WebDavPage {
       const selection = new AppDataBackupSelection();
       selection.searchHistory = true;
       const result = await AppDataBackupService.importBackup(getContext(this), prepared, selection);
-      this.busyProgress = 100;
-      promptAction.showToast({ message: `恢复完成：${result.summary()}` });
-    } catch (error) {
-      promptAction.showToast({ message: `恢复失败：${this.message(error)}` });
+      return result.summary();
     } finally {
       await AppDataBackupService.discardImport(session);
-      try { if (fs.accessSync(sourcePath)) fs.unlinkSync(sourcePath); } catch (_) {}
-      this.busy = false;
-      this.busyText = '';
-      this.busyProgress = 0;
     }
+  }
+
+  isBackupPasswordRequired(error: Object): boolean {
+    return this.message(error).includes(AppDataBackupService.PASSWORD_REQUIRED_MESSAGE);
+  }
+
+  deleteRestoreSource(sourcePath: string): void {
+    if (!sourcePath) return;
+    try { if (fs.accessSync(sourcePath)) fs.unlinkSync(sourcePath); } catch (_) {}
   }
 
   async deleteBackup(entry: WebDavEntry): Promise<void> {

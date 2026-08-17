@@ -1098,6 +1098,7 @@ struct BookshelfPage {
   @State activeFullTextCacheBookUrls: string[] = [];
   @State isCacheTocLoading: boolean = false;
   @State isShelfRefreshing: boolean = false;
+  @State shelfRefreshStatus: RefreshStatus = RefreshStatus.Inactive;
   @State shelfRefreshPrompt: string = '下拉刷新书架';
   @State editingTags: string[] = [];
   @State tagInput: string = '';
@@ -1328,7 +1329,7 @@ struct BookshelfPage {
       const db = AppDatabase.getInstance();
       this.deleteBookCoverCache(book);
       LocalBookService.deleteLocalBookFiles(getContext(this), book);
-      await db.deleteBook(book.bookUrl);
+      await db.deleteBook(book.bookUrl, 'bookshelf_user_delete');
       promptAction.showToast({ message: `已删除《${book.name}》` });
       AppStorage.setOrCreate('shelfUpdateTime', Date.now());
       await this.loadBooks();
@@ -2379,6 +2380,11 @@ struct BookshelfPage {
       .height('100%')
       .backgroundColor(this.pageColor())
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+
+      if (this.books.length > 0 &&
+        (this.isShelfRefreshing || this.shelfRefreshStatus !== RefreshStatus.Inactive)) {
+        this.shelfRefreshStatusOverlay()
+      }
 
       if (this.showShelfSortMenu && this.books.length > 0) {
         this.shelfSortFloatingMenu()
@@ -3621,7 +3627,7 @@ struct BookshelfPage {
     for (const book of targets) {
       this.deleteBookCoverCache(book);
       LocalBookService.deleteLocalBookFiles(getContext(this), book);
-      await db.deleteBook(book.bookUrl);
+      await db.deleteBook(book.bookUrl, 'bookshelf_batch_delete');
     }
     this.exitBookMultiSelect();
     AppStorage.setOrCreate('shelfUpdateTime', Date.now());
@@ -4321,9 +4327,7 @@ struct BookshelfPage {
           url: 'pages/ReadBook',
           params: {
             bookUrl: book.bookUrl,
-            shelfBookOpening: 'true',
-            shelfOpeningBookName: book.name,
-            shelfOpeningBookWidth: String(this.openingBookWidth())
+            shelfBookOpening: 'true'
           }
         }).catch((error: Error) => {
           AppStorage.setOrCreate<boolean>('shelfReaderDirectTransition', false);
@@ -4432,48 +4436,48 @@ struct BookshelfPage {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor(this.openingBookWaiting ? this.inputColor() : this.pageColor())
+        .backgroundColor(this.pageColor())
         .opacity(this.openingBookBackdropOpacity)
 
-      Stack({ alignContent: Alignment.Center }) {
+      if (this.openingBookWaiting) {
         Column() {
-          Text(book.name)
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.primaryTextColor())
-            .maxLines(2)
-            .textAlign(TextAlign.Center)
-            .margin({ left: 22, right: 22, top: 34, bottom: this.openingBookWaiting ? 14 : 28 })
-
-          if (this.openingBookWaiting) {
-            Column() {
-              LoadingProgress()
-                .width(28)
-                .height(28)
-                .color(this.accentColor())
-              Text('正在进入阅读…')
-                .fontSize(13)
-                .fontColor(this.secondaryTextColor())
-                .margin({ top: 7 })
-            }
-            .margin({ bottom: 18 })
-          }
-
-          ForEach(this.openingBookWaiting ? [0, 1, 2] : [0, 1, 2, 3, 4, 5, 6], (_line: number) => {
-            Divider()
-              .width('72%')
-              .color(this.appDarkMode ? '#24FFFFFF' : '#18000000')
-              .margin({ bottom: 17 })
-          })
+          LoadingProgress()
+            .width(40)
+            .height(40)
+            .color(this.accentColor())
+          Text('正在打开书籍…')
+            .fontSize(14)
+            .fontColor(this.secondaryTextColor())
+            .margin({ top: 10 })
         }
-        .width(this.openingBookWidth())
-        .height(this.openingBookHeight())
-        .backgroundColor(this.inputColor())
-        .borderRadius(8)
-        .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
-        .shadow({ radius: 24, color: this.appDarkMode ? '#90000000' : '#38000000', offsetX: 8, offsetY: 10 })
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+      } else {
+        Stack({ alignContent: Alignment.Center }) {
+          Column() {
+            Text(book.name)
+              .fontSize(20)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.primaryTextColor())
+              .maxLines(2)
+              .textAlign(TextAlign.Center)
+              .margin({ left: 22, right: 22, top: 34, bottom: 28 })
 
-        if (!this.openingBookWaiting) {
+            ForEach([0, 1, 2, 3, 4, 5, 6], (_line: number) => {
+              Divider()
+                .width('72%')
+                .color(this.appDarkMode ? '#24FFFFFF' : '#18000000')
+                .margin({ bottom: 17 })
+            })
+          }
+          .width(this.openingBookWidth())
+          .height(this.openingBookHeight())
+          .backgroundColor(this.inputColor())
+          .borderRadius(8)
+          .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
+          .shadow({ radius: 24, color: this.appDarkMode ? '#90000000' : '#38000000', offsetX: 8, offsetY: 10 })
+
           Stack({ alignContent: Alignment.Center }) {
             this.coverView(book, '100%', '100%', ImageFit.Cover)
 
@@ -4500,13 +4504,13 @@ struct BookshelfPage {
           })
           .shadow({ radius: 20, color: '#55000000', offsetX: 5, offsetY: 8 })
         }
+        .width(this.openingBookWidth())
+        .height(this.openingBookHeight())
+        .clip(false)
+        .scale({ x: this.openingBookScale, y: this.openingBookScale })
+        .translate({ x: this.openingBookTranslateX, y: this.openingBookTranslateY })
+        .opacity(this.openingBookOpacity)
       }
-      .width(this.openingBookWidth())
-      .height(this.openingBookHeight())
-      .clip(false)
-      .scale({ x: this.openingBookScale, y: this.openingBookScale })
-      .translate({ x: this.openingBookTranslateX, y: this.openingBookTranslateY })
-      .opacity(this.openingBookOpacity)
     }
     .width('100%')
     .height('100%')
@@ -6137,6 +6141,7 @@ struct BookshelfPage {
   }
 
   updateShelfRefreshPrompt(state: RefreshStatus): void {
+    this.shelfRefreshStatus = state;
     if (this.shelfRefreshRunning) {
       this.shelfRefreshPrompt = '书架刷新中';
       return;
@@ -6171,6 +6176,17 @@ struct BookshelfPage {
 
   @Builder
   shelfRefreshBuilder() {
+    // Refresh translates its builder back to y=0 during Done. The bookshelf header is an
+    // immersive glass overlay, so a visible builder would travel through that overlay. Keep the
+    // layout placeholder here and render the status in a fixed sibling below the full header.
+    Row()
+      .height(48)
+      .width('100%')
+      .opacity(0)
+  }
+
+  @Builder
+  shelfRefreshStatusOverlay() {
     Row({ space: 8 }) {
       if (this.isShelfRefreshing) {
         LoadingProgress()
@@ -6186,6 +6202,9 @@ struct BookshelfPage {
     .width('100%')
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
+    .position({ x: 0, y: this.bookshelfTopOverlayHeight() + 4 })
+    .zIndex(3)
+    .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
@@ -8892,6 +8911,8 @@ struct SearchPage {
   @State searchSourcePickerQuery: string = '';
   @State searchableSources: BookSource[] = [];
   @State sourceGroups: string[] = [];
+  @State pendingSelectedSourceUrlsRaw: string = '';
+  @State expandedSearchSourceGroups: string[] = [];
   @State searchViewportWidth: number = 360;
   @StorageLink('shelfUpdateTime') @Watch('onShelfChanged') shelfUpdateTime: number = 0;
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
@@ -8907,6 +8928,8 @@ struct SearchPage {
   @StorageLink('searchExploreShowSearchProgress') showSearchProgress: boolean = true;
   @StorageLink('searchExploreSearchConcurrency') searchConcurrency: number = 6;
   @StorageLink('searchExploreSelectedSourceGroups') selectedSourceGroupsRaw: string = '';
+  @StorageLink('searchExploreSelectedSourceUrls') selectedSourceUrlsRaw: string =
+    SearchExploreSettingsStore.LEGACY_SOURCE_SELECTION;
   @StorageLink('singleSourceSearchUrl') singleSourceSearchUrl: string = '';
   @StorageLink('singleSourceSearchName') singleSourceSearchName: string = '';
   @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
@@ -8920,6 +8943,7 @@ struct SearchPage {
   private searchResultScroller: ListScroller = new ListScroller();
   private searchSessionId: number = 0;
   private readonly NO_SOURCE_GROUPS_SELECTED: string = '__NO_SOURCE_GROUPS_SELECTED__';
+  private readonly NO_SOURCES_SELECTED: string = '__NO_SOURCES_SELECTED__';
 
   aboutToAppear() {
     if (this.isActive) {
@@ -8944,7 +8968,6 @@ struct SearchPage {
       await db.initWithContext(getContext(this));
       const keywords = await db.getSearchKeywords();
       this.searchHistory = keywords.map(k => k.keyword);
-      await this.loadSourceGroups(db);
       await this.loadSearchableSources(db);
       const pendingKeyword = AppStorage.get<string>('singleSourceSearchKeyword') || '';
       if (pendingKeyword && this.singleSourceSearchUrl) {
@@ -8991,20 +9014,33 @@ struct SearchPage {
       const sources = await db.getEnabledBookSourcesForSearch();
       this.searchableSources = sources.filter((source: BookSource): boolean =>
         !!(source.bookSourceUrl && source.bookSourceName && source.searchUrl && source.searchRule?.bookList));
+      const groups: string[] = [];
+      for (const source of this.searchableSources) {
+        const group = this.normalizeSourceGroup(source);
+        if (!groups.includes(group)) groups.push(group);
+      }
+      this.sourceGroups = groups.sort((left: string, right: string): number => left.localeCompare(right));
+      this.migrateLegacySearchSourceSelection();
+      this.pruneSearchSourceSelection();
     } catch (e) {
       console.warn('加载可搜索书源失败:', e);
       this.searchableSources = [];
     }
   }
 
-  openSearchSourcePicker(): void {
+  async openSearchSourcePicker(): Promise<void> {
     this.showSearchHistoryDropdown = false;
     this.showSearchSettingsDialog = false;
     this.searchSourcePickerQuery = '';
-    this.showSearchSourcePicker = true;
-    this.loadSearchableSources().catch((e: Error) => {
+    try {
+      await this.loadSearchableSources();
+    } catch (e) {
       console.warn('刷新可搜索书源失败:', e);
-    });
+    }
+    this.pendingSelectedSourceUrlsRaw = (this.singleSourceSearchUrl ? [this.singleSourceSearchUrl] :
+      this.effectiveSelectedSourceUrls()).join('\n');
+    this.expandedSearchSourceGroups = this.sourceGroups.length === 1 ? this.sourceGroups.slice() : [];
+    this.showSearchSourcePicker = true;
   }
 
   filteredSearchableSources(): BookSource[] {
@@ -9016,13 +9052,190 @@ struct SearchPage {
     });
   }
 
-  selectSearchSource(source: BookSource | null): void {
+  filteredSearchSourceGroups(): string[] {
+    const result: string[] = [];
+    for (const source of this.filteredSearchableSources()) {
+      const group = this.normalizeSourceGroup(source);
+      if (!result.includes(group)) result.push(group);
+    }
+    return result.sort((left: string, right: string): number => left.localeCompare(right));
+  }
+
+  searchSourcesInGroup(group: string, filtered: boolean = false): BookSource[] {
+    const sources = filtered ? this.filteredSearchableSources() : this.searchableSources;
+    return sources.filter((source: BookSource): boolean => this.normalizeSourceGroup(source) === group);
+  }
+
+  searchableSourceUrls(): string[] {
+    return this.searchableSources.map((source: BookSource): string => source.bookSourceUrl)
+      .filter((url: string): boolean => !!url);
+  }
+
+  uniqueSourceUrls(urls: string[]): string[] {
+    const result: string[] = [];
+    for (const rawUrl of urls) {
+      const url = (rawUrl || '').trim();
+      if (url && !result.includes(url)) result.push(url);
+    }
+    return result;
+  }
+
+  pendingSelectedSourceUrls(): string[] {
+    return this.uniqueSourceUrls(this.pendingSelectedSourceUrlsRaw.split('\n'));
+  }
+
+  setPendingSelectedSourceUrls(urls: string[]): void {
+    this.pendingSelectedSourceUrlsRaw = this.uniqueSourceUrls(urls).join('\n');
+  }
+
+  selectedSourceUrls(): string[] {
+    const raw = this.selectedSourceUrlsRaw.trim();
+    if (!raw || raw === this.NO_SOURCES_SELECTED ||
+      raw === SearchExploreSettingsStore.LEGACY_SOURCE_SELECTION) return [];
+    return this.uniqueSourceUrls(raw.split('\n'));
+  }
+
+  isAllSearchSourcesSelected(): boolean {
+    const raw = this.selectedSourceUrlsRaw.trim();
+    return raw === '' || raw === SearchExploreSettingsStore.LEGACY_SOURCE_SELECTION;
+  }
+
+  isNoSearchSourcesSelected(): boolean {
+    return this.selectedSourceUrlsRaw.trim() === this.NO_SOURCES_SELECTED;
+  }
+
+  effectiveSelectedSourceUrls(): string[] {
+    if (this.isAllSearchSourcesSelected()) return this.searchableSourceUrls();
+    if (this.isNoSearchSourcesSelected()) return [];
+    const available = this.searchableSourceUrls();
+    return this.selectedSourceUrls().filter((url: string): boolean => available.includes(url));
+  }
+
+  pendingSourceSelectionState(urls: string[]): number {
+    const normalized = this.uniqueSourceUrls(urls);
+    if (normalized.length === 0) return 0;
+    let selectedCount = 0;
+    for (const url of normalized) {
+      if (this.pendingSelectedSourceUrls().includes(url)) selectedCount++;
+    }
+    if (selectedCount === 0) return 0;
+    return selectedCount === normalized.length ? 2 : 1;
+  }
+
+  togglePendingAllSources(): void {
+    this.setPendingSelectedSourceUrls(this.pendingSourceSelectionState(this.searchableSourceUrls()) === 2 ?
+      [] : this.searchableSourceUrls());
+  }
+
+  togglePendingSourceGroup(group: string): void {
+    const groupUrls = this.searchSourcesInGroup(group)
+      .map((source: BookSource): string => source.bookSourceUrl);
+    if (this.pendingSourceSelectionState(groupUrls) === 2) {
+      this.setPendingSelectedSourceUrls(this.pendingSelectedSourceUrls()
+        .filter((url: string): boolean => !groupUrls.includes(url)));
+      return;
+    }
+    this.setPendingSelectedSourceUrls(this.pendingSelectedSourceUrls().concat(groupUrls));
+  }
+
+  togglePendingSource(source: BookSource): void {
+    const url = source.bookSourceUrl;
+    if (!url) return;
+    if (this.pendingSelectedSourceUrls().includes(url)) {
+      this.setPendingSelectedSourceUrls(this.pendingSelectedSourceUrls()
+        .filter((item: string): boolean => item !== url));
+    } else {
+      this.setPendingSelectedSourceUrls(this.pendingSelectedSourceUrls().concat([url]));
+    }
+  }
+
+  isSearchSourceGroupExpanded(group: string): boolean {
+    return !!this.searchSourcePickerQuery.trim() || this.expandedSearchSourceGroups.includes(group);
+  }
+
+  toggleSearchSourceGroupExpanded(group: string): void {
+    if (this.expandedSearchSourceGroups.includes(group)) {
+      this.expandedSearchSourceGroups = this.expandedSearchSourceGroups
+        .filter((item: string): boolean => item !== group);
+    } else {
+      this.expandedSearchSourceGroups = this.expandedSearchSourceGroups.concat([group]);
+    }
+  }
+
+  selectedSourceGroupCount(urls: string[]): number {
+    const groups: string[] = [];
+    for (const source of this.searchableSources) {
+      if (!urls.includes(source.bookSourceUrl)) continue;
+      const group = this.normalizeSourceGroup(source);
+      if (!groups.includes(group)) groups.push(group);
+    }
+    return groups.length;
+  }
+
+  searchScopeSummary(): string {
+    if (this.singleSourceSearchUrl) {
+      return this.singleSourceSearchName || this.singleSourceSearchUrl;
+    }
+    if (this.isAllSearchSourcesSelected()) {
+      return this.searchableSources.length > 0 ? `全部书源 · ${this.searchableSources.length}` : '全部书源';
+    }
+    const selected = this.effectiveSelectedSourceUrls();
+    if (selected.length === 0) return '未选择书源';
+    if (selected.length === 1) {
+      const source = this.searchableSources.find((item: BookSource): boolean => item.bookSourceUrl === selected[0]);
+      return source?.bookSourceName || '1 个书源';
+    }
+    return `${selected.length} 个书源 · ${this.selectedSourceGroupCount(selected)} 个分组`;
+  }
+
+  migrateLegacySearchSourceSelection(): void {
+    if (this.selectedSourceUrlsRaw.trim() !== SearchExploreSettingsStore.LEGACY_SOURCE_SELECTION) return;
+    const legacyRaw = this.selectedSourceGroupsRaw.trim();
+    if (!legacyRaw) {
+      this.selectedSourceUrlsRaw = '';
+    } else if (legacyRaw === this.NO_SOURCE_GROUPS_SELECTED) {
+      this.selectedSourceUrlsRaw = this.NO_SOURCES_SELECTED;
+    } else {
+      const legacyGroups = legacyRaw.split('\n').map((group: string): string => group.trim())
+        .filter((group: string): boolean => !!group);
+      const urls = this.searchableSources.filter((source: BookSource): boolean =>
+        legacyGroups.includes(this.normalizeSourceGroup(source)))
+        .map((source: BookSource): string => source.bookSourceUrl);
+      this.selectedSourceUrlsRaw = urls.length > 0 ? this.uniqueSourceUrls(urls).join('\n') : this.NO_SOURCES_SELECTED;
+    }
+    this.saveSearchExploreSettings();
+  }
+
+  pruneSearchSourceSelection(): void {
+    if (this.isAllSearchSourcesSelected() || this.isNoSearchSourcesSelected()) return;
+    const available = this.searchableSourceUrls();
+    const selected = this.selectedSourceUrls().filter((url: string): boolean => available.includes(url));
+    const normalized = selected.length > 0 ? selected.join('\n') : this.NO_SOURCES_SELECTED;
+    if (normalized !== this.selectedSourceUrlsRaw) {
+      this.selectedSourceUrlsRaw = normalized;
+      this.saveSearchExploreSettings();
+    }
+  }
+
+  applySearchSourceSelection(): void {
+    const available = this.searchableSourceUrls();
+    const selected = this.pendingSelectedSourceUrls()
+      .filter((url: string): boolean => available.includes(url));
+    this.selectedSourceUrlsRaw = selected.length === available.length ? '' :
+      (selected.length > 0 ? selected.join('\n') : this.NO_SOURCES_SELECTED);
+    this.selectedSourceGroupsRaw = '';
+    this.singleSourceSearchUrl = '';
+    this.singleSourceSearchName = '';
+    this.saveSearchExploreSettings();
+    this.resetSearchForScopeChange();
+    this.showSearchSourcePicker = false;
+  }
+
+  resetSearchForScopeChange(): void {
     this.searchSessionId++;
     this.coordinator?.cancel();
     this.coordinator = null;
     this.isSearching = false;
-    this.singleSourceSearchUrl = source?.bookSourceUrl || '';
-    this.singleSourceSearchName = source ? (source.bookSourceName || source.bookSourceUrl) : '';
     this.searchResults = [];
     this.displayedSearchResults = [];
     this.searchResultKeySet.clear();
@@ -9030,7 +9243,6 @@ struct SearchPage {
     this.statusMessage = '';
     this.verificationUrl = '';
     this.verificationTitle = '';
-    this.showSearchSourcePicker = false;
   }
 
   build() {
@@ -9108,8 +9320,7 @@ struct SearchPage {
           SymbolGlyph($r('sys.symbol.magnifyingglass'))
             .fontSize(14)
             .fontColor([this.buttonColor()])
-          Text(this.singleSourceSearchUrl ?
-            `搜索范围：${this.singleSourceSearchName || this.singleSourceSearchUrl}` : '搜索范围：全部书源')
+          Text(`搜索范围：${this.searchScopeSummary()}`)
             .fontSize(13)
             .fontColor(this.primaryTextColor())
             .maxLines(1)
@@ -9125,7 +9336,8 @@ struct SearchPage {
         .margin({ left: 16, right: 16, bottom: 6 })
         .borderRadius(18)
         .backgroundColor(this.glassCardColor())
-        .border({ width: 1, color: this.singleSourceSearchUrl ? this.buttonColor() : this.glassBorderColor() })
+        .border({ width: 1, color: (this.singleSourceSearchUrl || !this.isAllSearchSourcesSelected()) ?
+          this.buttonColor() : this.glassBorderColor() })
         .alignItems(VerticalAlign.Center)
         .onClick(() => this.openSearchSourcePicker())
 
@@ -9355,123 +9567,221 @@ struct SearchPage {
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor('#66000000')
+        .backgroundColor(this.appDarkMode ? '#52000000' : '#26FFFFFF')
+        .backdropBlur(ThemeRuntime.glassBlur('popover', 18))
         .onClick(() => {
           this.showSearchSourcePicker = false;
         })
 
       Column() {
         Row() {
-          Text('选择搜索书源')
-            .fontSize(18)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.primaryTextColor())
-            .layoutWeight(1)
-          Text('关闭')
-            .fontSize(13)
+          Column({ space: 3 }) {
+            Text('搜索范围')
+              .fontSize(18)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.primaryTextColor())
+            Text(`已选 ${this.pendingSelectedSourceUrls().length} / ${this.searchableSources.length} 个书源`)
+              .fontSize(12)
+              .fontColor(this.subTextColor())
+          }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          Text('完成')
+            .fontSize(14)
+            .fontWeight(FontWeight.Medium)
             .fontColor(this.buttonColor())
             .height(36)
-            .padding({ left: 12, right: 4 })
+            .padding({ left: 16, right: 4 })
             .textAlign(TextAlign.Center)
             .onClick(() => {
-              this.showSearchSourcePicker = false;
+              this.applySearchSourceSelection();
             })
         }
         .width('100%')
         .height(44)
         .alignItems(VerticalAlign.Center)
 
-        TextInput({ placeholder: '搜索书源名称或分组', text: this.searchSourcePickerQuery })
+        TextInput({ placeholder: '搜索书源或分组', text: this.searchSourcePickerQuery })
           .width('100%')
           .height(40)
           .fontSize(14)
           .fontColor(this.primaryTextColor())
           .placeholderColor(this.subTextColor())
-          .backgroundColor(this.buttonBackgroundColor())
+          .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode,
+            ThemeRuntime.inputColor(this.appDarkMode), 'button'))
+          .backdropBlur(ThemeRuntime.glassBlur('button', 12))
+          .border({ width: ThemeRuntime.glassBorderWidth('button'),
+            color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'button') })
           .borderRadius(20)
           .padding({ left: 14, right: 14 })
           .onChange((value: string) => {
             this.searchSourcePickerQuery = value;
           })
 
-        List({ space: 6 }) {
-          ListItem() {
-            Row() {
-              Column({ space: 3 }) {
-                Text('全部书源')
-                  .fontSize(15)
-                  .fontWeight(FontWeight.Medium)
-                  .fontColor(this.primaryTextColor())
-                Text(`同时搜索已启用的 ${this.searchableSources.length} 个书源`)
-                  .fontSize(12)
-                  .fontColor(this.subTextColor())
-              }
-              .layoutWeight(1)
-              .alignItems(HorizontalAlign.Start)
-              if (!this.singleSourceSearchUrl) {
-                Text('当前')
-                  .fontSize(12)
-                  .fontColor(this.buttonColor())
-              }
-            }
-            .width('100%')
-            .padding(12)
-            .borderRadius(10)
-            .backgroundColor(this.singleSourceSearchUrl ? this.cardColor() : this.buttonBackgroundColor())
-            .onClick(() => this.selectSearchSource(null))
+        Row() {
+          this.searchSourceSelectionIndicator(this.searchableSourceUrls())
+          Column({ space: 2 }) {
+            Text('全部书源')
+              .fontSize(15)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.primaryTextColor())
+            Text(`已启用且支持搜索的 ${this.searchableSources.length} 个书源`)
+              .fontSize(12)
+              .fontColor(this.subTextColor())
           }
+          .layoutWeight(1)
+          .alignItems(HorizontalAlign.Start)
+          Text(this.pendingSourceSelectionState(this.searchableSourceUrls()) === 2 ? '取消全选' : '全选')
+            .fontSize(12)
+            .fontColor(this.buttonColor())
+        }
+        .width('100%')
+        .constraintSize({ minHeight: 56 })
+        .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+        .margin({ top: 10, bottom: 8 })
+        .borderRadius(ThemeRuntime.glassCornerRadius(12, 'button'))
+        .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'button'))
+        .backdropBlur(ThemeRuntime.glassBlur('button', 12))
+        .border({ width: ThemeRuntime.glassBorderWidth('button'),
+          color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'button') })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => this.togglePendingAllSources())
 
-          ForEach(this.filteredSearchableSources(), (source: BookSource) => {
+        List({ space: 8 }) {
+          ForEach(this.filteredSearchSourceGroups(), (group: string) => {
             ListItem() {
-              Row() {
-                Column({ space: 3 }) {
-                  Text(source.bookSourceName || source.bookSourceUrl)
-                    .fontSize(15)
-                    .fontWeight(FontWeight.Medium)
-                    .fontColor(this.primaryTextColor())
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  Text(source.bookSourceGroup || '未分组')
-                    .fontSize(12)
-                    .fontColor(this.subTextColor())
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+              Column() {
+                Row() {
+                  Row() {
+                    this.searchSourceSelectionIndicator(this.searchSourcesInGroup(group)
+                      .map((source: BookSource): string => source.bookSourceUrl))
+                  }
+                  .height(48)
+                  .padding({ left: 12, right: 10 })
+                  .onClick(() => this.togglePendingSourceGroup(group))
+
+                  Column({ space: 2 }) {
+                    Text(group)
+                      .fontSize(15)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor(this.primaryTextColor())
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    Text(`${this.searchSourcesInGroup(group).filter((source: BookSource): boolean =>
+                      this.pendingSelectedSourceUrls().includes(source.bookSourceUrl)).length} / ` +
+                      `${this.searchSourcesInGroup(group).length} 个书源`)
+                      .fontSize(12)
+                      .fontColor(this.subTextColor())
+                  }
+                  .layoutWeight(1)
+                  .alignItems(HorizontalAlign.Start)
+
+                  SymbolGlyph(this.isSearchSourceGroupExpanded(group) ?
+                    $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+                    .fontSize(16)
+                    .fontColor([this.subTextColor()])
+                    .width(44)
+                    .height(48)
+                    .onClick(() => this.toggleSearchSourceGroupExpanded(group))
                 }
-                .layoutWeight(1)
-                .alignItems(HorizontalAlign.Start)
-                if (source.bookSourceUrl === this.singleSourceSearchUrl) {
-                  Text('当前')
-                    .fontSize(12)
-                    .fontColor(this.buttonColor())
+                .width('100%')
+                .alignItems(VerticalAlign.Center)
+
+                if (this.isSearchSourceGroupExpanded(group)) {
+                  Divider()
+                    .color(this.glassBorderColor())
+                    .margin({ left: 44, right: 12 })
+
+                  ForEach(this.searchSourcesInGroup(group, !!this.searchSourcePickerQuery.trim()),
+                    (source: BookSource) => {
+                    Row() {
+                      this.searchSourceSelectionIndicator([source.bookSourceUrl])
+                      Text(source.bookSourceName || source.bookSourceUrl)
+                        .fontSize(14)
+                        .fontColor(this.secondaryTextColor())
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .layoutWeight(1)
+                        .margin({ left: 10 })
+                    }
+                    .width('100%')
+                    .height(44)
+                    .padding({ left: 30, right: 14 })
+                    .alignItems(VerticalAlign.Center)
+                    .onClick(() => this.togglePendingSource(source))
+                  }, (source: BookSource) => source.bookSourceUrl)
                 }
               }
               .width('100%')
-              .padding(12)
-              .borderRadius(10)
-              .backgroundColor(source.bookSourceUrl === this.singleSourceSearchUrl ?
-                this.buttonBackgroundColor() : this.cardColor())
-              .onClick(() => this.selectSearchSource(source))
+              .borderRadius(ThemeRuntime.glassCornerRadius(12, 'button'))
+              .clip(true)
+              .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'button'))
+              .backdropBlur(ThemeRuntime.glassBlur('button', 12))
+              .border({ width: ThemeRuntime.glassBorderWidth('button'),
+                color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'button') })
             }
-          }, (source: BookSource) => source.bookSourceUrl)
+          }, (group: string) => group)
+
+          if (this.filteredSearchSourceGroups().length === 0) {
+            ListItem() {
+              Text('没有匹配的书源')
+                .fontSize(14)
+                .fontColor(this.subTextColor())
+                .width('100%')
+                .height(96)
+                .textAlign(TextAlign.Center)
+            }
+          }
         }
         .width('100%')
-        .height(420)
-        .margin({ top: 12 })
+        .layoutWeight(1)
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       }
       .width(Math.min(520, Math.max(280, this.searchViewportWidth - 32)))
+      .height('78%')
       .padding(18)
       .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
       .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
       .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
       .border({ width: ThemeRuntime.glassBorderWidth('overlay'),
         color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'overlay') })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius('overlay'),
+        color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'overlay'),
+        offsetX: ThemeRuntime.glassShadowOffsetX('overlay'),
+        offsetY: ThemeRuntime.glassShadowOffsetY('overlay') })
       .onClick(() => {
       })
     }
     .width('100%')
     .height('100%')
     .zIndex(20)
+  }
+
+  @Builder
+  searchSourceSelectionIndicator(sourceUrls: string[]) {
+    Stack({ alignContent: Alignment.Center }) {
+      Toggle({ type: ToggleType.Checkbox, isOn: this.pendingSourceSelectionState(sourceUrls) > 0 })
+        .selectedColor(this.buttonColor())
+        .hitTestBehavior(HitTestMode.None)
+
+      if (this.pendingSourceSelectionState(sourceUrls) === 1) {
+        Stack({ alignContent: Alignment.Center }) {
+          Row()
+            .width(7)
+            .height(2)
+            .borderRadius(1)
+            .backgroundColor('#FFFFFF')
+        }
+        .width(12)
+        .height(12)
+        .borderRadius(6)
+        .backgroundColor(this.buttonColor())
+        .hitTestBehavior(HitTestMode.None)
+      }
+    }
+    .width(28)
+    .height(28)
+    .hitTestBehavior(HitTestMode.None)
   }
 
   searchFromHistory(keyword: string): void {
@@ -9552,6 +9862,17 @@ struct SearchPage {
           return;
         }
         targetSources.push(targetSource);
+      } else {
+        await this.loadSearchableSources(db);
+        if (this.isNoSearchSourcesSelected() || this.effectiveSelectedSourceUrls().length === 0) {
+          promptAction.showToast({ message: '请先在搜索范围中选择书源' });
+          return;
+        }
+        if (!this.isAllSearchSourcesSelected()) {
+          const selectedUrls = this.effectiveSelectedSourceUrls();
+          targetSources.push(...this.searchableSources.filter((source: BookSource): boolean =>
+            selectedUrls.includes(source.bookSourceUrl)));
+        }
       }
 
       this.isSearching = true;
@@ -9559,8 +9880,9 @@ struct SearchPage {
       this.searchResults = [];
       this.displayedSearchResults = [];
       this.searchResultKeySet.clear();
-      this.statusMessage = targetSources.length > 0 ?
-        `正在通过 ${this.singleSourceSearchName || targetSources[0].bookSourceName} 搜索...` : '正在搜索...';
+      this.statusMessage = targetSources.length === 1 ?
+        `正在通过 ${this.singleSourceSearchName || targetSources[0].bookSourceName} 搜索...` :
+        (targetSources.length > 1 ? `正在通过 ${targetSources.length} 个书源搜索...` : '正在搜索...');
       this.verificationUrl = '';
       this.verificationTitle = '';
       this.coordinator?.cancel();
@@ -9600,7 +9922,6 @@ struct SearchPage {
       const allBooks = await coordinator.search(keyword, callback, {
         exactMatch: this.exactSearch,
         exactMatchAuthor: this.exactSearchMatchAuthor,
-        sourceGroups: targetSources.length > 0 ? [] : this.searchSourceGroups(),
         targetSources: targetSources
       });
       if (sessionId !== this.searchSessionId || this.coordinator !== coordinator) {
@@ -9796,95 +10117,9 @@ struct SearchPage {
     });
   }
 
-  async loadSourceGroups(db: AppDatabase = AppDatabase.getInstance()): Promise<void> {
-    const sources = await db.getAllBookSources();
-    const groups: string[] = [];
-    for (const source of sources) {
-      const group = this.normalizeSourceGroup(source);
-      if (!groups.includes(group)) {
-        groups.push(group);
-      }
-    }
-    this.sourceGroups = groups.sort((a: string, b: string) => a.localeCompare(b));
-    if (!this.isAllSourceGroupsSelected() && !this.isNoSourceGroupsSelected()) {
-      this.saveSelectedSourceGroups(this.selectedSourceGroups().filter((group: string) => this.sourceGroups.includes(group)));
-    }
-  }
-
   normalizeSourceGroup(source: BookSource): string {
     const group = (source.bookSourceGroup || '').trim();
     return group || '未分组';
-  }
-
-  isAllSourceGroupsSelected(): boolean {
-    const selectedGroups = this.selectedSourceGroups();
-    return !this.isNoSourceGroupsSelected() &&
-      (this.selectedSourceGroupsRaw.trim() === '' || selectedGroups.length >= this.sourceGroups.length);
-  }
-
-  isNoSourceGroupsSelected(): boolean {
-    return this.selectedSourceGroupsRaw.trim() === this.NO_SOURCE_GROUPS_SELECTED;
-  }
-
-  isSourceGroupSelected(group: string): boolean {
-    return !this.isNoSourceGroupsSelected() &&
-      (this.isAllSourceGroupsSelected() || this.selectedSourceGroups().includes(group));
-  }
-
-  setSourceGroupSelected(group: string, selected: boolean): void {
-    const selectedGroups = this.isAllSourceGroupsSelected() ? this.sourceGroups : this.selectedSourceGroups();
-    if (selected) {
-      if (!selectedGroups.includes(group)) {
-        this.saveSelectedSourceGroups(selectedGroups.concat([group]));
-      }
-      return;
-    }
-    this.saveSelectedSourceGroups(selectedGroups.filter((item: string) => item !== group));
-  }
-
-  searchSourceGroupSummary(): string {
-    if (this.isAllSourceGroupsSelected()) {
-      return '全部书源';
-    }
-    if (this.isNoSourceGroupsSelected()) {
-      return '未选择书源';
-    }
-    return `已选 ${this.selectedSourceGroups().length} 个分组`;
-  }
-
-  selectedSourceGroups(): string[] {
-    const raw = this.selectedSourceGroupsRaw.trim();
-    if (!raw || raw === this.NO_SOURCE_GROUPS_SELECTED) {
-      return [];
-    }
-    return raw.split('\n').map((group: string) => group.trim()).filter((group: string) => group);
-  }
-
-  searchSourceGroups(): string[] {
-    if (this.isNoSourceGroupsSelected()) {
-      return [this.NO_SOURCE_GROUPS_SELECTED];
-    }
-    return this.isAllSourceGroupsSelected() ? [] : this.selectedSourceGroups();
-  }
-
-  saveSelectedSourceGroups(groups: string[]): void {
-    const normalized: string[] = [];
-    for (const group of groups) {
-      const value = (group || '').trim();
-      if (value && !normalized.includes(value)) {
-        normalized.push(value);
-      }
-    }
-    this.selectedSourceGroupsRaw = normalized.length > 0 ? normalized.join('\n') : this.NO_SOURCE_GROUPS_SELECTED;
-    if (normalized.length >= this.sourceGroups.length) {
-      this.selectedSourceGroupsRaw = '';
-    }
-    this.saveSearchExploreSettings();
-  }
-
-  saveAllSourceGroupsSelected(selected: boolean): void {
-    this.selectedSourceGroupsRaw = selected ? '' : this.NO_SOURCE_GROUPS_SELECTED;
-    this.saveSearchExploreSettings();
   }
 
   saveSearchExploreSettings(): void {
@@ -9899,6 +10134,7 @@ struct SearchPage {
       settings.showSearchProgress = this.showSearchProgress;
       settings.searchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(this.searchConcurrency);
       settings.selectedSourceGroupsRaw = this.selectedSourceGroupsRaw;
+      settings.selectedSourceUrlsRaw = this.selectedSourceUrlsRaw;
       settings.sourceSortRaw = AppStorage.get<string>('searchExploreSourceSort') || '';
       SearchExploreSettingsStore.applyToStorage(settings);
       return SearchExploreSettingsStore.save(getContext(this), settings);
@@ -9952,68 +10188,6 @@ struct SearchPage {
           this.saveSearchExploreSettings();
         })
 
-        Row() {
-          Text('搜索书源设置')
-            .fontSize(15)
-            .fontColor(this.primaryTextColor())
-            .layoutWeight(1)
-
-          Text(this.searchSourceGroupSummary())
-            .fontSize(13)
-            .fontColor(this.subTextColor())
-        }
-        .width('100%')
-        .height(42)
-        .alignItems(VerticalAlign.Center)
-        .margin({ top: 8 })
-
-        Row() {
-          Toggle({ type: ToggleType.Checkbox, isOn: this.isAllSourceGroupsSelected() })
-            .selectedColor(this.buttonColor())
-            .onChange((isOn: boolean) => {
-              this.saveAllSourceGroupsSelected(isOn);
-            })
-          Text('全部书源')
-            .fontSize(14)
-            .fontColor(this.secondaryTextColor())
-            .margin({ left: 8 })
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .height(38)
-        .alignItems(VerticalAlign.Center)
-
-        Scroll() {
-          Column() {
-            ForEach(this.sourceGroups, (group: string) => {
-              Row() {
-                Toggle({ type: ToggleType.Checkbox, isOn: this.isSourceGroupSelected(group) })
-                  .selectedColor(this.buttonColor())
-                  .onChange((isOn: boolean) => {
-                    if (this.isAllSourceGroupsSelected() && !isOn) {
-                      this.saveSelectedSourceGroups(this.sourceGroups.filter((item: string) => item !== group));
-                      return;
-                    }
-                    this.setSourceGroupSelected(group, isOn);
-                  })
-                Text(group)
-                  .fontSize(14)
-                  .fontColor(this.secondaryTextColor())
-                  .margin({ left: 8 })
-                  .layoutWeight(1)
-              }
-              .width('100%')
-              .height(36)
-              .alignItems(VerticalAlign.Center)
-            })
-          }
-          .width('100%')
-        }
-        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-        .width('100%')
-        .constraintSize({ maxHeight: 180 })
-        .margin({ top: 4 })
-
         Button('完成')
           .width('100%')
           .height(44)
@@ -10025,7 +10199,7 @@ struct SearchPage {
           })
       }
       .width(this.searchSettingsPopupPanelWidth())
-      .constraintSize({ maxHeight: 620 })
+      .constraintSize({ maxHeight: 430 })
       .padding(18)
       .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
       .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
@@ -10054,9 +10228,6 @@ struct SearchPage {
       .onClick(() => {
         this.showSearchHistoryDropdown = false;
         this.hideKeyboard();
-        this.loadSourceGroups().catch((e: Error) => {
-          console.warn('加载搜索书源分组失败:', e);
-        });
         this.showSearchSettingsDialog = !this.showSearchSettingsDialog;
       })
   }

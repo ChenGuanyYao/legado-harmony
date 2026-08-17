@@ -47,6 +47,7 @@ import { ReaderTtsPlayerPanel } from '../components/ReaderTtsPlayerPanel';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
 import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
 import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from '../core/book/BookSourceStageWebRuntime';
+import { WebBookFetchRuntime } from '../core/book/WebBookFetchRuntime';
 import { SourceRuntimeStage } from '../core/book/BookSourceRuntimeRouter';
 import { TtsSettings, TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ReaderFontHelper, ReaderFontItem } from '../utils/ReaderFontHelper';
@@ -88,6 +89,7 @@ import { ReaderV2GestureRouter, ReaderV2TapResult } from '../core/reader/ReaderV
 import { ReaderOpenTrace } from '../utils/ReaderOpenTrace';
 
 const TOC_WINDOW_PAGE_SIZE = 72;
+const TOC_SCROLLBAR_DRAG_UPDATE_INTERVAL_MS = 90;
 const FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS = 5000;
 const READER_CURRENT_PAGINATION_AHEAD_PAGE_COUNT = 4;
 const READER_ADJACENT_PAGINATION_PREVIEW_PAGE_COUNT = 2;
@@ -297,7 +299,12 @@ struct ReadBookPage {
   @State tocListViewportHeight: number = 0;
   @State tocFirstVisibleGlobalIndex: number = 0;
   @State tocVisibleItemCount: number = 1;
+  @State tocScrollbarDragging: boolean = false;
+  @State tocScrollbarDragOffset: number = 0;
   private tocSearchRequestSerial: number = 0;
+  private tocScrollbarPointerAnchor: number = 0;
+  private tocScrollbarPendingIndex: number = -1;
+  private tocScrollbarUpdateTimer: number = -1;
   @State currentChapterIndex: number = 0;
   @State menuChapterPreviewIndex: number = 0;
   @State menuChapterSliderActive: boolean = false;
@@ -361,6 +368,7 @@ struct ReadBookPage {
   @State readerBottomInfoBarMeasuredHeight: number = 0;
   @State readerInitialPageReady: boolean = false;
   @State readerInitialOpening: boolean = true;
+  @State readerWebFetchRuntimeNeeded: boolean = false;
   @State readerComicMode: boolean = false;
   @State readerComicImageRatios: number[] = [];
   @State readerComicPaginationParsing: boolean = false;
@@ -716,8 +724,6 @@ struct ReadBookPage {
   private readerSettingsReloadSerial: number = 0;
   private returningFromReaderReplaceRules: boolean = false;
   private openedWithShelfAnimation: boolean = false;
-  private shelfOpeningBookName: string = '';
-  private shelfOpeningBookWidth: number = 208;
   private readerScreenTimeoutTimerId: number = -1;
   private readerScreenTimeoutSerial: number = 0;
   private readerScreenOrientationSerial: number = 0;
@@ -740,11 +746,6 @@ struct ReadBookPage {
     this.updateVolumeKeySubscription();
     const params = router.getParams() as Record<string, string>;
     this.openedWithShelfAnimation = !!params && params['shelfBookOpening'] === 'true';
-    if (this.openedWithShelfAnimation) {
-      this.shelfOpeningBookName = params['shelfOpeningBookName'] || '';
-      const openingBookWidth = Number(params['shelfOpeningBookWidth']);
-      this.shelfOpeningBookWidth = Number.isFinite(openingBookWidth) ? Math.max(184, Math.min(228, openingBookWidth)) : 208;
-    }
     this.openedFromShortcut = !!params && params['shortcutEntry'] === 'true';
     this.shortcutReplacedPreviousPage = !!params && params['shortcutReplace'] === 'true';
     if (params && params['bookUrl']) {
@@ -774,7 +775,13 @@ struct ReadBookPage {
         this.loadBookmarks().catch((error: Error) => {
           console.warn('读取书签失败:', error);
         });
+    }
+    } catch (error) {
+      console.error('[ReaderOpen] reader entry initialization failed:', error);
+      if (!this.content) {
+        this.setReaderContent('打开书籍失败。请返回书架后重试。');
       }
+      this.isLoading = false;
     } finally {
       this.readerEntryInitializing = false;
     }
@@ -782,6 +789,12 @@ struct ReadBookPage {
 
   onPageShow(): void {
     this.readerPageVisible = true;
+    if (this.pagedContentText && this.shouldUseReaderLayoutV2(this.pagedContentText) &&
+      !this.readerV2PageSet(this.currentChapterIndex, this.pagedContentText)) {
+      this.readerInitialPageReady = false;
+      this.pendingRestorePageIndex = Math.max(this.pendingRestorePageIndex, this.currentPageIndex);
+      this.paginateContent(this.content);
+    }
     this.applyReaderScreenOrientation();
     this.applyReaderScreenTimeout();
     this.shortcutRoutingActive = true;
@@ -898,7 +911,9 @@ struct ReadBookPage {
     this.refreshReaderTextRender();
     const nextPaginationKey = paginationSource ?
       this.buildReaderPaginationCacheKey(this.currentChapterIndex, paginationSource) : '';
-    if (previousPaginationKey && previousPaginationKey === nextPaginationKey) {
+    const missingV2Pagination = !!paginationSource && this.shouldUseReaderLayoutV2(paginationSource) &&
+      !this.readerV2PageSet(this.currentChapterIndex, paginationSource);
+    if (previousPaginationKey && previousPaginationKey === nextPaginationKey && !missingV2Pagination) {
       return;
     }
     this.pendingRestorePageIndex = Math.max(this.pendingRestorePageIndex, this.currentPageIndex);
@@ -936,6 +951,7 @@ struct ReadBookPage {
     this.resetReaderScreenOrientation();
     ReaderProgressCheckpoint.detach(this.ttsFloatingSessionOwnerId);
     this.readerPageVisible = false;
+    this.cancelReaderPaginationWork(true);
     this.resetReaderPageCurl();
     if (this.readerExtendLayoutRefreshTimerId >= 0) {
       clearTimeout(this.readerExtendLayoutRefreshTimerId);
@@ -988,6 +1004,7 @@ struct ReadBookPage {
   onPageHide(): void {
     this.shortcutRoutingActive = false;
     this.readerPageVisible = false;
+    this.cancelReaderPaginationWork(true);
     this.releaseReaderScreenTimeout();
     this.flushReadingProgressCheckpoint().catch((error: Error) => {
       console.warn('阅读页退到后台时保存进度失败:', error);
@@ -1095,6 +1112,7 @@ struct ReadBookPage {
       const sourceForType = this.book.origin && this.book.origin !== 'local' ?
         (engine.getPreparedSource(this.book.bookUrl, this.book.origin) || await db.getBookSource(this.book.origin)) :
         null;
+      await this.prepareReaderWebFetchRuntime(sourceForType);
       BookTypeSupport.applyBookType(this.book, sourceForType);
       if (BookTypeSupport.isAudio(this.book)) {
         await db.updateBook(this.book, false);
@@ -1179,6 +1197,27 @@ struct ReadBookPage {
     }
   }
 
+  private async prepareReaderWebFetchRuntime(source: BookSource | null): Promise<void> {
+    const needed = this.sourceUsesWebFetchRuntime(source);
+    this.readerWebFetchRuntimeNeeded = needed;
+    if (!needed) return;
+    const attached = await WebBookFetchRuntime.get().waitUntilAttached(3000);
+    if (!attached) {
+      console.warn('[ReaderOpen] WebView fetch runtime did not attach before book loading');
+    }
+  }
+
+  private sourceUsesWebFetchRuntime(source: BookSource | null): boolean {
+    if (!source) return false;
+    let serialized = '';
+    try {
+      serialized = JSON.stringify(source) || '';
+    } catch (_) {
+      serialized = source.rawSourceJson || '';
+    }
+    return /["']?webView["']?\s*:\s*(?:true|["']true["']|1)(?:\s*[,}])?/i.test(serialized);
+  }
+
   async retryFetchChapters() {
     try {
       const engine = ReadBookEngine.get();
@@ -1203,6 +1242,8 @@ struct ReadBookPage {
 
   resetReaderStateForBookLoad(): void {
     this.contentLoadSerial++;
+    this.cancelReaderPaginationWork(true);
+    this.readerWebFetchRuntimeNeeded = false;
     this.content = '';
     this.chapters = [];
     this.tocVisibleChapters = [];
@@ -1221,7 +1262,6 @@ struct ReadBookPage {
     this.contentPageStarts = [];
     this.contentPageEnds = [];
     this.pagedContentText = '';
-    this.readerPaginationCache.clear();
     this.readerParagraphMetricsCache.clear();
     if (this.readerExtendLayoutRefreshTimerId >= 0) {
       clearTimeout(this.readerExtendLayoutRefreshTimerId);
@@ -1230,7 +1270,6 @@ struct ReadBookPage {
     this.readerExtendLayoutReadingOffset = -1;
     this.readerTypographyRestoreOffset = -1;
     this.resetReaderPageCurl();
-    this.adjacentPaginationPreloadSerial++;
     this.currentPageIndex = 0;
     this.currentPageText = '';
     this.displayPageText = '';
@@ -1768,7 +1807,7 @@ struct ReadBookPage {
 
   getReaderLoadingText(): string {
     if (this.readerInitialOpening) {
-      return '正在进入阅读…';
+      return '正在打开书籍…';
     }
     if (this.pendingRestorePageIndex >= 0) {
       return '正在恢复阅读进度...';
@@ -1782,55 +1821,19 @@ struct ReadBookPage {
   @Builder
   readerLoadingPanel() {
     Column() {
-      if (this.readerInitialOpening && this.openedWithShelfAnimation) {
-        Column() {
-        Text(this.book?.name || this.shelfOpeningBookName)
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.getTextColor())
-          .maxLines(2)
-          .textAlign(TextAlign.Center)
-          .margin({ left: 22, right: 22, top: 34, bottom: 14 })
-        Column() {
-          LoadingProgress()
-            .width(28)
-            .height(28)
-            .color(this.accentColor())
-          Text('正在进入阅读…')
-            .fontSize(13)
-            .fontColor(this.isReaderThemeDark() ? '#AEB4BE' : '#777777')
-            .margin({ top: 7 })
-        }
-        .margin({ bottom: 18 })
-        ForEach([0, 1, 2], (_line: number) => {
-          Divider()
-            .width('72%')
-            .color(this.isReaderThemeDark() ? '#24FFFFFF' : '#18000000')
-            .margin({ bottom: 17 })
-        })
-        }
-        .width(this.shelfOpeningBookWidth)
-        .height(this.shelfOpeningBookWidth / 0.735)
-        .backgroundColor(this.readerContentLayerColor())
-        .borderRadius(8)
-        .border({ width: ThemeRuntime.glassBorderWidth(), color: this.readerGlassBorderColor() })
-        .shadow({ radius: 24, color: this.isReaderThemeDark() ? '#90000000' : '#38000000', offsetX: 8, offsetY: 10 })
-      } else {
-        Column() {
-          LoadingProgress()
-            .width(40)
-            .height(40)
-          Text(this.getReaderLoadingText())
-            .fontSize(14)
-            .fontColor('#999')
-            .margin({ top: 8 })
-        }
-      }
+      LoadingProgress()
+        .width(40)
+        .height(40)
+        .color(this.accentColor())
+      Text(this.getReaderLoadingText())
+        .fontSize(14)
+        .fontColor(this.isReaderThemeDark() ? '#AEB4BE' : '#777777')
+        .margin({ top: 10 })
     }
     .width('100%')
     .height('100%')
     .justifyContent(FlexAlign.Center)
-    .backgroundColor(this.readerContentLayerColor())
+    .backgroundColor(this.getBackgroundColor())
   }
 
   @Builder
@@ -2101,7 +2104,9 @@ struct ReadBookPage {
   build() {
     Stack() {
       BookSourceStageRuntimeHost()
-      WebBookFetchRuntimeHost()
+      if (this.readerWebFetchRuntimeNeeded) {
+        WebBookFetchRuntimeHost()
+      }
       ReaderThemeBackground({
         surfaceColor: this.getBackgroundColor(),
         backgroundAssetId: this.getBackgroundAssetId(),
@@ -3327,21 +3332,36 @@ struct ReadBookPage {
   @Builder
   tocVirtualScrollbar() {
     if (this.tocShouldShowVirtualScrollbar()) {
-      Column()
-        .width(3)
-        .height(this.tocListViewportHeight)
-        .borderRadius(2)
-        .backgroundColor(this.isReaderThemeDark() ? '#18FFFFFF' : '#14000000')
-        .margin({ right: 3 })
-        .hitTestBehavior(HitTestMode.None)
-      Column()
-        .width(3)
-        .height(this.tocScrollbarThumbLength())
-        .borderRadius(2)
-        .backgroundColor(this.isReaderThemeDark() ? '#99D5D8DE' : '#887A6F63')
-        .margin({ right: 3 })
-        .translate({ y: this.tocScrollbarThumbOffset() })
-        .hitTestBehavior(HitTestMode.None)
+      Stack({ alignContent: Alignment.TopEnd }) {
+        Column()
+          .width(3)
+          .height(this.tocListViewportHeight)
+          .borderRadius(2)
+          .backgroundColor(this.isReaderThemeDark() ? '#18FFFFFF' : '#14000000')
+          .margin({ right: 3 })
+          .hitTestBehavior(HitTestMode.None)
+        Column()
+          .width(this.tocScrollbarDragging ? 6 : 4)
+          .height(this.tocScrollbarThumbLength())
+          .borderRadius(3)
+          .backgroundColor(this.isReaderThemeDark() ? '#BFD5D8DE' : '#A87A6F63')
+          .margin({ right: 2 })
+          .translate({ y: this.tocDisplayedScrollbarThumbOffset() })
+          .hitTestBehavior(HitTestMode.None)
+      }
+      .width(24)
+      .height(this.tocListViewportHeight)
+      .zIndex(10)
+      .gesture(
+        GestureGroup(GestureMode.Exclusive,
+          PanGesture({ direction: PanDirection.Vertical, distance: 1 })
+            .onActionStart((event: GestureEvent) => this.beginTocScrollbarDrag(event))
+            .onActionUpdate((event: GestureEvent) => this.updateTocScrollbarDrag(event))
+            .onActionEnd((event: GestureEvent) => this.endTocScrollbarDrag(event))
+            .onActionCancel(() => this.cancelTocScrollbarDrag()),
+          TapGesture().onAction((event: GestureEvent) => this.jumpTocScrollbarToPointer(event))
+        )
+      )
     }
   }
 
@@ -7000,6 +7020,137 @@ struct ReadBookPage {
       this.tocDatabaseChapterCount, this.tocFirstVisibleGlobalIndex, this.tocVisibleItemCount);
   }
 
+  tocDisplayedScrollbarThumbOffset(): number {
+    return this.tocScrollbarDragging ? this.tocScrollbarDragOffset : this.tocScrollbarThumbOffset();
+  }
+
+  tocScrollbarPointerY(event: GestureEvent): number {
+    const finger = event.fingerList.length > 0 ? event.fingerList[0] : undefined;
+    return finger ? finger.localY : 0;
+  }
+
+  beginTocScrollbarDrag(event: GestureEvent): void {
+    const thumbLength = this.tocScrollbarThumbLength();
+    const currentOffset = this.tocScrollbarThumbOffset();
+    const pointerY = this.tocScrollbarPointerY(event);
+    this.tocScrollbarDragging = true;
+    this.tocScrollbarDragOffset = currentOffset;
+    if (pointerY >= currentOffset && pointerY <= currentOffset + thumbLength) {
+      this.tocScrollbarPointerAnchor = pointerY - currentOffset;
+    } else {
+      this.tocScrollbarPointerAnchor = thumbLength / 2;
+      this.updateTocScrollbarFromPointer(pointerY);
+    }
+  }
+
+  updateTocScrollbarDrag(event: GestureEvent): void {
+    if (!this.tocScrollbarDragging) return;
+    this.updateTocScrollbarFromPointer(this.tocScrollbarPointerY(event));
+  }
+
+  endTocScrollbarDrag(event: GestureEvent): void {
+    if (!this.tocScrollbarDragging) return;
+    this.updateTocScrollbarFromPointer(this.tocScrollbarPointerY(event));
+    this.tocScrollbarDragging = false;
+    this.flushTocScrollbarTarget();
+  }
+
+  cancelTocScrollbarDrag(): void {
+    this.tocScrollbarDragging = false;
+    this.tocScrollbarPendingIndex = -1;
+    if (this.tocScrollbarUpdateTimer >= 0) {
+      clearTimeout(this.tocScrollbarUpdateTimer);
+      this.tocScrollbarUpdateTimer = -1;
+    }
+  }
+
+  jumpTocScrollbarToPointer(event: GestureEvent): void {
+    this.tocScrollbarPointerAnchor = this.tocScrollbarThumbLength() / 2;
+    this.updateTocScrollbarFromPointer(this.tocScrollbarPointerY(event));
+  }
+
+  updateTocScrollbarFromPointer(pointerY: number): void {
+    const thumbLength = this.tocScrollbarThumbLength();
+    const offset = VirtualListScrollbar.clampThumbOffset(this.tocListViewportHeight, thumbLength,
+      pointerY - this.tocScrollbarPointerAnchor);
+    this.tocScrollbarDragOffset = offset;
+    const targetIndex = VirtualListScrollbar.firstVisibleIndex(this.tocListViewportHeight, thumbLength,
+      this.tocDatabaseChapterCount, this.tocVisibleItemCount, offset);
+    this.tocFirstVisibleGlobalIndex = targetIndex;
+    if (this.tocScrollbarDragging) {
+      this.queueTocScrollbarTarget(targetIndex, TOC_SCROLLBAR_DRAG_UPDATE_INTERVAL_MS);
+      return;
+    }
+    this.queueTocScrollbarTarget(targetIndex);
+  }
+
+  flushTocScrollbarTarget(): void {
+    if (this.tocScrollbarUpdateTimer >= 0) {
+      clearTimeout(this.tocScrollbarUpdateTimer);
+      this.tocScrollbarUpdateTimer = -1;
+    }
+    const pending = this.tocScrollbarPendingIndex;
+    this.tocScrollbarPendingIndex = -1;
+    this.applyTocScrollbarTarget(pending);
+  }
+
+  queueTocScrollbarTarget(targetIndex: number, delayMs: number = 16): void {
+    this.tocScrollbarPendingIndex = targetIndex;
+    if (this.tocScrollbarUpdateTimer >= 0) return;
+    this.tocScrollbarUpdateTimer = setTimeout(() => {
+      this.tocScrollbarUpdateTimer = -1;
+      const pending = this.tocScrollbarPendingIndex;
+      this.tocScrollbarPendingIndex = -1;
+      this.applyTocScrollbarTarget(pending);
+    }, delayMs);
+  }
+
+  applyTocScrollbarTarget(targetIndex: number): void {
+    if (targetIndex < 0) return;
+    if (this.isTocSearchActive()) {
+      const localIndex = this.nearestTocSearchResultIndex(targetIndex);
+      if (localIndex < 0) return;
+      this.tocFirstVisibleGlobalIndex = this.tocSearchChapterIndexes[localIndex] ?? targetIndex;
+      try {
+        this.tocScroller.scrollToIndex(localIndex, false, ScrollAlign.START);
+      } catch (e) {
+        console.warn('拖动目录滚动条定位搜索结果失败:', e);
+      }
+      return;
+    }
+    if (this.chapters.length === 0) return;
+    const target = Math.max(0, Math.min(targetIndex, this.chapters.length - 1));
+    const requestSerial = ++this.tocPositionRequestSerial;
+    this.tocPositioning = true;
+    const localIndex = this.setTocWindowAround(target, ScrollAlign.START);
+    setTimeout(() => {
+      if (requestSerial !== this.tocPositionRequestSerial) return;
+      try {
+        this.tocScroller.scrollToIndex(localIndex, false, ScrollAlign.START);
+      } catch (e) {
+        console.warn('拖动目录滚动条定位章节失败:', e);
+      } finally {
+        if (requestSerial === this.tocPositionRequestSerial) this.tocPositioning = false;
+      }
+    }, 0);
+  }
+
+  nearestTocSearchResultIndex(targetIndex: number): number {
+    const indexes = this.tocSearchChapterIndexes;
+    if (indexes.length === 0) return -1;
+    let low = 0;
+    let high = indexes.length - 1;
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      if (indexes[mid] < targetIndex) low = mid + 1;
+      else high = mid;
+    }
+    if (low > 0 && Math.abs(indexes[low - 1] - targetIndex) <= Math.abs(indexes[low] - targetIndex)) {
+      return low - 1;
+    }
+    return low;
+  }
+
   scrollTocVisibleEdge(toEnd: boolean): void {
     if (!this.isTocSearchActive()) {
       this.scrollTocToChapter(toEnd ? this.chapters.length - 1 : 0,
@@ -7633,6 +7784,7 @@ struct ReadBookPage {
     this.readerV2SelectionStyledTextCache.clear();
     this.readerV2ActiveDocument = null;
     this.readerV2ActiveSnapshot = null;
+    for (const controller of this.readerV2Controllers.values()) controller.updatePage(null);
     this.readerV2Controllers.clear();
     const selectableKeys = Array.from(this.readerSelectableTextControllers.keys());
     for (const key of selectableKeys) {
@@ -7667,6 +7819,25 @@ struct ReadBookPage {
   forceCurrentReaderPageRender(): void {
     this.chapterJumpRenderGeneration++;
     this.pageRenderVersion++;
+  }
+
+  private cancelReaderPaginationWork(releaseNativeCaches: boolean): void {
+    this.readerPaginationWorkSerial++;
+    this.adjacentPaginationPreloadSerial++;
+    this.previousPaginationPreloadSerial++;
+    this.readerPaginationCache.clear();
+    if (!releaseNativeCaches) return;
+    this.readerV2PageSetCache.clear();
+    this.readerV2DocumentCache.clear();
+    this.readerV2SelectionStyledTextCache.clear();
+    this.readerV2ActiveDocument = null;
+    this.readerV2ActiveSnapshot = null;
+    for (const controller of this.readerV2Controllers.values()) controller.updatePage(null);
+    this.readerV2Controllers.clear();
+    const selectableKeys = Array.from(this.readerSelectableTextControllers.keys());
+    for (const key of selectableKeys) {
+      if (key.startsWith('reader_v2_native_page_')) this.readerSelectableTextControllers.delete(key);
+    }
   }
 
   onReaderFontChanged(): void {
@@ -13972,12 +14143,14 @@ struct ReadBookPage {
     Stack() {
       if (this.shouldRenderSlidingPageTurn()) {
         if (this.isSimulationPageTurnAnimation()) {
-          this.readerSimulationPageTurnSurface(currentRenderVersion, currentText, ttsRenderVersion)
+          this.readerSimulationPageTurnSurface(currentRenderVersion, currentText, ttsRenderVersion, 'primary')
         } else if (this.isStackPageTurnAnimation()) {
           this.readerCurrentPageSurface(currentRenderVersion, currentText, ttsRenderVersion)
-          this.readerIncomingPageSurface(this.pageTurnIncomingRenderVersion, this.getVisiblePageTurnIncomingText())
+          this.readerIncomingPageSurface(this.pageTurnIncomingRenderVersion,
+            this.getVisiblePageTurnIncomingText(), 'incoming_primary')
         } else {
-          this.readerIncomingPageSurface(this.pageTurnIncomingRenderVersion, this.getVisiblePageTurnIncomingText())
+          this.readerIncomingPageSurface(this.pageTurnIncomingRenderVersion,
+            this.getVisiblePageTurnIncomingText(), 'incoming_primary')
           this.readerCurrentPageSurface(currentRenderVersion, currentText, ttsRenderVersion)
         }
       } else {
@@ -13996,12 +14169,14 @@ struct ReadBookPage {
     Stack() {
       if (this.shouldRenderSlidingPageTurn()) {
         if (this.isSimulationPageTurnAnimation()) {
-          this.readerSimulationPageTurnSurface(currentRenderVersion, currentText, ttsRenderVersion)
+          this.readerSimulationPageTurnSurface(currentRenderVersion, currentText, ttsRenderVersion, 'alternate')
         } else if (this.isStackPageTurnAnimation()) {
           this.readerCurrentPageSurfaceAlternate(currentRenderVersion, currentText, ttsRenderVersion)
-          this.readerIncomingPageSurface(this.pageTurnIncomingRenderVersion, this.getVisiblePageTurnIncomingText())
+          this.readerIncomingPageSurface(this.pageTurnIncomingRenderVersion,
+            this.getVisiblePageTurnIncomingText(), 'incoming_alternate')
         } else {
-          this.readerIncomingPageSurface(this.pageTurnIncomingRenderVersion, this.getVisiblePageTurnIncomingText())
+          this.readerIncomingPageSurface(this.pageTurnIncomingRenderVersion,
+            this.getVisiblePageTurnIncomingText(), 'incoming_alternate')
           this.readerCurrentPageSurfaceAlternate(currentRenderVersion, currentText, ttsRenderVersion)
         }
       } else {
@@ -14016,23 +14191,24 @@ struct ReadBookPage {
   }
 
   @Builder
-  readerSimulationPageTurnSurface(currentRenderVersion: number, currentText: string, ttsRenderVersion: number) {
+  readerSimulationPageTurnSurface(currentRenderVersion: number, currentText: string, ttsRenderVersion: number,
+    surfaceRole: string) {
     if (this.isLandscapeDoublePageActive()) {
-      this.readerSimulationDoublePageTurnSurface(currentRenderVersion, currentText, ttsRenderVersion)
+      this.readerSimulationDoublePageTurnSurface(currentRenderVersion, currentText, ttsRenderVersion, surfaceRole)
     } else {
-      this.readerSimulationSinglePageTurnSurface(currentRenderVersion, currentText, ttsRenderVersion)
+      this.readerSimulationSinglePageTurnSurface(currentRenderVersion, currentText, ttsRenderVersion, surfaceRole)
     }
   }
 
   @Builder
   readerSimulationSinglePageTurnSurface(currentRenderVersion: number, currentText: string,
-    ttsRenderVersion: number) {
+    ttsRenderVersion: number, surfaceRole: string) {
     Stack() {
       Stack() {
         this.readerSimulationPaperBackground()
         Column() {
           this.readerIncomingPageLayer(this.pageTurnIncomingRenderVersion,
-            this.getVisiblePageTurnIncomingText())
+            this.getVisiblePageTurnIncomingText(), `${surfaceRole}_simulation_back`)
         }
         .width('100%')
         .height('100%')
@@ -14045,12 +14221,14 @@ struct ReadBookPage {
       .renderGroup(true)
 
       this.readerSimulationPaperBackground()
-      this.readerIncomingPageSurface(this.pageTurnIncomingRenderVersion, this.getVisiblePageTurnIncomingText())
+      this.readerIncomingPageSurface(this.pageTurnIncomingRenderVersion,
+        this.getVisiblePageTurnIncomingText(), `${surfaceRole}_simulation_base`)
 
       Stack() {
         this.readerSimulationPaperBackground()
         Column() {
-          this.readerCurrentPageLayer(currentRenderVersion, currentText, ttsRenderVersion)
+          this.readerCurrentPageLayer(currentRenderVersion, currentText, ttsRenderVersion,
+            `${surfaceRole}_simulation_front`)
         }
         .width('100%')
         .height('100%')
@@ -14074,7 +14252,7 @@ struct ReadBookPage {
 
   @Builder
   readerSimulationDoublePageTurnSurface(currentRenderVersion: number, currentText: string,
-    ttsRenderVersion: number) {
+    ttsRenderVersion: number, surfaceRole: string) {
     Stack() {
       Stack() {
         // The back of the turning leaf belongs to the opposite half of the target spread.
@@ -14083,11 +14261,12 @@ struct ReadBookPage {
         this.readerSimulationHalfPaperBackground(this.pageSlideDirection < 0)
         if (this.pageSlideDirection > 0) {
           this.readerSimulationIncomingHalfPage(this.pageTurnIncomingText, this.pageTurnIncomingPageIndex,
-            this.pageTurnIncomingPageStart, this.pageTurnIncomingRenderVersion, 'leaf_back_capture')
+            this.pageTurnIncomingPageStart, this.pageTurnIncomingRenderVersion,
+            `${surfaceRole}_leaf_back_capture`)
         } else {
           this.readerSimulationIncomingHalfPage(this.pageTurnIncomingSecondaryText,
             this.pageTurnIncomingPageIndex + 1, this.pageTurnIncomingSecondaryPageStart,
-            this.pageTurnIncomingRenderVersion, 'leaf_back_capture')
+            this.pageTurnIncomingRenderVersion, `${surfaceRole}_leaf_back_capture`)
         }
       }
       .width('50%')
@@ -14101,15 +14280,16 @@ struct ReadBookPage {
       Row() {
         if (this.pageSlideDirection > 0) {
           this.readerSimulationCurrentHalfPage(currentText, this.currentPageIndex, currentRenderVersion,
-            ttsRenderVersion, 'base_left', true)
+            ttsRenderVersion, `${surfaceRole}_base_left`, true)
           this.readerSimulationIncomingHalfPage(this.pageTurnIncomingSecondaryText,
             this.pageTurnIncomingPageIndex + 1, this.pageTurnIncomingSecondaryPageStart,
-            this.pageTurnIncomingRenderVersion, 'base_right', true)
+            this.pageTurnIncomingRenderVersion, `${surfaceRole}_base_right`, true)
         } else {
           this.readerSimulationIncomingHalfPage(this.pageTurnIncomingText, this.pageTurnIncomingPageIndex,
-            this.pageTurnIncomingPageStart, this.pageTurnIncomingRenderVersion, 'base_left', true)
+            this.pageTurnIncomingPageStart, this.pageTurnIncomingRenderVersion,
+            `${surfaceRole}_base_left`, true)
           this.readerSimulationCurrentHalfPage(this.getSecondaryPageText(), this.currentPageIndex + 1,
-            currentRenderVersion, ttsRenderVersion, 'base_right', true)
+            currentRenderVersion, ttsRenderVersion, `${surfaceRole}_base_right`, true)
         }
       }
       .width('100%')
@@ -14131,10 +14311,10 @@ struct ReadBookPage {
         this.readerSimulationHalfPaperBackground(this.pageSlideDirection > 0)
         if (this.pageSlideDirection > 0) {
           this.readerSimulationCurrentHalfPage(this.getSecondaryPageText(), this.currentPageIndex + 1,
-            currentRenderVersion, ttsRenderVersion, 'leaf_front')
+            currentRenderVersion, ttsRenderVersion, `${surfaceRole}_leaf_front`)
         } else {
           this.readerSimulationCurrentHalfPage(currentText, this.currentPageIndex, currentRenderVersion,
-            ttsRenderVersion, 'leaf_front')
+            ttsRenderVersion, `${surfaceRole}_leaf_front`)
         }
       }
       .width('50%')
@@ -14204,7 +14384,8 @@ struct ReadBookPage {
   readerSimulationCurrentHalfPage(text: string, pageIndex: number, renderVersion: number,
     ttsRenderVersion: number, identity: string, halfWidth: boolean = false) {
     Column() {
-      if (this.shouldUseReaderLayoutV2(this.pagedContentText)) {
+      if (this.shouldUseReaderLayoutV2(this.pagedContentText) &&
+        this.readerV2Page(this.currentChapterIndex, pageIndex, this.pagedContentText)) {
         this.readerV2PageSurface(`simulation_current_${identity}`, this.currentChapterIndex,
           pageIndex, this.pagedContentText)
       } else {
@@ -14225,7 +14406,8 @@ struct ReadBookPage {
   readerSimulationIncomingHalfPage(text: string, pageIndex: number, pageStart: number,
     renderVersion: number, identity: string, halfWidth: boolean = false) {
     Column() {
-      if (this.shouldUseReaderLayoutV2(this.pageTurnIncomingDocumentSource)) {
+      if (this.shouldUseReaderLayoutV2(this.pageTurnIncomingDocumentSource) &&
+        this.readerV2Page(this.pageTurnIncomingChapterIndex, pageIndex, this.pageTurnIncomingDocumentSource)) {
         this.readerV2PageSurface(`simulation_incoming_${identity}`, this.pageTurnIncomingChapterIndex,
           pageIndex, this.pageTurnIncomingDocumentSource)
       } else {
@@ -14244,7 +14426,7 @@ struct ReadBookPage {
   @Builder
   readerCurrentPageSurface(renderVersion: number, text: string, ttsRenderVersion: number) {
     Column() {
-      this.readerCurrentPageLayer(renderVersion, text, ttsRenderVersion)
+      this.readerCurrentPageLayer(renderVersion, text, ttsRenderVersion, 'current_primary')
     }
     .width('100%')
     .height('100%')
@@ -14258,7 +14440,7 @@ struct ReadBookPage {
   @Builder
   readerCurrentPageSurfaceAlternate(renderVersion: number, text: string, ttsRenderVersion: number) {
     Column() {
-      this.readerCurrentPageLayer(renderVersion, text, ttsRenderVersion)
+      this.readerCurrentPageLayer(renderVersion, text, ttsRenderVersion, 'current_alternate')
     }
     .width('100%')
     .height('100%')
@@ -14270,13 +14452,13 @@ struct ReadBookPage {
   }
 
   @Builder
-  readerIncomingPageSurface(renderVersion: number, text: string) {
+  readerIncomingPageSurface(renderVersion: number, text: string, controllerRole: string = 'incoming') {
     Stack() {
       if (this.isStackPageTurnAnimation()) {
         this.readerIncomingPageBackground()
       }
       Column() {
-        this.readerIncomingPageLayer(renderVersion, text)
+        this.readerIncomingPageLayer(renderVersion, text, controllerRole)
       }
       .width('100%')
       .height('100%')
@@ -14309,25 +14491,27 @@ struct ReadBookPage {
   }
 
   @Builder
-  readerCurrentPageLayer(renderVersion: number, text: string, ttsRenderVersion: number) {
-    if (this.shouldUseReaderLayoutV2(this.pagedContentText)) {
+  readerCurrentPageLayer(renderVersion: number, text: string, ttsRenderVersion: number,
+    controllerRole: string = 'current') {
+    if (this.shouldUseReaderLayoutV2(this.pagedContentText) &&
+      this.readerV2Page(this.currentChapterIndex, this.currentPageIndex, this.pagedContentText)) {
       if (this.isLandscapeDoublePageActive()) {
         Row() {
-          this.readerV2PageSurface('current_left', this.currentChapterIndex,
+          this.readerV2PageSurface(`${controllerRole}_left`, this.currentChapterIndex,
             this.currentPageIndex, this.pagedContentText, true)
           Blank()
             .width(READER_DOUBLE_PAGE_DIVIDER_WIDTH)
             .height('88%')
             .backgroundColor(this.getSubTextColor())
             .opacity(0.22)
-          this.readerV2PageSurface('current_right', this.currentChapterIndex,
+          this.readerV2PageSurface(`${controllerRole}_right`, this.currentChapterIndex,
             this.currentPageIndex + 1, this.pagedContentText, true)
         }
         .width('100%')
         .height('100%')
         .alignItems(VerticalAlign.Center)
       } else {
-        this.readerV2PageSurface('current_single', this.currentChapterIndex,
+        this.readerV2PageSurface(`${controllerRole}_single`, this.currentChapterIndex,
           this.currentPageIndex, this.pagedContentText)
       }
     } else if (this.isLandscapeDoublePageActive()) {
@@ -14375,25 +14559,27 @@ struct ReadBookPage {
   }
 
   @Builder
-  readerIncomingPageLayer(renderVersion: number, text: string) {
-    if (this.shouldUseReaderLayoutV2(this.pageTurnIncomingDocumentSource)) {
+  readerIncomingPageLayer(renderVersion: number, text: string, controllerRole: string = 'incoming') {
+    if (this.shouldUseReaderLayoutV2(this.pageTurnIncomingDocumentSource) &&
+      this.readerV2Page(this.pageTurnIncomingChapterIndex, this.pageTurnIncomingPageIndex,
+        this.pageTurnIncomingDocumentSource)) {
       if (this.isLandscapeDoublePageActive()) {
         Row() {
-          this.readerV2PageSurface('incoming_left', this.pageTurnIncomingChapterIndex,
+          this.readerV2PageSurface(`${controllerRole}_left`, this.pageTurnIncomingChapterIndex,
             this.pageTurnIncomingPageIndex, this.pageTurnIncomingDocumentSource, true)
           Blank()
             .width(READER_DOUBLE_PAGE_DIVIDER_WIDTH)
             .height('88%')
             .backgroundColor(this.getSubTextColor())
             .opacity(0.22)
-          this.readerV2PageSurface('incoming_right', this.pageTurnIncomingChapterIndex,
+          this.readerV2PageSurface(`${controllerRole}_right`, this.pageTurnIncomingChapterIndex,
             this.pageTurnIncomingPageIndex + 1, this.pageTurnIncomingDocumentSource, true)
         }
         .width('100%')
         .height('100%')
         .alignItems(VerticalAlign.Center)
       } else {
-        this.readerV2PageSurface('incoming_single', this.pageTurnIncomingChapterIndex,
+        this.readerV2PageSurface(`${controllerRole}_single`, this.pageTurnIncomingChapterIndex,
           this.pageTurnIncomingPageIndex, this.pageTurnIncomingDocumentSource)
       }
     } else if (this.isLandscapeDoublePageActive()) {
@@ -16945,23 +17131,19 @@ struct ReadBookPage {
     };
     this.registerReaderV2PaginationSession(source, chapterIndex, session);
     const visibleSpreadSize = this.isLandscapeDoublePageActive() ? 2 : 1;
-    const requestedPageCount = chapterIndex === this.currentChapterIndex && this.pendingRestorePageIndex >= 0 ?
-      this.pendingRestorePageIndex + visibleSpreadSize :
-      Math.min(Math.max(1, initialPageCount), visibleSpreadSize);
-    const targetOffset = chapterIndex === this.currentChapterIndex ? this.readerTypographyRestoreOffset : -1;
-    let offsetCoveredAtPageCount = -1;
-    while (!result.complete) {
+    // Never rebuild synchronously from the chapter start to a deep saved position. A single V2 page can include
+    // native paragraph measurement, so restoring hundreds of pages in this lifecycle call can trip the UI watchdog.
+    // Publish only the first visible spread here; the retained session restores the saved position cooperatively.
+    const requestedPageCount = Math.min(Math.max(1, initialPageCount), visibleSpreadSize);
+    const rawTargetOffset = chapterIndex === this.currentChapterIndex ? this.readerTypographyRestoreOffset : -1;
+    const targetOffset = rawTargetOffset < 0 ? -1 : Math.min(source.length, Math.max(0, rawTargetOffset));
+    if (chapterIndex === this.currentChapterIndex && rawTargetOffset >= 0) {
+      this.readerTypographyRestoreOffset = targetOffset;
+    }
+    while (!result.complete && result.pages.length < requestedPageCount) {
       const previousPageCount = result.pages.length;
       this.appendReaderV2PaginationBatch(result, chapterIndex, 1);
       if (result.pages.length <= previousPageCount) break;
-      if (targetOffset >= 0 && result.ends.length > 0 &&
-        result.ends[result.ends.length - 1] > targetOffset && offsetCoveredAtPageCount < 0) {
-        offsetCoveredAtPageCount = result.pages.length;
-      }
-      const offsetReady = targetOffset < 0 || offsetCoveredAtPageCount > 0;
-      const offsetSpreadReady = offsetCoveredAtPageCount < 0 ||
-        result.pages.length >= offsetCoveredAtPageCount + visibleSpreadSize - 1;
-      if (result.pages.length >= requestedPageCount && offsetReady && offsetSpreadReady) break;
     }
     ReaderOpenTrace.mark(this.bookUrl, 'v2-initial-window-ready',
       `pages=${result.pages.length} complete=${result.complete} offset=${targetOffset}`);
@@ -16973,7 +17155,7 @@ struct ReadBookPage {
     const key = this.buildReaderPaginationCacheKey(chapterIndex, source);
     this.readerV2PageSetCache.set(key, session.pageSet);
     this.readerV2DocumentCache.set(key, session.document);
-    while (this.readerV2PageSetCache.size > 8) {
+    while (this.readerV2PageSetCache.size > 3) {
       const oldest = this.readerV2PageSetCache.keys().next().value as string | undefined;
       if (!oldest) break;
       this.readerV2PageSetCache.delete(oldest);
@@ -17028,12 +17210,22 @@ struct ReadBookPage {
 
   readerV2PageSet(chapterIndex: number, source: string): ReaderV2PageSet | null {
     if (!source) return null;
-    return this.readerV2PageSetCache.get(this.buildReaderPaginationCacheKey(chapterIndex, source)) || null;
+    const key = this.buildReaderPaginationCacheKey(chapterIndex, source);
+    const cached = this.readerV2PageSetCache.get(key);
+    if (cached) return cached;
+    // The pagination result owns the retained native session. Its small lookup cache can be evicted independently
+    // while adjacent chapters are prepared; falling back to the owning session prevents a valid page boundary
+    // from being rendered as a blank NodeContainer until the reader is reopened.
+    const result = this.readerPaginationCache.get(key);
+    return result?.v2Session?.pageSet || null;
   }
 
   readerV2Document(chapterIndex: number, source: string): ReaderV2Document | null {
     if (!source) return null;
-    return this.readerV2DocumentCache.get(this.buildReaderPaginationCacheKey(chapterIndex, source)) || null;
+    const key = this.buildReaderPaginationCacheKey(chapterIndex, source);
+    const cached = this.readerV2DocumentCache.get(key);
+    if (cached) return cached;
+    return this.readerPaginationCache.get(key)?.v2Session?.document || null;
   }
 
   readerV2Page(chapterIndex: number, pageIndex: number, source: string): ReaderV2PageLayout | null {
@@ -17537,13 +17729,17 @@ struct ReadBookPage {
     if (!result) {
       result = this.createIncrementalReaderPagination(source, chapterIndex, desiredPageCount);
       this.readerPaginationCache.set(key, result);
-      while (this.readerPaginationCache.size > 6) {
+      while (this.readerPaginationCache.size > 3) {
         const oldestKey = this.readerPaginationCache.keys().next().value as string | undefined;
         if (!oldestKey) break;
         this.readerPaginationCache.delete(oldestKey);
       }
     } else if (!result.complete && result.pages.length < desiredPageCount) {
-      this.appendReaderPaginationBatch(result, chapterIndex, desiredPageCount - result.pages.length);
+      const missingPageCount = desiredPageCount - result.pages.length;
+      // A cached deep restore must remain cooperative too. Otherwise reopening while a partial session is cached
+      // reintroduces the same synchronous native-Paragraph burst avoided by the initial creation path.
+      const synchronousPageCount = result.v2Session ? Math.min(1, missingPageCount) : missingPageCount;
+      this.appendReaderPaginationBatch(result, chapterIndex, synchronousPageCount);
     }
     if (chapterIndex === this.currentChapterIndex) {
       this.updateReaderComicPaginationProgress(chapterIndex, result);
@@ -17669,7 +17865,8 @@ struct ReadBookPage {
     const batchDelay = ReaderActionMarker.has(result.source) ?
       READER_INTERACTIVE_PAGINATION_BATCH_DELAY_MS : READER_PAGINATION_BATCH_DELAY_MS;
     const runBatch = (): void => {
-      if (serial !== this.readerPaginationWorkSerial || chapterIndex !== this.currentChapterIndex ||
+      if (!this.readerPageVisible || serial !== this.readerPaginationWorkSerial ||
+        chapterIndex !== this.currentChapterIndex ||
         this.readerPaginationCache.get(key) !== result) {
         return;
       }
@@ -17682,8 +17879,13 @@ struct ReadBookPage {
       const batchStartedAt = Date.now();
       // A pure comic page is already delimited by an image marker and requires no text measurement. Parse a small
       // group per idle slice so large comics finish promptly without turning the whole chapter into one UI task.
-      this.appendReaderPaginationBatch(result, chapterIndex, imageOnlyPagination ? 8 : (result.v2Session ? 2 : 1));
+      this.appendReaderPaginationBatch(result, chapterIndex, imageOnlyPagination ? 8 : 1);
       const batchElapsedMs = Math.max(0, Date.now() - batchStartedAt);
+      if (!this.readerInitialPageReady) {
+        // Publish cooperative snapshots only while a saved page/offset is waiting to become available.
+        // Normal background pagination remains private and is published once at completion.
+        this.publishCurrentReaderPagination(result);
+      }
       if (result.complete) {
         this.publishCurrentReaderPagination(result);
         this.persistReaderPagination(chapterIndex, key, result);
@@ -17719,8 +17921,6 @@ struct ReadBookPage {
     this.contentPageStarts = [...result.starts];
     this.contentPageEnds = [...result.ends];
     this.restorePendingPageIndex(result.complete === true);
-    this.readerInitialPageReady = this.pendingRestorePageIndex < 0;
-    if (this.readerInitialPageReady) this.finishReaderInitialOpening();
     if (pendingRestore >= 0 && this.pendingRestorePageIndex < 0) {
       this.setCurrentPageText(this.contentPages[this.currentPageIndex] || '');
     } else if (shouldRefreshCompletedSpread) {
@@ -17729,6 +17929,8 @@ struct ReadBookPage {
       this.refreshReaderTextRender();
     }
     const restoredTypographyPosition = this.restoreReaderTypographyOffsetIfAvailable(result.complete === true);
+    this.readerInitialPageReady = this.pendingRestorePageIndex < 0 && this.readerTypographyRestoreOffset < 0;
+    if (this.readerInitialPageReady) this.finishReaderInitialOpening();
     const restoredPendingPosition = pendingRestore >= 0 && this.pendingRestorePageIndex < 0;
     if (this.isReaderContinuousScrollSurfaceActive()) {
       if (restoredPendingPosition || restoredTypographyPosition) this.readerComicScrollRestoring = true;
@@ -17819,7 +18021,7 @@ struct ReadBookPage {
   }
 
   preloadNextChapterPaginationLater(delayMs: number = 120): void {
-    if (!this.readerPreloadEnabled || !this.hasPagedReaderArea() ||
+    if (!this.readerPageVisible || !this.readerPreloadEnabled || !this.hasPagedReaderArea() ||
       this.currentChapterIndex >= this.chapters.length - 1) {
       return;
     }
@@ -17828,19 +18030,24 @@ struct ReadBookPage {
     const sessionBookUrl = this.book?.bookUrl || this.bookUrl;
     const serial = ++this.adjacentPaginationPreloadSerial;
     setTimeout(() => {
-      if (serial !== this.adjacentPaginationPreloadSerial ||
+      if (!this.readerPageVisible || serial !== this.adjacentPaginationPreloadSerial ||
         !this.isCurrentReaderEngineBook(sessionBookUrl) ||
         (this.currentChapterIndex !== sourceChapterIndex && this.currentChapterIndex !== targetChapterIndex)) {
         return;
       }
       ReadBookEngine.get().peekContent(targetChapterIndex)
         .then(async (body: string): Promise<void> => {
-          if (!body || serial !== this.adjacentPaginationPreloadSerial ||
+          if (!body || !this.readerPageVisible || serial !== this.adjacentPaginationPreloadSerial ||
             !this.isCurrentReaderEngineBook(sessionBookUrl) ||
             (this.currentChapterIndex !== sourceChapterIndex && this.currentChapterIndex !== targetChapterIndex)) {
             return;
           }
           const processed = await this.prepareReaderContentRules(body, targetChapterIndex);
+          if (!this.readerPageVisible || serial !== this.adjacentPaginationPreloadSerial ||
+            !this.isCurrentReaderEngineBook(sessionBookUrl) ||
+            (this.currentChapterIndex !== sourceChapterIndex && this.currentChapterIndex !== targetChapterIndex)) {
+            return;
+          }
           const source = this.buildPagedSourceText(targetChapterIndex, processed);
           const key = this.buildReaderPaginationCacheKey(targetChapterIndex, source);
           const result = this.getCachedReaderPagination(targetChapterIndex, source) ||
@@ -17859,10 +18066,13 @@ struct ReadBookPage {
       this.persistReaderPagination(targetChapterIndex, key, result);
       return;
     }
+    // Adjacent V2 previews already retain native Paragraphs. Complete them only after the chapter becomes current.
+    if (result.v2Session) return;
     const batchDelay = ReaderActionMarker.has(result.source) ?
       READER_INTERACTIVE_PAGINATION_BATCH_DELAY_MS : READER_PAGINATION_BATCH_DELAY_MS;
     const runBatch = (): void => {
-      if (serial !== this.adjacentPaginationPreloadSerial || this.currentChapterIndex !== sourceChapterIndex ||
+      if (!this.readerPageVisible || serial !== this.adjacentPaginationPreloadSerial ||
+        this.currentChapterIndex !== sourceChapterIndex ||
         this.readerPaginationCache.get(key) !== result) return;
       if (this.isReaderPaginationInteractionBusy()) {
         setTimeout(runBatch, READER_PAGINATION_BUSY_RETRY_DELAY_MS);
@@ -17885,21 +18095,24 @@ struct ReadBookPage {
   }
 
   preloadPreviousChapterPaginationLater(delayMs: number = 180): void {
-    if (!this.readerPreloadEnabled || !this.hasPagedReaderArea() || this.currentChapterIndex <= 0) return;
+    if (!this.readerPageVisible || !this.readerPreloadEnabled || !this.hasPagedReaderArea() ||
+      this.currentChapterIndex <= 0) return;
     const sourceChapterIndex = this.currentChapterIndex;
     const targetChapterIndex = sourceChapterIndex - 1;
     const sessionBookUrl = this.book?.bookUrl || this.bookUrl;
     const serial = ++this.previousPaginationPreloadSerial;
     setTimeout(() => {
-      if (serial !== this.previousPaginationPreloadSerial || !this.isCurrentReaderEngineBook(sessionBookUrl) ||
+      if (!this.readerPageVisible || serial !== this.previousPaginationPreloadSerial ||
+        !this.isCurrentReaderEngineBook(sessionBookUrl) ||
         this.currentChapterIndex !== sourceChapterIndex) return;
       ReadBookEngine.get().peekContent(targetChapterIndex)
         .then(async (body: string): Promise<void> => {
-          if (!body || serial !== this.previousPaginationPreloadSerial ||
+          if (!body || !this.readerPageVisible || serial !== this.previousPaginationPreloadSerial ||
             !this.isCurrentReaderEngineBook(sessionBookUrl) ||
             this.currentChapterIndex !== sourceChapterIndex) return;
           const processed = await this.prepareReaderContentRules(body, targetChapterIndex);
-          if (serial !== this.previousPaginationPreloadSerial || !this.isCurrentReaderEngineBook(sessionBookUrl) ||
+          if (!this.readerPageVisible || serial !== this.previousPaginationPreloadSerial ||
+            !this.isCurrentReaderEngineBook(sessionBookUrl) ||
             this.currentChapterIndex !== sourceChapterIndex) {
             return;
           }
@@ -17922,10 +18135,12 @@ struct ReadBookPage {
       this.persistReaderPagination(targetChapterIndex, key, result);
       return;
     }
+    if (result.v2Session) return;
     const batchDelay = ReaderActionMarker.has(result.source) ?
       READER_INTERACTIVE_PAGINATION_BATCH_DELAY_MS : READER_PAGINATION_BATCH_DELAY_MS;
     const runBatch = (): void => {
-      if (serial !== this.previousPaginationPreloadSerial || this.currentChapterIndex !== sourceChapterIndex ||
+      if (!this.readerPageVisible || serial !== this.previousPaginationPreloadSerial ||
+        this.currentChapterIndex !== sourceChapterIndex ||
         this.readerPaginationCache.get(key) !== result) return;
       if (this.isReaderPaginationInteractionBusy()) {
         setTimeout(runBatch, READER_PAGINATION_BUSY_RETRY_DELAY_MS);
@@ -18002,7 +18217,7 @@ struct ReadBookPage {
     this.restoreReaderTypographyOffsetIfAvailable(result.complete === true);
     // Incremental pagination may initially contain only page one. Do not expose that temporary page while
     // the saved position is still waiting for enough page boundaries to be rebuilt.
-    this.readerInitialPageReady = this.pendingRestorePageIndex < 0;
+    this.readerInitialPageReady = this.pendingRestorePageIndex < 0 && this.readerTypographyRestoreOffset < 0;
     if (this.readerInitialPageReady) this.finishReaderInitialOpening();
     if (!initialPageWasReady && this.readerInitialPageReady && this.bookUrl) {
       ReaderOpenTrace.finish(this.bookUrl);
@@ -18973,6 +19188,9 @@ struct ReadBookPage {
     for (let attempt = 0; attempt < 120; attempt++) {
       if (this.readerPageCurlSnapshotReady && key === this.readerPageCurlCaptureKey) return true;
       if (this.pageSlideDirection === 0 || key !== this.readerPageCurlCaptureKey) return false;
+      // captureReaderPageCurlSnapshots clears the pending flag when the platform snapshot request fails.
+      // Do not keep the turn locked for the remainder of the old 1.9s polling window after a terminal failure.
+      if (!this.readerPageCurlCapturePending) return false;
       await this.delay(16);
     }
     return false;

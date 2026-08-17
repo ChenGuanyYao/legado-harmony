@@ -1,6 +1,7 @@
 import { BookSource } from '../../model/data/Book';
 import { HttpClient, HttpRequest, HttpResponse } from '../http/HttpClient';
 import { VerificationSupport } from '../http/VerificationSupport';
+import { RequestSessionConfig, RequestSessionSupport } from '../http/RequestSessionSupport';
 import { BookSourceRateLimiter } from '../http/BookSourceRateLimiter';
 import { util } from '@kit.ArkTS';
 
@@ -17,6 +18,7 @@ export interface UrlConfig {
   webJs: string;
   bodyJs: string;
   rawBody: boolean;
+  session: RequestSessionConfig;
 }
 
 export class AnalyzeUrl {
@@ -106,6 +108,7 @@ export class AnalyzeUrl {
       // coordinator executes it in the same bounded runtime used by the other rule stages.
       if (opt['bodyJs']) this.config.bodyJs = String(opt['bodyJs']);
       if (opt['rawBody'] !== undefined) this.config.rawBody = String(opt['rawBody']).toLowerCase() !== 'false';
+      if (opt['session'] !== undefined) this.config.session = RequestSessionSupport.parseConfig(opt['session']);
     } catch (e) {
       // 正则保底提取
       const m = optStr.match(/['"]?method['"]?\s*:\s*['"]?(\w+)['"]?/i);
@@ -406,6 +409,7 @@ export class AnalyzeUrl {
       const cookie = VerificationSupport.sourceCookieHeader(this.source, this.config.url);
       if (cookie) merged['Cookie'] = cookie;
     }
+    RequestSessionSupport.apply(this.config.url, merged, this.config.session);
     if (this.config.method === 'POST' && this.config.body && !this.findHeader(merged, 'content-type')) {
       merged['Content-Type'] = this.looksLikeStructuredBody(this.config.body) && this.config.body.trim().startsWith('{') ?
         'application/json; charset=utf-8' : 'application/x-www-form-urlencoded';
@@ -439,6 +443,18 @@ export class AnalyzeUrl {
     if (req.url.startsWith('data:')) return this.decodeDataUrl(req.url, maxResponseBytes);
     const resp = await this.fetchWithRetry(req);
     if (this.isUsableResponse(resp)) return resp;
+
+    // A small group of IIS/legacy hosts intermittently fail before HarmonyOS Network Kit can
+    // produce an HTTP response (for example 2300003/2300056/2300999). The same URL remains
+    // reachable from ArkWeb because it uses the browser network stack. Keep native HTTP as the
+    // fast default and retry only safe, body-less reads through the already isolated WebView
+    // fetch host. This is destination-agnostic and preserves the source's URL, headers and cookie
+    // scope exactly; normal HTTP status failures are never hidden by the fallback.
+    if (this.shouldRetryWithWebView(req, resp)) {
+      console.info('[AnalyzeUrl] native transport failed; retrying with WebView:', this.urlHost(req.url));
+      const webResponse = await this.client.execute({ ...req, useWebView: true });
+      if (this.isUsableResponse(webResponse)) return webResponse;
+    }
 
     const fallbackUrls = this.buildFallbackUrls(req.url);
     for (const url of fallbackUrls) {
@@ -528,7 +544,10 @@ export class AnalyzeUrl {
       if (!nextUrl || nextUrl === currentReq.url) return lastResp;
       const switchToGet = (lastResp.statusCode === 301 || lastResp.statusCode === 302 || lastResp.statusCode === 303) &&
         currentReq.method.toUpperCase() !== 'GET' && currentReq.method.toUpperCase() !== 'HEAD';
-      currentReq = switchToGet ? { ...currentReq, url: nextUrl, method: 'GET', body: '' } : { ...currentReq, url: nextUrl };
+      const redirectHeaders = this.headersForRedirect(currentReq.headers, currentReq.url, nextUrl);
+      currentReq = switchToGet ?
+        { ...currentReq, url: nextUrl, method: 'GET', body: '', headers: redirectHeaders } :
+        { ...currentReq, url: nextUrl, headers: redirectHeaders };
       await BookSourceRateLimiter.acquire(this.source);
       lastResp = await this.client.execute(currentReq);
     }
@@ -564,8 +583,20 @@ export class AnalyzeUrl {
   private emptyConfig(url: string): UrlConfig {
     return {
       url: url, method: 'GET', body: '', charset: '', headers: {}, sourceHeaders: {},
-      retry: 0, type: '', useWebView: false, webJs: '', bodyJs: '', rawBody: false
+      retry: 0, type: '', useWebView: false, webJs: '', bodyJs: '', rawBody: false,
+      session: RequestSessionSupport.emptyConfig()
     };
+  }
+
+  private headersForRedirect(headers: Record<string, string>, fromUrl: string,
+    toUrl: string): Record<string, string> {
+    if (this.urlHost(fromUrl) === this.urlHost(toUrl)) return { ...headers };
+    const result: Record<string, string> = {};
+    const destinationScoped = ['cookie', 'authorization', 'proxy-authorization', 'host', 'origin', 'referer'];
+    for (const key of Object.keys(headers || {})) {
+      if (!destinationScoped.includes(key.toLowerCase())) result[key] = headers[key];
+    }
+    return result;
   }
 
   private normalizeCharset(charset: string): string {
@@ -595,6 +626,14 @@ export class AnalyzeUrl {
     // A reader must not invent mirrors or silently downgrade HTTPS.  Alternate endpoints are
     // executed only when the imported source explicitly declares them in its own rule/script.
     return [];
+  }
+
+  private shouldRetryWithWebView(req: HttpRequest, resp: HttpResponse): boolean {
+    if (req.useWebView || resp.statusCode !== 0 || !/^https?:\/\//i.test(req.url || '')) return false;
+    const method = (req.method || 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') return false;
+    const error = String(resp.error || '');
+    return /2300056|2300999|curl(?:_|\s*)code\s*(?:result\s*)?[=:]?\s*(?:35|56)\b|connection\s+reset|failed\s+to\s+receive\s+data|ssl\s+connect/i.test(error);
   }
 
   private isUsableResponse(resp: HttpResponse): boolean {

@@ -347,7 +347,7 @@ export class SearchCoordinator {
         new RuleFieldRequest('name', searchRule.name || ''),
         new RuleFieldRequest('author', searchRule.author || ''),
         new RuleFieldRequest('bookUrl',
-          this.applySimpleSourceUrlConstants(searchRule.bookUrl || '', source.jsLib || '')),
+          this.applySimpleSourceUrlConstants(searchRule.bookUrl || '', source.jsLib || ''), true),
         // 换源搜索同样需要展示各书源当前提供的最新章节。该字段通常与书名、作者
         // 位于同一搜索结果节点中，保留它不会引入额外网络请求。
         new RuleFieldRequest('lastChapter', searchRule.lastChapter || '')
@@ -397,7 +397,7 @@ export class SearchCoordinator {
             sourceApiRecord['title'] || '');
           if (!book.author) book.author = String(sourceApiRecord['author'] || sourceApiRecord['writer'] || '');
         }
-        book.bookUrl = BookUrlResolver.resolve(fieldValues['bookUrl'] || '', baseUrl);
+        book.bookUrl = BookUrlResolver.resolveScalar(fieldValues['bookUrl'] || '', baseUrl);
         this.fillSearchFallbackFields(source, ir, book, baseUrl, item);
         if (options.exactMatch) {
           if (!this.matchesExactSearch(this.normalizeSearchText(book.name), this.normalizeSearchText(book.author),
@@ -440,7 +440,7 @@ export class SearchCoordinator {
               book.bookUrl = String(raw['url'] || raw['bookUrl'] || raw['link'] || raw['href'] || raw['nid'] || '');
             } catch (_) {}
           }
-          book.bookUrl = BookUrlResolver.resolve(book.bookUrl, baseUrl);
+          book.bookUrl = BookUrlResolver.resolveScalar(book.bookUrl, baseUrl);
         }
         if (!book.bookUrl || /["']\s*\+\s*result|\bresult\s*\+\s*["']|@js:/.test(book.bookUrl) ||
           (/result/.test(searchRule.bookUrl || '') && /\+/.test(searchRule.bookUrl || ''))) {
@@ -648,7 +648,7 @@ export class SearchCoordinator {
   }
 
   private cleanUrlField(value: string, maxLength: number): string {
-    const text = this.safeString(value).trim();
+    const text = BookUrlResolver.scalar(this.safeString(value));
     if (!text || this.isUnresolvedUrl(text)) return '';
     return text.length > maxLength ? text.substring(0, maxLength) : text;
   }

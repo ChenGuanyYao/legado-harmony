@@ -53,10 +53,20 @@ export class WebBookFetchRuntime {
       this.recoverIdleController();
       return;
     }
-    // A routed page can attach its host before the previous page has disappeared. Do not leave
-    // an in-flight task bound to a controller whose callbacks will no longer reach this runtime.
-    if (this.controller && this.active) {
-      this.finishActive(this.failure(this.active.request.url, '网页抓取环境已切换，请重试'));
+    // A routed page can attach its host before the previous page has disappeared. Preserve the
+    // in-flight request and restart it on the new controller; failing it here creates a race where
+    // a detail request submitted by aboutToAppear is cancelled by that very detail page's host.
+    const migratingTask = this.active;
+    if (migratingTask) {
+      if (migratingTask.timeoutId >= 0) clearTimeout(migratingTask.timeoutId);
+      if (migratingTask.inspectId >= 0) clearTimeout(migratingTask.inspectId);
+      migratingTask.timeoutId = -1;
+      migratingTask.inspectId = -1;
+      migratingTask.pageEnded = false;
+      migratingTask.stableCount = 0;
+      migratingTask.lastSignature = '';
+      this.active = null;
+      this.queue.unshift(migratingTask);
     }
     this.controller = controller;
     // onControllerAttached means loadUrl/postUrl are already usable. Waiting for the initial
@@ -207,6 +217,14 @@ export class WebBookFetchRuntime {
         return;
       }
       const html = snapshot['html'];
+      const snapshotUrl = String(snapshot['url'] || '').trim();
+      // A newly attached routed-page host first completes its own about:blank navigation. That
+      // callback can arrive after the pending request has migrated to it; never mistake the
+      // 39-byte empty document for the requested source response.
+      if (!/^https?:\/\//i.test(snapshotUrl)) {
+        this.scheduleInspect(task, 400);
+        return;
+      }
       const maxBytes = task.request.maxResponseBytes || 0;
       if (maxBytes > 0 && this.utf8Length(html) > maxBytes) {
         this.finishActive(this.failure(snapshot['url'] || task.request.url, `response too large: >${maxBytes}`));

@@ -30,6 +30,12 @@ export class Book {
   variable: string = '';
   readConfig: ReadConfig | null = null;
   syncTime: number = 0;
+  /** App-owned identity. It must not be stored in the source-controlled variable JSON. */
+  identityKey: string = '';
+  /** Temporary search/explore read state, stored in its own database column. */
+  pendingAddToShelf: boolean = false;
+  /** Last explicit local bookshelf add/keep time, used to reject stale cloud tombstones. */
+  shelfModifiedTime: number = 0;
 
   constructor() {
     this.latestChapterTime = Date.now();
@@ -38,14 +44,18 @@ export class Book {
   }
 
   private _variableMap: Record<string, string> | null = null;
+  private _variableMapRaw: string = '';
 
   get variableMap(): Record<string, string> {
-    if (!this._variableMap) {
+    // Source rules still assign `book.variable` directly in a number of paths. Tie the cache to the
+    // exact raw value so a later putVariable() can never resurrect an older variable snapshot.
+    if (!this._variableMap || this._variableMapRaw !== this.variable) {
       try {
         this._variableMap = JSON.parse(this.variable || '{}') as Record<string, string>;
       } catch (e) {
         this._variableMap = {};
       }
+      this._variableMapRaw = this.variable;
     }
     return this._variableMap;
   }
@@ -57,11 +67,13 @@ export class Book {
   putVariable(key: string, value: string): void {
     this.variableMap[key] = value;
     this.variable = JSON.stringify(this.variableMap);
+    this._variableMapRaw = this.variable;
   }
 
   replaceVariable(raw: string): void {
     this.variable = raw || '{}';
     this._variableMap = null;
+    this._variableMapRaw = '';
   }
 
   getRealAuthor(): string {
@@ -307,6 +319,7 @@ export class BookListRule {
   coverUrl: string = '';
   intro: string = '';
   kind: string = '';
+  status: string = '';
   lastChapter: string = '';
   bookUrl: string = '';
   wordCount: string = '';
@@ -319,6 +332,7 @@ export class SearchRule {
   coverUrl: string = '';
   intro: string = '';
   kind: string = '';
+  status: string = '';
   lastChapter: string = '';
   bookUrl: string = '';
   wordCount: string = '';
@@ -331,6 +345,7 @@ export class ExploreRule {
   coverUrl: string = '';
   intro: string = '';
   kind: string = '';
+  status: string = '';
   lastChapter: string = '';
   bookUrl: string = '';
   wordCount: string = '';

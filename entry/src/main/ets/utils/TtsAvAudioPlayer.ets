@@ -18,6 +18,7 @@ export class TtsAvAudioPlayer {
     const generation = ++this.playGeneration;
     this.interruptPaused = false;
     await this.releaseCurrent();
+    const sourceLength = this.getFileLength(filePath);
     const player = await media.createAVPlayer();
     this.player = player;
     const sourceFile = fs.openSync(filePath, fs.OpenMode.READ_ONLY);
@@ -26,7 +27,10 @@ export class TtsAvAudioPlayer {
     const initialized = this.waitForInitialized(player, generation);
     const audioSessionOwner = `${this.audioSessionOwnerPrefix}_${generation}`;
     try {
-      player.fdSrc = { fd: sourceFile.fd };
+      // Supplying the complete descriptor is important for downloaded TTS audio.
+      // A bare fd can be classified as an unknown-length/live stream by AVPlayer,
+      // which rejects playback-rate changes and aborts continuous reading.
+      player.fdSrc = { fd: sourceFile.fd, offset: 0, length: sourceLength };
       await initialized;
       if (generation !== this.playGeneration) {
         return;
@@ -63,11 +67,7 @@ export class TtsAvAudioPlayer {
           this.handleAudioInterrupt(player, generation, event);
         });
       });
-      try {
-        player.setPlaybackRate(normalizedSpeed);
-      } catch (_) {
-        this.setDiscreteSpeed(player, normalizedSpeed);
-      }
+      const rateApplied = this.applyPlaybackRate(player, normalizedSpeed);
       await this.waitUntilResumed();
       if (generation !== this.playGeneration) {
         return;
@@ -88,7 +88,7 @@ export class TtsAvAudioPlayer {
       if (onPlaybackStart) {
         try {
           const sourceDuration = player.duration;
-          const playbackDuration = sourceDuration > 0 ? sourceDuration / normalizedSpeed : 0;
+          const playbackDuration = sourceDuration > 0 && rateApplied ? sourceDuration / normalizedSpeed : sourceDuration;
           onPlaybackStart(playbackDuration);
         } catch (error) {
           console.warn('[TTS] report av audio duration failed:', error);
@@ -199,6 +199,36 @@ export class TtsAvAudioPlayer {
       }
     } catch (_) {
     }
+  }
+
+  private applyPlaybackRate(player: media.AVPlayer, speed: number): boolean {
+    // 1x does not require a rate operation. Avoiding the call also keeps
+    // providers that return a stream-like container compatible with AVPlayer.
+    if (Math.abs(speed - 1) < 0.01) {
+      return false;
+    }
+    // A prepared local file normally has a finite duration. If the media
+    // service still reports an unknown duration, it may reject rate changes
+    // with 5400102 (live stream); play it at its encoded/provider speed.
+    if (player.duration <= 0) {
+      console.warn('[TTS] skip playback rate for unknown-duration audio');
+      return false;
+    }
+    try {
+      player.setPlaybackRate(speed);
+      return true;
+    } catch (_) {
+      this.setDiscreteSpeed(player, speed);
+      return true;
+    }
+  }
+
+  private getFileLength(filePath: string): number {
+    const size = Number(fs.statSync(filePath).size);
+    if (!Number.isSafeInteger(size) || size <= 0) {
+      throw new Error('朗读音频文件无效');
+    }
+    return size;
   }
 
   private handleAudioInterrupt(player: media.AVPlayer, generation: number,

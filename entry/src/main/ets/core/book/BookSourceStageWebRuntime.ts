@@ -299,6 +299,18 @@ export class BookSourceStageWebRuntime {
       const step = this.parseStep(raw);
       request.source.variable = step.variable;
       request.source.loginHeader = step.loginHeader;
+      // java.ajax() is synchronous from the source script's point of view, while this bridge fulfils it by
+      // replaying the script after each native request. Source/java mutations made before that AJAX therefore
+      // belong to the next replay and to the request currently being issued. Carry them in the task-local source
+      // snapshot immediately, but do not persist them to the database until the script reaches a completed pass.
+      //
+      // This is also required by sources that discover a per-account API domain, store it with source.put(), and
+      // then call java.ajax() on that domain. AnalyzeUrl scopes login headers to trusted source-state URLs; without
+      // this task-local merge, the freshly selected domain is not trusted until after the request has already
+      // returned 401. Cache state remains deliberately deferred below because caching a speculative empty AJAX
+      // result can poison later passes.
+      request.source.loginInfo = this.mergeRuntimeState(request.source.loginInfo || '',
+        step.javaState, step.sourceState);
       if (request.book) {
         request.book.variable = step.bookVariable;
         const bookType = Number(step.bookType);
@@ -362,8 +374,6 @@ export class BookSourceStageWebRuntime {
       // script cache/runtime state only after a pass finishes, otherwise a placeholder can poison
       // the next evaluation (for example, caching an empty paragraph-comment summary).
       cacheState = this.storeCache(sourceKey, nextCacheState);
-      request.source.loginInfo = this.mergeRuntimeState(request.source.loginInfo || '',
-        step.javaState, step.sourceState);
       const persistedBeforeSave = await AppDatabase.getInstance().getBookSource(request.source.bookSourceUrl);
       if (persistedBeforeSave) {
         // Empty state from a non-login task is never an explicit logout. Preserve a token/header

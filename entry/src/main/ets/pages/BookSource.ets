@@ -103,6 +103,8 @@ struct BookSourcePage {
   @State sourceListViewportHeight: number = 0;
   @State sourceFirstVisibleIndex: number = 0;
   @State sourceVisibleItemCount: number = 1;
+  @State sourceScrollbarDragging: boolean = false;
+  @State sourceScrollbarDragOffset: number = 0;
   @State sourceGroups: string[] = [];
   @State isLoading: boolean = false;
   @State searchText: string = '';
@@ -172,6 +174,9 @@ struct BookSourcePage {
   @State checkBackgroundMode: boolean = false;
   @State webImportActive: boolean = false;
   private sourceListScroller: Scroller = new Scroller();
+  private sourceScrollbarPointerAnchor: number = 0;
+  private sourceScrollbarPendingIndex: number = -1;
+  private sourceScrollbarUpdateTimer: number = -1;
   private hasShownOnce: boolean = false;
   private sourceOrderSaving: boolean = false;
   private checkCoordinator: SearchCoordinator | null = null;
@@ -2212,37 +2217,130 @@ struct BookSourcePage {
   @Builder
   sourceVirtualScrollbar() {
     if (this.sourceShouldShowVirtualScrollbar()) {
-      Column()
-        .width(3)
-        .height(this.sourceListViewportHeight)
-        .borderRadius(2)
-        .backgroundColor(this.appDarkMode ? '#18FFFFFF' : '#14000000')
-        .margin({ right: 3 })
-        .hitTestBehavior(HitTestMode.None)
-      Column()
-        .width(3)
-        .height(this.sourceScrollbarThumbLength())
-        .borderRadius(2)
-        .backgroundColor(this.appDarkMode ? '#99D5D8DE' : '#887A6F63')
-        .margin({ right: 3 })
-        .translate({ y: this.sourceScrollbarThumbOffset() })
-        .hitTestBehavior(HitTestMode.None)
+      Stack({ alignContent: Alignment.TopEnd }) {
+        Column()
+          .width(3)
+          .height(this.sourceScrollbarViewportHeight())
+          .borderRadius(2)
+          .backgroundColor(this.appDarkMode ? '#18FFFFFF' : '#14000000')
+          .margin({ right: 3 })
+          .hitTestBehavior(HitTestMode.None)
+        Column()
+          .width(this.sourceScrollbarDragging ? 6 : 4)
+          .height(this.sourceScrollbarThumbLength())
+          .borderRadius(3)
+          .backgroundColor(this.appDarkMode ? '#BFD5D8DE' : '#A87A6F63')
+          .margin({ right: 2 })
+          .translate({ y: this.sourceDisplayedScrollbarThumbOffset() })
+          .hitTestBehavior(HitTestMode.None)
+      }
+      .width(24)
+      .height(this.sourceScrollbarViewportHeight())
+      .translate({ y: this.sourceListTopInset() })
+      .zIndex(10)
+      .gesture(
+        GestureGroup(GestureMode.Exclusive,
+          PanGesture({ direction: PanDirection.Vertical, distance: 1 })
+            .onActionStart((event: GestureEvent) => this.beginSourceScrollbarDrag(event))
+            .onActionUpdate((event: GestureEvent) => this.updateSourceScrollbarDrag(event))
+            .onActionEnd((event: GestureEvent) => this.endSourceScrollbarDrag(event))
+            .onActionCancel(() => this.cancelSourceScrollbarDrag()),
+          TapGesture().onAction((event: GestureEvent) => this.jumpSourceScrollbarToPointer(event))
+        )
+      )
     }
   }
 
   sourceShouldShowVirtualScrollbar(): boolean {
-    return this.sourceListViewportHeight > 0 && this.sources.length > this.sourceVisibleItemCount;
+    return this.sourceScrollbarViewportHeight() > 0 && this.sources.length > this.sourceVisibleItemCount;
+  }
+
+  sourceScrollbarViewportHeight(): number {
+    return Math.max(0, this.sourceListViewportHeight - this.sourceListTopInset());
   }
 
   sourceScrollbarThumbLength(): number {
-    return VirtualListScrollbar.thumbLength(this.sourceListViewportHeight,
+    return VirtualListScrollbar.thumbLength(this.sourceScrollbarViewportHeight(),
       this.sources.length, this.sourceVisibleItemCount);
   }
 
   sourceScrollbarThumbOffset(): number {
-    return VirtualListScrollbar.thumbOffset(this.sourceListViewportHeight,
+    return VirtualListScrollbar.thumbOffset(this.sourceScrollbarViewportHeight(),
       this.sourceScrollbarThumbLength(), this.sources.length,
       this.sourceFirstVisibleIndex, this.sourceVisibleItemCount);
+  }
+
+  sourceDisplayedScrollbarThumbOffset(): number {
+    return this.sourceScrollbarDragging ? this.sourceScrollbarDragOffset : this.sourceScrollbarThumbOffset();
+  }
+
+  sourceScrollbarPointerY(event: GestureEvent): number {
+    const finger = event.fingerList.length > 0 ? event.fingerList[0] : undefined;
+    return finger ? finger.localY : 0;
+  }
+
+  beginSourceScrollbarDrag(event: GestureEvent): void {
+    const thumbLength = this.sourceScrollbarThumbLength();
+    const currentOffset = this.sourceScrollbarThumbOffset();
+    const pointerY = this.sourceScrollbarPointerY(event);
+    this.sourceScrollbarDragging = true;
+    this.sourceScrollbarDragOffset = currentOffset;
+    if (pointerY >= currentOffset && pointerY <= currentOffset + thumbLength) {
+      this.sourceScrollbarPointerAnchor = pointerY - currentOffset;
+    } else {
+      this.sourceScrollbarPointerAnchor = thumbLength / 2;
+      this.updateSourceScrollbarFromPointer(pointerY);
+    }
+  }
+
+  updateSourceScrollbarDrag(event: GestureEvent): void {
+    if (!this.sourceScrollbarDragging) return;
+    this.updateSourceScrollbarFromPointer(this.sourceScrollbarPointerY(event));
+  }
+
+  endSourceScrollbarDrag(event: GestureEvent): void {
+    if (!this.sourceScrollbarDragging) return;
+    this.updateSourceScrollbarFromPointer(this.sourceScrollbarPointerY(event));
+    this.sourceScrollbarDragging = false;
+  }
+
+  cancelSourceScrollbarDrag(): void {
+    this.sourceScrollbarDragging = false;
+  }
+
+  jumpSourceScrollbarToPointer(event: GestureEvent): void {
+    this.sourceScrollbarPointerAnchor = this.sourceScrollbarThumbLength() / 2;
+    this.updateSourceScrollbarFromPointer(this.sourceScrollbarPointerY(event));
+  }
+
+  updateSourceScrollbarFromPointer(pointerY: number): void {
+    const thumbLength = this.sourceScrollbarThumbLength();
+    const viewportHeight = this.sourceScrollbarViewportHeight();
+    const offset = VirtualListScrollbar.clampThumbOffset(viewportHeight, thumbLength,
+      pointerY - this.sourceScrollbarPointerAnchor);
+    this.sourceScrollbarDragOffset = offset;
+    const targetIndex = VirtualListScrollbar.firstVisibleIndex(viewportHeight, thumbLength,
+      this.sources.length, this.sourceVisibleItemCount, offset);
+    this.sourceFirstVisibleIndex = targetIndex;
+    this.queueSourceScrollbarTarget(targetIndex);
+  }
+
+  queueSourceScrollbarTarget(targetIndex: number): void {
+    this.sourceScrollbarPendingIndex = targetIndex;
+    if (this.sourceScrollbarUpdateTimer >= 0) return;
+    this.sourceScrollbarUpdateTimer = setTimeout(() => {
+      this.sourceScrollbarUpdateTimer = -1;
+      const pending = this.sourceScrollbarPendingIndex;
+      this.sourceScrollbarPendingIndex = -1;
+      if (pending < 0 || this.sources.length === 0) return;
+      const target = Math.max(0, Math.min(pending, this.sources.length - 1));
+      try {
+        // The first ListItem is the top inset spacer, so source indexes start at one.
+        this.sourceListScroller.scrollToIndex(target + 1, false, ScrollAlign.START);
+      } catch (e) {
+        console.warn('拖动书源滚动条定位失败:', e);
+      }
+    }, 16);
   }
 
   sourceListTopInset(): number {
@@ -3830,6 +3928,8 @@ struct BookSourcePage {
         this.showSourceLoginUiDialog = true;
       }
     } catch (error) {
+      console.error('[SourceLoginRuntime] action failed:', currentSource.bookSourceName, item.name,
+        this.importErrorMessage(error as Object));
       const missing = BookSourceRuntimeRouter.missingCapabilityMessage(this.loginRuntimeDecision);
       promptAction.showToast({
         message: `登录动作失败：${this.importErrorMessage(error as Object)}${missing ? `\n${missing}` : ''}`
@@ -4250,7 +4350,8 @@ struct BookSourcePage {
     if (!source || !baseSource || !this.loginRuntimeActive) return;
     const script = BookSourceLoginWebRuntime.buildScript(baseSource, this.loginRuntimeAction,
       this.loginRuntimeJournal.responses, this.loginRuntimeCookies,
-      this.loginRuntimeFixedNow, this.loginRuntimeRandomSeed);
+      this.loginRuntimeFixedNow, this.loginRuntimeRandomSeed,
+      this.loginRuntimeJournal.appliedOperations('cookie'));
     const raw = await this.runLoginRuntimeScript(script);
     const step = BookSourceLoginWebRuntime.parseResult(raw);
     this.applyLoginCookieOperations(step.cookieOperations);
@@ -4589,6 +4690,16 @@ struct BookSourcePage {
     if (error) {
       this.finishLoginRuntime(null, error);
       return;
+    }
+    // startBrowserAwait() resumes through deterministic script replay. Refresh every Cookie URL
+    // observed before suspension so the resumed pass sees credentials created by the browser,
+    // instead of the deliberately cleared pre-login snapshot.
+    for (const url of this.loginRuntimeCookieUrls) {
+      this.loginRuntimeCookies[url] = CookieStore.getCookie(url);
+    }
+    if (browserUrl) {
+      this.loginRuntimeCookies[browserUrl] = CookieStore.getCookie(browserUrl);
+      if (!this.loginRuntimeCookieUrls.includes(browserUrl)) this.loginRuntimeCookieUrls.push(browserUrl);
     }
     this.loginRuntimeJournal.recordResponse(`browser:${browserUrl}`, body);
     this.loginRuntimeStepRunning = false;
@@ -5883,11 +5994,11 @@ struct BookSourcePage {
     result['loginCheckJs'] = source.loginCheckJs;
     result['searchUrl'] = source.searchUrl;
     result['exploreUrl'] = source.exploreUrl;
-    result['ruleSearch'] = JSON.parse(JSON.stringify(source.searchRule || {})) as Object;
-    result['ruleExplore'] = JSON.parse(JSON.stringify(source.exploreRule || {})) as Object;
-    result['ruleBookInfo'] = JSON.parse(JSON.stringify(source.bookInfoRule || {})) as Object;
-    result['ruleToc'] = JSON.parse(JSON.stringify(source.tocRule || {})) as Object;
-    result['ruleContent'] = JSON.parse(JSON.stringify(source.contentRule || {})) as Object;
+    result['ruleSearch'] = this.mergeRuleForExport(result['ruleSearch'], source.searchRule);
+    result['ruleExplore'] = this.mergeRuleForExport(result['ruleExplore'], source.exploreRule);
+    result['ruleBookInfo'] = this.mergeRuleForExport(result['ruleBookInfo'], source.bookInfoRule);
+    result['ruleToc'] = this.mergeRuleForExport(result['ruleToc'], source.tocRule);
+    result['ruleContent'] = this.mergeRuleForExport(result['ruleContent'], source.contentRule);
     result['variableComment'] = source.variableComment;
     result['lastUpdateTime'] = source.lastUpdateTime;
     result['respondTime'] = source.respondTime;
@@ -5898,6 +6009,17 @@ struct BookSourcePage {
     if (source.isPinned || result['isPinned'] !== undefined) result['isPinned'] = source.isPinned;
     if (source.isLocked || result['isLocked'] !== undefined) result['isLocked'] = source.isLocked;
     return result;
+  }
+
+  mergeRuleForExport(rawRule: Object | undefined, storedRule: Object): Object {
+    const merged: Record<string, Object> = {};
+    if (rawRule && typeof rawRule === 'object' && !Array.isArray(rawRule)) {
+      const rawRecord = rawRule as Record<string, Object>;
+      for (const key of Object.keys(rawRecord)) merged[key] = rawRecord[key];
+    }
+    const stored = JSON.parse(JSON.stringify(storedRule || {})) as Record<string, Object>;
+    for (const key of Object.keys(stored)) merged[key] = stored[key];
+    return merged;
   }
 
   async readTextFile(filePath: string): Promise<string> {
@@ -6602,6 +6724,7 @@ struct BookSourcePage {
     rule.coverUrl = fields['coverUrl'] || '';
     rule.intro = fields['intro'] || fields['desc'] || '';
     rule.kind = fields['kind'] || '';
+    rule.status = fields['status'] || '';
     rule.lastChapter = fields['lastChapter'] || fields['lastchapter'] || '';
     rule.bookUrl = fields['bookUrl'] || fields['bookurl'] || '';
     rule.wordCount = fields['wordCount'] || fields['wordcount'] || '';

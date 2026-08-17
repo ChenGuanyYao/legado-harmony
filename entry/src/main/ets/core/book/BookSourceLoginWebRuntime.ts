@@ -44,7 +44,8 @@ export class BookSourceLoginWebRuntime {
   private static readonly RUNTIME_STATE_KEY: string = '__legadoHarmonyRuntime';
 
   static buildScript(source: BookSource, action: string, responses: Record<string, string>,
-    cookies: Record<string, string> = {}, fixedNow: number = Date.now(), randomSeed: number = 1): string {
+    cookies: Record<string, string> = {}, fixedNow: number = Date.now(), randomSeed: number = 1,
+    appliedCookieOperations: string[] = []): string {
     const state = JSON.stringify({
       variable: source.variable || '',
       loginHeader: source.loginHeader || '',
@@ -52,6 +53,7 @@ export class BookSourceLoginWebRuntime {
       runtime: this.parseRuntimeState(source.loginInfo),
       responses: responses || {},
       cookies: cookies || {},
+      appliedCookieOperations: appliedCookieOperations || [],
       sourceUrl: source.bookSourceUrl || '',
       sourceName: source.bookSourceName || '',
       sourceHeader: source.header || '',
@@ -92,9 +94,21 @@ export class BookSourceLoginWebRuntime {
       `const sourceData=Object.assign({},runtime.source||{});` +
       `const cacheData=Object.assign({},runtime.cache||{});` +
       `const cookieData=Object.assign({},S.cookies||{});const cookieOps=[];` +
+      `const appliedCookieOps=new Set(Array.isArray(S.appliedCookieOperations)?S.appliedCookieOperations:[]);` +
+      `function cookieOpKey(operation,url,name,value){return String(operation||'')+'\\n'+String(url||'')+'\\n'+` +
+      `String(name||'')+'\\n'+String(value||'');}` +
       `const loginMap=Object.assign({},S.loginInfo||{});` +
       `Object.defineProperty(loginMap,'get',{enumerable:false,value:function(k){return this[k]||'';}});` +
       `Object.defineProperty(loginMap,'put',{enumerable:false,value:function(k,v){this[k]=v;return v;}});` +
+      `function normalizedLoginKey(v){return String(v??'').toLowerCase().replace(/[\\s\\p{P}\\p{S}]/gu,'');}` +
+      `function loginInfoValue(k){if(Object.prototype.hasOwnProperty.call(loginMap,k))return loginMap[k]||'';` +
+      `const wanted=normalizedLoginKey(k);for(const key of Object.keys(loginMap)){` +
+      `if(normalizedLoginKey(key)===wanted)return loginMap[key]||'';}` +
+      `if(/token|令牌/i.test(wanted)){const matches=Object.keys(loginMap).filter(function(key){` +
+      `return /token|令牌/i.test(normalizedLoginKey(key))&&String(loginMap[key]??'').trim();});` +
+      `if(matches.length===1)return loginMap[matches[0]]||'';}return '';}` +
+      `const loginInfoView=new Proxy(loginMap,{get:function(target,key){if(typeof key!=='string')return target[key];` +
+      `if(key in target)return target[key];return loginInfoValue(key);}});` +
       `const source={` +
       `bookSourceUrl:S.sourceUrl,bookSourceName:S.sourceName,loginUi:S.loginUi,header:S.sourceHeader,` +
       `getKey:function(){return S.sourceUrl;},getTag:function(){return S.sourceName;},` +
@@ -113,8 +127,8 @@ export class BookSourceLoginWebRuntime {
       `let p=m[2].replace(/-/g,'+').replace(/_/g,'/');while(p.length%4)p+='=';const d=JSON.parse(b64d(p)||'{}');` +
       `if(Number(d.exp||0)>0&&Number(d.exp)*1000<=Number(S.fixedNow)+30000)return null;}catch(e){}}return v;},` +
       `getHeaderMap:function(){try{return JSON.parse(S.sourceHeader||'{}');}catch(e){return {};}} ,` +
-      `getLoginInfoMap:function(){return loginMap;},` +
-      `getLoginInfo:function(k){return arguments.length?(k?loginMap[k]||'':''):JSON.stringify(loginMap);},` +
+      `getLoginInfoMap:function(){return loginInfoView;},` +
+      `getLoginInfo:function(k){return arguments.length?(k?loginInfoValue(k):''):JSON.stringify(loginMap);},` +
       `putLoginInfo:function(a,b){if(arguments.length>1){loginMap[a]=b;return b;}` +
       `let next=a;if(typeof next==='string'){try{next=JSON.parse(next);}catch(e){return a;}}` +
       `if(next&&typeof next==='object'&&!Array.isArray(next)){Object.keys(loginMap).forEach(function(k){delete loginMap[k];});` +
@@ -185,11 +199,12 @@ export class BookSourceLoginWebRuntime {
       `if(!pendingCookie)pendingCookie=k;return '';},getKey:function(k,n){` +
       `const value=this.getCookie(k);const m=String(value??'').match(new RegExp('(?:^|;\\\\s*)'+n+'=([^;]*)'));` +
       `return m?m[1]:'';},` +
-      `setCookie:function(k,v){k=String(k??'');v=String(v??'');cookieData[k]=v;` +
-      `cookieOps.push({operation:'set',url:k,value:v,name:''});return v;},` +
-      `replaceCookie:function(k,v){k=String(k??'');v=String(v??'');cookieData[k]=v;` +
-      `cookieOps.push({operation:'replace',url:k,value:v,name:''});return v;},` +
+      `setCookie:function(k,v){k=String(k??'');v=String(v??'');const op=cookieOpKey('set',k,'',v);` +
+      `if(!appliedCookieOps.has(op)){cookieData[k]=v;cookieOps.push({operation:'set',url:k,value:v,name:''});}return v;},` +
+      `replaceCookie:function(k,v){k=String(k??'');v=String(v??'');const op=cookieOpKey('replace',k,'',v);` +
+      `if(!appliedCookieOps.has(op)){cookieData[k]=v;cookieOps.push({operation:'replace',url:k,value:v,name:''});}return v;},` +
       `removeCookie:function(k,n){k=String(k??'');n=String(n??'');` +
+      `const op=cookieOpKey('remove',k,n,'');if(appliedCookieOps.has(op))return true;` +
       `cookieOps.push({operation:'remove',url:k,value:'',name:n});` +
       `if(!n){cookieData[k]='';}else{cookieData[k]=String(cookieData[k]??'').split(';').filter(function(x){` +
       `return x.trim().split('=')[0]!==n;}).join(';');}return true;}};` +
@@ -329,8 +344,26 @@ export class BookSourceLoginWebRuntime {
   private static selectActionScript(script: string, action: string): string {
     const functions = this.extractFunctions(script || '');
     if (functions.length === 0) return script || '';
+
+    // Preserve top-level constants and setup statements, but remove every unneeded function body.
+    // Replacing removed spans with a line break also prevents adjacent comments/tokens merging.
+    let prelude = '';
+    let cursor = 0;
+    for (const block of functions) {
+      if (block.start < cursor) continue;
+      prelude += script.substring(cursor, block.start) + '\n';
+      cursor = block.end;
+    }
+    prelude += script.substring(cursor);
+
+    // The preserved prelude is executable code, not merely declarations. Large aggregation
+    // sources commonly initialize settings through helpers such as getArgument() at top level.
+    // Starting the closure from the clicked action alone retained that call site while removing
+    // its helper declaration, so an unrelated-looking "getArgument is not defined" was raised
+    // before or after the requested action. Treat both executable roots alike, then recursively
+    // include every named source helper they reference.
     const required: string[] = [];
-    const pending: string[] = this.scriptIdentifiers(action || '');
+    const pending: string[] = this.scriptIdentifiers(`${action || ''}\n${prelude}`);
     while (pending.length > 0) {
       const name = pending.shift() || '';
       if (!name || required.includes(name)) continue;
@@ -343,16 +376,6 @@ export class BookSourceLoginWebRuntime {
       }
     }
 
-    // Preserve top-level constants and setup statements, but remove every unneeded function body.
-    // Replacing removed spans with a line break also prevents adjacent comments/tokens merging.
-    let prelude = '';
-    let cursor = 0;
-    for (const block of functions) {
-      if (block.start < cursor) continue;
-      prelude += script.substring(cursor, block.start) + '\n';
-      cursor = block.end;
-    }
-    prelude += script.substring(cursor);
     if (required.length === 0) return prelude;
     let selected = prelude;
     for (const block of functions) {

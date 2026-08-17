@@ -191,7 +191,7 @@ export class ExploreCoordinator {
       fieldRequest.fields = [
         new RuleFieldRequest('name', exploreRule.name || ''),
         new RuleFieldRequest('author', exploreRule.author || ''),
-        new RuleFieldRequest('bookUrl', exploreRule.bookUrl || ''),
+        new RuleFieldRequest('bookUrl', exploreRule.bookUrl || '', true),
         new RuleFieldRequest('coverUrl', exploreRule.coverUrl || ''),
         new RuleFieldRequest('intro', exploreRule.intro || ''),
         new RuleFieldRequest('kind', exploreRule.kind || ''),
@@ -236,7 +236,7 @@ export class ExploreCoordinator {
         book.kind = fieldValues['kind'] || '';
         book.latestChapterTitle = fieldValues['lastChapter'] || '';
         book.wordCount = fieldValues['wordCount'] || '';
-        book.bookUrl = BookUrlResolver.resolve(fieldValues['bookUrl'] || '', baseUrl);
+        book.bookUrl = BookUrlResolver.resolveScalar(fieldValues['bookUrl'] || '', baseUrl);
         book.variable = itemIndex < fieldBatch.contextValues.length ? fieldBatch.contextValues[itemIndex] :
           ir.getContext().toPersistentJson();
         book.origin = source.bookSourceUrl;

@@ -1,6 +1,23 @@
 import { HttpResponse } from '../http/HttpClient';
 
 export class BookUrlResolver {
+  /**
+   * A book/list URL is a scalar field. Some HTML rules intentionally match more than one
+   * descendant (for example `a@href` inside a result card). Android Legado consumes the first
+   * match for URL fields; accepting the newline-joined value would pass several addresses to
+   * Network Kit as one malformed URL.
+   */
+  static scalar(url: string): string {
+    const value = (url || '').trim();
+    if (!value) return '';
+    const lineBreak = value.search(/[\r\n]/);
+    return (lineBreak >= 0 ? value.substring(0, lineBreak) : value).trim();
+  }
+
+  static resolveScalar(url: string, base: string): string {
+    return this.resolve(this.scalar(url), base);
+  }
+
   static cleanBaseUrl(url: string): string {
     if (!url) return '';
     const hashIndex = url.indexOf('##');

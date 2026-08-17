@@ -380,12 +380,23 @@ struct BookSourceEditPage {
     raw['enabled'] = this.source.enabled;
     raw['enabledExplore'] = this.source.enabledExplore;
     raw['weight'] = this.source.weight;
-    raw['ruleSearch'] = JSON.parse(JSON.stringify(this.source.searchRule || {})) as Object;
-    raw['ruleExplore'] = JSON.parse(JSON.stringify(this.source.exploreRule || {})) as Object;
-    raw['ruleBookInfo'] = JSON.parse(JSON.stringify(this.source.bookInfoRule || {})) as Object;
-    raw['ruleToc'] = JSON.parse(JSON.stringify(this.source.tocRule || {})) as Object;
-    raw['ruleContent'] = JSON.parse(JSON.stringify(this.source.contentRule || {})) as Object;
+    raw['ruleSearch'] = this.mergeRuleForRawSource(raw['ruleSearch'], this.source.searchRule);
+    raw['ruleExplore'] = this.mergeRuleForRawSource(raw['ruleExplore'], this.source.exploreRule);
+    raw['ruleBookInfo'] = this.mergeRuleForRawSource(raw['ruleBookInfo'], this.source.bookInfoRule);
+    raw['ruleToc'] = this.mergeRuleForRawSource(raw['ruleToc'], this.source.tocRule);
+    raw['ruleContent'] = this.mergeRuleForRawSource(raw['ruleContent'], this.source.contentRule);
     this.source.rawSourceJson = JSON.stringify(raw);
+  }
+
+  mergeRuleForRawSource(rawRule: Object | undefined, editedRule: Object): Object {
+    const merged: Record<string, Object> = {};
+    if (rawRule && typeof rawRule === 'object' && !Array.isArray(rawRule)) {
+      const rawRecord = rawRule as Record<string, Object>;
+      for (const key of Object.keys(rawRecord)) merged[key] = rawRecord[key];
+    }
+    const edited = JSON.parse(JSON.stringify(editedRule || {})) as Record<string, Object>;
+    for (const key of Object.keys(edited)) merged[key] = edited[key];
+    return merged;
   }
 
   draftKey(): string {
@@ -491,6 +502,7 @@ struct BookSourceEditPage {
     this.appendSnapshotPart(parts, this.source.searchRule.coverUrl);
     this.appendSnapshotPart(parts, this.source.searchRule.intro);
     this.appendSnapshotPart(parts, this.source.searchRule.kind);
+    this.appendSnapshotPart(parts, this.source.searchRule.status || '');
     this.appendSnapshotPart(parts, this.source.searchRule.lastChapter);
     this.appendSnapshotPart(parts, this.source.searchRule.bookUrl);
     this.appendSnapshotPart(parts, this.source.searchRule.wordCount);
@@ -501,6 +513,7 @@ struct BookSourceEditPage {
     this.appendSnapshotPart(parts, this.source.exploreRule.coverUrl);
     this.appendSnapshotPart(parts, this.source.exploreRule.intro);
     this.appendSnapshotPart(parts, this.source.exploreRule.kind);
+    this.appendSnapshotPart(parts, this.source.exploreRule.status || '');
     this.appendSnapshotPart(parts, this.source.exploreRule.lastChapter);
     this.appendSnapshotPart(parts, this.source.exploreRule.bookUrl);
     this.appendSnapshotPart(parts, this.source.exploreRule.wordCount);
@@ -818,6 +831,10 @@ struct BookSourceEditPage {
         this.source.searchRule.kind = value;
       })
 
+      this.inputItemBuilder('状态', this.source.searchRule.status || '', (value: string) => {
+        this.source.searchRule.status = value;
+      })
+
       this.inputItemBuilder('最新章节', this.source.searchRule.lastChapter, (value: string) => {
         this.source.searchRule.lastChapter = value;
       })
@@ -863,6 +880,10 @@ struct BookSourceEditPage {
 
       this.inputItemBuilder('分类', this.source.exploreRule.kind, (value: string) => {
         this.source.exploreRule.kind = value;
+      })
+
+      this.inputItemBuilder('状态', this.source.exploreRule.status || '', (value: string) => {
+        this.source.exploreRule.status = value;
       })
 
       this.inputItemBuilder('最新章节', this.source.exploreRule.lastChapter, (value: string) => {

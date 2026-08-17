@@ -4,6 +4,7 @@ export class BookSourceExecutionJournal {
   private startedRequestIds: string[] = [];
   private completedRequestIds: string[] = [];
   private appliedOperationIds: string[] = [];
+  private appliedOperationPayloads: string[] = [];
   sideEffectsStarted: boolean = false;
 
   reset(): void {
@@ -11,6 +12,7 @@ export class BookSourceExecutionJournal {
     this.startedRequestIds = [];
     this.completedRequestIds = [];
     this.appliedOperationIds = [];
+    this.appliedOperationPayloads = [];
     this.sideEffectsStarted = false;
   }
 
@@ -38,11 +40,24 @@ export class BookSourceExecutionJournal {
   }
 
   markOperationApplied(kind: string, payload: string): boolean {
-    const id = this.stableId(`${kind || 'operation'}\n${payload || ''}`);
+    const operationKind = kind || 'operation';
+    const operationPayload = payload || '';
+    const record = `${operationKind}\n${operationPayload}`;
+    const id = this.stableId(record);
     if (this.appliedOperationIds.includes(id)) return false;
     this.appliedOperationIds.push(id);
+    this.appliedOperationPayloads.push(record);
     this.sideEffectsStarted = true;
     return true;
+  }
+
+  appliedOperations(kind: string): string[] {
+    const prefix = `${kind || 'operation'}\n`;
+    const result: string[] = [];
+    for (const record of this.appliedOperationPayloads) {
+      if (record.startsWith(prefix)) result.push(record.substring(prefix.length));
+    }
+    return result;
   }
 
   canFallback(): boolean {

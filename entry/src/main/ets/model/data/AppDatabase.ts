@@ -2,6 +2,7 @@ import relationalStore from '@ohos.data.relationalStore';
 import { Book, BookChapter, BookSource, BookGroup, Bookmark, SearchKeyword, ExploreRule, TocRule, ContentRule } from './Book';
 import { Context } from '@kit.AbilityKit';
 import { CloudSyncChangeTracker } from '../../account/CloudSyncChangeTracker';
+import { BookIdentity } from '../../utils/BookIdentity';
 
 interface ColumnMigration {
   table: string;
@@ -30,6 +31,14 @@ class ReaderPaginationCacheWrite {
   }
 }
 
+class BookLifecycleMigrationRecord {
+  bookUrl: string = '';
+  identityKey: string = '';
+  variable: string = '{}';
+  pendingAddToShelf: boolean = false;
+  shelfModifiedTime: number = 0;
+}
+
 export class AppDatabase {
   private static readonly BATCH_INSERT_CHUNK_SIZE: number = 400;
   private static instance: AppDatabase | null = null;
@@ -40,7 +49,7 @@ export class AppDatabase {
     new Map<string, ReaderPaginationCacheWrite>();
   private readerPaginationWriteTasks: Map<string, Promise<void>> = new Map<string, Promise<void>>();
   private readonly DATABASE_NAME = 'legado.db';
-  private readonly SCHEMA_VERSION = 14;
+  private readonly SCHEMA_VERSION = 15;
 
   private constructor() {}
 
@@ -119,7 +128,10 @@ export class AppDatabase {
         originOrder INTEGER DEFAULT 0,
         variable TEXT,
         readConfig TEXT,
-        syncTime INTEGER DEFAULT 0
+        syncTime INTEGER DEFAULT 0,
+        identityKey TEXT DEFAULT '',
+        pendingAddToShelf INTEGER DEFAULT 0,
+        shelfModifiedTime INTEGER DEFAULT 0
       )
     `);
 
@@ -247,6 +259,19 @@ export class AppDatabase {
       )
     `);
 
+    await this.store.executeSql(`
+      CREATE TABLE IF NOT EXISTS book_mutation_journal (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        operation TEXT DEFAULT '',
+        reason TEXT DEFAULT '',
+        bookUrl TEXT DEFAULT '',
+        identityKey TEXT DEFAULT '',
+        pendingAddToShelf INTEGER DEFAULT 0,
+        eventTime INTEGER DEFAULT 0,
+        details TEXT DEFAULT ''
+      )
+    `);
+
     const schemaVersion = await this.getSchemaVersion();
     if (schemaVersion < this.SCHEMA_VERSION) {
       await this.migrateTables();
@@ -255,6 +280,9 @@ export class AppDatabase {
       }
       if (schemaVersion < 14) {
         await this.repairOversizedImportedBookData();
+      }
+      if (schemaVersion < 15) {
+        await this.migrateBookLifecycleMetadata();
       }
       await this.setSchemaVersion(this.SCHEMA_VERSION);
     }
@@ -269,6 +297,10 @@ export class AppDatabase {
       'CREATE INDEX IF NOT EXISTS idx_bookmarks_book_time ON bookmarks(bookUrl, createTime DESC)');
     await this.store.executeSql(
       'CREATE INDEX IF NOT EXISTS idx_books_read_time ON books(durChapterTime DESC)');
+    await this.store.executeSql(
+      'CREATE INDEX IF NOT EXISTS idx_books_identity_key ON books(identityKey)');
+    await this.store.executeSql(
+      'CREATE INDEX IF NOT EXISTS idx_book_mutation_time ON book_mutation_journal(eventTime DESC)');
     await this.store.executeSql(
       'CREATE INDEX IF NOT EXISTS idx_book_sources_enabled_order ON book_sources(enabled, isPinned DESC, customOrder)');
     await this.store.executeSql(
@@ -336,6 +368,9 @@ export class AppDatabase {
       { table: 'books', column: 'variable', definition: 'variable TEXT' },
       { table: 'books', column: 'readConfig', definition: 'readConfig TEXT' },
       { table: 'books', column: 'syncTime', definition: 'syncTime INTEGER DEFAULT 0' },
+      { table: 'books', column: 'identityKey', definition: "identityKey TEXT DEFAULT ''" },
+      { table: 'books', column: 'pendingAddToShelf', definition: 'pendingAddToShelf INTEGER DEFAULT 0' },
+      { table: 'books', column: 'shelfModifiedTime', definition: 'shelfModifiedTime INTEGER DEFAULT 0' },
       { table: 'book_sources', column: 'searchUrl', definition: "searchUrl TEXT DEFAULT ''" },
       { table: 'book_sources', column: 'exploreUrl', definition: "exploreUrl TEXT DEFAULT ''" },
       { table: 'book_sources', column: 'jsLib', definition: "jsLib TEXT DEFAULT ''" },
@@ -418,6 +453,61 @@ export class AppDatabase {
     }
   }
 
+  private async migrateBookLifecycleMetadata(): Promise<void> {
+    if (!this.store) return;
+    const legacyKey = 'searchExplorePendingAddToShelf';
+    const records: BookLifecycleMigrationRecord[] = [];
+    const resultSet = await this.store.querySql(
+      'SELECT bookUrl, origin, variable, durChapterTime, lastCheckTime, latestChapterTime FROM books');
+    try {
+      while (resultSet.goToNextRow()) {
+        const bookUrl = this.getStringColumn(resultSet, 'bookUrl');
+        if (!bookUrl) continue;
+        const book = new Book();
+        book.bookUrl = bookUrl;
+        book.origin = this.getStringColumn(resultSet, 'origin', 'local');
+        const rawVariable = this.getStringColumn(resultSet, 'variable', '{}');
+        let cleanedVariable = rawVariable;
+        let pending = false;
+        if (rawVariable.indexOf(legacyKey) >= 0) {
+          try {
+            const legacy = JSON.parse(rawVariable) as Record<string, string>;
+            pending = String(legacy[legacyKey] || '') === 'true';
+            const cleaned: Record<string, string> = {};
+            for (const key of Object.keys(legacy)) {
+              if (key !== legacyKey) cleaned[key] = legacy[key];
+            }
+            cleanedVariable = JSON.stringify(cleaned);
+          } catch (_) {
+          }
+        }
+        const modified = pending ? 0 : Math.max(
+          this.getLongColumn(resultSet, 'durChapterTime'),
+          this.getLongColumn(resultSet, 'lastCheckTime'),
+          this.getLongColumn(resultSet, 'latestChapterTime'));
+        const record = new BookLifecycleMigrationRecord();
+        record.bookUrl = bookUrl;
+        record.identityKey = BookIdentity.keyOfBook(book);
+        record.variable = cleanedVariable;
+        record.pendingAddToShelf = pending;
+        record.shelfModifiedTime = modified;
+        records.push(record);
+      }
+    } finally {
+      resultSet.close();
+    }
+    for (const record of records) {
+      const predicates = new relationalStore.RdbPredicates('books');
+      predicates.equalTo('bookUrl', record.bookUrl);
+      await this.store.update({
+        identityKey: record.identityKey,
+        pendingAddToShelf: record.pendingAddToShelf ? 1 : 0,
+        shelfModifiedTime: record.shelfModifiedTime,
+        variable: record.variable
+      }, predicates);
+    }
+  }
+
   private async initDefaultData(): Promise<void> {
     if (!this.store) return;
 
@@ -458,8 +548,12 @@ export class AppDatabase {
     }
   }
 
-  async insertBook(book: Book): Promise<void> {
+  async insertBook(book: Book, reason: string = 'insert_book'): Promise<void> {
     if (!this.store) return;
+    book.identityKey = BookIdentity.keyOfBook(book);
+    if (!book.pendingAddToShelf && book.shelfModifiedTime <= 0) {
+      book.shelfModifiedTime = Date.now();
+    }
     const bucket: relationalStore.ValuesBucket = {
       bookUrl: book.bookUrl,
       tocUrl: book.tocUrl,
@@ -491,17 +585,22 @@ export class AppDatabase {
       originOrder: book.originOrder,
       variable: book.variable,
       readConfig: JSON.stringify(book.readConfig),
-      syncTime: book.syncTime
+      syncTime: book.syncTime,
+      identityKey: book.identityKey,
+      pendingAddToShelf: book.pendingAddToShelf ? 1 : 0,
+      shelfModifiedTime: book.shelfModifiedTime
     };
 
     await this.store.insert('books', bucket);
+    await this.recordBookMutation('insert', reason, book);
     if (book.origin && book.origin !== 'local') {
       CloudSyncChangeTracker.markDataChanged();
     }
   }
 
-  async updateBook(book: Book, syncRelevant: boolean = true): Promise<void> {
+  async updateBook(book: Book, syncRelevant: boolean = true, reason: string = 'update_book'): Promise<void> {
     if (!this.store) return;
+    book.identityKey = BookIdentity.keyOfBook(book);
     const bucket: relationalStore.ValuesBucket = {
       tocUrl: book.tocUrl,
       origin: book.origin,
@@ -532,12 +631,21 @@ export class AppDatabase {
       originOrder: book.originOrder,
       variable: book.variable,
       readConfig: JSON.stringify(book.readConfig),
-      syncTime: book.syncTime
+      syncTime: book.syncTime,
+      identityKey: book.identityKey,
+      pendingAddToShelf: book.pendingAddToShelf ? 1 : 0,
+      shelfModifiedTime: book.shelfModifiedTime
     };
 
     const predicates = new relationalStore.RdbPredicates('books');
     predicates.equalTo('bookUrl', book.bookUrl);
-    await this.store.update(bucket, predicates);
+    const affected = await this.store.update(bucket, predicates);
+    if (affected <= 0) {
+      await this.recordBookMutation('update_missed', reason, book, 'bookUrl 精确匹配未命中');
+      console.warn(`更新书籍未命中数据库记录: ${book.bookUrl}`);
+      return;
+    }
+    await this.recordBookMutation('update', reason, book);
     if (syncRelevant && book.origin && book.origin !== 'local') {
       CloudSyncChangeTracker.markDataChanged();
     }
@@ -545,6 +653,7 @@ export class AppDatabase {
 
   async commitBookSourceSwitch(oldBookUrl: string, book: Book, chapters: BookChapter[]): Promise<void> {
     if (!this.store || !oldBookUrl || !book.bookUrl) return;
+    book.identityKey = BookIdentity.keyOfBook(book);
     const bookBucket: relationalStore.ValuesBucket = {
       bookUrl: book.bookUrl,
       tocUrl: book.tocUrl,
@@ -576,7 +685,10 @@ export class AppDatabase {
       originOrder: book.originOrder,
       variable: book.variable,
       readConfig: JSON.stringify(book.readConfig),
-      syncTime: book.syncTime
+      syncTime: book.syncTime,
+      identityKey: book.identityKey,
+      pendingAddToShelf: book.pendingAddToShelf ? 1 : 0,
+      shelfModifiedTime: book.shelfModifiedTime
     };
     const chapterBuckets: relationalStore.ValuesBucket[] = [];
     for (const chapter of chapters) {
@@ -656,23 +768,59 @@ export class AppDatabase {
     };
     const predicates = new relationalStore.RdbPredicates('books');
     predicates.equalTo('bookUrl', bookUrl);
-    await this.store.update(bucket, predicates);
+    const affected = await this.store.update(bucket, predicates);
+    if (affected <= 0) {
+      const missing = new Book();
+      missing.bookUrl = bookUrl;
+      await this.recordBookMutation(
+        'progress_update_missed', 'save_reading_progress', missing, 'bookUrl 精确匹配未命中');
+      console.warn(`保存阅读进度未命中数据库记录: ${bookUrl}`);
+      return;
+    }
     if (syncRelevant) {
       CloudSyncChangeTracker.markReadingProgressChanged();
     }
   }
 
-  async deleteBook(bookUrl: string): Promise<void> {
+  async deleteBook(bookUrl: string, reason: string = 'delete_book'): Promise<void> {
     if (!this.store) return;
     const existing = await this.getBook(bookUrl);
     const predicates = new relationalStore.RdbPredicates('books');
     predicates.equalTo('bookUrl', bookUrl);
-    await this.store.delete(predicates);
+    const affected = await this.store.delete(predicates);
+    if (affected > 0) {
+      await this.recordBookMutation('delete', reason, existing, '', bookUrl);
+    } else {
+      await this.recordBookMutation('delete_missed', reason, existing, 'bookUrl 精确匹配未命中', bookUrl);
+    }
     await this.deleteBookChapters(bookUrl);
     await this.deleteBookCachedContent(bookUrl);
     await this.deleteBookBookmarks(bookUrl);
     if (existing?.origin && existing.origin !== 'local') {
       CloudSyncChangeTracker.markDataChanged();
+    }
+  }
+
+  private async recordBookMutation(operation: string, reason: string, book: Book | null,
+    details: string = '', fallbackBookUrl: string = ''): Promise<void> {
+    if (!this.store) return;
+    try {
+      const bookUrl = book?.bookUrl || fallbackBookUrl;
+      const identityKey = book ? (book.identityKey || BookIdentity.keyOfBook(book)) : '';
+      await this.store.insert('book_mutation_journal', {
+        operation: operation,
+        reason: reason,
+        bookUrl: bookUrl,
+        identityKey: identityKey,
+        pendingAddToShelf: book?.pendingAddToShelf ? 1 : 0,
+        eventTime: Date.now(),
+        details: details
+      });
+      await this.store.executeSql(
+        'DELETE FROM book_mutation_journal WHERE id NOT IN ' +
+        '(SELECT id FROM book_mutation_journal ORDER BY id DESC LIMIT 500)');
+    } catch (error) {
+      console.warn('记录书架变更审计失败:', error);
     }
   }
 
@@ -858,13 +1006,30 @@ export class AppDatabase {
     return books;
   }
 
+  async getBookByIdentityKey(identityKey: string): Promise<Book | null> {
+    if (!this.store || !identityKey) return null;
+    const predicates = new relationalStore.RdbPredicates('books');
+    predicates.equalTo('identityKey', identityKey);
+    const resultSet = await this.store.query(predicates, []);
+    try {
+      if (!resultSet.goToFirstRow()) return null;
+      return this.resultSetToBook(resultSet);
+    } finally {
+      resultSet.close();
+    }
+  }
+
   async restoreBook(book: Book): Promise<void> {
     if (!this.store || !book.bookUrl) return;
-    const existing = await this.getBook(book.bookUrl);
+    book.identityKey = BookIdentity.keyOfBook(book);
+    const existing = await this.getBook(book.bookUrl) || await this.getBookByIdentityKey(book.identityKey);
     if (existing) {
-      await this.updateBook(book);
+      if (existing.bookUrl !== book.bookUrl) {
+        book.bookUrl = existing.bookUrl;
+      }
+      await this.updateBook(book, true, 'cloud_restore_update');
     } else {
-      await this.insertBook(book);
+      await this.insertBook(book, 'cloud_restore_insert');
     }
   }
 
@@ -1014,6 +1179,9 @@ export class AppDatabase {
       }
     }
     book.syncTime = this.getLongColumn(resultSet, 'syncTime');
+    book.identityKey = this.getStringColumn(resultSet, 'identityKey') || BookIdentity.keyOfBook(book);
+    book.pendingAddToShelf = this.getLongColumn(resultSet, 'pendingAddToShelf') === 1;
+    book.shelfModifiedTime = this.getLongColumn(resultSet, 'shelfModifiedTime');
     return book;
   }
 

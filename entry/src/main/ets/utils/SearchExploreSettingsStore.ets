@@ -13,6 +13,7 @@ export class SearchExploreSettings {
   showSearchProgress: boolean = true;
   searchConcurrency: number = 6;
   selectedSourceGroupsRaw: string = '';
+  selectedSourceUrlsRaw: string = '__LEGACY_SOURCE_GROUP_SELECTION__';
   sourceSortRaw: string = '';
   exploreSourceUrl: string = '';
   explorePlatform: string = '';
@@ -29,6 +30,8 @@ export class SearchExploreSettingsStore {
   static readonly KEY_SHOW_SEARCH_PROGRESS: string = 'searchExploreShowSearchProgress';
   static readonly KEY_SEARCH_CONCURRENCY: string = 'searchExploreSearchConcurrency';
   static readonly KEY_SELECTED_SOURCE_GROUPS: string = 'searchExploreSelectedSourceGroups';
+  static readonly KEY_SELECTED_SOURCE_URLS: string = 'searchExploreSelectedSourceUrls';
+  static readonly LEGACY_SOURCE_SELECTION: string = '__LEGACY_SOURCE_GROUP_SELECTION__';
   static readonly KEY_SOURCE_SORT: string = 'searchExploreSourceSort';
   static readonly KEY_EXPLORE_SOURCE_URL: string = 'exploreSourceUrl';
   static readonly KEY_EXPLORE_PLATFORM: string = 'explorePlatform';
@@ -69,6 +72,9 @@ export class SearchExploreSettingsStore {
         SearchExploreSettingsStore.DEFAULT_SEARCH_CONCURRENCY);
     settings.selectedSourceGroupsRaw = await SearchExploreSettingsStore.getString(
       store, SearchExploreSettingsStore.KEY_SELECTED_SOURCE_GROUPS, '');
+    settings.selectedSourceUrlsRaw = await SearchExploreSettingsStore.getString(
+      store, SearchExploreSettingsStore.KEY_SELECTED_SOURCE_URLS,
+      SearchExploreSettingsStore.LEGACY_SOURCE_SELECTION);
     settings.sourceSortRaw = await SearchExploreSettingsStore.getString(
       store, SearchExploreSettingsStore.KEY_SOURCE_SORT, '');
     settings.exploreSourceUrl = await SearchExploreSettingsStore.getString(
@@ -95,6 +101,7 @@ export class SearchExploreSettingsStore {
     await store.put(SearchExploreSettingsStore.KEY_SEARCH_CONCURRENCY,
       SearchExploreSettingsStore.normalizeSearchConcurrency(settings.searchConcurrency));
     await store.put(SearchExploreSettingsStore.KEY_SELECTED_SOURCE_GROUPS, settings.selectedSourceGroupsRaw);
+    await store.put(SearchExploreSettingsStore.KEY_SELECTED_SOURCE_URLS, settings.selectedSourceUrlsRaw);
     await store.put(SearchExploreSettingsStore.KEY_SOURCE_SORT, settings.sourceSortRaw);
     await store.put(SearchExploreSettingsStore.KEY_EXPLORE_SOURCE_URL, settings.exploreSourceUrl);
     await store.put(SearchExploreSettingsStore.KEY_EXPLORE_PLATFORM, settings.explorePlatform);
@@ -142,6 +149,7 @@ export class SearchExploreSettingsStore {
     AppStorage.setOrCreate(SearchExploreSettingsStore.KEY_SEARCH_CONCURRENCY,
       SearchExploreSettingsStore.normalizeSearchConcurrency(settings.searchConcurrency));
     AppStorage.setOrCreate(SearchExploreSettingsStore.KEY_SELECTED_SOURCE_GROUPS, settings.selectedSourceGroupsRaw);
+    AppStorage.setOrCreate(SearchExploreSettingsStore.KEY_SELECTED_SOURCE_URLS, settings.selectedSourceUrlsRaw);
     AppStorage.setOrCreate(SearchExploreSettingsStore.KEY_SOURCE_SORT, settings.sourceSortRaw);
     AppStorage.setOrCreate(SearchExploreSettingsStore.KEY_EXPLORE_SOURCE_URL, settings.exploreSourceUrl);
     AppStorage.setOrCreate(SearchExploreSettingsStore.KEY_EXPLORE_PLATFORM, settings.explorePlatform);
@@ -190,6 +198,7 @@ export class SearchExploreSettingsStore {
     settings.showSearchProgress = source.showSearchProgress;
     settings.searchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(source.searchConcurrency);
     settings.selectedSourceGroupsRaw = source.selectedSourceGroupsRaw;
+    settings.selectedSourceUrlsRaw = source.selectedSourceUrlsRaw || '';
     settings.sourceSortRaw = source.sourceSortRaw;
     settings.exploreSourceUrl = source.exploreSourceUrl;
     settings.explorePlatform = source.explorePlatform || '';
@@ -231,6 +240,7 @@ export class SearchExploreSettingsStore {
       left.promptAddToShelfOnBack !== right.promptAddToShelfOnBack ||
       left.exactSearch !== right.exactSearch ||
       left.exactSearchMatchAuthor !== right.exactSearchMatchAuthor ||
-      left.showSearchProgress !== right.showSearchProgress;
+      left.showSearchProgress !== right.showSearchProgress ||
+      left.selectedSourceUrlsRaw !== right.selectedSourceUrlsRaw;
   }
 }

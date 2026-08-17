@@ -1,8 +1,6 @@
 import { router } from '@kit.ArkUI';
 import { syncSystemBars } from '../utils/SystemBars';
 import { SearchExploreSettings, SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
-import { BookSource } from '../model/data/Book';
-import { AppDatabase } from '../model/data/AppDatabase';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 
@@ -18,25 +16,20 @@ struct SearchExploreSettingsPage {
   @StorageLink('searchExploreExactSearchMatchAuthor') searchExploreExactSearchMatchAuthor: boolean = true;
   @StorageLink('searchExploreShowSearchProgress') searchExploreShowSearchProgress: boolean = true;
   @StorageLink('searchExploreSearchConcurrency') searchExploreSearchConcurrency: number = 6;
-  @StorageLink('searchExploreSelectedSourceGroups') searchExploreSelectedSourceGroups: string = '';
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
   @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
-  @State sourceGroups: string[] = [];
-  private readonly NO_SOURCE_GROUPS_SELECTED: string = '__NO_SOURCE_GROUPS_SELECTED__';
 
   aboutToAppear(): void {
     this.reloadSettings();
-    this.loadSourceGroups();
     this.syncBars();
   }
 
   onPageShow(): void {
     this.reloadSettings();
-    this.loadSourceGroups();
     this.syncBars();
   }
 
@@ -111,7 +104,6 @@ struct SearchExploreSettingsPage {
               this.searchExploreSearchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(value);
               this.onSettingChanged();
             })
-          this.sourceGroupSettings()
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
@@ -148,31 +140,8 @@ struct SearchExploreSettingsPage {
       this.searchExploreExactSearchMatchAuthor = settings.exactSearchMatchAuthor;
       this.searchExploreShowSearchProgress = settings.showSearchProgress;
       this.searchExploreSearchConcurrency = settings.searchConcurrency;
-      this.searchExploreSelectedSourceGroups = settings.selectedSourceGroupsRaw;
     } catch (e) {
       console.warn('重新加载搜索/发现配置失败:', e);
-    }
-  }
-
-  async loadSourceGroups(): Promise<void> {
-    try {
-      const db = AppDatabase.getInstance();
-      await db.initWithContext(getContext(this));
-      const sources = await db.getBookSourceSummaries();
-      const groups: string[] = [];
-      for (const source of sources) {
-        const group = this.normalizeSourceGroup(source);
-        if (!groups.includes(group)) {
-          groups.push(group);
-        }
-      }
-      this.sourceGroups = groups.sort((a: string, b: string) => a.localeCompare(b));
-      if (!this.isAllSourceGroupsSelected() && !this.isNoSourceGroupsSelected()) {
-        this.saveSelectedSourceGroups(this.selectedSourceGroups()
-          .filter((group: string) => this.sourceGroups.includes(group)), false);
-      }
-    } catch (e) {
-      console.warn('加载搜索书源分组失败:', e);
     }
   }
 
@@ -187,85 +156,11 @@ struct SearchExploreSettingsPage {
       settings.exactSearchMatchAuthor = this.searchExploreExactSearchMatchAuthor;
       settings.showSearchProgress = this.searchExploreShowSearchProgress;
       settings.searchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(this.searchExploreSearchConcurrency);
-      settings.selectedSourceGroupsRaw = this.searchExploreSelectedSourceGroups;
       SearchExploreSettingsStore.applyToStorage(settings);
       return SearchExploreSettingsStore.save(getContext(this), settings);
     }).catch((e: Error) => {
       console.warn('保存搜索/发现配置失败:', e);
     });
-  }
-
-  normalizeSourceGroup(source: BookSource): string {
-    const group = (source.bookSourceGroup || '').trim();
-    return group || '未分组';
-  }
-
-  selectedSourceGroups(): string[] {
-    const raw = this.searchExploreSelectedSourceGroups.trim();
-    if (!raw || raw === this.NO_SOURCE_GROUPS_SELECTED) {
-      return [];
-    }
-    return raw.split('\n')
-      .map((group: string) => group.trim())
-      .filter((group: string) => group);
-  }
-
-  isAllSourceGroupsSelected(): boolean {
-    const selectedGroups = this.selectedSourceGroups();
-    return !this.isNoSourceGroupsSelected() &&
-      (this.searchExploreSelectedSourceGroups.trim() === '' || selectedGroups.length >= this.sourceGroups.length);
-  }
-
-  isNoSourceGroupsSelected(): boolean {
-    return this.searchExploreSelectedSourceGroups.trim() === this.NO_SOURCE_GROUPS_SELECTED;
-  }
-
-  isSourceGroupSelected(group: string): boolean {
-    return !this.isNoSourceGroupsSelected() &&
-      (this.isAllSourceGroupsSelected() || this.selectedSourceGroups().includes(group));
-  }
-
-  setSourceGroupSelected(group: string, selected: boolean): void {
-    const selectedGroups = this.isAllSourceGroupsSelected() ? this.sourceGroups : this.selectedSourceGroups();
-    if (selected) {
-      if (!selectedGroups.includes(group)) {
-        this.saveSelectedSourceGroups(selectedGroups.concat([group]), true);
-      }
-      return;
-    }
-    this.saveSelectedSourceGroups(selectedGroups.filter((item: string) => item !== group), true);
-  }
-
-  saveSelectedSourceGroups(groups: string[], shouldSave: boolean = true): void {
-    const normalized: string[] = [];
-    for (const group of groups) {
-      const value = (group || '').trim();
-      if (value && !normalized.includes(value)) {
-        normalized.push(value);
-      }
-    }
-    this.searchExploreSelectedSourceGroups = normalized.length > 0 ? normalized.join('\n') : this.NO_SOURCE_GROUPS_SELECTED;
-    if (normalized.length >= this.sourceGroups.length) {
-      this.searchExploreSelectedSourceGroups = '';
-    }
-    if (shouldSave) {
-      this.onSettingChanged();
-    }
-  }
-
-  saveAllSourceGroupsSelected(selected: boolean): void {
-    this.searchExploreSelectedSourceGroups = selected ? '' : this.NO_SOURCE_GROUPS_SELECTED;
-    this.onSettingChanged();
-  }
-
-  searchSourceGroupSummary(): string {
-    if (this.isAllSourceGroupsSelected()) {
-      return '全部书源';
-    }
-    if (this.isNoSourceGroupsSelected()) {
-      return '未选择书源';
-    }
-    return `已选 ${this.selectedSourceGroups().length} 个分组`;
   }
 
   pageColor(): string {
@@ -436,66 +331,4 @@ struct SearchExploreSettingsPage {
     })
   }
 
-  @Builder
-  sourceGroupSettings() {
-    Column() {
-      Row() {
-        Column() {
-          Text('搜索书源设置')
-            .fontSize(16)
-            .fontColor(this.primaryTextColor())
-          Text(this.searchSourceGroupSummary())
-            .fontSize(12)
-            .fontColor(this.subTextColor())
-            .margin({ top: 4 })
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-      }
-      .width('100%')
-      .padding({ left: 16, right: 16, top: 12, bottom: 8 })
-
-      Row() {
-        Toggle({ type: ToggleType.Checkbox, isOn: this.isAllSourceGroupsSelected() })
-          .selectedColor(this.buttonColor())
-          .onChange((isOn: boolean) => {
-            this.saveAllSourceGroupsSelected(isOn);
-          })
-        Text('全部书源')
-          .fontSize(14)
-          .fontColor(this.primaryTextColor())
-          .margin({ left: 8 })
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(42)
-      .padding({ left: 16, right: 16 })
-      .alignItems(VerticalAlign.Center)
-
-      ForEach(this.sourceGroups, (group: string) => {
-        Row() {
-          Toggle({ type: ToggleType.Checkbox, isOn: this.isSourceGroupSelected(group) })
-            .selectedColor(this.buttonColor())
-            .onChange((isOn: boolean) => {
-              if (this.isAllSourceGroupsSelected() && !isOn) {
-                this.saveSelectedSourceGroups(this.sourceGroups.filter((item: string) => item !== group), true);
-                return;
-              }
-              this.setSourceGroupSelected(group, isOn);
-            })
-          Text(group)
-            .fontSize(14)
-            .fontColor(this.primaryTextColor())
-            .margin({ left: 8 })
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .height(40)
-        .padding({ left: 16, right: 16 })
-        .alignItems(VerticalAlign.Center)
-      })
-    }
-    .width('100%')
-    .backgroundColor(this.cardColor())
-  }
 }
