@@ -18,6 +18,7 @@ import { BookSourceStageRuleSupport } from './BookSourceStageRuleSupport';
 import { RuleExecutionService } from '../rule/RuleExecutionService';
 import { RuleBatchExecutionRequest, RuleFieldRequest } from '../rule/RuleExecutionModels';
 import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
+import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
 
 export interface SearchProgress {
   done: number;
@@ -265,6 +266,12 @@ export class SearchCoordinator {
         return this.sourceResult([], BookSource.VALIDATION_FAILED, '缺少搜索地址或必要搜索规则');
       }
       const js = new JsRuntime();
+      const urlObservation = new QuickJsObservationContext();
+      urlObservation.sourceUrl = source.bookSourceUrl || '';
+      urlObservation.sourceName = source.bookSourceName || urlObservation.sourceUrl;
+      urlObservation.stage = SourceRuntimeStage.SEARCH;
+      urlObservation.field = 'searchUrl';
+      js.setQuickJsObservation(urlObservation);
       js.setVar('key', encodeURIComponent(keyword));
       js.setVar('searchKey', encodeURIComponent(keyword));
       js.setVar('keyword', encodeURIComponent(keyword));

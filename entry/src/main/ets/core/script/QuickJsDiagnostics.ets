@@ -1,7 +1,10 @@
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import { Context } from '@kit.AbilityKit';
 import { JSBoundedExecutionResult, JSContext, JSRuntimeOptions } from '@devzeng/quickjs';
 import { QuickJsRuntimeStatus } from './QuickJsRuntimeStatus';
 import { QuickJsShadowExecutor } from './QuickJsShadowExecutor';
+import { QuickJsMigrationStore } from './QuickJsMigrationStore';
+import { QuickJsValidationStore } from './QuickJsValidationStore';
 
 class QuickJsSelfTestCase {
   name: string;
@@ -25,6 +28,36 @@ export class QuickJsDiagnostics {
   private static readonly DOMAIN: number = 0x0000;
   private static readonly TAG: string = 'QuickJS';
   private static hasRun: boolean = false;
+
+  static async initialize(context: Context): Promise<void> {
+    await QuickJsMigrationStore.initialize(context);
+    await QuickJsValidationStore.initialize(context);
+    QuickJsDiagnostics.runStartupSelfTest();
+    if (!QuickJsRuntimeStatus.isHealthy()) return;
+    const submitter = QuickJsRuntimeStatus.getAsyncSubmitter();
+    if (!submitter) {
+      QuickJsDiagnostics.failAsyncSelfTest('executor-not-installed');
+      return;
+    }
+    const bindings: Record<string, number | string | boolean> = {};
+    bindings['value'] = 7;
+    const result = await submitter.execute('value * 6', JSON.stringify(bindings), 120);
+    if (!result.success || result.timedOut || result.value !== '42') {
+      QuickJsDiagnostics.failAsyncSelfTest(result.error || `unexpected-${result.value}`);
+      return;
+    }
+    hilog.info(QuickJsDiagnostics.DOMAIN, QuickJsDiagnostics.TAG,
+      'TaskPool self-test PASS elapsed=%{public}d', result.elapsedMs);
+  }
+
+  private static failAsyncSelfTest(reason: string): void {
+    QuickJsRuntimeStatus.markSelfTest(false);
+    QuickJsRuntimeStatus.setShadowSubmitter(null);
+    QuickJsRuntimeStatus.setAsyncSubmitter(null);
+    QuickJsMigrationStore.recordSelfTest(false);
+    hilog.error(QuickJsDiagnostics.DOMAIN, QuickJsDiagnostics.TAG,
+      'TaskPool self-test FAIL reason=%{public}s', reason);
+  }
 
   static runStartupSelfTest(): void {
     if (QuickJsDiagnostics.hasRun) {
@@ -116,6 +149,7 @@ export class QuickJsDiagnostics {
       hilog.error(QuickJsDiagnostics.DOMAIN, QuickJsDiagnostics.TAG,
         'Self-test FAIL %{public}d/%{public}d', passed, total);
     }
+    QuickJsMigrationStore.recordSelfTest(passed === total);
   }
 
   private static isExpected(result: JSBoundedExecutionResult, expectedValue: string): boolean {

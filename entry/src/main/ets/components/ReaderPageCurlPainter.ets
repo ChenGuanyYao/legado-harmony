@@ -76,7 +76,7 @@ export class ReaderPageCurlPainter {
     for (let row = 0; row <= this.meshRows; row++) {
       const y = row * dy;
       for (let column = 0; column <= meshColumns; column++) {
-        points.push(this.mapPoint(column * dx, y, canvasWidth, canvasHeight, leafWidth, progress,
+        points.push(this.mapPoint(column * dx, y, canvasWidth, leafWidth, progress,
           direction, doublePage));
       }
     }
@@ -117,16 +117,13 @@ export class ReaderPageCurlPainter {
     };
   }
 
-  private mapPoint(sourceX: number, sourceY: number, canvasWidth: number, canvasHeight: number,
-    leafWidth: number, progress: number, direction: number, doublePage: boolean): CurlPoint {
+  private mapPoint(sourceX: number, sourceY: number, canvasWidth: number, leafWidth: number,
+    progress: number, direction: number, doublePage: boolean): CurlPoint {
     const canonicalX = direction > 0 ? sourceX : leafWidth - sourceX;
-    const axisTilt = -0.14 * Math.sin(progress * Math.PI);
-    const cosine = Math.cos(axisTilt);
-    const sine = Math.sin(axisTilt);
-    const centerY = canvasHeight * 0.64;
-    const tangentY = sourceY - centerY;
-    const normal = canonicalX * cosine - tangentY * sine;
-    const tangent = canonicalX * sine + tangentY * cosine;
+    // Keep the curl axis vertical. The previous tilted-axis projection mixed the horizontal curl distance into
+    // every texture point's Y coordinate, so the rasterized正文 appeared to sink and then rise during a turn.
+    // A real page may bend in depth, but its top/bottom registration must remain stable in this 2D projection.
+    const normal = canonicalX;
     const axis = leafWidth * (1 - progress * this.pageTravelFactor);
     const radius = leafWidth * (0.115 + 0.065 * Math.sin(progress * Math.PI));
     const distance = normal - axis;
@@ -159,18 +156,12 @@ export class ReaderPageCurlPainter {
         if (settle >= 0.9) face = -1;
       }
     }
-    const mappedX = mappedNormal * cosine + tangent * sine;
-    const curledY = centerY - mappedNormal * sine + tangent * cosine;
-    // Keep the physical top and bottom edges attached to the viewport. Applying the full tilted-axis displacement
-    // at y=0/height lifts the sheet away from the screen edge and reads as vertical compression. The middle of the
-    // leaf retains the S-shaped curl, while the displacement fades smoothly to zero at both horizontal edges.
-    const edgeLock = Math.sin(Math.PI * Math.max(0, Math.min(1, sourceY / Math.max(1, canvasHeight))));
-    const mappedY = sourceY + (curledY - sourceY) * edgeLock;
+    const mappedX = mappedNormal;
     const canonicalOrigin = doublePage ? leafWidth : 0;
     const canonicalGlobalX = canonicalOrigin + mappedX;
     return {
       x: direction > 0 ? canonicalGlobalX : canvasWidth - canonicalGlobalX,
-      y: mappedY,
+      y: sourceY,
       face: face,
       shade: shade
     };
@@ -270,7 +261,7 @@ export class ReaderPageCurlPainter {
       const y = canvasHeight * index / 10;
       const sourceX = leafWidth * Math.min(1, Math.max(0, 1 - progress * this.pageTravelFactor +
         (0.5 * Math.PI) * (0.115 + 0.065 * Math.sin(progress * Math.PI))));
-      edge.push(this.mapPoint(direction > 0 ? sourceX : leafWidth - sourceX, y, canvasWidth, canvasHeight,
+      edge.push(this.mapPoint(direction > 0 ? sourceX : leafWidth - sourceX, y, canvasWidth,
         leafWidth, progress, direction, doublePage));
     }
     context.save();

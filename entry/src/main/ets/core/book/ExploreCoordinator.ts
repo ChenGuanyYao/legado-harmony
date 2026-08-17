@@ -18,6 +18,7 @@ import { RuleExecutionService } from '../rule/RuleExecutionService';
 import { RuleBatchExecutionRequest, RuleBatchExecutionResult, RuleFieldRequest } from '../rule/RuleExecutionModels';
 import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
 import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
+import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
 
 export interface ExploreEntry {
   title: string;
@@ -714,9 +715,15 @@ export class ExploreCoordinator {
     // Ordinary Legado explore entries are very often relative URLs. Keep them on the lightweight
     // runner, which evaluates page expressions and resolves the result against the selected source
     // host before the caller performs its absolute-URL validity check.
-    const templated = BookSourceScriptRunner.evaluateUrl(source, url, '', String(page));
+    const observation = new QuickJsObservationContext();
+    observation.sourceUrl = source.bookSourceUrl || '';
+    observation.sourceName = source.bookSourceName || observation.sourceUrl;
+    observation.stage = SourceRuntimeStage.EXPLORE;
+    observation.field = 'exploreUrl';
+    const templated = BookSourceScriptRunner.evaluateUrl(source, url, '', String(page), observation);
     if (templated.handled && templated.value) return templated.value;
     const js = new JsRuntime();
+    js.setQuickJsObservation(observation);
     js.setVar('page', String(page));
     js.setVar('pageIndex', String(page));
     const fallback = js.evalTemplate(this.applySourceTemplate(url, source))

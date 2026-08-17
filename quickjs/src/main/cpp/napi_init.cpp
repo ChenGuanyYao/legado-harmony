@@ -644,7 +644,12 @@ static napi_value SetProperty(napi_env env, napi_callback_info info) {
     if (!objEntry.context) return NAPIBoolean(env, false);
 
     std::string key = NValueToString(env, args[2]);
-    JSValue val = NAPIValueToJSValue(env, args[3], ctx);
+    // ArkTS passes a registry handle here, not the primitive payload itself. Duplicate the
+    // registered value because JS_SetPropertyStr consumes its JSValue argument.
+    int64_t valueHandle = NValueToHandle(env, args[3]);
+    ValueEntry valueEntry = HandleToValue(valueHandle);
+    if (!valueEntry.context || valueEntry.context != ctx) return NAPIBoolean(env, false);
+    JSValue val = JS_DupValue(ctx, valueEntry.value);
 
     int result = JS_SetPropertyStr(ctx, objEntry.value, key.c_str(), val);
     return NAPIBoolean(env, result == 1);
@@ -757,7 +762,11 @@ static napi_value SetElement(napi_env env, napi_callback_info info) {
 
     double index;
     napi_get_value_double(env, args[2], &index);
-    JSValue val = NAPIValueToJSValue(env, args[3], ctx);
+    // Keep the registry-owned value alive; JS_SetPropertyUint32 consumes the duplicate.
+    int64_t valueHandle = NValueToHandle(env, args[3]);
+    ValueEntry valueEntry = HandleToValue(valueHandle);
+    if (!valueEntry.context || valueEntry.context != ctx) return NAPIBoolean(env, false);
+    JSValue val = JS_DupValue(ctx, valueEntry.value);
 
     int result = JS_SetPropertyUint32(ctx, arrEntry.value, (uint32_t)index, val);
     return NAPIBoolean(env, result == 1);

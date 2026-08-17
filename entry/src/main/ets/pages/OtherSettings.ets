@@ -60,6 +60,18 @@ struct OtherSettingsPage {
           .borderRadius(16)
           .clip(true)
           .backgroundColor(this.cardColor())
+
+          this.sectionTitle('兼容与诊断')
+          Column() {
+            this.menuItem('脚本引擎迁移', 'QuickJS 影子校验、灰度路由与自动回退状态', false, () => {
+              router.pushUrl({ url: 'pages/QuickJsDiagnostics' });
+            })
+          }
+          .width('calc(100% - 24vp)')
+          .margin({ left: 12, right: 12 })
+          .borderRadius(16)
+          .clip(true)
+          .backgroundColor(this.cardColor())
         }
         .width('100%')
         .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })

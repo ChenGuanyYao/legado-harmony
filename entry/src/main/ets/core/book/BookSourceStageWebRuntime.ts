@@ -7,6 +7,7 @@ import { HttpClient, HttpResponse } from '../http/HttpClient';
 import { AnalyzeUrl } from '../rule/AnalyzeUrl';
 import { SourceRuntimeStage } from './BookSourceRuntimeRouter';
 import { BookSourceLoginCrypto } from './BookSourceLoginCrypto';
+import { BookSourceExecutionJournal, BookSourceHostActionKind } from './BookSourceExecutionJournal';
 
 export class StageWebRuntimeRequest {
   source: BookSource = new BookSource();
@@ -282,10 +283,10 @@ export class BookSourceStageWebRuntime {
       }
     }
     const sourceKey = request.source.bookSourceUrl || request.source.bookSourceName || 'source';
-    const responses: Record<string, string> = {};
+    const journal = new BookSourceExecutionJournal();
+    const responses: Record<string, string> = journal.responses;
     const cookies: Record<string, string> = {};
     let cacheState = this.caches[sourceKey] || {};
-    const appliedOperations: string[] = [];
     const fixedNow = Date.now();
     const randomSeed = Math.max(1, Math.floor(Math.random() * 0x7fffffff));
     let requestCount = 0;
@@ -330,20 +331,23 @@ export class BookSourceStageWebRuntime {
       } catch (_) {
         nextCacheState = {};
       }
-      this.applyCookieOperations(step.cookieOperations, appliedOperations);
+      this.applyCookieOperations(step.cookieOperations, journal);
       if (step.pendingCookie) {
         cookies[step.pendingCookie] = CookieStore.getCookie(step.pendingCookie);
         continue;
       }
       if (step.pendingCrypto) {
         const responseKey = `crypto:${step.pendingCrypto}`;
-        responses[responseKey] = await BookSourceLoginCrypto.execute(step.pendingCrypto);
+        if (journal.markRequestStarted(`${BookSourceHostActionKind.CRYPTO_REQUEST}\n${step.pendingCrypto}`)) {
+          journal.recordResponse(responseKey, await BookSourceLoginCrypto.execute(step.pendingCrypto));
+        }
         continue;
       }
       if (step.pendingAjax) {
         requestCount++;
         const requestLimit = Math.max(1, Math.min(request.maxRequestCount || 12, 12));
         if (requestCount > requestLimit) throw new Error('书源脚本网络请求次数过多');
+        journal.markRequestStarted(`${BookSourceHostActionKind.HTTP_REQUEST}\n${step.pendingAjax}`);
         const response = await this.fetch(request, step.pendingAjax, step.pendingHeaders);
         this.ensureNotCancelled(request);
         if (!response.success && response.statusCode === 0) {
@@ -364,7 +368,7 @@ export class BookSourceStageWebRuntime {
         if (totalResponseBytes > totalLimit) {
           throw new Error('书源脚本累计响应过大');
         }
-        responses[step.pendingAjax] = responseBody;
+        journal.recordResponse(step.pendingAjax, responseBody);
         this.captureResponseCookies(cookies, step.pendingAjax, response.url || '', response.headers);
         continue;
       }
@@ -960,7 +964,7 @@ export class BookSourceStageWebRuntime {
         (_match: string, prefix: string, parameter: string): string => `${prefix}(${parameter}) =>`);
   }
 
-  private applyCookieOperations(raw: string, applied: string[]): void {
+  private applyCookieOperations(raw: string, journal: BookSourceExecutionJournal): void {
     let records: Object[] = [];
     try {
       const value = JSON.parse(raw || '[]') as Object;
@@ -975,8 +979,7 @@ export class BookSourceStageWebRuntime {
       operation.value = String(record['value'] || '');
       operation.name = String(record['name'] || '');
       const key = `${operation.operation}\n${operation.url}\n${operation.name}\n${operation.value}`;
-      if (!operation.url || applied.includes(key)) continue;
-      applied.push(key);
+      if (!operation.url || !journal.markOperationApplied(BookSourceHostActionKind.COOKIE_MUTATION, key)) continue;
       if (operation.operation === 'set') CookieStore.setCookies(operation.url, operation.value);
       if (operation.operation === 'replace') CookieStore.replaceCookies(operation.url, operation.value);
       if (operation.operation === 'remove') CookieStore.removeCookie(operation.url, operation.name || undefined);

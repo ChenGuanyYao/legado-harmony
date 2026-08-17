@@ -258,7 +258,9 @@ export default class EntryAbility extends UIAbility {
     this.deferredStartupScheduled = true;
     // Let the first frame commit before registering a potentially large custom font file.
     setTimeout(() => {
-      QuickJsDiagnostics.runStartupSelfTest();
+      QuickJsDiagnostics.initialize(this.context).catch((error: Error) => {
+        hilog.warn(0x0000, 'QuickJS', 'Migration initialization failed: %{public}s', error.message);
+      });
       this.readerBootstrapPromise
         .then(() => ReaderFontBootstrap.registerFromSettings(
           this.context, null, 'ability-after-first-content'))

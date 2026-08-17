@@ -5,6 +5,7 @@ import { EncodedJsonMap, EncodedSourceUrl } from '../book/EncodedSourceUrl';
 import { JsonPathEvaluator } from './JsonPathEvaluator';
 import { ScriptEngine, ScriptEngineContext } from './ScriptEngine';
 import { BookUrlResolver } from '../book/BookUrlResolver';
+import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
 
 const MAX_HTML_PARSE_LENGTH = 4 * 1024 * 1024;
 
@@ -28,6 +29,10 @@ export class AnalyzeRule {
   setContext(ctx: RuleContext): AnalyzeRule { this.ctx = ctx; return this; }
   getContext(): RuleContext { return this.ctx; }
   setJsVar(k: string, v: string): AnalyzeRule { this.js.setVar(k, v); return this; }
+  setQuickJsObservation(observation: QuickJsObservationContext | null): AnalyzeRule {
+    this.js.setQuickJsObservation(observation);
+    return this;
+  }
 
   private scriptEnv(): ScriptEngineContext {
     const env = new ScriptEngineContext();

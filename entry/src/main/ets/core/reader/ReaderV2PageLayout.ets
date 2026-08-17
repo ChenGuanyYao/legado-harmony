@@ -7,12 +7,15 @@ export class ReaderV2SelectionRun {
   fontSizePx: number = 0;
   fontFamily: string = '';
   bold: boolean = false;
+  letterSpacingPx: number = 0;
 
-  constructor(text: string, fontSizePx: number, fontFamily: string, bold: boolean) {
+  constructor(text: string, fontSizePx: number, fontFamily: string, bold: boolean,
+    letterSpacingPx: number = 0) {
     this.text = text;
     this.fontSizePx = fontSizePx;
     this.fontFamily = fontFamily;
     this.bold = bold;
+    this.letterSpacingPx = letterSpacingPx;
   }
 }
 

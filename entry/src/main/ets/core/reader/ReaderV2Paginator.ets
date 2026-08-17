@@ -391,7 +391,22 @@ export class ReaderV2Paginator {
         const boxes = fragment.paragraph.getRectsForRange({ start: segmentStart, end: segmentEnd },
           graphicsText.RectWidthStyle.TIGHT, graphicsText.RectHeightStyle.TIGHT);
         if (boxes.length === 0) continue;
-        const box = boxes[0].rect;
+        // A single logical regex run can be split into several native glyph runs when it contains
+        // punctuation, emoji or another character that falls back to a different font. Harmony then
+        // returns one rect for each glyph run even though all of them are on this same visual line.
+        // Using only boxes[0] made the bubble appear to stop at the first special symbol. Merge every
+        // rect owned by this line so the decoration follows the complete regex match.
+        let boxLeft = boxes[0].rect.left;
+        let boxTop = boxes[0].rect.top;
+        let boxRight = boxes[0].rect.right;
+        let boxBottom = boxes[0].rect.bottom;
+        for (let boxIndex = 1; boxIndex < boxes.length; boxIndex++) {
+          const nextBox = boxes[boxIndex].rect;
+          boxLeft = Math.min(boxLeft, nextBox.left);
+          boxTop = Math.min(boxTop, nextBox.top);
+          boxRight = Math.max(boxRight, nextBox.right);
+          boxBottom = Math.max(boxBottom, nextBox.bottom);
+        }
         const segment = new ReaderV2RegexBubbleSegment();
         segment.styleId = style.decorationStyleId;
         segment.text = fragmentText.substring(segmentStart, segmentEnd);
@@ -411,8 +426,8 @@ export class ReaderV2Paginator {
         segment.shadowRadiusPx = style.shadowRadiusPx;
         segment.shadowOffsetXPx = style.shadowOffsetXPx;
         segment.shadowOffsetYPx = style.shadowOffsetYPx;
-        const textLeft = fragment.paragraphX + box.left;
-        const textRight = fragment.paragraphX + box.right;
+        const textLeft = fragment.paragraphX + boxLeft;
+        const textRight = fragment.paragraphX + boxRight;
         const contentLeft = fragment.paragraphX;
         const contentRight = fragment.clipRect.right;
         // Leading space is reserved on the preceding glyph, while trailing space is part of the decorated run's
@@ -428,8 +443,8 @@ export class ReaderV2Paginator {
         // RectHeightStyle.TIGHT follows the actual native glyph run. Add a small deterministic cushion for the
         // bubble background and let the caps expand it when necessary. This keeps decoration geometry centred on
         // the already-laid-out text without introducing a second text baseline.
-        const glyphTop = fragment.paragraphY + box.top;
-        const glyphBottom = fragment.paragraphY + box.bottom;
+        const glyphTop = fragment.paragraphY + boxTop;
+        const glyphBottom = fragment.paragraphY + boxBottom;
         const glyphCenter = (glyphTop + glyphBottom) / 2;
         const verticalPadding = Math.max(1, style.fontSizePx * 0.08);
         const capHalf = style.decorationSizePx / 2;
@@ -476,7 +491,7 @@ export class ReaderV2Paginator {
       const style = ReaderV2Paginator.styleAt(document, block, block.displayStart + start, snapshot, regexStyles);
       const families = style.fontFamilies;
       result.push(new ReaderV2SelectionRun(block.text.substring(start, end), Number(style.fontSize),
-        families && families.length > 0 ? families[0] : '', block.title));
+        families && families.length > 0 ? families[0] : '', block.title, Number(style.letterSpacing || 0)));
     }
     return result;
   }

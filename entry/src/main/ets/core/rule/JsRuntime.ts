@@ -3,12 +3,17 @@ import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { CookieStore } from '../http/CookieStore';
 import { JsonPathEvaluator } from './JsonPathEvaluator';
 import { QuickJsShadowComparator } from '../script/QuickJsScriptRuntime';
+import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
 
 export class JsRuntime {
   private vars: Record<string, string> = {};
   private jsonContext: Object | null = null;
+  private quickJsObservation: QuickJsObservationContext | null = null;
 
   setVar(k: string, v: string): void { this.vars[k] = v; }
+  setQuickJsObservation(observation: QuickJsObservationContext | null): void {
+    this.quickJsObservation = observation;
+  }
   getVar(k: string): string { return this.vars[k] || ''; }
   setJsonContext(text: string): void {
     try {
@@ -27,8 +32,15 @@ export class JsRuntime {
     this.vars['result'] = result;
     this.setJsonContext(result);
     const legacyValue = this.evalExpr(expression.replace(/^\s*(?:return\s+)?/, '').replace(/;\s*$/, ''));
-    QuickJsShadowComparator.compare(expression, this.vars, legacyValue);
+    QuickJsShadowComparator.compare(expression, this.vars, legacyValue, this.quickJsObservation);
     return legacyValue;
+  }
+
+  /** Reference-only evaluation used by the local regression runner; it must not affect shadow statistics. */
+  evaluateWithoutShadow(expression: string, result: string = ''): string {
+    this.vars['result'] = result;
+    this.setJsonContext(result);
+    return this.evalExpr(expression.replace(/^\s*(?:return\s+)?/, '').replace(/;\s*$/, ''));
   }
 
   evalTemplate(tpl: string): string {
@@ -36,7 +48,7 @@ export class JsRuntime {
     return tpl.replace(/\{\{([\s\S]*?)\}\}/g, (_: string, expr: string) => {
       const expression = expr.trim();
       const legacyValue = this.evalExpr(expression);
-      QuickJsShadowComparator.compare(expression, this.vars, legacyValue);
+      QuickJsShadowComparator.compare(expression, this.vars, legacyValue, this.quickJsObservation);
       return legacyValue;
     });
   }

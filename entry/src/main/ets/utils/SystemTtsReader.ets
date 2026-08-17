@@ -1776,12 +1776,11 @@ export class SystemTtsReader {
   }
 
   private normalizeText(text: string): string {
-    return (text || '')
-      .replace(/\r\n/g, '\n');
+    return this.replaceUnsafeSpeechCharacters((text || '').replace(/\r\n/g, '\n'));
   }
 
   private normalizeChunkForSpeech(text: string): string {
-    return (text || '')
+    return this.replaceUnsafeSpeechCharacters(text || '')
       .replace(/\r\n/g, '\n')
       .replace(/\s*\n+\s*/g, '。')
       .replace(/[ \t]{2,}/g, ' ')
@@ -1790,6 +1789,39 @@ export class SystemTtsReader {
       .replace(/^[，。！？；;,.!?]+/, '')
       .replace(/[，,]+$/, '')
       .trim();
+  }
+
+  /**
+   * Replace invisible controls and damaged UTF-16 units one-for-one. Keeping the code-unit
+   * length stable is important because chunk offsets are also used to focus the reader page.
+   */
+  private replaceUnsafeSpeechCharacters(text: string): string {
+    if (!text) return '';
+    let result = '';
+    for (let index = 0; index < text.length; index++) {
+      const code = text.charCodeAt(index);
+      if (code >= 0xD800 && code <= 0xDBFF) {
+        const next = index + 1 < text.length ? text.charCodeAt(index + 1) : 0;
+        if (next >= 0xDC00 && next <= 0xDFFF) {
+          result += text.charAt(index) + text.charAt(index + 1);
+          index++;
+        } else {
+          result += ' ';
+        }
+        continue;
+      }
+      if (code >= 0xDC00 && code <= 0xDFFF) {
+        result += ' ';
+        continue;
+      }
+      const unsafeControl = code <= 0x0008 || (code >= 0x000B && code <= 0x000C) ||
+        (code >= 0x000E && code <= 0x001F) || (code >= 0x007F && code <= 0x009F);
+      const invisibleFormatting = (code >= 0x200B && code <= 0x200F) ||
+        (code >= 0x202A && code <= 0x202E) || (code >= 0x2060 && code <= 0x206F) ||
+        code === 0xFEFF || code === 0xFFFD;
+      result += unsafeControl || invisibleFormatting ? ' ' : text.charAt(index);
+    }
+    return result;
   }
 
   private estimateSpeakDuration(text: string): number {

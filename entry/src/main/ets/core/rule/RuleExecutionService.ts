@@ -5,6 +5,9 @@ import { CooperativeCancellationToken, CooperativeScheduler } from '../concurren
 import { AnalyzeRule } from './AnalyzeRule';
 import { RuleContext } from './RuleContext';
 import { RuleBatchExecutionRequest, RuleBatchExecutionResult, RuleFieldRequest } from './RuleExecutionModels';
+import { QuickJsAsyncRouter } from '../script/QuickJsAsyncRouter';
+import { QuickJsScriptRuntime } from '../script/QuickJsScriptRuntime';
+import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
 
 /**
  * The single public execution gateway for rule parsing.
@@ -57,7 +60,9 @@ export class RuleExecutionService {
         if (code === null && postProcessor === null) continue;
         try {
           if (code !== null) {
-            fullJsValues[field.name] = await this.executeFullJsFieldBatch(request, field, code, token);
+            fullJsValues[field.name] = QuickJsScriptRuntime.isPureExpressionCandidate(code) ?
+              await this.executeRoutedPureJsFieldBatch(request, field, code, token) :
+              await this.executeFullJsFieldBatch(request, field, code, token);
           } else if (postProcessor !== null) {
             fullJsValues[field.name] = await this.executePostProcessorJsFieldBatch(request, field,
               postProcessor.baseRule, postProcessor.code, token);
@@ -85,6 +90,7 @@ export class RuleExecutionService {
         const itemValues: Record<string, string> = {};
         for (const field of request.fields) {
           token.throwIfCancelled();
+          analyzer.setQuickJsObservation(this.observationContext(request, field));
           const jsValues = fullJsValues[field.name];
           if (jsValues !== undefined) {
             const value = itemIndex < jsValues.length ? jsValues[itemIndex] : '';
@@ -126,6 +132,39 @@ export class RuleExecutionService {
           `fields=${request.fields.length} elapsed=${result.elapsedMs}ms yields=${result.yieldedCount}`);
       }
     }
+  }
+
+  private async executeRoutedPureJsFieldBatch(request: RuleBatchExecutionRequest, field: RuleFieldRequest,
+    code: string, token: CooperativeCancellationToken): Promise<string[]> {
+    let legacyValuesPromise: Promise<string[]> | null = null;
+    const getLegacyValues = (): Promise<string[]> => {
+      if (!legacyValuesPromise) {
+        legacyValuesPromise = this.executeFullJsFieldBatch(request, field, code, token);
+      }
+      return legacyValuesPromise;
+    };
+    const values: string[] = [];
+    for (let index = 0; index < request.contents.length; index++) {
+      token.throwIfCancelled();
+      const content = request.contents[index] || '';
+      const bindings: Record<string, number | string | boolean> = {};
+      for (const key of Object.keys(request.contextValues)) {
+        const value = request.contextValues[key] || '';
+        bindings[key] = /^-?(?:\d+\.?\d*|\.\d+)$/.test(value) ? Number(value) : value;
+      }
+      bindings['result'] = content;
+      bindings['src'] = content;
+      bindings['$'] = content;
+      bindings['baseUrl'] = request.baseUrl || request.source.bookSourceUrl || '';
+      const itemIndex = index;
+      const value = await QuickJsAsyncRouter.evaluate(code, bindings, async (): Promise<string> => {
+        const legacyValues = await getLegacyValues();
+        return itemIndex < legacyValues.length ? legacyValues[itemIndex] : '';
+      }, Math.min(200, Math.max(40, Math.round((request.timeoutMs || 15000) /
+        Math.max(1, request.contents.length)))), this.observationContext(request, field));
+      values.push(value);
+    }
+    return values;
   }
 
   private async executeFullJsFieldBatch(request: RuleBatchExecutionRequest, field: RuleFieldRequest,
@@ -248,6 +287,17 @@ export class RuleExecutionService {
     if (tagged) return (tagged[1] || '').trim();
     if (/^@?js:/i.test(value)) return value.replace(/^@?js:\s*/i, '');
     return null;
+  }
+
+  private observationContext(request: RuleBatchExecutionRequest,
+    field: RuleFieldRequest): QuickJsObservationContext {
+    const observation = new QuickJsObservationContext();
+    observation.sourceUrl = request.source.bookSourceUrl || '';
+    observation.sourceName = request.source.bookSourceName || observation.sourceUrl;
+    observation.stage = request.stage || '';
+    if (field.name === 'value' || !request.stage) observation.field = field.name;
+    else observation.field = `${request.stage}.${field.name}`;
+    return observation;
   }
 
   private extractPostProcessorJs(rule: string): { baseRule: string, code: string } | null {

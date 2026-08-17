@@ -1,4 +1,14 @@
-/** Records externally visible effects so a replayed ArkWeb script cannot apply them twice. */
+export class BookSourceHostActionKind {
+  static readonly HTTP_REQUEST: string = 'http-request';
+  static readonly COOKIE_MUTATION: string = 'cookie-mutation';
+  static readonly CRYPTO_REQUEST: string = 'crypto-request';
+  static readonly VARIABLE_MUTATION: string = 'variable-mutation';
+}
+
+/**
+ * Engine-neutral host-action journal. ArkWeb uses it now; QuickJS can use the same request/replay
+ * contract later without receiving direct network, Cookie, database or filesystem access.
+ */
 export class BookSourceExecutionJournal {
   responses: Record<string, string> = {};
   private startedRequestIds: string[] = [];

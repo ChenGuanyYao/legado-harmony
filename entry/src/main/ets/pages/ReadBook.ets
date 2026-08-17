@@ -141,6 +141,14 @@ interface ReaderParagraphMeasureFallback {
   fontFamily: string;
 }
 
+interface ReaderV2HighlightRect {
+  leftPx: number;
+  topPx: number;
+  widthPx: number;
+  heightPx: number;
+  key: string;
+}
+
 interface ReaderParagraphMetrics {
   heightPx: number;
   lineEnds: number[];
@@ -396,6 +404,8 @@ struct ReadBookPage {
   @State ttsHighlightStart: number = -1;
   @State ttsHighlightEnd: number = -1;
   @State ttsHighlightRenderVersion: number = 0;
+  @State readerV2TtsPaintVersion: number = 0;
+  @State readerV2SelectionPaintVersion: number = 0;
   @State ttsSleepTimerMinutes: number = 0;
   @State ttsSleepTimerRemainingSeconds: number = 0;
   @StorageLink('globalTtsActive') @Watch('onGlobalTtsActiveChanged') globalTtsActive: boolean = false;
@@ -446,6 +456,12 @@ struct ReadBookPage {
   private ttsTextStartOffset: number = 0;
   private ttsLastFocusChunk: TtsChunk | null = null;
   private ttsLastFocusPageIndex: number = -1;
+  private ttsFocusGeneration: number = 0;
+  private ttsFocusChapterIndex: number = -1;
+  private ttsFocusSourceIdentity: string = '';
+  private ttsFocusContentLoadSerial: number = -1;
+  private ttsLastAppliedSourceOffset: number = -1;
+  private ttsSurfaceFocusSyncSerial: number = 0;
   private ttsResumeSyncSerial: number = 0;
   private mirroredTtsFocusSyncSerial: number = 0;
   @State mirroredTtsFocusActive: boolean = false;
@@ -553,6 +569,7 @@ struct ReadBookPage {
   private queuedPageTurnStyle: string = '';
   private queuedPageTurnCount: number = 0;
   private queuedPageTurnVelocity: number = 0;
+  private queuedPageTurnGeneration: number = 0;
   private pageTurnCrossChapterHandoff: boolean = false;
   private changeSourceSessionId: number = 0;
   private activeChangeSourceCoordinator: SearchCoordinator | null = null;
@@ -586,6 +603,13 @@ struct ReadBookPage {
   private readerSelectableTextAreas: Map<string, number[]> = new Map<string, number[]>();
   private readerSelectableTextValues: Map<string, string> = new Map<string, string>();
   private readerTextSelectionUntil: number = 0;
+  private readerTextSelectionSerial: number = 0;
+  private readerV2SelectionChapterIndex: number = -1;
+  private readerV2SelectionPageIndex: number = -1;
+  private readerV2SelectionDisplayStart: number = -1;
+  private readerV2SelectionDisplayEnd: number = -1;
+  private readerContinuousVisibleStart: number = 0;
+  private readerContinuousVisibleEnd: number = 0;
   private readerTapLayerGlobalX: number = 0;
   private readerTapLayerGlobalY: number = 0;
   private readerSourceActionHitSlopX: number = 8;
@@ -2129,22 +2153,47 @@ struct ReadBookPage {
             ForEach(this.currentReaderSurfaceKeys(), (_surfaceKey: string) => {
               if (this.currentReaderSurfaceIndex() === 0) {
                 if (this.isPageTurnAnimationEnabled()) {
-                  this.readerSlidingPageTurnSurface(this.visibleCurrentPageText(), this.pageRenderVersion,
-                    this.ttsHighlightRenderVersion)
+                  if (this.isSimulationPageTurnAnimation()) {
+                    this.readerCurrentPageSurface(this.pageRenderVersion, this.visibleCurrentPageText(),
+                      this.ttsHighlightRenderVersion)
+                  } else {
+                    this.readerSlidingPageTurnSurface(this.visibleCurrentPageText(), this.pageRenderVersion,
+                      this.ttsHighlightRenderVersion)
+                  }
                 } else {
                   this.readerCurrentPageSurface(this.pageRenderVersion, this.visibleCurrentPageText(),
                     this.ttsHighlightRenderVersion)
                 }
               } else {
                 if (this.isPageTurnAnimationEnabled()) {
-                  this.readerSlidingPageTurnSurfaceAlternate(this.visibleCurrentPageText(), this.pageRenderVersion,
-                    this.ttsHighlightRenderVersion)
+                  if (this.isSimulationPageTurnAnimation()) {
+                    this.readerCurrentPageSurfaceAlternate(this.pageRenderVersion, this.visibleCurrentPageText(),
+                      this.ttsHighlightRenderVersion)
+                  } else {
+                    this.readerSlidingPageTurnSurfaceAlternate(this.visibleCurrentPageText(), this.pageRenderVersion,
+                      this.ttsHighlightRenderVersion)
+                  }
                 } else {
                   this.readerCurrentPageSurfaceAlternate(this.pageRenderVersion, this.visibleCurrentPageText(),
                     this.ttsHighlightRenderVersion)
                 }
               }
             }, (surfaceKey: string) => surfaceKey)
+            // The stable正文 subtree is intentionally keyed by page so retained native paragraphs always
+            // advance to the new chapter. Keep the simulation overlay outside that keyed ForEach: committing
+            // the destination can now rebuild正文 behind the captured leaf without destroying the active Canvas.
+            if (this.isPageTurnAnimationEnabled() && this.isSimulationPageTurnAnimation() &&
+              this.shouldRenderSlidingPageTurn()) {
+              this.readerSimulationPageTurnSurface(this.pageRenderVersion, this.visibleCurrentPageText(),
+                this.ttsHighlightRenderVersion, 'overlay')
+            }
+            // Keep the simulation Canvas mounted for the lifetime of the selected turn mode. Destroying and
+            // recreating it at every completed curl races the RenderService submission of the last textured
+            // frame (SubmitCanvasPreAllocatedBuffer) and can expose a one-frame handoff shake. The capture
+            // surfaces above remain transient; the inexpensive Canvas is merely hidden while it is idle.
+            if (this.isPageTurnAnimationEnabled() && this.isSimulationPageTurnAnimation()) {
+              this.readerSimulationCurlCanvas()
+            }
             Column() {
               Blank()
                 .layoutWeight(1)
@@ -4101,6 +4150,11 @@ struct ReadBookPage {
 
   async openTtsQuickPlayer(): Promise<void> {
     if (this.isReaderComicModeActive()) return;
+    // The quick-action tap is above the page-turn layer. Consume its trailing click and discard
+    // page turns queued while the menu was animating, otherwise they can execute many seconds
+    // later between TTS focus turns and move the reader to an older chapter.
+    this.suppressReaderTapClick = true;
+    this.clearQueuedReaderPageTurns();
     this.showMenu = false;
     this.showToc = false;
     this.showSettings = false;
@@ -5159,6 +5213,9 @@ struct ReadBookPage {
   }
 
   onReaderComicScrollIndexChanged(start: number, end: number): void {
+    this.readerContinuousVisibleStart = Math.max(0, Math.round(start));
+    this.readerContinuousVisibleEnd = Math.max(this.readerContinuousVisibleStart, Math.round(end));
+    this.pruneContinuousReaderSelectionAreas();
     if (!this.isReaderContinuousScrollSurfaceActive() || this.readerComicScrollRestoring ||
       this.pendingRestorePageIndex >= 0 || this.contentPages.length === 0) {
       return;
@@ -5173,6 +5230,23 @@ struct ReadBookPage {
     }
     if (pageIndex <= 3) this.preloadPreviousChapterPaginationLater(0);
     this.scheduleReaderComicProgressSave();
+  }
+
+  pruneContinuousReaderSelectionAreas(): void {
+    const prefix = `reader_vertical_scroll_${this.currentChapterIndex}_`;
+    const keepStart = Math.max(0, this.readerContinuousVisibleStart - 1);
+    const keepEnd = this.readerContinuousVisibleEnd + 1;
+    for (const key of Array.from(this.readerSelectableTextAreas.keys())) {
+      const marker = key.indexOf(prefix);
+      if (marker < 0) continue;
+      const tail = key.substring(marker + prefix.length);
+      const match = tail.match(/^(\d+)/);
+      const pageIndex = match ? Number(match[1]) : -1;
+      if (pageIndex >= keepStart && pageIndex <= keepEnd) continue;
+      this.readerSelectableTextAreas.delete(key);
+      this.readerSelectableTextValues.delete(key);
+      this.readerSelectableTextControllers.delete(key);
+    }
   }
 
   scheduleReaderComicProgressSave(): void {
@@ -5352,6 +5426,8 @@ struct ReadBookPage {
 
   setCurrentPageText(text: string): void {
     const nextText = text || '';
+    this.readerTextSelectionSerial++;
+    this.clearReaderV2SelectionOverlay();
     if (this.currentPageText !== nextText) {
       this.chapterJumpRenderGeneration++;
     }
@@ -7539,6 +7615,10 @@ struct ReadBookPage {
     return Math.max(1, (this.pageViewWidth - READER_DOUBLE_PAGE_DIVIDER_WIDTH) / 2);
   }
 
+  getReaderDoublePageRightOrigin(): number {
+    return this.getReaderPageColumnWidth() + READER_DOUBLE_PAGE_DIVIDER_WIDTH;
+  }
+
   getReaderAdaptiveLetterSpacing(): number {
     const availableWidth = Math.max(1,
       this.getReaderPageColumnWidth() - this.getEffectiveReaderMarginLeft() - this.getEffectiveReaderMarginRight());
@@ -9392,8 +9472,7 @@ struct ReadBookPage {
     // attached to the full-page interaction layer. V2 geometry is page-local, so derive that coordinate from the
     // explicit window point and the measured interaction-layer origin. This also remains correct in split screen.
     const readerLocalX = Number(point.windowX) - this.readerTapLayerGlobalX;
-    const readerLocalY = Number(point.windowY) - this.readerTapLayerGlobalY -
-      (!this.readerExtendToStatusBar ? this.statusBarSafeHeight : 0);
+    const readerLocalY = Number(point.windowY) - this.readerTapLayerGlobalY - this.readerV2SurfaceTopOffset();
     if (event.type === TouchType.Down) {
       this.deferReaderPaginationForInteraction();
       // A fresh pointer stream must not inherit the short click guard from the previous source action.
@@ -11271,8 +11350,8 @@ struct ReadBookPage {
     );
     ReaderTtsFloatingSession.configurePositionControl(
       this.ttsFloatingSessionOwnerId,
-      (chapterIndex: number, pageIndex: number): Promise<void> =>
-        this.playPositionFromFloatingSession(chapterIndex, pageIndex)
+      (chapterIndex: number, pageIndex: number, sourceOffset: number): Promise<void> =>
+        this.playPositionFromFloatingSession(chapterIndex, pageIndex, sourceOffset)
     );
     this.publishTtsFloatingVoices();
     this.updateTtsFloatingSession();
@@ -11378,6 +11457,7 @@ struct ReadBookPage {
     readingStartOffset: number = -1, preserveExistingFocus: boolean = false): Promise<void> {
     if (!manualPageTurnResume) {
       this.cancelManualPageTurnTtsResume();
+      this.clearQueuedReaderPageTurns();
     } else if (!this.isManualPageTurnTtsResumeCurrent(manualPageTurnResumeSerial)) {
       return;
     }
@@ -11396,6 +11476,13 @@ struct ReadBookPage {
       return;
     }
     const token = ++this.ttsReadToken;
+    const focusGeneration = ++this.ttsFocusGeneration;
+    const focusChapterIndex = this.currentChapterIndex;
+    const focusSourceIdentity = this.currentTtsSourceIdentity();
+    this.ttsFocusChapterIndex = focusChapterIndex;
+    this.ttsFocusSourceIdentity = focusSourceIdentity;
+    this.ttsFocusContentLoadSerial = this.contentLoadSerial;
+    this.ttsLastAppliedSourceOffset = Math.max(-1, this.ttsTextStartOffset - 1);
     await ReaderTtsFloatingSession.stopOther(this.ttsFloatingSessionOwnerId);
     // A later page turn or explicit stop supersedes this async start. The stale task must not
     // restore auto-continue or tear down the newer page-turn resume that replaced it.
@@ -11411,7 +11498,10 @@ struct ReadBookPage {
       this.ttsHighlightEnd = -1;
       this.ttsLastFocusChunk = null;
       this.ttsLastFocusPageIndex = -1;
-      this.ttsHighlightRenderVersion++;
+      this.readerV2TtsSourceStart = -1;
+      this.readerV2TtsSourceEnd = -1;
+      this.refreshReaderV2TtsOverlay();
+      this.publishTtsHighlightRenderChange();
     }
     this.persistTtsReadPosition(this.ttsTextStartOffset, this.ttsTextStartOffset);
     try {
@@ -11455,10 +11545,11 @@ struct ReadBookPage {
           promptAction.showToast({ message: message || '系统朗读失败' });
         },
         onChunkStart: (chunk: TtsChunk) => {
-          if (token !== this.ttsReadToken) {
+          if (!this.isCurrentTtsFocusSession(token, focusGeneration,
+            focusChapterIndex, focusSourceIdentity)) {
             return;
           }
-          this.followTtsChunk(chunk);
+          this.followTtsChunk(chunk, token, focusGeneration, focusChapterIndex, focusSourceIdentity);
         },
         onAudioStart: () => {
           if (token !== this.ttsReadToken) {
@@ -11503,6 +11594,7 @@ struct ReadBookPage {
       this.ttsAutoContinue = false;
       this.ttsReadToken++;
     }
+    this.invalidateTtsFocusSession();
     this.ttsAutoTurningPage = false;
     this.ttsPendingTargetPageIndex = -1;
     this.ttsPendingHighlightChunk = null;
@@ -11534,6 +11626,7 @@ struct ReadBookPage {
     this.ttsAutoContinue = false;
     this.isTtsPaused = false;
     this.ttsReadToken++;
+    this.invalidateTtsFocusSession();
     this.ttsAutoTurningPage = false;
     this.ttsPendingTargetPageIndex = -1;
     this.ttsPendingHighlightChunk = null;
@@ -11582,6 +11675,7 @@ struct ReadBookPage {
     this.ttsAutoContinue = false;
     this.isTtsPaused = false;
     this.ttsReadToken++;
+    this.invalidateTtsFocusSession();
     this.ttsAutoTurningPage = false;
     this.ttsPendingTargetPageIndex = -1;
     this.ttsPendingHighlightChunk = null;
@@ -11600,7 +11694,8 @@ struct ReadBookPage {
     this.ttsManualPageTurnResumeTimerId = setTimeout(() => {
       this.ttsManualPageTurnResumeTimerId = -1;
       if (serial !== this.ttsManualPageTurnResumeSerial || !this.ttsManualPageTurnResumePending) return;
-      if (this.isPageTurning || this.queuedPageTurnCount > 0 || this.queuedPageTurnDirection !== 0) {
+      if (this.isPageTurning || this.queuedPageTurnCount > 0 || this.queuedPageTurnDirection !== 0 ||
+        !this.isReaderPageTurnPositionReadyForTts()) {
         this.scheduleTtsResumeAfterManualPageTurn();
         return;
       }
@@ -11612,6 +11707,10 @@ struct ReadBookPage {
         .then(() => {
           if (!this.isManualPageTurnTtsResumeCurrent(serial)) return;
           this.ttsManualPageTurnResumePending = false;
+          // A fast engine may deliver its first chunk while the final incoming page still owns the
+          // temporary turn surface. Republish once more from this deterministic resume-complete
+          // boundary so the focus cannot remain attached to the discarded surface.
+          this.scheduleCurrentTtsFocusRepublishAfterPageTurn();
           console.info(`[TTS-Turn] resumed chapter=${chapterIndex},page=${pageIndex},` +
             `elapsed=${Math.max(0, Date.now() - startedAt)}ms`);
           this.ttsManualPageTurnStartedAt = 0;
@@ -11622,6 +11721,15 @@ struct ReadBookPage {
           this.finishTtsReading();
         });
     }, 48);
+  }
+
+  isReaderPageTurnPositionReadyForTts(): boolean {
+    if (this.pendingRestorePageIndex >= 0 || this.readerTypographyRestoreOffset >= 0 ||
+      !this.readerInitialPageReady || this.contentPages.length === 0 ||
+      this.currentPageIndex < 0 || this.currentPageIndex >= this.contentPages.length) return false;
+    return this.displayPageChapterIndex === this.currentChapterIndex &&
+      this.displayPageIndex === this.currentPageIndex &&
+      this.displayPageText === this.getCurrentPageText();
   }
 
   syncTtsStateToVisiblePage(): void {
@@ -11638,7 +11746,7 @@ struct ReadBookPage {
     this.readerV2TtsSourceStart = -1;
     this.readerV2TtsSourceEnd = -1;
     this.refreshReaderV2TtsOverlay();
-    this.ttsHighlightRenderVersion++;
+    this.publishTtsHighlightRenderChange();
     this.persistTtsReadPosition(pageStart, pageStart);
     this.updateTtsFloatingSession();
   }
@@ -11680,6 +11788,11 @@ struct ReadBookPage {
     const handoffReadToken = this.ttsReadToken;
     this.ttsChapterSwitching = true;
     try {
+      // The completed chapter can still have a queued UI focus callback. Invalidate it before
+      // loading the next chapter so an old offset cannot be interpreted against the new page set.
+      this.invalidateTtsFocusSession();
+      this.ttsLastFocusChunk = null;
+      this.ttsLastFocusPageIndex = -1;
       this.ttsAutoTurningPage = false;
       this.ttsPendingTargetPageIndex = -1;
       this.ttsPendingHighlightChunk = null;
@@ -11746,6 +11859,7 @@ struct ReadBookPage {
     this.updateVolumeKeySubscription();
     this.ttsMediaControlsExpanded = false;
     this.ttsReader.stop();
+    this.invalidateTtsFocusSession();
     this.stopTtsBackgroundRunning();
     this.ttsPageTurnSerial++;
     this.clearTtsHighlight();
@@ -12065,7 +12179,8 @@ struct ReadBookPage {
     }
   }
 
-  async playPositionFromFloatingSession(targetChapterIndex: number, targetPageIndex: number): Promise<void> {
+  async playPositionFromFloatingSession(targetChapterIndex: number, targetPageIndex: number,
+    targetSourceOffset: number = -1): Promise<void> {
     const normalizedChapterIndex = this.clampChapterIndex(targetChapterIndex);
     const normalizedPageIndex = Math.max(0, Math.round(targetPageIndex));
     if (normalizedChapterIndex === this.currentChapterIndex && normalizedPageIndex === this.currentPageIndex) {
@@ -12109,7 +12224,13 @@ struct ReadBookPage {
         promptAction.showToast({ message: '章节加载失败，已保留当前朗读位置' });
       }
       if (shouldResume) {
-        await this.startTtsReadingFromCurrentPosition(false);
+        const sourceLength = (this.pagedContentText || this.getPagedSourceText()).length;
+        const resumeOffset = targetSourceOffset >= 0 ?
+          Math.max(0, Math.min(Math.round(targetSourceOffset), sourceLength)) : -1;
+        // A retained owner may have only the first cooperative pagination window while the visible
+        // mirror already knows the target page. The absolute page start keeps speech on that exact
+        // visible page without synchronously rebuilding every preceding native Paragraph.
+        await this.startTtsReadingFromCurrentPosition(false, false, -1, resumeOffset);
       }
     } finally {
       this.ttsChapterSwitching = false;
@@ -12535,7 +12656,41 @@ struct ReadBookPage {
     this.readerV2TtsSourceStart = -1;
     this.readerV2TtsSourceEnd = -1;
     this.refreshReaderV2TtsOverlay();
-    this.ttsHighlightRenderVersion++;
+    this.publishTtsHighlightRenderChange();
+  }
+
+  publishTtsHighlightRenderChange(): void {
+    // V2 republishes only its lightweight focus-rectangle layer. Rekeying the whole declarative
+    // reader tree for every short TTS cue caused stutter and intermittent blank frames.
+    if (this.shouldUseReaderLayoutV2(this.pagedContentText)) {
+      // Some HarmonyOS builds do not schedule a new frame for a RenderNode.invalidate() issued
+      // outside a declarative state transaction. This state changes only the overlay and does not
+      // change the page surface key or rebuild pagination.
+      this.readerV2TtsPaintVersion++;
+    } else {
+      this.ttsHighlightRenderVersion++;
+    }
+  }
+
+  currentTtsSourceIdentity(): string {
+    const source = this.pagedContentText || this.getPagedSourceText();
+    return `${this.currentChapterIndex}_${source.length}_${this.hashText(source)}`;
+  }
+
+  invalidateTtsFocusSession(): void {
+    this.ttsFocusGeneration++;
+    this.ttsFocusChapterIndex = -1;
+    this.ttsFocusSourceIdentity = '';
+    this.ttsFocusContentLoadSerial = -1;
+    this.ttsLastAppliedSourceOffset = -1;
+  }
+
+  isCurrentTtsFocusSession(token: number, generation: number,
+    chapterIndex: number, sourceIdentity: string): boolean {
+    return token === this.ttsReadToken && generation === this.ttsFocusGeneration &&
+      chapterIndex === this.ttsFocusChapterIndex && chapterIndex === this.currentChapterIndex &&
+      !!sourceIdentity && sourceIdentity === this.ttsFocusSourceIdentity &&
+      this.ttsFocusContentLoadSerial === this.contentLoadSerial && this.isTtsSpeaking && this.ttsAutoContinue;
   }
 
   getTtsReadingText(startOffset: number = -1): string {
@@ -13764,9 +13919,10 @@ struct ReadBookPage {
     return safeBest;
   }
 
-  followTtsChunk(chunk: TtsChunk): void {
+  followTtsChunk(chunk: TtsChunk, token: number, generation: number,
+    chapterIndex: number, sourceIdentity: string): void {
     setTimeout(() => {
-      if (!this.isTtsSpeaking || !this.ttsAutoContinue) {
+      if (!this.isCurrentTtsFocusSession(token, generation, chapterIndex, sourceIdentity)) {
         return;
       }
       this.applyTtsChunkFocus(chunk);
@@ -13775,7 +13931,12 @@ struct ReadBookPage {
   }
 
   applyTtsChunkFocus(chunk: TtsChunk): void {
-    const pageIndex = this.resolveTtsChunkPageIndex(chunk);
+    const absoluteStart = this.readerV2TtsSourceOffset(chunk.start);
+    // Cloud/custom audio may finish a cancelled prefetch after the replacement session has
+    // already advanced. Never allow an older focus cue to move the visible reader backwards.
+    if (this.ttsLastAppliedSourceOffset >= 0 && absoluteStart < this.ttsLastAppliedSourceOffset) return;
+    this.ttsLastAppliedSourceOffset = absoluteStart;
+    const pageIndex = this.findPageIndexByOffset(absoluteStart);
     const spreadPageIndex = this.normalizeReaderSpreadPageIndex(pageIndex);
     this.ttsLastFocusChunk = chunk;
     this.ttsLastFocusPageIndex = pageIndex;
@@ -13788,10 +13949,13 @@ struct ReadBookPage {
 
   syncTtsFocusAfterResumeLater(delayMs: number): void {
     const serial = ++this.ttsResumeSyncSerial;
+    const focusGeneration = this.ttsFocusGeneration;
+    const readToken = this.ttsReadToken;
     setTimeout(() => {
       if (serial < this.ttsResumeSyncSerial - 1) {
         return;
       }
+      if (focusGeneration !== this.ttsFocusGeneration || readToken !== this.ttsReadToken) return;
       this.syncTtsFocusAfterResume();
     }, delayMs);
   }
@@ -13800,6 +13964,8 @@ struct ReadBookPage {
     if (!this.isTtsSpeaking || !this.ttsAutoContinue || this.contentPages.length === 0) {
       return;
     }
+    if (this.ttsManualPageTurnResumePending || this.isPageTurning || this.ttsAutoTurningPage ||
+      this.ttsChapterSwitching) return;
     if (!this.ttsLastFocusChunk && !this.restorePersistedTtsFocus()) return;
     if (!this.ttsLastFocusChunk) return;
     const pageIndex = this.resolveTtsChunkPageIndex(this.ttsLastFocusChunk);
@@ -13847,7 +14013,47 @@ struct ReadBookPage {
     this.readerV2TtsSourceEnd = absoluteEnd;
     this.refreshReaderV2TtsOverlay();
     this.persistTtsReadPosition(absoluteStart, absoluteEnd);
-    this.ttsHighlightRenderVersion++;
+    this.publishTtsHighlightRenderChange();
+    if (this.isPageTurning || this.ttsAutoTurningPage || this.ttsManualPageTurnResumePending) {
+      this.scheduleTtsFocusRepublishAfterPageTurn(this.currentChapterIndex, pageIndex,
+        absoluteStart, absoluteEnd);
+    }
+  }
+
+  scheduleTtsFocusRepublishAfterPageTurn(chapterIndex: number, pageIndex: number,
+    absoluteStart: number, absoluteEnd: number): void {
+    const serial = ++this.ttsSurfaceFocusSyncSerial;
+    this.republishTtsFocusAfterPageTurn(serial, chapterIndex, pageIndex, absoluteStart, absoluteEnd, 0);
+  }
+
+  scheduleCurrentTtsFocusRepublishAfterPageTurn(): void {
+    if (this.readerV2TtsSourceStart < 0 || this.readerV2TtsSourceEnd <= this.readerV2TtsSourceStart ||
+      !this.shouldRenderTtsFocus()) return;
+    const pageIndex = this.findPageIndexByOffset(this.readerV2TtsSourceStart);
+    if (pageIndex < 0 || pageIndex >= this.contentPages.length) return;
+    this.scheduleTtsFocusRepublishAfterPageTurn(this.currentChapterIndex, pageIndex,
+      this.readerV2TtsSourceStart, this.readerV2TtsSourceEnd);
+  }
+
+  republishTtsFocusAfterPageTurn(serial: number, chapterIndex: number, pageIndex: number,
+    absoluteStart: number, absoluteEnd: number, attempt: number): void {
+    setTimeout(() => {
+      if (serial !== this.ttsSurfaceFocusSyncSerial || chapterIndex !== this.currentChapterIndex ||
+        this.normalizeReaderSpreadPageIndex(pageIndex) !== this.currentPageIndex ||
+        absoluteStart !== this.readerV2TtsSourceStart || absoluteEnd !== this.readerV2TtsSourceEnd ||
+        !this.shouldRenderTtsFocus()) return;
+      if (this.isPageTurning || this.ttsAutoTurningPage || this.ttsManualPageTurnResumePending ||
+        this.mirroredTtsManualTurnPending) {
+        if (attempt < 3) {
+          this.republishTtsFocusAfterPageTurn(serial, chapterIndex, pageIndex,
+            absoluteStart, absoluteEnd, attempt + 1);
+        }
+        return;
+      }
+      // The current/incoming reader surfaces alternate during rapid turns. Republish only the
+      // lightweight rectangle layer after the final surface owns the page.
+      this.publishTtsHighlightRenderChange();
+    }, attempt === 0 ? 32 : 64);
   }
 
   persistTtsReadPosition(absoluteStart: number, absoluteEnd: number): void {
@@ -13988,7 +14194,7 @@ struct ReadBookPage {
     this.readerV2TtsSourceStart = absoluteStart;
     this.readerV2TtsSourceEnd = absoluteEnd;
     this.refreshReaderV2TtsOverlay();
-    this.ttsHighlightRenderVersion++;
+    this.publishTtsHighlightRenderChange();
   }
 
   clearMirroredTtsFocus(): void {
@@ -14023,7 +14229,14 @@ struct ReadBookPage {
     try {
       while (turnSerial === this.ttsPageTurnSerial && this.isTtsSpeaking && this.ttsAutoContinue &&
         this.ttsPendingTargetPageIndex > this.currentPageIndex && this.canTurnPage(1)) {
-        await this.runTtsPageTurnAnimation(1, turnSerial);
+        const targetPageIndex = this.normalizeReaderSpreadPageIndex(Math.min(
+          this.ttsPendingTargetPageIndex, Math.max(0, this.contentPages.length - 1)));
+        if (targetPageIndex <= this.currentPageIndex) break;
+        if (targetPageIndex > this.currentPageIndex + this.getReaderPageTurnStep()) {
+          await this.runTtsPageTurnAnimationTo(targetPageIndex, turnSerial);
+        } else {
+          await this.runTtsPageTurnAnimation(1, turnSerial);
+        }
         if (turnSerial !== this.ttsPageTurnSerial) {
           return;
         }
@@ -14037,6 +14250,9 @@ struct ReadBookPage {
         this.ttsAutoTurningPage = false;
         this.ttsPendingTargetPageIndex = -1;
         this.ttsPendingHighlightChunk = null;
+        // The incoming animation surface is gone at this boundary. Publish the current chunk once
+        // more to the stable page overlay so focus never remains owned only by that temporary leaf.
+        this.scheduleCurrentTtsFocusRepublishAfterPageTurn();
       }
       // A user turn can arrive while the automatic TTS page animation is in
       // progress. It is queued by runPageTurnAnimation and must run as soon as
@@ -14045,6 +14261,55 @@ struct ReadBookPage {
         this.runQueuedPageTurnLater();
       }
     }
+  }
+
+  async runTtsPageTurnAnimationTo(targetPageIndex: number, turnSerial: number): Promise<void> {
+    const target = this.normalizeReaderSpreadPageIndex(Math.max(0,
+      Math.min(targetPageIndex, Math.max(0, this.contentPages.length - 1))));
+    if (this.isPageTurning || target <= this.currentPageIndex) return;
+    this.isPageTurning = true;
+    try {
+      if (!this.isPageTurnAnimationEnabled()) {
+        this.applyTtsPageTarget(target, turnSerial);
+        const targetText = this.getCurrentPageText();
+        this.commitVisibleCurrentPageText(targetText);
+        this.finishPageTurnAnimation();
+        this.commitCurrentPageTextLater(this.currentChapterIndex, this.currentPageIndex, targetText);
+        return;
+      }
+      const distance = this.getPageTurnDistance();
+      this.prepareSlidePageTurn(1, 0);
+      this.pageTurnCrossChapterHandoff = false;
+      this.setPageTurnIncomingState(target, this.getPageText(target), true, this.currentChapterIndex,
+        this.getSecondaryPageText(target), this.getPageStartOffset(target),
+        this.isLandscapeDoublePageActive() ? this.getPageStartOffset(target + 1) : -1,
+        this.pagedContentText);
+      this.requestReaderPageCurlCapture();
+      if (this.isSimulationPageTurnAnimation()) {
+        await this.completeSimulationPageTurnMotion(1);
+      } else {
+        const duration = 140;
+        animateTo({ duration: duration, curve: this.pageTurnAnimationCurve() }, () => {
+          this.setPageSlideAxisOffset(-distance);
+          this.pageTransitionOpacity = 1;
+        });
+        await this.delay(duration + 10);
+      }
+      this.applyTtsPageTarget(target, turnSerial);
+      await this.finishAnimatedPageTurn();
+    } finally {
+      this.isPageTurning = false;
+    }
+  }
+
+  applyTtsPageTarget(targetPageIndex: number, turnSerial: number): void {
+    if (turnSerial !== this.ttsPageTurnSerial || !this.isTtsSpeaking || !this.ttsAutoContinue) return;
+    const target = this.normalizeReaderSpreadPageIndex(Math.max(this.currentPageIndex,
+      Math.min(targetPageIndex, Math.max(0, this.contentPages.length - 1))));
+    this.currentPageIndex = target;
+    this.syncCurrentPageText();
+    if (this.contentPages.length - target <= 3) this.preloadReaderContent();
+    this.scheduleReaderPagedProgressSave();
   }
 
   async runTtsPageTurnAnimation(direction: number, turnSerial: number = this.ttsPageTurnSerial): Promise<void> {
@@ -14075,7 +14340,7 @@ struct ReadBookPage {
     if (this.isSimulationPageTurnAnimation()) {
       await this.completeSimulationPageTurnMotion(direction);
     } else {
-      const duration = 220;
+      const duration = 140;
       animateTo({ duration: duration, curve: this.pageTurnAnimationCurve() }, () => {
         this.setPageSlideAxisOffset(direction > 0 ? -distance : distance);
         this.pageTransitionOpacity = 1;
@@ -14092,7 +14357,7 @@ struct ReadBookPage {
     if (this.isSimulationPageTurnAnimation()) {
       await this.completeSimulationPageTurnMotion(direction);
     } else {
-      const duration = 240;
+      const duration = 150;
       animateTo({ duration: duration, curve: this.pageTurnAnimationCurve() }, () => {
         this.setPageSlideAxisOffset(direction > 0 ? -distance : distance);
         this.pageTransitionOpacity = 1;
@@ -14115,7 +14380,9 @@ struct ReadBookPage {
         if (this.contentPages.length - this.currentPageIndex <= 3) {
           this.preloadReaderContent();
         }
-        await this.saveReadingProgress();
+        // Keep speech focus responsive; the existing debounce persists the latest page without
+        // blocking every automatic animation on a database transaction.
+        this.scheduleReaderPagedProgressSave();
       } else {
         await this.loadNextChapter();
       }
@@ -14126,7 +14393,7 @@ struct ReadBookPage {
     if (localPageIndex >= 0) {
       this.currentPageIndex = localPageIndex;
       this.syncCurrentPageText();
-      await this.saveReadingProgress();
+      this.scheduleReaderPagedProgressSave();
     } else {
       await this.loadPrevChapter(true);
     }
@@ -14212,8 +14479,7 @@ struct ReadBookPage {
         }
         .width('100%')
         .height('100%')
-        .padding({ top: this.shouldUseReaderLayoutV2(this.pageTurnIncomingDocumentSource) ? 0 :
-          this.getReaderPageContentTopPadding() })
+        .padding({ top: this.getReaderPageContentTopPadding() })
       }
       .width('100%')
       .height('100%')
@@ -14232,8 +14498,7 @@ struct ReadBookPage {
         }
         .width('100%')
         .height('100%')
-        .padding({ top: this.shouldUseReaderLayoutV2(this.pagedContentText) ? 0 :
-          this.getReaderPageContentTopPadding() })
+        .padding({ top: this.getReaderPageContentTopPadding() })
 
       }
       .width('100%')
@@ -14242,7 +14507,6 @@ struct ReadBookPage {
       .renderGroup(true)
       .opacity(this.readerPageCurlSnapshotReady ? 0 : 1)
 
-      this.readerSimulationCurlCanvas()
     }
     .width('100%')
     .height('100%')
@@ -14269,37 +14533,35 @@ struct ReadBookPage {
             this.pageTurnIncomingRenderVersion, `${surfaceRole}_leaf_back_capture`)
         }
       }
-      .width('50%')
+      .width(this.getReaderPageColumnWidth())
       .height('100%')
-      .position({ x: this.pageSlideDirection > 0 ? '50%' : 0, y: 0 })
+      .position({ x: this.pageSlideDirection > 0 ? this.getReaderDoublePageRightOrigin() : 0, y: 0 })
       .id('reader_page_curl_back_double')
       .renderGroup(true)
 
-      this.readerSimulationPaperBackground()
-
-      Row() {
+      // Keep the non-turning half on the stable正文 surface below this overlay. Rebuilding that half with a
+      // second native Paragraph controller made it jump by a fractional layout pixel whenever the snapshot
+      // became ready. Only the destination half that really changes needs an opaque paper and正文 layer here.
+      Stack() {
+        this.readerSimulationHalfPaperBackground(this.pageSlideDirection > 0)
         if (this.pageSlideDirection > 0) {
-          this.readerSimulationCurrentHalfPage(currentText, this.currentPageIndex, currentRenderVersion,
-            ttsRenderVersion, `${surfaceRole}_base_left`, true)
           this.readerSimulationIncomingHalfPage(this.pageTurnIncomingSecondaryText,
             this.pageTurnIncomingPageIndex + 1, this.pageTurnIncomingSecondaryPageStart,
-            this.pageTurnIncomingRenderVersion, `${surfaceRole}_base_right`, true)
+            this.pageTurnIncomingRenderVersion, `${surfaceRole}_base_right`)
         } else {
           this.readerSimulationIncomingHalfPage(this.pageTurnIncomingText, this.pageTurnIncomingPageIndex,
             this.pageTurnIncomingPageStart, this.pageTurnIncomingRenderVersion,
-            `${surfaceRole}_base_left`, true)
-          this.readerSimulationCurrentHalfPage(this.getSecondaryPageText(), this.currentPageIndex + 1,
-            currentRenderVersion, ttsRenderVersion, `${surfaceRole}_base_right`, true)
+            `${surfaceRole}_base_left`)
         }
       }
-      .width('100%')
+      .width(this.getReaderPageColumnWidth())
       .height('100%')
+      .position({ x: this.pageSlideDirection > 0 ? this.getReaderDoublePageRightOrigin() : 0, y: 0 })
 
       Column()
         .width(2)
         .height('94%')
-        .position({ x: '50%', y: '3%' })
-        .translate({ x: -1 })
+        .position({ x: this.getReaderPageColumnWidth(), y: '3%' })
         .linearGradient({
           angle: 0,
           colors: [['#00000000', 0], [this.getSimulationSpineColor(), 0.5], ['#00000000', 1]]
@@ -14317,18 +14579,17 @@ struct ReadBookPage {
             ttsRenderVersion, `${surfaceRole}_leaf_front`)
         }
       }
-      .width('50%')
+      .width(this.getReaderPageColumnWidth())
       .height('100%')
-      .position({ x: this.pageSlideDirection > 0 ? '50%' : 0, y: 0 })
+      .position({ x: this.pageSlideDirection > 0 ? this.getReaderDoublePageRightOrigin() : 0, y: 0 })
       .id('reader_page_curl_front_double')
       .renderGroup(true)
       .opacity(this.readerPageCurlSnapshotReady ? 0 : 1)
 
-      this.readerSimulationCurlCanvas()
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.readerContentLayerColor())
+    .backgroundColor(Color.Transparent)
     .clip(true)
   }
 
@@ -14371,7 +14632,7 @@ struct ReadBookPage {
       })
         .width(this.getPageTurnWidth())
         .height('100%')
-        .position({ x: rightHalf ? -this.getPageTurnWidth() / 2 : 0, y: 0 })
+        .position({ x: rightHalf ? -this.getReaderDoublePageRightOrigin() : 0, y: 0 })
         .hitTestBehavior(HitTestMode.None)
     }
     .width('100%')
@@ -14395,8 +14656,10 @@ struct ReadBookPage {
           pageIndex)
       }
     }
-    .width(halfWidth ? '50%' : '100%')
+    .width(halfWidth ? this.getReaderPageColumnWidth() : '100%')
     .height('100%')
+    // Current, incoming and curl-capture leaves share this wrapper coordinate system. Keeping the
+    // status-bar inset here prevents a rapidly recycled V2 leaf from briefly losing its local translate.
     .padding({ top: this.getReaderPageContentTopPadding() })
     .justifyContent(FlexAlign.Start)
     .alignItems(HorizontalAlign.Start)
@@ -14416,7 +14679,7 @@ struct ReadBookPage {
           pageIndex, this.getEffectiveReaderMarginTop(), pageStart, this.pageTurnIncomingDocumentSource)
       }
     }
-    .width(halfWidth ? '50%' : '100%')
+    .width(halfWidth ? this.getReaderPageColumnWidth() : '100%')
     .height('100%')
     .padding({ top: this.getReaderPageContentTopPadding() })
     .justifyContent(FlexAlign.Start)
@@ -14430,7 +14693,7 @@ struct ReadBookPage {
     }
     .width('100%')
     .height('100%')
-    .padding({ top: this.shouldUseReaderLayoutV2(this.pagedContentText) ? 0 : this.getReaderPageContentTopPadding() })
+    .padding({ top: this.getReaderPageContentTopPadding() })
     .id(`reader_current_${this.currentChapterIndex}_${this.currentPageIndex}_${this.displayPageRenderKey}_${renderVersion}_${ttsRenderVersion}`)
     .backgroundColor(this.readerContentLayerColor())
     .translate({ x: this.getCurrentPageTurnX(), y: this.getCurrentPageTurnY() + this.bookmarkPullOffsetY })
@@ -14444,7 +14707,7 @@ struct ReadBookPage {
     }
     .width('100%')
     .height('100%')
-    .padding({ top: this.shouldUseReaderLayoutV2(this.pagedContentText) ? 0 : this.getReaderPageContentTopPadding() })
+    .padding({ top: this.getReaderPageContentTopPadding() })
     .id(`reader_current_alt_${this.currentChapterIndex}_${this.currentPageIndex}_${this.displayPageRenderKey}_${renderVersion}_${ttsRenderVersion}`)
     .backgroundColor(this.readerContentLayerColor())
     .translate({ x: this.getCurrentPageTurnX(), y: this.getCurrentPageTurnY() + this.bookmarkPullOffsetY })
@@ -14462,8 +14725,7 @@ struct ReadBookPage {
       }
       .width('100%')
       .height('100%')
-      .padding({ top: this.shouldUseReaderLayoutV2(this.pageTurnIncomingDocumentSource) ? 0 :
-        this.getReaderPageContentTopPadding() })
+      .padding({ top: this.getReaderPageContentTopPadding() })
     }
     .width('100%')
     .height('100%')
@@ -16011,13 +16273,25 @@ struct ReadBookPage {
 
   selectReaderTextAtGlobalPoint(event: GestureEvent): void {
     if (event.fingerList.length === 0) return;
+    // A recognised long press must never fall through to a tap-zone page turn, even if the
+    // system selection menu needs a later layout retry.
+    this.readerTextSelectionUntil = Date.now() + 900;
+    this.suppressReaderTapClick = true;
+    this.readerTouchActive = false;
+    this.readerPanActive = false;
     const finger = event.fingerList[0];
     const globalX = Number(finger.globalX);
     const globalY = Number(finger.globalY);
+    const serial = ++this.readerTextSelectionSerial;
     if (this.shouldUseReaderLayoutV2(this.pagedContentText)) {
-      this.selectReaderV2TextAtGlobalPoint(globalX, globalY);
+      this.selectReaderV2TextAtGlobalPoint(globalX, globalY, serial, 0);
       return;
     }
+    this.selectLegacyReaderTextAtGlobalPoint(globalX, globalY, serial, 0);
+  }
+
+  selectLegacyReaderTextAtGlobalPoint(globalX: number, globalY: number, serial: number, attempt: number): void {
+    if (serial !== this.readerTextSelectionSerial) return;
     const currentIdentity = this.currentReaderPageRenderIdentity(this.pageRenderVersion,
       this.ttsHighlightRenderVersion);
     const continuousNovel = this.isReaderNovelContinuousScrollModeActive();
@@ -16028,6 +16302,7 @@ struct ReadBookPage {
       const key = entry[0];
       const area = entry[1];
       if ((!continuousNovel && !key.startsWith(currentIdentity)) || area.length < 4) continue;
+      if (continuousNovel && !this.isVisibleContinuousSelectionKey(key)) continue;
       if (globalX >= area[0] && globalX <= area[2] && globalY >= area[1] && globalY <= area[3]) {
         const areaSize = (area[2] - area[0]) * (area[3] - area[1]);
         if (areaSize < selectedAreaSize) {
@@ -16037,13 +16312,41 @@ struct ReadBookPage {
         }
       }
     }
-    if (!selectedKey || selectedArea.length < 4) return;
+    if (!selectedKey || selectedArea.length < 4) {
+      this.retryReaderTextSelection(serial, attempt,
+        (nextAttempt: number): void => this.selectLegacyReaderTextAtGlobalPoint(
+          globalX, globalY, serial, nextAttempt));
+      return;
+    }
     const text = this.readerSelectableTextValues.get(selectedKey) || '';
-    this.showReaderTextSelection(selectedKey, text, globalX - selectedArea[0], globalY - selectedArea[1]);
+    if (!this.showReaderTextSelection(selectedKey, text,
+      globalX - selectedArea[0], globalY - selectedArea[1])) {
+      this.retryReaderTextSelection(serial, attempt,
+        (nextAttempt: number): void => this.selectLegacyReaderTextAtGlobalPoint(
+          globalX, globalY, serial, nextAttempt));
+    }
   }
 
-  showReaderTextSelection(key: string, text: string, localX: number, localY: number): void {
-    if (!text) return;
+  isVisibleContinuousSelectionKey(key: string): boolean {
+    const keepStart = Math.max(0, this.readerContinuousVisibleStart - 1);
+    const keepEnd = this.readerContinuousVisibleEnd + 1;
+    for (let pageIndex = keepStart; pageIndex <= keepEnd; pageIndex++) {
+      if (key.includes(`reader_vertical_scroll_${this.currentChapterIndex}_${pageIndex}`)) return true;
+    }
+    return false;
+  }
+
+  retryReaderTextSelection(serial: number, attempt: number, action: (attempt: number) => void): void {
+    if (attempt >= 3) return;
+    const delayMs = attempt === 0 ? 16 : 40;
+    setTimeout(() => {
+      if (serial !== this.readerTextSelectionSerial || !this.readerPageVisible) return;
+      action(attempt + 1);
+    }, delayMs);
+  }
+
+  showReaderTextSelection(key: string, text: string, localX: number, localY: number): boolean {
+    if (!text) return false;
     try {
       const controller = this.readerSelectableTextController(key);
       const layout = controller.getLayoutManager();
@@ -16069,8 +16372,10 @@ struct ReadBookPage {
       this.readerTouchActive = false;
       this.readerPanActive = false;
       controller.setTextSelection(start, end, { menuPolicy: MenuPolicy.SHOW });
+      return true;
     } catch (error) {
-      console.warn('正文长按选择失败:', error);
+      console.info('正文长按选择布局尚未就绪，准备重试:', error);
+      return false;
     }
   }
 
@@ -17243,16 +17548,88 @@ struct ReadBookPage {
     }
     const page = this.readerV2Page(chapterIndex, pageIndex, source);
     controller.updatePage(page);
-    const document = this.readerV2Document(chapterIndex, source);
-    if (page && document && chapterIndex === this.currentChapterIndex &&
-      this.readerV2TtsSourceStart >= 0 && this.readerV2TtsSourceEnd > this.readerV2TtsSourceStart) {
-      controller.updateHighlight(document.displayOffsetForSource(this.readerV2TtsSourceStart),
-        document.displayOffsetForSource(this.readerV2TtsSourceEnd));
-    } else {
-      controller.updateHighlight(-1, -1);
-    }
-    controller.updateSelection(-1, -1);
+    // TTS focus is a declarative overlay below. Keeping it outside the retained FrameNode avoids
+    // HarmonyOS builds that defer RenderNode.invalidate() until the next page transition.
+    controller.updateHighlight(-1, -1);
     return controller;
+  }
+
+  readerV2TtsHighlightRects(chapterIndex: number, pageIndex: number, source: string,
+    _paintVersion: number = this.readerV2TtsPaintVersion): ReaderV2HighlightRect[] {
+    if (chapterIndex !== this.currentChapterIndex || this.readerV2TtsSourceStart < 0 ||
+      this.readerV2TtsSourceEnd <= this.readerV2TtsSourceStart) return [];
+    const page = this.readerV2Page(chapterIndex, pageIndex, source);
+    const document = this.readerV2Document(chapterIndex, source);
+    if (!page || !document) return [];
+    const absoluteStart = document.displayOffsetForSource(this.readerV2TtsSourceStart);
+    const absoluteEnd = document.displayOffsetForSource(this.readerV2TtsSourceEnd);
+    return this.readerV2DisplayHighlightRects(page, absoluteStart, absoluteEnd, 'tts');
+  }
+
+  readerV2SelectionHighlightRects(chapterIndex: number, pageIndex: number, source: string,
+    _paintVersion: number = this.readerV2SelectionPaintVersion): ReaderV2HighlightRect[] {
+    if (chapterIndex !== this.readerV2SelectionChapterIndex || pageIndex !== this.readerV2SelectionPageIndex ||
+      this.readerV2SelectionDisplayStart < 0 ||
+      this.readerV2SelectionDisplayEnd <= this.readerV2SelectionDisplayStart) return [];
+    const page = this.readerV2Page(chapterIndex, pageIndex, source);
+    if (!page) return [];
+    return this.readerV2DisplayHighlightRects(page, this.readerV2SelectionDisplayStart,
+      this.readerV2SelectionDisplayEnd, 'selection');
+  }
+
+  readerV2DisplayHighlightRects(page: ReaderV2PageLayout, absoluteStart: number,
+    absoluteEnd: number, keyPrefix: string): ReaderV2HighlightRect[] {
+    if (absoluteEnd <= absoluteStart) return [];
+    const result: ReaderV2HighlightRect[] = [];
+    for (let fragmentIndex = 0; fragmentIndex < page.fragments.length; fragmentIndex++) {
+      const fragment = page.fragments[fragmentIndex];
+      if (!fragment.paragraph || absoluteEnd <= fragment.displayStart ||
+        absoluteStart >= fragment.displayEnd) continue;
+      const localStart = Math.max(0, absoluteStart - fragment.displayStart);
+      const localEnd = Math.min(fragment.localEnd - fragment.localStart,
+        absoluteEnd - fragment.displayStart);
+      if (localEnd <= localStart) continue;
+      const boxes = fragment.paragraph.getRectsForRange({ start: localStart, end: localEnd },
+        graphicsText.RectWidthStyle.TIGHT, graphicsText.RectHeightStyle.TIGHT);
+      for (let boxIndex = 0; boxIndex < boxes.length; boxIndex++) {
+        const rect = boxes[boxIndex].rect;
+        const left = Math.max(fragment.clipRect.left, fragment.paragraphX + rect.left);
+        const top = Math.max(fragment.clipRect.top, fragment.paragraphY + rect.top);
+        const right = Math.min(fragment.clipRect.right, fragment.paragraphX + rect.right);
+        const bottom = Math.min(fragment.clipRect.bottom, fragment.paragraphY + rect.bottom);
+        if (right <= left || bottom <= top) continue;
+        result.push({
+          leftPx: left,
+          topPx: top,
+          widthPx: right - left,
+          heightPx: bottom - top,
+          key: `${keyPrefix}_${page.identity}_${fragmentIndex}_${boxIndex}_${absoluteStart}_${absoluteEnd}`
+        });
+      }
+    }
+    return result;
+  }
+
+  @Builder
+  readerV2TtsHighlightRect(rect: ReaderV2HighlightRect) {
+    Row() {
+    }
+    .width(px2vp(rect.widthPx))
+    .height(px2vp(rect.heightPx))
+    .backgroundColor(0x55FFE58A)
+    .position({ x: px2vp(rect.leftPx), y: px2vp(rect.topPx) })
+    .hitTestBehavior(HitTestMode.None)
+  }
+
+  @Builder
+  readerV2SelectionHighlightRect(rect: ReaderV2HighlightRect) {
+    Row() {
+    }
+    .width(px2vp(rect.widthPx))
+    .height(px2vp(rect.heightPx))
+    .backgroundColor(0x663B82F6)
+    .position({ x: px2vp(rect.leftPx), y: px2vp(rect.topPx) })
+    .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
@@ -17269,6 +17646,20 @@ struct ReadBookPage {
           `${role}_${chapterIndex}_${pageIndex}_${fragmentIndex}_regex_bubble_${segmentIndex}`)
       }, (fragment: ReaderV2PageFragment, fragmentIndex: number) =>
         `${role}_${chapterIndex}_${pageIndex}_${fragment.blockId}_regex_${fragmentIndex}`)
+      ForEach(this.readerV2TtsHighlightRects(
+        chapterIndex, pageIndex, source, this.readerV2TtsPaintVersion),
+      (rect: ReaderV2HighlightRect) => {
+        this.readerV2TtsHighlightRect(rect)
+      }, (rect: ReaderV2HighlightRect) => rect.key)
+      ForEach(this.readerV2SelectionHighlightRects(
+        chapterIndex, pageIndex, source, this.readerV2SelectionPaintVersion),
+      (rect: ReaderV2HighlightRect) => {
+        this.readerV2SelectionHighlightRect(rect)
+      }, (rect: ReaderV2HighlightRect) => rect.key)
+      // TTS paint versions intentionally do not flow into the retained正文 node. Re-publishing that
+      // NodeContainer for every spoken chunk can trigger a fresh safe-area measurement after a page
+      // animation, moving all glyphs upward. Only the lightweight rectangle overlay above depends on
+      // readerV2TtsPaintVersion.
       NodeContainer(this.readerV2Controller(role, chapterIndex, pageIndex, source))
         .width('100%')
         .height('100%')
@@ -17279,7 +17670,6 @@ struct ReadBookPage {
     }
     .width(halfWidth ? '50%' : '100%')
     .height('100%')
-    .translate({ y: this.readerV2SurfaceTopOffset() })
     .hitTestBehavior(HitTestMode.None)
   }
 
@@ -17342,6 +17732,7 @@ struct ReadBookPage {
     const cached = this.readerV2SelectionStyledTextCache.get(cacheKey);
     if (cached) return cached;
     const styles: StyleOptions[] = [];
+    const snapshot = this.readerV2ActiveSnapshot || this.buildReaderV2Snapshot();
     for (let fragmentIndex = 0; fragmentIndex < page.fragments.length; fragmentIndex++) {
       const fragment = page.fragments[fragmentIndex];
       let runStart = fragment.selectionPageStart;
@@ -17357,13 +17748,19 @@ struct ReadBookPage {
             fontColor: Color.Transparent
           })
         });
+        styles.push({
+          start: runStart,
+          length: run.text.length,
+          styledKey: StyledStringKey.LETTER_SPACING,
+          styledValue: new LetterSpacingStyle(LengthMetrics.px(run.letterSpacingPx))
+        });
         runStart += run.text.length;
       }
-      const next = fragmentIndex + 1 < page.fragments.length ? page.fragments[fragmentIndex + 1] : null;
-      const paragraphGapPx = next ?
-        Math.max(0, next.paragraphY - fragment.paragraphY - fragment.paragraphHeight) : 0;
-      const paragraphLength = Math.max(0, fragment.selectionPageEnd - fragment.selectionPageStart) +
-        (next ? 1 : 0);
+      // A single Text owns the whole visible page so HarmonyOS can extend its native selection
+      // handles across paragraph boundaries. Paragraph styles retain the same gap and wrapping
+      // contract used by the independent native Paragraphs that paint the visible glyphs.
+      const paragraphLength = fragment.selectionPageEnd - fragment.selectionPageStart +
+        (fragmentIndex < page.fragments.length - 1 ? 1 : 0);
       if (paragraphLength > 0) {
         styles.push({
           start: fragment.selectionPageStart,
@@ -17372,14 +17769,14 @@ struct ReadBookPage {
           styledValue: new ParagraphStyle({
             textAlign: TextAlign.JUSTIFY,
             wordBreak: WordBreak.BREAK_WORD,
-            paragraphSpacing: LengthMetrics.px(paragraphGapPx)
+            paragraphSpacing: LengthMetrics.px(snapshot.paragraphSpacingPx)
           })
         });
       }
     }
     const styled = new MutableStyledString(page.selectionText, styles);
     this.readerV2SelectionStyledTextCache.set(cacheKey, styled);
-    while (this.readerV2SelectionStyledTextCache.size > 16) {
+    while (this.readerV2SelectionStyledTextCache.size > 64) {
       const oldest = this.readerV2SelectionStyledTextCache.keys().next().value as string | undefined;
       if (!oldest) break;
       this.readerV2SelectionStyledTextCache.delete(oldest);
@@ -17396,45 +17793,76 @@ struct ReadBookPage {
     return controller;
   }
 
+  readerV2DisplayOffsetForPageSelection(page: ReaderV2PageLayout, selectionOffset: number): number {
+    const target = Math.max(0, Math.min(page.selectionText.length, selectionOffset));
+    let previousDisplayEnd = page.displayStart;
+    for (const fragment of page.fragments) {
+      if (target < fragment.selectionPageStart) return previousDisplayEnd;
+      if (target <= fragment.selectionPageEnd) {
+        return fragment.displayStart + Math.max(0,
+          Math.min(fragment.displayEnd - fragment.displayStart, target - fragment.selectionPageStart));
+      }
+      previousDisplayEnd = fragment.displayEnd;
+    }
+    return page.displayEnd;
+  }
+
   @Builder
   readerV2NativeSelectionPage(role: string, chapterIndex: number, pageIndex: number, source: string) {
     if (this.readerV2Page(chapterIndex, pageIndex, source)) {
-      Text('', { controller: this.readerV2NativeSelectionController(
-        this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex,
-          this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout),
-        this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout) })
-    .lineSpacing(LengthMetrics.vp(px2vp((this.readerV2ActiveSnapshot || this.buildReaderV2Snapshot()).lineSpacingPx)),
-      { onlyBetweenLines: true })
-    .halfLeading(false)
-    // Match the native V2 paragraph metrics. The selection layer is transparent, but its line boxes must retain
-    // the same first-line font padding for selection rectangles and handles to stay aligned with painted glyphs.
-    .includeFontPadding(true)
-    .letterSpacing(px2vp((this.readerV2ActiveSnapshot || this.buildReaderV2Snapshot()).letterSpacingPx))
-    .textAlign(TextAlign.JUSTIFY)
-    .wordBreak(WordBreak.BREAK_WORD)
-    .lineBreakStrategy(LineBreakStrategy.GREEDY)
-    .copyOption(CopyOptions.LocalDevice)
-    .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
-    .width(px2vp((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionWidth))
-    .height(px2vp((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionHeight))
-    .position({
-      x: px2vp((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionX),
-      y: px2vp((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionY)
-    })
-    .hitTestBehavior(HitTestMode.None)
-    .onTextSelectionChange((_selectionStart: number, _selectionEnd: number) => {
-      this.readerTextSelectionUntil = Date.now() + 900;
-      this.suppressReaderTapClick = true;
-      this.readerTouchActive = false;
-      this.readerPanActive = false;
-    })
-      .id(`reader_v2_selection_${role}_${chapterIndex}_${pageIndex}`)
-      .onAppear(() => {
-        const page = this.readerV2Page(chapterIndex, pageIndex, source);
-        if (!page) return;
-        const key = this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex, page);
-        this.readerV2NativeSelectionController(key, page);
-      })
+      if ((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionText) {
+        Text('', { controller: this.readerV2NativeSelectionController(
+          this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex,
+            this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout),
+          this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout) })
+          .lineSpacing(LengthMetrics.vp(px2vp(
+            (this.readerV2ActiveSnapshot || this.buildReaderV2Snapshot()).lineSpacingPx)),
+          { onlyBetweenLines: true })
+          .halfLeading(false)
+          .includeFontPadding(true)
+          .textAlign(TextAlign.JUSTIFY)
+          .wordBreak(WordBreak.BREAK_WORD)
+          .lineBreakStrategy(LineBreakStrategy.GREEDY)
+          .copyOption(CopyOptions.LocalDevice)
+          .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
+          .selectedBackgroundColor(Color.Transparent)
+          .width(px2vp((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionWidth))
+          .height(px2vp(Math.max(1,
+            (this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionHeight)))
+          .position({
+            x: px2vp((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionX),
+            y: px2vp((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionY)
+          })
+          .hitTestBehavior(HitTestMode.None)
+          .onTextSelectionChange((selectionStart: number, selectionEnd: number) => {
+            const page = this.readerV2Page(chapterIndex, pageIndex, source);
+            if (!page) return;
+            this.readerTextSelectionUntil = Date.now() + 900;
+            this.suppressReaderTapClick = true;
+            this.readerTouchActive = false;
+            this.readerPanActive = false;
+            const safeStart = Math.max(0, Math.min(selectionStart, page.selectionText.length));
+            const safeEnd = Math.max(safeStart, Math.min(selectionEnd, page.selectionText.length));
+            if (safeEnd > safeStart) {
+              this.readerV2SelectionChapterIndex = chapterIndex;
+              this.readerV2SelectionPageIndex = pageIndex;
+              this.readerV2SelectionDisplayStart =
+                this.readerV2DisplayOffsetForPageSelection(page, safeStart);
+              this.readerV2SelectionDisplayEnd =
+                this.readerV2DisplayOffsetForPageSelection(page, safeEnd);
+              this.readerV2SelectionPaintVersion++;
+            } else {
+              this.clearReaderV2SelectionOverlay();
+            }
+          })
+          .id(`reader_v2_selection_${role}_${chapterIndex}_${pageIndex}`)
+          .onAppear(() => {
+            const page = this.readerV2Page(chapterIndex, pageIndex, source);
+            if (!page) return;
+            const key = this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex, page);
+            this.readerV2NativeSelectionController(key, page);
+          })
+      }
     }
   }
 
@@ -17444,6 +17872,15 @@ struct ReadBookPage {
     return !this.readerExtendToStatusBar &&
       (this.isStackPageTurnAnimation() || this.isSimulationPageTurnAnimation()) ?
       this.statusBarSafeHeight : 0;
+  }
+
+  clearReaderV2SelectionOverlay(): void {
+    if (this.readerV2SelectionDisplayStart < 0 && this.readerV2SelectionDisplayEnd < 0) return;
+    this.readerV2SelectionChapterIndex = -1;
+    this.readerV2SelectionPageIndex = -1;
+    this.readerV2SelectionDisplayStart = -1;
+    this.readerV2SelectionDisplayEnd = -1;
+    this.readerV2SelectionPaintVersion++;
   }
 
   readerV2ActionAtLocalPoint(xVp: number, yVp: number): string {
@@ -17471,25 +17908,44 @@ struct ReadBookPage {
     return [pageIndex, this.toMeasurePx(localX), this.toMeasurePx(yVp), 1];
   }
 
-  selectReaderV2TextAtGlobalPoint(globalX: number, globalY: number): void {
+  selectReaderV2TextAtGlobalPoint(globalX: number, globalY: number, serial: number, attempt: number): void {
+    if (serial !== this.readerTextSelectionSerial) return;
     const localX = globalX - this.readerTapLayerGlobalX;
-    const localY = globalY - this.readerTapLayerGlobalY -
-      (!this.readerExtendToStatusBar ? this.statusBarSafeHeight : 0);
+    const localY = globalY - this.readerTapLayerGlobalY - this.readerV2SurfaceTopOffset();
     const located = this.readerV2LocatedPagePoint(localX, localY);
     if (located.length < 4) return;
     const pageIndex = located[0];
+    // The retained page surface alternates between two keyed buffers. Selection must address
+    // the controller attached to the currently visible buffer; using a generic current_left key
+    // silently created a detached TextController whose selection menu could never appear.
+    const surfaceRole = this.currentReaderSurfaceIndex() === 0 ? 'current_primary' : 'current_alternate';
     const role = this.isLandscapeDoublePageActive() ?
-      (pageIndex === this.currentPageIndex ? 'current_left' : 'current_right') : 'current_single';
+      `${surfaceRole}_${pageIndex === this.currentPageIndex ? 'left' : 'right'}` : `${surfaceRole}_single`;
     const page = this.readerV2Page(this.currentChapterIndex, pageIndex, this.pagedContentText);
-    if (!page || !page.selectionText) return;
-    for (const fragment of page.fragments) {
-      if (!fragment.clipRect.contains(located[1], located[2])) continue;
+    if (!page || !page.selectionText) {
+      this.retryReaderTextSelection(serial, attempt,
+        (nextAttempt: number): void => this.selectReaderV2TextAtGlobalPoint(
+          globalX, globalY, serial, nextAttempt));
+      return;
+    }
+    let matchedFragment = false;
+    const selectionSlop = this.toMeasurePx(8);
+    for (let fragmentIndex = 0; fragmentIndex < page.fragments.length; fragmentIndex++) {
+      const fragment = page.fragments[fragmentIndex];
+      if (!fragment.clipRect.contains(located[1], located[2], selectionSlop, selectionSlop)) continue;
+      matchedFragment = true;
       try {
         const key = this.readerV2NativeSelectionKey(role, this.currentChapterIndex, pageIndex, page);
         const controller = this.readerSelectableTextController(key);
-        const layout = controller.getLayoutManager();
-        let position = layout.getGlyphPositionAtCoordinate(
-          located[1] - page.selectionX, located[2] - page.selectionY).position;
+        if (!fragment.paragraph) break;
+        // The transparent Text's LayoutManager can stay unavailable on some HarmonyOS builds
+        // even though it is already on screen. The painted paragraph is the pagination source of
+        // truth and always has the exact glyph coordinates, so derive the transparent selection
+        // offset from it instead of depending on that optional manager.
+        const fragmentPosition = fragment.paragraph.getGlyphPositionAtCoordinate(
+          located[1] - fragment.paragraphX, located[2] - fragment.paragraphY).position;
+        let position = fragment.selectionPageStart + Math.max(0,
+          Math.min(fragment.selectionPageEnd - fragment.selectionPageStart - 1, fragmentPosition));
         const text = page.selectionText;
         position = Math.max(0, Math.min(text.length - 1, position));
         while (position < text.length - 1 && /\s/.test(text.charAt(position))) position++;
@@ -17510,11 +17966,16 @@ struct ReadBookPage {
         this.readerTouchActive = false;
         this.readerPanActive = false;
         controller.setTextSelection(start, end, { menuPolicy: MenuPolicy.SHOW });
+        return;
       } catch (error) {
-        console.warn('V2 正文系统选区启动失败:', error);
+        console.info('V2 正文选区布局尚未就绪，准备重试:', error);
       }
-      return;
+      break;
     }
+    if (!matchedFragment && attempt >= 3) return;
+    this.retryReaderTextSelection(serial, attempt,
+      (nextAttempt: number): void => this.selectReaderV2TextAtGlobalPoint(
+        globalX, globalY, serial, nextAttempt));
   }
 
   readerV2TtsSourceOffset(speechOffset: number): number {
@@ -17523,12 +17984,8 @@ struct ReadBookPage {
   }
 
   refreshReaderV2TtsOverlay(): void {
-    const document = this.readerV2Document(this.currentChapterIndex, this.pagedContentText);
-    const start = document && this.readerV2TtsSourceStart >= 0 ?
-      document.displayOffsetForSource(this.readerV2TtsSourceStart) : -1;
-    const end = document && this.readerV2TtsSourceEnd > this.readerV2TtsSourceStart ?
-      document.displayOffsetForSource(this.readerV2TtsSourceEnd) : -1;
-    for (const controller of this.readerV2Controllers.values()) controller.updateHighlight(start, end);
+    // The declarative overlay is republished by readerV2TtsPaintVersion. Do not rely on a retained
+    // RenderNode invalidation here: on affected devices it only becomes visible after turning a page.
   }
 
   async exitReaderPage(): Promise<void> {
@@ -17903,7 +18360,8 @@ struct ReadBookPage {
   isReaderPaginationInteractionBusy(): boolean {
     return this.showReaderCommentPanel || this.isPageTurning || this.readerPanActive || this.readerTouchActive ||
       this.readerComicPanMoved || this.readerComicBoundaryDirection !== 0 || this.readerComicChapterSwitching ||
-      this.pageSlideDirection !== 0 || this.pageTurnAnimating || Date.now() < this.readerPaginationInteractionIdleUntil;
+      this.pageSlideDirection !== 0 || this.pageTurnAnimating || this.queuedPageTurnCount > 0 ||
+      this.queuedPageTurnDirection !== 0 || Date.now() < this.readerPaginationInteractionIdleUntil;
   }
 
   deferReaderPaginationForInteraction(idleDelayMs: number = 420): void {
@@ -18066,8 +18524,11 @@ struct ReadBookPage {
       this.persistReaderPagination(targetChapterIndex, key, result);
       return;
     }
-    // Adjacent V2 previews already retain native Paragraphs. Complete them only after the chapter becomes current.
-    if (result.v2Session) return;
+    // A cross-chapter turn must not expose the small provisional spread and then replace it with the
+    // completed V2 page set after the animation. That changes the visible total from e.g. 2 to 6 and
+    // rebuilds the reader immediately after landing, which looks like a vertical layout shake. Finish
+    // the retained next-chapter session cooperatively while the current chapter is still visible.
+    // Interaction-busy checks below keep native Paragraph work away from an active drag/turn chain.
     const batchDelay = ReaderActionMarker.has(result.source) ?
       READER_INTERACTIVE_PAGINATION_BATCH_DELAY_MS : READER_PAGINATION_BATCH_DELAY_MS;
     const runBatch = (): void => {
@@ -18091,10 +18552,10 @@ struct ReadBookPage {
         Math.min(240, Math.max(batchDelay, elapsedMs * 2)) : batchDelay;
       setTimeout(runBatch, nextDelay);
     };
-    setTimeout(runBatch, batchDelay);
+    setTimeout(runBatch, 0);
   }
 
-  preloadPreviousChapterPaginationLater(delayMs: number = 180): void {
+  preloadPreviousChapterPaginationLater(delayMs: number = 0): void {
     if (!this.readerPageVisible || !this.readerPreloadEnabled || !this.hasPagedReaderArea() ||
       this.currentChapterIndex <= 0) return;
     const sourceChapterIndex = this.currentChapterIndex;
@@ -18135,7 +18596,11 @@ struct ReadBookPage {
       this.persistReaderPagination(targetChapterIndex, key, result);
       return;
     }
-    if (result.v2Session) return;
+    // Going backwards must land on the real last page. V2 used to stop here after producing only
+    // the two-page turn preview, so the first backward chapter turn had to finish the whole chapter
+    // after the gesture and exposed the "restore progress" overlay. Complete the retained native
+    // pagination cooperatively while the current chapter is being read; a small two-page idle slice keeps
+    // the UI responsive and makes the previous tail immediately available when the user turns back.
     const batchDelay = ReaderActionMarker.has(result.source) ?
       READER_INTERACTIVE_PAGINATION_BATCH_DELAY_MS : READER_PAGINATION_BATCH_DELAY_MS;
     const runBatch = (): void => {
@@ -18147,11 +18612,19 @@ struct ReadBookPage {
         return;
       }
       const startedAt = Date.now();
-      this.appendReaderPaginationBatch(result, targetChapterIndex, 1);
+      this.appendReaderPaginationBatch(result, targetChapterIndex, 2);
       if (result.complete) {
         this.persistReaderPagination(targetChapterIndex, key, result);
         console.info(`[ReaderPreload] previous chapter=${targetChapterIndex} pages=${result.pages.length} ` +
           `lastBatch=${Date.now() - startedAt}ms`);
+        // A slow drag may already be exposing the temporary incoming leaf. Replace it with the
+        // confirmed tail before the curl snapshot is captured/released; never leave the provisional
+        // first spread on the back of a backward cross-chapter turn.
+        if (this.pageSlideDirection < 0 && this.pageTurnCrossChapterHandoff &&
+          this.pageTurnIncomingChapterIndex === targetChapterIndex) {
+          const preview = this.buildAdjacentPageTurnPreview(-1, targetChapterIndex, result.source);
+          if (preview.text) this.applyPageTurnPreview(preview);
+        }
         return;
       }
       const elapsedMs = Math.max(0, Date.now() - startedAt);
@@ -18159,7 +18632,7 @@ struct ReadBookPage {
         Math.min(240, Math.max(batchDelay, elapsedMs * 2)) : batchDelay;
       setTimeout(runBatch, nextDelay);
     };
-    setTimeout(runBatch, batchDelay);
+    setTimeout(runBatch, 0);
   }
 
   paginateContent(sourceContent?: string, chapterIndex: number = this.currentChapterIndex) {
@@ -18436,6 +18909,9 @@ struct ReadBookPage {
       ttsPrepareElapsed = Math.max(0, Date.now() - turnRequestStartedAt);
     }
     const visualStartedAt = Date.now();
+    // Text pagination runs on the UI thread. Reserve the whole visual turn plus a short handoff window so an
+    // idle batch cannot slip between two queued curls and move the paragraph tree on their shared boundary.
+    this.deferReaderPaginationForInteraction(700);
     this.isPageTurning = true;
     let turnCompleted = false;
     try {
@@ -18450,6 +18926,7 @@ struct ReadBookPage {
     } finally {
       this.isPageTurning = false;
     }
+    this.deferReaderPaginationForInteraction(220);
     if (resumeTtsAfterTurn) {
       console.info(`[TTS-Turn] visual ${turnCompleted ? 'completed' : 'cancelled'} in ` +
         `${Math.max(0, Date.now() - visualStartedAt)}ms,request=${Math.max(0, Date.now() - turnRequestStartedAt)}ms,` +
@@ -18482,25 +18959,31 @@ struct ReadBookPage {
     this.mirroredTtsManualTurnTimerId = setTimeout(() => {
       this.mirroredTtsManualTurnTimerId = -1;
       if (serial !== this.mirroredTtsManualTurnSerial || !this.mirroredTtsManualTurnPending) return;
-      if (this.isPageTurning || this.queuedPageTurnCount > 0 || this.queuedPageTurnDirection !== 0) {
+      if (this.isPageTurning || this.queuedPageTurnCount > 0 || this.queuedPageTurnDirection !== 0 ||
+        !this.isReaderPageTurnPositionReadyForTts()) {
         this.scheduleMirroredTtsResumeAfterManualPageTurn();
         return;
       }
       const chapterIndex = this.currentChapterIndex;
       const pageIndex = this.currentPageIndex;
-      ReaderTtsFloatingSession.jumpToPosition(chapterIndex, pageIndex)
+      const pageStartOffset = this.getPageStartOffset(pageIndex);
+      ReaderTtsFloatingSession.jumpToPosition(chapterIndex, pageIndex, pageStartOffset)
         .then(() => {
           if (serial !== this.mirroredTtsManualTurnSerial) return;
           this.mirroredTtsManualTurnPending = false;
-          this.syncMirroredTtsFocus().catch((error: Error) => {
-            console.warn('手动翻页后同步后台朗读焦点失败:', error);
-          });
+          this.syncMirroredTtsFocus()
+            .then(() => this.scheduleCurrentTtsFocusRepublishAfterPageTurn())
+            .catch((error: Error) => {
+              console.warn('手动翻页后同步后台朗读焦点失败:', error);
+            });
         })
         .catch((error: Error) => {
           if (serial !== this.mirroredTtsManualTurnSerial) return;
           this.mirroredTtsManualTurnPending = false;
           console.warn('手动翻页提交后台朗读位置失败:', error);
-          this.syncMirroredTtsFocus().catch(() => {});
+          this.syncMirroredTtsFocus()
+            .then(() => this.scheduleCurrentTtsFocusRepublishAfterPageTurn())
+            .catch(() => {});
         });
     }, 48);
   }
@@ -18519,6 +19002,7 @@ struct ReadBookPage {
     const style = this.queuedPageTurnStyle;
     const releaseVelocity = this.queuedPageTurnVelocity;
     if (direction === 0 || this.queuedPageTurnCount <= 0) return;
+    const generation = this.queuedPageTurnGeneration;
     this.queuedPageTurnCount--;
     if (this.queuedPageTurnCount <= 0) {
       this.queuedPageTurnDirection = 0;
@@ -18526,8 +19010,18 @@ struct ReadBookPage {
       this.queuedPageTurnVelocity = 0;
     }
     setTimeout(() => {
+      if (generation !== this.queuedPageTurnGeneration) return;
       this.runPageTurnAnimation(direction, style, true, releaseVelocity);
     }, 0);
+  }
+
+  clearQueuedReaderPageTurns(): void {
+    this.queuedPageTurnGeneration++;
+    this.queuedPageTurnDirection = 0;
+    this.queuedPageTurnStyle = '';
+    this.queuedPageTurnCount = 0;
+    this.queuedPageTurnVelocity = 0;
+    this.queuedPageTurnGeneration++;
   }
 
   async runNoAnimationPageTurn(direction: number): Promise<void> {
@@ -18568,6 +19062,8 @@ struct ReadBookPage {
       this.displayPageChapterIndex === this.currentChapterIndex && this.displayPageIndex === this.currentPageIndex) {
       return;
     }
+    this.readerTextSelectionSerial++;
+    this.clearReaderV2SelectionOverlay();
     this.readerSourceActionAreas.clear();
     this.clearPendingReaderSourceActionBounds();
     this.currentPageText = nextText;
@@ -18863,6 +19359,13 @@ struct ReadBookPage {
     const source = this.buildPagedSourceText(chapterIndex, preparedBody);
     const result = this.getOrCreateReaderPagination(chapterIndex, source);
     if (result.pages.length === 0) {
+      return { text: '', pageIndex: 0, chapterIndex: chapterIndex };
+    }
+    // For a backward chapter turn, result.pages.length is authoritative only after pagination is
+    // complete. A cooperative V2 session initially contains the first spread, so treating its last
+    // currently-known page as the chapter tail makes simulation mode preview page one and then jump
+    // to the real last page after commit.
+    if (direction < 0 && !result.complete) {
       return { text: '', pageIndex: 0, chapterIndex: chapterIndex };
     }
     const pageIndex = direction > 0 ? 0 : this.normalizeReaderSpreadPageIndex(result.pages.length - 1);
@@ -19177,8 +19680,12 @@ struct ReadBookPage {
     this.readerPageCurlCapturePending = false;
     this.readerPageCurlSnapshotReady = true;
     this.drawReaderPageCurl();
-    if (oldFront) oldFront.release().catch(() => {});
-    if (oldBack) oldBack.release().catch(() => {});
+    // RenderService can still own the previous texture for the frame currently being submitted.
+    // Releasing it in the same task intermittently invalidates that frame during rapid queued turns.
+    setTimeout(() => {
+      if (oldFront) oldFront.release().catch(() => {});
+      if (oldBack) oldBack.release().catch(() => {});
+    }, 48);
   }
 
   async ensureReaderPageCurlReady(): Promise<boolean> {
@@ -19228,10 +19735,12 @@ struct ReadBookPage {
     const back = this.readerPageCurlBack;
     this.readerPageCurlFront = null;
     this.readerPageCurlBack = null;
+    // Keep the last raster alive for a few frames after hiding the curl Canvas. The RS submission is
+    // asynchronous; a zero-delay release races its final draw and can expose a transient unformatted page.
     setTimeout(() => {
       if (front) front.release().catch(() => {});
       if (back) back.release().catch(() => {});
-    }, 0);
+    }, 48);
   }
 
   animateReaderPageCurlOffset(targetOffset: number, duration: number,

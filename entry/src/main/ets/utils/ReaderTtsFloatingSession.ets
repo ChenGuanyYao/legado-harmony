@@ -5,7 +5,8 @@ export class ReaderTtsFloatingSession {
   private static stopAction: (() => Promise<void> | void) | null = null;
   private static previousAction: (() => void) | null = null;
   private static nextAction: (() => void) | null = null;
-  private static positionAction: ((chapterIndex: number, pageIndex: number) => Promise<void> | void) | null = null;
+  private static positionAction: ((chapterIndex: number, pageIndex: number,
+    sourceOffset: number) => Promise<void> | void) | null = null;
   private static speedAction: ((value: number) => void) | null = null;
   private static timerAction: ((minutes: number) => void) | null = null;
   private static voiceAction: (() => void) | null = null;
@@ -64,7 +65,7 @@ export class ReaderTtsFloatingSession {
   }
 
   static configurePositionControl(ownerId: string,
-    positionAction: (chapterIndex: number, pageIndex: number) => Promise<void> | void): void {
+    positionAction: (chapterIndex: number, pageIndex: number, sourceOffset: number) => Promise<void> | void): void {
     if (!ReaderTtsFloatingSession.isOwner(ownerId)) {
       return;
     }
@@ -295,9 +296,9 @@ export class ReaderTtsFloatingSession {
     if (action) action();
   }
 
-  static async jumpToPosition(chapterIndex: number, pageIndex: number): Promise<void> {
+  static async jumpToPosition(chapterIndex: number, pageIndex: number, sourceOffset: number = -1): Promise<void> {
     const action = ReaderTtsFloatingSession.positionAction;
-    if (action) await Promise.resolve(action(chapterIndex, pageIndex));
+    if (action) await Promise.resolve(action(chapterIndex, pageIndex, sourceOffset));
   }
 
   static setSpeed(value: number): void {

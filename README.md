@@ -5,7 +5,7 @@
 | 项目 | 信息 |
 | --- | --- |
 | 应用包名 | `io.legado.read` |
-| 当前版本 | `3.7.824`（以 `AppScope/app.json5` 为准） |
+| 当前版本 | `3.7.825`（以 `AppScope/app.json5` 为准） |
 | 支持设备 | `phone`、`tablet`、`2in1` |
 | 最低 API | HarmonyOS API 12 |
 | 目标 API | HarmonyOS API 23 |
@@ -59,7 +59,7 @@
 
 - 支持书籍详情、分页章节目录、正文解析与本地章节缓存；`nextTocUrl` 具备重复页去重和 1000 页保护上限，可覆盖常见超长篇目录。
 - 支持字号、行距、段落间距、四周边距、自定义字体、背景、深色模式和沉浸式布局。
-- 支持横向滑动、仿真翻页、滚动阅读、横屏双页，以及章节间预览和预缓存；双页以阅读区域实际宽度大于高度为启用条件，不只依赖设备类型，因此平板竖屏不会误启用。
+- 支持横向滑动、仿真翻页、滚动阅读、横屏双页，以及章节间预览和预缓存；仿真翻页使用独立的页面卷曲渲染层，双页以阅读区域实际宽度大于高度为启用条件，不只依赖设备类型，因此平板竖屏不会误启用。
 - 支持正文扩展至状态栏、书签、正文替换规则、章节评论和书源显式提供的网页交互标记。
 - 支持漫画连续全宽阅读，以及携带书源请求头、Cookie 或解码规则的远程图片。
 - 网页动作、图片和媒体标记不会混入朗读文本。
@@ -67,7 +67,7 @@
 
 ### 朗读与有声书
 
-- 支持系统 TTS、自定义 HTTP TTS、语速、定时停止、章节切换、后台朗读和系统媒体控制。
+- 支持系统 TTS、自定义 HTTP TTS、语速、定时停止、章节切换、后台朗读和系统媒体控制；朗读状态可通过全局浮动控制会话在阅读页与书架之间继续操作。
 - 可导入原版 `HttpTTS` JSON，也可在应用内手动新建、编辑和排序自定义音色，并配置请求 URL、请求头、Content-Type、并发数、登录地址、脚本库和 Cookie jar。
 - 系统 TTS 与 HTTP TTS 优先通过 PCM 和 `AudioRenderer` 输出，并结合音频预取与播放状态保护提升连续性。
 - 有声书使用独立远程播放器，支持进度、倍速、目录跳转、定时停止和音色代码。
@@ -88,7 +88,7 @@
 - URL 请求选项中的 `webView: true` 会显式改走隐藏 ArkWeb，等待页面稳定后返回 DOM；`webJs` 可在该页面上下文中生成最终响应。
 - JSONPath、CSS、基础 XPath、旧式链式规则、属性提取、规则分段和正则后处理。
 - `<js>` / `@js:` 混合规则；轻量兼容引擎负责常用表达式与主机函数，复杂 JavaScript 可按搜索、发现、详情、目录和正文阶段路由到受控 ArkWeb 环境。
-- 原生 QuickJS 已接入启动自检和纯表达式影子比对；当前默认 `SHADOW` 模式下仍以既有兼容引擎结果为准，不会重复执行网络、Cookie 或持久化动作。
+- 原生 QuickJS 已接入启动自检、持久化影子诊断、合格指纹灰度接管、失败回退和熔断；默认仍为 `SHADOW`，可在“其他设置 → 脚本引擎迁移”查看或切换。“书源脚本回归测试”已形成离线回归 → 真实上下文影子验证 → 灰度接管闭环，并按书源、阶段和字段分别展示晋级状态。
 - 常见 `java.xxx`、`source.xxx`、`book.xxx`、`cache.xxx` 和 `cookie.xxx` 主机函数。
 - Base64、Hex、摘要、URL/HTML 编解码、对称加密和标准 `data:` 数据。
 - 动态登录面板、`startBrowserAwait`、登录页脚本、验证码跳转和跨地址 Cookie 同步。
@@ -151,8 +151,8 @@ legado-harmony/
 | --- | --- |
 | 主模块 | `entry` |
 | 入口 Ability | `EntryAbility` |
-| `versionName` | `3.7.824` |
-| `versionCode` / `buildVersion` | `370824` |
+| `versionName` | `3.7.825` |
+| `versionCode` / `buildVersion` | `370825` |
 | `minAPIVersion` | `12` |
 | `targetAPIVersion` | `23` |
 | 权限 | `INTERNET`、`KEEP_BACKGROUND_RUNNING` |
@@ -220,7 +220,7 @@ node scripts/theme-framework-check.mjs
 | `[InteractionPostProcessor]` | 评论、正文动作和媒体标记 |
 | `[TTS]` / `[HttpTtsReader]` | 系统 TTS 与 HTTP TTS |
 | `[RemoteAudioPlayback]` | 有声书请求、预取和播放状态 |
-| `[QuickJS]` / `[QuickJSShadow]` | 原生运行时自检及纯表达式影子比对 |
+| `[QuickJS]` / `[QuickJSShadow]` | 原生运行时自检、纯表达式影子比对及灰度路由 |
 | `[ReaderOpen]` | 打开书籍、路由、首屏和分页阶段耗时 |
 
 建议按“搜索结果 → 详情地址 → 详情解析 → 目录 → 正文 → 发现”的顺序排查。遇到登录或验证码响应时，先在验证页完成登录并同步 Cookie，再重试相应链路。
@@ -229,7 +229,7 @@ node scripts/theme-framework-check.mjs
 
 - 书源兼容层不是完整的 Android Java/WebView 环境。
 - 分阶段 ArkWeb 只开放受控桥接；`fetch`、`XMLHttpRequest`、`WebSocket`、任意 Java 导入、文件、进程、反射和系统组件不会自动可用。
-- QuickJS 当前处于影子校验阶段，只接受无主机副作用的短纯表达式；选择器、网络、Cookie、书源变量和复杂阶段脚本仍由现有解析器或 ArkWeb 执行。
+- QuickJS 当前只接受无主机副作用的短纯表达式；默认影子校验，灰度模式只接管累计至少 4 次一致且零差异、零失败的指纹，异常会回退并在连续失败时自动熔断。选择器、网络、Cookie、书源变量和复杂阶段脚本仍由现有解析器或 ArkWeb 执行。
 - `webView: true` 仅支持书源明确给出的 HTTP(S) GET/POST 地址，并在已挂载隐藏 ArkWeb 的页面中串行执行；它不承诺自动通过交互式验证码、证书错误、浏览器指纹或所有反自动化挑战。
 - 依赖浏览器指纹、长期动态渲染、强反爬、付费权限或私有登录流程的站点不保证支持。
 - 私有评论、音频或聚合协议仍受服务授权、会话 Token 和接口变更影响。

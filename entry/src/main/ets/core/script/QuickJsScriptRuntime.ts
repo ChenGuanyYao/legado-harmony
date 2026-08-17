@@ -1,5 +1,6 @@
 import { JSBoundedExecutionResult, JSContext, JSRuntimeOptions } from '@devzeng/quickjs';
-import { QuickJsRuntimeMode, QuickJsRuntimeStatus } from './QuickJsRuntimeStatus';
+import { QuickJsObservationContext, QuickJsRuntimeMode, QuickJsRuntimeStatus } from './QuickJsRuntimeStatus';
+import { QuickJsValidationStore } from './QuickJsValidationStore';
 
 export class QuickJsExpressionResult {
   success: boolean = false;
@@ -23,12 +24,20 @@ export class QuickJsScriptRuntime {
   static isPureExpressionCandidate(expression: string): boolean {
     const code = QuickJsScriptRuntime.normalizeExpression(expression);
     if (!code || code.length > QuickJsScriptRuntime.MAX_SCRIPT_LENGTH) return false;
+    // JSONPath and Legado replacement operators are rule-language syntax, not JavaScript.  In
+    // particular `$` is an object in the full field runtime, while the bounded QuickJS bridge
+    // intentionally accepts primitive bindings only.  Keep these expressions on the legacy
+    // path until structured bindings are represented explicitly.
+    const syntax = QuickJsScriptRuntime.stripLiterals(code);
+    if (syntax.includes('##') || /(^|[^A-Za-z0-9_$])\$(?![A-Za-z0-9_$])/.test(syntax) ||
+      /(^|[^A-Za-z0-9_$])@(?:\.|\[)/.test(syntax)) return false;
     if (/[;{}]/.test(code)) return false;
     if (/(^|[^=!<>])=(?!=|>)/.test(code)) return false;
     if (/\+\+|--/.test(code)) return false;
     if (/\b(?:var|let|const|function|class|while|for|do|switch|try|catch|throw|return|await|yield|import|export|delete|new)\b/.test(code)) return false;
     if (/\b(?:java|cookie|source|book|chapter|fetch|request|webView|WebView|Packages|android|crypto|eval|Function|globalThis|performance)\b/.test(code)) return false;
     if (/\bDate\b|Math\.random\s*\(/.test(code)) return false;
+    if (QuickJsScriptRuntime.hasUnknownBareCall(code)) return false;
     return true;
   }
 
@@ -82,6 +91,31 @@ export class QuickJsScriptRuntime {
     return (expression || '').trim().replace(/^return\s+/, '').replace(/;\s*$/, '').trim();
   }
 
+  private static hasUnknownBareCall(code: string): boolean {
+    const safeCalls = ['String', 'Number', 'Boolean', 'RegExp', 'parseInt', 'parseFloat', 'isNaN',
+      'encodeURIComponent', 'encodeURI', 'decodeURIComponent', 'decodeURI'];
+    // Remove literals before looking for calls so text and regular-expression groups do not look
+    // like executable identifiers. Method calls are allowed; only unqualified host/jsLib calls
+    // need to remain on the full runtime.
+    const scan = QuickJsScriptRuntime.stripLiterals(code);
+    const calls = /[A-Za-z_$][A-Za-z0-9_$]*\s*\(/g;
+    let match: RegExpExecArray | null = null;
+    while ((match = calls.exec(scan)) !== null) {
+      const raw = match[0];
+      const name = raw.substring(0, raw.indexOf('(')).trim();
+      const previous = match.index > 0 ? scan.charAt(match.index - 1) : '';
+      if (previous === '.' || safeCalls.includes(name)) continue;
+      return true;
+    }
+    return false;
+  }
+
+  private static stripLiterals(code: string): string {
+    return code
+      .replace(/(['"`])(?:\\.|(?!\1)[\s\S])*?\1/g, ' ')
+      .replace(/\/(?:\\.|[^/\\\r\n])+\/[dgimsuvy]*/g, ' ');
+  }
+
   private static isSafeIdentifier(key: string): boolean {
     if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)) return false;
     return !/^(?:break|case|catch|class|const|continue|debugger|default|delete|do|else|export|extends|finally|for|function|if|import|in|instanceof|let|new|return|super|switch|this|throw|try|typeof|var|void|while|with|yield|await|enum|implements|interface|package|private|protected|public|static)$/.test(key);
@@ -107,19 +141,25 @@ export class QuickJsShadowComparator {
   private static samples: number = 0;
   private static samplesByFingerprint: Record<string, number> = {};
 
-  static compare(expression: string, variables: Record<string, string>, legacyValue: string): void {
+  static compare(expression: string, variables: Record<string, string>, legacyValue: string,
+    observation: QuickJsObservationContext | null = null): void {
+    const validationTarget = QuickJsValidationStore.isValidationTarget(observation,
+      QuickJsShadowComparator.fingerprint(expression));
     if (!QuickJsRuntimeStatus.isHealthy() ||
       QuickJsRuntimeStatus.getMode() !== QuickJsRuntimeMode.SHADOW ||
-      QuickJsShadowComparator.samples >= QuickJsShadowComparator.MAX_SAMPLES ||
+      (!validationTarget && QuickJsShadowComparator.samples >= QuickJsShadowComparator.MAX_SAMPLES) ||
       !QuickJsScriptRuntime.isPureExpressionCandidate(expression)) {
       return;
     }
     const submitter = QuickJsRuntimeStatus.getShadowSubmitter();
     if (!submitter) return;
     const fingerprint = QuickJsShadowComparator.fingerprint(expression);
-    const fingerprintSamples = QuickJsShadowComparator.samplesByFingerprint[fingerprint] || 0;
-    // A second observation catches value-dependent coercion while preserving room for other rules.
-    if (fingerprintSamples >= 2) return;
+    const sampleKey = observation ? `${observation.sourceUrl}\n${observation.stage}\n${observation.field}\n${fingerprint}` :
+      fingerprint;
+    const fingerprintSamples = QuickJsShadowComparator.samplesByFingerprint[sampleKey] || 0;
+    // A targeted validation session needs four real observations to reach the canary gate.
+    // Ordinary shadow mode remains capped at two observations per fingerprint.
+    if (fingerprintSamples >= (validationTarget ? 4 : 2)) return;
     const bindings: Record<string, number | string | boolean> = {};
     const keys = Object.keys(variables);
     for (let index = 0; index < keys.length; index++) {
@@ -127,13 +167,19 @@ export class QuickJsShadowComparator {
       const value = variables[key] || '';
       bindings[key] = /^-?(?:\d+\.?\d*|\.\d+)$/.test(value) ? Number(value) : value;
     }
-    const sample = QuickJsShadowComparator.samples + 1;
-    if (!submitter.submit(expression, JSON.stringify(bindings), legacyValue, fingerprint, sample)) return;
-    QuickJsShadowComparator.samplesByFingerprint[fingerprint] = fingerprintSamples + 1;
-    QuickJsShadowComparator.samples = sample;
+    const sample = validationTarget ? fingerprintSamples + 1 : QuickJsShadowComparator.samples + 1;
+    if (!submitter.submit(expression, JSON.stringify(bindings), legacyValue, fingerprint, sample,
+      observation)) return;
+    QuickJsShadowComparator.samplesByFingerprint[sampleKey] = fingerprintSamples + 1;
+    if (!validationTarget) QuickJsShadowComparator.samples = sample;
   }
 
-  private static fingerprint(value: string): string {
+  static resetSampling(): void {
+    QuickJsShadowComparator.samples = 0;
+    QuickJsShadowComparator.samplesByFingerprint = {};
+  }
+
+  static fingerprint(value: string): string {
     let hash = 2166136261;
     for (let index = 0; index < value.length; index++) {
       hash ^= value.charCodeAt(index);

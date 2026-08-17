@@ -155,8 +155,15 @@ export class ReaderV2SpeechText {
 
   sourceOffsetAt(speechOffset: number): number {
     const target = Math.max(0, Math.min(this.text.length, speechOffset));
-    for (const segment of this.segments) {
+    for (let index = 0; index < this.segments.length; index++) {
+      const segment = this.segments[index];
       if (target < segment.speechStart || target > segment.speechEnd) continue;
+      // Hidden action markers do not occupy speech text. The segment before and after a marker
+      // therefore share one speech boundary. Prefer the following segment at that boundary so
+      // the first sentence after a paragraph comment maps after the marker instead of jumping
+      // back to the previous page.
+      const next = index + 1 < this.segments.length ? this.segments[index + 1] : null;
+      if (target === segment.speechEnd && next && next.speechStart === target) continue;
       return segment.sourceStart + Math.max(0, Math.min(segment.sourceEnd - segment.sourceStart,
         target - segment.speechStart));
     }
