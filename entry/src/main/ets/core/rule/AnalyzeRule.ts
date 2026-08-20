@@ -2347,6 +2347,13 @@ export class AnalyzeRule {
       const rule = expr.trim();
       const javaTime = this.evalJavaTimeFormatTemplate(rule);
       if (javaTime !== null) return javaTime;
+      // Evaluate nested Java helpers as one expression so calls such as
+      // java.put(key, java.timeFormatUTC(java.getString(path), format, zone)) both return the
+      // formatted value and update the shared RuleContext for a following @get rule.
+      if (rule.includes('java.')) {
+        const engineValue = this.scriptEngine.evalBlock(rule, this.scriptEnv());
+        if (engineValue.handled) return engineValue.value;
+      }
       if (this.indexOfTopLevel(rule, '?') >= 0 || /java\.(?:getString|getElement)\s*\(/.test(rule)) {
         const expressionValue = this.evalSimpleJsExpression(rule, {});
         if (expressionValue !== null) return expressionValue;
@@ -2389,9 +2396,11 @@ export class AnalyzeRule {
   }
 
   private evalJavaTimeFormatTemplate(rule: string): string | null {
-    if (!rule.startsWith('java.timeFormat')) return null;
+    // Keep this legacy shortcut scoped to the one-argument local-time helper. Variants such as
+    // timeFormatUTC(value, pattern, zone) must continue through ScriptEngine's generic Java bridge.
+    if (!/^java\.timeFormat\s*\(/.test(rule)) return null;
     const match = rule.match(/^java\.timeFormat\(\s*java\.getString\(\s*["']([^"']+)["']\s*\)\s*(?:\*\s*(\d+))?\s*\)$/);
-    if (!match) return '';
+    if (!match) return null;
     const raw = this.getJavaString(match[1]);
     const multiplier = match[2] ? Number(match[2]) : 1;
     const timestamp = Number(raw) * multiplier;

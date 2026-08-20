@@ -30,9 +30,11 @@ export class ReaderPageCurlPainter {
   // The curl is almost linear on the vertical axis. A shallow vertical mesh keeps the S-shaped
   // fold while cutting clipped PixelMap draws substantially. A double-page leaf is only half as
   // wide, so eight columns retain roughly the same visual sampling density as a full-width leaf.
-  private readonly singlePageMeshColumns: number = 14;
-  private readonly doublePageMeshColumns: number = 8;
-  private readonly meshRows: number = 2;
+  private readonly singlePageMeshColumns: number = 8;
+  private readonly doublePageMeshColumns: number = 5;
+  // mapPoint keeps Y unchanged, so additional horizontal rows produce identical geometry while multiplying
+  // full-page PixelMap draws. One row preserves the vertical fold exactly and substantially reduces UI work.
+  private readonly meshRows: number = 1;
   // The fold radius is still about 0.115 leaf widths at the final frame. Travelling beyond
   // 1 + radius keeps the last folded strip fully outside the viewport instead of freezing
   // visibly while the reader commits the incoming page.
@@ -40,24 +42,29 @@ export class ReaderPageCurlPainter {
 
   draw(context: CanvasRenderingContext2D, front: image.PixelMap, back: image.PixelMap,
     canvasWidth: number, canvasHeight: number, progress: number, direction: number,
-    doublePage: boolean, darkMode: boolean): void {
+    doublePage: boolean, darkMode: boolean, doubleLeafWidth: number = 0,
+    doubleRightOrigin: number = 0): void {
     const width = Math.max(1, canvasWidth);
     const height = Math.max(1, canvasHeight);
-    const leafWidth = doublePage ? width / 2 : width;
+    const leafWidth = doublePage && doubleLeafWidth > 0 ? Math.min(width, doubleLeafWidth) :
+      (doublePage ? width / 2 : width);
+    const rightOrigin = doublePage && doubleRightOrigin > 0 ?
+      Math.min(width - leafWidth, doubleRightOrigin) : width - leafWidth;
     const safeProgress = Math.max(0, Math.min(1, progress));
     context.clearRect(0, 0, width, height);
     context.imageSmoothingEnabled = true;
     context.save();
     if (safeProgress <= 0.001) {
-      const startX = doublePage && direction > 0 ? leafWidth : 0;
+      const startX = doublePage && direction > 0 ? rightOrigin : 0;
       context.drawImage(front, startX, 0, leafWidth, height);
       context.restore();
       return;
     }
 
-    this.drawCastShadow(context, width, height, leafWidth, safeProgress, direction, doublePage,
+    this.drawCastShadow(context, width, height, leafWidth, rightOrigin, safeProgress, direction, doublePage,
       darkMode);
-    const triangles = this.buildTriangles(width, height, leafWidth, safeProgress, direction, doublePage);
+    const triangles = this.buildTriangles(width, height, leafWidth, rightOrigin, safeProgress, direction,
+      doublePage);
     this.drawFace(context, triangles, front, leafWidth, height, 1, darkMode, false);
     // The landed double-page mesh reverses its horizontal axis when the right leaf moves onto
     // the left side (and vice versa). Pre-mirror only the paper-back texture so the composed
@@ -66,7 +73,7 @@ export class ReaderPageCurlPainter {
     context.restore();
   }
 
-  private buildTriangles(canvasWidth: number, canvasHeight: number, leafWidth: number,
+  private buildTriangles(canvasWidth: number, canvasHeight: number, leafWidth: number, rightOrigin: number,
     progress: number, direction: number, doublePage: boolean): CurlTriangle[] {
     const triangles: CurlTriangle[] = [];
     const points: CurlPoint[] = [];
@@ -76,7 +83,7 @@ export class ReaderPageCurlPainter {
     for (let row = 0; row <= this.meshRows; row++) {
       const y = row * dy;
       for (let column = 0; column <= meshColumns; column++) {
-        points.push(this.mapPoint(column * dx, y, canvasWidth, leafWidth, progress,
+        points.push(this.mapPoint(column * dx, y, canvasWidth, leafWidth, rightOrigin, progress,
           direction, doublePage));
       }
     }
@@ -118,6 +125,7 @@ export class ReaderPageCurlPainter {
   }
 
   private mapPoint(sourceX: number, sourceY: number, canvasWidth: number, leafWidth: number,
+    rightOrigin: number,
     progress: number, direction: number, doublePage: boolean): CurlPoint {
     const canonicalX = direction > 0 ? sourceX : leafWidth - sourceX;
     // Keep the curl axis vertical. The previous tilted-axis projection mixed the horizontal curl distance into
@@ -157,7 +165,13 @@ export class ReaderPageCurlPainter {
       }
     }
     const mappedX = mappedNormal;
-    const canonicalOrigin = doublePage ? leafWidth : 0;
+    // The physical spread contains a divider between leaves. Start the moving sheet at the real right-page
+    // origin, then close only that divider gap as the sheet settles onto the opposite page. Keeping the origin
+    // at width/2 throughout either displaced the live right page initially or left the landed page shifted by
+    // the divider width.
+    const landingSettle = doublePage ? this.doublePageSettleProgress(progress) : 0;
+    const pageGap = Math.max(0, rightOrigin - leafWidth);
+    const canonicalOrigin = doublePage ? leafWidth + pageGap * (1 - landingSettle) : 0;
     const canonicalGlobalX = canonicalOrigin + mappedX;
     return {
       x: direction > 0 ? canonicalGlobalX : canvasWidth - canonicalGlobalX,
@@ -254,7 +268,8 @@ export class ReaderPageCurlPainter {
   }
 
   private drawCastShadow(context: CanvasRenderingContext2D, canvasWidth: number, canvasHeight: number,
-    leafWidth: number, progress: number, direction: number, doublePage: boolean, darkMode: boolean): void {
+    leafWidth: number, rightOrigin: number, progress: number, direction: number, doublePage: boolean,
+    darkMode: boolean): void {
     const shadowWidth = leafWidth * (0.12 + 0.11 * Math.sin(progress * Math.PI));
     const edge: CurlPoint[] = [];
     for (let index = 0; index <= 10; index++) {
@@ -262,7 +277,7 @@ export class ReaderPageCurlPainter {
       const sourceX = leafWidth * Math.min(1, Math.max(0, 1 - progress * this.pageTravelFactor +
         (0.5 * Math.PI) * (0.115 + 0.065 * Math.sin(progress * Math.PI))));
       edge.push(this.mapPoint(direction > 0 ? sourceX : leafWidth - sourceX, y, canvasWidth,
-        leafWidth, progress, direction, doublePage));
+        leafWidth, rightOrigin, progress, direction, doublePage));
     }
     context.save();
     context.beginPath();

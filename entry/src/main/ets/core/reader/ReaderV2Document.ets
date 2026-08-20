@@ -186,11 +186,18 @@ export class ReaderV2SpeechText {
     const result = new ReaderV2SpeechText();
     result.sourceStart = Math.max(0, Math.min(document.sourceText.length, sourceStart));
     let sourceCursor = result.sourceStart;
+    const containingMarker = ReaderActionMarker.findRawRangeContaining(document.sourceText, sourceCursor);
+    if (containingMarker.length >= 2) {
+      // A saved page boundary from an older layout can point into a compact action marker. Starting a speech
+      // substring there bypasses the normal marker scanner and exposes dimensions/scripts as spoken正文.
+      sourceCursor = containingMarker[1];
+      result.sourceStart = sourceCursor;
+    }
     let speechCursor = 0;
     let text = '';
     while (sourceCursor < document.sourceText.length) {
-      const match = ReaderActionMarker.findFirst(document.sourceText.substring(sourceCursor));
-      const actionStart = match ? sourceCursor + match.start : document.sourceText.length;
+      const bounds = ReaderActionMarker.findFirstRawRange(document.sourceText, sourceCursor);
+      const actionStart = bounds.length >= 2 ? bounds[0] : document.sourceText.length;
       if (actionStart > sourceCursor) {
         const plain = document.sourceText.substring(sourceCursor, actionStart);
         text += plain;
@@ -198,8 +205,8 @@ export class ReaderV2SpeechText {
           sourceCursor, actionStart));
         speechCursor += plain.length;
       }
-      if (!match) break;
-      sourceCursor += match.end;
+      if (bounds.length < 2) break;
+      sourceCursor = bounds[1];
     }
     result.text = text;
     return result;
@@ -207,6 +214,8 @@ export class ReaderV2SpeechText {
 }
 
 export class ReaderV2DocumentParser {
+  private static readonly MAX_ACTIONS_PER_CHAPTER: number = 320;
+
   static parse(source: string, chapterIndex: number, chapterTitle: string): ReaderV2Document {
     const document = new ReaderV2Document();
     document.chapterIndex = chapterIndex;
@@ -218,8 +227,10 @@ export class ReaderV2DocumentParser {
     let actionIndex = 0;
     let display = '';
     while (sourceCursor < document.sourceText.length) {
-      const actionMatch = ReaderActionMarker.findFirst(document.sourceText.substring(sourceCursor));
-      if (!actionMatch) {
+      // Search the original chapter with an absolute cursor. Repeatedly slicing the entire remaining chapter
+      // made a comment-heavy source allocate O(actions * chapterLength) temporary strings while opening.
+      const rawBounds = ReaderActionMarker.findFirstRawRange(document.sourceText, sourceCursor);
+      if (rawBounds.length < 2) {
         const tail = document.sourceText.substring(sourceCursor);
         display += tail;
         document.offsets.push(new ReaderV2OffsetSegment(sourceCursor, document.sourceText.length,
@@ -229,8 +240,8 @@ export class ReaderV2DocumentParser {
         break;
       }
 
-      const absoluteStart = sourceCursor + actionMatch.start;
-      const absoluteEnd = sourceCursor + actionMatch.end;
+      const absoluteStart = rawBounds[0];
+      const absoluteEnd = rawBounds[1];
       if (absoluteStart > sourceCursor) {
         const before = document.sourceText.substring(sourceCursor, absoluteStart);
         display += before;
@@ -239,6 +250,17 @@ export class ReaderV2DocumentParser {
         displayCursor += before.length;
       }
 
+      const actionMatch = ReaderActionMarker.findFirst(document.sourceText, sourceCursor);
+      const validAction = actionMatch && actionMatch.start === absoluteStart && actionMatch.end === absoluteEnd &&
+        actionIndex < ReaderV2DocumentParser.MAX_ACTIONS_PER_CHAPTER;
+      if (!validAction || !actionMatch) {
+        // Damaged and excessive markers are provider metadata, not正文. Drop only the marker and retain an
+        // explicit zero-width mapping so progress/TTS offsets continue past it without exposing its payload.
+        document.offsets.push(new ReaderV2OffsetSegment(absoluteStart, absoluteEnd,
+          displayCursor, displayCursor));
+        sourceCursor = absoluteEnd;
+        continue;
+      }
       const label = ReaderV2DocumentParser.actionLabel(actionMatch);
       const labelStart = displayCursor;
       display += label;

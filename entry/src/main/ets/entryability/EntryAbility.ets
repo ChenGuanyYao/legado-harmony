@@ -124,6 +124,8 @@ export default class EntryAbility extends UIAbility {
     PersistentStorage.persistProp('readerVolumeTurnPage', false);
     PersistentStorage.persistProp('readerKeepScreenOn', true);
     PersistentStorage.persistProp('readerExtendToStatusBar', false);
+    PersistentStorage.persistProp('readerLastPageViewWidth', 0);
+    PersistentStorage.persistProp('readerLastPageViewHeight', 0);
     PersistentStorage.persistProp('bookshelfShowTags', true);
     PersistentStorage.persistProp('bookshelfShowSource', true);
     PersistentStorage.persistProp('bookshelfShowIntro', true);
@@ -277,6 +279,7 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onForeground');
+    AppStorage.setOrCreate<number>('appLifecycleForegroundRevision', Date.now());
     ThemeTrialManager.stopIfExpired();
     this.syncSystemColorMode(this.context.config);
     this.accountBootstrapPromise
@@ -324,6 +327,9 @@ export default class EntryAbility extends UIAbility {
 
   onBackground(): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onBackground');
+    // Page.onPageShow is shared by real route returns and a simple Home/lock-screen resume. Publish a
+    // background revision so retained pages do not treat the foreground transition as a settings change.
+    AppStorage.setOrCreate<number>('appLifecycleBackgroundRevision', Date.now());
     ReaderProgressCheckpoint.request('ability-background').then(() => {
       // Keep the background upload behind the local checkpoint so it cannot publish a stale page number.
       return CloudSyncCoordinator.syncAutomatically(

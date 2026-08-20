@@ -396,8 +396,8 @@ export class SearchCoordinator {
         }
         const book = new SearchBook();
         const fieldValues = itemIndex < fieldBatch.values.length ? fieldBatch.values[itemIndex] : {};
-        book.name = fieldValues['name'] || '';
-        book.author = fieldValues['author'] || '';
+        book.name = BookFieldSanitizer.clean(fieldValues['name'] || '');
+        book.author = BookFieldSanitizer.clean(fieldValues['author'] || '');
         const sourceApiRecord = this.parseJsonRecord(item);
         if (sourceApiRecord) {
           if (!book.name) book.name = String(sourceApiRecord['name'] || sourceApiRecord['bookName'] ||
@@ -415,10 +415,10 @@ export class SearchCoordinator {
 
         book.coverUrl = BookSourceDataUrlSupport.normalizeCoverUrlFromItem(source,
           fieldValues['coverUrl'] || '', item, baseUrl);
-        book.intro = fieldValues['intro'] || '';
-        book.kind = fieldValues['kind'] || '';
-        book.latestChapterTitle = fieldValues['lastChapter'] || '';
-        book.wordCount = fieldValues['wordCount'] || '';
+        book.intro = BookFieldSanitizer.clean(fieldValues['intro'] || '');
+        book.kind = BookFieldSanitizer.clean(fieldValues['kind'] || '');
+        book.latestChapterTitle = BookFieldSanitizer.clean(fieldValues['lastChapter'] || '');
+        book.wordCount = BookFieldSanitizer.clean(fieldValues['wordCount'] || '');
         if (sourceApiRecord) {
           if (!book.coverUrl) book.coverUrl = String(sourceApiRecord['cover'] || sourceApiRecord['coverUrl'] || '');
           if (!book.intro) book.intro = String(sourceApiRecord['desc'] || sourceApiRecord['intro'] ||

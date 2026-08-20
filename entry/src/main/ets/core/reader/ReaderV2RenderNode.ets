@@ -8,7 +8,11 @@ import {
   Position
 } from '@ohos.arkui.node';
 import graphicsText from '@ohos.graphics.text';
-import { ReaderV2PageFragment, ReaderV2PageLayout } from './ReaderV2PageLayout';
+import {
+  ReaderV2PageFragment,
+  ReaderV2PageLayout,
+  ReaderV2RegexBubbleSegment
+} from './ReaderV2PageLayout';
 
 class ReaderV2PageFrameNode extends FrameNode {
   private page: ReaderV2PageLayout | null = null;
@@ -53,6 +57,15 @@ class ReaderV2PageFrameNode extends FrameNode {
   onDraw(context: DrawContext): void {
     if (!this.page) return;
     const canvas = context.canvas;
+    // Bubble decoration and glyphs must be submitted by the same retained node. The previous ArkUI overlay was
+    // keyed independently from this FrameNode, so a forward/back turn could update the glyph page first while
+    // leaving the old page's bubble rectangles mounted. Painting both layers here also removes dozens of
+    // Row/Image nodes from simulation snapshots on dialogue-heavy chapters.
+    for (const fragment of this.page.fragments) {
+      for (const segment of fragment.regexBubbleSegments) {
+        this.drawRegexBubble(canvas, segment);
+      }
+    }
     for (const fragment of this.page.fragments) {
       if (!fragment.paragraph) continue;
       canvas.save();
@@ -67,6 +80,63 @@ class ReaderV2PageFrameNode extends FrameNode {
       fragment.paragraph.paint(canvas, fragment.paragraphX, fragment.paragraphY);
       canvas.restore();
     }
+  }
+
+  private drawRegexBubble(canvas: drawing.Canvas, segment: ReaderV2RegexBubbleSegment): void {
+    const left = segment.rect.left;
+    const top = segment.rect.top;
+    const right = segment.rect.right;
+    const bottom = segment.rect.bottom;
+    if (right <= left || bottom <= top) return;
+
+    const brush = new drawing.Brush();
+    brush.setColor(segment.backgroundColor);
+    if (segment.shadowEnabled && segment.shadowRadiusPx > 0) {
+      try {
+        brush.setShadowLayer(drawing.ShadowLayer.create(segment.shadowRadiusPx,
+          segment.shadowOffsetXPx, segment.shadowOffsetYPx, segment.shadowColor));
+      } catch (_) {
+      }
+    }
+    const radius = Math.max(0, Math.min((right - left) / 2, (bottom - top) / 2,
+      segment.radiusTopLeftPx, segment.radiusTopRightPx,
+      segment.radiusBottomRightPx, segment.radiusBottomLeftPx));
+    const roundRect = new drawing.RoundRect({ left: left, top: top, right: right, bottom: bottom }, radius, radius);
+    roundRect.setCorner(drawing.CornerPos.TOP_LEFT_POS, segment.radiusTopLeftPx, segment.radiusTopLeftPx);
+    roundRect.setCorner(drawing.CornerPos.TOP_RIGHT_POS, segment.radiusTopRightPx, segment.radiusTopRightPx);
+    roundRect.setCorner(drawing.CornerPos.BOTTOM_RIGHT_POS,
+      segment.radiusBottomRightPx, segment.radiusBottomRightPx);
+    roundRect.setCorner(drawing.CornerPos.BOTTOM_LEFT_POS,
+      segment.radiusBottomLeftPx, segment.radiusBottomLeftPx);
+    canvas.attachBrush(brush);
+    canvas.drawRoundRect(roundRect);
+    canvas.detachBrush();
+
+    // The original cap is a tiny decorative diamond. Draw it directly so it remains page-atomic without adding
+    // Image components back to the snapshot tree.
+    const capHalf = Math.max(2, Math.min(6, segment.capSizePx * 0.18));
+    if (segment.leading) {
+      const centerX = left + Math.max(capHalf + 1, segment.leadingCapWidthPx * 0.5);
+      this.drawRegexBubbleCap(canvas, centerX, (top + bottom) / 2, capHalf);
+    }
+    if (segment.trailing) {
+      const centerX = right - Math.max(capHalf + 1, segment.trailingCapWidthPx * 0.5);
+      this.drawRegexBubbleCap(canvas, centerX, (top + bottom) / 2, capHalf);
+    }
+  }
+
+  private drawRegexBubbleCap(canvas: drawing.Canvas, centerX: number, centerY: number, half: number): void {
+    const path = new drawing.Path();
+    path.moveTo(centerX, centerY - half);
+    path.lineTo(centerX + half, centerY);
+    path.lineTo(centerX, centerY + half);
+    path.lineTo(centerX - half, centerY);
+    path.close();
+    const brush = new drawing.Brush();
+    brush.setColor(0xFFC4544D);
+    canvas.attachBrush(brush);
+    canvas.drawPath(path);
+    canvas.detachBrush();
   }
 
   private drawRange(canvas: drawing.Canvas, fragment: ReaderV2PageFragment,
@@ -111,17 +181,31 @@ export class ReaderV2PageNodeController extends NodeController {
   }
 
   updatePage(page: ReaderV2PageLayout | null): void {
+    // ArkUI reevaluates the reader Builder for every page-curl animation frame. The settled page object does not
+    // change during those frames, so invalidating its native RenderNode each time only resubmits identical glyphs
+    // and can expose a one-frame baseline/layout fluctuation during rapid turns.
+    if (this.page === page) return;
     this.page = page;
-    this.publish();
+    if (this.node) {
+      // RenderNode.invalidate() is not sufficient on every HarmonyOS build when a NodeContainer keeps the same
+      // controller: the footer/state advances but the custom FrameNode may continue submitting the old page.
+      // Rebuild only this lightweight native node at the settled page handoff. The incoming animation leaf remains
+      // above it for one frame, so the replacement is both deterministic and visually continuous.
+      this.rebuild();
+    } else {
+      this.publish();
+    }
   }
 
   updateHighlight(start: number, end: number): void {
+    if (this.highlightStart === start && this.highlightEnd === end) return;
     this.highlightStart = start;
     this.highlightEnd = end;
     this.publish();
   }
 
   updateSelection(start: number, end: number): void {
+    if (this.selectionStart === start && this.selectionEnd === end) return;
     this.selectionStart = start;
     this.selectionEnd = end;
     this.publish();

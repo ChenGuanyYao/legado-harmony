@@ -229,14 +229,14 @@ export class ExploreCoordinator {
         }
         const book = new SearchBook();
         const fieldValues = itemIndex < fieldBatch.values.length ? fieldBatch.values[itemIndex] : {};
-        book.name = fieldValues['name'] || '';
-        book.author = fieldValues['author'] || '';
+        book.name = BookFieldSanitizer.clean(fieldValues['name'] || '');
+        book.author = BookFieldSanitizer.clean(fieldValues['author'] || '');
         book.coverUrl = BookSourceDataUrlSupport.normalizeCoverUrlFromItem(source,
           fieldValues['coverUrl'] || '', item, baseUrl);
         book.intro = BookFieldSanitizer.clean(fieldValues['intro'] || '');
-        book.kind = fieldValues['kind'] || '';
-        book.latestChapterTitle = fieldValues['lastChapter'] || '';
-        book.wordCount = fieldValues['wordCount'] || '';
+        book.kind = BookFieldSanitizer.clean(fieldValues['kind'] || '');
+        book.latestChapterTitle = BookFieldSanitizer.clean(fieldValues['lastChapter'] || '');
+        book.wordCount = BookFieldSanitizer.clean(fieldValues['wordCount'] || '');
         book.bookUrl = BookUrlResolver.resolveScalar(fieldValues['bookUrl'] || '', baseUrl);
         book.variable = itemIndex < fieldBatch.contextValues.length ? fieldBatch.contextValues[itemIndex] :
           ir.getContext().toPersistentJson();

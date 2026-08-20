@@ -102,13 +102,18 @@ export class JsRuntime {
       expr = this.replaceFunctionCalls(expr, 'java.htmlEncode', (v: string) => this.htmlEncode(this.evalStr(v)));
       expr = this.replaceFunctionCalls(expr, 'java.htmlDecode', (v: string) => this.htmlDecode(this.evalStr(v)));
       expr = this.replaceFunctionCalls(expr, 'java.getCookie', (v: string) => this.cookieValue(v));
-      expr = this.replaceFunctionCalls(expr, 'java.put', (v: string) => this.putVar(v));
-      expr = this.replaceFunctionCalls(expr, 'java.get', (v: string) => this.getVarCall(v));
       expr = this.replaceFunctionCalls(expr, 'cookie.getCookie', (v: string) => this.cookieValue(v));
-      expr = this.replaceFunctionCalls(expr, 'java.timeFormat', (v: string) => this.timeFormatCall(v));
+      // Resolve value-producing accessors before wrappers such as timeFormat/put. Processing the
+      // outer java.put first used to persist the unevaluated inner rule text.
       expr = this.replaceGetStringListCalls(expr);
       expr = this.replaceFunctionCalls(expr, 'java.getString', (v: string) => this.javaGetStringCall(v));
       expr = this.replaceFunctionCalls(expr, 'java.getElement', (v: string) => this.javaGetStringCall(v));
+      expr = this.replaceFunctionCalls(expr, 'java.timeFormatUTC',
+        (v: string) => this.timeFormatCall(v, true));
+      expr = this.replaceFunctionCalls(expr, 'java.timeFormat',
+        (v: string) => this.timeFormatCall(v, false));
+      expr = this.replaceFunctionCalls(expr, 'java.put', (v: string) => this.putVar(v));
+      expr = this.replaceFunctionCalls(expr, 'java.get', (v: string) => this.getVarCall(v));
       expr = this.replaceFunctionCalls(expr, 'java.t2s', (v: string) => this.evalStr(v));
       expr = this.replaceFunctionCalls(expr, 'String', (v: string) => this.evalStr(v));
       expr = this.replaceFunctionCalls(expr, 'encodeURIComponent', (v: string) => encodeURIComponent(this.evalStr(v)));
@@ -605,20 +610,27 @@ export class JsRuntime {
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   }
 
-  private timeFormatCall(rawArgs: string): string {
+  private timeFormatCall(rawArgs: string, utc: boolean = false): string {
     const args = this.splitArgs(rawArgs);
     const timestamp = this.evalNumber(this.evalStr(args[0] || ''));
     if (args.length < 2) return this.timeFormat(timestamp);
     const millis = timestamp < 100000000000 ? timestamp * 1000 : timestamp;
-    const date = new Date(millis);
+    const offsetHours = utc && args.length > 2 ? Number(this.evalStr(args[2])) : 0;
+    const date = new Date(millis + (Number.isFinite(offsetHours) ? offsetHours * 60 * 60 * 1000 : 0));
     const pad = (value: number): string => value < 10 ? `0${value}` : String(value);
+    const year = utc ? date.getUTCFullYear() : date.getFullYear();
+    const month = utc ? date.getUTCMonth() + 1 : date.getMonth() + 1;
+    const day = utc ? date.getUTCDate() : date.getDate();
+    const hour = utc ? date.getUTCHours() : date.getHours();
+    const minute = utc ? date.getUTCMinutes() : date.getMinutes();
+    const second = utc ? date.getUTCSeconds() : date.getSeconds();
     return this.evalStr(args[1])
-      .replace(/yyyy/g, String(date.getFullYear()))
-      .replace(/MM/g, pad(date.getMonth() + 1))
-      .replace(/dd/g, pad(date.getDate()))
-      .replace(/HH/g, pad(date.getHours()))
-      .replace(/mm/g, pad(date.getMinutes()))
-      .replace(/ss/g, pad(date.getSeconds()));
+      .replace(/yyyy/g, String(year))
+      .replace(/MM/g, pad(month))
+      .replace(/dd/g, pad(day))
+      .replace(/HH/g, pad(hour))
+      .replace(/mm/g, pad(minute))
+      .replace(/ss/g, pad(second));
   }
 
   private cookieValue(rawArgs: string): string {

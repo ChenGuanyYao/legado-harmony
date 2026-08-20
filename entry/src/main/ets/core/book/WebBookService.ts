@@ -629,7 +629,11 @@ export class WebBookService {
   private isBadExtractedContent(content: string): boolean {
     if (!content) return false;
     const sample = content.substring(0, Math.min(content.length, 1200));
-    return sample.includes('font-family:') || sample.includes('-webkit-text-size-adjust') ||
+    // A failed combined extraction rule must never become chapter text. Require several strong
+    // script markers together so ordinary novels that merely mention code are not rejected.
+    const leakedRuleScript = /(?:result\s*\.\s*match|\.match\s*\(\s*\/\^https?)/i.test(sample) &&
+      /java\s*\.\s*ajax\s*\(/i.test(sample) && /java\s*\.\s*base64Decode\s*\(/i.test(sample);
+    return leakedRuleScript || sample.includes('font-family:') || sample.includes('-webkit-text-size-adjust') ||
       sample.includes('.nuxt-progress') || sample.includes('box-sizing:border-box') ||
       sample.includes('<!doctype html') || sample.includes('<html');
   }
@@ -1021,7 +1025,7 @@ export class WebBookService {
       .replace(/&amp;/g, '&')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
-    return await this.materializeReaderImageMarkers(source, normalized);
+    return await this.materializeReaderImageMarkers(source, ReaderActionMarker.limit(normalized));
   }
 
   private convertReaderNativeActions(_source: BookSource, content: string, _baseUrl: string): string {
@@ -1066,7 +1070,10 @@ export class WebBookService {
       const count = this.readerDataImageLabel(data[1] || '');
       const label = count ? `段评 ${count}` : '段评';
       const marker = ReaderActionMarker.createSourceScript(label, this.decodeHtmlEntities(action[2]), '段评');
-      return marker ? `${marker}\n` : tag;
+      // This data-image is an interaction control, not正文 artwork. If its imported click script exceeds the
+      // bounded action budget, drop the control instead of passing the enormous base64/options tag into the
+      // ordinary image pipeline (the latter can exhaust memory while opening the chapter).
+      return marker ? `${marker}\n` : '';
     });
   }
 

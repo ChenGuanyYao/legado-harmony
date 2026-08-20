@@ -59,7 +59,6 @@ export class HttpTtsReader {
   private static readonly MAX_RETRY: number = 5;
   private static readonly CACHE_DIR_NAME: string = 'http_tts';
   private static readonly MAX_CACHE_FILES: number = 600;
-  private static readonly DEFAULT_SILENCE_MS: number = 450;
   private static rateBuckets: Record<string, TtsRateBucket> = {};
   private static sharedRuntimes: Record<string, JsRuntime> = {};
 
@@ -67,7 +66,6 @@ export class HttpTtsReader {
   private avPlayer: TtsAvAudioPlayer = new TtsAvAudioPlayer();
   private generation: number = 0;
   private currentClients: http.HttpRequest[] = [];
-  private consecutiveErrors: number = 0;
   private loginPromptedAt: Record<string, number> = {};
   private protectedCachePaths: Map<string, number> = new Map<string, number>();
 
@@ -83,7 +81,6 @@ export class HttpTtsReader {
     try {
       const audio = await this.synthesizeWithRetry(voice, text, normalizedSpeed, generation);
       this.assertGeneration(generation);
-      this.consecutiveErrors = 0;
       if (audio.filePath) {
         this.retainCacheFile(audio.filePath);
       }
@@ -92,15 +89,11 @@ export class HttpTtsReader {
       if (this.isCancelledError(error as Error) || generation !== this.generation) {
         throw new HttpTtsCancelledError();
       }
-      this.consecutiveErrors++;
       console.warn('[TTS] custom voice synthesize failed:', error);
-      if (this.consecutiveErrors >= HttpTtsReader.MAX_RETRY) {
-        this.consecutiveErrors = 0;
-        throw error as Error;
-      }
-      const silent = this.createSilentAudio();
-      silent.speed = normalizedSpeed;
-      return silent;
+      // synthesizeWithRetry has already exhausted the voice/request retry policy. Replacing this paragraph with
+      // silence makes continuous reading advance as though it had been spoken, which is especially visible on
+      // the final page. Surface the error so the reader stops at the exact paragraph and can retry it later.
+      throw error as Error;
     }
   }
 
@@ -666,13 +659,6 @@ export class HttpTtsReader {
     if ('；;：:'.includes(last)) return 0.16;
     if ('，,、'.includes(last)) return 0.12;
     return 0.1;
-  }
-
-  private createSilentAudio(): HttpTtsAudio {
-    const audio = new HttpTtsAudio();
-    audio.sampleRate = 16000;
-    audio.pcm = new ArrayBuffer(Math.floor(16000 * HttpTtsReader.DEFAULT_SILENCE_MS / 1000) * 2);
-    return audio;
   }
 
   private async withRateLimit<T>(voice: HttpTTS, generation: number,

@@ -19,6 +19,11 @@ export class ReaderProgressCheckpoint {
     ReaderProgressCheckpoint.saveAction = null;
   }
 
+  /** A retained/disappearing reader may finish after a newer reader page has attached. */
+  static canWrite(ownerId: string): boolean {
+    return !!ownerId && ReaderProgressCheckpoint.ownerId === ownerId;
+  }
+
   static request(reason: string): Promise<void> {
     const action = ReaderProgressCheckpoint.saveAction;
     if (!action) return Promise.resolve();

@@ -48,6 +48,8 @@ export class AppDatabase {
   private readerPaginationPendingWrites: Map<string, ReaderPaginationCacheWrite> =
     new Map<string, ReaderPaginationCacheWrite>();
   private readerPaginationWriteTasks: Map<string, Promise<void>> = new Map<string, Promise<void>>();
+  private bookProgressWriteTasks: Map<string, Promise<void>> = new Map<string, Promise<void>>();
+  private latestBookProgressWriteTimes: Map<string, number> = new Map<string, number>();
   private readonly DATABASE_NAME = 'legado.db';
   private readonly SCHEMA_VERSION = 15;
 
@@ -758,6 +760,39 @@ export class AppDatabase {
   async updateBookReadingProgress(bookUrl: string, chapterTitle: string, chapterIndex: number,
     chapterPos: number, chapterTime: number, variable: string,
     syncRelevant: boolean = true): Promise<void> {
+    if (!this.store || !bookUrl) return;
+    const previousLatestTime = this.latestBookProgressWriteTimes.get(bookUrl) || 0;
+    if (chapterTime < previousLatestTime) {
+      console.info(`[ReaderProgress] skip stale snapshot before queue: ${bookUrl},` +
+        `time=${chapterTime}<${previousLatestTime}`);
+      return;
+    }
+    this.latestBookProgressWriteTimes.set(bookUrl, chapterTime);
+    const previous = this.bookProgressWriteTasks.get(bookUrl) || Promise.resolve();
+    const task = previous.catch((error: Error) => {
+      console.warn(`[ReaderProgress] previous queued write failed: ${bookUrl}`, error);
+    }).then(async (): Promise<void> => {
+      const latestTime = this.latestBookProgressWriteTimes.get(bookUrl) || chapterTime;
+      if (chapterTime < latestTime) {
+        console.info(`[ReaderProgress] skip stale queued snapshot: ${bookUrl},` +
+          `time=${chapterTime}<${latestTime}`);
+        return;
+      }
+      await this.performBookReadingProgressUpdate(bookUrl, chapterTitle, chapterIndex,
+        chapterPos, chapterTime, variable, syncRelevant);
+    });
+    this.bookProgressWriteTasks.set(bookUrl, task);
+    try {
+      await task;
+    } finally {
+      if (this.bookProgressWriteTasks.get(bookUrl) === task) {
+        this.bookProgressWriteTasks.delete(bookUrl);
+      }
+    }
+  }
+
+  private async performBookReadingProgressUpdate(bookUrl: string, chapterTitle: string, chapterIndex: number,
+    chapterPos: number, chapterTime: number, variable: string, syncRelevant: boolean): Promise<void> {
     if (!this.store || !bookUrl) return;
     const bucket: relationalStore.ValuesBucket = {
       durChapterTitle: chapterTitle,

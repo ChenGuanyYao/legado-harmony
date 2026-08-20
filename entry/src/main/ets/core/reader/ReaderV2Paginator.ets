@@ -49,6 +49,19 @@ export class ReaderV2PaginationSession {
 }
 
 export class ReaderV2Paginator {
+  /** Measures a plain selectable surface with the same native paragraph engine as pagination. */
+  static glyphPositionForPlainText(text: string, snapshot: ReaderV2LayoutSnapshot,
+    width: number, x: number, y: number): number {
+    if (!text) return 0;
+    const document = new ReaderV2Document();
+    document.sourceText = text;
+    document.displayText = text;
+    const block = new ReaderV2Block('selection', text, 0, text.length, 0, text.length, false);
+    const paragraph = ReaderV2Paginator.buildParagraph(document, block, snapshot, [], Math.max(1, width),
+      0, text.length);
+    return paragraph.getGlyphPositionAtCoordinate(Math.max(0, x), Math.max(0, y)).position;
+  }
+
   static paginate(document: ReaderV2Document, snapshot: ReaderV2LayoutSnapshot,
     regexStyles: ReaderV2SpanStyleRange[] = []): ReaderV2PageSet {
     const session = ReaderV2Paginator.start(document, snapshot, regexStyles);
@@ -234,7 +247,12 @@ export class ReaderV2Paginator {
     regexStyles: ReaderV2SpanStyleRange[], sliceStart: number = 0,
     sliceEnd: number = block.text.length): number[] {
     const boundaries: number[] = [sliceStart, sliceEnd];
-    for (const action of document.actions) {
+    const absoluteSliceStart = block.displayStart + sliceStart;
+    const absoluteSliceEnd = block.displayStart + sliceEnd;
+    const firstAction = ReaderV2Paginator.firstActionWhoseEndExceeds(document.actions, absoluteSliceStart);
+    for (let index = firstAction; index < document.actions.length; index++) {
+      const action = document.actions[index];
+      if (action.displayStart >= absoluteSliceEnd) break;
       const actionStart = action.displayStart - block.displayStart;
       const actionEnd = action.displayEnd - block.displayStart;
       if (actionEnd <= sliceStart || actionStart >= sliceEnd) continue;
@@ -276,8 +294,10 @@ export class ReaderV2Paginator {
     const base = ReaderV2Paginator.baseTextStyle(block, snapshot);
     const decorationReservation = ReaderV2Paginator.decorationReservationAfter(absoluteOffset, block, regexStyles);
     if (decorationReservation > 0) base.letterSpacing = snapshot.letterSpacingPx + decorationReservation;
-    for (const action of document.actions) {
-      if (absoluteOffset < action.displayStart || absoluteOffset >= action.displayEnd) continue;
+    const actionIndex = ReaderV2Paginator.firstActionWhoseEndExceeds(document.actions, absoluteOffset);
+    if (actionIndex < document.actions.length) {
+      const action = document.actions[actionIndex];
+      if (absoluteOffset >= action.displayStart && absoluteOffset < action.displayEnd) {
       base.fontSize = snapshot.commentFontSizePx;
       base.color = ReaderV2Paginator.graphicsColor(snapshot.commentTextColor);
       base.backgroundRect = {
@@ -288,6 +308,7 @@ export class ReaderV2Paginator {
         leftBottomRadius: snapshot.commentRadiusPx
       };
       return base;
+      }
     }
     for (const style of regexStyles) {
       if (absoluteOffset < style.start || absoluteOffset >= style.end) continue;
@@ -499,7 +520,10 @@ export class ReaderV2Paginator {
   private static appendActionAreas(page: ReaderV2PageLayout, fragment: ReaderV2PageFragment,
     actions: ReaderV2InlineAction[]): void {
     if (!fragment.paragraph) return;
-    for (const action of actions) {
+    const firstAction = ReaderV2Paginator.firstActionWhoseEndExceeds(actions, fragment.displayStart);
+    for (let index = firstAction; index < actions.length; index++) {
+      const action = actions[index];
+      if (action.displayStart >= fragment.displayEnd) break;
       if (action.displayEnd <= fragment.displayStart || action.displayStart >= fragment.displayEnd) continue;
       const start = Math.max(0, action.displayStart - fragment.displayStart);
       const end = Math.min(fragment.localEnd - fragment.localStart, action.displayEnd - fragment.displayStart);
@@ -519,6 +543,17 @@ export class ReaderV2Paginator {
         page.actions.push(hit);
       }
     }
+  }
+
+  private static firstActionWhoseEndExceeds(actions: ReaderV2InlineAction[], offset: number): number {
+    let low = 0;
+    let high = actions.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (actions[middle].displayEnd <= offset) low = middle + 1;
+      else high = middle;
+    }
+    return low;
   }
 
   private static lineBottom(line: graphicsText.LineMetrics): number {

@@ -192,8 +192,13 @@ export class LocalBookService {
       const suffix = source.indexOf(LocalBookService.EPUB_IMAGE_MARKER_SUFFIX,
         start + LocalBookService.EPUB_IMAGE_MARKER_PREFIX.length);
       if (suffix < 0) {
-        result += source.substring(start);
-        break;
+        // A damaged image marker is metadata, never prose. Remove only its current line when the suffix is
+        // missing so TTS cannot read a URL/dimension such as "10x2", while preserving following paragraphs.
+        const lineEnd = source.indexOf('\n', start + LocalBookService.EPUB_IMAGE_MARKER_PREFIX.length);
+        const end = lineEnd >= 0 ? lineEnd : source.length;
+        if (preserveOffsets) result += ' '.repeat(Math.max(0, end - start));
+        cursor = Math.max(start + 1, end);
+        continue;
       }
       const end = suffix + LocalBookService.EPUB_IMAGE_MARKER_SUFFIX.length;
       if (preserveOffsets) {

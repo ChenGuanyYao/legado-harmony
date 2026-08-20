@@ -119,6 +119,10 @@ export class TtsPcmAudioPlayer {
       .catch((error: Error) => {
         this.discardPendingWrite(pendingWrite);
         console.warn('[TTS] write pcm audio failed:', error);
+        // Do not convert an output failure into a successful consumed segment. System/custom TTS queues use this
+        // promise as the proof that a paragraph entered AudioRenderer; swallowing it made the queue drain and
+        // report chapter completion even though the final paragraphs had never been played.
+        throw error;
       });
     const previousWrites = this.writeChain;
     this.writeChain = Promise.all([

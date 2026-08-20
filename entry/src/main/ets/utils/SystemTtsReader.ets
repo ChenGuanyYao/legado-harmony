@@ -117,7 +117,6 @@ export class SystemTtsReader {
   private currentAudioSampleBit: number = 16;
   private currentAudioChannel: number = 1;
   private currentAudioType: string = 'pcm';
-  private chunkFocusChain: Promise<void> = Promise.resolve();
   private currentFocusChunk: TtsChunk | null = null;
   private currentFocusChunkIndex: number = -1;
   private currentFocusDuration: number = 0;
@@ -399,7 +398,6 @@ export class SystemTtsReader {
     this.onAudioStart = options?.onAudioStart;
     this.audioStarted = false;
     this.ttsPcmPlayType = 0;
-    this.chunkFocusChain = Promise.resolve();
     this.optionPerson = options?.person ?? null;
     this.optionOnline = options?.online ?? null;
     this.optionStyle = options?.style ?? null;
@@ -640,7 +638,6 @@ export class SystemTtsReader {
     this.ttsPcmPlayType = 0;
     this.resetSystemPcmPipeline();
     this.clearSpeakWatchdog();
-    this.chunkFocusChain = Promise.resolve();
     this.httpReader.stop();
     this.cloudReader.stop();
     this.pcmPlayer.stop();
@@ -806,7 +803,6 @@ export class SystemTtsReader {
     this.currentFocusRetryCount = 0;
     this.resetSystemPcmPipeline();
     this.clearSpeakWatchdog();
-    this.chunkFocusChain = Promise.resolve();
     if (keepPcmOutput) {
       // Continuous reading restarts with the next chapter. Keep the same
       // AudioRenderer and audio-session owner across that short handoff so the
@@ -1074,11 +1070,17 @@ export class SystemTtsReader {
       }
       this.fillCustomAudioJobs(generation, voice, jobs);
       this.currentFocusAudioReceived = true;
-      this.queueCurrentChunkFocusOnAudio(generation);
-      await this.httpReader.writeAudioRecovering(voice, job.text, this.getTtsSpeed(), result.audio);
+      await this.httpReader.writeAudioRecovering(voice, job.text, this.getTtsSpeed(), result.audio,
+        (durationMs: number): void => {
+          if (durationMs > 0) this.currentFocusDuration = durationMs;
+          this.emitCurrentCustomChunkFocus(generation);
+        });
       if (this.readGeneration !== generation || !this.active) {
         return;
       }
+      // Every built-in writer reports playback start. Keep a guarded fallback for third-party containers whose
+      // platform player omits duration/start metadata, without publishing the same focus twice.
+      this.emitCurrentCustomChunkFocus(generation);
       this.currentFocusAudioWritten = true;
       this.notifyAudioStarted();
       this.currentRequestId = '';
@@ -1264,6 +1266,11 @@ export class SystemTtsReader {
         this.continueSystemPcmSynthesis(generation);
       }).catch((error: Error) => {
         console.warn('[TTS] system pcm segment write failed:', error);
+        if (this.readGeneration === generation && this.active && this.ttsPcmPlayType === 0) {
+          // Never consume a synthesized paragraph whose PCM failed to enter the renderer. Advancing here makes
+          // the chapter appear complete and is most noticeable when the failed segment is on the last page.
+          this.failSystemPcmPlayback(`系统音频写入失败：${this.formatError(error as Object)}`);
+        }
       });
       this.systemLastWritePromise = writePromise;
     }
@@ -1526,28 +1533,22 @@ export class SystemTtsReader {
           return;
         }
         console.warn('[TTS] wait current pcm write failed:', error);
-        this.currentRequestId = '';
-        this.currentSpeakStartedAt = 0;
-        this.currentSpeakMinDuration = 0;
-        this.completionPending = false;
-        this.currentFocusChunk = null;
-        this.currentFocusChunkIndex = -1;
-        this.currentFocusDuration = 0;
-        this.currentFocusQueued = false;
-        this.currentFocusAudioReceived = false;
-        this.currentFocusAudioWritten = false;
-        this.currentAudioWritePromise = Promise.resolve();
-        this.speakNext(generation);
+        // The old fallback called speakNext(), silently dropping this chunk. Stop at the failed chunk so resume
+        // starts from the same visible paragraph instead of jumping several lines or entering the next chapter.
+        this.failSystemPcmPlayback(`系统音频写入失败：${this.formatError(error as Object)}`);
       });
   }
 
-  private queueCurrentChunkFocusOnAudio(generation: number): void {
+  private emitCurrentCustomChunkFocus(generation: number): void {
     if (this.readGeneration !== generation || !this.active || this.currentFocusQueued ||
       !this.currentFocusChunk || this.currentFocusChunkIndex < 0) {
       return;
     }
     this.currentFocusQueued = true;
-    this.queueChunkFocus(generation, this.currentFocusChunk, this.currentFocusChunkIndex, this.currentFocusDuration);
+    if (this.onChunkStart) {
+      this.onChunkStart(this.currentFocusChunk, this.currentFocusChunkIndex);
+    }
+    this.notifyAudioStarted();
   }
 
   private emitCurrentSystemChunkFocus(generation: number): void {
@@ -1667,34 +1668,6 @@ export class SystemTtsReader {
     }, waitMs);
   }
 
-  private queueChunkFocus(generation: number, chunk: TtsChunk, index: number, duration: number): void {
-    const focusChunks = this.optionCloudVoiceId ? this.splitCloudFocusChunks(chunk) : [chunk];
-    let totalWeight = 0;
-    for (const focusChunk of focusChunks) {
-      totalWeight += this.focusChunkWeight(focusChunk.text);
-    }
-    const safeTotalWeight = Math.max(1, totalWeight);
-    const safeDuration = Math.max(120, duration);
-    this.chunkFocusChain = this.chunkFocusChain
-      .then(async () => {
-        for (let focusIndex = 0; focusIndex < focusChunks.length; focusIndex++) {
-          if (this.readGeneration !== generation || !this.active) {
-            return;
-          }
-          const focusChunk = focusChunks[focusIndex];
-          if (this.onChunkStart) {
-            this.onChunkStart(focusChunk, index);
-          }
-          const weight = this.focusChunkWeight(focusChunk.text);
-          const waitMs = Math.max(120, Math.round(safeDuration * weight / safeTotalWeight));
-          await this.sleep(waitMs);
-        }
-      })
-      .catch((error: Error) => {
-        console.warn('[TTS] update chunk focus failed:', error);
-      });
-  }
-
   private splitCloudFocusChunks(chunk: TtsChunk): TtsChunk[] {
     const sentenceChunks = this.splitText(
       chunk.text, SystemTtsReader.CLOUD_TTS_FOCUS_CHUNK_LENGTH);
@@ -1739,14 +1712,6 @@ export class SystemTtsReader {
     });
   }
 
-  private focusChunkWeight(text: string): number {
-    const value = text || '';
-    const readableLength = value.replace(/\s/g, '').length;
-    const punctuationMatches = value.match(/[，。！？；;,.!?、：:]/g);
-    const punctuationCount = punctuationMatches ? punctuationMatches.length : 0;
-    return Math.max(1, readableLength + punctuationCount * 0.6);
-  }
-
   private normalizeFocusBreakOffsets(offsets: number[] | undefined, textLength: number): number[] {
     if (!offsets || offsets.length === 0 || textLength <= 0) {
       return [];
@@ -1776,7 +1741,33 @@ export class SystemTtsReader {
   }
 
   private normalizeText(text: string): string {
-    return this.replaceUnsafeSpeechCharacters((text || '').replace(/\r\n/g, '\n'));
+    return this.sanitizeStructuralSpeechArtifacts(
+      this.replaceUnsafeSpeechCharacters((text || '').replace(/\r\n/g, '\n')));
+  }
+
+  private sanitizeStructuralSpeechArtifacts(text: string): string {
+    if (!text) return '';
+    return text.split('\n').map((line: string): string => {
+      const trimmed = line.trim();
+      if (!trimmed) return line;
+      const dimensionOnly = /^\d{1,5}\s*[*x×]\s*\d{1,5}$/.test(trimmed);
+      const signatures = [
+        /\bjava\.(?:ajax|base64Decode|put|get)\s*\(/i,
+        /\.match\s*\(\s*\//i,
+        /\bsrc\s*=/i,
+        /<\/?js>|@js:/i,
+        /\b(?:JSON\.parse|document\.querySelector)\s*\(/i,
+        /=>|\bfunction\s*\(/i
+      ];
+      let signatureCount = 0;
+      for (const signature of signatures) {
+        if (signature.test(trimmed)) signatureCount++;
+      }
+      const codePunctuationOnly = /^[=;{}()[\].,+*\/\\-]{1,16}$/.test(trimmed);
+      if (!dimensionOnly && !codePunctuationOnly && signatureCount < 1) return line;
+      // Replace one-for-one so chunk/focus offsets continue to map to the original reader document.
+      return ' '.repeat(line.length);
+    }).join('\n');
   }
 
   private normalizeChunkForSpeech(text: string): string {

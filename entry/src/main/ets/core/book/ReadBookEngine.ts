@@ -147,6 +147,10 @@ export class ReadBookEngine {
     this.book.durChapterPos = book.durChapterPos;
     this.book.durChapterTitle = book.durChapterTitle;
     this.book.durChapterTime = book.durChapterTime;
+    // Page position alone is insufficient: V2 restores from the durable character offset stored in variable.
+    // A retained engine session must not keep an older variable snapshot and reinterpret a saved last page as
+    // page one when the reader is opened again from the retained bookshelf route.
+    this.book.replaceVariable(book.variable);
   }
 
   private async openBookFresh(book: Book, sourceHint: BookSource | null): Promise<void> {

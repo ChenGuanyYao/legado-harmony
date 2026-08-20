@@ -56,13 +56,18 @@ export class RuleExecutionService {
 
       for (const field of request.fields) {
         const code = this.extractStandaloneJsCode(field.rule);
-        const postProcessor = code === null ? this.extractPostProcessorJs(field.rule) : null;
-        if (code === null && postProcessor === null) continue;
+        const embeddedProcessor = code === null ? this.extractEmbeddedJsProcessor(field.rule) : null;
+        const postProcessor = code === null && embeddedProcessor === null ?
+          this.extractPostProcessorJs(field.rule) : null;
+        if (code === null && embeddedProcessor === null && postProcessor === null) continue;
         try {
           if (code !== null) {
             fullJsValues[field.name] = QuickJsScriptRuntime.isPureExpressionCandidate(code) ?
               await this.executeRoutedPureJsFieldBatch(request, field, code, token) :
               await this.executeFullJsFieldBatch(request, field, code, token);
+          } else if (embeddedProcessor !== null) {
+            fullJsValues[field.name] = await this.executePostProcessorJsFieldBatch(request, field,
+              embeddedProcessor.baseRule, embeddedProcessor.code, token, embeddedProcessor.trailingRule);
           } else if (postProcessor !== null) {
             fullJsValues[field.name] = await this.executePostProcessorJsFieldBatch(request, field,
               postProcessor.baseRule, postProcessor.code, token);
@@ -229,7 +234,8 @@ export class RuleExecutionService {
    * `src`, java.getString) while the full script runs in the bounded host runtime.
    */
   private async executePostProcessorJsFieldBatch(request: RuleBatchExecutionRequest, field: RuleFieldRequest,
-    baseRule: string, code: string, token: CooperativeCancellationToken): Promise<string[]> {
+    baseRule: string, code: string, token: CooperativeCancellationToken,
+    trailingRule: string = ''): Promise<string[]> {
     const baseValues: string[] = [];
     for (let index = 0; index < request.contents.length; index++) {
       token.throwIfCancelled();
@@ -275,9 +281,20 @@ export class RuleExecutionService {
     token.throwIfCancelled();
     const parsed = JSON.parse(runtimeResult.value || '[]') as Object;
     if (!Array.isArray(parsed)) throw new Error('完整脚本批量结果格式错误');
-    const values = (parsed as Object[]).map((value: Object): string => String(value || ''));
+    let values = (parsed as Object[]).map((value: Object): string => String(value || ''));
     const fieldError = values.find((value: string): boolean => value.startsWith('__LEGADO_FIELD_ERROR__'));
     if (fieldError) throw new Error(fieldError.substring('__LEGADO_FIELD_ERROR__'.length));
+    if (trailingRule) {
+      const transformed: string[] = [];
+      for (const value of values) {
+        token.throwIfCancelled();
+        const analyzer = new AnalyzeRule(value, request.baseUrl);
+        this.seedSourceVariables(analyzer.getContext(), request.source, request.contextValues);
+        transformed.push(field.listResult ? JSON.stringify(analyzer.getStringList(trailingRule)) :
+          (field.joinMatches ? analyzer.getString(trailingRule) : analyzer.analyzeFirst(trailingRule)));
+      }
+      values = transformed;
+    }
     return values;
   }
 
@@ -325,6 +342,19 @@ export class RuleExecutionService {
       }
     }
     return null;
+  }
+
+  private extractEmbeddedJsProcessor(rule: string): {
+    baseRule: string, code: string, trailingRule: string
+  } | null {
+    const value = (rule || '').trim();
+    const match = value.match(/^([\s\S]+?)<js>([\s\S]*?)<\/js>([\s\S]*)$/i);
+    if (!match) return null;
+    const baseRule = (match[1] || '').trim();
+    const code = (match[2] || '').trim();
+    const trailingRule = (match[3] || '').trim();
+    if (!baseRule || !code) return null;
+    return { baseRule: baseRule, code: code, trailingRule: trailingRule };
   }
 
   private seedSourceVariables(ctx: RuleContext, source: BookSource,
