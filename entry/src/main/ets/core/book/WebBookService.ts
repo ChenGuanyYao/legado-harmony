@@ -32,9 +32,21 @@ class ContentPageData {
 
 export class WebBookService {
   private http: HttpClient;
+  private activeContentRuleOwners: Set<string> = new Set();
 
   constructor() {
     this.http = new HttpClient(10000);
+  }
+
+  cancelPendingRequests(): void {
+    this.http.cancelAll();
+    for (const ownerId of this.activeContentRuleOwners) {
+      RuleExecutionService.get().cancelOwner(ownerId);
+    }
+  }
+
+  private contentRequestCanceled(shouldCancel: (() => boolean) | null): boolean {
+    return shouldCancel ? shouldCancel() : false;
   }
 
   async getBookInfo(source: BookSource, book: Book): Promise<Book> {
@@ -408,16 +420,20 @@ export class WebBookService {
     return chapters;
   }
 
-  async getContent(source: BookSource, book: Book, chapter: BookChapter): Promise<string> {
+  async getContent(source: BookSource, book: Book, chapter: BookChapter,
+    shouldCancel: (() => boolean) | null = null): Promise<string> {
+    if (this.contentRequestCanceled(shouldCancel)) return '';
     // Validation and reader diagnostics must describe the current content request, not a
     // stale error left by a previous catalog/script stage.
     AppStorage.setOrCreate('bookSourceStageLastError', '');
     if (BookSourceDataUrlSupport.isEncodedSource(chapter.url)) {
       const shortcutContent = await BookSourceDataUrlSupport.getContent(this.http, source, book, chapter);
+      if (this.contentRequestCanceled(shouldCancel)) return '';
       const shortcutAudio = source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
       if (!shortcutContent || shortcutAudio) return shortcutContent.trim();
       const interactiveContent = await BookSourceInteractionPostProcessor.process(source, book, chapter,
         shortcutContent);
+      if (this.contentRequestCanceled(shouldCancel)) return '';
       const shortcutContext = new RuleContext();
       shortcutContext.loadFromJson(book.variable);
       this.seedBookVariables(shortcutContext, book.bookUrl);
@@ -438,10 +454,12 @@ export class WebBookService {
       if (webViewAudioUrl) return webViewAudioUrl;
     }
     const stageContent = await this.tryGetStageContent(source, book, chapter);
+    if (this.contentRequestCanceled(shouldCancel)) return '';
     if (stageContent) {
       if (isAudioContent) return stageContent.trim();
       const interactiveContent = await BookSourceInteractionPostProcessor.process(source, book, chapter,
         stageContent);
+      if (this.contentRequestCanceled(shouldCancel)) return '';
       return await this.normalizeReaderContent(source,
         this.applyContentReplaceRule(interactiveContent, source.contentRule.replaceRegex,
           new RuleContext(), chapter), chapter.url);
@@ -452,9 +470,11 @@ export class WebBookService {
       return '';
     }
     console.log('[WS] getContent, url:', chapter.url);
+    if (this.contentRequestCanceled(shouldCancel)) return '';
     const au = new AnalyzeUrl(source, this.http);
     let resp = EncodedSourceUrl.canHandle(chapter.url) ?
       await this.fetchEncodedDataUrl(chapter.url, source) : await au.fetch(chapter.url);
+    if (this.contentRequestCanceled(shouldCancel)) return '';
     console.log('[WS] getContent resp:', resp.success, 'len:', resp.body.length);
     if (!resp.success) {
       const status = Number(resp.statusCode || 0);
@@ -483,6 +503,7 @@ export class WebBookService {
     let currentResp = resp;
     let totalLength = 0;
     for (let page = 0; page < 50; page++) {
+      if (this.contentRequestCanceled(shouldCancel)) return '';
       if (!currentResp.success || !currentResp.body) break;
       const pageKey = this.urlWithoutFragment(currentResp.url || currentUrl);
       if (seenPageUrls.has(pageKey)) break;
@@ -493,7 +514,9 @@ export class WebBookService {
       const baseUrl = BookUrlResolver.effectiveBase(currentResp,
         page === 0 ? this.getChapterBaseUrl(chapter, book, source) : currentUrl,
         book.bookUrl || source.bookSourceUrl);
-      const pageData = await this.parseContentPage(source, book, chapter, currentResp.body, baseUrl, ctx);
+      const pageData = await this.parseContentPage(source, book, chapter, currentResp.body, baseUrl, ctx,
+        shouldCancel);
+      if (this.contentRequestCanceled(shouldCancel)) return '';
       if (pageData.content) {
         totalLength += pageData.content.length;
         if (totalLength > 8 * 1024 * 1024) break;
@@ -505,17 +528,20 @@ export class WebBookService {
       currentUrl = pageData.nextUrl;
       currentResp = EncodedSourceUrl.canHandle(currentUrl) ?
         await this.fetchEncodedDataUrl(currentUrl, source) : await au.fetch(currentUrl);
+      if (this.contentRequestCanceled(shouldCancel)) return '';
     }
     book.variable = ctx.toPersistentJson();
     return parts.join('\n\n');
   }
 
   private async parseContentPage(source: BookSource, book: Book, chapter: BookChapter, body: string,
-    baseUrl: string, ctx: RuleContext): Promise<ContentPageData> {
+    baseUrl: string, ctx: RuleContext, shouldCancel: (() => boolean) | null = null): Promise<ContentPageData> {
     const data = new ContentPageData();
+    if (this.contentRequestCanceled(shouldCancel)) return data;
     const contentRule = source.contentRule;
     const isAudioContent = source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
     const directContent = await this.tryGetDirectAjaxRuleContent(source, body, baseUrl, ctx, contentRule.content);
+    if (this.contentRequestCanceled(shouldCancel)) return data;
     const fieldRequest = new RuleBatchExecutionRequest();
     fieldRequest.source = source;
     fieldRequest.book = book;
@@ -536,14 +562,17 @@ export class WebBookService {
     ];
     fieldRequest.timeoutMs = 20000;
     let values: Record<string, string> = {};
+    this.activeContentRuleOwners.add(fieldRequest.ownerId);
     try {
       const batch = await RuleExecutionService.get().executeBatch(fieldRequest);
+      if (this.contentRequestCanceled(shouldCancel)) return data;
       if (batch.values.length > 0) values = batch.values[0];
       if (batch.contextValues.length > 0) ctx.loadFromJson(batch.contextValues[0]);
       if (batch.errors.length > 0) {
         console.warn('[WS] content field errors:', source.bookSourceName, batch.errors.join('; '));
       }
     } finally {
+      this.activeContentRuleOwners.delete(fieldRequest.ownerId);
       RuleExecutionService.get().clearOwner(fieldRequest.ownerId);
     }
     data.nextUrl = values['nextContentUrl'] || '';
@@ -565,7 +594,9 @@ export class WebBookService {
     }
     if (!content && imageRuleValues.length === 0) return data;
     content = this.applyContentReplaceRule(content, contentRule.replaceRegex, ctx, chapter);
+    if (this.contentRequestCanceled(shouldCancel)) return data;
     data.content = await this.normalizeReaderContent(source, content, baseUrl, imageRuleValues);
+    if (this.contentRequestCanceled(shouldCancel)) data.content = '';
     return data;
   }
 

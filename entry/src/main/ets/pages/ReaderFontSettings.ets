@@ -378,7 +378,9 @@ struct ReaderFontSettingsPage {
     if (mode === 'custom') {
       const fonts = this.customFonts();
       for (let i = 0; i < fonts.length; i++) {
-        if (fonts[i].familyName === family) {
+        const normalizedFamily = fonts[i].filePath ?
+          ReaderFontHelper.normalizeFontFamily(fonts[i].filePath) : fonts[i].familyName;
+        if (fonts[i].familyName === family || normalizedFamily === family) {
           return i + 2;
         }
       }
@@ -411,7 +413,8 @@ struct ReaderFontSettingsPage {
         const font = new ReaderCustomFontItem();
         font.familyName = item.familyName;
         font.filePath = item.filePath || '';
-        font.sourceName = item.sourceName || item.familyName;
+        font.sourceName = ReaderFontHelper.resolveDisplayName(
+          item.sourceName || item.familyName, font.filePath);
         result.push(font);
       }
       return result;

@@ -9,7 +9,6 @@ import deviceInfo from '@ohos.deviceInfo';
 import image from '@ohos.multimedia.image';
 import fs from '@ohos.file.fs';
 import fileUri from '@ohos.file.fileuri';
-import commonEventManager from '@ohos.commonEventManager';
 import { HdsTabs, hdsMaterial } from '@kit.UIDesignKit';
 import { Book, BookChapter, BookGroup, BookSource, SearchBook, SearchKeyword } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
@@ -47,17 +46,11 @@ import { ChangeSourceResultCache } from '../utils/ChangeSourceResultCache';
 import { BookFieldSanitizer } from '../utils/BookFieldSanitizer';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 import { ReaderOpenTrace } from '../utils/ReaderOpenTrace';
+import { FullTextCacheCancelCoordinator, FullTextCacheCancelSignal } from '../utils/FullTextCacheCancelCoordinator';
 
-const SHELF_FULL_TEXT_CACHE_CANCEL_EVENT: string = 'com.legado.harmony.action.SHELF_FULL_TEXT_CACHE_CANCEL';
 const SHELF_FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS: number = 5000;
 const SHELF_COVER_INITIAL_PREFETCH_COUNT: number = 16;
 const SHELF_COVER_UPDATE_BATCH_MS: number = 48;
-
-interface FullTextCacheCancelSignal {
-  nonce: number;
-  taskKey: string;
-  bookUrl: string;
-}
 
 interface ShelfFullTextCacheTask {
   taskId: number;
@@ -74,6 +67,8 @@ interface ShelfFullTextCacheTask {
   status: string;
   coverPixelMap: image.PixelMap | null;
   notificationFailureHintShown: boolean;
+  engine: ReadBookEngine | null;
+  stoppingNotificationTask: Promise<void> | null;
 }
 
 class ShelfTileSortEntry {
@@ -1145,7 +1140,6 @@ struct BookshelfPage {
   private cacheTocLoadPromise: Promise<boolean> | null = null;
   private cacheDialogOpenedAt: number = 0;
   private fullTextCacheTasks: Map<string, ShelfFullTextCacheTask> = new Map();
-  private fullTextCacheCancelSubscriber: commonEventManager.CommonEventSubscriber | null = null;
   private activeCacheBookUrl: string = '';
   private shelfRefreshRunning: boolean = false;
   private shelfChangeSourceSessionId: number = 0;
@@ -1186,12 +1180,10 @@ struct BookshelfPage {
     this.shelfComponentActive = true;
     this.reloadDisplaySettings();
     this.scheduleLoadBooks();
-    this.ensureShelfFullTextCacheCancelSubscriber();
   }
 
   aboutToDisappear(): void {
     this.shelfComponentActive = false;
-    this.releaseShelfFullTextCacheCancelSubscriber();
     this.cancelShelfBookOpening();
     this.cancelNetworkCoverSearch();
     this.cancelShelfChangeSourceSearch();
@@ -5195,21 +5187,18 @@ struct BookshelfPage {
       if (!task || task.cancelSeenNonce === signal.nonce) {
         return;
       }
-      task.cancelRequested = true;
-      task.cancelSeenNonce = signal.nonce;
-      promptAction.showToast({ message: '缓存已停止' });
+      this.beginStoppingShelfFullTextCache(task, signal.nonce, true);
       return;
     }
     let stopped = false;
     this.fullTextCacheTasks.forEach((task: ShelfFullTextCacheTask) => {
       if (task.cancelSeenNonce !== nonce) {
-        task.cancelRequested = true;
-        task.cancelSeenNonce = nonce;
+        this.beginStoppingShelfFullTextCache(task, nonce, false);
         stopped = true;
       }
     });
     if (stopped) {
-      promptAction.showToast({ message: '缓存已停止' });
+      promptAction.showToast({ message: '正在停止缓存…' });
     }
   }
 
@@ -5222,9 +5211,7 @@ struct BookshelfPage {
     if (!task || task.cancelSeenNonce === signal.nonce) {
       return;
     }
-    task.cancelRequested = true;
-    task.cancelSeenNonce = signal.nonce;
-    promptAction.showToast({ message: '缓存已停止' });
+    this.beginStoppingShelfFullTextCache(task, signal.nonce, true);
   }
 
   async loadCacheChapters(book: Book, forceRefresh: boolean = false): Promise<boolean> {
@@ -5330,9 +5317,24 @@ struct BookshelfPage {
       await db.initWithContext(getContext(this));
       const freshBook = await db.getBook(book.bookUrl) || book;
       const engine = ReadBookEngine.createBackgroundWorker();
+      task.engine = engine;
+      if (this.shouldCancelShelfFullTextCache(task)) {
+        this.setFullTextCacheStatus(task, '全文缓存已取消');
+        if (task.stoppingNotificationTask) await task.stoppingNotificationTask;
+        await this.publishShelfFullTextCacheNotification(task, '缓存已停止',
+          this.shelfFullTextCacheProgressText(task), false);
+        return;
+      }
       await engine.openBook(freshBook);
       await engine.syncChapterCacheDates();
       if (!this.isShelfFullTextCacheTaskActive(task)) {
+        return;
+      }
+      if (this.shouldCancelShelfFullTextCache(task)) {
+        this.setFullTextCacheStatus(task, '全文缓存已取消');
+        if (task.stoppingNotificationTask) await task.stoppingNotificationTask;
+        await this.publishShelfFullTextCacheNotification(task, '缓存已停止',
+          this.shelfFullTextCacheProgressText(task), false);
         return;
       }
       const total = engine.chapters.length;
@@ -5357,12 +5359,13 @@ struct BookshelfPage {
         }
         this.setFullTextCacheStatus(task, `正在缓存 ${i + 1}/${total}`);
         try {
-          if (await engine.cacheChapter(i)) {
+          if (await engine.cacheChapter(i, (): boolean => this.shouldCancelShelfFullTextCache(task))) {
             task.done = this.countCachedChapters(engine.chapters);
           }
         } catch (e) {
-          console.error('缓存章节失败:', i, e);
+          if (!this.shouldCancelShelfFullTextCache(task)) console.error('缓存章节失败:', i, e);
         }
+        if (this.shouldCancelShelfFullTextCache(task)) break;
         await this.publishShelfFullTextCacheProgress(task, false);
         await this.sleep(0);
       }
@@ -5374,6 +5377,7 @@ struct BookshelfPage {
       await engine.syncChapterCacheDates();
       task.done = this.countCachedChapters(engine.chapters);
       this.setFullTextCacheStatus(task, canceled ? '全文缓存已取消' : `缓存完成：${task.done}/${total}`);
+      if (canceled && task.stoppingNotificationTask) await task.stoppingNotificationTask;
       await this.publishShelfFullTextCacheNotification(
         task,
         canceled ? '缓存已停止' : '全文缓存完成',
@@ -5382,6 +5386,16 @@ struct BookshelfPage {
       );
       promptAction.showToast({ message: canceled ? '缓存已停止' : `缓存完成 ${task.done}/${total}` });
       AppStorage.setOrCreate('shelfUpdateTime', Date.now());
+    } catch (error) {
+      if (!task.cancelRequested) {
+        const message = error instanceof Error ? error.message : '全文缓存任务执行失败';
+        throw new Error(message);
+      }
+      if (task.stoppingNotificationTask) await task.stoppingNotificationTask;
+      this.setFullTextCacheStatus(task, '全文缓存已取消');
+      await this.publishShelfFullTextCacheNotification(task, '缓存已停止',
+        this.shelfFullTextCacheProgressText(task), false);
+      promptAction.showToast({ message: '缓存已停止' });
     } finally {
       this.finishShelfFullTextCacheTask(task);
       await this.stopShelfFullTextCacheBackgroundRunning();
@@ -5404,66 +5418,31 @@ struct BookshelfPage {
       total: 0,
       status: '',
       coverPixelMap: null,
-      notificationFailureHintShown: false
+      notificationFailureHintShown: false,
+      engine: null,
+      stoppingNotificationTask: null
     };
   }
 
   registerShelfFullTextCacheTask(task: ShelfFullTextCacheTask): void {
     this.fullTextCacheTasks.set(task.bookUrl, task);
+    FullTextCacheCancelCoordinator.register(task.taskKey, task.bookUrl,
+      (signal: FullTextCacheCancelSignal): void => {
+        if (FullTextCacheCancelCoordinator.matches(signal, task.taskKey, task.bookUrl)) {
+          this.beginStoppingShelfFullTextCache(task, signal.nonce, true);
+        }
+      });
     this.syncShelfFullTextCacheTaskState();
   }
 
-  async ensureShelfFullTextCacheCancelSubscriber(): Promise<void> {
-    if (this.fullTextCacheCancelSubscriber) {
-      return;
-    }
-    try {
-      const subscriber = await commonEventManager.createSubscriber({
-        events: [SHELF_FULL_TEXT_CACHE_CANCEL_EVENT]
-      });
-      this.fullTextCacheCancelSubscriber = subscriber;
-      commonEventManager.subscribe(subscriber, (error: Error | null, data: commonEventManager.CommonEventData) => {
-        if (error) {
-          console.warn('接收书架缓存取消事件失败:', error);
-          return;
-        }
-        this.handleShelfFullTextCacheCancelEvent(data);
-      });
-    } catch (error) {
-      console.warn('注册书架缓存取消事件失败:', error);
-    }
-  }
-
-  releaseShelfFullTextCacheCancelSubscriber(): void {
-    if (!this.fullTextCacheCancelSubscriber) {
-      return;
-    }
-    const subscriber = this.fullTextCacheCancelSubscriber;
-    this.fullTextCacheCancelSubscriber = null;
-    commonEventManager.unsubscribe(subscriber, (error: Error | null) => {
-      if (error) {
-        console.warn('注销书架缓存取消事件失败:', error);
-      }
-    });
-  }
-
-  handleShelfFullTextCacheCancelEvent(data: commonEventManager.CommonEventData): void {
-    const params = data.parameters || {};
-    const taskKey = typeof params['cacheTaskKey'] === 'string' ? params['cacheTaskKey'] as string : '';
-    const bookUrl = typeof params['bookUrl'] === 'string' ? params['bookUrl'] as string : '';
-    this.requestShelfFullTextCacheCancel({
-      nonce: Date.now(),
-      taskKey: taskKey,
-      bookUrl: bookUrl
-    });
-  }
-
   finishShelfFullTextCacheTask(task: ShelfFullTextCacheTask): void {
+    FullTextCacheCancelCoordinator.unregister(task.taskKey);
     const current = this.fullTextCacheTasks.get(task.bookUrl);
     if (current && current.taskKey === task.taskKey) {
       this.fullTextCacheTasks.delete(task.bookUrl);
     }
-    task.cancelRequested = false;
+    task.engine = null;
+    task.stoppingNotificationTask = null;
     this.releaseFullTextCacheCover(task);
     this.syncShelfFullTextCacheTaskState();
   }
@@ -5493,16 +5472,17 @@ struct BookshelfPage {
     return signal.bookUrl ? this.getShelfFullTextCacheTask(signal.bookUrl) : null;
   }
 
-  requestShelfFullTextCacheCancel(signal: FullTextCacheCancelSignal): void {
-    const task = this.findShelfFullTextCacheTaskBySignal(signal);
-    if (!task || task.cancelSeenNonce === signal.nonce) {
-      return;
-    }
+  beginStoppingShelfFullTextCache(task: ShelfFullTextCacheTask, nonce: number, showHint: boolean): void {
+    if (!this.isShelfFullTextCacheTaskActive(task) || task.cancelRequested) return;
     task.cancelRequested = true;
-    task.cancelSeenNonce = signal.nonce;
-    AppStorage.setOrCreate('fullTextCacheCancelSignal', JSON.stringify(signal));
-    AppStorage.setOrCreate('fullTextCacheCancelNonce', signal.nonce);
-    promptAction.showToast({ message: '缓存已停止' });
+    task.cancelSeenNonce = nonce;
+    this.setFullTextCacheStatus(task, '正在停止缓存…');
+    task.engine?.cancelPendingRequests();
+    task.stoppingNotificationTask = this.publishShelfFullTextCacheNotification(task, '正在停止缓存…',
+      this.shelfFullTextCacheProgressText(task), true).catch((error: Error) => {
+      console.warn('更新正在停止缓存通知失败:', error);
+    });
+    if (showHint) promptAction.showToast({ message: '正在停止缓存…' });
   }
 
   shouldCancelShelfFullTextCache(task: ShelfFullTextCacheTask): boolean {
@@ -5517,8 +5497,7 @@ struct BookshelfPage {
         return false;
       }
       if (!signal || this.isCurrentFullTextCacheSignal(task, signal)) {
-        task.cancelRequested = true;
-        task.cancelSeenNonce = signal ? signal.nonce : nonce;
+        this.beginStoppingShelfFullTextCache(task, signal ? signal.nonce : nonce, false);
         return true;
       }
     }
@@ -5530,17 +5509,7 @@ struct BookshelfPage {
     if (!raw.trim()) {
       return null;
     }
-    try {
-      const parsed = JSON.parse(raw) as Record<string, Object>;
-      const signal: FullTextCacheCancelSignal = {
-        nonce: typeof parsed['nonce'] === 'number' ? parsed['nonce'] as number : 0,
-        taskKey: typeof parsed['taskKey'] === 'string' ? parsed['taskKey'] as string : '',
-        bookUrl: typeof parsed['bookUrl'] === 'string' ? parsed['bookUrl'] as string : ''
-      };
-      return signal.nonce > 0 ? signal : null;
-    } catch (e) {
-      return null;
-    }
+    return FullTextCacheCancelCoordinator.parse(raw);
   }
 
   isCurrentFullTextCacheSignal(task: ShelfFullTextCacheTask, signal: FullTextCacheCancelSignal): boolean {
@@ -5843,7 +5812,8 @@ struct BookshelfPage {
     const context = getContext(this) as common.UIAbilityContext;
     task.cancelAgent = await wantAgent.getWantAgent({
       wants: [{
-        action: SHELF_FULL_TEXT_CACHE_CANCEL_EVENT,
+        bundleName: context.abilityInfo.bundleName,
+        abilityName: 'EntryAbility',
         parameters: {
           cacheAction: 'cancelFullTextCache',
           cacheTaskId: task.taskId,
@@ -5851,7 +5821,7 @@ struct BookshelfPage {
           bookUrl: task.bookUrl
         }
       }],
-      actionType: wantAgent.OperationType.SEND_COMMON_EVENT,
+      actionType: wantAgent.OperationType.START_ABILITY,
       requestCode: this.fullTextCacheCancelRequestCode(task.bookUrl),
       actionFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
     });

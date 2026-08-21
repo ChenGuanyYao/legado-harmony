@@ -1,5 +1,5 @@
 import { router, promptAction } from '@kit.ArkUI';
-import { ConfigurationConstant } from '@kit.AbilityKit';
+import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ReaderSettings, ReaderSettingsStore } from '../utils/ReaderSettingsStore';
 import { ReaderThemeHelper, ReaderThemeItem } from '../utils/ReaderThemeHelper';
@@ -11,6 +11,7 @@ import { ReaderFontHelper, ReaderFontItem } from '../utils/ReaderFontHelper';
 import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
 import { ColorCodePicker } from '../components/ColorCodePicker';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { EyeTurnController } from '../core/reader/EyeTurnController';
 import fs from '@ohos.file.fs';
 class ReaderCustomFontItem {
   familyName: string = '';
@@ -67,6 +68,11 @@ struct SettingsPage {
   @StorageLink('readerScreenTimeoutMinutes') readerScreenTimeoutMinutes: number =
     ReaderSettingsStore.SCREEN_TIMEOUT_ALWAYS_ON;
   @StorageLink('readerExtendToStatusBar') readerExtendToStatusBar: boolean = false;
+  @StorageLink('readerEyeTurnEnabled') readerEyeTurnEnabled: boolean = false;
+  @StorageLink('readerEyeTurnPortraitCalibration') readerEyeTurnPortraitCalibration: string = '';
+  @StorageLink('readerEyeTurnLandscapeCalibration') readerEyeTurnLandscapeCalibration: string = '';
+  @StorageLink('readerEyeTurnPreviousDwellMs') readerEyeTurnPreviousDwellMs: number = 850;
+  @StorageLink('readerEyeTurnNextDwellMs') readerEyeTurnNextDwellMs: number = 650;
   @StorageLink('readerPreloadEnabled') readerPreloadEnabled: boolean = true;
   @StorageLink('readerPreloadChapterCount') readerPreloadChapterCount: number = 1;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
@@ -78,6 +84,7 @@ struct SettingsPage {
   @State previewFontRenderVersion: number = 0;
   @State showTapZoneSettings: boolean = false;
   @State customThemeNameDraft: string = '';
+  private readerEyePermissionRequestSerial: number = 0;
 
   aboutToAppear() {
     this.loadThemeMode();
@@ -179,6 +186,21 @@ struct SettingsPage {
           this.switchItem('音量键翻页', '阅读页获得焦点时使用音量上/下键切换上一页/下一页', this.readerVolumeTurnPage, (value: boolean) => {
             this.setReaderVolumeTurnPage(value);
           })
+          this.switchItem('眼动翻页（beta）', '注视屏幕上/下边缘并停留翻页；摄像头图像仅在本机处理',
+            this.readerEyeTurnEnabled, (value: boolean) => {
+              this.setReaderEyeTurnEnabled(value);
+            })
+          if (this.readerEyeTurnEnabled) {
+            this.eyeTurnCalibrationStatusItem()
+            this.selectItem('注视上侧停留', '达到上侧边缘后翻到上一页', this.readerEyeDwellOptions(),
+              this.readerEyeDwellSelectedIndex(this.readerEyeTurnPreviousDwellMs), (index: number) => {
+                this.setReaderEyeDwell(true, index);
+              }, 'settings_eye_previous_dwell_select')
+            this.selectItem('注视下侧停留', '达到下侧边缘后翻到下一页', this.readerEyeDwellOptions(),
+              this.readerEyeDwellSelectedIndex(this.readerEyeTurnNextDwellMs), (index: number) => {
+                this.setReaderEyeDwell(false, index);
+              }, 'settings_eye_next_dwell_select')
+          }
           this.selectItem('亮屏时间设置', '无操作达到所选时长后恢复系统息屏',
             this.screenTimeoutOptions(), this.screenTimeoutSelectedIndex(), (index: number) => {
               this.setReaderScreenTimeoutByIndex(index);
@@ -523,6 +545,11 @@ struct SettingsPage {
     this.readerVolumeTurnPage = settings.volumeTurnPage;
     this.readerScreenTimeoutMinutes = settings.screenTimeoutMinutes;
     this.readerExtendToStatusBar = settings.extendToStatusBar;
+    this.readerEyeTurnEnabled = settings.eyeTurnEnabled;
+    this.readerEyeTurnPortraitCalibration = settings.eyeTurnPortraitCalibration;
+    this.readerEyeTurnLandscapeCalibration = settings.eyeTurnLandscapeCalibration;
+    this.readerEyeTurnPreviousDwellMs = settings.eyeTurnPreviousDwellMs;
+    this.readerEyeTurnNextDwellMs = settings.eyeTurnNextDwellMs;
     this.readerPreloadEnabled = settings.preloadEnabled;
     this.readerPreloadChapterCount = settings.preloadChapterCount;
     this.readerFontFamily = settings.fontFamily || '';
@@ -1315,6 +1342,92 @@ struct SettingsPage {
   setReaderVolumeTurnPage(enabled: boolean): void {
     this.readerVolumeTurnPage = enabled;
     this.saveReaderInteractionSettings();
+  }
+
+  setReaderEyeTurnEnabled(enabled: boolean): void {
+    const serial = ++this.readerEyePermissionRequestSerial;
+    if (!enabled) {
+      this.readerEyeTurnEnabled = false;
+      this.saveReaderEyeTurnSettings();
+      return;
+    }
+    EyeTurnController.requestPermission(getContext(this) as common.UIAbilityContext)
+      .then((granted: boolean): void => {
+        if (serial !== this.readerEyePermissionRequestSerial) return;
+        this.readerEyeTurnEnabled = granted;
+        this.saveReaderEyeTurnSettings();
+        if (!granted) {
+          promptAction.showToast({ message: '需要相机权限才能使用眼动翻页' });
+          return;
+        }
+        if (!this.readerEyeTurnPortraitCalibration && !this.readerEyeTurnLandscapeCalibration) {
+          promptAction.showToast({ message: '已开启，请进入正文阅读设置完成眼动校准' });
+        }
+      })
+      .catch((error: Error): void => {
+        if (serial !== this.readerEyePermissionRequestSerial) return;
+        this.readerEyeTurnEnabled = false;
+        this.saveReaderEyeTurnSettings();
+        promptAction.showToast({ message: `眼动翻页启用失败：${error.message}` });
+      });
+  }
+
+  saveReaderEyeTurnSettings(): void {
+    ReaderSettingsStore.saveEyeTurnSettings(
+      getContext(this),
+      this.readerEyeTurnEnabled,
+      this.readerEyeTurnPortraitCalibration,
+      this.readerEyeTurnLandscapeCalibration,
+      this.readerEyeTurnPreviousDwellMs,
+      this.readerEyeTurnNextDwellMs
+    ).catch((error: Error): void => {
+      console.warn('保存眼动翻页设置失败:', error.message);
+    });
+  }
+
+  readerEyeDwellOptions(): SelectOption[] {
+    return [
+      { value: '0.5秒' },
+      { value: '0.65秒' },
+      { value: '0.85秒' },
+      { value: '1.1秒' },
+      { value: '1.4秒' }
+    ];
+  }
+
+  readerEyeDwellValues(): number[] {
+    return [500, 650, 850, 1100, 1400];
+  }
+
+  readerEyeDwellSelectedIndex(value: number): number {
+    const values = this.readerEyeDwellValues();
+    let selected = 0;
+    let distance = Number.MAX_SAFE_INTEGER;
+    for (let index = 0; index < values.length; index++) {
+      const nextDistance = Math.abs(values[index] - value);
+      if (nextDistance < distance) {
+        selected = index;
+        distance = nextDistance;
+      }
+    }
+    return selected;
+  }
+
+  setReaderEyeDwell(previous: boolean, index: number): void {
+    const values = this.readerEyeDwellValues();
+    const value = index >= 0 && index < values.length ? values[index] : 850;
+    if (previous) {
+      this.readerEyeTurnPreviousDwellMs = value;
+    } else {
+      this.readerEyeTurnNextDwellMs = value;
+    }
+    this.saveReaderEyeTurnSettings();
+  }
+
+  readerEyeCalibrationSummary(): string {
+    const portrait = this.readerEyeTurnPortraitCalibration ? '已校准' : '未校准';
+    const landscape = this.readerEyeTurnLandscapeCalibration ? '已校准' : '未校准';
+    return `竖屏 ${portrait} · 横屏 ${landscape}`;
   }
 
   screenTimeoutOptions(): SelectOption[] {
@@ -2201,6 +2314,37 @@ struct SettingsPage {
     .backgroundColor(this.inputColor())
     .accessibilityText(accessibilityText)
     .onClick(action)
+  }
+
+  @Builder
+  eyeTurnCalibrationStatusItem() {
+    Row() {
+      Column() {
+        Text('眼动校准')
+          .fontSize(16)
+          .fontColor(this.primaryTextColor())
+        Text(this.readerEyeCalibrationSummary())
+          .fontSize(12)
+          .fontColor(this.subTextColor())
+          .margin({ top: 4 })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Text('在正文内校准')
+        .fontSize(13)
+        .fontColor(this.accentColor())
+    }
+    .width('calc(100% - 32vp)')
+    .constraintSize({ minHeight: 64 })
+    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
+    .margin({ left: 16, right: 16 })
+    .backgroundColor(Color.Transparent)
+    .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+    .alignItems(VerticalAlign.Center)
+    .onClick((): void => {
+      promptAction.showToast({ message: '请打开任意书籍，在正文阅读设置中点击“眼动校准”' });
+    })
   }
 
   @Builder

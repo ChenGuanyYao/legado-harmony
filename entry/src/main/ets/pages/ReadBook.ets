@@ -88,6 +88,15 @@ import { ReaderV2Color, ReaderV2SpanStyleRange } from '../core/reader/ReaderV2St
 import { ReaderV2PageNodeController } from '../core/reader/ReaderV2RenderNode';
 import { ReaderV2GestureRouter, ReaderV2TapResult } from '../core/reader/ReaderV2Interaction';
 import { ReaderOpenTrace } from '../utils/ReaderOpenTrace';
+import { EyeTurnCalibration, EyeTurnController, EyeTurnSample } from '../core/reader/EyeTurnController';
+import { FullTextCacheCancelCoordinator, FullTextCacheCancelSignal } from '../utils/FullTextCacheCancelCoordinator';
+
+const READER_EYE_CALIBRATION_SWEEP_MS: number = 4000;
+const READER_EYE_CALIBRATION_CENTER_MS: number = 1500;
+const READER_EYE_CALIBRATION_TOTAL_MS: number =
+  READER_EYE_CALIBRATION_SWEEP_MS * 2 + READER_EYE_CALIBRATION_CENTER_MS;
+const READER_EYE_CALIBRATION_TICK_MS: number = 60;
+const READER_EYE_CALIBRATION_MIN_SWEEP_SAMPLES: number = 6;
 
 const TOC_WINDOW_PAGE_SIZE = 72;
 const TOC_SCROLLBAR_DRAG_UPDATE_INTERVAL_MS = 90;
@@ -145,6 +154,22 @@ interface ReaderPaginationResult {
 interface ReaderViewportSize {
   width: number;
   height: number;
+}
+
+class ReaderEyeCalibrationPoint {
+  score: number = 0;
+  pitch: number = 0;
+  eyeRatio: number = 0.5;
+  eyeAvailable: boolean = false;
+  targetY: number = 0;
+  phase: number = 0;
+  confidence: number = 0;
+}
+
+class ReaderEyeCalibrationFit {
+  slope: number = 0;
+  intercept: number = 0;
+  correlation: number = 0;
 }
 
 interface ReaderParagraphMeasureFallback {
@@ -699,6 +724,11 @@ struct ReadBookPage {
     ReaderSettingsStore.SCREEN_ORIENTATION_SYSTEM;
   @StorageLink('readerTapZoneActions') readerTapZoneActions: string = '3,3,3,3,1,2,2,2,2';
   @StorageLink('readerVolumeTurnPage') @Watch('onReaderVolumeTurnPageChanged') readerVolumeTurnPage: boolean = false;
+  @StorageLink('readerEyeTurnEnabled') readerEyeTurnEnabled: boolean = false;
+  @StorageLink('readerEyeTurnPortraitCalibration') readerEyeTurnPortraitCalibration: string = '';
+  @StorageLink('readerEyeTurnLandscapeCalibration') readerEyeTurnLandscapeCalibration: string = '';
+  @StorageLink('readerEyeTurnPreviousDwellMs') readerEyeTurnPreviousDwellMs: number = 850;
+  @StorageLink('readerEyeTurnNextDwellMs') readerEyeTurnNextDwellMs: number = 650;
   @StorageLink('readerScreenTimeoutMinutes') readerScreenTimeoutMinutes: number =
     ReaderSettingsStore.SCREEN_TIMEOUT_ALWAYS_ON;
   @StorageLink('readerExtendToStatusBar') @Watch('onReaderExtendToStatusBarChanged') readerExtendToStatusBar: boolean = false;
@@ -770,6 +800,8 @@ struct ReadBookPage {
   private fullTextCacheNotificationLastAt: number = 0;
   private fullTextCacheBackgroundRunning: boolean = false;
   private fullTextCacheCancelAgent: WantAgent | null = null;
+  private fullTextCacheTaskKey: string = '';
+  private fullTextCacheStoppingNotificationTask: Promise<void> | null = null;
   private volumeUpCallback?: (event: KeyEvent) => void;
   private volumeDownCallback?: (event: KeyEvent) => void;
   private lastLoggedReaderFontFamily: string = '';
@@ -820,6 +852,24 @@ struct ReadBookPage {
   private readerCommentPageAreaTop: number = -1;
   private readerCommentPageAreaHeight: number = 0;
   private readerCommentPanelController: webview.WebviewController = new webview.WebviewController();
+  private readerEyeTurnController: EyeTurnController = new EyeTurnController();
+  private readerEyeTurnSurfaceController: XComponentController = new XComponentController();
+  private readerEyeTurnSurfaceId: string = '';
+  private readerEyeTurnConfiguredLandscape: boolean = false;
+  @State private readerEyeTurnStatus: string = '未启用';
+  @State private showReaderEyeCalibration: boolean = false;
+  @State private readerEyeCalibrationStep: number = 1;
+  @State private readerEyeCalibrationCapturing: boolean = false;
+  @State private readerEyeCalibrationProgress: number = 0;
+  @State private readerEyeCalibrationTargetY: number = 0;
+  @State private readerEyeCalibrationOverlayWidth: number = 0;
+  @State private readerEyeCalibrationOverlayHeight: number = 0;
+  private readerEyeCalibrationPoints: ReaderEyeCalibrationPoint[] = [];
+  private readerEyeCalibrationTimerId: number = -1;
+  private readerEyeCalibrationSequenceStartedAt: number = 0;
+  private readerEyeCalibrationStartupAt: number = 0;
+  private readerEyeCalibrationLandscape: boolean = false;
+  private readerEyePermissionRequestSerial: number = 0;
 
   async aboutToAppear() {
     ReaderProgressCheckpoint.attach(this.ttsFloatingSessionOwnerId,
@@ -923,6 +973,7 @@ struct ReadBookPage {
     }
     this.syncTtsFocusAfterResumeLater(0);
     this.syncTtsFocusAfterResumeLater(180);
+    this.startReaderEyeTurnIfReady();
   }
 
   onGlobalTtsActiveChanged(): void {
@@ -945,6 +996,10 @@ struct ReadBookPage {
   }
 
   onBackPress(): boolean {
+    if (this.showReaderEyeCalibration) {
+      this.cancelReaderEyeCalibration();
+      return true;
+    }
     if (this.showReaderCommentPanel) {
       this.closeReaderCommentPanel();
       return true;
@@ -1049,6 +1104,9 @@ struct ReadBookPage {
     AppStorage.setOrCreate<boolean>('shelfReaderDirectTransition', false);
     this.resetReaderScreenOrientation();
     this.readerPageVisible = false;
+    this.readerEyeTurnController.stop().catch((error: Error): void => {
+      console.warn('[EyeTurn] reader disappear release failed:', error.message);
+    });
     this.setReaderTextSelectionActive(false);
     this.cancelReaderPaginationWork(true);
     this.resetReaderPageCurl();
@@ -1108,6 +1166,9 @@ struct ReadBookPage {
   onPageHide(): void {
     this.shortcutRoutingActive = false;
     this.readerPageVisible = false;
+    this.readerEyeTurnController.stop().catch((error: Error): void => {
+      console.warn('[EyeTurn] reader background release failed:', error.message);
+    });
     this.setReaderTextSelectionActive(false);
     // Capture the authoritative visible page before pausing background workers. Clearing the retained V2
     // document here made canSaveReadingProgress() reject the checkpoint, then forced a full repagination on
@@ -1581,25 +1642,55 @@ struct ReadBookPage {
     }
 
     const engine = ReadBookEngine.get();
+    const chapterIndex = this.currentChapterIndex;
+    // Treat an explicit reload as a new content generation. Previously reloadContent() replaced `content` while
+    // the old incremental pagination session, retained V2 document and TTS source mapping remained alive. When the
+    // source happened to keep the same cache identity,正文 could reset to page one but TTS rectangles were still
+    // resolved through the detached document and stayed invisible even after a page turn.
+    const refreshSerial = ++this.contentLoadSerial;
     this.isLoading = true;
     this.loadStatus = '正在刷新本章...';
+    // Mark the refresh busy before stopping TTS so its delayed sentence checkpoint cannot race the explicit
+    // page-one progress written after the replacement pagination has been published.
+    this.stopTtsReading();
+    this.readerPreparedContentCache.clear();
     try {
-      const body = await engine.reloadContent(this.currentChapterIndex);
+      const body = await engine.reloadContent(chapterIndex);
+      if (refreshSerial !== this.contentLoadSerial || chapterIndex !== this.currentChapterIndex) return;
       if (body) {
-        const processedBody = await this.prepareReaderContentRules(body, this.currentChapterIndex);
+        const processedBody = await this.prepareReaderContentRules(body, chapterIndex);
+        if (refreshSerial !== this.contentLoadSerial || chapterIndex !== this.currentChapterIndex) return;
+        // Cancel every producer and retained consumer derived from the previous正文 before publishing the new one.
+        // The surface generation is necessary because NodeContainer may retain the old controller even after the
+        // controller map has been cleared; a remount keeps正文、分页边界 and TTS source offsets on one generation.
+        this.finishPageTurnAnimation(false);
+        this.clearQueuedReaderPageTurns();
+        this.cancelReaderPaginationWork(true);
+        this.readerV2SurfaceGeneration++;
+        this.readerV2ActiveSpeechText = null;
+        this.readerTypographyRestoreOffset = -1;
+        this.readerInitialPageReady = false;
+        this.contentPages = [];
+        this.contentPageStarts = [];
+        this.contentPageEnds = [];
+        this.pagedContentText = '';
         this.readerComicImageRatios = [];
         this.content = processedBody;
         this.detectReaderComicMode(processedBody);
         this.chapters = [...engine.chapters];
         this.pendingRestorePageIndex = 0;
         this.currentPageIndex = 0;
-        this.paginateContent(processedBody);
+        this.paginateContent(processedBody, chapterIndex);
+        this.forceCurrentReaderPageRender();
+        this.refreshCurrentReaderV2RetainedPages(true);
         this.preloadReaderContentLater(720);
         await this.saveReadingProgress();
+        if (refreshSerial !== this.contentLoadSerial || chapterIndex !== this.currentChapterIndex) return;
         promptAction.showToast({ message: '本章已刷新' });
       } else {
+        if (refreshSerial !== this.contentLoadSerial || chapterIndex !== this.currentChapterIndex) return;
         this.updatePendingVerification();
-        const chapter = this.chapters[this.currentChapterIndex];
+        const chapter = this.chapters[chapterIndex];
         const loadedContent = this.verificationUrl ? `${chapter ? chapter.title : '当前章节'}\n\n该书源需要先完成网页验证。请点击右上角“更多操作”，选择“登录”，完成后返回，再从该菜单选择“重试”。` :
           (chapter ? `${chapter.title}\n\n章节正文刷新失败。请再次点击右上角“刷新本章”或“换源”。` :
             '章节正文刷新失败。请点击右上角“更多操作”，选择“重试”。');
@@ -1611,17 +1702,25 @@ struct ReadBookPage {
       console.error('刷新本章失败:', e);
       promptAction.showToast({ message: '刷新本章失败' });
     } finally {
-      this.isLoading = false;
-      this.loadStatus = '';
-      this.updatePendingVerification();
+      if (refreshSerial === this.contentLoadSerial) {
+        this.isLoading = false;
+        this.loadStatus = '';
+        this.updatePendingVerification();
+      }
     }
   }
 
   onFullTextCacheCancelNonceChanged(): void {
     const nonce = this.fullTextCacheCancelNonce || 0;
     if (this.fullTextCaching && nonce > 0 && nonce !== this.fullTextCacheCancelSeenNonce) {
-      this.fullTextCacheCancelRequested = true;
-      this.fullTextCacheCancelSeenNonce = nonce;
+      const signal = FullTextCacheCancelCoordinator.parse(
+        AppStorage.get<string>('fullTextCacheCancelSignal') || '');
+      if (signal && !FullTextCacheCancelCoordinator.matches(signal, this.fullTextCacheTaskKey,
+        this.book?.bookUrl || this.bookUrl)) {
+        this.fullTextCacheCancelSeenNonce = nonce;
+        return;
+      }
+      this.beginStoppingFullTextCache(signal ? signal.nonce : nonce, true);
     }
   }
 
@@ -1637,7 +1736,18 @@ struct ReadBookPage {
 
     this.hideReaderPanels();
     promptAction.showToast({ message: '已转入后台缓存，可在通知栏取消' });
-    this.runFullTextCache(++this.fullTextCacheTaskId).catch((error: Error) => {
+    this.runFullTextCache(++this.fullTextCacheTaskId).catch(async (error: Error): Promise<void> => {
+      if (this.fullTextCacheCancelRequested) {
+        if (this.fullTextCacheStoppingNotificationTask) await this.fullTextCacheStoppingNotificationTask;
+        this.fullTextCaching = false;
+        this.fullTextCacheStatus = '全文缓存已取消';
+        await this.publishFullTextCacheNotification('缓存已停止', this.fullTextCacheProgressText(), false);
+        await this.stopFullTextCacheBackgroundRunning();
+        this.releaseFullTextCacheCancelRegistration();
+        this.fullTextCacheCancelRequested = false;
+        return;
+      }
+      this.releaseFullTextCacheCancelRegistration();
       console.error('全文缓存任务失败:', error);
       this.fullTextCaching = false;
       this.fullTextCacheStatus = '全文缓存失败';
@@ -1662,6 +1772,14 @@ struct ReadBookPage {
     this.fullTextCacheCancelSeenNonce = AppStorage.get<number>('fullTextCacheCancelNonce') || 0;
     this.fullTextCacheNotificationLastAt = 0;
     this.fullTextCacheCancelAgent = null;
+    this.fullTextCacheStoppingNotificationTask = null;
+    this.fullTextCacheTaskKey = `reader_${taskId}_${Date.now()}`;
+    FullTextCacheCancelCoordinator.register(this.fullTextCacheTaskKey, engine.book.bookUrl,
+      (signal: FullTextCacheCancelSignal): void => {
+        if (FullTextCacheCancelCoordinator.matches(signal, this.fullTextCacheTaskKey, engine.book?.bookUrl || '')) {
+          this.beginStoppingFullTextCache(signal.nonce, true);
+        }
+      });
     await engine.syncChapterCacheDates();
     this.chapters = [...engine.chapters];
     this.fullTextCacheTotal = engine.chapters.length;
@@ -1689,11 +1807,13 @@ struct ReadBookPage {
         this.fullTextCacheDone = this.countCachedChapters(engine.chapters);
         this.chapters = [...engine.chapters];
       }
+      if (this.shouldCancelFullTextCache()) break;
       await this.publishFullTextCacheProgress(false);
       await this.sleep(0);
     }
 
     if (taskId !== this.fullTextCacheTaskId) {
+      this.releaseFullTextCacheCancelRegistration();
       return;
     }
 
@@ -1705,7 +1825,9 @@ struct ReadBookPage {
     const failedCount = Math.max(0, this.fullTextCacheTotal - this.fullTextCacheDone);
     this.fullTextCacheStatus = canceled ? '全文缓存已取消' :
       (failedCount > 0 ? `缓存结束，${failedCount} 章未缓存` : '全文缓存完成');
-    this.fullTextCacheCancelRequested = false;
+    if (canceled && this.fullTextCacheStoppingNotificationTask) {
+      await this.fullTextCacheStoppingNotificationTask;
+    }
     await this.publishFullTextCacheNotification(
       canceled ? '缓存已停止' : this.fullTextCacheStatus,
       this.fullTextCacheProgressText(),
@@ -1717,6 +1839,26 @@ struct ReadBookPage {
       promptAction.showToast({ message: '全文缓存完成' });
     }
     await this.stopFullTextCacheBackgroundRunning();
+    this.releaseFullTextCacheCancelRegistration();
+    this.fullTextCacheCancelRequested = false;
+  }
+
+  beginStoppingFullTextCache(nonce: number, showHint: boolean): void {
+    if (!this.fullTextCaching || this.fullTextCacheCancelRequested) return;
+    this.fullTextCacheCancelRequested = true;
+    this.fullTextCacheCancelSeenNonce = nonce;
+    this.fullTextCacheStatus = '正在停止缓存…';
+    ReadBookEngine.get().cancelPendingRequests();
+    this.fullTextCacheStoppingNotificationTask = this.publishFullTextCacheNotification(
+      '正在停止缓存…', this.fullTextCacheProgressText(), true)
+      .catch((error: Error) => console.warn('更新正在停止缓存通知失败:', error));
+    if (showHint) promptAction.showToast({ message: '正在停止缓存…' });
+  }
+
+  releaseFullTextCacheCancelRegistration(): void {
+    FullTextCacheCancelCoordinator.unregister(this.fullTextCacheTaskKey);
+    this.fullTextCacheTaskKey = '';
+    this.fullTextCacheStoppingNotificationTask = null;
   }
 
   shouldCancelFullTextCache(): boolean {
@@ -1725,9 +1867,15 @@ struct ReadBookPage {
     }
     const nonce = AppStorage.get<number>('fullTextCacheCancelNonce') || 0;
     if (nonce > 0 && nonce !== this.fullTextCacheCancelSeenNonce) {
-      this.fullTextCacheCancelRequested = true;
-      this.fullTextCacheCancelSeenNonce = nonce;
-      return true;
+      const signal = FullTextCacheCancelCoordinator.parse(
+        AppStorage.get<string>('fullTextCacheCancelSignal') || '');
+      if (signal && !FullTextCacheCancelCoordinator.matches(signal, this.fullTextCacheTaskKey,
+        this.book?.bookUrl || this.bookUrl)) {
+        this.fullTextCacheCancelSeenNonce = nonce;
+        return false;
+      }
+      this.beginStoppingFullTextCache(signal ? signal.nonce : nonce, false);
+      return this.fullTextCacheCancelRequested;
     }
     return false;
   }
@@ -1794,11 +1942,14 @@ struct ReadBookPage {
         return false;
       }
       try {
-        if (await engine.cacheChapter(chapterIndex)) {
+        if (await engine.cacheChapter(chapterIndex,
+          (): boolean => taskId !== this.fullTextCacheTaskId || this.shouldCancelFullTextCache())) {
           return true;
         }
       } catch (error) {
-        console.warn(`缓存第 ${chapterIndex + 1} 章失败（第 ${attempt + 1} 次）:`, error);
+        if (!this.shouldCancelFullTextCache()) {
+          console.warn(`缓存第 ${chapterIndex + 1} 章失败（第 ${attempt + 1} 次）:`, error);
+        }
       }
       if (attempt === 0) {
         await this.sleep(300);
@@ -1890,7 +2041,9 @@ struct ReadBookPage {
         abilityName: 'EntryAbility',
         parameters: {
           cacheAction: 'cancelFullTextCache',
-          cacheTaskId: this.fullTextCacheTaskId
+          cacheTaskId: this.fullTextCacheTaskId,
+          cacheTaskKey: this.fullTextCacheTaskKey,
+          bookUrl: this.book?.bookUrl || this.bookUrl
         }
       }],
       actionType: wantAgent.OperationType.START_ABILITY,
@@ -2286,6 +2439,44 @@ struct ReadBookPage {
       if (this.readerWebFetchRuntimeNeeded) {
         WebBookFetchRuntimeHost()
       }
+      if (this.readerEyeTurnEnabled) {
+        // The camera Surface stays behind the opaque reader background. It is never shown or persisted; only a
+        // throttled local PixelMap is sampled while this page is in the foreground.
+        XComponent({
+          id: 'reader_eye_turn_camera_surface',
+          type: XComponentType.SURFACE,
+          controller: this.readerEyeTurnSurfaceController
+        })
+          // Never resize the live camera Surface to 1x1. Some camera drivers use the component's layout viewport
+          // as the producer crop even when setXComponentSurfaceRect keeps a 640x480 buffer; shrinking it after
+          // calibration then yielded faceNum=0 for every reading-page frame. The opaque theme hides this stable
+          // Surface in normal reading mode.
+          .width(this.readerEyeCalibrationPreviewWidthVp())
+          .height(this.readerEyeCalibrationPreviewHeightVp())
+          .position({
+            x: this.showReaderEyeCalibration ? this.readerEyeCalibrationPreviewLeftVp() : 0,
+            y: this.showReaderEyeCalibration ? this.readerEyeCalibrationPreviewTopVp() : 0
+          })
+          .opacity(this.showReaderEyeCalibration ? 1 : 0.001)
+          .borderRadius(this.showReaderEyeCalibration ? 20 : 0)
+          .clip(true)
+          .zIndex(this.showReaderEyeCalibration ? 3 : -1)
+          .hitTestBehavior(HitTestMode.None)
+          .onLoad((): void => {
+            this.readerEyeTurnSurfaceController.setXComponentSurfaceRect({
+              surfaceWidth: 640,
+              surfaceHeight: 480
+            });
+            this.readerEyeTurnSurfaceId = this.readerEyeTurnSurfaceController.getXComponentSurfaceId();
+            this.startReaderEyeTurnIfReady();
+          })
+          .onDestroy((): void => {
+            this.readerEyeTurnSurfaceId = '';
+            this.readerEyeTurnController.stop().catch((error: Error): void => {
+              console.warn('[EyeTurn] release surface failed:', error.message);
+            });
+          })
+      }
       ReaderThemeBackground({
         surfaceColor: this.getBackgroundColor(),
         backgroundAssetId: this.getBackgroundAssetId(),
@@ -2491,6 +2682,17 @@ struct ReadBookPage {
       if (this.showReaderCommentPanel) {
         this.readerCommentPanel()
       }
+
+      if (this.readerEyeTurnEnabled && this.readerInitialPageReady && !this.showReaderEyeCalibration &&
+        !this.showMenu && !this.showSettings && !this.showToc && !this.showReaderCommentPanel) {
+        if (this.readerEyeTurnEdgeDirection() !== 0) {
+          this.readerEyeTurnEdgePrompt()
+        }
+      }
+
+      if (this.showReaderEyeCalibration) {
+        this.readerEyeCalibrationPanel()
+      }
     }
     .width('100%')
     .height('100%')
@@ -2583,7 +2785,7 @@ struct ReadBookPage {
 
   @Builder
   readerCommentPanelDragHandle() {
-    Stack({ alignContent: Alignment.Center }) {
+    Stack({ alignContent: Alignment.Bottom }) {
       Row()
         .width('100%')
         .height('100%')
@@ -5690,6 +5892,11 @@ struct ReadBookPage {
     if (width <= 0 || height <= 0) {
       return;
     }
+    // A theme rebuild can move the page without changing its size. Keep the measured origin current even when
+    // pagination itself does not need to run again, otherwise V2 action hit testing uses a stale vertical offset.
+    const globalY: Length = area.globalPosition?.y ?? 0;
+    this.readerCommentPageAreaTop = this.parseAreaDimension(globalY);
+    this.readerCommentPageAreaHeight = height;
     if (Math.abs(this.pageViewWidth - width) < 0.5 && Math.abs(this.pageViewHeight - height) < 0.5) {
       return;
     }
@@ -5698,9 +5905,6 @@ struct ReadBookPage {
         (this.readerProgressAnchorChapterIndex === this.currentChapterIndex &&
           this.readerProgressAnchorOffset >= 0));
     const shouldRestoreSavedPage = this.pendingRestorePageIndex >= 0 || preservingStoredOffset;
-    const globalY: Length = area.globalPosition?.y ?? 0;
-    this.readerCommentPageAreaTop = this.parseAreaDimension(globalY);
-    this.readerCommentPageAreaHeight = height;
     const readingOffset = this.getReaderStableReflowOffset();
     if (!shouldRestoreSavedPage && this.readerInitialPageReady && this.contentPages.length > 0) {
       // Window foreground/rotation can briefly report several sizes. Keep the completed visible snapshot and
@@ -5709,6 +5913,7 @@ struct ReadBookPage {
     }
     this.pageViewWidth = width;
     this.pageViewHeight = height;
+    this.refreshReaderEyeTurnForViewport();
     AppStorage.setOrCreate<number>('readerLastPageViewWidth', width);
     AppStorage.setOrCreate<number>('readerLastPageViewHeight', height);
     this.paginateContent(this.content);
@@ -6254,6 +6459,11 @@ struct ReadBookPage {
     this.readerScreenOrientation = settings.screenOrientation;
     this.readerTapZoneActions = settings.tapZoneActions;
     this.readerVolumeTurnPage = settings.volumeTurnPage;
+    this.readerEyeTurnEnabled = settings.eyeTurnEnabled;
+    this.readerEyeTurnPortraitCalibration = settings.eyeTurnPortraitCalibration || '';
+    this.readerEyeTurnLandscapeCalibration = settings.eyeTurnLandscapeCalibration || '';
+    this.readerEyeTurnPreviousDwellMs = settings.eyeTurnPreviousDwellMs || 850;
+    this.readerEyeTurnNextDwellMs = settings.eyeTurnNextDwellMs || 650;
     this.readerScreenTimeoutMinutes = settings.screenTimeoutMinutes;
     this.applyReaderScreenTimeout();
     this.readerExtendToStatusBar = settings.extendToStatusBar;
@@ -10490,6 +10700,23 @@ struct ReadBookPage {
           this.setReaderVolumeTurnPage(checked);
         })
 
+      this.readerSwitchSettingItem('眼动翻页（beta）', '注视屏幕上/下边缘并停留，翻到上一页/下一页；图像仅在设备本地处理',
+        this.readerEyeTurnEnabled, (checked: boolean) => {
+          this.setReaderEyeTurnEnabled(checked);
+        })
+
+      if (this.readerEyeTurnEnabled) {
+        this.readerEyeTurnCalibrationSettingItem()
+        this.readerSelectSettingItem('注视上侧停留', '达到上侧边缘后翻到上一页', this.readerEyeDwellOptions(),
+          this.readerEyeDwellSelectedIndex(this.readerEyeTurnPreviousDwellMs), (index: number) => {
+            this.setReaderEyeDwell(true, index);
+          }, 'reader_eye_previous_dwell_select')
+        this.readerSelectSettingItem('注视下侧停留', '达到下侧边缘后翻到下一页', this.readerEyeDwellOptions(),
+          this.readerEyeDwellSelectedIndex(this.readerEyeTurnNextDwellMs), (index: number) => {
+            this.setReaderEyeDwell(false, index);
+          }, 'reader_eye_next_dwell_select')
+      }
+
       this.readerSelectSettingItem('亮屏时间设置', '无操作达到所选时长后恢复系统息屏',
         this.screenTimeoutOptions(), this.screenTimeoutSelectedIndex(), (index: number) => {
           this.setReaderScreenTimeoutByIndex(index);
@@ -11332,6 +11559,243 @@ struct ReadBookPage {
   }
 
   @Builder
+  readerEyeTurnCalibrationSettingItem() {
+    Row() {
+      Column() {
+        Text('眼动校准')
+          .fontSize(15)
+          .fontColor(this.getTextColor())
+        Text(`${this.isReaderEyeLandscape() ? '横屏' : '竖屏'} · ${this.readerEyeTurnStatus}`)
+          .fontSize(12)
+          .fontColor(this.getSubTextColor())
+          .margin({ top: 4 })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Button(this.currentReaderEyeCalibrationRaw() ? '重新校准' : '开始校准')
+        .height(36)
+        .fontSize(13)
+        .fontColor('#FFFFFF')
+        .backgroundColor(this.accentColor())
+        .onClick((): void => this.openReaderEyeCalibration())
+    }
+    .width('100%')
+    .constraintSize({ minHeight: 56 })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  readerEyeTurnEdgeDirection(): number {
+    const status = this.readerEyeTurnStatus || '';
+    if (status.indexOf('正在注视顶部') >= 0) return -1;
+    if (status.indexOf('正在注视底部') >= 0) return 1;
+    return 0;
+  }
+
+  readerEyeTurnEdgePromptTop(): number {
+    const direction = this.readerEyeTurnEdgeDirection();
+    if (direction < 0) {
+      return this.getReaderPageContentTopPadding() + this.getEffectiveReaderMarginTop() + 18;
+    }
+    const viewportHeight = this.pageViewHeight > 0 ? this.pageViewHeight : 720;
+    return Math.max(48, viewportHeight - this.getReaderContentBottomReserve() -
+      this.getEffectiveReaderMarginBottom() - 48);
+  }
+
+  @Builder
+  readerEyeTurnEdgePrompt() {
+    Row() {
+      Text(this.readerEyeTurnEdgeDirection() < 0 ? '上一页' : '下一页')
+        .fontSize(14)
+        .fontWeight(FontWeight.Medium)
+        .fontColor('#F8FFFFFF')
+        .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+        .borderRadius(18)
+        .backgroundColor('#B35C7569')
+        .shadow({ radius: 12, color: '#45000000', offsetX: 0, offsetY: 4 })
+    }
+    .width('100%')
+    .justifyContent(FlexAlign.Center)
+    .position({ x: 0, y: this.readerEyeTurnEdgePromptTop() })
+    .zIndex(3)
+    .hitTestBehavior(HitTestMode.None)
+  }
+
+  @Builder
+  readerEyeCalibrationPanel() {
+    Stack({ alignContent: Alignment.Center }) {
+      Column({ space: 18 }) {
+        Row() {
+          Text('眼动翻页校准')
+            .fontSize(20)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.getTextColor())
+          Blank()
+          Button({ type: ButtonType.Circle }) {
+            SymbolGlyph($r('sys.symbol.xmark'))
+              .fontSize(18)
+              .fontColor([this.getTextColor()])
+          }
+          .width(38)
+          .height(38)
+          .backgroundColor(this.isReaderThemeDark() ? '#28FFFFFF' : '#12000000')
+          .onClick((): void => this.cancelReaderEyeCalibration())
+        }
+        .width('100%')
+
+        Text(this.readerEyeCalibrationInstruction())
+          .fontSize(17)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.getTextColor())
+          .textAlign(TextAlign.Center)
+
+        Text('头部和手机保持稳定，只用眼睛跟随圆点缓慢移动。请不要提前看向圆点将要到达的位置。')
+          .fontSize(13)
+          .fontColor(this.getSubTextColor())
+          .textAlign(TextAlign.Center)
+          .lineHeight(20)
+
+        if (this.readerEyeCalibrationCapturing) {
+          Progress({ value: this.readerEyeCalibrationProgress, total: 100, type: ProgressType.Linear })
+            .width('100%')
+            .height(6)
+            .color(this.accentColor())
+          Text(`校准进度 ${Math.round(this.readerEyeCalibrationProgress)}%`)
+            .fontSize(13)
+            .fontColor(this.accentColor())
+          Text(this.readerEyeTurnStatus)
+            .fontSize(12)
+            .fontColor(this.getSubTextColor())
+            .textAlign(TextAlign.Center)
+        } else {
+          Button('开始连续视线校准')
+            .width('100%')
+            .height(46)
+            .fontSize(15)
+            .fontColor('#FFFFFF')
+            .backgroundColor(this.accentColor())
+            .onClick((): void => this.beginReaderEyeCalibrationCapture())
+        }
+      }
+      .width('calc(100% - 48vp)')
+      .constraintSize({ maxWidth: 480 })
+      .padding(24)
+      .borderRadius(28)
+      .backgroundColor(this.readerGlassPanelColor())
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({ width: 1, color: this.readerGlassBorderColor() })
+      .margin({ bottom: 24 })
+
+      Stack({ alignContent: Alignment.Center }) {
+        Row()
+          .width(this.readerEyeCalibrationPreviewWidthVp() * 0.48)
+          .height(this.readerEyeCalibrationPreviewHeightVp() * 0.76)
+          .borderRadius(999)
+          .border({ width: 2, color: this.accentColor(), style: BorderStyle.Dashed })
+
+        Column() {
+          Blank()
+          Text(this.readerEyeCalibrationPreviewHint())
+            .fontSize(11)
+            .fontColor('#FFFFFF')
+            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+            .borderRadius(12)
+            .backgroundColor('#88000000')
+            .margin({ bottom: 8 })
+        }
+        .height('100%')
+      }
+      .width(this.readerEyeCalibrationPreviewWidthVp())
+      .height(this.readerEyeCalibrationPreviewHeightVp())
+      .position({
+        x: this.readerEyeCalibrationPreviewLeftVp(),
+        y: this.readerEyeCalibrationPreviewTopVp()
+      })
+      .borderRadius(20)
+      .border({ width: 1, color: '#70FFFFFF' })
+      .hitTestBehavior(HitTestMode.None)
+
+      if (this.readerEyeCalibrationCapturing && this.readerEyeCalibrationStep >= 1 &&
+        this.readerEyeCalibrationStep <= 3) {
+        Row()
+          .width(24)
+          .height(24)
+          .borderRadius(12)
+          .backgroundColor(this.accentColor())
+          .border({ width: 4, color: this.isReaderThemeDark() ? '#A0FFFFFF' : '#D0FFFFFF' })
+          .shadow({ radius: 16, color: this.accentColor(), offsetX: 0, offsetY: 0 })
+          .position({
+            x: Math.max(0, (this.readerEyeCalibrationOverlayWidth - 24) / 2),
+            y: this.readerEyeCalibrationTargetTopVp()
+          })
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .backgroundColor('#66000000')
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .zIndex(4)
+    .onAreaChange((_oldArea: Area, newArea: Area): void => {
+      const width = this.parseAreaDimension(newArea.width);
+      const height = this.parseAreaDimension(newArea.height);
+      if (width > 0 && Math.abs(width - this.readerEyeCalibrationOverlayWidth) >= 0.5) {
+        this.readerEyeCalibrationOverlayWidth = width;
+      }
+      if (height > 0 && Math.abs(height - this.readerEyeCalibrationOverlayHeight) >= 0.5) {
+        this.readerEyeCalibrationOverlayHeight = height;
+      }
+    })
+    .onClick((): void => {})
+  }
+
+  readerEyeCalibrationTargetTopVp(): number {
+    const overlayHeight = this.readerEyeCalibrationOverlayHeight > 0 ?
+      this.readerEyeCalibrationOverlayHeight : Math.max(1, this.pageViewHeight);
+    const top = 4;
+    const bottom = Math.max(top, overlayHeight - 28);
+    const progress = Math.max(0, Math.min(1, (this.readerEyeCalibrationTargetY + 1) / 2));
+    return top + (bottom - top) * progress;
+  }
+
+  readerEyeCalibrationPreviewWidthVp(): number {
+    const overlayWidth = this.readerEyeCalibrationOverlayWidth > 0 ?
+      this.readerEyeCalibrationOverlayWidth : Math.max(1, this.pageViewWidth);
+    const overlayHeight = this.readerEyeCalibrationOverlayHeight > 0 ?
+      this.readerEyeCalibrationOverlayHeight : Math.max(1, this.pageViewHeight);
+    return Math.max(150, Math.min(300, overlayWidth - 48, overlayHeight * 0.40 / 0.75));
+  }
+
+  readerEyeCalibrationPreviewHeightVp(): number {
+    return this.readerEyeCalibrationPreviewWidthVp() * 0.75;
+  }
+
+  readerEyeCalibrationPreviewLeftVp(): number {
+    const overlayWidth = this.readerEyeCalibrationOverlayWidth > 0 ?
+      this.readerEyeCalibrationOverlayWidth : Math.max(1, this.pageViewWidth);
+    return Math.max(0, (overlayWidth - this.readerEyeCalibrationPreviewWidthVp()) / 2);
+  }
+
+  readerEyeCalibrationPreviewTopVp(): number {
+    return 18;
+  }
+
+  readerEyeCalibrationPreviewHint(): string {
+    if (!this.readerEyeCalibrationCapturing) return '请让完整面部位于虚线框内';
+    if (this.readerEyeTurnStatus.indexOf('未检测到') >= 0) return '未检测到面部，请调整距离和角度';
+    if (this.readerEyeTurnStatus.indexOf('不稳定') >= 0) return '请保证正面光线充足';
+    return '面部保持在框内，仅在本机处理';
+  }
+
+  readerEyeCalibrationInstruction(): string {
+    if (!this.readerEyeCalibrationCapturing) return '准备好后，眼睛跟随圆点移动';
+    if (this.readerEyeCalibrationStep === 0) return '正在启动前置摄像头';
+    if (this.readerEyeCalibrationStep === 1) return '跟随圆点，从顶部缓慢看到底部';
+    if (this.readerEyeCalibrationStep === 2) return '继续跟随圆点，从底部返回顶部';
+    if (this.readerEyeCalibrationStep === 3) return '注视屏幕中央';
+    return '正在分析校准曲线';
+  }
+
+  @Builder
   readerPreloadSettingItem() {
     Column() {
       Row() {
@@ -11636,6 +12100,519 @@ struct ReadBookPage {
     this.updateVolumeKeySubscription();
     this.saveReaderInteractionSettings();
     this.saveReadConfig();
+  }
+
+  setReaderEyeTurnEnabled(enabled: boolean): void {
+    const serial = ++this.readerEyePermissionRequestSerial;
+    if (!enabled) {
+      this.readerEyeTurnEnabled = false;
+      this.readerEyeTurnStatus = '未启用';
+      this.showReaderEyeCalibration = false;
+      this.readerEyeTurnController.stop().catch((error: Error): void => {
+        console.warn('[EyeTurn] disable release failed:', error.message);
+      });
+      this.saveReaderEyeTurnSettings();
+      return;
+    }
+    this.readerEyeTurnStatus = '正在请求相机权限';
+    EyeTurnController.requestPermission(getContext(this) as common.UIAbilityContext)
+      .then((granted: boolean): void => {
+        if (serial !== this.readerEyePermissionRequestSerial) return;
+        if (!granted) {
+          this.readerEyeTurnEnabled = false;
+          this.readerEyeTurnStatus = '未获得相机权限';
+          promptAction.showToast({ message: '需要相机权限才能使用眼动翻页' });
+          this.saveReaderEyeTurnSettings();
+          return;
+        }
+        this.readerEyeTurnEnabled = true;
+        this.readerEyeTurnStatus = '正在启动眼动识别';
+        this.saveReaderEyeTurnSettings();
+        if (!this.currentReaderEyeCalibrationRaw()) {
+          this.openReaderEyeCalibration();
+        }
+        // Conditional XComponent mounting happens after this state update; its onLoad callback starts the camera.
+        setTimeout((): void => this.startReaderEyeTurnIfReady(), 0);
+      })
+      .catch((error: Error): void => {
+        if (serial !== this.readerEyePermissionRequestSerial) return;
+        this.readerEyeTurnEnabled = false;
+        this.readerEyeTurnStatus = '相机权限请求失败';
+        promptAction.showToast({ message: `眼动翻页启用失败：${error.message}` });
+        this.saveReaderEyeTurnSettings();
+      });
+  }
+
+  saveReaderEyeTurnSettings(): void {
+    ReaderSettingsStore.saveEyeTurnSettings(
+      getContext(this),
+      this.readerEyeTurnEnabled,
+      this.readerEyeTurnPortraitCalibration,
+      this.readerEyeTurnLandscapeCalibration,
+      this.readerEyeTurnPreviousDwellMs,
+      this.readerEyeTurnNextDwellMs
+    ).catch((error: Error): void => {
+      console.warn('[EyeTurn] save settings failed:', error.message);
+    });
+    this.saveReadConfig();
+  }
+
+  readerEyeDwellOptions(): SelectOption[] {
+    return [
+      { value: '0.5秒' },
+      { value: '0.65秒' },
+      { value: '0.85秒' },
+      { value: '1.1秒' },
+      { value: '1.4秒' }
+    ];
+  }
+
+  readerEyeDwellValues(): number[] {
+    return [500, 650, 850, 1100, 1400];
+  }
+
+  readerEyeDwellSelectedIndex(value: number): number {
+    const values = this.readerEyeDwellValues();
+    let selected = 0;
+    let distance = Number.MAX_SAFE_INTEGER;
+    for (let index = 0; index < values.length; index++) {
+      const nextDistance = Math.abs(values[index] - value);
+      if (nextDistance < distance) {
+        selected = index;
+        distance = nextDistance;
+      }
+    }
+    return selected;
+  }
+
+  setReaderEyeDwell(previous: boolean, index: number): void {
+    const values = this.readerEyeDwellValues();
+    const value = index >= 0 && index < values.length ? values[index] : 850;
+    if (previous) this.readerEyeTurnPreviousDwellMs = value;
+    else this.readerEyeTurnNextDwellMs = value;
+    this.configureReaderEyeTurnController();
+    this.saveReaderEyeTurnSettings();
+  }
+
+  isReaderEyeLandscape(): boolean {
+    // `pageViewWidth` can be the width of one pane in landscape double-page mode, which is smaller than the page
+    // height and previously saved a landscape calibration into the portrait slot. Display geometry represents the
+    // physical screen orientation and must be the primary source for camera calibration selection.
+    try {
+      const currentDisplay = display.getDefaultDisplaySync();
+      if (currentDisplay.width > 0 && currentDisplay.height > 0) {
+        return currentDisplay.width > currentDisplay.height;
+      }
+    } catch (_error) {
+      // Fall through to the measured reader viewport on devices without synchronous display geometry.
+    }
+    if (this.pageViewWidth > 0 && this.pageViewHeight > 0) {
+      return this.pageViewWidth > this.pageViewHeight;
+    }
+    return false;
+  }
+
+  currentReaderEyeCalibrationRaw(): string {
+    const landscape = this.isReaderEyeLandscape();
+    const preferred = landscape ? this.readerEyeTurnLandscapeCalibration : this.readerEyeTurnPortraitCalibration;
+    // Keep existing users functional after fixing the old double-page orientation misclassification. The next
+    // explicit calibration is persisted into the correct orientation slot.
+    return preferred || (landscape ? this.readerEyeTurnPortraitCalibration : this.readerEyeTurnLandscapeCalibration);
+  }
+
+  configureReaderEyeTurnController(): void {
+    const landscape = this.isReaderEyeLandscape();
+    this.readerEyeTurnConfiguredLandscape = landscape;
+    const preferredCalibration = landscape ?
+      this.readerEyeTurnLandscapeCalibration : this.readerEyeTurnPortraitCalibration;
+    const calibrationRaw = preferredCalibration || (landscape ?
+      this.readerEyeTurnPortraitCalibration : this.readerEyeTurnLandscapeCalibration);
+    this.readerEyeTurnController.configure(
+      calibrationRaw,
+      this.readerEyeTurnPreviousDwellMs,
+      this.readerEyeTurnNextDwellMs,
+      (status: string): void => {
+        if (this.readerEyeTurnStatus !== status) this.readerEyeTurnStatus = status;
+      },
+      (sample: EyeTurnSample): void => this.consumeReaderEyeCalibrationSample(sample),
+      (direction: number): void => {
+        if (!this.readerEyeTurnCanTrigger()) return;
+        this.runPageTurnAnimation(direction, 'tap').catch((error: Error): void => {
+          console.warn('[EyeTurn] page turn failed:', error.message);
+        });
+      },
+      (): boolean => this.readerEyeTurnCanTrigger()
+    );
+  }
+
+  startReaderEyeTurnIfReady(): void {
+    if (!this.readerEyeTurnEnabled || !this.readerPageVisible || !this.readerEyeTurnSurfaceId) return;
+    this.configureReaderEyeTurnController();
+    this.readerEyeTurnController.start(
+      getContext(this) as common.UIAbilityContext,
+      this.readerEyeTurnSurfaceId
+    ).catch((error: Error): void => {
+      this.readerEyeTurnStatus = `眼动识别启动失败：${error.message}`;
+    });
+  }
+
+  refreshReaderEyeTurnForViewport(): void {
+    if (!this.readerEyeTurnEnabled) return;
+    const landscape = this.isReaderEyeLandscape();
+    if (landscape === this.readerEyeTurnConfiguredLandscape) return;
+    this.configureReaderEyeTurnController();
+    if (!this.currentReaderEyeCalibrationRaw()) {
+      this.readerEyeTurnStatus = landscape ? '横屏需要校准' : '竖屏需要校准';
+    }
+  }
+
+  readerEyeTurnCanTrigger(): boolean {
+    return this.readerEyeTurnEnabled && this.readerPageVisible && !this.showReaderEyeCalibration &&
+      !this.showMenu && !this.showToc && !this.showSettings && !this.showReaderActionMenu &&
+      !this.showBookmarkActionMenu && !this.showTapZoneSettings && !this.showChangeSourceDialog &&
+      !this.readerTextSelectionActive && !this.isLoading && this.readerInitialPageReady &&
+      this.readerEffectivePageTurnMode() !== 3 && !this.isReaderPaginationInteractionBusy();
+  }
+
+  openReaderEyeCalibration(): void {
+    this.clearReaderEyeCalibrationTimer();
+    this.readerEyeCalibrationLandscape = this.isReaderEyeLandscape();
+    this.readerEyeCalibrationStep = 0;
+    this.readerEyeCalibrationCapturing = false;
+    this.readerEyeCalibrationProgress = 0;
+    this.readerEyeCalibrationTargetY = 0;
+    this.readerEyeCalibrationPoints = [];
+    this.readerEyeCalibrationSequenceStartedAt = 0;
+    this.readerEyeCalibrationStartupAt = 0;
+    this.readerEyeTurnController.setCalibrationMode(true);
+    this.showMenu = false;
+    this.showSettings = false;
+    this.showReaderEyeCalibration = true;
+  }
+
+  beginReaderEyeCalibrationCapture(): void {
+    this.clearReaderEyeCalibrationTimer();
+    this.readerEyeTurnController.setCalibrationMode(true);
+    this.readerEyeCalibrationPoints = [];
+    this.readerEyeCalibrationProgress = 0;
+    this.readerEyeCalibrationTargetY = -1;
+    this.readerEyeCalibrationStep = 0;
+    this.readerEyeCalibrationSequenceStartedAt = 0;
+    this.readerEyeCalibrationStartupAt = Date.now();
+    this.readerEyeCalibrationCapturing = true;
+    this.readerEyeTurnStatus = this.readerEyeTurnController.isRunning() ?
+      '准备开始连续扫描' : '正在启动前置摄像头';
+    if (!this.readerEyeTurnController.isRunning()) this.startReaderEyeTurnIfReady();
+    this.scheduleReaderEyeCalibrationTick(80);
+  }
+
+  consumeReaderEyeCalibrationSample(sample: EyeTurnSample): void {
+    if (!this.showReaderEyeCalibration || !this.readerEyeCalibrationCapturing) return;
+    if (this.readerEyeCalibrationLandscape !== this.isReaderEyeLandscape()) {
+      this.abortReaderEyeCalibrationAttempt('校准过程中屏幕方向发生变化，请重新开始');
+      promptAction.showToast({ message: '校准过程中屏幕方向发生变化，请重新开始' });
+      return;
+    }
+    if (this.readerEyeCalibrationSequenceStartedAt <= 0) return;
+    const capturedAt = sample.capturedAt > 0 ? sample.capturedAt : Date.now();
+    const elapsed = capturedAt - this.readerEyeCalibrationSequenceStartedAt;
+    if (elapsed < 0 || elapsed > READER_EYE_CALIBRATION_TOTAL_MS) return;
+    const point = new ReaderEyeCalibrationPoint();
+    point.score = sample.rawScore;
+    point.pitch = sample.pitch;
+    point.eyeRatio = sample.eyeRatio;
+    point.eyeAvailable = sample.eyeAvailable;
+    point.targetY = this.readerEyeCalibrationTargetForElapsed(elapsed);
+    point.phase = this.readerEyeCalibrationPhaseForElapsed(elapsed);
+    point.confidence = sample.confidence;
+    this.readerEyeCalibrationPoints.push(point);
+    console.info(`[EyeTurn] sweep phase=${point.phase}, y=${point.targetY.toFixed(2)}, score=${point.score.toFixed(2)}`);
+  }
+
+  private scheduleReaderEyeCalibrationTick(delayMs: number = READER_EYE_CALIBRATION_TICK_MS): void {
+    if (!this.readerEyeCalibrationCapturing || !this.showReaderEyeCalibration) return;
+    this.clearReaderEyeCalibrationTimer();
+    this.readerEyeCalibrationTimerId = setTimeout((): void => {
+      this.readerEyeCalibrationTimerId = -1;
+      this.updateReaderEyeCalibrationSequence();
+    }, delayMs);
+  }
+
+  private updateReaderEyeCalibrationSequence(): void {
+    if (!this.readerEyeCalibrationCapturing || !this.showReaderEyeCalibration) return;
+    if (this.readerEyeCalibrationLandscape !== this.isReaderEyeLandscape()) {
+      this.abortReaderEyeCalibrationAttempt('屏幕方向已变化，请重新开始');
+      return;
+    }
+    const now = Date.now();
+    if (!this.readerEyeTurnController.isRunning()) {
+      if (now - this.readerEyeCalibrationStartupAt > 8000) {
+        this.abortReaderEyeCalibrationAttempt('前置摄像头启动超时，请重试');
+        return;
+      }
+      this.readerEyeCalibrationStep = 0;
+      this.readerEyeTurnStatus = '正在启动前置摄像头';
+      this.scheduleReaderEyeCalibrationTick(120);
+      return;
+    }
+    if (this.readerEyeCalibrationSequenceStartedAt <= 0) {
+      this.readerEyeCalibrationSequenceStartedAt = now + 350;
+      this.readerEyeCalibrationStep = 1;
+      this.readerEyeCalibrationTargetY = -1;
+      this.readerEyeTurnStatus = '请看向圆点并开始跟随';
+      this.scheduleReaderEyeCalibrationTick();
+      return;
+    }
+    const elapsed = now - this.readerEyeCalibrationSequenceStartedAt;
+    if (elapsed < 0) {
+      this.scheduleReaderEyeCalibrationTick();
+      return;
+    }
+    if (elapsed <= READER_EYE_CALIBRATION_TOTAL_MS) {
+      this.readerEyeCalibrationStep = this.readerEyeCalibrationPhaseForElapsed(elapsed);
+      this.readerEyeCalibrationTargetY = this.readerEyeCalibrationTargetForElapsed(elapsed);
+      this.readerEyeCalibrationProgress = Math.max(0, Math.min(100,
+        elapsed * 100 / READER_EYE_CALIBRATION_TOTAL_MS));
+      this.scheduleReaderEyeCalibrationTick();
+      return;
+    }
+    // Allow the last in-flight face detection to report the frame timestamp captured before the sequence ended.
+    if (elapsed < READER_EYE_CALIBRATION_TOTAL_MS + 650) {
+      this.readerEyeCalibrationStep = 4;
+      this.readerEyeCalibrationTargetY = 0;
+      this.readerEyeCalibrationProgress = 100;
+      this.scheduleReaderEyeCalibrationTick();
+      return;
+    }
+    this.readerEyeCalibrationCapturing = false;
+    this.clearReaderEyeCalibrationTimer();
+    this.finishReaderEyeCalibrationFromSweep();
+  }
+
+  private readerEyeCalibrationPhaseForElapsed(elapsed: number): number {
+    if (elapsed < READER_EYE_CALIBRATION_SWEEP_MS) return 1;
+    if (elapsed < READER_EYE_CALIBRATION_SWEEP_MS * 2) return 2;
+    return 3;
+  }
+
+  private readerEyeCalibrationTargetForElapsed(elapsed: number): number {
+    if (elapsed <= 0) return -1;
+    if (elapsed < READER_EYE_CALIBRATION_SWEEP_MS) {
+      return -1 + 2 * elapsed / READER_EYE_CALIBRATION_SWEEP_MS;
+    }
+    if (elapsed < READER_EYE_CALIBRATION_SWEEP_MS * 2) {
+      const reverseElapsed = elapsed - READER_EYE_CALIBRATION_SWEEP_MS;
+      return 1 - 2 * reverseElapsed / READER_EYE_CALIBRATION_SWEEP_MS;
+    }
+    return 0;
+  }
+
+  private trimmedReaderEyeCalibrationMean(samples: number[]): number {
+    const sorted = [...samples].sort((left: number, right: number): number => left - right);
+    const trim = sorted.length >= 8 ? 2 : 0;
+    let sum = 0;
+    let count = 0;
+    for (let index = trim; index < sorted.length - trim; index++) {
+      sum += sorted[index];
+      count++;
+    }
+    return count > 0 ? sum / count : 0;
+  }
+
+  private readerEyeCalibrationChannelValue(point: ReaderEyeCalibrationPoint, channel: number): number {
+    return channel === 1 ? point.eyeRatio : point.pitch;
+  }
+
+  private fitReaderEyeCalibration(points: ReaderEyeCalibrationPoint[], channel: number): ReaderEyeCalibrationFit | null {
+    if (points.length < 3) return null;
+    let meanY = 0;
+    let meanScore = 0;
+    for (const point of points) {
+      meanY += point.targetY;
+      meanScore += this.readerEyeCalibrationChannelValue(point, channel);
+    }
+    meanY /= points.length;
+    meanScore /= points.length;
+    let covariance = 0;
+    let varianceY = 0;
+    let varianceScore = 0;
+    for (const point of points) {
+      const deltaY = point.targetY - meanY;
+      const deltaScore = this.readerEyeCalibrationChannelValue(point, channel) - meanScore;
+      covariance += deltaY * deltaScore;
+      varianceY += deltaY * deltaY;
+      varianceScore += deltaScore * deltaScore;
+    }
+    // Pitch is measured in degrees, while the eye-band channel is a 0..1 ratio whose useful movement is commonly
+    // only 0.003-0.03. Sharing pitch's 0.01 variance floor made every otherwise valid eye sweep look constant and
+    // forced all saved calibrations into head-only mode. Use a scale-appropriate floor for each channel.
+    const minimumScoreVariance = channel === 1 ? 0.000002 : 0.01;
+    if (varianceY < 0.01 || varianceScore < minimumScoreVariance) return null;
+    const fit = new ReaderEyeCalibrationFit();
+    fit.slope = covariance / varianceY;
+    fit.intercept = meanScore - fit.slope * meanY;
+    fit.correlation = covariance / Math.sqrt(varianceY * varianceScore);
+    return fit;
+  }
+
+  private refinedReaderEyeCalibrationFit(points: ReaderEyeCalibrationPoint[],
+    channel: number): ReaderEyeCalibrationFit | null {
+    const initialFit = this.fitReaderEyeCalibration(points, channel);
+    if (!initialFit) return null;
+    const residuals: number[] = points.map((point: ReaderEyeCalibrationPoint): number =>
+      Math.abs(this.readerEyeCalibrationChannelValue(point, channel) -
+        (initialFit.intercept + initialFit.slope * point.targetY)));
+    const medianResidual = this.readerEyeCalibrationMedian(residuals);
+    const minimumResidual = channel === 1 ? 0.008 : 0.45;
+    const residualLimit = Math.max(minimumResidual, medianResidual * 2.8);
+    const refinedPoints = points.filter((point: ReaderEyeCalibrationPoint): boolean =>
+      Math.abs(this.readerEyeCalibrationChannelValue(point, channel) -
+        (initialFit.intercept + initialFit.slope * point.targetY)) <= residualLimit);
+    return this.fitReaderEyeCalibration(refinedPoints, channel);
+  }
+
+  private finishReaderEyeCalibrationFromSweep(): void {
+    const sweepPoints = this.readerEyeCalibrationPoints.filter((point: ReaderEyeCalibrationPoint): boolean =>
+      point.phase === 1 || point.phase === 2);
+    if (sweepPoints.length < READER_EYE_CALIBRATION_MIN_SWEEP_SAMPLES) {
+      this.failReaderEyeSweepCalibration(`有效样本不足（${sweepPoints.length}），请保持面部在取景范围内`);
+      return;
+    }
+    const pitchFit = this.refinedReaderEyeCalibrationFit(sweepPoints, 0);
+    const eyeSweepPoints = sweepPoints.filter((point: ReaderEyeCalibrationPoint): boolean => point.eyeAvailable);
+    const eyeFit = this.refinedReaderEyeCalibrationFit(eyeSweepPoints, 1);
+    const pitchFitAvailable = pitchFit !== null && Math.abs(pitchFit.slope) >= 0.08 &&
+      Math.abs(pitchFit.correlation) >= 0.15;
+    const eyeFitAvailable = eyeFit !== null && Math.abs(eyeFit.slope) >= 0.0015 &&
+      Math.abs(eyeFit.correlation) >= 0.12;
+    console.info(`[EyeTurn] calibration fit pitchSlope=${pitchFit ? pitchFit.slope.toFixed(4) : 'n/a'}, ` +
+      `pitchCorr=${pitchFit ? pitchFit.correlation.toFixed(3) : 'n/a'}, ` +
+      `eyeSamples=${eyeSweepPoints.length}, eyeSlope=${eyeFit ? eyeFit.slope.toFixed(5) : 'n/a'}, ` +
+      `eyeCorr=${eyeFit ? eyeFit.correlation.toFixed(3) : 'n/a'}`);
+    const centerPoints = this.readerEyeCalibrationPoints.filter((point: ReaderEyeCalibrationPoint): boolean =>
+      point.phase === 3 || Math.abs(point.targetY) <= 0.16);
+    const centerPitches = centerPoints.map((point: ReaderEyeCalibrationPoint): number => point.pitch);
+    const centerEyeRatios = centerPoints
+      .filter((point: ReaderEyeCalibrationPoint): boolean => point.eyeAvailable)
+      .map((point: ReaderEyeCalibrationPoint): number => point.eyeRatio);
+    const pitchCenter = centerPitches.length > 0 ?
+      this.trimmedReaderEyeCalibrationMean(centerPitches) : (pitchFit ? pitchFit.intercept : 0);
+    const eyeCenter = centerEyeRatios.length > 0 ?
+      this.trimmedReaderEyeCalibrationMean(centerEyeRatios) : (eyeFit ? eyeFit.intercept : 0.5);
+    const topPoints = sweepPoints.filter((point: ReaderEyeCalibrationPoint): boolean => point.targetY <= -0.68);
+    const bottomPoints = sweepPoints.filter((point: ReaderEyeCalibrationPoint): boolean => point.targetY >= 0.68);
+    const topEyePoints = topPoints.filter((point: ReaderEyeCalibrationPoint): boolean => point.eyeAvailable);
+    const bottomEyePoints = bottomPoints.filter((point: ReaderEyeCalibrationPoint): boolean => point.eyeAvailable);
+    const topPitchValues = topPoints.map((point: ReaderEyeCalibrationPoint): number => point.pitch);
+    const bottomPitchValues = bottomPoints.map((point: ReaderEyeCalibrationPoint): number => point.pitch);
+    const topEyeValues = topEyePoints.map((point: ReaderEyeCalibrationPoint): number => point.eyeRatio);
+    const bottomEyeValues = bottomEyePoints.map((point: ReaderEyeCalibrationPoint): number => point.eyeRatio);
+    const pitchTopDelta = (topPitchValues.length > 0 ?
+      this.trimmedReaderEyeCalibrationMean(topPitchValues) : pitchCenter - (pitchFit ? pitchFit.slope : 0)) -
+      pitchCenter;
+    const pitchBottomDelta = (bottomPitchValues.length > 0 ?
+      this.trimmedReaderEyeCalibrationMean(bottomPitchValues) : pitchCenter + (pitchFit ? pitchFit.slope : 0)) -
+      pitchCenter;
+    const eyeTopDelta = (topEyeValues.length > 0 ?
+      this.trimmedReaderEyeCalibrationMean(topEyeValues) : eyeCenter - (eyeFit ? eyeFit.slope : 0)) - eyeCenter;
+    const eyeBottomDelta = (bottomEyeValues.length > 0 ?
+      this.trimmedReaderEyeCalibrationMean(bottomEyeValues) : eyeCenter + (eyeFit ? eyeFit.slope : 0)) - eyeCenter;
+    const pitchAvailable = pitchFitAvailable && Math.abs(pitchTopDelta) >= 0.08 &&
+      Math.abs(pitchBottomDelta) >= 0.08 && pitchTopDelta * pitchBottomDelta < 0;
+    const eyeAvailable = eyeFitAvailable && Math.abs(eyeTopDelta) >= 0.0015 &&
+      Math.abs(eyeBottomDelta) >= 0.0015 && eyeTopDelta * eyeBottomDelta < 0;
+    if (!pitchAvailable && !eyeAvailable) {
+      this.failReaderEyeSweepCalibration('没有检测到连续的眼球轨迹，请保持头部不动并让眼睛跟随圆点');
+      return;
+    }
+    const calibration = new EyeTurnCalibration();
+    calibration.version = 3;
+    calibration.top = -1;
+    calibration.center = 0;
+    calibration.bottom = 1;
+    calibration.pitchCenter = pitchCenter;
+    calibration.pitchScale = pitchAvailable && pitchFit ? pitchFit.slope : 0;
+    calibration.pitchTopDelta = pitchAvailable ? pitchTopDelta : 0;
+    calibration.pitchBottomDelta = pitchAvailable ? pitchBottomDelta : 0;
+    calibration.eyeCenter = eyeCenter;
+    calibration.eyeScale = eyeAvailable && eyeFit ? eyeFit.slope : 0;
+    calibration.eyeTopDelta = eyeAvailable ? eyeTopDelta : 0;
+    calibration.eyeBottomDelta = eyeAvailable ? eyeBottomDelta : 0;
+    if (eyeAvailable && pitchAvailable) {
+      calibration.eyeWeight = 0.78;
+      calibration.pitchWeight = 0.22;
+    } else if (eyeAvailable) {
+      calibration.eyeWeight = 1;
+      calibration.pitchWeight = 0;
+    } else {
+      calibration.eyeWeight = 0;
+      calibration.pitchWeight = 1;
+    }
+    if (!calibration.isValid()) {
+      this.failReaderEyeSweepCalibration('眼球纵向变化不足，请保持正对屏幕并重新校准');
+      return;
+    }
+    const raw = calibration.encode();
+    if (this.readerEyeCalibrationLandscape) this.readerEyeTurnLandscapeCalibration = raw;
+    else this.readerEyeTurnPortraitCalibration = raw;
+    this.showReaderEyeCalibration = false;
+    this.readerEyeTurnController.setCalibrationMode(false);
+    this.readerEyeTurnStatus = '眼动翻页已就绪';
+    this.configureReaderEyeTurnController();
+    this.saveReaderEyeTurnSettings();
+    promptAction.showToast({
+      message: eyeAvailable ? '眼动翻页校准完成' : '校准完成，当前为头部辅助模式'
+    });
+  }
+
+  private readerEyeCalibrationMedian(values: number[]): number {
+    if (values.length === 0) return 0;
+    const sorted = [...values].sort((left: number, right: number): number => left - right);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle];
+  }
+
+  private failReaderEyeSweepCalibration(message: string): void {
+    this.readerEyeTurnController.setCalibrationMode(false);
+    this.readerEyeCalibrationStep = 0;
+    this.readerEyeCalibrationProgress = 0;
+    this.readerEyeCalibrationTargetY = 0;
+    this.readerEyeCalibrationSequenceStartedAt = 0;
+    this.readerEyeTurnStatus = message;
+    promptAction.showToast({ message: message });
+  }
+
+  private abortReaderEyeCalibrationAttempt(message: string): void {
+    this.clearReaderEyeCalibrationTimer();
+    this.readerEyeTurnController.setCalibrationMode(false);
+    this.readerEyeCalibrationCapturing = false;
+    this.readerEyeCalibrationStep = 0;
+    this.readerEyeCalibrationProgress = 0;
+    this.readerEyeCalibrationTargetY = 0;
+    this.readerEyeCalibrationSequenceStartedAt = 0;
+    this.readerEyeTurnStatus = message;
+  }
+
+  private clearReaderEyeCalibrationTimer(): void {
+    if (this.readerEyeCalibrationTimerId >= 0) {
+      clearTimeout(this.readerEyeCalibrationTimerId);
+      this.readerEyeCalibrationTimerId = -1;
+    }
+  }
+
+  cancelReaderEyeCalibration(): void {
+    this.clearReaderEyeCalibrationTimer();
+    this.readerEyeCalibrationCapturing = false;
+    this.showReaderEyeCalibration = false;
+    this.readerEyeTurnController.setCalibrationMode(false);
+    if (!this.currentReaderEyeCalibrationRaw()) {
+      this.readerEyeTurnEnabled = false;
+      this.readerEyeTurnStatus = '未启用';
+      this.readerEyeTurnController.stop().catch((error: Error): void => {
+        console.warn('[EyeTurn] cancel calibration release failed:', error.message);
+      });
+      this.saveReaderEyeTurnSettings();
+    }
   }
 
   setReaderScreenTimeoutByIndex(index: number): void {
@@ -14909,7 +15886,10 @@ struct ReadBookPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.readerContentLayerColor())
+    // The overlay is mounted as soon as the drag direction is known, one frame before the asynchronous front/back
+    // snapshots become ready. An opaque outer paper therefore covered the still-valid live page with an empty sheet
+    // for that frame. The ready-gated destination surface above already paints its own paper, so keep this host clear.
+    .backgroundColor(Color.Transparent)
     .clip(true)
   }
 
@@ -18936,6 +19916,10 @@ struct ReadBookPage {
   }
 
   readerV2SurfaceTopOffset(): number {
+    const measuredOffset = this.readerCommentPageAreaTop - this.readerTapLayerGlobalY;
+    if (this.readerCommentPageAreaTop >= 0 && Number.isFinite(measuredOffset)) {
+      return measuredOffset;
+    }
     // Simulation and stack paper expand through the status bar so their animation covers the screen. Text
     // remains below the status bar unless the user explicitly enables正文 extension.
     return !this.readerExtendToStatusBar &&

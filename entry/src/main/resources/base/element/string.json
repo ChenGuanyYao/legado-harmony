@@ -69,6 +69,10 @@
       "value": "用于扫描下载和文档目录中的本地 TXT、EPUB 书籍"
     },
     {
+      "name": "reader_eye_turn_camera_permission",
+      "value": "用于在阅读页本地识别注视方向并进行眼动翻页，画面不会上传或保存"
+    },
+    {
       "name": "loading",
       "value": "加载中..."
     },

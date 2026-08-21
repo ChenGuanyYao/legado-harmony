@@ -27,6 +27,7 @@ import { QuickJsDiagnostics } from '../core/script/QuickJsDiagnostics';
 import { TlsTrustStore } from '../core/http/TlsTrustStore';
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
+import { FullTextCacheCancelCoordinator } from '../utils/FullTextCacheCancelCoordinator';
 
 export default class EntryAbility extends UIAbility {
   private appliedColorMode: number = -1;
@@ -425,13 +426,7 @@ export default class EntryAbility extends UIAbility {
       return 'audioBook';
     }
     if (params['cacheAction'] === 'cancelFullTextCache') {
-      const nonce = Date.now();
-      AppStorage.setOrCreate('fullTextCacheCancelSignal', JSON.stringify({
-        nonce: nonce,
-        taskKey: params['cacheTaskKey'] || '',
-        bookUrl: params['bookUrl'] || ''
-      }));
-      AppStorage.setOrCreate('fullTextCacheCancelNonce', nonce);
+      FullTextCacheCancelCoordinator.request(params['cacheTaskKey'] || '', params['bookUrl'] || '');
       return '';
     }
     const action = params['shortcutAction'];

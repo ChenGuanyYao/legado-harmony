@@ -447,8 +447,9 @@ export class ReadBookEngine {
     return await this.fetchContent(idx);
   }
 
-  private async fetchContent(idx: number): Promise<string> {
+  private async fetchContent(idx: number, shouldCancel: (() => boolean) | null = null): Promise<string> {
     if (idx < 0 || idx >= this.chapters.length || !this.book) return '';
+    if (shouldCancel && shouldCancel()) return '';
 
     if (this.chapterCache.has(idx)) {
       const memoryContent = this.chapterCache.get(idx)!;
@@ -459,7 +460,7 @@ export class ReadBookEngine {
     }
     if (this.chapterLoading.has(idx)) return await this.chapterLoading.get(idx)!;
 
-    const task = this.fetchContentUncached(idx);
+    const task = this.fetchContentUncached(idx, shouldCancel);
     this.chapterLoading.set(idx, task);
     try {
       return await task;
@@ -468,13 +469,15 @@ export class ReadBookEngine {
     }
   }
 
-  private async fetchContentUncached(idx: number): Promise<string> {
+  private async fetchContentUncached(idx: number, shouldCancel: (() => boolean) | null = null): Promise<string> {
     if (idx < 0 || idx >= this.chapters.length || !this.book) return '';
+    if (shouldCancel && shouldCancel()) return '';
     const generation = this.bookGeneration;
     const sessionBook = this.book;
     const sessionBookUrl = sessionBook.bookUrl;
     const chapter = this.chapters[idx];
     const cached = await appDb.getCachedChapterContent(sessionBookUrl, idx);
+    if (shouldCancel && shouldCancel()) return '';
     if (!this.isCurrentBookSession(generation, sessionBookUrl)) return '';
     if (cached && !this.isInvalidChapterContent(cached)) {
       this.putChapterCache(idx, cached);
@@ -499,9 +502,11 @@ export class ReadBookEngine {
     if (!this.source) return '';
 
     await this.refreshSourceForContent(generation, sessionBookUrl);
+    if (shouldCancel && shouldCancel()) return '';
     if (!this.isCurrentBookSession(generation, sessionBookUrl) || !this.source) return '';
     const sessionSource = this.source;
-    const text = await this.webBook.getContent(sessionSource, sessionBook, chapter);
+    const text = await this.webBook.getContent(sessionSource, sessionBook, chapter, shouldCancel);
+    if (shouldCancel && shouldCancel()) return '';
     if (!this.isCurrentBookSession(generation, sessionBookUrl)) return '';
     if (text && !this.isInvalidChapterContent(text)) {
       this.putChapterCache(idx, text);
@@ -549,9 +554,14 @@ export class ReadBookEngine {
       text.includes('升级VIP可享受不限速访问');
   }
 
-  async cacheChapter(idx: number): Promise<boolean> {
-    const text = await this.fetchContent(idx);
-    return !!text;
+  async cacheChapter(idx: number, shouldCancel: (() => boolean) | null = null): Promise<boolean> {
+    if (shouldCancel && shouldCancel()) return false;
+    const text = await this.fetchContent(idx, shouldCancel);
+    return !(shouldCancel && shouldCancel()) && !!text;
+  }
+
+  cancelPendingRequests(): void {
+    this.webBook.cancelPendingRequests();
   }
 
   async syncChapterCacheDates(expectedGeneration: number = this.bookGeneration,

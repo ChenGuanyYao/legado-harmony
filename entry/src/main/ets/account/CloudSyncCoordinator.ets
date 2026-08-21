@@ -195,6 +195,11 @@ export class CloudSyncCoordinator {
   private static readonly MAX_BATCH_BYTES: number = 768 * 1024;
   private static readonly MAX_EXCHANGE_PAGES: number = 1000;
   private static protectedLocalBooksDuringSync: number = 0;
+  // Older reader_settings payloads predate eye-turn support. Keep track of a
+  // compatibility merge so the normalized payload is uploaded after the
+  // current remote-apply transaction finishes instead of silently resetting
+  // the device and leaving the cloud object on the old schema forever.
+  private static readerSettingsBackfillPending: boolean = false;
 
   static async syncNow(context: Context, conflictPolicy: string = 'cloud'): Promise<CloudSyncRunResult> {
     if (CloudSyncCoordinator.running) {
@@ -307,6 +312,7 @@ export class CloudSyncCoordinator {
 
     const result = new CloudSyncRunResult();
     CloudSyncCoordinator.protectedLocalBooksDuringSync = 0;
+    CloudSyncCoordinator.readerSettingsBackfillPending = false;
     settings.status = CloudSyncSettingsStore.STATUS_SYNCING;
     settings.errorMessage = '';
     await CloudSyncSettingsStore.saveRuntimeState(context, userId, settings.status,
@@ -348,6 +354,13 @@ export class CloudSyncCoordinator {
             context, db, response.changes || [], state, deviceId, settings);
         } finally {
           CloudSyncChangeTracker.endRemoteApply();
+        }
+        if (CloudSyncCoordinator.readerSettingsBackfillPending) {
+          CloudSyncCoordinator.readerSettingsBackfillPending = false;
+          // The run snapshot was captured before this revision, so markSynced
+          // below cannot consume it. A following automatic/foreground sync
+          // will therefore backfill the versioned reader-settings payload.
+          CloudSyncChangeTracker.markPreferenceChanged();
         }
         if (CloudSyncCoordinator.protectedLocalBooksDuringSync > 0) {
           CloudSyncCoordinator.protectedLocalBooksDuringSync = 0;
@@ -881,6 +894,30 @@ export class CloudSyncCoordinator {
       readerSettings.fontMode = localReaderSettings.fontMode;
       readerSettings.systemFontFamily = localReaderSettings.systemFontFamily;
       readerSettings.customFontsRaw = localReaderSettings.customFontsRaw;
+      let needsEyeTurnBackfill = false;
+      if (typeof readerSettings.eyeTurnEnabled !== 'boolean') {
+        readerSettings.eyeTurnEnabled = localReaderSettings.eyeTurnEnabled;
+        needsEyeTurnBackfill = true;
+      }
+      if (typeof readerSettings.eyeTurnPortraitCalibration !== 'string') {
+        readerSettings.eyeTurnPortraitCalibration = localReaderSettings.eyeTurnPortraitCalibration;
+        needsEyeTurnBackfill = true;
+      }
+      if (typeof readerSettings.eyeTurnLandscapeCalibration !== 'string') {
+        readerSettings.eyeTurnLandscapeCalibration = localReaderSettings.eyeTurnLandscapeCalibration;
+        needsEyeTurnBackfill = true;
+      }
+      if (typeof readerSettings.eyeTurnPreviousDwellMs !== 'number') {
+        readerSettings.eyeTurnPreviousDwellMs = localReaderSettings.eyeTurnPreviousDwellMs;
+        needsEyeTurnBackfill = true;
+      }
+      if (typeof readerSettings.eyeTurnNextDwellMs !== 'number') {
+        readerSettings.eyeTurnNextDwellMs = localReaderSettings.eyeTurnNextDwellMs;
+        needsEyeTurnBackfill = true;
+      }
+      if (needsEyeTurnBackfill) {
+        CloudSyncCoordinator.readerSettingsBackfillPending = true;
+      }
       await ReaderSettingsStore.saveAll(
         context,
         readerSettings,
