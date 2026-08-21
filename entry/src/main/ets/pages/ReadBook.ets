@@ -395,6 +395,7 @@ struct ReadBookPage {
   @State displayPageRenderKey: number = 0;
   @State pageRenderVersion: number = 0;
   @State chapterJumpRenderGeneration: number = 0;
+  @State readerV2SurfaceGeneration: number = 0;
   @State pageViewWidth: number = 0;
   @State pageViewHeight: number = 0;
   @State readerBottomInfoBarMeasuredHeight: number = 0;
@@ -885,6 +886,13 @@ struct ReadBookPage {
       this.readerInitialPageReady = false;
       this.pendingRestorePageIndex = Math.max(this.pendingRestorePageIndex, this.currentPageIndex);
       this.paginateContent(this.content);
+    }
+    if (returningFromBackground) {
+      // The chapter-scoped V2 ForEach host can be retained from the page on which the chapter was first mounted.
+      // Give a real foreground resume a fresh host so ArkUI cannot replay that old subtree after the controller has
+      // already been rebound to the current page. Ordinary page turns still reuse one native node.
+      this.readerV2SurfaceGeneration++;
+      this.republishCurrentReaderPageAfterBackground();
     }
     this.applyReaderScreenOrientation();
     this.applyReaderScreenTimeout();
@@ -5619,7 +5627,7 @@ struct ReadBookPage {
 
   currentReaderV2ChapterSurfaceKeys(): string[] {
     // Reuse one retained native canvas for every page in a chapter. Only a real document handoff replaces it.
-    return [`reader_v2_chapter_${this.currentChapterIndex}`];
+    return [`reader_v2_chapter_${this.currentChapterIndex}_${this.readerV2SurfaceGeneration}`];
   }
 
   visibleCurrentPageText(): string {
@@ -8127,6 +8135,11 @@ struct ReadBookPage {
     // cooperative batches created with the previous settings; otherwise an old background batch can publish its
     // page array after the live preview has already switched to the new geometry.
     this.finishPageTurnAnimation(false);
+    // The retained NodeContainer does not reliably adopt a replacement NodeController while its keyed ForEach
+    // host stays unchanged. Since the controllers below are deliberately detached, remount that host as part of
+    // the same transaction; otherwise a theme/background change can leave the visible node bound to the cleared
+    // controller until the next page turn publishes another surface.
+    this.readerV2SurfaceGeneration++;
     this.readerPaginationWorkSerial++;
     this.adjacentPaginationPreloadSerial++;
     this.previousPaginationPreloadSerial++;
@@ -8980,6 +8993,38 @@ struct ReadBookPage {
     target.durChapterTime = Date.now();
     target.syncTime = oldBook.syncTime;
     target.putVariable('lastReadTime', `${Date.now()}`);
+  }
+
+  committedLocalPageTurnCheckpointPageIndex(): number {
+    // During an animated turn the incoming page is already the committed visual destination, while
+    // currentPageIndex is intentionally updated only after the motion finishes. Home can freeze that handoff for
+    // long enough that a lifecycle checkpoint would otherwise persist the page behind the animation (often page
+    // zero). Only trust a same-chapter target owned by the current immutable pagination snapshot.
+    if (!this.isPageTurning || !this.pageTurnIncomingText ||
+      this.pageTurnIncomingChapterIndex !== this.currentChapterIndex) {
+      return -1;
+    }
+    if (this.pageTurnIncomingDocumentSource &&
+      this.pageTurnIncomingDocumentSource !== this.pagedContentText) {
+      return -1;
+    }
+    const pageIndex = this.normalizeReaderSpreadPageIndex(this.pageTurnIncomingPageIndex);
+    if (pageIndex < 0 || pageIndex >= this.contentPages.length) {
+      return -1;
+    }
+    return pageIndex;
+  }
+
+  settleCommittedLocalPageTurnForCheckpoint(): void {
+    const targetPageIndex = this.committedLocalPageTurnCheckpointPageIndex();
+    if (targetPageIndex < 0) return;
+    // Backgrounding may suspend the animation timer indefinitely. Settle the already-accepted local turn now so
+    // both a retained reader surface and a cold restart agree with the lifecycle checkpoint. The suspended async
+    // turn can safely apply the same captured target again when the app resumes.
+    this.currentPageIndex = targetPageIndex;
+    this.readerProgressRestoreConfirmed = true;
+    this.commitVisibleCurrentPageText(this.getPageText(targetPageIndex));
+    this.finishPageTurnAnimation(false);
   }
 
   async saveReadingProgress(notifyShelf: boolean = false): Promise<void> {
@@ -14230,13 +14275,14 @@ struct ReadBookPage {
 
   followTtsChunk(chunk: TtsChunk, token: number, generation: number,
     chapterIndex: number, sourceIdentity: string): void {
-    setTimeout(() => {
-      if (!this.isCurrentTtsFocusSession(token, generation, chapterIndex, sourceIdentity)) {
-        return;
-      }
-      this.applyTtsChunkFocus(chunk);
-      this.updateTtsFloatingSession();
-    }, 0);
+    // Playback cues already arrive on the ArkTS event loop at the audible segment boundary. Deferring them through
+    // another timer lets pagination/layout work overtake the focus update, so the previous sentence can remain
+    // highlighted after the next sentence is already audible.
+    if (!this.isCurrentTtsFocusSession(token, generation, chapterIndex, sourceIdentity)) {
+      return;
+    }
+    this.applyTtsChunkFocus(chunk);
+    this.updateTtsFloatingSession();
   }
 
   applyTtsChunkFocus(chunk: TtsChunk): void {
@@ -14249,11 +14295,14 @@ struct ReadBookPage {
     const spreadPageIndex = this.normalizeReaderSpreadPageIndex(pageIndex);
     this.ttsLastFocusChunk = chunk;
     this.ttsLastFocusPageIndex = pageIndex;
+    // Publish the destination range before mounting the incoming page. Both legacy text and V2 rectangles filter
+    // the range by page, so it cannot leak onto the outgoing leaf; it does let the new sentence appear highlighted
+    // during the turn instead of waiting until the animation has finished while audio continues playing.
+    this.updateTtsChunkHighlight(chunk, pageIndex);
     if (spreadPageIndex !== this.currentPageIndex) {
       this.animateTtsToPage(spreadPageIndex, chunk);
       return;
     }
-    this.updateTtsChunkHighlight(chunk, pageIndex);
   }
 
   syncTtsFocusAfterResumeLater(delayMs: number): void {
@@ -14396,6 +14445,7 @@ struct ReadBookPage {
   async flushReadingProgressCheckpoint(): Promise<void> {
     // Normal page turns are debounced. Cancel every delayed writer and persist the current chapter/page snapshot
     // immediately before Harmony freezes the UI in Home or lock-screen background transitions.
+    this.settleCommittedLocalPageTurnForCheckpoint();
     this.clearReaderComicProgressSaveTimer();
     this.clearReaderPagedProgressSaveTimer();
     if (this.ttsProgressSaveTimerId >= 0) {
@@ -15035,9 +15085,12 @@ struct ReadBookPage {
   @Builder
   readerCurrentPageSurface(renderVersion: number, text: string, ttsRenderVersion: number) {
     Stack() {
-      // Keep the settled page self-contained so simulation mode can snapshot the exact visible paragraph tree.
-      // Capturing a separately rebuilt copy differs by an occasional physical pixel on retained native Paragraphs.
-      this.readerSimulationPaperBackground()
+      if (this.isStackPageTurnAnimation() || this.isSimulationPageTurnAnimation()) {
+        // Stack and simulation animate/snapshot a full-screen sheet, so their page must own the paper artwork.
+        // Slide and fade live below the status-bar inset: painting the same Cover image here would restart its
+        // crop at the content origin and create a visible seam against the full-screen root background.
+        this.readerSimulationPaperBackground()
+      }
       Column() {
         this.readerCurrentPageLayer(renderVersion, text, ttsRenderVersion, 'current_primary')
       }
@@ -15056,7 +15109,9 @@ struct ReadBookPage {
   @Builder
   readerCurrentPageSurfaceAlternate(renderVersion: number, text: string, ttsRenderVersion: number) {
     Stack() {
-      this.readerSimulationPaperBackground()
+      if (this.isStackPageTurnAnimation() || this.isSimulationPageTurnAnimation()) {
+        this.readerSimulationPaperBackground()
+      }
       Column() {
         this.readerCurrentPageLayer(renderVersion, text, ttsRenderVersion, 'current_alternate')
       }
@@ -18481,7 +18536,7 @@ struct ReadBookPage {
     }, 80);
   }
 
-  refreshCurrentReaderV2RetainedPages(): void {
+  refreshCurrentReaderV2RetainedPages(forceRebuild: boolean = false): void {
     if (!this.shouldUseReaderLayoutV2(this.pagedContentText)) return;
     const primaryRole = this.currentReaderSurfaceIndex() === 0 ? 'current_primary' : 'current_alternate';
     const roles: string[] = this.isLandscapeDoublePageActive() ?
@@ -18493,7 +18548,7 @@ struct ReadBookPage {
       const pageIndex = pageIndexes[index];
       const page = this.readerV2Page(this.currentChapterIndex, pageIndex, this.pagedContentText);
       const controller = this.readerV2Controllers.get(role);
-      if (controller) controller.updatePage(page);
+      if (controller) controller.updatePage(page, forceRebuild);
       if (!page || !page.selectionText) continue;
       const selectionKey = this.readerV2NativeSelectionKey(role, this.currentChapterIndex, pageIndex, page);
       const selectionController = this.readerSelectableTextControllers.get(selectionKey);
@@ -18504,6 +18559,23 @@ struct ReadBookPage {
         }
       }
     }
+  }
+
+  republishCurrentReaderPageAfterBackground(): void {
+    if (this.contentPages.length === 0 || this.pendingRestorePageIndex >= 0 ||
+      this.readerTypographyRestoreOffset >= 0) return;
+    const pageText = this.getCurrentPageText();
+    // Footer progress is declarative state, while V2正文 is retained by a native FrameNode. After a Home/resume
+    // transition the controller can still point at the right page object even though RenderService retained the
+    // last animation/capture submission. Re-publish both layers from the same authoritative page index and force
+    // the lightweight native node to rebuild even when the page object identity has not changed.
+    this.currentPageText = pageText;
+    this.displayPageText = pageText;
+    this.displayPageChapterIndex = this.currentChapterIndex;
+    this.displayPageIndex = this.currentPageIndex;
+    this.displayPageRenderKey++;
+    this.forceCurrentReaderPageRender();
+    this.refreshCurrentReaderV2RetainedPages(true);
   }
 
   readerV2TtsHighlightRects(chapterIndex: number, pageIndex: number, source: string,
@@ -18570,6 +18642,7 @@ struct ReadBookPage {
     .height(px2vp(rect.heightPx))
     .backgroundColor(0x55FFE58A)
     .position({ x: px2vp(rect.leftPx), y: px2vp(rect.topPx) })
+    .zIndex(1)
     .hitTestBehavior(HitTestMode.None)
   }
 
@@ -18589,19 +18662,22 @@ struct ReadBookPage {
   readerV2PageSurface(role: string, chapterIndex: number, pageIndex: number, source: string,
     halfWidth: boolean = false) {
     Stack({ alignContent: Alignment.TopStart }) {
-      ForEach(this.readerV2TtsHighlightRects(
-        chapterIndex, pageIndex, source, this.readerV2TtsPaintVersion),
-      (rect: ReaderV2HighlightRect) => {
-        this.readerV2TtsHighlightRect(rect)
-      }, (rect: ReaderV2HighlightRect) => rect.key)
       // TTS paint versions intentionally do not flow into the retained正文 node. Re-publishing that
       // NodeContainer for every spoken chunk can trigger a fresh safe-area measurement after a page
-      // animation, moving all glyphs upward. Only the lightweight rectangle overlay above depends on
+      // animation, moving all glyphs upward. Only the lightweight rectangle overlay below depends on
       // readerV2TtsPaintVersion.
       NodeContainer(this.readerV2Controller(role, chapterIndex, pageIndex, source))
         .width('100%')
         .height('100%')
         .hitTestBehavior(HitTestMode.None)
+      // Regex/comment bubbles are painted inside the retained正文 node. The focus used to sit below that node, so
+      // an opaque bubble could completely hide it. Paint the translucent focus above正文 while leaving selection
+      // as the topmost interaction layer.
+      ForEach(this.readerV2TtsHighlightRects(
+        chapterIndex, pageIndex, source, this.readerV2TtsPaintVersion),
+      (rect: ReaderV2HighlightRect) => {
+        this.readerV2TtsHighlightRect(rect)
+      }, (rect: ReaderV2HighlightRect) => rect.key)
       // Selection belongs above the retained正文 node: that node paints regex/comment bubbles together with the
       // glyphs, so placing the blue range before it makes the bubble background obscure the selected characters.
       ForEach(this.readerV2SelectionHighlightRects(

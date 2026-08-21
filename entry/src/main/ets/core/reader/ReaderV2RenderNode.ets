@@ -180,11 +180,11 @@ export class ReaderV2PageNodeController extends NodeController {
     return this.node;
   }
 
-  updatePage(page: ReaderV2PageLayout | null): void {
+  updatePage(page: ReaderV2PageLayout | null, forceRebuild: boolean = false): void {
     // ArkUI reevaluates the reader Builder for every page-curl animation frame. The settled page object does not
     // change during those frames, so invalidating its native RenderNode each time only resubmits identical glyphs
     // and can expose a one-frame baseline/layout fluctuation during rapid turns.
-    if (this.page === page) return;
+    if (!forceRebuild && this.page === page) return;
     this.page = page;
     if (this.node) {
       // RenderNode.invalidate() is not sufficient on every HarmonyOS build when a NodeContainer keeps the same

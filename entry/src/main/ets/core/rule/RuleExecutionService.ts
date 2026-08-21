@@ -1,5 +1,6 @@
 import { BookSource } from '../../model/data/Book';
 import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from '../book/BookSourceStageWebRuntime';
+import { BookSourceRuntimeRouter, SourceRuntimeDecision } from '../book/BookSourceRuntimeRouter';
 import { BookUrlResolver } from '../book/BookUrlResolver';
 import { CooperativeCancellationToken, CooperativeScheduler } from '../concurrency/CooperativeScheduler';
 import { AnalyzeRule } from './AnalyzeRule';
@@ -56,7 +57,12 @@ export class RuleExecutionService {
 
       for (const field of request.fields) {
         const code = this.extractStandaloneJsCode(field.rule);
-        const embeddedProcessor = code === null ? this.extractEmbeddedJsProcessor(field.rule) : null;
+        const embeddedCandidate = code === null ? this.extractEmbeddedJsProcessor(field.rule) : null;
+        const embeddedDecision = embeddedCandidate === null ? null :
+          BookSourceRuntimeRouter.decide(request.stage, embeddedCandidate.code);
+        // Combined extraction + <js> rules were historically evaluated by AnalyzeRule per item.
+        // Keep that compatible path unless the processor really needs complete JavaScript syntax.
+        const embeddedProcessor = embeddedDecision?.runtime === 'arkweb' ? embeddedCandidate : null;
         const postProcessor = code === null && embeddedProcessor === null ?
           this.extractPostProcessorJs(field.rule) : null;
         if (code === null && embeddedProcessor === null && postProcessor === null) continue;
@@ -74,8 +80,12 @@ export class RuleExecutionService {
           }
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error || '完整脚本执行失败');
-          result.errors.push(`${field.name}: ${message}`);
-          fullJsValues[field.name] = [];
+          const canFallbackEmbedded = embeddedProcessor !== null &&
+            this.canFallbackEmbeddedProcessor(embeddedDecision);
+          result.errors.push(`${field.name}: ${message}${canFallbackEmbedded ? '，已回退兼容解析' : ''}`);
+          // Leaving this field unset makes the item loop use AnalyzeRule, matching the 3.7.825
+          // behavior. Never retry scripts with observable side effects in a second runtime.
+          if (!canFallbackEmbedded) fullJsValues[field.name] = [];
         }
         token.throwIfCancelled();
         this.throwIfDeadlineExceeded(deadlineAt, request.stage);
@@ -355,6 +365,10 @@ export class RuleExecutionService {
     const trailingRule = (match[3] || '').trim();
     if (!baseRule || !code) return null;
     return { baseRule: baseRule, code: code, trailingRule: trailingRule };
+  }
+
+  private canFallbackEmbeddedProcessor(decision: SourceRuntimeDecision | null): boolean {
+    return decision !== null && decision.fallbackAllowed;
   }
 
   private seedSourceVariables(ctx: RuleContext, source: BookSource,
