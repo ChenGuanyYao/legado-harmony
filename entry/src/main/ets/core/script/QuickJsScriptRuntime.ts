@@ -24,13 +24,10 @@ export class QuickJsScriptRuntime {
   static isPureExpressionCandidate(expression: string): boolean {
     const code = QuickJsScriptRuntime.normalizeExpression(expression);
     if (!code || code.length > QuickJsScriptRuntime.MAX_SCRIPT_LENGTH) return false;
-    // JSONPath and Legado replacement operators are rule-language syntax, not JavaScript.  In
-    // particular `$` is an object in the full field runtime, while the bounded QuickJS bridge
-    // intentionally accepts primitive bindings only.  Keep these expressions on the legacy
-    // path until structured bindings are represented explicitly.
+    // Legado replacement operators and @-paths are rule-language syntax, not JavaScript. A bare
+    // `$` is valid here because structured RuleValue bindings are now represented explicitly.
     const syntax = QuickJsScriptRuntime.stripLiterals(code);
-    if (syntax.includes('##') || /(^|[^A-Za-z0-9_$])\$(?![A-Za-z0-9_$])/.test(syntax) ||
-      /(^|[^A-Za-z0-9_$])@(?:\.|\[)/.test(syntax)) return false;
+    if (syntax.includes('##') || /(^|[^A-Za-z0-9_$])@(?:\.|\[)/.test(syntax)) return false;
     if (/[;{}]/.test(code)) return false;
     if (/(^|[^=!<>])=(?!=|>)/.test(code)) return false;
     if (/\+\+|--/.test(code)) return false;
@@ -42,7 +39,7 @@ export class QuickJsScriptRuntime {
   }
 
   static evaluateExpression(expression: string,
-    variables: Record<string, number | string | boolean>, timeoutMs: number = 80): QuickJsExpressionResult {
+    variables: Record<string, Object>, timeoutMs: number = 80): QuickJsExpressionResult {
     const output = new QuickJsExpressionResult();
     const code = QuickJsScriptRuntime.normalizeExpression(expression);
     if (!QuickJsScriptRuntime.isPureExpressionCandidate(code)) {
@@ -58,7 +55,9 @@ export class QuickJsScriptRuntime {
     const declarations: string[] = [];
     for (let index = 0; index < keys.length; index++) {
       const key = keys[index];
-      bindingBytes += key.length + String(variables[key]).length;
+      let serialized = '';
+      try { serialized = JSON.stringify(variables[key]); } catch (_) { serialized = String(variables[key]); }
+      bindingBytes += key.length + serialized.length;
       if (QuickJsScriptRuntime.isSafeIdentifier(key)) {
         declarations.push(`const ${key}=__bindings[${JSON.stringify(key)}]`);
       }
@@ -141,7 +140,7 @@ export class QuickJsShadowComparator {
   private static samples: number = 0;
   private static samplesByFingerprint: Record<string, number> = {};
 
-  static compare(expression: string, variables: Record<string, string>, legacyValue: string,
+  static compare(expression: string, variables: Record<string, Object>, legacyValue: string,
     observation: QuickJsObservationContext | null = null): void {
     const validationTarget = QuickJsValidationStore.isValidationTarget(observation,
       QuickJsShadowComparator.fingerprint(expression));
@@ -160,15 +159,8 @@ export class QuickJsShadowComparator {
     // A targeted validation session needs four real observations to reach the canary gate.
     // Ordinary shadow mode remains capped at two observations per fingerprint.
     if (fingerprintSamples >= (validationTarget ? 4 : 2)) return;
-    const bindings: Record<string, number | string | boolean> = {};
-    const keys = Object.keys(variables);
-    for (let index = 0; index < keys.length; index++) {
-      const key = keys[index];
-      const value = variables[key] || '';
-      bindings[key] = /^-?(?:\d+\.?\d*|\.\d+)$/.test(value) ? Number(value) : value;
-    }
     const sample = validationTarget ? fingerprintSamples + 1 : QuickJsShadowComparator.samples + 1;
-    if (!submitter.submit(expression, JSON.stringify(bindings), legacyValue, fingerprint, sample,
+    if (!submitter.submit(expression, JSON.stringify(variables), legacyValue, fingerprint, sample,
       observation)) return;
     QuickJsShadowComparator.samplesByFingerprint[sampleKey] = fingerprintSamples + 1;
     if (!validationTarget) QuickJsShadowComparator.samples = sample;

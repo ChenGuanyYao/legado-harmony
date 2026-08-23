@@ -6,6 +6,7 @@ import { JsonPathEvaluator } from './JsonPathEvaluator';
 import { ScriptEngine, ScriptEngineContext } from './ScriptEngine';
 import { BookUrlResolver } from '../book/BookUrlResolver';
 import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
+import { RuleExecutionTarget, RuleValue, RuleValueKind } from './RuleValue';
 
 const MAX_HTML_PARSE_LENGTH = 4 * 1024 * 1024;
 
@@ -21,11 +22,16 @@ export class AnalyzeRule {
     this.baseUrl = baseUrl;
     this.ctx = ctx || new RuleContext();
     this.js = new JsRuntime();
+    this.js.setVar('baseUrl', baseUrl);
     this.scriptEngine = new ScriptEngine(this.js);
   }
 
   setContent(c: string): AnalyzeRule { this.content = c; return this; }
-  setBaseUrl(u: string): AnalyzeRule { this.baseUrl = u; return this; }
+  setBaseUrl(u: string): AnalyzeRule {
+    this.baseUrl = u;
+    this.js.setVar('baseUrl', u);
+    return this;
+  }
   setContext(ctx: RuleContext): AnalyzeRule { this.ctx = ctx; return this; }
   getContext(): RuleContext { return this.ctx; }
   setJsVar(k: string, v: string): AnalyzeRule { this.js.setVar(k, v); return this; }
@@ -45,18 +51,53 @@ export class AnalyzeRule {
   // === 主入口 ===
 
   getString(rule: string, isUrl: boolean = false): string {
-    // Android Legado joins every non-URL match with a newline. URL rules are the
-    // exception: callers need one address, so only their first match is used.
-    const r = this.analyzeFirst(rule, !isUrl);
-    return isUrl ? this.resolveUrl(r) : r;
+    const values = this.execute(rule, RuleExecutionTarget.STRING, isUrl);
+    return values.length > 0 ? values[0].asString() : '';
   }
 
   getStringList(rule: string): string[] {
-    return this.analyze(rule);
+    return this.execute(rule, RuleExecutionTarget.STRING_LIST)
+      .map((value: RuleValue): string => value.asString());
   }
 
   getElements(rule: string): string[] {
-    if (!rule) return [this.content];
+    return this.execute(rule, RuleExecutionTarget.ELEMENTS)
+      .map((value: RuleValue): string => value.asString());
+  }
+
+  /**
+   * One typed gateway for the three public rule result shapes.  Recursive rule evaluation remains
+   * inside AnalyzeRule, but conversion to the legacy string API now happens only after this
+   * boundary.  That prevents list element, JSON and regex-group contexts from becoming display
+   * text before a following field rule consumes them.
+   */
+  execute(rule: string, target: string = RuleExecutionTarget.STRING, isUrl: boolean = false): RuleValue[] {
+    if (target === RuleExecutionTarget.ELEMENTS) return this.executeElementValues(rule);
+    if (target === RuleExecutionTarget.STRING_LIST) return this.executeStringListValues(rule);
+    // Android Legado joins every non-URL match with a newline. URL rules are the exception:
+    // callers need one address, so only their first match is used.
+    const extracted = this.analyzeFirst(rule, !isUrl);
+    const value = isUrl ? this.resolveUrl(extracted) : extracted;
+    return value ? [this.classifyValue(value)] : [];
+  }
+
+  private executeStringListValues(rule: string): RuleValue[] {
+    if (!rule) return [];
+    if (this.findTopLevelProcessor(rule, '##') === 0) {
+      const processed = this.applyProcessor(this.content, rule);
+      // Android converts the post-processed String to a one-item list even when the first-match
+      // form did not match and therefore produced an empty string.
+      return [this.classifyValue(processed)];
+    }
+    // analyze() deliberately removes the replacement suffix before extraction. Android applies
+    // that suffix to every list member, rather than once to the joined string.
+    return this.analyze(rule).map((item: string): RuleValue => {
+      return this.classifyValue(this.applyProcessor(item, rule));
+    });
+  }
+
+  private executeElementValues(rule: string): RuleValue[] {
+    if (!rule) return [RuleValue.htmlElement(this.content)];
     // Legado uses a leading "-" on list rules to request reverse ordering.
     // Keep the convention at the element-list boundary so it works for both
     // JSONPath and HTML/CSS rules without changing scalar/regex semantics.
@@ -65,11 +106,101 @@ export class AnalyzeRule {
     if (reverse) elementRule = elementRule.substring(1).trim();
     // 防止超大 HTML 进入正则/CSS 解析，但 JSON 接口列表仍需要正常走 JSONPath。
     if (this.content.length > MAX_HTML_PARSE_LENGTH && !this.isJsonPathLikeRule(elementRule)) return [];
-    const jsElements = this.evalJsElementsRule(elementRule);
+    const jsElements = this.evalJsElementsRule(elementRule)
+      .map((item: string): RuleValue => this.classifyValue(item, RuleValueKind.JS_VALUE));
     if (jsElements.length > 0) return reverse ? jsElements.reverse() : jsElements;
-    const items = this.analyze(elementRule);
+    const regexElements = this.evalAllInOneRegexElements(elementRule);
+    if (regexElements.length > 0) return reverse ? regexElements.reverse() : regexElements;
+    // A CSS list rule selects element contexts, not their display text. Keeping the outer HTML is
+    // essential because item rules commonly extract attributes (href/src/data-*) or run a regex
+    // against the card after the list has been split. Scalar CSS rules continue to return text.
+    const effectiveRule = this.stripProcessor(elementRule).trim();
+    const cssSelector = this.cssSelectorForElements(effectiveRule);
+    if (cssSelector) {
+      const cssElements = this.matchElements(cssSelector)
+        .map((item: string): RuleValue => RuleValue.htmlElement(item));
+      if (cssElements.length > 0) return reverse ? cssElements.reverse() : cssElements;
+      // An explicit CSS rule is unambiguous. Falling through to scalar analysis would turn a
+      // legitimate empty list into the full page or selector text.
+      if (effectiveRule.toLowerCase().startsWith('@css:')) return [];
+    }
+    const items = this.analyze(elementRule).map((item: string): RuleValue => this.classifyValue(item));
     if (items.length > 0) return reverse ? items.reverse() : items;
-    return [this.content];
+    // A non-empty list rule with no matches is empty in Android Legado. The old whole-page
+    // fallback produced one false item and hid broken selectors from the caller.
+    return [];
+  }
+
+  private classifyValue(value: string, preferredKind: string = ''): RuleValue {
+    if (preferredKind === RuleValueKind.HTML_ELEMENT) return RuleValue.htmlElement(value);
+    const text = value || '';
+    const trimmed = text.trim();
+    if (preferredKind === RuleValueKind.JS_VALUE) {
+      try { return RuleValue.jsValue(JSON.parse(trimmed) as Object, text); } catch (_) {
+        return new RuleValue(RuleValueKind.JS_VALUE, text, text as Object);
+      }
+    }
+    return RuleValue.fromExternal(text);
+  }
+
+  private cssSelectorForElements(rule: string): string {
+    let value = (rule || '').trim();
+    const lowerValue = value.toLowerCase();
+    const explicit = lowerValue.startsWith('@css:');
+    if (explicit) value = value.substring(5).trim();
+    if (!value || lowerValue.startsWith('@json:') || lowerValue.startsWith('@xpath:') || value.startsWith('//') ||
+      value.startsWith('/') || value.startsWith('$') || value.startsWith('@.') || value.startsWith(':') ||
+      value.startsWith('%') || value.startsWith('js:') || value.startsWith('@js:') || value.startsWith('<js>')) {
+      return '';
+    }
+    // getElements selects contexts. Ignore a scalar attribute/text suffix if a source included
+    // one accidentally, matching JSoup's element-list boundary rather than scalar evalCss().
+    const atIndex = value.lastIndexOf('@');
+    if (atIndex > 0) {
+      const suffix = value.substring(atIndex + 1);
+      if (suffix === 'text' || suffix === 'html' || this.isAttrName(suffix)) value = value.substring(0, atIndex);
+    }
+    return explicit || /^[A-Za-z*#.\[]/.test(value) ? value.trim() : '';
+  }
+
+  private evalAllInOneRegexElements(rule: string): RuleValue[] {
+    const effective = this.stripProcessor((rule || '').trim());
+    if (!effective.startsWith(':') || effective.length < 2) return [];
+    const regexRules = this.splitCombinedRule(effective.substring(1), '&&')
+      .map((item: string): string => item.trim()).filter((item: string): boolean => item.length > 0);
+    if (regexRules.length === 0) return [];
+    let input = this.content;
+    for (let index = 0; index < regexRules.length; index++) {
+      try {
+        const regex = new RegExp(regexRules[index], 'g');
+        const last = index === regexRules.length - 1;
+        const values: RuleValue[] = [];
+        let concatenated = '';
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(input)) !== null) {
+          if (last) {
+            const record: Record<string, string> = {};
+            const groups: string[] = [];
+            for (let groupIndex = 0; groupIndex < match.length; groupIndex++) {
+              const group = match[groupIndex] || '';
+              groups.push(group);
+              record[`$${groupIndex}`] = group;
+            }
+            values.push(RuleValue.regexGroups(record, groups));
+          } else {
+            concatenated += match[0] || '';
+          }
+          if (values.length > 5000) break;
+          if ((match[0] || '').length === 0) regex.lastIndex++;
+        }
+        if (last) return values;
+        if (!concatenated) return [];
+        input = concatenated;
+      } catch (_) {
+        return [];
+      }
+    }
+    return [];
   }
 
   private isJsonPathLikeRule(rule: string): boolean {
@@ -235,6 +366,13 @@ export class AnalyzeRule {
     rule = rule.replace(/@get:\{([^}]+)\}/g, (_: string, key: string) => {
       return this.ctx.get(key.trim());
     });
+
+    // Android Legado keeps the current content as the input when a rule starts directly with a
+    // replacement processor (`##match##replacement`). This form is common for turning an href in
+    // a whole search-result card into a canonical book URL.
+    if (this.findTopLevelProcessor(rule, '##') === 0) {
+      return this.applyProcessor(this.content, rule);
+    }
 
     // Resolve extraction fallbacks before JS-like expression heuristics. A suffix such as
     // `@js:'prefix' + result` belongs to the selected branch, not to the whole source body.
@@ -2364,6 +2502,10 @@ export class AnalyzeRule {
         const m = rule.match(/@get:\{([^}]+)\}/);
         return m ? this.ctx.get(m[1].trim()) : '';
       }
+      // In Android Legado, `@@selector` inside a `{{...}}` template is still an HTML
+      // extraction rule. Route it back through the ordinary analyzer instead of treating it as
+      // JavaScript; the latter returns the selector text literally when the expression is invalid.
+      if (rule.startsWith('@@')) return this.analyzeFirst(rule.substring(2));
       if ((rule.startsWith('$') || rule.startsWith('@.')) && (rule.includes('##') || rule.includes('@js:'))) {
         return this.analyzeFirst(rule);
       }
@@ -2529,7 +2671,15 @@ export class AnalyzeRule {
 
     try {
       if (parts.length >= 3) {
-        return value.replace(new RegExp(parts[1], 'g'), parts[2]);
+        const regex = new RegExp(parts[1], parts.length > 3 ? '' : 'g');
+        if (parts.length > 3) {
+          // A fourth segment is produced by the trailing `###` marker. Legado applies the
+          // replacement only to the first matched substring and returns that substring, rather
+          // than returning the surrounding source content.
+          const match = regex.exec(value);
+          return match ? match[0].replace(regex, parts[2]) : '';
+        }
+        return value.replace(regex, parts[2]);
       }
       return value.replace(new RegExp(parts[1], 'g'), '');
     } catch (_) {

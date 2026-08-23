@@ -9,7 +9,7 @@ export type QuickJsLegacyEvaluator = () => Promise<string>;
  * scripts, all host actions and every QuickJS failure continue through the supplied legacy path.
  */
 export class QuickJsAsyncRouter {
-  static async evaluate(expression: string, variables: Record<string, number | string | boolean>,
+  static async evaluate(expression: string, variables: Record<string, Object>,
     legacyEvaluator: QuickJsLegacyEvaluator, timeoutMs: number = 80,
     observation: QuickJsObservationContext | null = null): Promise<string> {
     const mode = QuickJsRuntimeStatus.getMode();
@@ -20,9 +20,7 @@ export class QuickJsAsyncRouter {
     if (mode === QuickJsRuntimeMode.OFF || !candidate) return legacyEvaluator();
     if (mode === QuickJsRuntimeMode.SHADOW) {
       const legacyValue = await legacyEvaluator();
-      const stringBindings: Record<string, string> = {};
-      for (const key of Object.keys(variables)) stringBindings[key] = String(variables[key]);
-      QuickJsShadowComparator.compare(expression, stringBindings, legacyValue, observation);
+      QuickJsShadowComparator.compare(expression, variables, legacyValue, observation);
       return legacyValue;
     }
 

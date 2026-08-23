@@ -51,6 +51,8 @@ import { FullTextCacheCancelCoordinator, FullTextCacheCancelSignal } from '../ut
 const SHELF_FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS: number = 5000;
 const SHELF_COVER_INITIAL_PREFETCH_COUNT: number = 16;
 const SHELF_COVER_UPDATE_BATCH_MS: number = 48;
+const SHELF_UPDATE_BADGE_VARIABLE: string = 'shelfHasUpdate';
+let bookshelfColdStartRefreshStarted: boolean = false;
 
 interface ShelfFullTextCacheTask {
   taskId: number;
@@ -1175,6 +1177,7 @@ struct BookshelfPage {
   private localBookIntroMigrationRunning: boolean = false;
   private localBookIntroMigrationGeneration: number = 0;
   private shelfComponentActive: boolean = false;
+  private shelfUpdateAcknowledgedAt: Map<string, number> = new Map();
 
   aboutToAppear() {
     this.shelfComponentActive = true;
@@ -1291,6 +1294,7 @@ struct BookshelfPage {
       this.reloadShelfDataSources(forceDataSourceReload);
       this.refreshShelfCoverCache(this.books);
       this.scheduleLocalBookIntroMigration(loadedBooks);
+      this.scheduleColdStartBookshelfRefresh(loadedBooks);
     } catch (e) {
       if (loadSerial === this.shelfLoadSerial) console.error('加载书籍失败:', e);
     } finally {
@@ -1314,6 +1318,23 @@ struct BookshelfPage {
       this.loadTimer = -1;
       this.loadBooks();
     }, 80);
+  }
+
+  scheduleColdStartBookshelfRefresh(loadedBooks: Book[]): void {
+    if (bookshelfColdStartRefreshStarted || loadedBooks.length === 0) {
+      return;
+    }
+    bookshelfColdStartRefreshStarted = true;
+    // Run once per process after the first local shelf snapshot is visible. The refresh deliberately
+    // has no spinner or toast so cold startup remains responsive.
+    setTimeout(() => {
+      console.info('[ShelfRefresh] cold-start silent refresh started');
+      this.refreshBookshelfToc(true).then(() => {
+        console.info('[ShelfRefresh] cold-start silent refresh finished');
+      }).catch((e: Error) => {
+        console.error('[ShelfRefresh] cold-start silent refresh failed:', e);
+      });
+    }, 600);
   }
 
   async deleteBook(book: Book) {
@@ -2373,8 +2394,7 @@ struct BookshelfPage {
       .backgroundColor(this.pageColor())
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
 
-      if (this.books.length > 0 &&
-        (this.isShelfRefreshing || this.shelfRefreshStatus !== RefreshStatus.Inactive)) {
+      if (this.books.length > 0 && this.shouldShowShelfRefreshStatus()) {
         this.shelfRefreshStatusOverlay()
       }
 
@@ -4272,6 +4292,7 @@ struct BookshelfPage {
     if (this.openingBook) {
       return;
     }
+    this.acknowledgeShelfBookUpdate(book);
     const centerX = this.contextViewportWidth / 2;
     const centerY = this.contextViewportHeight / 2;
     this.openingBookOriginX = touchX - centerX;
@@ -4329,6 +4350,40 @@ struct BookshelfPage {
         });
       }, 96);
     }, 560);
+  }
+
+  hasShelfBookUpdate(book: Book): boolean {
+    return book.getVariable(SHELF_UPDATE_BADGE_VARIABLE) === '1';
+  }
+
+  acknowledgeShelfBookUpdate(book: Book): void {
+    if (!book.bookUrl) {
+      return;
+    }
+    // Remember the click while a background refresh may still be in flight, so that refresh cannot
+    // write the badge back after the user has already entered this book.
+    this.shelfUpdateAcknowledgedAt.set(book.bookUrl, Date.now());
+    if (!this.hasShelfBookUpdate(book)) {
+      return;
+    }
+    book.putVariable(SHELF_UPDATE_BADGE_VARIABLE, '');
+    this.allBooks = this.allBooks.map((item: Book) => item.bookUrl === book.bookUrl ? book : item);
+    this.applyShelfScope();
+    this.reloadShelfDataSources(true);
+    this.persistShelfBookUpdateAcknowledgement(book.bookUrl).catch((e: Error) => {
+      console.error('清除书架更新标记失败:', book.name, e);
+    });
+  }
+
+  async persistShelfBookUpdateAcknowledgement(bookUrl: string): Promise<void> {
+    const db = AppDatabase.getInstance();
+    await db.initWithContext(getContext(this));
+    const current = await db.getBook(bookUrl);
+    if (!current || !this.hasShelfBookUpdate(current)) {
+      return;
+    }
+    current.putVariable(SHELF_UPDATE_BADGE_VARIABLE, '');
+    await db.updateBook(current, false, 'shelf_update_badge_acknowledged');
   }
 
   closeShelfBook(bookUrl: string): void {
@@ -4736,6 +4791,22 @@ struct BookshelfPage {
         .interval(3500)
         .indicator(false)
         .loop(true)
+      }
+      if (this.hasShelfBookUpdate(book)) {
+        Text('新')
+          .fontSize(10)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#FFFFFF')
+          .textAlign(TextAlign.Center)
+          .width(21)
+          .height(21)
+          .borderRadius(11)
+          .backgroundColor('#F04B45')
+          .border({ width: 2, color: '#FFFFFF' })
+          .position({ x: '100%', y: '100%' })
+          .translate({ x: -24, y: -24 })
+          .shadow({ radius: 5, color: '#55000000', offsetX: 0, offsetY: 2 })
+          .accessibilityText(`${book.name}有更新`)
       }
     }
     .width(width)
@@ -5997,23 +6068,29 @@ struct BookshelfPage {
     }
   }
 
-  async refreshBookshelfToc(): Promise<void> {
+  async refreshBookshelfToc(silent: boolean = false): Promise<void> {
     if (this.shelfRefreshRunning) {
-      this.shelfRefreshPrompt = '书架刷新中';
-      this.isShelfRefreshing = true;
+      if (!silent) {
+        this.shelfRefreshPrompt = '书架刷新中';
+        this.isShelfRefreshing = true;
+      }
       return;
     }
-    if (this.shelfScope === 'local') {
+    if (!silent && this.shelfScope === 'local') {
       await this.refreshLocalBooks();
       return;
     }
-    if (this.books.length === 0) {
-      this.isShelfRefreshing = false;
+    const shelfBooks = silent ? [...this.allBooks] : [...this.books];
+    if (shelfBooks.length === 0) {
+      if (!silent) this.isShelfRefreshing = false;
       return;
     }
     this.shelfRefreshRunning = true;
-    this.isShelfRefreshing = true;
-    promptAction.showToast({ message: '正在刷新书架...' });
+    const refreshStartedAt = Date.now();
+    if (!silent) {
+      this.isShelfRefreshing = true;
+      promptAction.showToast({ message: '正在刷新书架...' });
+    }
     let attempted = 0;
     let skippedFinished = 0;
     let updated = 0;
@@ -6023,7 +6100,6 @@ struct BookshelfPage {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
       const engine = ReadBookEngine.createBackgroundWorker();
-      const shelfBooks = [...this.books];
       for (const shelfBook of shelfBooks) {
         if (!shelfBook.bookUrl || LocalBookService.isLocalBook(shelfBook) || !shelfBook.canUpdate) {
           continue;
@@ -6033,10 +6109,11 @@ struct BookshelfPage {
           continue;
         }
         attempted++;
-        const beforeCount = shelfBook.totalChapterNum;
-        const beforeLatest = shelfBook.latestChapterTitle;
         try {
           const freshBook = await db.getBook(shelfBook.bookUrl) || shelfBook;
+          const beforeCount = freshBook.totalChapterNum;
+          const beforeLatest = freshBook.latestChapterTitle;
+          const hadPendingUpdate = this.hasShelfBookUpdate(freshBook);
           await engine.openBook(freshBook);
           await engine.refreshToc();
           const refreshedBook = await db.getBook(shelfBook.bookUrl);
@@ -6047,8 +6124,15 @@ struct BookshelfPage {
               refreshedBook.totalChapterNum = engine.chapters.length;
               refreshedBook.latestChapterTitle = engine.chapters[engine.chapters.length - 1].title;
             }
+            const hasNewUpdate = refreshedBook.totalChapterNum > beforeCount ||
+              refreshedBook.latestChapterTitle !== beforeLatest;
+            const acknowledgedAt = this.shelfUpdateAcknowledgedAt.get(refreshedBook.bookUrl) || 0;
+            const keepPendingUpdate = hadPendingUpdate && acknowledgedAt === 0;
+            const keepNewUpdate = hasNewUpdate && acknowledgedAt < refreshStartedAt;
+            refreshedBook.putVariable(SHELF_UPDATE_BADGE_VARIABLE,
+              keepPendingUpdate || keepNewUpdate ? '1' : '');
             await db.updateBook(refreshedBook);
-            if (refreshedBook.totalChapterNum > beforeCount || refreshedBook.latestChapterTitle !== beforeLatest) {
+            if (hasNewUpdate) {
               updated++;
             }
           }
@@ -6059,22 +6143,25 @@ struct BookshelfPage {
       }
       if (attempted > 0) {
         await this.loadBooks();
-        const skippedText = skippedFinished > 0 ? `，跳过${skippedFinished}本完结` : '';
-        const message = failed > 0 ?
-          `书架刷新完成：${updated}本有更新，${failed}本失败${skippedText}` :
-          `书架刷新完成：${updated}本有更新${skippedText}`;
-        promptAction.showToast({ message });
+        if (!silent) {
+          const skippedText = skippedFinished > 0 ? `，跳过${skippedFinished}本完结` : '';
+          const message = failed > 0 ?
+            `书架刷新完成：${updated}本有更新，${failed}本失败${skippedText}` :
+            `书架刷新完成：${updated}本有更新${skippedText}`;
+          promptAction.showToast({ message });
+        }
         AppStorage.setOrCreate('shelfUpdateTime', Date.now());
       }
     } catch (e) {
       taskFailed = true;
       console.error('刷新书架失败:', e);
-      promptAction.showToast({ message: '书架刷新失败' });
+      if (!silent) promptAction.showToast({ message: '书架刷新失败' });
     } finally {
       this.shelfRefreshRunning = false;
       this.isShelfRefreshing = false;
+      this.shelfRefreshStatus = RefreshStatus.Inactive;
       this.shelfRefreshPrompt = '下拉刷新书架';
-      if (!taskFailed && attempted === 0) {
+      if (!silent && !taskFailed && attempted === 0) {
         const message = skippedFinished > 0 ? `没有可刷新的连载书籍，已跳过${skippedFinished}本完结` : '没有可刷新的网络书籍';
         promptAction.showToast({ message });
       }
@@ -6095,6 +6182,7 @@ struct BookshelfPage {
     } finally {
       this.shelfRefreshRunning = false;
       this.isShelfRefreshing = false;
+      this.shelfRefreshStatus = RefreshStatus.Inactive;
       this.shelfRefreshPrompt = '下拉刷新书架';
     }
   }
@@ -6121,10 +6209,19 @@ struct BookshelfPage {
     } else if (state === RefreshStatus.Refresh) {
       this.shelfRefreshPrompt = '正在刷新书架...';
     } else if (state === RefreshStatus.Done) {
-      this.shelfRefreshPrompt = '刷新完成';
+      // Done is the native rebound/settled phase. Keeping a fixed sibling visible here makes
+      // the prompt overlap the first shelf item after the books have already returned to place.
+      this.shelfRefreshPrompt = '下拉刷新书架';
     } else {
       this.shelfRefreshPrompt = '下拉刷新书架';
     }
+  }
+
+  shouldShowShelfRefreshStatus(): boolean {
+    if (this.isShelfRefreshing) return true;
+    return this.shelfRefreshStatus === RefreshStatus.Drag ||
+      this.shelfRefreshStatus === RefreshStatus.OverDrag ||
+      this.shelfRefreshStatus === RefreshStatus.Refresh;
   }
 
   async updateShelfBook(book: Book): Promise<void> {

@@ -90,8 +90,7 @@ export class CookieStore {
 
   private static splitSetCookie(cookies: string): string[] {
     if (!cookies) return [];
-    if (!cookies.includes(',')) return [cookies.trim()].filter(v => v.length > 0);
-    const values: string[] = [];
+    const records: string[] = [];
     let quote = '';
     let start = 0;
     for (let i = 0; i < cookies.length; i++) {
@@ -105,12 +104,79 @@ export class CookieStore {
         continue;
       }
       if (ch === ',' && /\s*[A-Za-z0-9_.-]+=/.test(cookies.substring(i + 1))) {
-        values.push(cookies.substring(start, i).trim());
+        records.push(cookies.substring(start, i).trim());
         start = i + 1;
       }
     }
-    values.push(cookies.substring(start).trim());
-    return values.filter(v => v.length > 0);
+    records.push(cookies.substring(start).trim());
+
+    const values: string[] = [];
+    for (const record of records) {
+      for (const value of this.splitCookieRecord(record)) {
+        if (value) values.push(value);
+      }
+    }
+    return values;
+  }
+
+  /**
+   * ArkWeb accepts one RFC 6265 Set-Cookie value per configCookieSync call. Legado source
+   * scripts, however, commonly pass a Cookie request-header value such as
+   * `token=...; deviceId=...` to cookie.setCookie(). A second name/value pair is not a cookie
+   * attribute; forwarding the whole string makes ArkWeb reject it and silently loses the login
+   * token. Preserve real Set-Cookie attributes, but emit every additional cookie separately.
+   */
+  private static splitCookieRecord(record: string): string[] {
+    const parts = this.splitOnSemicolons(record);
+    const values: string[] = [];
+    let current = '';
+    for (const rawPart of parts) {
+      const part = rawPart.trim();
+      if (!part) continue;
+      const separator = part.indexOf('=');
+      const name = (separator >= 0 ? part.substring(0, separator) : part).trim().toLowerCase();
+      if (!current) {
+        current = part;
+      } else if (this.isCookieAttribute(name, separator >= 0)) {
+        current += `; ${part}`;
+      } else if (separator > 0) {
+        values.push(current);
+        current = part;
+      } else {
+        current += `; ${part}`;
+      }
+    }
+    if (current) values.push(current);
+    return values;
+  }
+
+  private static splitOnSemicolons(value: string): string[] {
+    const result: string[] = [];
+    let quote = '';
+    let start = 0;
+    for (let i = 0; i < value.length; i++) {
+      const ch = value.charAt(i);
+      if (quote) {
+        if (ch === quote && value.charAt(i - 1) !== '\\') quote = '';
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        quote = ch;
+      } else if (ch === ';') {
+        result.push(value.substring(start, i));
+        start = i + 1;
+      }
+    }
+    result.push(value.substring(start));
+    return result;
+  }
+
+  private static isCookieAttribute(name: string, hasValue: boolean): boolean {
+    if (hasValue) {
+      return name === 'domain' || name === 'path' || name === 'expires' || name === 'max-age' ||
+        name === 'samesite' || name === 'priority' || name === 'version' || name === 'comment';
+    }
+    return name === 'secure' || name === 'httponly' || name === 'partitioned';
   }
 
   /**

@@ -687,6 +687,10 @@ export class BookSourceStageWebRuntime {
       `const S=JSON.parse(dec('${stateBase64}'));let pending='',pendingHeaders='{}',pendingCookie='',pendingCrypto='',url='',browserHtml='',toast='',error='';` +
       `const cookieOps=[];const sourceData=Object.assign({},S.sourceState||{});` +
       `const cacheData=Object.assign({},S.cache||{});` +
+      `const infoMap=Object.create(null);` +
+      `Object.defineProperty(infoMap,'get',{enumerable:false,value:function(k){return this[String(k??'')]??'';}});` +
+      `Object.defineProperty(infoMap,'put',{enumerable:false,value:function(k,v){this[String(k??'')]=v;return v;}});` +
+      `Object.defineProperty(infoMap,'save',{enumerable:false,value:function(){return true;}});` +
       `const javaData=Object.assign({},S.javaState||{});const loginMap=Object.assign({},S.loginInfo||{});` +
       `Object.defineProperty(loginMap,'get',{enumerable:false,value:function(k){return this[k]??'';}});` +
       `Object.defineProperty(loginMap,'put',{enumerable:false,value:function(k,v){this[k]=v;return v;}});` +
@@ -839,9 +843,10 @@ export class BookSourceStageWebRuntime {
       `function JavaImporter(){return {importClass:function(){return true;},importPackage:function(){return true;}};}` +
       `function importClass(){return true;}function importPackage(){return true;}` +
       `globalThis.source=source;globalThis.book=book;globalThis.chapter=chapter;globalThis.java=java;` +
-      `globalThis.cache=cache;globalThis.cookie=cookie;` +
+      `globalThis.cache=cache;globalThis.cookie=cookie;globalThis.infoMap=infoMap;` +
       `const runtimeScope=Object.create(globalThis);runtimeScope.source=source;runtimeScope.book=book;` +
       `runtimeScope.chapter=chapter;runtimeScope.java=java;runtimeScope.cache=cache;runtimeScope.cookie=cookie;` +
+      `runtimeScope.infoMap=infoMap;` +
       `globalThis.__legadoHarmonyStageScope=runtimeScope;` +
       `globalThis.Packages=Packages;globalThis.baseUrl=S.baseUrl;globalThis.result=S.content;globalThis.src=S.content;` +
       `globalThis.title=S.chapterTitle||'';Object.keys(bookData).forEach(function(k){` +

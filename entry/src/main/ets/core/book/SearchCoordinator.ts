@@ -19,6 +19,7 @@ import { RuleExecutionService } from '../rule/RuleExecutionService';
 import { RuleBatchExecutionRequest, RuleFieldRequest } from '../rule/RuleExecutionModels';
 import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
 import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
+import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
 
 export interface SearchProgress {
   done: number;
@@ -329,10 +330,14 @@ export class SearchCoordinator {
       if (this.cancelled) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
       }
-      const allItems = stageItems === null ? rule.getElements(searchRule.bookList || '') : stageItems;
+      const allTypedItems = stageItems === null ?
+        rule.execute(searchRule.bookList || '', RuleExecutionTarget.ELEMENTS) :
+        stageItems.map((item: string): RuleValue => RuleValue.fromExternal(item));
       const candidateLimit = this.normalizedLimit(options.maxCandidatesPerSource,
         options.leanResult === true ? 60 : 120, 1, 200);
-      const items = allItems.length > candidateLimit ? allItems.slice(0, candidateLimit) : allItems;
+      const typedItems = allTypedItems.length > candidateLimit ?
+        allTypedItems.slice(0, candidateLimit) : allTypedItems;
+      const items = typedItems.map((item: RuleValue): string => item.asString());
       if (this.cancelled) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
       }
@@ -348,6 +353,7 @@ export class SearchCoordinator {
       fieldRequest.source = source;
       fieldRequest.stage = SourceRuntimeStage.SEARCH;
       fieldRequest.ownerId = this.stageRuntimeOwnerId;
+      fieldRequest.typedContents = typedItems;
       fieldRequest.contents = items;
       fieldRequest.baseUrl = baseUrl || source.bookSourceUrl;
       fieldRequest.fields = [

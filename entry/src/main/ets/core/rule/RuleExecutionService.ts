@@ -9,6 +9,7 @@ import { RuleBatchExecutionRequest, RuleBatchExecutionResult, RuleFieldRequest }
 import { QuickJsAsyncRouter } from '../script/QuickJsAsyncRouter';
 import { QuickJsScriptRuntime } from '../script/QuickJsScriptRuntime';
 import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
+import { RuleValue } from './RuleValue';
 
 /**
  * The single public execution gateway for rule parsing.
@@ -45,6 +46,7 @@ export class RuleExecutionService {
   async executeBatch(request: RuleBatchExecutionRequest): Promise<RuleBatchExecutionResult> {
     const result = new RuleBatchExecutionResult();
     const startedAt = Date.now();
+    const itemCount = this.itemCount(request);
     const token = new CooperativeCancellationToken();
     this.registerToken(request.ownerId, token);
     try {
@@ -91,7 +93,7 @@ export class RuleExecutionService {
         this.throwIfDeadlineExceeded(deadlineAt, request.stage);
       }
 
-      for (let itemIndex = 0; itemIndex < request.contents.length; itemIndex++) {
+      for (let itemIndex = 0; itemIndex < itemCount; itemIndex++) {
         if (itemIndex > 0 && itemIndex % itemChunkSize === 0) {
           await CooperativeScheduler.yieldToNextUiFrame();
           result.yieldedCount++;
@@ -99,7 +101,7 @@ export class RuleExecutionService {
         }
         if (await slice.checkpoint(token)) result.yieldedCount++;
         this.throwIfDeadlineExceeded(deadlineAt, request.stage);
-        const content = request.contents[itemIndex] || '';
+        const content = this.itemText(request, itemIndex);
         const analyzer = new AnalyzeRule(content, request.baseUrl);
         this.seedSourceVariables(analyzer.getContext(), request.source, request.contextValues);
         const itemValues: Record<string, string> = {};
@@ -143,7 +145,7 @@ export class RuleExecutionService {
       result.elapsedMs = Math.max(0, Date.now() - startedAt);
       this.unregisterToken(request.ownerId, token);
       if (result.elapsedMs >= CooperativeScheduler.DANGEROUS_OPERATION_MS) {
-        console.info(`[RuleExecution] ${request.stage || 'unknown'} items=${request.contents.length} ` +
+        console.info(`[RuleExecution] ${request.stage || 'unknown'} items=${itemCount} ` +
           `fields=${request.fields.length} elapsed=${result.elapsedMs}ms yields=${result.yieldedCount}`);
       }
     }
@@ -159,24 +161,26 @@ export class RuleExecutionService {
       return legacyValuesPromise;
     };
     const values: string[] = [];
-    for (let index = 0; index < request.contents.length; index++) {
+    const itemCount = this.itemCount(request);
+    for (let index = 0; index < itemCount; index++) {
       token.throwIfCancelled();
-      const content = request.contents[index] || '';
-      const bindings: Record<string, number | string | boolean> = {};
+      const contentValue = this.itemValue(request, index);
+      const runtimeValue = contentValue.runtimeValue();
+      const bindings: Record<string, Object> = {};
       for (const key of Object.keys(request.contextValues)) {
         const value = request.contextValues[key] || '';
         bindings[key] = /^-?(?:\d+\.?\d*|\.\d+)$/.test(value) ? Number(value) : value;
       }
-      bindings['result'] = content;
-      bindings['src'] = content;
-      bindings['$'] = content;
+      bindings['result'] = runtimeValue;
+      bindings['src'] = runtimeValue;
+      bindings['$'] = runtimeValue;
       bindings['baseUrl'] = request.baseUrl || request.source.bookSourceUrl || '';
       const itemIndex = index;
       const value = await QuickJsAsyncRouter.evaluate(code, bindings, async (): Promise<string> => {
         const legacyValues = await getLegacyValues();
         return itemIndex < legacyValues.length ? legacyValues[itemIndex] : '';
       }, Math.min(200, Math.max(40, Math.round((request.timeoutMs || 15000) /
-        Math.max(1, request.contents.length)))), this.observationContext(request, field));
+        Math.max(1, itemCount)))), this.observationContext(request, field));
       values.push(value);
     }
     return values;
@@ -196,9 +200,7 @@ export class RuleExecutionService {
     runtimeRequest.book = request.book;
     runtimeRequest.chapter = request.chapter;
     runtimeRequest.readerActionMode = request.readerActionMode;
-    runtimeRequest.content = JSON.stringify(request.contents.map((item: string): Object | string => {
-      try { return JSON.parse(item) as Object; } catch (_) { return item; }
-    }));
+    runtimeRequest.content = JSON.stringify(this.runtimeItems(request));
     // The runtime falls back to content when contextContent is empty. Keeping only one copy avoids
     // serializing every search item twice before it crosses into ArkWeb.
     runtimeRequest.contextContent = '';
@@ -247,9 +249,10 @@ export class RuleExecutionService {
     baseRule: string, code: string, token: CooperativeCancellationToken,
     trailingRule: string = ''): Promise<string[]> {
     const baseValues: string[] = [];
-    for (let index = 0; index < request.contents.length; index++) {
+    const itemCount = this.itemCount(request);
+    for (let index = 0; index < itemCount; index++) {
       token.throwIfCancelled();
-      const analyzer = new AnalyzeRule(request.contents[index] || '', request.baseUrl);
+      const analyzer = new AnalyzeRule(this.itemText(request, index), request.baseUrl);
       this.seedSourceVariables(analyzer.getContext(), request.source, request.contextValues);
       baseValues.push(field.listResult ? JSON.stringify(analyzer.getStringList(baseRule)) :
         (field.joinMatches ? analyzer.getString(baseRule) : analyzer.analyzeFirst(baseRule)));
@@ -266,9 +269,7 @@ export class RuleExecutionService {
     runtimeRequest.book = request.book;
     runtimeRequest.chapter = request.chapter;
     runtimeRequest.readerActionMode = request.readerActionMode;
-    runtimeRequest.content = JSON.stringify(request.contents.map((item: string): Object | string => {
-      try { return JSON.parse(item) as Object; } catch (_) { return item; }
-    }));
+    runtimeRequest.content = JSON.stringify(this.runtimeItems(request));
     runtimeRequest.contextContent = '';
     runtimeRequest.baseUrl = request.baseUrl || request.source.bookSourceUrl;
     runtimeRequest.variables = request.contextValues;
@@ -369,6 +370,28 @@ export class RuleExecutionService {
 
   private canFallbackEmbeddedProcessor(decision: SourceRuntimeDecision | null): boolean {
     return decision !== null && decision.fallbackAllowed;
+  }
+
+  private itemCount(request: RuleBatchExecutionRequest): number {
+    return request.typedContents.length > 0 ? request.typedContents.length : request.contents.length;
+  }
+
+  private itemValue(request: RuleBatchExecutionRequest, index: number): RuleValue {
+    if (request.typedContents.length > 0 && index < request.typedContents.length) {
+      return request.typedContents[index];
+    }
+    return RuleValue.fromExternal(index < request.contents.length ? request.contents[index] || '' : '');
+  }
+
+  private itemText(request: RuleBatchExecutionRequest, index: number): string {
+    return this.itemValue(request, index).asString();
+  }
+
+  private runtimeItems(request: RuleBatchExecutionRequest): Object[] {
+    const values: Object[] = [];
+    const count = this.itemCount(request);
+    for (let index = 0; index < count; index++) values.push(this.itemValue(request, index).runtimeValue());
+    return values;
   }
 
   private seedSourceVariables(ctx: RuleContext, source: BookSource,

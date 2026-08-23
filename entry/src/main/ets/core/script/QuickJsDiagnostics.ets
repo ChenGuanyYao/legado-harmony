@@ -39,11 +39,21 @@ export class QuickJsDiagnostics {
       QuickJsDiagnostics.failAsyncSelfTest('executor-not-installed');
       return;
     }
-    const bindings: Record<string, number | string | boolean> = {};
+    const bindings: Record<string, Object> = {};
     bindings['value'] = 7;
     const result = await submitter.execute('value * 6', JSON.stringify(bindings), 120);
     if (!result.success || result.timedOut || result.value !== '42') {
       QuickJsDiagnostics.failAsyncSelfTest(result.error || `unexpected-${result.value}`);
+      return;
+    }
+    const structured: Record<string, Object> = {};
+    structured['value'] = 7;
+    structured['tags'] = ['search', 'detail'] as Object;
+    bindings['$'] = structured;
+    const structuredResult = await submitter.execute("$.tags[1] + ':' + ($.value * 6)",
+      JSON.stringify(bindings), 120);
+    if (!structuredResult.success || structuredResult.timedOut || structuredResult.value !== 'detail:42') {
+      QuickJsDiagnostics.failAsyncSelfTest(structuredResult.error || `structured-${structuredResult.value}`);
       return;
     }
     hilog.info(QuickJsDiagnostics.DOMAIN, QuickJsDiagnostics.TAG,
@@ -71,7 +81,7 @@ export class QuickJsDiagnostics {
         'JSON.stringify([1, 2, 3].map((value) => value * 2))', '[2,4,6]')
     ];
     let passed = 0;
-    let total = cases.length + 3;
+    let total = cases.length + 4;
 
     const options = new JSRuntimeOptions();
     options.memoryLimitBytes = 16 * 1024 * 1024;
@@ -89,7 +99,7 @@ export class QuickJsDiagnostics {
         }
       }
 
-      const fixture: Record<string, number | string | boolean> = {};
+      const fixture: Record<string, Object> = {};
       fixture.value = 7;
       fixture.enabled = true;
       context.setObject(fixture, 'fixture');
@@ -99,6 +109,21 @@ export class QuickJsDiagnostics {
         passed++;
       } else {
         QuickJsDiagnostics.logFailure('host-binding', bindingResult);
+      }
+
+      const nested: Record<string, Object> = {};
+      nested['value'] = 7;
+      nested['tags'] = ['search', 'detail'] as Object;
+      const structuredFixture: Record<string, Object> = {};
+      structuredFixture['$'] = nested;
+      context.setObject(structuredFixture, '__structuredBindings');
+      const structuredBindingResult = context.evaluateBounded(
+        "__structuredBindings.$.tags[1] + ':' + (__structuredBindings.$.value * 6)",
+        'quickjs-self-test-structured-binding.js', 250, 16);
+      if (QuickJsDiagnostics.isExpected(structuredBindingResult, 'detail:42')) {
+        passed++;
+      } else {
+        QuickJsDiagnostics.logFailure('structured-host-binding', structuredBindingResult);
       }
 
       const promiseResult = context.evaluateBounded(

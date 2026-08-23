@@ -24,6 +24,7 @@ import { RuleBatchExecutionRequest, RuleFieldRequest } from '../rule/RuleExecuti
 import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
 import { BookSourceAudioWebRuntime } from './BookSourceAudioWebRuntime';
 import { BookSourceMetadataSupport } from './BookSourceMetadataSupport';
+import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
 
 class ContentPageData {
   content: string = '';
@@ -95,6 +96,7 @@ export class WebBookService {
     fieldRequest.book = book;
     fieldRequest.stage = SourceRuntimeStage.BOOK_INFO;
     fieldRequest.ownerId = `book_info_${Date.now()}_${book.bookUrl}`;
+    fieldRequest.typedContents = [RuleValue.fromExternal(content)];
     fieldRequest.contents = [content];
     fieldRequest.baseUrl = baseUrl;
     fieldRequest.contextValues = ctx.toPersistentRecord();
@@ -346,8 +348,10 @@ export class WebBookService {
     // retry it synchronously when it returned no usable chapters.
     if (this.stageRuleCode(tocRule.chapterList || '')) return [];
     const rule = new AnalyzeRule(body, baseUrl, ctx);
-    const matchedItems = rule.getElements(tocRule.chapterList || '');
-    const items = maxItems > 0 ? matchedItems.slice(0, maxItems) : matchedItems;
+    const matchedValues = rule.execute(tocRule.chapterList || '', RuleExecutionTarget.ELEMENTS);
+    const itemValues = maxItems > 0 ? matchedValues.slice(0, maxItems) : matchedValues;
+    const matchedItems = matchedValues.map((item: RuleValue): string => item.asString());
+    const items = itemValues.map((item: RuleValue): string => item.asString());
     console.log('[WS] getChapterList page items:', matchedItems.length, 'processing:', items.length,
       'from resp:', body.length);
     const chapters: BookChapter[] = [];
@@ -357,6 +361,7 @@ export class WebBookService {
     fieldRequest.book = book;
     fieldRequest.stage = SourceRuntimeStage.TOC;
     fieldRequest.ownerId = `toc_fields_${Date.now()}_${book.bookUrl}`;
+    fieldRequest.typedContents = itemValues;
     fieldRequest.contents = items;
     fieldRequest.baseUrl = baseUrl;
     fieldRequest.contextValues = ctx.toPersistentRecord();
@@ -549,6 +554,7 @@ export class WebBookService {
     fieldRequest.readerActionMode = true;
     fieldRequest.stage = SourceRuntimeStage.CONTENT;
     fieldRequest.ownerId = `content_fields_${Date.now()}_${chapter.url}`;
+    fieldRequest.typedContents = [RuleValue.fromExternal(body)];
     fieldRequest.contents = [body];
     fieldRequest.baseUrl = baseUrl;
     fieldRequest.contextValues = ctx.toPersistentRecord();
@@ -1383,6 +1389,7 @@ export class WebBookService {
     request.readerActionMode = stage === SourceRuntimeStage.CONTENT;
     request.stage = stage;
     request.ownerId = `${stage}_field_${Date.now()}_${book.bookUrl}`;
+    request.typedContents = [RuleValue.fromExternal(content)];
     request.contents = [content];
     request.baseUrl = baseUrl;
     request.contextValues = ctx.toPersistentRecord();
@@ -1484,6 +1491,9 @@ export class WebBookService {
     fieldRequest.book = book;
     fieldRequest.stage = SourceRuntimeStage.TOC;
     fieldRequest.ownerId = `stage_toc_fields_${Date.now()}_${book.bookUrl}`;
+    fieldRequest.typedContents = records.map((record: Record<string, Object>, index: number): RuleValue => {
+      return RuleValue.jsonValue(record, items[index] || JSON.stringify(record));
+    });
     fieldRequest.contents = items;
     fieldRequest.baseUrl = baseUrl;
     fieldRequest.contextValues = ctx.toPersistentRecord();
@@ -1682,6 +1692,15 @@ export class WebBookService {
   private extractVirtualChapterPayload(url: string): string {
     const value = (url || '').trim();
     if (!value) return '';
+    // A data URL is already a complete virtual chapter descriptor. Its Base64 payload may contain
+    // `/`, and the suffix after that slash can coincidentally look like `name=value`. Running the
+    // generic relative-query matcher over it truncates the descriptor and makes the content rule
+    // parse a Base64 tail instead of the decoded chapter JSON. Keep compatibility only for the old
+    // cached form that appended a real query string after the trailing options object.
+    if (EncodedSourceUrl.isEncodedDataUrl(value)) {
+      const legacyAppended = /}\s*((?:[A-Za-z_$][\w$.-]*=[^&\s]*)(?:&[A-Za-z_$][\w$.-]*=[^&\s]*)*)$/.exec(value);
+      return legacyAppended && legacyAppended[1] ? legacyAppended[1] : '';
+    }
     // Recover legacy cached values produced by concatenating a virtual data: base directly with
     // the chapter payload (there may be no slash between the metadata object and the first key).
     const appended = /(?:^|[}\/])((?:[A-Za-z_$][\w$.-]*=[^&\s]*)(?:&[A-Za-z_$][\w$.-]*=[^&\s]*)*)$/.exec(value);

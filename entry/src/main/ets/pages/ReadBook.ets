@@ -22206,13 +22206,30 @@ struct ReadBookPage {
   async ensureReaderPageCurlReady(): Promise<boolean> {
     if (!this.isSimulationPageTurnAnimation() || this.pageSlideDirection === 0) return false;
     this.requestReaderPageCurlCapture();
-    const key = this.readerPageCurlCaptureKey;
+    let key = this.readerPageCurlCaptureKey;
+    let keyChangeCount = 0;
     for (let attempt = 0; attempt < 120; attempt++) {
-      if (this.readerPageCurlSnapshotReady && key === this.readerPageCurlCaptureKey) return true;
-      if (this.pageSlideDirection === 0 || key !== this.readerPageCurlCaptureKey) return false;
+      if (this.pageSlideDirection === 0) return false;
+      const latestKey = this.readerPageCurlCaptureKey;
+      if (latestKey !== key) {
+        // An uncached adjacent chapter first publishes a loading leaf and then replaces it with the prepared
+        // destination page. That replacement deliberately starts a new capture with a new render-version key;
+        // follow it instead of treating the valid cross-chapter handoff as a snapshot failure.
+        key = latestKey;
+        keyChangeCount++;
+        if (keyChangeCount > 4) return false;
+        attempt = 0;
+      }
+      const crossChapterPreviewLoading = this.pageTurnCrossChapterHandoff && !!this.pageTurnPreviewLoadingKey;
+      const crossChapterPreviewReady = !this.pageTurnCrossChapterHandoff ||
+        !!this.pageTurnIncomingDocumentSource;
+      if (this.readerPageCurlSnapshotReady && key === this.readerPageCurlCaptureKey &&
+        crossChapterPreviewReady) return true;
       // captureReaderPageCurlSnapshots clears the pending flag when the platform snapshot request fails.
       // Do not keep the turn locked for the remainder of the old 1.9s polling window after a terminal failure.
-      if (!this.readerPageCurlCapturePending) return false;
+      // While an adjacent preview is still loading, a completed placeholder capture is not a terminal result:
+      // applyPageTurnPreview will publish the real leaf and start the authoritative replacement capture.
+      if (!this.readerPageCurlCapturePending && !crossChapterPreviewLoading) return false;
       await this.delay(16);
     }
     return false;

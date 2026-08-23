@@ -1,4 +1,5 @@
 import { Book, BookChapter, BookSource } from '../../model/data/Book';
+import { RuleValue } from './RuleValue';
 
 export class RuleExecutionPriority {
   static readonly BACKGROUND: number = 0;
@@ -30,6 +31,8 @@ export class RuleBatchExecutionRequest {
   chapter: BookChapter | null = null;
   stage: string = '';
   ownerId: string = '';
+  /** Preferred typed input. contents remains available for legacy call sites and display fallbacks. */
+  typedContents: RuleValue[] = [];
   contents: string[] = [];
   baseUrl: string = '';
   fields: RuleFieldRequest[] = [];

@@ -9,17 +9,11 @@ import { QuickJsValidationEvent, QuickJsValidationStore } from './QuickJsValidat
 /** Pure TaskPool entry: no UI, database, network, Cookie or filesystem access is exposed. */
 @Concurrent
 function executeQuickJsTask(expression: string, variablesJson: string, timeoutMs: number): string {
-  const variables: Record<string, number | string | boolean> = {};
+  let variables: Record<string, Object> = {};
   try {
     const parsed = JSON.parse(variablesJson || '{}') as Record<string, Object>;
-    const keys = Object.keys(parsed);
-    for (let index = 0; index < keys.length; index++) {
-      const key = keys[index];
-      const value = parsed[key];
-      if (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean') {
-        variables[key] = value;
-      }
-    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('invalid-bindings');
+    variables = parsed;
   } catch (_) {
     const invalid = new QuickJsExpressionResult();
     invalid.error = 'invalid-bindings';

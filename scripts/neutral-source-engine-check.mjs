@@ -40,6 +40,12 @@ for (const file of scanRoots.flatMap(filesUnder)) {
   }
 }
 
+const webBookService = fs.readFileSync(
+  path.join(projectRoot, 'entry/src/main/ets/core/book/WebBookService.ts'), 'utf8');
+if (!webBookService.includes('if (EncodedSourceUrl.isEncodedDataUrl(value))')) {
+  failures.push('WebBookService.ts: encoded chapter descriptors are not protected from query-tail extraction');
+}
+
 if (failures.length > 0) {
   console.error('Neutral source-engine check failed:');
   failures.forEach((failure) => console.error(`- ${failure}`));

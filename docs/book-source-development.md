@@ -1,14 +1,14 @@
 # Legado Harmony 书源开发指南
 
-> 适用版本：`3.7.829`（2026-08-21）。本文以当前工作区代码为准；规则能力、字段消费方式和限制可能随版本继续调整。
+> 适用版本：`3.7.830`（2026-08-23）。本文以当前工作区代码为准；规则能力、字段消费方式和限制可能随版本继续调整。
 
 本文面向为开源轻页编写、迁移和调试书源的开发者，描述项目当前代码中**已经实现并实际调用**的规则能力。
 
 | 项目 | 信息 |
 | --- | --- |
 | 适用项目 | `legado-harmony` |
-| 适用版本 | `3.7.829`（以 `AppScope/app.json5` 为准） |
-| 最后核对 | 2026-08-21 |
+| 适用版本 | `3.7.830`（以 `AppScope/app.json5` 为准） |
+| 最后核对 | 2026-08-23 |
 | 文档性质 | 当前实现参考，不是 Android「阅读」全部规则的等价清单 |
 
 > [!IMPORTANT]
@@ -77,7 +77,7 @@
 
 - `bookList`、`chapterList` 在完整响应上运行，返回多个元素；
 - 书名、作者、章节名等子规则分别在单个元素上运行；
-- JSON 元素会被序列化为 JSON 字符串，HTML 元素会保留该元素的完整 HTML；
+- JSON、HTML 元素、正则捕获组和 JavaScript 对象会以带类型的中间值进入字段规则，直到公开字符串结果边界才转换；HTML 元素保留完整外层 HTML，JSON/JS 对象进入脚本时保持对象结构；
 - 所以子规则通常从 `$.字段` 或元素内部的 CSS 选择器开始，而不必重复列表的完整路径。
 
 ### 最小可用书源
@@ -307,7 +307,7 @@
 ]
 ```
 
-动态发现脚本返回的 `select` 控件也可映射为原生筛选。控件标题需包含“模式、类型、频道、平台、来源、源站”之一，候选值来自 `chars`；使用 `show(值, '变量名')` 写入书源变量后，应用会重新执行该源的发现规则。线路选择不按源站层级处理。复杂脚本仍需逐源验证，不应只依赖标题推断。
+动态发现脚本返回的 `select` 控件也可映射为原生筛选。控件只需具有非空标题，候选值来自 `chars`；使用 `show(值, '变量名')` 写入书源变量后，应用会重新执行该源的发现规则。复杂脚本仍需逐源验证，不应只依赖标题推断。
 
 发现页会一次查询已启用书源的轻量元数据，以便排序、搜索和恢复选择；下拉菜单使用 `LazyForEach`，只为可见项创建 ArkUI 组件。这里的“按需加载”是界面虚拟化，不是把书源数据库拆成网络分页。
 
@@ -516,7 +516,7 @@ li:nth-of-type(2)
 - 数字形式的 `:nth-child(n)`、`:nth-of-type(n)`；
 - `@text`、`@html`、`@ownText`、`@textNodes` 和属性提取。
 
-未写提取后缀时，普通 CSS 字段默认返回文本；列表规则会保留完整元素供子规则继续解析。
+未写提取后缀时，普通 CSS 字段默认返回文本；列表规则会保留完整元素供子规则继续解析属性、文本或正则。明确的列表规则没有命中时返回空列表，不再把整页响应伪装成一个列表元素。
 
 常用提取后缀：
 
@@ -583,6 +583,8 @@ https://cdn.example.com/{{$.cover}}
 {{source.getVariable()}}
 ```
 
+模板表达式中的 `@@选择器` 会按当前 HTML 元素继续执行普通提取规则，而不是作为 JavaScript 文本处理。例如 `{{@@a@href}}` 可读取当前卡片内链接。
+
 详情、目录、正文阶段还会注入 `book.bookUrl`、`bookUrl`，并尽量从详情 URL 提取 `book`、`book_id`、`id`。
 
 ### 正则提取与替换
@@ -604,9 +606,12 @@ $.status##^1$##连载
 
 正则以 JavaScript `RegExp` 的全局模式执行。第三段省略时替换为空字符串；替换文本支持 `$1` 等捕获组引用。字面量 `##` 可写成 `\##`。
 
+规则可直接以 `##正则##替换` 开头，此时处理输入是完整当前元素。尾部再加 `###` 时只处理首个命中的子串，并返回替换后的该子串，而不是返回周围的原文本。
+
 还支持直接正则规则：
 
 - 以 `%` 开头时，对完整内容运行一次非全局正则，并返回完整匹配和捕获组；
+- 以 `:` 开头时，可用 `&&` 串联全量正则；中间正则先拼接所有完整匹配，最后一条为每个匹配保留 `$0`、`$1` 等捕获组，供字段规则继续读取；
 - 普通“像正则”的规则会以全局模式运行。有捕获组时，每个匹配会变为 `{"$0":"...","$1":"..."}`，后续可用 `$['$1']` 一类路径读取。
 
 直接正则的兼容行为较特殊，稳定书源更适合用 CSS/JSONPath 提取后再用 `##` 净化。
@@ -656,7 +661,7 @@ $.data<js>result.items</js>$.books[*]
 
 搜索、发现、详情、目录和正文分别路由，启用某一阶段的 ArkWeb 不会把所有书源或所有阶段一起改道。无副作用的失败可以回退轻量引擎；含网络、Cookie 或持久化写入的动作会避免双重执行。`jsLib` 中声明的顶层函数会暴露给当前阶段规则，并在下一书源执行前清理，防止跨源污染。
 
-QuickJS 候选当前限制为最多 4096 字符、最多 64 个绑定和 128 KiB 绑定数据，并使用 16 MiB 内存、512 KiB 栈及 10～250 ms 的受限执行。包含赋值、语句块、循环、函数/类声明、`new`、`Date`、随机数，或 `java/source/book/chapter/cookie/fetch/webView` 等主机对象的表达式不会进入 QuickJS。迁移诊断只持久化不可逆表达式指纹、计数和耗时，不保存书源代码、变量或解析结果。
+QuickJS 候选当前限制为最多 4096 字符、最多 64 个绑定和 128 KiB 绑定数据，并使用 16 MiB 内存、512 KiB 栈及 10～250 ms 的受限执行。JSON 安全的对象和数组会保持结构化绑定，因此纯表达式可读取 `$.field` 或数组下标；绑定转换另有 32 层、20000 节点保护。包含赋值、语句块、循环、函数/类声明、`new`、`Date`、随机数，或 `java/source/book/chapter/cookie/fetch/webView` 等主机对象的表达式不会进入 QuickJS。迁移诊断只持久化不可逆表达式指纹、计数和耗时，不保存书源代码、变量或解析结果。
 
 可在“其他设置 → 脚本引擎迁移 → 书源脚本回归测试”中多选书源与搜索、发现、详情、目录、正文阶段。该工具只抽取符合上述安全边界的 `{{…}}`、独立 `<js>…</js>`、`@js:`/`js:` 纯表达式，以三组固定输入在原有表达式运行时和 TaskPool QuickJS 中分别执行并报告一致、差异或失败；它不会请求书源网站，也不会读取或修改 Cookie、登录信息、书源变量或迁移统计。异步纯脚本由统一异步路由提交，仍保留原执行结果作为失败回退。单次最多加载 50 个书源并测试 300 个候选表达式。
 
@@ -686,6 +691,7 @@ QuickJS 不能直接替代 JSONPath/CSS/XPath：选择器需要解析 HTML/JSON 
 - `java.getCookie`、`cookie.getCookie/setCookie/removeCookie`；
 - `java.randomUUID()`、`java.androidId()`；
 - `java.put/get`、`source.get/put/getVariable/setVariable`、`book.getVariable/putVariable`；
+- `baseUrl` 会随当前规则解析地址注入；分阶段 ArkWeb 还提供带 `get/put/save` 的临时 `infoMap`；
 - `source.getLoginInfo/getLoginInfoMap/putLoginInfo`、`source.getLoginHeader` 和 `cache.get/put/delete`；
 - `android.util.Base64`、`java.util.Base64`、`URLEncoder/URLDecoder`、`System.currentTimeMillis` 等常见 Java/Android 别名；
 - `StringBuilder`、`HashMap`、`ArrayList` 及常用 Java 字符串/集合方法；
@@ -697,7 +703,7 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 
 ### 编码 `data:` 地址与显式请求
 
-应用支持标准 `data:` 文本以及 `data:;base64,<负载>,{...}` 形式。Base64 负载和尾部选项会分别解析，避免把请求选项误当成正文。
+应用支持标准 `data:` 文本以及 `data:;base64,<负载>,{...}` 形式。Base64 负载和尾部选项会分别解析，避免把请求选项误当成正文；编码章节地址中的 `/` 或形似 `name=value` 的 Base64 片段不会再被旧式虚拟章节参数解析截断。
 
 编码请求只有在选项明确使用通用 `type: "request"`，并明确提供 HTTP(S) `url`/`requestUrl` 时才会执行。方法、请求体和请求头也必须来自书源配置。应用不会：
 
@@ -738,7 +744,7 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 
 至少需要：`exploreUrl`、`bookList`、`name`、`bookUrl`。字段语义与搜索相同。发现链会读取 `wordCount`，并按“来源 + 详情 URL”去重。
 
-当 `ruleExplore` 为 `null`、空数组、空对象或缺少必要字段时，会自动回退到 `ruleSearch`。`exploreUrl` 以 `@js:` / `js:` 开头时会按能力路由执行，结果应为分类对象数组的 JSON 字符串；简单表达式可由轻量引擎处理，完整脚本或带 `jsLib` 函数的模板可进入分阶段 ArkWeb。两条路径都有代码、输出、操作或响应大小限制。
+当 `ruleExplore` 为 `null`、空数组、空对象或缺少必要字段时，会自动回退到 `ruleSearch`。`exploreUrl` 以 `@js:` / `js:` 开头时会按能力路由执行，结果应为分类对象数组的 JSON 字符串；简单表达式可由轻量引擎处理，完整脚本或带 `jsLib` 函数的模板可进入分阶段 ArkWeb。阶段脚本返回 `/api/...` 等相对地址时会以 `bookSourceUrl` 补全后再请求。两条路径都有代码、输出、操作或响应大小限制。
 
 ### 详情规则 `ruleBookInfo`
 
@@ -938,7 +944,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 请求规则中的 `<js>startBrowserAwait(...)`、`getVerificationCode(...)` 等提示也可触发验证逻辑，但不是完整 Android WebView/Activity API。需要账号口令签名、动态参数或复杂验证码的网站，必须实机确认。应用不按站点名称提供私有接口适配，全部请求参数和解析逻辑应来自书源本身。
 
-登录动作会通过确定性脚本重放完成多次 `java.ajax` 和网页等待。Cookie 写入、替换和删除操作会记录并去重，避免重放时重复修改会话；脚本在 AJAX 前写入的 `source`/`loginInfo` 状态会合并到当前请求上下文。`getLoginInfo`/`getLoginInfoMap` 对空格、标点差异的键名做兼容，只有一个可用 Token 类字段时也可作为回退值。番茄网页登录中的应用启动链接会被验证页拦截，要求继续在网页环境完成登录。
+登录动作会通过确定性脚本重放完成多次 `java.ajax` 和网页等待。Cookie 写入、替换和删除操作会记录并去重，避免重放时重复修改会话；`cookie.setCookie()` 传入 `token=...; deviceId=...` 这类请求头形式时，会区分真正的 Cookie 属性并把多个键分别写入 ArkWeb。脚本在 AJAX 前写入的 `source`/`loginInfo` 状态会合并到当前请求上下文。`getLoginInfo`/`getLoginInfoMap` 对空格、标点差异的键名做兼容，只有一个可用 Token 类字段时也可作为回退值。
 
 ### 有声书源与音色
 
@@ -1206,6 +1212,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 - 编辑器字段：`entry/src/main/ets/pages/BookSourceEdit.ets`
 - URL 和请求选项：`entry/src/main/ets/core/rule/AnalyzeUrl.ts`
 - 通用规则解析：`entry/src/main/ets/core/rule/AnalyzeRule.ts`
+- 规则中间值与执行目标：`entry/src/main/ets/core/rule/RuleValue.ts`
 - JSONPath：`entry/src/main/ets/core/rule/JsonPathEvaluator.ts`
 - JS 兼容层：`entry/src/main/ets/core/rule/JsRuntime.ts`
 - QuickJS 迁移运行时：`entry/src/main/ets/core/script/QuickJsScriptRuntime.ts`、`QuickJsAsyncRouter.ts`、`QuickJsMigrationStore.ts`、`QuickJsRuntimeStatus.ts`、`QuickJsShadowExecutor.ets`

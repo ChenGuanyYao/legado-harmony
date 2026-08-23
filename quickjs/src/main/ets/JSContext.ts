@@ -33,6 +33,8 @@ export class JSBoundedExecutionResult {
 }
 
 export class JSContext {
+  private static readonly MAX_BINDING_DEPTH: number = 32;
+  private static readonly MAX_BINDING_NODES: number = 20000;
   private _engineHandle: bigint = 0n;
   private nameValue: string = '';
 
@@ -94,34 +96,55 @@ export class JSContext {
     return result;
   }
 
-  setObject(object: Record<string, number | string | boolean> | JSValue, name: string): void {
+  setObject(object: Record<string, Object> | JSValue, name: string): void {
     if (object instanceof JSValue) {
       const globalObj = this.globalObject;
       qjs.setProperty(this.engineHandle, globalObj.valueHandle, name, object.valueHandle);
       globalObj.release();
     } else {
-      const objHandle = qjs.createObject(this.engineHandle);
-      for (const key of Object.keys(object)) {
-        const val = object[key];
-        if (typeof val === 'number') {
-          const numHandle = qjs.createNumber(this.engineHandle, val);
-          qjs.setProperty(this.engineHandle, objHandle, key, numHandle);
-          qjs.release(numHandle);
-        } else if (typeof val === 'string') {
-          const strHandle = qjs.createString(this.engineHandle, val);
-          qjs.setProperty(this.engineHandle, objHandle, key, strHandle);
-          qjs.release(strHandle);
-        } else if (typeof val === 'boolean') {
-          const boolHandle = qjs.createBoolean(this.engineHandle, val);
-          qjs.setProperty(this.engineHandle, objHandle, key, boolHandle);
-          qjs.release(boolHandle);
-        }
-      }
+      const budget: number[] = [0];
+      const objHandle = this.createStructuredValue(object, 0, budget);
       const globalObj = this.globalObject;
       qjs.setProperty(this.engineHandle, globalObj.valueHandle, name, objHandle);
       globalObj.release();
       qjs.release(objHandle);
     }
+  }
+
+  /** Converts JSON-safe ArkTS values into real QuickJS objects instead of stringifying them. */
+  private createStructuredValue(value: Object | null | undefined, depth: number, budget: number[]): bigint {
+    budget[0] = (budget[0] || 0) + 1;
+    if (budget[0] > JSContext.MAX_BINDING_NODES || depth > JSContext.MAX_BINDING_DEPTH) {
+      return qjs.createNull(this.engineHandle);
+    }
+    if (value === undefined) return qjs.createUndefined(this.engineHandle);
+    if (value === null) return qjs.createNull(this.engineHandle);
+    if (typeof value === 'number') return qjs.createNumber(this.engineHandle, value);
+    if (typeof value === 'string') return qjs.createString(this.engineHandle, value);
+    if (typeof value === 'boolean') return qjs.createBoolean(this.engineHandle, value);
+    if (Array.isArray(value)) {
+      const array = value as Object[];
+      const arrayHandle = qjs.createArray(this.engineHandle, array.length);
+      for (let index = 0; index < array.length && budget[0] <= JSContext.MAX_BINDING_NODES; index++) {
+        const childHandle = this.createStructuredValue(array[index], depth + 1, budget);
+        qjs.setElement(this.engineHandle, arrayHandle, index, childHandle);
+        qjs.release(childHandle);
+      }
+      return arrayHandle;
+    }
+    if (typeof value === 'object') {
+      const objectHandle = qjs.createObject(this.engineHandle);
+      const record = value as Record<string, Object>;
+      const keys = Object.keys(record);
+      for (let index = 0; index < keys.length && budget[0] <= JSContext.MAX_BINDING_NODES; index++) {
+        const key = keys[index];
+        const childHandle = this.createStructuredValue(record[key], depth + 1, budget);
+        qjs.setProperty(this.engineHandle, objectHandle, key, childHandle);
+        qjs.release(childHandle);
+      }
+      return objectHandle;
+    }
+    return qjs.createString(this.engineHandle, String(value));
   }
 
   getGlobalProperty(name: string): JSValue {

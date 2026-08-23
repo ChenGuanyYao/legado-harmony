@@ -359,7 +359,7 @@ struct VerifyWebPage {
     if (this.shouldBlockFanqieAppLaunch(requestUrl)) {
       if (!this.fanqieAppLaunchNoticeShown) {
         this.fanqieAppLaunchNoticeShown = true;
-        this.showToastSafely('已阻止打开番茄客户端，请继续使用网页登录');
+        this.showToastSafely('已阻止打开客户端，请继续使用网页登录');
       }
       return true;
     }

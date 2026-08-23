@@ -19,6 +19,7 @@ import { RuleBatchExecutionRequest, RuleBatchExecutionResult, RuleFieldRequest }
 import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
 import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
 import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
+import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
 
 export interface ExploreEntry {
   title: string;
@@ -175,18 +176,23 @@ export class ExploreCoordinator {
       const stageItems = await BookSourceStageRuleSupport.getElements(source, resp.body, baseUrl,
         exploreRule.bookList || '', SourceRuntimeStage.EXPLORE, '', 8 * 1024 * 1024,
         16 * 1024 * 1024, encodedVariables);
-      const items = stageItems === null ? rule.getElements(exploreRule.bookList || '') : stageItems;
+      const typedItems = stageItems === null ?
+        rule.execute(exploreRule.bookList || '', RuleExecutionTarget.ELEMENTS) :
+        stageItems.map((item: string): RuleValue => RuleValue.fromExternal(item));
+      const items = typedItems.map((item: RuleValue): string => item.asString());
       if (items.length === 0) this.noticeMessage = '发现接口已有响应，但列表规则未匹配到内容';
       console.info('[ExploreCoordinator] parsed list:', source.bookSourceName, 'rule:', exploreRule.bookList, 'count:', items.length);
       // Capability validation only needs a representative book. Avoid parsing a 100+ item page
       // synchronously when the caller explicitly supplies a small validation limit.
-      const parseItems = maxItems > 0 ? items.slice(0, Math.max(1, maxItems)) : items;
+      const parseTypedItems = maxItems > 0 ? typedItems.slice(0, Math.max(1, maxItems)) : typedItems;
+      const parseItems = parseTypedItems.map((item: RuleValue): string => item.asString());
       const books: SearchBook[] = [];
       const sourceBackendHost = BookSourceDataUrlSupport.sourceBackendHost(source);
       const fieldRequest = new RuleBatchExecutionRequest();
       fieldRequest.source = source;
       fieldRequest.stage = SourceRuntimeStage.EXPLORE;
       fieldRequest.ownerId = `explore_${Date.now()}_${source.bookSourceUrl}`;
+      fieldRequest.typedContents = parseTypedItems;
       fieldRequest.contents = parseItems;
       fieldRequest.baseUrl = baseUrl || source.bookSourceUrl;
       fieldRequest.fields = [
@@ -460,8 +466,7 @@ export class ExploreCoordinator {
     const discovered: ExplorePlatformSelector[] = [];
     for (const item of items) {
       const title = String(item.title || item.name || '').trim();
-      if (String(item.type || '').toLowerCase() !== 'select' ||
-        !/模式|类型|频道|平台|来源|源站/.test(title) || /线路/.test(title)) continue;
+      if (String(item.type || '').toLowerCase() !== 'select' || !title) continue;
       const chars = Array.isArray(item.chars) ? item.chars : [];
       const selector = new ExplorePlatformSelector();
       for (const rawValue of chars) {
@@ -704,7 +709,14 @@ export class ExploreCoordinator {
       }
       try {
         const result = await runtime.execute(request);
-        if (result.value) return this.applyLegacyPageAlternative(result.value, page);
+        if (result.value) {
+          const evaluated = this.applyLegacyPageAlternative(result.value, page);
+          // Stage scripts commonly return the same root-relative address that an ordinary
+          // Legado template would produce. Resolve it before the caller applies its absolute-URL
+          // safety check; otherwise a successfully evaluated `/api/...` request is rejected as
+          // invalid solely because it used the full JavaScript runtime.
+          return BookUrlResolver.resolve(evaluated, source.bookSourceUrl) || evaluated;
+        }
       } catch (error) {
         console.warn('[ExploreCoordinator] stage runtime URL failed:', source.bookSourceName, error);
       }

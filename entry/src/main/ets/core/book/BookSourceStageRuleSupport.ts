@@ -2,6 +2,7 @@ import { BookSource } from '../../model/data/Book';
 import { AnalyzeRule } from '../rule/AnalyzeRule';
 import { BookSourceRuntimeRouter, SourceRuntimeStage } from './BookSourceRuntimeRouter';
 import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceStageWebRuntime';
+import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
 
 class EmbeddedStageRule {
   baseRule: string = '';
@@ -50,15 +51,11 @@ export class BookSourceStageRuleSupport {
       }
     }
 
-    const baseItems = new AnalyzeRule(content || '', baseUrl).getElements(embedded.baseRule);
+    const baseItemValues = new AnalyzeRule(content || '', baseUrl)
+      .execute(embedded.baseRule, RuleExecutionTarget.ELEMENTS);
+    const baseItems = baseItemValues.map((item: RuleValue): string => item.asString());
     const values: Object[] = [];
-    for (const item of baseItems) {
-      try {
-        values.push(JSON.parse(item) as Object);
-      } catch (_) {
-        values.push(item);
-      }
-    }
+    for (const item of baseItemValues) values.push(item.runtimeValue());
     const request = new StageWebRuntimeRequest();
     request.applyStageBudget(stage);
     request.source = source;

@@ -79,6 +79,9 @@ export class JsRuntime {
       expr = this.replaceDateExpressions(expr);
       expr = expr.replace(/Date\.now\(\)/g, String(Date.now()));
 
+      const directMatchValue = this.evalVariableMatchExpression(expr);
+      if (directMatchValue !== null) return directMatchValue;
+
       expr = this.replaceFunctionCalls(expr, 'Math.round', (v: string) => String(Math.round(this.evalNumber(v))));
       expr = this.replaceFunctionCalls(expr, 'Math.floor', (v: string) => String(Math.floor(this.evalNumber(v))));
       expr = this.replaceFunctionCalls(expr, 'Math.ceil', (v: string) => String(Math.ceil(this.evalNumber(v))));
@@ -162,6 +165,25 @@ export class JsRuntime {
     if (parts.length > 1) return parts.map((part: string) => this.evalStr(part)).join('');
     for (const k in this.vars) v = v.replace(new RegExp('\\b' + k + '\\b', 'g'), this.vars[k]);
     return v;
+  }
+
+  private evalVariableMatchExpression(expression: string): string | null {
+    const match = expression.trim().match(
+      /^([A-Za-z_][A-Za-z0-9_]*)\.match\((\/(?:\\.|[^/\\])+\/[gimsuy]*)\)\s*\[\s*(\d+)\s*\]$/);
+    if (!match) return null;
+    const source = this.vars[match[1]];
+    if (source === undefined) return null;
+    const literal = match[2];
+    const lastSlash = literal.lastIndexOf('/');
+    if (lastSlash <= 0) return '';
+    try {
+      const regex = new RegExp(literal.substring(1, lastSlash), literal.substring(lastSlash + 1));
+      const found = source.match(regex);
+      const index = parseInt(match[3]);
+      return found && found[index] !== undefined ? found[index] : '';
+    } catch (_) {
+      return '';
+    }
   }
 
   private replaceDateExpressions(expr: string): string {
