@@ -512,6 +512,7 @@ struct ReadBookPage {
   private ttsFocusContentLoadSerial: number = -1;
   private ttsLastAppliedSourceOffset: number = -1;
   private ttsSurfaceFocusSyncSerial: number = 0;
+  private ttsPaginationFocusSyncSerial: number = 0;
   private ttsResumeSyncSerial: number = 0;
   private mirroredTtsFocusSyncSerial: number = 0;
   @State mirroredTtsFocusActive: boolean = false;
@@ -2512,6 +2513,12 @@ struct ReadBookPage {
                   this.ttsHighlightRenderVersion)
               }, (surfaceKey: string) => surfaceKey)
             }
+            // Keep the V2 TTS focus outside the chapter-scoped正文 host. That host deliberately preserves its
+            // native Paragraph node across same-page updates, and some ArkUI builds consequently skip nested
+            // ForEach evaluation. Rekey only this lightweight rectangle layer for every audible chunk.
+            ForEach(this.currentReaderV2TtsOverlayKeys(this.readerV2TtsPaintVersion), (_focusKey: string) => {
+              this.readerCurrentV2TtsOverlay(this.readerV2TtsPaintVersion)
+            }, (focusKey: string) => focusKey)
             // Legacy rich text is keyed by page; V2 updates its retained node in place. Keep the simulation
             // overlay outside both paths so the destination can settle behind the captured leaf without
             // destroying the active Canvas.
@@ -5998,6 +6005,12 @@ struct ReadBookPage {
   }
 
   getReaderStableReflowOffset(): number {
+    // Opening-time viewport/font calibration can repaginate immediately after TTS has started. The spoken
+    // sentence is the authoritative visible position in that state; anchoring the reflow to the old page start
+    // can put the rebuilt surface on the neighbouring page and leave the still-valid focus range off-screen.
+    if (this.shouldRenderTtsFocus() && this.readerV2TtsSourceStart >= 0) {
+      return this.readerV2TtsSourceStart;
+    }
     // Initial V2 pagination deliberately publishes only a small window. Until the persisted character offset has
     // been mapped onto authoritative page boundaries, page zero is merely a render placeholder and must never
     // become the anchor of a geometry/calibration repagination.
@@ -13989,12 +14002,9 @@ struct ReadBookPage {
   }
 
   publishTtsHighlightRenderChange(): void {
-    // V2 republishes only its lightweight focus-rectangle layer. Rekeying the whole declarative
-    // reader tree for every short TTS cue caused stutter and intermittent blank frames.
+    // V2 owns a root-level lightweight focus layer. Its key observes readerV2TtsPaintVersion directly, so the
+    // retained正文 page stays mounted while only the yellow rectangles are replaced.
     if (this.shouldUseReaderLayoutV2(this.pagedContentText)) {
-      // Some HarmonyOS builds do not schedule a new frame for a RenderNode.invalidate() issued
-      // outside a declarative state transaction. This state changes only the overlay and does not
-      // change the page surface key or rebuild pagination.
       this.readerV2TtsPaintVersion++;
     } else {
       this.ttsHighlightRenderVersion++;
@@ -15270,6 +15280,7 @@ struct ReadBookPage {
     this.ttsLastAppliedSourceOffset = absoluteStart;
     const pageIndex = this.findPageIndexByOffset(absoluteStart);
     const spreadPageIndex = this.normalizeReaderSpreadPageIndex(pageIndex);
+    const firstFocusInSession = !this.ttsLastFocusChunk;
     this.ttsLastFocusChunk = chunk;
     this.ttsLastFocusPageIndex = pageIndex;
     // Publish the destination range before mounting the incoming page. Both legacy text and V2 rectangles filter
@@ -15279,6 +15290,12 @@ struct ReadBookPage {
     if (spreadPageIndex !== this.currentPageIndex) {
       this.animateTtsToPage(spreadPageIndex, chunk);
       return;
+    }
+    if (firstFocusInSession) {
+      // Starting TTS can replace the continuous-scroll reader with the paged surface in this same UI turn.
+      // Republish the first cue after that new surface has mounted instead of relying on the pre-mount frame.
+      this.scheduleTtsFocusRepublishAfterPageTurn(this.currentChapterIndex, pageIndex,
+        this.readerV2TtsSourceStart, this.readerV2TtsSourceEnd);
     }
   }
 
@@ -15330,7 +15347,7 @@ struct ReadBookPage {
     return this.findPageIndexByOffset(absoluteStart);
   }
 
-  updateTtsChunkHighlight(chunk: TtsChunk, pageIndex: number): void {
+  updateTtsChunkHighlight(chunk: TtsChunk, pageIndex: number, persistPosition: boolean = true): void {
     const absoluteStart = this.readerV2TtsSourceOffset(chunk.start);
     const absoluteEnd = this.readerV2TtsSourceOffset(chunk.end);
     const pageStart = this.getPageStartOffset(pageIndex);
@@ -15347,7 +15364,7 @@ struct ReadBookPage {
     this.readerV2TtsSourceStart = absoluteStart;
     this.readerV2TtsSourceEnd = absoluteEnd;
     this.refreshReaderV2TtsOverlay();
-    this.persistTtsReadPosition(absoluteStart, absoluteEnd);
+    if (persistPosition) this.persistTtsReadPosition(absoluteStart, absoluteEnd);
     this.publishTtsHighlightRenderChange();
     if (this.isPageTurning || this.ttsAutoTurningPage || this.ttsManualPageTurnResumePending) {
       this.scheduleTtsFocusRepublishAfterPageTurn(this.currentChapterIndex, pageIndex,
@@ -15389,6 +15406,59 @@ struct ReadBookPage {
       // lightweight rectangle layer after the final surface owns the page.
       this.publishTtsHighlightRenderChange();
     }, attempt === 0 ? 32 : 64);
+  }
+
+  scheduleTtsFocusSyncAfterPagination(): void {
+    const serial = ++this.ttsPaginationFocusSyncSerial;
+    const chapterIndex = this.currentChapterIndex;
+    const source = this.pagedContentText;
+    // Pagination is commonly followed by a synchronous current-page restore. Reconcile on the next UI task so
+    // that restore has settled and the replacement ArkUI/V2 surface exists before its focus layer is republished.
+    setTimeout(() => {
+      if (serial !== this.ttsPaginationFocusSyncSerial || chapterIndex !== this.currentChapterIndex ||
+        source !== this.pagedContentText) return;
+      this.syncActiveTtsFocusAfterPagination();
+    }, 0);
+  }
+
+  syncActiveTtsFocusAfterPagination(): void {
+    if (!this.readerInitialPageReady || this.pendingRestorePageIndex >= 0 ||
+      this.readerTypographyRestoreOffset >= 0 || this.contentPages.length === 0) return;
+    if (this.isMirroringActiveTtsForCurrentBook()) {
+      this.syncMirroredTtsFocus().then(() => {
+        this.scheduleCurrentTtsFocusRepublishAfterPageTurn();
+      }).catch((error: Error) => {
+        console.warn('分页更新后同步后台朗读焦点失败:', error);
+      });
+      return;
+    }
+    const chunk = this.ttsLastFocusChunk;
+    if (!chunk || !this.isTtsSpeaking || !this.ttsAutoContinue ||
+      this.ttsFocusChapterIndex !== this.currentChapterIndex ||
+      this.ttsFocusContentLoadSerial !== this.contentLoadSerial ||
+      this.ttsFocusSourceIdentity !== this.currentTtsSourceIdentity()) return;
+    const absoluteStart = this.readerV2TtsSourceOffset(chunk.start);
+    const lastKnownEnd = this.contentPageEnds.length > 0 ?
+      this.contentPageEnds[this.contentPageEnds.length - 1] : 0;
+    if (absoluteStart >= lastKnownEnd && lastKnownEnd < this.pagedContentText.length) return;
+    const pageIndex = this.findPageIndexByOffset(absoluteStart);
+    if (pageIndex < 0 || pageIndex >= this.contentPages.length) return;
+    const targetPageIndex = this.normalizeReaderSpreadPageIndex(pageIndex);
+    if (this.isPageTurning || this.ttsAutoTurningPage || this.ttsManualPageTurnResumePending) {
+      this.scheduleCurrentTtsFocusRepublishAfterPageTurn();
+      return;
+    }
+    if (targetPageIndex !== this.currentPageIndex) {
+      this.finishPageTurnAnimation();
+      this.currentPageIndex = targetPageIndex;
+      this.syncCurrentPageText();
+    } else if (this.displayPageChapterIndex !== this.currentChapterIndex ||
+      this.displayPageIndex !== this.currentPageIndex || this.displayPageText !== this.getCurrentPageText()) {
+      this.syncCurrentPageText();
+    }
+    this.ttsLastFocusPageIndex = pageIndex;
+    this.updateTtsChunkHighlight(chunk, pageIndex, false);
+    this.scheduleCurrentTtsFocusRepublishAfterPageTurn();
   }
 
   persistTtsReadPosition(absoluteStart: number, absoluteEnd: number): void {
@@ -19650,14 +19720,6 @@ struct ReadBookPage {
         .width('100%')
         .height('100%')
         .hitTestBehavior(HitTestMode.None)
-      // Regex/comment bubbles are painted inside the retained正文 node. The focus used to sit below that node, so
-      // an opaque bubble could completely hide it. Paint the translucent focus above正文 while leaving selection
-      // as the topmost interaction layer.
-      ForEach(this.readerV2TtsHighlightRects(
-        chapterIndex, pageIndex, source, this.readerV2TtsPaintVersion),
-      (rect: ReaderV2HighlightRect) => {
-        this.readerV2TtsHighlightRect(rect)
-      }, (rect: ReaderV2HighlightRect) => rect.key)
       // Selection belongs above the retained正文 node: that node paints regex/comment bubbles together with the
       // glyphs, so placing the blue range before it makes the bubble background obscure the selected characters.
       ForEach(this.readerV2SelectionHighlightRects(
@@ -19672,6 +19734,52 @@ struct ReadBookPage {
     // Pagination subtracts the spread divider before measuring each column. Giving both native pages 50% plus
     // the divider makes their live width differ from the simulation capture width by the divider/fractional pixel,
     // which can reflow or shift glyphs when the capture hands off to the settled spread.
+    .width(halfWidth ? this.getReaderPageColumnWidth() : '100%')
+    .height('100%')
+    .hitTestBehavior(HitTestMode.None)
+  }
+
+  currentReaderV2TtsOverlayKeys(paintVersion: number): string[] {
+    if (!this.shouldUseReaderLayoutV2(this.pagedContentText) || !this.shouldRenderTtsFocus() ||
+      this.readerV2TtsSourceStart < 0 || this.readerV2TtsSourceEnd <= this.readerV2TtsSourceStart) return [];
+    return [`reader_v2_tts_${this.currentChapterIndex}_${this.currentPageIndex}_${paintVersion}`];
+  }
+
+  @Builder
+  readerCurrentV2TtsOverlay(paintVersion: number) {
+    Column() {
+      if (this.isLandscapeDoublePageActive()) {
+        Row() {
+          this.readerCurrentV2TtsOverlayPage(this.currentPageIndex, paintVersion, true)
+          Blank()
+            .width(READER_DOUBLE_PAGE_DIVIDER_WIDTH)
+            .height('100%')
+          this.readerCurrentV2TtsOverlayPage(this.currentPageIndex + 1, paintVersion, true)
+        }
+        .width('100%')
+        .height('100%')
+        .alignItems(VerticalAlign.Center)
+      } else {
+        this.readerCurrentV2TtsOverlayPage(this.currentPageIndex, paintVersion)
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .padding({ top: this.getReaderPageContentTopPadding() })
+    .translate({ x: this.getCurrentPageTurnX(), y: this.getCurrentPageTurnY() + this.bookmarkPullOffsetY })
+    .opacity(this.getCurrentPageTurnOpacity())
+    .hitTestBehavior(HitTestMode.None)
+  }
+
+  @Builder
+  readerCurrentV2TtsOverlayPage(pageIndex: number, paintVersion: number, halfWidth: boolean = false) {
+    Stack({ alignContent: Alignment.TopStart }) {
+      ForEach(this.readerV2TtsHighlightRects(
+        this.currentChapterIndex, pageIndex, this.pagedContentText, paintVersion),
+      (rect: ReaderV2HighlightRect) => {
+        this.readerV2TtsHighlightRect(rect)
+      }, (rect: ReaderV2HighlightRect) => rect.key)
+    }
     .width(halfWidth ? this.getReaderPageColumnWidth() : '100%')
     .height('100%')
     .hitTestBehavior(HitTestMode.None)
@@ -20493,6 +20601,7 @@ struct ReadBookPage {
       this.syncReaderComicPageDataSource();
       if (restoredPendingPosition || restoredTypographyPosition) this.scheduleReaderComicScrollRestore();
     }
+    this.scheduleTtsFocusSyncAfterPagination();
     if (restoredPendingPosition && !this.isPageTurning && this.queuedPageTurnCount > 0 &&
       this.queuedPageTurnDirection !== 0) {
       // A queued physical tap may have arrived while the previous chapter's authoritative tail was rebuilding.
@@ -20871,6 +20980,7 @@ struct ReadBookPage {
     }
     this.syncReaderComicPageDataSource();
     this.scheduleReaderComicScrollRestore();
+    this.scheduleTtsFocusSyncAfterPagination();
   }
 
   async turnNext() {
