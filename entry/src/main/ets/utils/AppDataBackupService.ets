@@ -939,6 +939,7 @@ export class AppDataBackupService {
     book.type = AppDataBackupService.numberValue(raw['type'], 0);
     book.group = AppDataBackupService.mapAndroidBookGroup(
       AppDataBackupService.numberValue(raw['group'], 0), mapping);
+    book.isPinned = raw['isPinned'] === true;
     book.latestChapterTitle = AppDataBackupService.stringValue(raw['latestChapterTitle']);
     book.latestChapterTime = AppDataBackupService.numberValue(raw['latestChapterTime'], 0);
     book.lastCheckTime = AppDataBackupService.numberValue(raw['lastCheckTime'], 0);
@@ -1193,6 +1194,7 @@ export class AppDataBackupService {
     book.charset = raw.charset || '';
     book.type = raw.type || 0;
     book.group = raw.group || 0;
+    book.isPinned = raw.isPinned === true;
     book.latestChapterTitle = raw.latestChapterTitle || '';
     book.latestChapterTime = raw.latestChapterTime || 0;
     book.lastCheckTime = raw.lastCheckTime || 0;

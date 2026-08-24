@@ -14,6 +14,7 @@ export class Book {
   charset: string = '';
   type: number = 0;
   group: number = 0;
+  isPinned: boolean = false;
   latestChapterTitle: string = '';
   latestChapterTime: number = 0;
   lastCheckTime: number = 0;

@@ -71,6 +71,7 @@ class BookshelfSyncPayload {
   charset: string = '';
   type: number = 0;
   groupName: string = '';
+  isPinned: boolean = false;
   latestChapterTitle: string = '';
   latestChapterTime: number = 0;
   totalChapterNum: number = 0;
@@ -195,6 +196,7 @@ export class CloudSyncCoordinator {
   private static readonly MAX_BATCH_BYTES: number = 768 * 1024;
   private static readonly MAX_EXCHANGE_PAGES: number = 1000;
   private static protectedLocalBooksDuringSync: number = 0;
+  private static protectedLocalBookEntityIdsDuringSync: Set<string> = new Set<string>();
   // Older reader_settings payloads predate eye-turn support. Keep track of a
   // compatibility merge so the normalized payload is uploaded after the
   // current remote-apply transaction finishes instead of silently resetting
@@ -312,6 +314,7 @@ export class CloudSyncCoordinator {
 
     const result = new CloudSyncRunResult();
     CloudSyncCoordinator.protectedLocalBooksDuringSync = 0;
+    CloudSyncCoordinator.protectedLocalBookEntityIdsDuringSync.clear();
     CloudSyncCoordinator.readerSettingsBackfillPending = false;
     settings.status = CloudSyncSettingsStore.STATUS_SYNCING;
     settings.errorMessage = '';
@@ -398,6 +401,10 @@ export class CloudSyncCoordinator {
       await CloudSyncSettingsStore.saveRuntimeState(context, userId, settings.status,
         settings.lastSuccessAt, settings.pendingCount, settings.errorMessage);
       throw new Error(settings.errorMessage || '同步失败');
+    } finally {
+      // A protected tombstone can arrive on a later exchange page. Retain the entity identities
+      // until every page in this run has been applied, then avoid leaking them into the next run.
+      CloudSyncCoordinator.protectedLocalBookEntityIdsDuringSync.clear();
     }
   }
 
@@ -463,6 +470,7 @@ export class CloudSyncCoordinator {
       shelf.charset = book.charset;
       shelf.type = book.type;
       shelf.groupName = groupNames[String(book.group)] || '';
+      shelf.isPinned = book.isPinned;
       shelf.latestChapterTitle = book.latestChapterTitle;
       shelf.latestChapterTime = book.latestChapterTime;
       shelf.totalChapterNum = book.totalChapterNum;
@@ -756,6 +764,7 @@ export class CloudSyncCoordinator {
           entityState.deleted = true;
           entityState.contentHash = '';
           CloudSyncCoordinator.protectedLocalBooksDuringSync++;
+          CloudSyncCoordinator.protectedLocalBookEntityIdsDuringSync.add(local.entityId);
           continue;
         }
         await CloudSyncCoordinator.applyEntity(
@@ -984,6 +993,14 @@ export class CloudSyncCoordinator {
     changeCreatedAt: number = 0
   ): Promise<void> {
     if (entityType === 'bookshelf_item' && entityState.localKey) {
+      // The acknowledgement pass runs before downloaded changes. When a locally re-added shelf item conflicts
+      // with an older cloud tombstone, it deliberately keeps the row and advances state to the tombstone revision.
+      // The same exchange response may also contain that tombstone in `changes`; do not delete the row again here.
+      // Keeping entityState.deleted=true makes the next sync upload the explicit local re-add from that revision.
+      if (CloudSyncCoordinator.protectedLocalBookEntityIdsDuringSync.has(entityId)) {
+        console.warn(`已忽略同轮同步中的过期书架删除记录: ${entityState.localKey}`);
+        return;
+      }
       const localBook = await db.getBook(entityState.localKey);
       if (localBook) {
         const currentEntityId = CloudSyncCoordinator.identity(
@@ -1079,6 +1096,7 @@ export class CloudSyncCoordinator {
     book.customIntro = payload.customIntro || '';
     book.charset = payload.charset || '';
     book.type = Math.floor(Number(payload.type) || 0);
+    book.isPinned = payload.isPinned === true;
     book.latestChapterTitle = payload.latestChapterTitle || '';
     book.latestChapterTime = Math.max(0, Math.floor(Number(payload.latestChapterTime) || 0));
     book.totalChapterNum = Math.max(0, Math.floor(Number(payload.totalChapterNum) || 0));

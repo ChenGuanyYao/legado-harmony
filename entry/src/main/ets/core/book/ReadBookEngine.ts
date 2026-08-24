@@ -7,6 +7,7 @@ import { LocalChapterContentLoader } from './LocalChapterContentLoader';
 import { ReaderActionMarker } from './ReaderActionMarker';
 import { BookSourceInteractionPostProcessor } from './BookSourceInteractionPostProcessor';
 import { ReaderOpenTrace } from '../../utils/ReaderOpenTrace';
+import { BookUrlResolver } from './BookUrlResolver';
 
 export class ReadBookEngine {
   private static inst: ReadBookEngine | null = null;
@@ -234,7 +235,8 @@ export class ReadBookEngine {
 
       const resolvedBook = this.book;
       if (!resolvedBook || !this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
-      let chapters = await this.webBook.getChapterList(sessionSource, resolvedBook);
+      const allowGenericFallback = this.chapters.length === 0;
+      let chapters = await this.webBook.getChapterList(sessionSource, resolvedBook, 0, allowGenericFallback);
       if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
       if (chapters.length === 0) {
         const recoveredBook = await this.tryRecoverStaleBookAddress(sessionSource, resolvedBook,
@@ -242,27 +244,34 @@ export class ReadBookEngine {
         if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
         if (recoveredBook) {
           this.book = recoveredBook;
-          chapters = await this.webBook.getChapterList(sessionSource, recoveredBook);
+          chapters = await this.webBook.getChapterList(sessionSource, recoveredBook, 0, allowGenericFallback);
           if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
         }
       }
       console.log('[RE] getChapterList done, count:', chapters.length);
       if (chapters.length > 0) {
         const targetBook = this.book;
-        await appDb.updateBook(targetBook);
-        if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
-        await appDb.deleteBookChapters(targetBook.bookUrl);
-        if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
-        await appDb.insertBookChapters(chapters);
-        if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
+        const temporaryFallback = chapters.some((chapter: BookChapter): boolean =>
+          BookUrlResolver.getVariableJson(chapter.variable,
+            WebBookService.GENERIC_TOC_FALLBACK_KEY) === 'true');
         this.chapters = chapters;
         this.chapterCache.clear();
         this.chapterLoading.clear();
-        await this.syncChapterCacheDates(expectedGeneration, sessionBookUrl);
-        if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
         targetBook.totalChapterNum = chapters.length;
         targetBook.latestChapterTitle = chapters[chapters.length - 1].title;
-        await appDb.updateBook(targetBook);
+        if (temporaryFallback) {
+          console.warn('[RE] using temporary generic catalog; skip persistent catalog replacement');
+        } else {
+          await appDb.updateBook(targetBook);
+          if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
+          await appDb.deleteBookChapters(targetBook.bookUrl);
+          if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
+          await appDb.insertBookChapters(chapters);
+          if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
+          await this.syncChapterCacheDates(expectedGeneration, sessionBookUrl);
+          if (!this.isCurrentBookSession(expectedGeneration, sessionBookUrl)) return;
+          await appDb.updateBook(targetBook);
+        }
       } else {
         this.book.latestChapterTitle = this.book.latestChapterTitle || oldLatestChapter;
         this.book.tocUrl = this.book.tocUrl || oldTocUrl;
@@ -359,6 +368,9 @@ export class ReadBookEngine {
     probe.customTag = staleBook.customTag;
     probe.type = candidate.type || staleBook.type;
     probe.group = staleBook.group;
+    probe.isPinned = staleBook.isPinned;
+    probe.pendingAddToShelf = staleBook.pendingAddToShelf;
+    probe.shelfModifiedTime = staleBook.shelfModifiedTime;
     probe.latestChapterTitle = candidate.latestChapterTitle || staleBook.latestChapterTitle;
     probe.wordCount = candidate.wordCount || staleBook.wordCount;
     probe.canUpdate = staleBook.canUpdate;
@@ -375,6 +387,9 @@ export class ReadBookEngine {
     target.origin = target.origin || source.origin;
     target.originName = target.originName || source.originName;
     target.group = source.group;
+    target.isPinned = source.isPinned;
+    target.pendingAddToShelf = source.pendingAddToShelf;
+    target.shelfModifiedTime = source.shelfModifiedTime;
     target.order = source.order;
     target.originOrder = source.originOrder;
     target.durChapterIndex = source.durChapterIndex;

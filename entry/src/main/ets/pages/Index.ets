@@ -81,6 +81,7 @@ class ShelfTileSortEntry {
   readTime: number = 0;
   addTime: number = 0;
   name: string = '';
+  pinned: boolean = false;
   originalOrder: number = 0;
 }
 
@@ -1363,6 +1364,23 @@ struct BookshelfPage {
     this.showActionDialog = true;
   }
 
+  async toggleBookPinned(book: Book): Promise<void> {
+    const nextPinned = !book.isPinned;
+    const modifiedTime = Date.now();
+    try {
+      await AppDatabase.getInstance().setBookPinned(book.bookUrl, nextPinned, modifiedTime);
+      book.isPinned = nextPinned;
+      book.shelfModifiedTime = modifiedTime;
+      this.allBooks = this.allBooks.map((item: Book) => item.bookUrl === book.bookUrl ? book : item);
+      this.applyShelfScope();
+      this.reloadShelfDataSources(true);
+      promptAction.showToast({ message: nextPinned ? `已置顶《${book.name}》` : `已取消置顶《${book.name}》` });
+    } catch (e) {
+      console.error('更新书籍置顶状态失败:', e);
+      promptAction.showToast({ message: nextPinned ? '置顶失败' : '取消置顶失败' });
+    }
+  }
+
   scheduleLocalBookIntroMigration(books: Book[]): void {
     this.localBookIntroMigrationQueue = books.filter((book: Book) =>
       LocalBookService.isLocalBook(book) &&
@@ -1578,7 +1596,7 @@ struct BookshelfPage {
       const fullBook = await service.getBookInfo(source, nextBook);
       if (!this.isShelfChangeSourceSessionActive(sessionId)) return;
       this.preserveShelfSourceBookState(fullBook, nextBook, oldBook);
-      const chapters = await service.getChapterList(source, fullBook);
+      const chapters = await service.getChapterList(source, fullBook, 0, false);
       if (!this.isShelfChangeSourceSessionActive(sessionId)) return;
       if (chapters.length === 0) throw new Error('新书源目录为空，已保留原书源');
       fullBook.totalChapterNum = chapters.length;
@@ -1623,6 +1641,7 @@ struct BookshelfPage {
     book.wordCount = BookFieldSanitizer.prefer(searchBook.wordCount, oldBook.wordCount);
     book.variable = searchBook.variable || '';
     book.group = oldBook.group;
+    book.isPinned = oldBook.isPinned;
     book.order = oldBook.order;
     book.originOrder = oldBook.originOrder;
     book.readConfig = oldBook.readConfig;
@@ -1640,6 +1659,7 @@ struct BookshelfPage {
     target.originName = source.originName;
     target.coverUrl = CoverUrlNormalizer.prefer(source.coverUrl, target.coverUrl);
     target.group = oldBook.group;
+    target.isPinned = oldBook.isPinned;
     target.order = oldBook.order;
     target.originOrder = oldBook.originOrder;
     target.customCoverUrl = oldBook.customCoverUrl;
@@ -1924,7 +1944,8 @@ struct BookshelfPage {
   }
 
   shelfBookRenderKey(book: Book, prefix: string): string {
-    return `${prefix}_${book.bookUrl}_cover_${this.shelfCoverRenderVersions.get(book.bookUrl) || 0}`;
+    return `${prefix}_${book.bookUrl}_pin_${book.isPinned ? '1' : '0'}_` +
+      `cover_${this.shelfCoverRenderVersions.get(book.bookUrl) || 0}`;
   }
 
   closeNetworkCoverPicker(): void {
@@ -2015,7 +2036,7 @@ struct BookshelfPage {
   }
 
   bookActionMenuHeight(book: Book): number {
-    const baseHeight = 320;
+    const baseHeight = 364;
     return baseHeight + (LocalBookService.isLocalBook(book) ? 0 : 44) + (book.customCoverUrl ? 44 : 0);
   }
 
@@ -2427,6 +2448,14 @@ struct BookshelfPage {
                 this.openShelfBookDetail(book);
               }
             })
+            this.contextActionItem($r('sys.symbol.pin'), this.pendingActionBook.isPinned ? '取消置顶' : '置顶',
+              this.primaryTextColor(), () => {
+                if (this.pendingActionBook) {
+                  const book = this.pendingActionBook;
+                  this.closeBookActions();
+                  this.toggleBookPinned(book);
+                }
+              })
             if (!LocalBookService.isLocalBook(this.pendingActionBook)) {
               this.contextActionItem($r('sys.symbol.arrow_left_arrow_right'), '换源', this.primaryTextColor(), () => {
                 if (this.pendingActionBook) {
@@ -3775,14 +3804,15 @@ struct BookshelfPage {
     const cacheKey = `${mode}_${this.shelfScope}_${this.activeShelfGroupId}_${this.isBookMultiSelect ? '1' : '0'}_` +
       `${latestBookUrl}_` +
       `${books.map((book: Book) => `${book.bookUrl}:${book.name}:${this.getBookReadTime(book)}:${this.getBookAddTime(book)}:` +
-        `${book.group}`).join('|')}_` +
+        `${book.group}:${book.isPinned ? '1' : '0'}`).join('|')}_` +
       `${this.shelfGroups.map((group: BookGroup) => `${group.groupId}:${group.groupName}`).join('|')}`;
     if (cacheKey === this.shelfTileEntriesCacheKey) {
       return this.shelfTileEntriesCache;
     }
     const entries: ShelfTileSortEntry[] = [];
-    const ungroupedBooks = this.getTileBooksWithoutLatest(books.filter((book: Book) => book.group <= 0 ||
-      !this.shelfGroups.some((group: BookGroup) => group.groupId === book.group)), latestBook);
+    // 置顶书籍在“全部”平铺页作为根级快捷项展示；它仍保留原分组归属，进入分组后也可找到。
+    const ungroupedBooks = this.getTileBooksWithoutLatest(books.filter((book: Book) => book.isPinned ||
+      book.group <= 0 || !this.shelfGroups.some((group: BookGroup) => group.groupId === book.group)), latestBook);
     ungroupedBooks.forEach((book: Book, index: number) => {
       const entry = new ShelfTileSortEntry();
       entry.kind = 'book';
@@ -3791,6 +3821,7 @@ struct BookshelfPage {
       entry.readTime = this.getBookReadTime(book);
       entry.addTime = this.getBookAddTime(book);
       entry.name = this.normalizeBookName(book.name);
+      entry.pinned = book.isPinned;
       entry.originalOrder = index;
       entries.push(entry);
     });
@@ -3847,6 +3878,9 @@ struct BookshelfPage {
   }
 
   compareTileRootEntry(a: ShelfTileSortEntry, b: ShelfTileSortEntry, mode: string = this.sortMode): number {
+    if (a.pinned !== b.pinned) {
+      return a.pinned ? -1 : 1;
+    }
     if (mode === 'name') {
       const nameDiff = a.name.localeCompare(b.name, 'zh-Hans-CN-u-co-pinyin');
       return nameDiff !== 0 ? nameDiff : a.originalOrder - b.originalOrder;
@@ -4044,6 +4078,7 @@ struct BookshelfPage {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
+        this.bookPinnedIndicator(book, true)
       }
       .width('100%')
       .height(18)
@@ -4232,6 +4267,7 @@ struct BookshelfPage {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
+        this.bookPinnedIndicator(book, true)
       }
       .width('100%')
       .height(18)
@@ -4581,6 +4617,7 @@ struct BookshelfPage {
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .layoutWeight(1)
+            this.bookPinnedIndicator(book)
 
             if (this.shouldShowBookSource(book)) {
               Text(this.getBookSourceText(book))
@@ -4647,6 +4684,7 @@ struct BookshelfPage {
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .layoutWeight(1)
+            this.bookPinnedIndicator(book)
           }
           .width('100%')
           .alignItems(VerticalAlign.Center)
@@ -4815,6 +4853,22 @@ struct BookshelfPage {
     .clip(true)
     .backgroundColor(this.inputColor())
     .onAppear(() => this.ensureShelfBookCoverCache(book))
+  }
+
+  @Builder
+  bookPinnedIndicator(book: Book, compact: boolean = false) {
+    if (book.isPinned) {
+      Stack({ alignContent: Alignment.Center }) {
+        SymbolGlyph($r('sys.symbol.pin'))
+          .fontSize(compact ? 12 : 14)
+          .fontColor([this.accentColor()])
+      }
+      .width(compact ? 18 : 22)
+      .height(compact ? 18 : 22)
+      .borderRadius(compact ? 9 : 11)
+      .backgroundColor(this.inputColor())
+      .accessibilityText(`${book.name}已置顶`)
+    }
   }
 
   @Builder
@@ -6618,15 +6672,19 @@ struct BookshelfPage {
   }
 
   sortBooks(books: Book[], mode: string = this.sortMode): Book[] {
-    if (mode === 'recentRead') {
-      return BookshelfSortHelper.sortByRecentRead(books);
-    }
     const sorted = [...books];
-    if (mode === 'name') {
-      sorted.sort((a: Book, b: Book) => this.compareBookName(a, b));
-    } else {
-      sorted.sort((a: Book, b: Book) => this.getBookAddTime(b) - this.getBookAddTime(a));
-    }
+    sorted.sort((a: Book, b: Book) => {
+      if (a.isPinned !== b.isPinned) {
+        return a.isPinned ? -1 : 1;
+      }
+      if (mode === 'recentRead') {
+        return BookshelfSortHelper.compareRecentRead(a, b);
+      }
+      if (mode === 'name') {
+        return this.compareBookName(a, b);
+      }
+      return this.getBookAddTime(b) - this.getBookAddTime(a);
+    });
     return sorted;
   }
 

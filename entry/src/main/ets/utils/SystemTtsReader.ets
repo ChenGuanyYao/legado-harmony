@@ -1763,8 +1763,11 @@ export class SystemTtsReader {
       for (const signature of signatures) {
         if (signature.test(trimmed)) signatureCount++;
       }
-      const codePunctuationOnly = /^[=;{}()[\].,+*\/\\-]{1,16}$/.test(trimmed);
-      if (!dimensionOnly && !codePunctuationOnly && signatureCount < 1) return line;
+      // Sources commonly use long runs of *, #, &, dashes or similar symbols as scene separators.
+      // Do not cap the run length: a rendered separator often contains dozens of characters and the
+      // old 16-character limit let exactly those lines through to be spoken one symbol at a time.
+      const decorativePunctuationOnly = /^[\s=;{}()[\].,+*#&＊＃＆_~～·•—–|｜\/\\-]+$/.test(trimmed);
+      if (!dimensionOnly && !decorativePunctuationOnly && signatureCount < 1) return line;
       // Replace one-for-one so chunk/focus offsets continue to map to the original reader document.
       return ' '.repeat(line.length);
     }).join('\n');

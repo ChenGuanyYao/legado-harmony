@@ -3529,7 +3529,7 @@ struct BookSourcePage {
     if (this.activeSourceGroup !== '__all__') {
       return '可切换其他分组查看';
     }
-    return '点击右上角"+"添加书源';
+    return '点击右下角"+"添加书源';
   }
 
   sourceNeedsLogin(source: BookSource): boolean {

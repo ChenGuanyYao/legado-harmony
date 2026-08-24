@@ -663,6 +663,9 @@ struct ReadBookPage {
   @State private readerContinuousSelectionOverlayX: number = 0;
   @State private readerContinuousSelectionOverlayY: number = 0;
   @State private readerContinuousSelectionOverlayWidth: number = 1;
+  @State private readerContinuousSelectionStart: number = -1;
+  @State private readerContinuousSelectionEnd: number = -1;
+  @State private readerContinuousSelectionPaintVersion: number = 0;
   private readerSelectableTextAreas: Map<string, number[]> = new Map<string, number[]>();
   private readerSelectableTextScrollOffsets: Map<string, number> = new Map<string, number>();
   private readerSelectableTextValues: Map<string, string> = new Map<string, string>();
@@ -673,9 +676,16 @@ struct ReadBookPage {
   private readerV2SelectionPageIndex: number = -1;
   private readerV2SelectionDisplayStart: number = -1;
   private readerV2SelectionDisplayEnd: number = -1;
-  @State private readerV2NativeSelectionCalibrationPageIndex: number = -1;
-  @State private readerV2NativeSelectionCalibrationX: number = 0;
-  @State private readerV2NativeSelectionCalibrationY: number = 0;
+  @State private readerV2NativeSelectionHostVersion: number = 0;
+  private readerV2NativeSelectionChapterIndex: number = -1;
+  private readerV2NativeSelectionPageIndex: number = -1;
+  private readerV2NativeSelectionFragmentIndex: number = -1;
+  private readerV2NativeSelectionRole: string = '';
+  private readerV2NativeSelectionPendingStart: number = -1;
+  private readerV2NativeSelectionPendingEnd: number = -1;
+  private readerV2NativeSelectionPendingSerial: number = -1;
+  @State private readerV2NativeSelectionOffsetX: number = 0;
+  @State private readerV2NativeSelectionOffsetY: number = 0;
   private readerContinuousVisibleStart: number = 0;
   private readerContinuousVisibleEnd: number = 0;
   private readerContinuousReachedEnd: boolean = false;
@@ -1491,6 +1501,8 @@ struct ReadBookPage {
     this.readerContinuousMountedSelectionControllers.clear();
     this.setReaderTextSelectionActive(false);
     this.readerContinuousSelectionOverlayText = '';
+    this.readerContinuousSelectionStart = -1;
+    this.readerContinuousSelectionEnd = -1;
     this.readerContinuousVisibleStart = 0;
     this.readerContinuousVisibleEnd = 0;
     this.readerContinuousReachedEnd = false;
@@ -2519,6 +2531,21 @@ struct ReadBookPage {
             ForEach(this.currentReaderV2TtsOverlayKeys(this.readerV2TtsPaintVersion), (_focusKey: string) => {
               this.readerCurrentV2TtsOverlay(this.readerV2TtsPaintVersion)
             }, (focusKey: string) => focusKey)
+            // Native Text supplies selection handles and the system menu, but its line boxes do not exactly match
+            // the Paragraph glyph boxes used to paint正文. Paint the range from Paragraph geometry so text stays
+            // vertically centered in the blue selection in every page-turn mode.
+            ForEach(this.currentReaderV2SelectionOverlayKeys(this.readerV2SelectionPaintVersion),
+              (_selectionPaintKey: string) => {
+              this.readerCurrentV2SelectionOverlay(this.readerV2SelectionPaintVersion)
+            }, (selectionPaintKey: string) => selectionPaintKey)
+            // The retained V2 host above only updates its native canvas during same-chapter turns. Selection Text
+            // must be page-keyed outside that host; otherwise its content advances while its paragraph coordinates
+            // remain those of the first mounted page, and long-press handles appear on another line.
+            ForEach(this.currentReaderV2SelectionSurfaceKeys(this.readerV2NativeSelectionHostVersion),
+              (_selectionKey: string) => {
+              this.readerCurrentV2SelectionSurface(this.readerV2NativeSelectionHostVersion,
+                this.readerV2NativeSelectionOffsetX, this.readerV2NativeSelectionOffsetY)
+            }, (selectionKey: string) => selectionKey)
             // Legacy rich text is keyed by page; V2 updates its retained node in place. Keep the simulation
             // overlay outside both paths so the destination can settle behind the captured leaf without
             // destroying the active Canvas.
@@ -9135,7 +9162,7 @@ struct ReadBookPage {
         return;
       }
       this.preserveSwitchBookState(fullBook, nextBook, oldBook, chapterIndex, pageIndex);
-      const chapters = await service.getChapterList(source, fullBook);
+      const chapters = await service.getChapterList(source, fullBook, 0, false);
       if (!this.isChangeSourceSessionActive(sessionId)) {
         return;
       }
@@ -9187,6 +9214,7 @@ struct ReadBookPage {
     book.wordCount = BookFieldSanitizer.prefer(searchBook.wordCount, oldBook.wordCount);
     book.variable = searchBook.variable || '';
     book.group = oldBook.group;
+    book.isPinned = oldBook.isPinned;
     book.order = oldBook.order;
     book.originOrder = oldBook.originOrder;
     book.readConfig = oldBook.readConfig;
@@ -9204,6 +9232,7 @@ struct ReadBookPage {
     target.originName = source.originName;
     target.coverUrl = CoverUrlNormalizer.prefer(source.coverUrl, target.coverUrl);
     target.group = oldBook.group;
+    target.isPinned = oldBook.isPinned;
     target.order = oldBook.order;
     target.originOrder = oldBook.originOrder;
     target.customCoverUrl = oldBook.customCoverUrl;
@@ -17468,6 +17497,56 @@ struct ReadBookPage {
       .id(this.readerContinuousNativeSelectionKey(text, pageIndex))
   }
 
+  readerContinuousSelectionHighlightRects(_paintVersion: number): ReaderV2HighlightRect[] {
+    if (!this.readerContinuousSelectionOverlayText || this.readerContinuousSelectionStart < 0 ||
+      this.readerContinuousSelectionEnd <= this.readerContinuousSelectionStart) return [];
+    try {
+      const manager = this.readerContinuousSelectionOverlayController.getLayoutManager();
+      if (!manager) return [];
+      const boxes = manager.getRectsForRange({
+        start: this.readerContinuousSelectionStart,
+        end: this.readerContinuousSelectionEnd
+      }, graphicsText.RectWidthStyle.TIGHT, graphicsText.RectHeightStyle.TIGHT);
+      const result: ReaderV2HighlightRect[] = [];
+      // The continuous overlay is positioned from the List item's outer box, while its glyph manager reports the
+      // transparent Text's typographic top. On the device this top is about 0.32em above the visible rich Text.
+      // Correct only the painted blue range; selection handles keep their native coordinates.
+      const baselineCorrectionPx = this.toMeasurePx(Math.max(1, this.readerFontSize * 0.32));
+      for (let index = 0; index < boxes.length; index++) {
+        const rect = boxes[index].rect;
+        const height = Math.max(0, rect.bottom - rect.top);
+        const verticalPadding = Math.max(1, Math.min(3, height * 0.08));
+        if (rect.right <= rect.left || height <= 0) continue;
+        result.push({
+          leftPx: rect.left,
+          topPx: rect.top - verticalPadding + baselineCorrectionPx,
+          widthPx: rect.right - rect.left,
+          heightPx: height + verticalPadding * 2,
+          key: `continuous_selection_${index}_${this.readerContinuousSelectionStart}_` +
+            `${this.readerContinuousSelectionEnd}_${_paintVersion}`
+        });
+      }
+      return result;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  @Builder
+  readerContinuousSelectionHighlightRect(rect: ReaderV2HighlightRect) {
+    Row() {
+    }
+    .width(px2vp(rect.widthPx))
+    .height(px2vp(rect.heightPx))
+    .backgroundColor(0x663B82F6)
+    .position({
+      x: this.readerContinuousSelectionOverlayX + px2vp(rect.leftPx),
+      y: this.readerContinuousSelectionOverlayY + px2vp(rect.topPx)
+    })
+    .zIndex(2)
+    .hitTestBehavior(HitTestMode.None)
+  }
+
   @Builder
   readerContinuousSelectionOverlay() {
     if (this.isReaderNovelContinuousScrollModeActive() && this.readerContinuousSelectionOverlayText) {
@@ -17488,7 +17567,7 @@ struct ReadBookPage {
         .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
         .editMenuOptions(this.readerTextEditMenuOptions())
         .onCopy(() => this.scheduleReaderTextSelectionClear())
-        .selectedBackgroundColor(0x663B82F6)
+        .selectedBackgroundColor(Color.Transparent)
         .focusable(true)
         .width(this.readerContinuousSelectionOverlayWidth)
         .position({
@@ -17499,11 +17578,18 @@ struct ReadBookPage {
         .zIndex(3)
         .onTextSelectionChange((selectionStart: number, selectionEnd: number) => {
           this.setReaderTextSelectionActive(selectionEnd > selectionStart);
+          this.readerContinuousSelectionStart = selectionStart;
+          this.readerContinuousSelectionEnd = selectionEnd;
+          this.readerContinuousSelectionPaintVersion++;
           if (selectionEnd <= selectionStart) return;
           this.readerTextSelectionUntil = Date.now() + 900;
           this.suppressReaderTapClick = true;
         })
         .id('reader_continuous_selection_overlay')
+      ForEach(this.readerContinuousSelectionHighlightRects(this.readerContinuousSelectionPaintVersion),
+        (rect: ReaderV2HighlightRect) => {
+        this.readerContinuousSelectionHighlightRect(rect)
+      }, (rect: ReaderV2HighlightRect) => rect.key)
     }
   }
 
@@ -18277,6 +18363,9 @@ struct ReadBookPage {
       this.readerContinuousSelectionOverlayY = first.top - this.readerTapLayerGlobalY;
       this.readerContinuousSelectionOverlayWidth = widthVp;
       this.readerContinuousSelectionOverlayText = text;
+      this.readerContinuousSelectionStart = -1;
+      this.readerContinuousSelectionEnd = -1;
+      this.readerContinuousSelectionPaintVersion++;
       this.readerTextSelectionUntil = Date.now() + 900;
       this.suppressReaderTapClick = true;
       setTimeout(() => {
@@ -19581,6 +19670,9 @@ struct ReadBookPage {
       this.clearReaderV2SelectionOverlay();
       this.setReaderTextSelectionActive(false);
       this.readerContinuousSelectionOverlayText = '';
+      this.readerContinuousSelectionStart = -1;
+      this.readerContinuousSelectionEnd = -1;
+      this.readerContinuousSelectionPaintVersion++;
       this.readerTextSelectionUntil = 0;
       this.suppressReaderTapClick = false;
     }, 80);
@@ -19599,15 +19691,6 @@ struct ReadBookPage {
       const page = this.readerV2Page(this.currentChapterIndex, pageIndex, this.pagedContentText);
       const controller = this.readerV2Controllers.get(role);
       if (controller) controller.updatePage(page, forceRebuild);
-      if (!page || !page.selectionText) continue;
-      const selectionKey = this.readerV2NativeSelectionKey(role, this.currentChapterIndex, pageIndex, page);
-      const selectionController = this.readerSelectableTextControllers.get(selectionKey);
-      if (selectionController) {
-        try {
-          selectionController.setStyledString(this.readerV2SelectionStyledText(page));
-        } catch (_) {
-        }
-      }
     }
   }
 
@@ -19668,9 +19751,15 @@ struct ReadBookPage {
       for (let boxIndex = 0; boxIndex < boxes.length; boxIndex++) {
         const rect = boxes[boxIndex].rect;
         const left = Math.max(fragment.clipRect.left, fragment.paragraphX + rect.left);
-        const top = Math.max(fragment.clipRect.top, fragment.paragraphY + rect.top);
         const right = Math.min(fragment.clipRect.right, fragment.paragraphX + rect.right);
-        const bottom = Math.min(fragment.clipRect.bottom, fragment.paragraphY + rect.bottom);
+        const glyphTop = fragment.paragraphY + rect.top;
+        const glyphBottom = fragment.paragraphY + rect.bottom;
+        // TIGHT Paragraph boxes follow the actual painted glyphs. Give selection a small symmetric inset around
+        // those boxes; the system Text background uses its lower line box and makes the same glyph look too high.
+        const verticalPadding = keyPrefix === 'selection' ?
+          Math.max(1, Math.min(3, (glyphBottom - glyphTop) * 0.08)) : 0;
+        const top = Math.max(fragment.clipRect.top, glyphTop - verticalPadding);
+        const bottom = Math.min(fragment.clipRect.bottom, glyphBottom + verticalPadding);
         if (right <= left || bottom <= top) continue;
         result.push({
           leftPx: left,
@@ -19720,16 +19809,6 @@ struct ReadBookPage {
         .width('100%')
         .height('100%')
         .hitTestBehavior(HitTestMode.None)
-      // Selection belongs above the retained正文 node: that node paints regex/comment bubbles together with the
-      // glyphs, so placing the blue range before it makes the bubble background obscure the selected characters.
-      ForEach(this.readerV2SelectionHighlightRects(
-        chapterIndex, pageIndex, source, this.readerV2SelectionPaintVersion),
-      (rect: ReaderV2HighlightRect) => {
-        this.readerV2SelectionHighlightRect(rect)
-      }, (rect: ReaderV2HighlightRect) => rect.key)
-      if (role.startsWith('current_')) {
-        this.readerV2NativeSelectionPage(role, chapterIndex, pageIndex, source)
-      }
     }
     // Pagination subtracts the spread divider before measuring each column. Giving both native pages 50% plus
     // the divider makes their live width differ from the simulation capture width by the divider/fractional pixel,
@@ -19743,6 +19822,111 @@ struct ReadBookPage {
     if (!this.shouldUseReaderLayoutV2(this.pagedContentText) || !this.shouldRenderTtsFocus() ||
       this.readerV2TtsSourceStart < 0 || this.readerV2TtsSourceEnd <= this.readerV2TtsSourceStart) return [];
     return [`reader_v2_tts_${this.currentChapterIndex}_${this.currentPageIndex}_${paintVersion}`];
+  }
+
+  currentReaderV2SelectionSurfaceKeys(hostVersion: number): string[] {
+    if (!this.shouldUseReaderLayoutV2(this.pagedContentText) ||
+      this.readerV2NativeSelectionChapterIndex !== this.currentChapterIndex ||
+      this.readerV2NativeSelectionPageIndex < this.currentPageIndex ||
+      this.readerV2NativeSelectionPageIndex > this.currentPageIndex +
+        (this.isLandscapeDoublePageActive() ? 1 : 0) ||
+      this.readerV2NativeSelectionFragmentIndex < 0) return [];
+    return [`reader_v2_selection_surface_${this.readerV2NativeSelectionChapterIndex}_` +
+      `${this.readerV2NativeSelectionPageIndex}_${this.readerV2NativeSelectionFragmentIndex}_` +
+      `${hostVersion}`];
+  }
+
+  currentReaderV2SelectionOverlayKeys(paintVersion: number): string[] {
+    if (!this.shouldUseReaderLayoutV2(this.pagedContentText) ||
+      this.readerV2SelectionChapterIndex !== this.currentChapterIndex ||
+      this.readerV2SelectionPageIndex < this.currentPageIndex ||
+      this.readerV2SelectionPageIndex > this.currentPageIndex +
+        (this.isLandscapeDoublePageActive() ? 1 : 0) ||
+      this.readerV2SelectionDisplayStart < 0 ||
+      this.readerV2SelectionDisplayEnd <= this.readerV2SelectionDisplayStart) return [];
+    return [`reader_v2_selection_paint_${this.readerV2SelectionChapterIndex}_` +
+      `${this.readerV2SelectionPageIndex}_${paintVersion}`];
+  }
+
+  @Builder
+  readerCurrentV2SelectionSurface(_hostVersion: number, offsetX: number, offsetY: number) {
+    Column() {
+      if (this.isLandscapeDoublePageActive()) {
+        Row() {
+          Stack({ alignContent: Alignment.TopStart }) {
+            this.readerV2NativeSelectionPage(
+              `${this.currentReaderSurfaceIndex() === 0 ? 'current_primary' : 'current_alternate'}_left`,
+              this.currentChapterIndex, this.currentPageIndex, this.pagedContentText, offsetX, offsetY)
+          }
+          .width(this.getReaderPageColumnWidth())
+          .height('100%')
+          Blank()
+            .width(READER_DOUBLE_PAGE_DIVIDER_WIDTH)
+            .height('100%')
+          Stack({ alignContent: Alignment.TopStart }) {
+            this.readerV2NativeSelectionPage(
+              `${this.currentReaderSurfaceIndex() === 0 ? 'current_primary' : 'current_alternate'}_right`,
+              this.currentChapterIndex, this.currentPageIndex + 1, this.pagedContentText, offsetX, offsetY)
+          }
+          .width(this.getReaderPageColumnWidth())
+          .height('100%')
+        }
+        .width('100%')
+        .height('100%')
+        .alignItems(VerticalAlign.Center)
+      } else {
+        this.readerV2NativeSelectionPage(
+          `${this.currentReaderSurfaceIndex() === 0 ? 'current_primary' : 'current_alternate'}_single`,
+          this.currentChapterIndex, this.currentPageIndex, this.pagedContentText, offsetX, offsetY)
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .padding({ top: this.getReaderPageContentTopPadding() })
+    .translate({ x: this.getCurrentPageTurnX(), y: this.getCurrentPageTurnY() + this.bookmarkPullOffsetY })
+    .opacity(this.getCurrentPageTurnOpacity())
+    .hitTestBehavior(HitTestMode.None)
+  }
+
+  @Builder
+  readerCurrentV2SelectionOverlay(paintVersion: number) {
+    Column() {
+      if (this.isLandscapeDoublePageActive()) {
+        Row() {
+          this.readerCurrentV2SelectionOverlayPage(this.currentPageIndex, paintVersion, true)
+          Blank()
+            .width(READER_DOUBLE_PAGE_DIVIDER_WIDTH)
+            .height('100%')
+          this.readerCurrentV2SelectionOverlayPage(this.currentPageIndex + 1, paintVersion, true)
+        }
+        .width('100%')
+        .height('100%')
+        .alignItems(VerticalAlign.Center)
+      } else {
+        this.readerCurrentV2SelectionOverlayPage(this.currentPageIndex, paintVersion)
+      }
+    }
+    .width('100%')
+    .height('100%')
+    .padding({ top: this.getReaderPageContentTopPadding() })
+    .translate({ x: this.getCurrentPageTurnX(), y: this.getCurrentPageTurnY() + this.bookmarkPullOffsetY })
+    .opacity(this.getCurrentPageTurnOpacity())
+    .hitTestBehavior(HitTestMode.None)
+  }
+
+  @Builder
+  readerCurrentV2SelectionOverlayPage(pageIndex: number, paintVersion: number,
+    halfWidth: boolean = false) {
+    Stack({ alignContent: Alignment.TopStart }) {
+      ForEach(this.readerV2SelectionHighlightRects(
+        this.currentChapterIndex, pageIndex, this.pagedContentText, paintVersion),
+      (rect: ReaderV2HighlightRect) => {
+        this.readerV2SelectionHighlightRect(rect)
+      }, (rect: ReaderV2HighlightRect) => rect.key)
+    }
+    .width(halfWidth ? this.getReaderPageColumnWidth() : '100%')
+    .height('100%')
+    .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
@@ -19836,14 +20020,14 @@ struct ReadBookPage {
 
   readerV2NativeSelectionKey(role: string, chapterIndex: number, pageIndex: number,
     page: ReaderV2PageLayout): string {
-    // The visible V2 page keeps one native TextController per surface role. Page-specific keys create a detached
-    // controller after the retained ArkUI subtree has settled, so programmatic long-press selection has no owner.
-    // Updating one stable controller in place keeps the native menu and drag handles attached across page turns.
-    return `reader_v2_native_page_${role}`;
+    // Every lazy host owns a fresh controller. A controller retained from a destroyed host can expose the previous
+    // page's LayoutManager briefly and put selection handles on stale glyph coordinates.
+    return `reader_v2_native_page_${role}_${chapterIndex}_${pageIndex}_${page.identity}_` +
+      `${this.readerV2NativeSelectionHostVersion}`;
   }
 
   readerV2SelectionStyledText(page: ReaderV2PageLayout): MutableStyledString {
-    const cacheKey = page.identity;
+    const cacheKey = `${page.identity}_selection_page`;
     const cached = this.readerV2SelectionStyledTextCache.get(cacheKey);
     if (cached) return cached;
     const styles: StyleOptions[] = [];
@@ -19871,9 +20055,6 @@ struct ReadBookPage {
         });
         runStart += run.text.length;
       }
-      // A single Text owns the whole visible page so HarmonyOS can extend its native selection
-      // handles across paragraph boundaries. Paragraph styles retain the same gap and wrapping
-      // contract used by the independent native Paragraphs that paint the visible glyphs.
       const paragraphLength = fragment.selectionPageEnd - fragment.selectionPageStart +
         (fragmentIndex < page.fragments.length - 1 ? 1 : 0);
       if (paragraphLength > 0) {
@@ -19922,130 +20103,165 @@ struct ReadBookPage {
     return page.displayEnd;
   }
 
-  readerV2NativeSelectionCalibrationOffset(pageIndex: number, horizontal: boolean): number {
-    if (this.readerV2NativeSelectionCalibrationPageIndex !== pageIndex) return 0;
-    return horizontal ? this.readerV2NativeSelectionCalibrationX : this.readerV2NativeSelectionCalibrationY;
-  }
-
-  calibrateReaderV2NativeSelection(page: ReaderV2PageLayout, pageIndex: number,
-    fragment: ReaderV2PageFragment, fragmentStart: number, fragmentEnd: number,
-    controller: TextController): void {
-    if (!fragment.paragraph || fragmentEnd <= fragmentStart) return;
-    try {
-      const manager = controller.getLayoutManager();
-      if (!manager) return;
-      const nativeStart = fragment.selectionPageStart + fragmentStart;
-      const nativeEnd = fragment.selectionPageStart + fragmentEnd;
-      const nativeBoxes: graphicsText.TextBox[] = manager.getRectsForRange(
-        { start: nativeStart, end: nativeEnd },
-        graphicsText.RectWidthStyle.TIGHT, graphicsText.RectHeightStyle.TIGHT);
-      const paintedBoxes = fragment.paragraph.getRectsForRange(
-        { start: fragmentStart, end: fragmentEnd },
-        graphicsText.RectWidthStyle.TIGHT, graphicsText.RectHeightStyle.TIGHT);
-      if (nativeBoxes.length === 0 || paintedBoxes.length === 0) return;
-      const nativeRect = nativeBoxes[0].rect;
-      const paintedRect = paintedBoxes[0].rect;
-      const offsetX = fragment.paragraphX + paintedRect.left - (page.selectionX + nativeRect.left);
-      const offsetY = fragment.paragraphY + paintedRect.top - (page.selectionY + nativeRect.top);
-      // A valid correction is local to the current line layout. A detached controller can still expose the
-      // previous page's LayoutManager; reject that instead of moving handles by a whole page.
-      if (!Number.isFinite(offsetX) || !Number.isFinite(offsetY) ||
-        Math.abs(offsetX) > Math.max(1, page.selectionWidth * 0.5) ||
-        Math.abs(offsetY) > Math.max(1, page.selectionHeight * 0.5)) return;
-      this.readerV2NativeSelectionCalibrationPageIndex = pageIndex;
-      this.readerV2NativeSelectionCalibrationX = offsetX;
-      this.readerV2NativeSelectionCalibrationY = offsetY;
-    } catch (_) {
-    }
+  showReaderV2NativeSelectionAfterLayout(page: ReaderV2PageLayout, fragmentIndex: number,
+    controller: TextController, hostVersion: number, attempt: number = 0): void {
+    setTimeout(() => {
+      if (hostVersion !== this.readerV2NativeSelectionHostVersion ||
+        this.readerV2NativeSelectionPendingSerial !== this.readerTextSelectionSerial ||
+        !this.readerPageVisible || this.readerV2NativeSelectionPendingStart < 0 ||
+        this.readerV2NativeSelectionPendingEnd <= this.readerV2NativeSelectionPendingStart) return;
+      let calibrated = false;
+      try {
+        const manager = controller.getLayoutManager();
+        const fragment = page.fragments[fragmentIndex];
+        if (manager && fragment && fragment.paragraph) {
+          const fragmentStart = Math.max(0,
+            this.readerV2NativeSelectionPendingStart - fragment.selectionPageStart);
+          const fragmentEnd = Math.min(fragment.selectionPageEnd - fragment.selectionPageStart,
+            this.readerV2NativeSelectionPendingEnd - fragment.selectionPageStart);
+          const nativeBoxes = manager.getRectsForRange({
+            start: this.readerV2NativeSelectionPendingStart,
+            end: this.readerV2NativeSelectionPendingEnd
+          }, graphicsText.RectWidthStyle.TIGHT, graphicsText.RectHeightStyle.TIGHT);
+          const paintedBoxes = fragment.paragraph.getRectsForRange({ start: fragmentStart, end: fragmentEnd },
+            graphicsText.RectWidthStyle.TIGHT, graphicsText.RectHeightStyle.TIGHT);
+          if (nativeBoxes.length > 0 && paintedBoxes.length > 0) {
+            const nativeRect = nativeBoxes[0].rect;
+            const paintedRect = paintedBoxes[0].rect;
+            const offsetX = fragment.paragraphX + paintedRect.left - (page.selectionX + nativeRect.left);
+            const offsetY = fragment.paragraphY + paintedRect.top - (page.selectionY + nativeRect.top);
+            if (Number.isFinite(offsetX) && Number.isFinite(offsetY) &&
+              Math.abs(offsetX) <= Math.max(1, page.selectionWidth * 0.5) &&
+              Math.abs(offsetY) <= Math.max(1, page.selectionHeight * 0.5)) {
+              this.readerV2NativeSelectionOffsetX = offsetX;
+              this.readerV2NativeSelectionOffsetY = offsetY;
+              calibrated = true;
+            }
+          }
+        }
+      } catch (_) {
+      }
+      if (!calibrated && attempt < 4) {
+        this.showReaderV2NativeSelectionAfterLayout(page, fragmentIndex, controller, hostVersion, attempt + 1);
+        return;
+      }
+      setTimeout(() => {
+        if (hostVersion !== this.readerV2NativeSelectionHostVersion ||
+          this.readerV2NativeSelectionPendingSerial !== this.readerTextSelectionSerial ||
+          !this.readerPageVisible) return;
+        try {
+          controller.setTextSelection(this.readerV2NativeSelectionPendingStart,
+            this.readerV2NativeSelectionPendingEnd, { menuPolicy: MenuPolicy.SHOW });
+        } catch (_) {
+        }
+      }, calibrated ? 32 : 0);
+    }, attempt === 0 ? 16 : 24);
   }
 
   @Builder
-  readerV2NativeSelectionPage(role: string, chapterIndex: number, pageIndex: number, source: string) {
-    if (this.readerV2Page(chapterIndex, pageIndex, source)) {
-      if ((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionText) {
-        Text('', { controller: this.readerV2NativeSelectionController(
-          this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex,
-            this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout),
-          this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout) })
-          .lineSpacing(LengthMetrics.vp(px2vp(
-            (this.readerV2ActiveSnapshot || this.buildReaderV2Snapshot()).lineSpacingPx)),
-          { onlyBetweenLines: true })
-          .halfLeading(false)
-          .includeFontPadding(true)
-          .textAlign(TextAlign.JUSTIFY)
-          .wordBreak(WordBreak.BREAK_WORD)
-          .lineBreakStrategy(LineBreakStrategy.GREEDY)
-          .copyOption(CopyOptions.LocalDevice)
-          .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
-          .editMenuOptions(this.readerTextEditMenuOptions())
-          .onCopy(() => this.scheduleReaderTextSelectionClear())
-          .selectedBackgroundColor(Color.Transparent)
-          .width(px2vp((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionWidth))
-          .height(px2vp(Math.max(1,
-            (this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionHeight)))
-          .position({
-            x: px2vp((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionX +
-              this.readerV2NativeSelectionCalibrationOffset(pageIndex, true)),
-            y: px2vp((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionY +
-              this.readerV2NativeSelectionCalibrationOffset(pageIndex, false))
-          })
-          .hitTestBehavior(HitTestMode.None)
-          .onTextSelectionChange((selectionStart: number, selectionEnd: number) => {
-            const activePageIndex = role.endsWith('_right') ? this.currentPageIndex + 1 : this.currentPageIndex;
-            const page = this.readerV2Page(this.currentChapterIndex, activePageIndex, this.pagedContentText);
-            if (!page) return;
-            this.readerTextSelectionUntil = Date.now() + 900;
-            this.suppressReaderTapClick = true;
-            this.readerTouchActive = false;
-            this.readerPanActive = false;
-            const safeStart = Math.max(0, Math.min(selectionStart, page.selectionText.length));
-            const safeEnd = Math.max(safeStart, Math.min(selectionEnd, page.selectionText.length));
-            if (safeEnd > safeStart) {
-              this.readerV2SelectionChapterIndex = this.currentChapterIndex;
-              this.readerV2SelectionPageIndex = activePageIndex;
-              this.readerV2SelectionDisplayStart =
-                this.readerV2DisplayOffsetForPageSelection(page, safeStart);
-              this.readerV2SelectionDisplayEnd =
-                this.readerV2DisplayOffsetForPageSelection(page, safeEnd);
-              this.readerV2SelectionPaintVersion++;
-            } else {
-              this.clearReaderV2SelectionOverlay();
-            }
-          })
-          .id(`reader_v2_selection_${role}_${chapterIndex}_${pageIndex}`)
-          .onAppear(() => {
-            const page = this.readerV2Page(chapterIndex, pageIndex, source);
-            if (!page) return;
-            const key = this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex, page);
-            this.readerV2NativeSelectionController(key, page);
-          })
+  readerV2NativeSelectionPage(role: string, chapterIndex: number, pageIndex: number, source: string,
+    offsetX: number, offsetY: number) {
+    if (chapterIndex === this.readerV2NativeSelectionChapterIndex &&
+      pageIndex === this.readerV2NativeSelectionPageIndex && role === this.readerV2NativeSelectionRole &&
+      this.readerV2Page(chapterIndex, pageIndex, source)) {
+      if ((this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).selectionText &&
+        this.readerV2NativeSelectionFragmentIndex >= 0 &&
+        this.readerV2NativeSelectionFragmentIndex <
+          (this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout).fragments.length) {
+        Stack({ alignContent: Alignment.TopStart }) {
+          this.readerV2NativeSelectionText(role, chapterIndex, pageIndex,
+            this.readerV2Page(chapterIndex, pageIndex, source) as ReaderV2PageLayout,
+            this.readerV2NativeSelectionFragmentIndex, offsetX, offsetY)
+        }
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.None)
       }
     }
   }
 
+  @Builder
+  readerV2NativeSelectionText(role: string, chapterIndex: number, pageIndex: number,
+    page: ReaderV2PageLayout, fragmentIndex: number, offsetX: number, offsetY: number) {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Text('', { controller: this.readerV2NativeSelectionController(
+        this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex, page), page) })
+        .lineSpacing(LengthMetrics.vp(px2vp(
+          (this.readerV2ActiveSnapshot || this.buildReaderV2Snapshot()).lineSpacingPx)),
+        { onlyBetweenLines: true })
+        .halfLeading(false)
+        .includeFontPadding(true)
+        .textAlign(TextAlign.JUSTIFY)
+        .wordBreak(WordBreak.BREAK_WORD)
+        .lineBreakStrategy(LineBreakStrategy.GREEDY)
+        .copyOption(CopyOptions.LocalDevice)
+        .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
+        .editMenuOptions(this.readerTextEditMenuOptions())
+        .onCopy(() => this.scheduleReaderTextSelectionClear())
+        .selectedBackgroundColor(Color.Transparent)
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.None)
+        .onTextSelectionChange((selectionStart: number, selectionEnd: number) => {
+          const textLength = page.selectionText.length;
+          this.readerTextSelectionUntil = Date.now() + 900;
+          this.suppressReaderTapClick = true;
+          this.readerTouchActive = false;
+          this.readerPanActive = false;
+          const safeStart = Math.max(0, Math.min(selectionStart, textLength));
+          const safeEnd = Math.max(safeStart, Math.min(selectionEnd, textLength));
+          if (safeEnd > safeStart) {
+            this.readerV2SelectionChapterIndex = chapterIndex;
+            this.readerV2SelectionPageIndex = pageIndex;
+            this.readerV2SelectionDisplayStart = this.readerV2DisplayOffsetForPageSelection(page, safeStart);
+            this.readerV2SelectionDisplayEnd = this.readerV2DisplayOffsetForPageSelection(page, safeEnd);
+            this.readerV2SelectionPaintVersion++;
+          }
+        })
+        .id(`reader_v2_selection_${role}_${chapterIndex}_${pageIndex}`)
+        .onAppear(() => {
+          const key = this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex, page);
+          const controller = this.readerV2NativeSelectionController(key, page);
+          const hostVersion = this.readerV2NativeSelectionHostVersion;
+          this.showReaderV2NativeSelectionAfterLayout(page, fragmentIndex, controller, hostVersion);
+        })
+    }
+    .width(px2vp(page.selectionWidth))
+    .height(px2vp(Math.max(1, page.selectionHeight)))
+    .position({ x: px2vp(page.selectionX + offsetX), y: px2vp(page.selectionY + offsetY) })
+    .hitTestBehavior(HitTestMode.None)
+  }
+
   readerV2SurfaceTopOffset(): number {
+    // Simulation/stack pages are laid out in a full-screen sheet and inset the live正文 with explicit top
+    // padding. onAreaChange still reports the unpadded sheet origin for both the page and tap layer, so their
+    // global-position delta can be zero even though painted glyphs start below the status bar. Keep that
+    // declarative padding in the hit-test origin; otherwise every long press resolves roughly one line lower.
+    const contentTopPadding = this.getReaderPageContentTopPadding();
     const measuredOffset = this.readerCommentPageAreaTop - this.readerTapLayerGlobalY;
     if (this.readerCommentPageAreaTop >= 0 && Number.isFinite(measuredOffset)) {
-      return measuredOffset;
+      return Math.max(contentTopPadding, measuredOffset);
     }
-    // Simulation and stack paper expand through the status bar so their animation covers the screen. Text
-    // remains below the status bar unless the user explicitly enables正文 extension.
-    return !this.readerExtendToStatusBar &&
-      (this.isStackPageTurnAnimation() || this.isSimulationPageTurnAnimation()) ?
-      this.statusBarSafeHeight : 0;
+    return contentTopPadding;
   }
 
   clearReaderV2SelectionOverlay(): void {
-    const hasCalibration = this.readerV2NativeSelectionCalibrationPageIndex >= 0 ||
-      this.readerV2NativeSelectionCalibrationX !== 0 || this.readerV2NativeSelectionCalibrationY !== 0;
-    if (this.readerV2SelectionDisplayStart < 0 && this.readerV2SelectionDisplayEnd < 0 && !hasCalibration) return;
+    const hasNativeHost = this.readerV2NativeSelectionFragmentIndex >= 0;
+    if (this.readerV2SelectionDisplayStart < 0 && this.readerV2SelectionDisplayEnd < 0 && !hasNativeHost) return;
     this.readerV2SelectionChapterIndex = -1;
     this.readerV2SelectionPageIndex = -1;
     this.readerV2SelectionDisplayStart = -1;
     this.readerV2SelectionDisplayEnd = -1;
-    this.readerV2NativeSelectionCalibrationPageIndex = -1;
-    this.readerV2NativeSelectionCalibrationX = 0;
-    this.readerV2NativeSelectionCalibrationY = 0;
+    this.readerV2NativeSelectionChapterIndex = -1;
+    this.readerV2NativeSelectionPageIndex = -1;
+    this.readerV2NativeSelectionFragmentIndex = -1;
+    this.readerV2NativeSelectionRole = '';
+    this.readerV2NativeSelectionPendingStart = -1;
+    this.readerV2NativeSelectionPendingEnd = -1;
+    this.readerV2NativeSelectionPendingSerial = -1;
+    this.readerV2NativeSelectionOffsetX = 0;
+    this.readerV2NativeSelectionOffsetY = 0;
+    this.readerV2NativeSelectionHostVersion++;
     this.readerV2SelectionPaintVersion++;
   }
 
@@ -20101,8 +20317,6 @@ struct ReadBookPage {
       if (!fragment.clipRect.contains(located[1], located[2], selectionSlop, selectionSlop)) continue;
       matchedFragment = true;
       try {
-        const key = this.readerV2NativeSelectionKey(role, this.currentChapterIndex, pageIndex, page);
-        const controller = this.readerSelectableTextController(key);
         if (!fragment.paragraph) break;
         // The transparent Text's LayoutManager can stay unavailable on some HarmonyOS builds
         // even though it is already on screen. The painted paragraph is the pagination source of
@@ -20110,9 +20324,9 @@ struct ReadBookPage {
         // offset from it instead of depending on that optional manager.
         const fragmentPosition = fragment.paragraph.getGlyphPositionAtCoordinate(
           located[1] - fragment.paragraphX, located[2] - fragment.paragraphY).position;
+        const text = page.selectionText;
         let position = fragment.selectionPageStart + Math.max(0,
           Math.min(fragment.selectionPageEnd - fragment.selectionPageStart - 1, fragmentPosition));
-        const text = page.selectionText;
         position = Math.max(0, Math.min(text.length - 1, position));
         while (position < text.length - 1 && /\s/.test(text.charAt(position))) position++;
         while (position > 0 && /\s/.test(text.charAt(position))) position--;
@@ -20127,24 +20341,27 @@ struct ReadBookPage {
           if (code >= 0xDC00 && code <= 0xDFFF && start > 0) start--;
           if (code >= 0xD800 && code <= 0xDBFF && end < text.length) end++;
         }
-        this.calibrateReaderV2NativeSelection(page, pageIndex, fragment,
-          Math.max(0, start - fragment.selectionPageStart),
-          Math.min(fragment.selectionPageEnd - fragment.selectionPageStart,
-            end - fragment.selectionPageStart), controller);
         this.readerTextSelectionUntil = Date.now() + 900;
         this.suppressReaderTapClick = true;
         this.readerTouchActive = false;
         this.readerPanActive = false;
-        // Calibration republishes the transparent Text at its corrected position. Wait for that layout pass before
-        // opening the native selection; selecting the controller in the same frame targets the node being replaced
-        // and leaves only the custom blue range without handles or menu.
-        setTimeout(() => {
-          if (serial !== this.readerTextSelectionSerial || !this.readerPageVisible) return;
-          try {
-            controller.setTextSelection(start, end, { menuPolicy: MenuPolicy.SHOW });
-          } catch (_) {
-          }
-        }, 32);
+        // Mount one whole-page Text only after long press. Its continuous selection range includes the separators
+        // between fragments, allowing native handles to cross paragraph boundaries without adding page-turn cost.
+        this.readerV2NativeSelectionChapterIndex = this.currentChapterIndex;
+        this.readerV2NativeSelectionPageIndex = pageIndex;
+        this.readerV2NativeSelectionFragmentIndex = fragmentIndex;
+        this.readerV2NativeSelectionRole = role;
+        this.readerV2NativeSelectionPendingStart = start;
+        this.readerV2NativeSelectionPendingEnd = end;
+        this.readerV2NativeSelectionPendingSerial = serial;
+        this.readerV2NativeSelectionOffsetX = 0;
+        this.readerV2NativeSelectionOffsetY = 0;
+        this.readerV2SelectionChapterIndex = this.currentChapterIndex;
+        this.readerV2SelectionPageIndex = pageIndex;
+        this.readerV2SelectionDisplayStart = this.readerV2DisplayOffsetForPageSelection(page, start);
+        this.readerV2SelectionDisplayEnd = this.readerV2DisplayOffsetForPageSelection(page, end);
+        this.readerV2SelectionPaintVersion++;
+        this.readerV2NativeSelectionHostVersion++;
         return;
       } catch (error) {
         console.info('V2 正文选区布局尚未就绪，准备重试:', error);

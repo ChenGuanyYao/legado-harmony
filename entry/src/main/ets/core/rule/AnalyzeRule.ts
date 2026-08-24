@@ -172,7 +172,7 @@ export class AnalyzeRule {
     let input = this.content;
     for (let index = 0; index < regexRules.length; index++) {
       try {
-        const regex = new RegExp(regexRules[index], 'g');
+        const regex = this.compileLegadoRegex(regexRules[index], true);
         const last = index === regexRules.length - 1;
         const values: RuleValue[] = [];
         let concatenated = '';
@@ -201,6 +201,27 @@ export class AnalyzeRule {
       }
     }
     return [];
+  }
+
+  private compileLegadoRegex(pattern: string, global: boolean): RegExp {
+    let source = pattern || '';
+    let flags = global ? 'g' : '';
+    // Kotlin/Java Regex accepts leading inline flags such as (?s), (?i) and
+    // (?m); JavaScript requires the same options in the RegExp flags string.
+    // Multiple leading groups (for example (?i)(?s)) and disabling groups are
+    // both legal in Legado sources, so consume all of them before compiling.
+    let inlineFlags = source.match(/^\(\?([ims]*)(?:-([ims]+))?\)/);
+    while (inlineFlags) {
+      const enabled = inlineFlags[1] || '';
+      const disabled = inlineFlags[2] || '';
+      for (const flag of ['i', 'm', 's']) {
+        if (enabled.includes(flag) && !flags.includes(flag)) flags += flag;
+        if (disabled.includes(flag)) flags = flags.replace(flag, '');
+      }
+      source = source.substring(inlineFlags[0].length);
+      inlineFlags = source.match(/^\(\?([ims]*)(?:-([ims]+))?\)/);
+    }
+    return new RegExp(source, flags);
   }
 
   private isJsonPathLikeRule(rule: string): boolean {
@@ -1474,7 +1495,11 @@ export class AnalyzeRule {
     while ((match = re.exec(this.content)) !== null) {
       const element = this.sliceWholeElement(this.content, match.index, match[0], match[1]);
       const ownText = this.normalizeVisibleText(this.extractOwnText(element));
-      if (ownText === expected) matches.push(element);
+      // Keep compatible with Legado's `text.xxx` selector, which delegates to
+      // Jsoup getElementsContainingOwnText(): match a substring of the
+      // element's own/direct text rather than requiring the whole text to be
+      // exactly equal. Descendant-only text remains excluded by extractOwnText.
+      if (ownText.includes(expected)) matches.push(element);
       if (matches.length >= 100) break;
     }
     if (parts.length === 1) return matches.map(item => this.stripHtml(item)).filter(value => value.length > 0);

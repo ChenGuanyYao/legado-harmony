@@ -32,6 +32,7 @@ class ContentPageData {
 }
 
 export class WebBookService {
+  static readonly GENERIC_TOC_FALLBACK_KEY: string = '__genericTocFallback';
   private http: HttpClient;
   private activeContentRuleOwners: Set<string> = new Set();
 
@@ -232,7 +233,8 @@ export class WebBookService {
     return '';
   }
 
-  async getChapterList(source: BookSource, book: Book, maxChapters: number = 0): Promise<BookChapter[]> {
+  async getChapterList(source: BookSource, book: Book, maxChapters: number = 0,
+    allowGenericFallback: boolean = true): Promise<BookChapter[]> {
     AppStorage.setOrCreate('bookSourceStageLastError', '');
     BookSourceMetadataSupport.applyBook(source, book, [book.bookUrl, book.tocUrl]);
     const chapterLimit = maxChapters > 0 ? Math.max(1, Math.round(maxChapters)) : 0;
@@ -315,8 +317,11 @@ export class WebBookService {
     book.variable = ctx.toPersistentJson();
     if (chapters.length > 0) return chapters;
 
+    if (!allowGenericFallback) return chapters;
+
     const fallbackChapters = this.tryBuildGenericChapterList(book, firstBody, firstBaseUrl);
     if (fallbackChapters.length > 0) {
+      AppStorage.setOrCreate('bookSourceStageLastError', '正式目录规则未匹配，当前使用临时通用目录');
       return chapterLimit > 0 ? fallbackChapters.slice(0, chapterLimit) : fallbackChapters;
     }
     return chapters;
@@ -680,10 +685,13 @@ export class WebBookService {
     const bookKey = this.extractGenericBookKey(book.tocUrl || book.bookUrl || baseUrl);
     const catalogHtml = this.pickGenericCatalogBlock(body, baseUrl, bookKey);
     let links = this.collectGenericChapterLinks(catalogHtml, baseUrl, bookKey, catalogHtml !== body);
-    if (links.length < 3 && catalogHtml !== body) {
-      links = this.collectGenericChapterLinks(body, baseUrl, bookKey, false);
+    if (catalogHtml !== body) {
+      const bodyLinks = this.collectGenericChapterLinks(body, baseUrl, bookKey, false);
+      // A named catalog container can itself be the short "latest chapters" widget. Prefer the
+      // full-page candidate when it contains substantially more chapter-like links.
+      if (links.length < 3 || bodyLinks.length > links.length * 2) links = bodyLinks;
     }
-    links = this.trimLeadingTeaserLinks(links);
+    links = this.normalizeGenericChapterLinks(links);
     if (links.length < 3) return [];
 
     const chapters: BookChapter[] = [];
@@ -694,6 +702,8 @@ export class WebBookService {
       chapter.bookUrl = book.bookUrl;
       chapter.index = chapters.length;
       chapter.variable = BookUrlResolver.setVariableJson(chapter.variable, 'baseUrl', chapter.url || baseUrl);
+      chapter.variable = BookUrlResolver.setVariableJson(chapter.variable,
+        WebBookService.GENERIC_TOC_FALLBACK_KEY, 'true');
       if (chapter.title && chapter.url) chapters.push(chapter);
     }
     console.log('[WS] 通用目录兜底:', chapters.length, 'from:', book.name || book.bookUrl);
@@ -778,7 +788,6 @@ export class WebBookService {
   private collectGenericChapterLinks(html: string, baseUrl: string, bookKey: string, inCatalogBlock: boolean):
     Record<string, string>[] {
     const links: Record<string, string>[] = [];
-    const seen: string[] = [];
     const re = /<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
     let match: RegExpExecArray | null;
     while ((match = re.exec(html || '')) !== null) {
@@ -787,21 +796,74 @@ export class WebBookService {
       if (!hrefMatch || !hrefMatch[1]) continue;
       const url = BookUrlResolver.resolve(this.decodeHtmlEntities(hrefMatch[1]), baseUrl);
       const chapterKey = this.normalizeChapterLinkKey(url);
-      if (!chapterKey || seen.includes(chapterKey)) continue;
+      if (!chapterKey) continue;
       const titleMatch = attrs.match(/\stitle\s*=\s*["']([^"']+)["']/i);
       const title = this.cleanInlineText(titleMatch && titleMatch[1] ? titleMatch[1] : match[2]);
       if (!title || this.isNavigationTitle(title)) continue;
       const likelyChapter = this.isLikelyChapterTitle(title) || this.isLikelyChapterUrl(url, baseUrl, bookKey);
       if (!inCatalogBlock && !likelyChapter) continue;
-      seen.push(chapterKey);
       links.push({
         title: title,
         url: url,
-        key: chapterKey
+        key: chapterKey,
+        likely: likelyChapter ? 'true' : 'false'
       });
       if (links.length > 20000) break;
     }
     return links;
+  }
+
+  private normalizeGenericChapterLinks(links: Record<string, string>[]): Record<string, string>[] {
+    // Pages commonly render a short "latest chapters" block before the complete catalog. Keep
+    // duplicate URLs until this point so trimming the leading teaser cannot also discard the same
+    // chapters from the complete list.
+    const withoutTeaser = this.trimLeadingTeaserLinks(links);
+    const unique: Record<string, string>[] = [];
+    const seen = new Set<string>();
+    for (const link of withoutTeaser) {
+      const key = link['key'] || this.normalizeChapterLinkKey(link['url'] || '');
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      unique.push(link);
+    }
+    if (unique.length < 3) return [];
+
+    let likelyCount = 0;
+    for (const link of unique) {
+      if (link['likely'] === 'true') likelyCount++;
+    }
+    if (likelyCount < 3 && unique.length > likelyCount * 2) return [];
+    return this.normalizeGenericChapterOrder(unique);
+  }
+
+  private normalizeGenericChapterOrder(links: Record<string, string>[]): Record<string, string>[] {
+    const ordinals: number[] = [];
+    for (const link of links) {
+      const ordinal = this.extractGenericChapterOrdinal(link['title'] || '');
+      if (ordinal >= 0) ordinals.push(ordinal);
+    }
+    if (ordinals.length < 4) return links;
+    let ascending = 0;
+    let descending = 0;
+    for (let index = 1; index < ordinals.length; index++) {
+      if (ordinals[index] > ordinals[index - 1]) ascending++;
+      if (ordinals[index] < ordinals[index - 1]) descending++;
+    }
+    // Only reverse when the evidence is strong. Volume resets and numbered side stories can create
+    // occasional decreases in an otherwise ascending catalog and must not flip the whole book.
+    if (descending >= 3 && descending > ascending * 2 && ordinals[0] > ordinals[ordinals.length - 1]) {
+      return links.slice().reverse();
+    }
+    return links;
+  }
+
+  private extractGenericChapterOrdinal(title: string): number {
+    const compact = (title || '').replace(/\s+/g, '').toLowerCase();
+    const chineseStyle = compact.match(/^第(\d+)[章节節回卷]/);
+    if (chineseStyle) return parseInt(chineseStyle[1]);
+    const westernStyle = compact.match(/^(?:chapter|ch\.?)(\d+)/);
+    if (westernStyle) return parseInt(westernStyle[1]);
+    return -1;
   }
 
   private trimLeadingTeaserLinks(links: Record<string, string>[]): Record<string, string>[] {

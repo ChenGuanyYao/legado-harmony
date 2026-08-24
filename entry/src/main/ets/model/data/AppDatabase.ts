@@ -51,7 +51,7 @@ export class AppDatabase {
   private bookProgressWriteTasks: Map<string, Promise<void>> = new Map<string, Promise<void>>();
   private latestBookProgressWriteTimes: Map<string, number> = new Map<string, number>();
   private readonly DATABASE_NAME = 'legado.db';
-  private readonly SCHEMA_VERSION = 15;
+  private readonly SCHEMA_VERSION = 16;
 
   private constructor() {}
 
@@ -115,6 +115,7 @@ export class AppDatabase {
         charset TEXT,
         type INTEGER DEFAULT 0,
         groupId INTEGER DEFAULT 0,
+        isPinned INTEGER DEFAULT 0,
         latestChapterTitle TEXT,
         latestChapterTime INTEGER DEFAULT 0,
         lastCheckTime INTEGER DEFAULT 0,
@@ -354,6 +355,7 @@ export class AppDatabase {
       { table: 'books', column: 'charset', definition: "charset TEXT DEFAULT ''" },
       { table: 'books', column: 'type', definition: 'type INTEGER DEFAULT 0' },
       { table: 'books', column: 'groupId', definition: 'groupId INTEGER DEFAULT 0' },
+      { table: 'books', column: 'isPinned', definition: 'isPinned INTEGER DEFAULT 0' },
       { table: 'books', column: 'latestChapterTitle', definition: "latestChapterTitle TEXT DEFAULT ''" },
       { table: 'books', column: 'latestChapterTime', definition: 'latestChapterTime INTEGER DEFAULT 0' },
       { table: 'books', column: 'lastCheckTime', definition: 'lastCheckTime INTEGER DEFAULT 0' },
@@ -572,6 +574,7 @@ export class AppDatabase {
       charset: book.charset,
       type: book.type,
       groupId: book.group,
+      isPinned: book.isPinned ? 1 : 0,
       latestChapterTitle: book.latestChapterTitle,
       latestChapterTime: book.latestChapterTime,
       lastCheckTime: book.lastCheckTime,
@@ -618,6 +621,7 @@ export class AppDatabase {
       charset: book.charset,
       type: book.type,
       groupId: book.group,
+      isPinned: book.isPinned ? 1 : 0,
       latestChapterTitle: book.latestChapterTitle,
       latestChapterTime: book.latestChapterTime,
       lastCheckTime: book.lastCheckTime,
@@ -672,6 +676,7 @@ export class AppDatabase {
       charset: book.charset,
       type: book.type,
       groupId: book.group,
+      isPinned: book.isPinned ? 1 : 0,
       latestChapterTitle: book.latestChapterTitle,
       latestChapterTime: book.latestChapterTime,
       lastCheckTime: book.lastCheckTime,
@@ -1041,6 +1046,20 @@ export class AppDatabase {
     return books;
   }
 
+  async setBookPinned(bookUrl: string, pinned: boolean, modifiedTime: number = Date.now()): Promise<void> {
+    if (!this.store || !bookUrl) return;
+    const predicates = new relationalStore.RdbPredicates('books');
+    predicates.equalTo('bookUrl', bookUrl);
+    const affected = await this.store.update({
+      isPinned: pinned ? 1 : 0,
+      shelfModifiedTime: modifiedTime
+    }, predicates);
+    if (affected <= 0) {
+      throw new Error(`置顶书籍未命中数据库记录: ${bookUrl}`);
+    }
+    CloudSyncChangeTracker.markDataChanged();
+  }
+
   async getBookByIdentityKey(identityKey: string): Promise<Book | null> {
     if (!this.store || !identityKey) return null;
     const predicates = new relationalStore.RdbPredicates('books');
@@ -1191,6 +1210,7 @@ export class AppDatabase {
     book.charset = this.getStringColumn(resultSet, 'charset');
     book.type = this.getLongColumn(resultSet, 'type');
     book.group = this.getLongColumn(resultSet, 'groupId');
+    book.isPinned = this.getLongColumn(resultSet, 'isPinned') === 1;
     book.latestChapterTitle = this.getStringColumn(resultSet, 'latestChapterTitle');
     book.latestChapterTime = this.getLongColumn(resultSet, 'latestChapterTime');
     book.lastCheckTime = this.getLongColumn(resultSet, 'lastCheckTime');

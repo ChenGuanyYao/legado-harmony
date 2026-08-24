@@ -139,7 +139,7 @@ export class ExploreReadingValidator {
 
       if (onStage) onStage(`书籍目录 ${candidateIndex + 1}/${candidateCount}`);
       const chapters = await service.getChapterList(source, fullBook,
-        ExploreReadingValidator.CHAPTER_SAMPLE_LIMIT);
+        ExploreReadingValidator.CHAPTER_SAMPLE_LIMIT, false);
       if (this.cancelled) return this.temporary(result, '校验已取消');
       result.chapterCount = chapters.length;
       if (chapters.length === 0) {
