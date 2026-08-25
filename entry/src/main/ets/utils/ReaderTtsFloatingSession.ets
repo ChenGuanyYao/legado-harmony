@@ -390,6 +390,7 @@ export class ReaderTtsFloatingSession {
     AppStorage.setOrCreate('globalTtsOffsetStart', -1);
     AppStorage.setOrCreate('globalTtsOffsetEnd', -1);
     AppStorage.setOrCreate('globalTtsVoiceRevision', 0);
+    AppStorage.setOrCreate('globalTtsAudioCatalogReverseOrder', false);
     ReaderTtsFloatingSession.notifyChanged();
   }
 

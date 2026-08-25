@@ -349,6 +349,8 @@ struct ReadBookPage {
   @State tocSearchChapterIndexes: number[] = [];
   @State tocSearchLoading: boolean = false;
   @State tocSearchResultActive: boolean = false;
+  @State tocReverseOrder: boolean = false;
+  @State tocOrderRevision: number = 0;
   @State tocDatabaseChapterCount: number = 0;
   @State tocListViewportHeight: number = 0;
   @State tocFirstVisibleGlobalIndex: number = 0;
@@ -473,6 +475,7 @@ struct ReadBookPage {
   @StorageLink('globalTtsRevision') @Watch('onGlobalTtsRevisionChanged') globalTtsRevision: number = 0;
   @State showGlobalTtsQuickPlayer: boolean = false;
   @State showGlobalTtsCatalog: boolean = false;
+  @State globalTtsCatalogReverseOrder: boolean = false;
   private ttsFloatingSessionOwnerId: string = `reader_${Date.now()}_${Math.random()}`;
   private ttsMiniPlayerDragOriginX: number = 0;
   private ttsMiniPlayerDragOriginY: number = 0;
@@ -1473,6 +1476,7 @@ struct ReadBookPage {
     this.tocSearchChapterIndexes = [];
     this.tocSearchLoading = false;
     this.tocSearchResultActive = false;
+    this.tocOrderRevision = 0;
     this.tocDatabaseChapterCount = 0;
     this.tocFirstVisibleGlobalIndex = 0;
     this.tocVisibleItemCount = 1;
@@ -3537,10 +3541,29 @@ struct ReadBookPage {
   tocPanelSummary() {
     Column({ space: 8 }) {
       Row() {
+        Stack({ alignContent: Alignment.Center }) {
+          Column({ space: 0 }) {
+            SymbolGlyph($r('sys.symbol.chevron_up'))
+              .fontSize(11)
+              .fontColor([this.tocReverseOrder ? this.accentColor() : this.getTextColor()])
+            SymbolGlyph($r('sys.symbol.chevron_down'))
+              .fontSize(11)
+              .fontColor([this.tocReverseOrder ? this.accentColor() : this.getTextColor()])
+          }
+          .alignItems(HorizontalAlign.Center)
+        }
+          .width(34)
+          .height(34)
+          .borderRadius(17)
+          .backgroundColor(this.tocReverseOrder ?
+            (this.isReaderThemeDark() ? '#24384A' : '#E8F1FF') :
+            (this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000'))
+          .accessibilityText(this.tocReverseOrder ? '切换为正序目录' : '切换为倒序目录')
+          .onClick(() => this.toggleTocOrder())
         Text(this.isTocSearchActive() ? `找到 ${this.tocSearchChapterIndexes.length} 章` : `共 ${this.chapters.length} 章`)
           .fontSize(14)
           .fontColor(this.getSubTextColor())
-          .margin({ right: 6 })
+          .margin({ left: 6 })
         SymbolGlyph($r('sys.symbol.chevron_up'))
           .fontSize(20)
           .fontColor([this.getTextColor()])
@@ -3750,7 +3773,7 @@ struct ReadBookPage {
             })
           }
         }, (chapter: BookChapter, localIndex: number) =>
-          `${this.tocGlobalIndex(localIndex)}_${chapter.url || chapter.title}`)
+          `${this.tocOrderRevision}_${this.tocGlobalIndex(localIndex)}_${chapter.url || chapter.title}`)
       }
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
@@ -4598,7 +4621,7 @@ struct ReadBookPage {
       promptAction.showToast({ message: '暂未获取到听书目录' });
       return;
     }
-    this.globalTtsCatalogSource.replace(titles);
+    this.globalTtsCatalogSource.replace(this.globalTtsCatalogReverseOrder ? titles.slice().reverse() : titles);
     animateTo({ duration: 280, curve: Curve.Friction }, () => {
       this.showGlobalTtsCatalog = true;
     });
@@ -4606,7 +4629,7 @@ struct ReadBookPage {
       if (!this.showGlobalTtsCatalog) return;
       try {
         this.globalTtsCatalogScroller.scrollToIndex(
-          ReaderTtsFloatingSession.catalogIndex(), false, ScrollAlign.CENTER);
+          this.globalTtsCatalogDisplayIndex(ReaderTtsFloatingSession.catalogIndex()), false, ScrollAlign.CENTER);
       } catch (_) {}
     }, 0);
   }
@@ -4619,7 +4642,30 @@ struct ReadBookPage {
 
   selectGlobalTtsCatalog(index: number): void {
     this.closeGlobalTtsCatalog();
-    ReaderTtsFloatingSession.selectCatalogIndex(index);
+    ReaderTtsFloatingSession.selectCatalogIndex(this.globalTtsCatalogCanonicalIndex(index));
+  }
+
+  globalTtsCatalogCanonicalIndex(displayIndex: number): number {
+    const count = ReaderTtsFloatingSession.catalogTitles().length;
+    return this.globalTtsCatalogReverseOrder ? count - 1 - displayIndex : displayIndex;
+  }
+
+  globalTtsCatalogDisplayIndex(canonicalIndex: number): number {
+    const count = ReaderTtsFloatingSession.catalogTitles().length;
+    return this.globalTtsCatalogReverseOrder ? count - 1 - canonicalIndex : canonicalIndex;
+  }
+
+  toggleGlobalTtsCatalogOrder(): void {
+    this.globalTtsCatalogReverseOrder = !this.globalTtsCatalogReverseOrder;
+    const titles = ReaderTtsFloatingSession.catalogTitles();
+    this.globalTtsCatalogSource.replace(this.globalTtsCatalogReverseOrder ? titles.slice().reverse() : titles);
+    setTimeout(() => {
+      if (!this.showGlobalTtsCatalog) return;
+      try {
+        this.globalTtsCatalogScroller.scrollToIndex(
+          this.globalTtsCatalogDisplayIndex(ReaderTtsFloatingSession.catalogIndex()), false, ScrollAlign.CENTER);
+      } catch (_) {}
+    }, 0);
   }
 
   ttsMiniPlayerLeft(): number {
@@ -4839,6 +4885,25 @@ struct ReadBookPage {
             .fontWeight(FontWeight.Bold)
             .fontColor(this.getTextColor())
           Blank()
+          Stack({ alignContent: Alignment.Center }) {
+            Column({ space: 0 }) {
+              SymbolGlyph($r('sys.symbol.chevron_up'))
+                .fontSize(11)
+                .fontColor([this.globalTtsCatalogReverseOrder ? this.accentColor() : this.getTextColor()])
+              SymbolGlyph($r('sys.symbol.chevron_down'))
+                .fontSize(11)
+                .fontColor([this.globalTtsCatalogReverseOrder ? this.accentColor() : this.getTextColor()])
+            }
+            .alignItems(HorizontalAlign.Center)
+          }
+            .width(34)
+            .height(34)
+            .borderRadius(17)
+            .backgroundColor(this.globalTtsCatalogReverseOrder ?
+              (this.isReaderThemeDark() ? '#24384A' : '#E8F1FF') :
+              (this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000'))
+            .accessibilityText(this.globalTtsCatalogReverseOrder ? '切换为正序目录' : '切换为倒序目录')
+            .onClick(() => this.toggleGlobalTtsCatalogOrder())
           Text(`${ReaderTtsFloatingSession.catalogIndex() + 1} / ` +
             `${ReaderTtsFloatingSession.catalogTitles().length}`)
             .fontSize(12)
@@ -4856,21 +4921,21 @@ struct ReadBookPage {
           LazyForEach(this.globalTtsCatalogSource, (title: string, index: number) => {
             ListItem() {
               Row({ space: 10 }) {
-                Text(`${index + 1}`)
+                Text(`${this.globalTtsCatalogCanonicalIndex(index) + 1}`)
                   .fontSize(11)
-                  .fontColor(index === ReaderTtsFloatingSession.catalogIndex() ? '#FFFFFF' :
+                  .fontColor(this.globalTtsCatalogCanonicalIndex(index) === ReaderTtsFloatingSession.catalogIndex() ? '#FFFFFF' :
                     this.getSubTextColor())
                   .textAlign(TextAlign.Center)
                   .width(34)
                   .height(26)
                   .borderRadius(13)
-                  .backgroundColor(index === ReaderTtsFloatingSession.catalogIndex() ?
+                  .backgroundColor(this.globalTtsCatalogCanonicalIndex(index) === ReaderTtsFloatingSession.catalogIndex() ?
                     this.accentColor() : ThemeRuntime.inputColor(this.isReaderThemeDark()))
-                Text(title || `第${index + 1}章`)
+                Text(title || `第${this.globalTtsCatalogCanonicalIndex(index) + 1}章`)
                   .fontSize(15)
-                  .fontWeight(index === ReaderTtsFloatingSession.catalogIndex() ?
+                  .fontWeight(this.globalTtsCatalogCanonicalIndex(index) === ReaderTtsFloatingSession.catalogIndex() ?
                     FontWeight.Bold : FontWeight.Regular)
-                  .fontColor(index === ReaderTtsFloatingSession.catalogIndex() ?
+                  .fontColor(this.globalTtsCatalogCanonicalIndex(index) === ReaderTtsFloatingSession.catalogIndex() ?
                     this.accentColor() : this.getTextColor())
                   .maxLines(2)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -4880,7 +4945,7 @@ struct ReadBookPage {
               .constraintSize({ minHeight: 50 })
               .padding({ left: 8, right: 8, top: 7, bottom: 7 })
               .borderRadius(10)
-              .backgroundColor(index === ReaderTtsFloatingSession.catalogIndex() ?
+              .backgroundColor(this.globalTtsCatalogCanonicalIndex(index) === ReaderTtsFloatingSession.catalogIndex() ?
                 ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()) : Color.Transparent)
               .onClick(() => this.selectGlobalTtsCatalog(index))
             }
@@ -7347,7 +7412,24 @@ struct ReadBookPage {
     if (this.isTocSearchActive()) {
       return this.tocSearchChapterIndexes[localIndex] ?? 0;
     }
-    return this.tocWindowStart + localIndex;
+    const displayIndex = this.tocWindowStart + localIndex;
+    return this.tocReverseOrder ? this.chapters.length - 1 - displayIndex : displayIndex;
+  }
+
+  tocChapterAtDisplayIndex(displayIndex: number): BookChapter {
+    const canonicalIndex = this.tocReverseOrder ? this.chapters.length - 1 - displayIndex : displayIndex;
+    return this.chapters[canonicalIndex];
+  }
+
+  toggleTocOrder(): void {
+    this.tocReverseOrder = !this.tocReverseOrder;
+    this.tocOrderRevision++;
+    this.tocSearchRequestSerial++;
+    this.tocSearchQuery = '';
+    this.tocSearchChapterIndexes = [];
+    this.tocSearchLoading = false;
+    this.tocSearchResultActive = false;
+    this.scrollTocToCurrentChapter(false);
   }
 
   applyCloudTtsVoice(voice: TtsVoiceInfo, restartSpeaking: boolean): void {
@@ -7527,6 +7609,9 @@ struct ReadBookPage {
         totalCount = await db.getBookChapterCount(bookUrl);
       }
       if (requestSerial !== this.tocSearchRequestSerial || !this.tocSearchVisible) return;
+      if (this.tocReverseOrder) {
+        matches = matches.slice().reverse();
+      }
       const indexes: number[] = [];
       for (const chapter of matches) {
         indexes.push(chapter.index);
@@ -7601,8 +7686,10 @@ struct ReadBookPage {
 
   tocScrollbarThumbOffset(): number {
     const thumbLength = this.tocScrollbarThumbLength();
+    const firstVisibleIndex = this.tocReverseOrder ?
+      this.tocDatabaseChapterCount - 1 - this.tocFirstVisibleGlobalIndex : this.tocFirstVisibleGlobalIndex;
     return VirtualListScrollbar.thumbOffset(this.tocListViewportHeight, thumbLength,
-      this.tocDatabaseChapterCount, this.tocFirstVisibleGlobalIndex, this.tocVisibleItemCount);
+      this.tocDatabaseChapterCount, firstVisibleIndex, this.tocVisibleItemCount);
   }
 
   tocDisplayedScrollbarThumbOffset(): number {
@@ -7661,12 +7748,14 @@ struct ReadBookPage {
     this.tocScrollbarDragOffset = offset;
     const targetIndex = VirtualListScrollbar.firstVisibleIndex(this.tocListViewportHeight, thumbLength,
       this.tocDatabaseChapterCount, this.tocVisibleItemCount, offset);
-    this.tocFirstVisibleGlobalIndex = targetIndex;
+    const targetChapterIndex = this.tocReverseOrder ?
+      this.tocDatabaseChapterCount - 1 - targetIndex : targetIndex;
+    this.tocFirstVisibleGlobalIndex = targetChapterIndex;
     if (this.tocScrollbarDragging) {
-      this.queueTocScrollbarTarget(targetIndex, TOC_SCROLLBAR_DRAG_UPDATE_INTERVAL_MS);
+      this.queueTocScrollbarTarget(targetChapterIndex, TOC_SCROLLBAR_DRAG_UPDATE_INTERVAL_MS);
       return;
     }
-    this.queueTocScrollbarTarget(targetIndex);
+    this.queueTocScrollbarTarget(targetChapterIndex);
   }
 
   flushTocScrollbarTarget(): void {
@@ -7727,7 +7816,7 @@ struct ReadBookPage {
     let high = indexes.length - 1;
     while (low < high) {
       const mid = Math.floor((low + high) / 2);
-      if (indexes[mid] < targetIndex) low = mid + 1;
+      if (this.tocReverseOrder ? indexes[mid] > targetIndex : indexes[mid] < targetIndex) low = mid + 1;
       else high = mid;
     }
     if (low > 0 && Math.abs(indexes[low - 1] - targetIndex) <= Math.abs(indexes[low] - targetIndex)) {
@@ -7738,7 +7827,9 @@ struct ReadBookPage {
 
   scrollTocVisibleEdge(toEnd: boolean): void {
     if (!this.isTocSearchActive()) {
-      this.scrollTocToChapter(toEnd ? this.chapters.length - 1 : 0,
+      const firstChapterIndex = this.tocReverseOrder ? this.chapters.length - 1 : 0;
+      const lastChapterIndex = this.tocReverseOrder ? 0 : this.chapters.length - 1;
+      this.scrollTocToChapter(toEnd ? lastChapterIndex : firstChapterIndex,
         toEnd ? ScrollAlign.END : ScrollAlign.START);
       return;
     }
@@ -7763,7 +7854,8 @@ struct ReadBookPage {
       this.tocVisibleChapters = [];
       return 0;
     }
-    const target = Math.max(0, Math.min(index, this.chapters.length - 1));
+    const canonicalTarget = Math.max(0, Math.min(index, this.chapters.length - 1));
+    const target = this.tocReverseOrder ? this.chapters.length - 1 - canonicalTarget : canonicalTarget;
     let start = target - Math.floor(TOC_WINDOW_PAGE_SIZE / 2);
     if (align === ScrollAlign.START) {
       start = target;
@@ -7772,8 +7864,12 @@ struct ReadBookPage {
     }
     start = Math.max(0, Math.min(start, Math.max(0, this.chapters.length - TOC_WINDOW_PAGE_SIZE)));
     const end = Math.min(this.chapters.length, start + TOC_WINDOW_PAGE_SIZE);
+    const visibleChapters: BookChapter[] = [];
+    for (let displayIndex = start; displayIndex < end; displayIndex++) {
+      visibleChapters.push(this.tocChapterAtDisplayIndex(displayIndex));
+    }
     this.tocWindowStart = start;
-    this.tocVisibleChapters = this.chapters.slice(start, end);
+    this.tocVisibleChapters = visibleChapters;
     return target - start;
   }
 
@@ -7787,7 +7883,11 @@ struct ReadBookPage {
     }
     this.tocLoadingNextPage = true;
     const nextEnd = Math.min(this.chapters.length, loadedEnd + TOC_WINDOW_PAGE_SIZE);
-    this.tocVisibleChapters = this.tocVisibleChapters.concat(this.chapters.slice(loadedEnd, nextEnd));
+    const nextChapters: BookChapter[] = [];
+    for (let displayIndex = loadedEnd; displayIndex < nextEnd; displayIndex++) {
+      nextChapters.push(this.tocChapterAtDisplayIndex(displayIndex));
+    }
+    this.tocVisibleChapters = this.tocVisibleChapters.concat(nextChapters);
     setTimeout(() => {
       this.tocLoadingNextPage = false;
     }, 0);
@@ -7802,8 +7902,12 @@ struct ReadBookPage {
     const oldStart = this.tocWindowStart;
     const nextStart = Math.max(0, oldStart - TOC_WINDOW_PAGE_SIZE);
     const added = oldStart - nextStart;
+    const previousChapters: BookChapter[] = [];
+    for (let displayIndex = nextStart; displayIndex < oldStart; displayIndex++) {
+      previousChapters.push(this.tocChapterAtDisplayIndex(displayIndex));
+    }
     this.tocWindowStart = nextStart;
-    this.tocVisibleChapters = this.chapters.slice(nextStart, oldStart).concat(this.tocVisibleChapters);
+    this.tocVisibleChapters = previousChapters.concat(this.tocVisibleChapters);
     setTimeout(() => {
       try {
         this.tocScroller.scrollToIndex(added, false, ScrollAlign.START);

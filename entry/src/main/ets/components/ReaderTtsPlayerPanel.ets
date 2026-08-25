@@ -13,6 +13,7 @@ export struct ReaderTtsPlayerPanel {
   @Prop viewportHeight: number = 720;
   onClose: () => void = () => {};
   onOpenCatalog: () => void = () => {};
+  onOpenVoice: () => void = () => ReaderTtsFloatingSession.openVoice();
 
   @StorageLink('globalTtsPaused') globalTtsPaused: boolean = false;
   @StorageLink('globalTtsBookName') globalTtsBookName: string = '';
@@ -75,6 +76,10 @@ export struct ReaderTtsPlayerPanel {
           this.audioActions()
         } else if (ReaderTtsFloatingSession.ttsVoiceTitles().length > 0) {
           this.ttsVoiceSelect()
+        }
+
+        if (this.globalTtsMode !== 'audio') {
+          this.catalogAction()
         }
 
         Button(this.globalTtsMode === 'audio' ? '停止听书' : '停止朗读')
@@ -146,6 +151,8 @@ export struct ReaderTtsPlayerPanel {
             .fontSize(15)
             .lineHeight(25)
             .fontColor(this.primaryTextColor)
+            .copyOption(CopyOptions.LocalDevice)
+            .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
             .width('100%')
         }
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
@@ -447,7 +454,7 @@ export struct ReaderTtsPlayerPanel {
         .height(40)
         .backgroundColor(ThemeRuntime.inputColor(this.darkMode))
         .fontColor(this.primaryTextColor)
-        .onClick(() => ReaderTtsFloatingSession.openVoice())
+        .onClick(() => this.onOpenVoice())
       Button('目录跳转')
         .layoutWeight(1)
         .height(40)
@@ -456,6 +463,16 @@ export struct ReaderTtsPlayerPanel {
         .onClick(() => this.onOpenCatalog())
     }
     .width('100%')
+  }
+
+  @Builder
+  catalogAction() {
+    Button('目录跳转')
+      .width('100%')
+      .height(40)
+      .backgroundColor(ThemeRuntime.inputColor(this.darkMode))
+      .fontColor(this.primaryTextColor)
+      .onClick(() => this.onOpenCatalog())
   }
 
   close(): void {

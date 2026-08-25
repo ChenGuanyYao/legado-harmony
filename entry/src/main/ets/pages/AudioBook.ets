@@ -15,6 +15,7 @@ import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { ReaderTtsPlayerPanel } from '../components/ReaderTtsPlayerPanel';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
 import { BookSourceAudioWebRuntimeHost } from '../components/BookSourceAudioWebRuntimeHost';
 import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
@@ -92,6 +93,8 @@ struct AudioBookPage {
   @State speed: number = 1;
   @State statusText: string = '正在加载听书信息...';
   @State showChapterList: boolean = false;
+  @StorageLink('globalTtsAudioCatalogReverseOrder') @Watch('onChapterOrderChanged')
+  chapterReverseOrder: boolean = false;
   @State showVoiceDialog: boolean = false;
   @State voiceCodeInput: string = '';
   @State sleepMinutes: number = 0;
@@ -115,6 +118,7 @@ struct AudioBookPage {
   private sleepTimerId: number = -1;
   private playbackRetryCount: number = 0;
   private chapterDataSource: AudioChapterDataSource = new AudioChapterDataSource();
+  private chapterScroller: ListScroller = new ListScroller();
   private loadingSerial: number = 0;
   private audioBackgroundRunning: boolean = false;
   private audioBackgroundStarting: boolean = false;
@@ -184,31 +188,19 @@ struct AudioBookPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Column({ space: 14 }) {
-        this.audioPlayerHeader()
-        this.audioIntroCard()
-        this.progressSection()
-        this.audioPanelControls()
-        if (this.audioOptionsPanel === 1) {
-          this.sleepSection()
-        } else if (this.audioOptionsPanel === 2) {
-          this.speedSection()
-        }
-        this.audioPanelActions()
-        Button('停止听书')
-          .width('100%')
-          .height(42)
-          .borderRadius(12)
-          .fontColor('#FFFFFF')
-          .backgroundColor('#D94841')
-          .onClick(() => this.stopAudioPlayback())
-      }
-      .width('100%')
-      .height('100%')
-      .padding({ left: 18, right: 18, top: this.statusBarHeight + 16, bottom: this.navBarHeight + 16 })
-      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
-      .backdropBlur(ThemeRuntime.glassBlur('panel', 24))
-      .transition(this.audioPanelTransition())
+      ReaderTtsPlayerPanel({
+        darkMode: this.appDarkMode,
+        accentColor: this.accentColor(),
+        primaryTextColor: this.primaryTextColor(),
+        subTextColor: this.subTextColor(),
+        panelColor: ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'),
+        topInset: this.statusBarHeight,
+        bottomInset: this.navBarHeight,
+        viewportHeight: this.viewportHeight,
+        onClose: () => this.closePage(),
+        onOpenVoice: () => this.openVoiceDialog(),
+        onOpenCatalog: () => this.openChapterList()
+      })
 
       if (this.showChapterList) {
         this.chapterListOverlay()
@@ -299,6 +291,7 @@ struct AudioBookPage {
           .lineHeight(25)
           .fontColor(this.primaryTextColor())
           .copyOption(CopyOptions.LocalDevice)
+          .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
           .width('100%')
       }
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
@@ -649,6 +642,24 @@ struct AudioBookPage {
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
           Blank()
+          Stack({ alignContent: Alignment.Center }) {
+            Column({ space: 0 }) {
+              SymbolGlyph($r('sys.symbol.chevron_up'))
+                .fontSize(11)
+                .fontColor([this.chapterReverseOrder ? this.accentColor() : this.primaryTextColor()])
+              SymbolGlyph($r('sys.symbol.chevron_down'))
+                .fontSize(11)
+                .fontColor([this.chapterReverseOrder ? this.accentColor() : this.primaryTextColor()])
+            }
+            .alignItems(HorizontalAlign.Center)
+          }
+            .width(34)
+            .height(34)
+            .borderRadius(17)
+            .backgroundColor(this.chapterReverseOrder ?
+              ThemeRuntime.accentSurfaceColor(this.appDarkMode) : this.inputColor())
+            .accessibilityText(this.chapterReverseOrder ? '切换为正序目录' : '切换为倒序目录')
+            .onClick(() => this.toggleChapterOrder())
           Text(`${this.chapterIndex + 1} / ${this.chapters.length}`)
             .fontSize(12)
             .fontColor(this.subTextColor())
@@ -661,22 +672,25 @@ struct AudioBookPage {
             .onClick(() => this.closeChapterList())
         }
         .width('100%')
-        List({ space: 4 }) {
+        List({ scroller: this.chapterScroller, space: 4 }) {
           LazyForEach(this.chapterDataSource, (chapter: BookChapter, index: number) => {
             ListItem() {
               Row({ space: 10 }) {
-                Text(`${index + 1}`)
+                Text(`${this.chapterCanonicalIndex(index) + 1}`)
                   .fontSize(11)
-                  .fontColor(index === this.chapterIndex ? '#FFFFFF' : this.subTextColor())
+                  .fontColor(this.chapterCanonicalIndex(index) === this.chapterIndex ? '#FFFFFF' : this.subTextColor())
                   .textAlign(TextAlign.Center)
                   .width(34)
                   .height(26)
                   .borderRadius(13)
-                  .backgroundColor(index === this.chapterIndex ? this.accentColor() : this.inputColor())
-                Text(chapter.title || `第${index + 1}章`)
+                  .backgroundColor(this.chapterCanonicalIndex(index) === this.chapterIndex ?
+                    this.accentColor() : this.inputColor())
+                Text(chapter.title || `第${this.chapterCanonicalIndex(index) + 1}章`)
                   .fontSize(15)
-                  .fontWeight(index === this.chapterIndex ? FontWeight.Bold : FontWeight.Regular)
-                  .fontColor(index === this.chapterIndex ? this.accentColor() : this.primaryTextColor())
+                  .fontWeight(this.chapterCanonicalIndex(index) === this.chapterIndex ?
+                    FontWeight.Bold : FontWeight.Regular)
+                  .fontColor(this.chapterCanonicalIndex(index) === this.chapterIndex ?
+                    this.accentColor() : this.primaryTextColor())
                   .maxLines(2)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
                   .layoutWeight(1)
@@ -685,9 +699,9 @@ struct AudioBookPage {
               .constraintSize({ minHeight: 50 })
               .padding({ left: 8, right: 8, top: 7, bottom: 7 })
               .borderRadius(10)
-              .backgroundColor(index === this.chapterIndex ?
+              .backgroundColor(this.chapterCanonicalIndex(index) === this.chapterIndex ?
                 ThemeRuntime.accentSurfaceColor(this.appDarkMode) : Color.Transparent)
-              .onClick(() => this.selectChapter(index))
+              .onClick(() => this.selectChapter(this.chapterCanonicalIndex(index)))
             }
           }, (chapter: BookChapter, index: number) => `${index}_${chapter.url}`)
         }
@@ -745,7 +759,7 @@ struct AudioBookPage {
         this.book.type |= BookTypeSupport.AUDIO;
       }
       this.chapters = engine.chapters;
-      this.chapterDataSource.replace(this.chapters);
+      this.refreshChapterDataSource();
       this.chapterIndex = this.clampChapterIndex(this.book.durChapterIndex);
       await db.updateBook(this.book, false);
       if (this.chapters.length === 0) {
@@ -840,9 +854,42 @@ struct AudioBookPage {
   }
 
   openChapterList(): void {
+    this.refreshChapterDataSource();
     animateTo({ duration: 280, curve: Curve.Friction }, () => {
       this.showChapterList = true;
     });
+    this.scrollChapterListToCurrent();
+  }
+
+  chapterCanonicalIndex(displayIndex: number): number {
+    return this.chapterReverseOrder ? this.chapters.length - 1 - displayIndex : displayIndex;
+  }
+
+  refreshChapterDataSource(): void {
+    this.chapterDataSource.replace(this.chapterReverseOrder ? this.chapters.slice().reverse() : this.chapters);
+  }
+
+  onChapterOrderChanged(): void {
+    this.refreshChapterDataSource();
+    this.scrollChapterListToCurrent();
+  }
+
+  toggleChapterOrder(): void {
+    this.chapterReverseOrder = !this.chapterReverseOrder;
+  }
+
+  chapterDisplayIndex(canonicalIndex: number): number {
+    return this.chapterReverseOrder ? this.chapters.length - 1 - canonicalIndex : canonicalIndex;
+  }
+
+  scrollChapterListToCurrent(): void {
+    setTimeout(() => {
+      if (!this.showChapterList || this.chapters.length === 0) return;
+      try {
+        this.chapterScroller.scrollToIndex(
+          this.chapterDisplayIndex(this.chapterIndex), false, ScrollAlign.CENTER);
+      } catch (_) {}
+    }, 0);
   }
 
   closeChapterList(): void {

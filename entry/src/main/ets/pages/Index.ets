@@ -225,6 +225,8 @@ struct Index {
   @StorageLink('globalTtsChapterProgress') globalTtsChapterProgress: string = '';
   @State showGlobalTtsPanel: boolean = false;
   @State showGlobalTtsCatalog: boolean = false;
+  @StorageLink('globalTtsAudioCatalogReverseOrder') @Watch('onGlobalTtsCatalogOrderChanged')
+  globalTtsCatalogReverseOrder: boolean = false;
   @State globalTtsViewportWidth: number = 360;
   @State globalTtsViewportHeight: number = 720;
   @StorageLink('globalTtsCapsulePositionX') globalTtsCapsulePositionX: number = 16;
@@ -247,6 +249,14 @@ struct Index {
     this.shortcutRoutingActive = true;
     hilog.info(0x0000, 'testTag', 'StartupTrace Index onPageShow %{public}d', Date.now());
     this.syncHomeSystemBars();
+    // ReadBook is pushed over the retained Index route. Its final progress notification can arrive while the
+    // bookshelf component is covered, so the storage watcher may already have been consumed before the route is
+    // visible again. Publish a strictly monotonic refresh revision on page-show to force the retained shelf to
+    // reload the committed Book snapshot without requiring a tab switch.
+    if (this.currentIndex === 0) {
+      const previousShelfUpdate = AppStorage.get<number>('shelfUpdateTime') || 0;
+      AppStorage.setOrCreate('shelfUpdateTime', Math.max(Date.now(), previousShelfUpdate + 1));
+    }
   }
 
   onAppDarkModeChanged(): void {
@@ -366,7 +376,7 @@ struct Index {
       promptAction.showToast({ message: '暂未获取到听书目录' });
       return;
     }
-    this.globalTtsCatalogSource.replace(titles);
+    this.globalTtsCatalogSource.replace(this.globalTtsCatalogReverseOrder ? titles.slice().reverse() : titles);
     animateTo({ duration: 280, curve: Curve.Friction }, () => {
       this.showGlobalTtsCatalog = true;
     });
@@ -374,7 +384,7 @@ struct Index {
       if (!this.showGlobalTtsCatalog) return;
       try {
         this.globalTtsCatalogScroller.scrollToIndex(
-          ReaderTtsFloatingSession.catalogIndex(), false, ScrollAlign.CENTER);
+          this.globalTtsCatalogDisplayIndex(ReaderTtsFloatingSession.catalogIndex()), false, ScrollAlign.CENTER);
       } catch (_) {}
     }, 0);
   }
@@ -385,9 +395,40 @@ struct Index {
     });
   }
 
+  onGlobalTtsCatalogOrderChanged(): void {
+    const titles = ReaderTtsFloatingSession.catalogTitles();
+    if (titles.length === 0) return;
+    this.globalTtsCatalogSource.replace(this.globalTtsCatalogReverseOrder ? titles.slice().reverse() : titles);
+    this.scrollGlobalTtsCatalogToCurrent();
+  }
+
   selectGlobalTtsCatalog(index: number): void {
     this.closeGlobalTtsCatalog();
-    ReaderTtsFloatingSession.selectCatalogIndex(index);
+    ReaderTtsFloatingSession.selectCatalogIndex(this.globalTtsCatalogCanonicalIndex(index));
+  }
+
+  globalTtsCatalogCanonicalIndex(displayIndex: number): number {
+    const count = ReaderTtsFloatingSession.catalogTitles().length;
+    return this.globalTtsCatalogReverseOrder ? count - 1 - displayIndex : displayIndex;
+  }
+
+  globalTtsCatalogDisplayIndex(canonicalIndex: number): number {
+    const count = ReaderTtsFloatingSession.catalogTitles().length;
+    return this.globalTtsCatalogReverseOrder ? count - 1 - canonicalIndex : canonicalIndex;
+  }
+
+  toggleGlobalTtsCatalogOrder(): void {
+    this.globalTtsCatalogReverseOrder = !this.globalTtsCatalogReverseOrder;
+  }
+
+  scrollGlobalTtsCatalogToCurrent(): void {
+    setTimeout(() => {
+      if (!this.showGlobalTtsCatalog) return;
+      try {
+        this.globalTtsCatalogScroller.scrollToIndex(
+          this.globalTtsCatalogDisplayIndex(ReaderTtsFloatingSession.catalogIndex()), false, ScrollAlign.CENTER);
+      } catch (_) {}
+    }, 0);
   }
 
   globalTtsCapsuleTransition(): TransitionEffect {
@@ -601,6 +642,26 @@ struct Index {
             .fontWeight(FontWeight.Bold)
             .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
           Blank()
+          Stack({ alignContent: Alignment.Center }) {
+            Column({ space: 0 }) {
+              SymbolGlyph($r('sys.symbol.chevron_up'))
+                .fontSize(11)
+                .fontColor([this.globalTtsCatalogReverseOrder ? this.tabBarActiveColor() :
+                  ThemeRuntime.primaryTextColor(this.appDarkMode)])
+              SymbolGlyph($r('sys.symbol.chevron_down'))
+                .fontSize(11)
+                .fontColor([this.globalTtsCatalogReverseOrder ? this.tabBarActiveColor() :
+                  ThemeRuntime.primaryTextColor(this.appDarkMode)])
+            }
+            .alignItems(HorizontalAlign.Center)
+          }
+            .width(34)
+            .height(34)
+            .borderRadius(17)
+            .backgroundColor(this.globalTtsCatalogReverseOrder ?
+              ThemeRuntime.accentSurfaceColor(this.appDarkMode) : ThemeRuntime.inputColor(this.appDarkMode))
+            .accessibilityText(this.globalTtsCatalogReverseOrder ? '切换为正序目录' : '切换为倒序目录')
+            .onClick(() => this.toggleGlobalTtsCatalogOrder())
           Text(`${ReaderTtsFloatingSession.catalogIndex() + 1} / ` +
             `${ReaderTtsFloatingSession.catalogTitles().length}`)
             .fontSize(12)
@@ -618,21 +679,21 @@ struct Index {
           LazyForEach(this.globalTtsCatalogSource, (title: string, index: number) => {
             ListItem() {
               Row({ space: 10 }) {
-                Text(`${index + 1}`)
+                Text(`${this.globalTtsCatalogCanonicalIndex(index) + 1}`)
                   .fontSize(11)
-                  .fontColor(index === ReaderTtsFloatingSession.catalogIndex() ? '#FFFFFF' :
+                  .fontColor(this.globalTtsCatalogCanonicalIndex(index) === ReaderTtsFloatingSession.catalogIndex() ? '#FFFFFF' :
                     ThemeRuntime.subTextColor(this.appDarkMode))
                   .textAlign(TextAlign.Center)
                   .width(34)
                   .height(26)
                   .borderRadius(13)
-                  .backgroundColor(index === ReaderTtsFloatingSession.catalogIndex() ?
+                  .backgroundColor(this.globalTtsCatalogCanonicalIndex(index) === ReaderTtsFloatingSession.catalogIndex() ?
                     this.tabBarActiveColor() : ThemeRuntime.inputColor(this.appDarkMode))
-                Text(title || `第${index + 1}章`)
+                Text(title || `第${this.globalTtsCatalogCanonicalIndex(index) + 1}章`)
                   .fontSize(15)
-                  .fontWeight(index === ReaderTtsFloatingSession.catalogIndex() ?
+                  .fontWeight(this.globalTtsCatalogCanonicalIndex(index) === ReaderTtsFloatingSession.catalogIndex() ?
                     FontWeight.Bold : FontWeight.Regular)
-                  .fontColor(index === ReaderTtsFloatingSession.catalogIndex() ?
+                  .fontColor(this.globalTtsCatalogCanonicalIndex(index) === ReaderTtsFloatingSession.catalogIndex() ?
                     this.tabBarActiveColor() : ThemeRuntime.primaryTextColor(this.appDarkMode))
                   .maxLines(2)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -642,7 +703,7 @@ struct Index {
               .constraintSize({ minHeight: 50 })
               .padding({ left: 8, right: 8, top: 7, bottom: 7 })
               .borderRadius(10)
-              .backgroundColor(index === ReaderTtsFloatingSession.catalogIndex() ?
+              .backgroundColor(this.globalTtsCatalogCanonicalIndex(index) === ReaderTtsFloatingSession.catalogIndex() ?
                 ThemeRuntime.accentSurfaceColor(this.appDarkMode) : Color.Transparent)
               .onClick(() => this.selectGlobalTtsCatalog(index))
             }
@@ -1944,8 +2005,14 @@ struct BookshelfPage {
   }
 
   shelfBookRenderKey(book: Book, prefix: string): string {
+    // LazyForEach keeps an item node when its key is unchanged. Reading progress is persisted into a fresh Book
+    // snapshot while the URL/pin/cover identity remains stable, so include the progress checkpoint in the key or
+    // the retained card keeps rendering the old percentage until the whole bookshelf is recreated.
+    const progressChapterIndex = book.getVariable('readProgressChapterIndex');
+    const progressPageCount = book.getVariable('readProgressPageCount');
     return `${prefix}_${book.bookUrl}_pin_${book.isPinned ? '1' : '0'}_` +
-      `cover_${this.shelfCoverRenderVersions.get(book.bookUrl) || 0}`;
+      `read_${book.durChapterTime}_${book.durChapterIndex}_${book.durChapterPos}_` +
+      `${progressChapterIndex}_${progressPageCount}_cover_${this.shelfCoverRenderVersions.get(book.bookUrl) || 0}`;
   }
 
   closeNetworkCoverPicker(): void {
@@ -4472,6 +4539,12 @@ struct BookshelfPage {
 
     this.openingBookRouteTimer = setTimeout(() => {
       this.openingBookRouteTimer = -1;
+      // The reader serializes its final progress checkpoint before routing back, but the retained bookshelf can
+      // still be rendering the pre-reader Book objects during the close animation. Reload once after the overlay
+      // is fully dismissed so the visible cards use the committed database snapshot without requiring a tab switch.
+      this.loadBooks(true).catch((error: Error) => {
+        console.warn('关闭阅读页后刷新书架进度失败:', error);
+      });
       this.cancelShelfBookOpening();
     }, 600);
   }
