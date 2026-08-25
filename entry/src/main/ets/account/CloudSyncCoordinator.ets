@@ -1215,7 +1215,9 @@ export class CloudSyncCoordinator {
     source.contentRule = payload.contentRule || new ContentRule();
     source.variableComment = payload.variableComment || '';
     source.variable = existing?.variable || '';
-    source.lastUpdateTime = Date.now();
+    // This is local bookkeeping, not a remote content version. Refreshing it on every restore
+    // makes the reader's cache identity change even when login/variable state is unchanged.
+    source.lastUpdateTime = existing?.lastUpdateTime || 0;
     source.respondTime = Math.max(0, Math.floor(Number(payload.respondTime) || 180000));
     source.customOrder = Math.max(0, Math.floor(Number(payload.customOrder) || 0));
     source.customButton = payload.customButton === true;

@@ -506,11 +506,12 @@ export class ReadBookEngine {
       if (!this.isCurrentBookSession(generation, sessionBookUrl)) return '';
       if (!text) return text;
       this.putChapterCache(idx, text);
-      chapter.cacheDate = Date.now();
       ReaderOpenTrace.mark(sessionBookUrl, 'content-local-ready', `chapter=${idx} length=${text.length}`);
-      appDb.saveCachedChapterContent(sessionBookUrl, chapter, text).catch((err: Error) => {
+      try {
+        await appDb.saveCachedChapterContent(sessionBookUrl, chapter, text);
+      } catch (err) {
         console.error('[RE] save local chapter cache failed:', idx, err);
-      });
+      }
       return text;
     }
 
@@ -525,11 +526,12 @@ export class ReadBookEngine {
     if (!this.isCurrentBookSession(generation, sessionBookUrl)) return '';
     if (text && !this.isInvalidChapterContent(text)) {
       this.putChapterCache(idx, text);
-      chapter.cacheDate = Date.now();
       ReaderOpenTrace.mark(sessionBookUrl, 'content-network-ready', `chapter=${idx} length=${text.length}`);
-      appDb.saveCachedChapterContent(sessionBookUrl, chapter, text).catch((err: Error) => {
+      try {
+        await appDb.saveCachedChapterContent(sessionBookUrl, chapter, text);
+      } catch (err) {
         console.error('[RE] save chapter cache failed:', idx, err);
-      });
+      }
     }
     return text;
   }
@@ -611,7 +613,14 @@ export class ReadBookEngine {
     if (!latestSource) return false;
     const nextIdentity = this.buildSourceInteractionIdentity(latestSource);
     this.source = latestSource;
-    if (nextIdentity === this.sourceInteractionIdentity) return false;
+    const previousIdentity = this.sourceInteractionIdentity;
+    if (nextIdentity === previousIdentity) return false;
+    // A missing identity is a non-versioned/legacy state, not proof that durable content is
+    // invalid. Only an explicit change between two identities can invalidate chapter content.
+    if (!previousIdentity || !nextIdentity) {
+      this.sourceInteractionIdentity = nextIdentity;
+      return false;
+    }
     this.sourceInteractionIdentity = nextIdentity;
     this.chapterCache.clear();
     this.chapterLoading.clear();
@@ -637,7 +646,25 @@ export class ReadBookEngine {
     const nextIdentity = this.buildSourceInteractionIdentity(this.source);
     const storedIdentity = expectedBook.getVariable(ReadBookEngine.SOURCE_INTERACTION_IDENTITY_KEY);
     this.sourceInteractionIdentity = nextIdentity;
+
+    // Books created before the interaction identity was introduced have no marker. Backfill it
+    // without deleting their existing durable content. An empty identity also means there is no
+    // interaction state whose change can invalidate chapter content.
+    if (!storedIdentity || !nextIdentity) {
+      if (!storedIdentity && nextIdentity) {
+        expectedBook.putVariable(ReadBookEngine.SOURCE_INTERACTION_IDENTITY_KEY, nextIdentity);
+        await appDb.updateBook(expectedBook, false);
+      }
+      return;
+    }
     if (storedIdentity === nextIdentity) return;
+    // Migrate identities generated before the versioned signature without destroying content
+    // that was already cached under the same source interaction state.
+    if (!storedIdentity.startsWith('v2:')) {
+      expectedBook.putVariable(ReadBookEngine.SOURCE_INTERACTION_IDENTITY_KEY, nextIdentity);
+      await appDb.updateBook(expectedBook, false);
+      return;
+    }
     await appDb.deleteBookCachedContent(expectedBookUrl);
     if (!this.isCurrentBookSession(expectedGeneration, expectedBookUrl)) return;
     expectedBook.putVariable(ReadBookEngine.SOURCE_INTERACTION_IDENTITY_KEY, nextIdentity);
@@ -654,7 +681,7 @@ export class ReadBookEngine {
       hash ^= raw.charCodeAt(index);
       hash = Math.imul(hash, 16777619);
     }
-    return `${source.bookSourceUrl || ''}:${(hash >>> 0).toString(16)}`;
+    return `v2:${source.bookSourceUrl || ''}:${(hash >>> 0).toString(16)}`;
   }
 
   preloadAround(idx: number, forwardCount: number = 2, backwardCount: number = 1): void {

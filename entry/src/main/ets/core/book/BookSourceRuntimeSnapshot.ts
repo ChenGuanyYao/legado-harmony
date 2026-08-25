@@ -129,7 +129,9 @@ export class BookSourceRuntimeSnapshotStore {
   private static buildSignature(source: BookSource): string {
     const login = source.loginInfo || '';
     const variable = source.variable || '';
-    return `${source.lastUpdateTime || 0}:${this.textSignature(login)}:${this.textSignature(variable)}`;
+    // lastUpdateTime is bookkeeping metadata and may be refreshed by cloud restore even when
+    // the interaction state is unchanged. It must not invalidate durable chapter content.
+    return `${this.textSignature(login)}:${this.textSignature(variable)}`;
   }
 
   private static textSignature(value: string): string {
