@@ -117,6 +117,7 @@ export class AppDatabase {
         groupId INTEGER DEFAULT 0,
         isPinned INTEGER DEFAULT 0,
         latestChapterTitle TEXT,
+        updateTime TEXT DEFAULT '',
         latestChapterTime INTEGER DEFAULT 0,
         lastCheckTime INTEGER DEFAULT 0,
         lastCheckCount INTEGER DEFAULT 0,
@@ -357,6 +358,7 @@ export class AppDatabase {
       { table: 'books', column: 'groupId', definition: 'groupId INTEGER DEFAULT 0' },
       { table: 'books', column: 'isPinned', definition: 'isPinned INTEGER DEFAULT 0' },
       { table: 'books', column: 'latestChapterTitle', definition: "latestChapterTitle TEXT DEFAULT ''" },
+      { table: 'books', column: 'updateTime', definition: "updateTime TEXT DEFAULT ''" },
       { table: 'books', column: 'latestChapterTime', definition: 'latestChapterTime INTEGER DEFAULT 0' },
       { table: 'books', column: 'lastCheckTime', definition: 'lastCheckTime INTEGER DEFAULT 0' },
       { table: 'books', column: 'lastCheckCount', definition: 'lastCheckCount INTEGER DEFAULT 0' },
@@ -576,6 +578,7 @@ export class AppDatabase {
       groupId: book.group,
       isPinned: book.isPinned ? 1 : 0,
       latestChapterTitle: book.latestChapterTitle,
+      updateTime: book.updateTime,
       latestChapterTime: book.latestChapterTime,
       lastCheckTime: book.lastCheckTime,
       lastCheckCount: book.lastCheckCount,
@@ -623,6 +626,7 @@ export class AppDatabase {
       groupId: book.group,
       isPinned: book.isPinned ? 1 : 0,
       latestChapterTitle: book.latestChapterTitle,
+      updateTime: book.updateTime,
       latestChapterTime: book.latestChapterTime,
       lastCheckTime: book.lastCheckTime,
       lastCheckCount: book.lastCheckCount,
@@ -678,6 +682,7 @@ export class AppDatabase {
       groupId: book.group,
       isPinned: book.isPinned ? 1 : 0,
       latestChapterTitle: book.latestChapterTitle,
+      updateTime: book.updateTime,
       latestChapterTime: book.latestChapterTime,
       lastCheckTime: book.lastCheckTime,
       lastCheckCount: book.lastCheckCount,
@@ -1212,6 +1217,7 @@ export class AppDatabase {
     book.group = this.getLongColumn(resultSet, 'groupId');
     book.isPinned = this.getLongColumn(resultSet, 'isPinned') === 1;
     book.latestChapterTitle = this.getStringColumn(resultSet, 'latestChapterTitle');
+    book.updateTime = this.getStringColumn(resultSet, 'updateTime');
     book.latestChapterTime = this.getLongColumn(resultSet, 'latestChapterTime');
     book.lastCheckTime = this.getLongColumn(resultSet, 'lastCheckTime');
     book.lastCheckCount = this.getLongColumn(resultSet, 'lastCheckCount');

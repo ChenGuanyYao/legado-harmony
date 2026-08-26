@@ -54,7 +54,8 @@ export class BookDisplayHelper {
   }
 
   static getLastUpdateText(book: Book): string {
-    return BookDisplayHelper.extractLastUpdateText(book.kind);
+    return BookDisplayHelper.extractLastUpdateText(book.updateTime) ||
+      BookDisplayHelper.extractLastUpdateText(book.kind);
   }
 
   static getCover(book: Book): string {

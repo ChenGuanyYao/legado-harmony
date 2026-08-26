@@ -109,6 +109,7 @@ export class WebBookService {
       new RuleFieldRequest('kind', infoRule.kind || ''),
       new RuleFieldRequest('lastChapter', infoRule.lastChapter || ''),
       new RuleFieldRequest('wordCount', infoRule.wordCount || ''),
+      new RuleFieldRequest('updateTime', infoRule.updateTime || ''),
       new RuleFieldRequest('tocUrl', infoRule.tocUrl || '', true)
     ];
     fieldRequest.timeoutMs = 20000;
@@ -136,6 +137,7 @@ export class WebBookService {
     book.kind = BookFieldSanitizer.prefer(fieldValues['kind'] || '', book.kind);
     book.latestChapterTitle = BookFieldSanitizer.prefer(fieldValues['lastChapter'] || '', book.latestChapterTitle);
     book.wordCount = BookFieldSanitizer.prefer(fieldValues['wordCount'] || '', book.wordCount);
+    book.updateTime = BookFieldSanitizer.prefer(fieldValues['updateTime'] || '', book.updateTime);
 
     // A few source-defined detail scripts build the catalog data URL in the same field batch
     // that updates book metadata. Their script runtime mutates the shared Book object, while the

@@ -73,6 +73,7 @@ class BookshelfSyncPayload {
   groupName: string = '';
   isPinned: boolean = false;
   latestChapterTitle: string = '';
+  updateTime: string = '';
   latestChapterTime: number = 0;
   totalChapterNum: number = 0;
   wordCount: string = '';
@@ -472,6 +473,7 @@ export class CloudSyncCoordinator {
       shelf.groupName = groupNames[String(book.group)] || '';
       shelf.isPinned = book.isPinned;
       shelf.latestChapterTitle = book.latestChapterTitle;
+      shelf.updateTime = book.updateTime;
       shelf.latestChapterTime = book.latestChapterTime;
       shelf.totalChapterNum = book.totalChapterNum;
       shelf.wordCount = book.wordCount;
@@ -1098,6 +1100,7 @@ export class CloudSyncCoordinator {
     book.type = Math.floor(Number(payload.type) || 0);
     book.isPinned = payload.isPinned === true;
     book.latestChapterTitle = payload.latestChapterTitle || '';
+    book.updateTime = payload.updateTime || '';
     book.latestChapterTime = Math.max(0, Math.floor(Number(payload.latestChapterTime) || 0));
     book.totalChapterNum = Math.max(0, Math.floor(Number(payload.totalChapterNum) || 0));
     book.wordCount = payload.wordCount || '';

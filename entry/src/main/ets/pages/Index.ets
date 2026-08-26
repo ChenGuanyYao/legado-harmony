@@ -1706,6 +1706,7 @@ struct BookshelfPage {
     book.intro = BookFieldSanitizer.prefer(searchBook.intro, oldBook.intro);
     book.customIntro = oldBook.customIntro;
     book.latestChapterTitle = BookFieldSanitizer.prefer(searchBook.latestChapterTitle, oldBook.latestChapterTitle);
+    book.updateTime = oldBook.updateTime;
     book.wordCount = BookFieldSanitizer.prefer(searchBook.wordCount, oldBook.wordCount);
     book.variable = searchBook.variable || '';
     book.group = oldBook.group;

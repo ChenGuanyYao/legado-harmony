@@ -16,6 +16,8 @@ export class Book {
   group: number = 0;
   isPinned: boolean = false;
   latestChapterTitle: string = '';
+  /** Source-provided publication/update label from BookInfoRule.updateTime. */
+  updateTime: string = '';
   latestChapterTime: number = 0;
   lastCheckTime: number = 0;
   lastCheckCount: number = 0;

@@ -941,6 +941,7 @@ export class AppDataBackupService {
       AppDataBackupService.numberValue(raw['group'], 0), mapping);
     book.isPinned = raw['isPinned'] === true;
     book.latestChapterTitle = AppDataBackupService.stringValue(raw['latestChapterTitle']);
+    book.updateTime = AppDataBackupService.stringValue(raw['updateTime']);
     book.latestChapterTime = AppDataBackupService.numberValue(raw['latestChapterTime'], 0);
     book.lastCheckTime = AppDataBackupService.numberValue(raw['lastCheckTime'], 0);
     book.lastCheckCount = AppDataBackupService.numberValue(raw['lastCheckCount'], 0);
@@ -1196,6 +1197,7 @@ export class AppDataBackupService {
     book.group = raw.group || 0;
     book.isPinned = raw.isPinned === true;
     book.latestChapterTitle = raw.latestChapterTitle || '';
+    book.updateTime = raw.updateTime || '';
     book.latestChapterTime = raw.latestChapterTime || 0;
     book.lastCheckTime = raw.lastCheckTime || 0;
     book.lastCheckCount = raw.lastCheckCount || 0;

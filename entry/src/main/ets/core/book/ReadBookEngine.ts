@@ -372,6 +372,7 @@ export class ReadBookEngine {
     probe.pendingAddToShelf = staleBook.pendingAddToShelf;
     probe.shelfModifiedTime = staleBook.shelfModifiedTime;
     probe.latestChapterTitle = candidate.latestChapterTitle || staleBook.latestChapterTitle;
+    probe.updateTime = staleBook.updateTime;
     probe.wordCount = candidate.wordCount || staleBook.wordCount;
     probe.canUpdate = staleBook.canUpdate;
     probe.order = staleBook.order;
@@ -390,6 +391,7 @@ export class ReadBookEngine {
     target.isPinned = source.isPinned;
     target.pendingAddToShelf = source.pendingAddToShelf;
     target.shelfModifiedTime = source.shelfModifiedTime;
+    target.updateTime = source.updateTime || target.updateTime;
     target.order = source.order;
     target.originOrder = source.originOrder;
     target.durChapterIndex = source.durChapterIndex;

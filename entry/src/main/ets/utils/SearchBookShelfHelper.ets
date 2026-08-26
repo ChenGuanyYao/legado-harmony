@@ -127,6 +127,7 @@ export class SearchBookShelfHelper {
       book.coverUrl = CoverUrlNormalizer.prefer(fallbackCoverUrl, fullBook.coverUrl || book.coverUrl);
       book.intro = BookFieldSanitizer.prefer(fullBook.intro, book.intro);
       book.latestChapterTitle = BookFieldSanitizer.prefer(fullBook.latestChapterTitle, book.latestChapterTitle);
+      book.updateTime = BookFieldSanitizer.prefer(fullBook.updateTime, book.updateTime);
       book.wordCount = BookFieldSanitizer.prefer(fullBook.wordCount, book.wordCount);
       book.variable = fullBook.variable || book.variable;
     }
@@ -142,6 +143,7 @@ export class SearchBookShelfHelper {
         resolvedExisting.kind = BookFieldSanitizer.prefer(book.kind, resolvedExisting.kind);
         resolvedExisting.intro = BookFieldSanitizer.prefer(book.intro, resolvedExisting.intro);
         resolvedExisting.latestChapterTitle = BookFieldSanitizer.prefer(book.latestChapterTitle, resolvedExisting.latestChapterTitle);
+        resolvedExisting.updateTime = BookFieldSanitizer.prefer(book.updateTime, resolvedExisting.updateTime);
         resolvedExisting.wordCount = BookFieldSanitizer.prefer(book.wordCount, resolvedExisting.wordCount);
         SearchExplorePendingBook.clearPendingAddToShelf(resolvedExisting);
         await db.updateBook(resolvedExisting, true, 'search_result_explicit_add_resolved');
