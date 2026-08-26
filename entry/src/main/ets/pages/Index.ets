@@ -1182,6 +1182,7 @@ struct BookshelfPage {
   @StorageLink('bookshelfShowTypeBadge') bookshelfShowTypeBadge: boolean = true;
   @StorageLink('bookshelfLayoutMode') bookshelfLayoutMode: string = 'compact';
   @StorageLink('bookshelfLastReadLeafMode') bookshelfLastReadLeafMode: string = 'adaptive';
+  @StorageLink('bookshelfBookOpenAnimation') bookshelfBookOpenAnimation: boolean = true;
   @StorageLink('bookshelfCoverAlbums') @Watch('onShelfCoverSettingsChanged') bookshelfCoverAlbums: string = '';
   @StorageLink('bookshelfLightCoverAlbumId') @Watch('onShelfCoverSettingsChanged') bookshelfLightCoverAlbumId: string = '';
   @StorageLink('bookshelfDarkCoverAlbumId') @Watch('onShelfCoverSettingsChanged') bookshelfDarkCoverAlbumId: string = '';
@@ -1271,6 +1272,11 @@ struct BookshelfPage {
 
   onActiveShelfGroupChanged(): void {
     this.applyShelfScope();
+    // A group switch changes the visible snapshot while the shelf's LazyForEach data sources
+    // are retained.  Replacing them here (and forcing a reload) prevents a retained list/grid
+    // from continuing to render the books from the previous group, especially on the tile group
+    // page where the source is shared across group transitions.
+    this.reloadShelfDataSources(true);
     if (this.activeShelfGroupRestored) {
       BookshelfStateStore.saveActiveGroupId(getContext(this), this.activeShelfGroupId).catch((e: Error) => {
         console.warn('保存书架分组状态失败:', e);
@@ -1309,6 +1315,7 @@ struct BookshelfPage {
       this.bookshelfShowTypeBadge = settings.showTypeBadge;
       this.bookshelfLayoutMode = settings.layoutMode;
       this.bookshelfLastReadLeafMode = settings.lastReadLeafMode;
+      this.bookshelfBookOpenAnimation = settings.bookOpenAnimation;
     } catch (e) {
       console.warn('恢复书架显示设置失败:', e);
     }
@@ -4396,6 +4403,24 @@ struct BookshelfPage {
       return;
     }
     this.acknowledgeShelfBookUpdate(book);
+    ReaderOpenTrace.begin(book.bookUrl);
+    if (!this.bookshelfBookOpenAnimation) {
+      AppStorage.setOrCreate<boolean>('shelfReaderDirectTransition', true);
+      ReaderOpenTrace.mark(book.bookUrl, 'direct-open');
+      ReaderOpenTrace.mark(book.bookUrl, 'route-requested');
+      router.pushUrl({
+        url: 'pages/ReadBook',
+        params: {
+          bookUrl: book.bookUrl,
+          shelfBookOpening: 'false'
+        }
+      }).catch((error: Error) => {
+        AppStorage.setOrCreate<boolean>('shelfReaderDirectTransition', false);
+        console.error('打开阅读页失败:', error);
+        ReaderOpenTrace.cancel(book.bookUrl, 'route-failed');
+      });
+      return;
+    }
     const centerX = this.contextViewportWidth / 2;
     const centerY = this.contextViewportHeight / 2;
     this.openingBookOriginX = touchX - centerX;
@@ -4408,7 +4433,6 @@ struct BookshelfPage {
     this.openingBookCoverAngle = 0;
     this.openingBookWaiting = false;
     this.openingBook = book;
-    ReaderOpenTrace.begin(book.bookUrl);
 
     this.openingBookGrowTimer = setTimeout(() => {
       this.openingBookGrowTimer = -1;

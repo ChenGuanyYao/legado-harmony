@@ -24,6 +24,7 @@ struct BookshelfSettingsPage {
   @StorageLink('bookshelfShowTypeBadge') bookshelfShowTypeBadge: boolean = true;
   @StorageLink('bookshelfLayoutMode') bookshelfLayoutMode: string = 'compact';
   @StorageLink('bookshelfLastReadLeafMode') bookshelfLastReadLeafMode: string = 'adaptive';
+  @StorageLink('bookshelfBookOpenAnimation') bookshelfBookOpenAnimation: boolean = true;
   @StorageLink('bookshelfCoverAlbums') @Watch('onCoverAlbumsChanged') bookshelfCoverAlbums: string = '';
   @StorageLink('bookshelfLightCoverAlbumId') bookshelfLightCoverAlbumId: string = '';
   @StorageLink('bookshelfDarkCoverAlbumId') bookshelfDarkCoverAlbumId: string = '';
@@ -66,6 +67,11 @@ struct BookshelfSettingsPage {
         Column() {
           this.sectionTitle('书籍信息')
           Column() {
+          this.switchItem('书籍打开动画', '开启后点击书籍时显示封面展开动画', this.bookshelfBookOpenAnimation, (value: boolean) => {
+            this.bookshelfBookOpenAnimation = value;
+            this.onDisplaySettingChanged();
+          })
+          this.itemDivider()
           this.switchItem('类型标识', '在书名前显示“书／漫／声”，区分普通书、漫画和有声书', this.bookshelfShowTypeBadge, (value: boolean) => {
             this.bookshelfShowTypeBadge = value;
             this.onDisplaySettingChanged();
@@ -240,6 +246,7 @@ struct BookshelfSettingsPage {
       this.bookshelfShowTypeBadge = settings.showTypeBadge;
       this.bookshelfLayoutMode = settings.layoutMode;
       this.bookshelfLastReadLeafMode = settings.lastReadLeafMode;
+      this.bookshelfBookOpenAnimation = settings.bookOpenAnimation;
     } catch (e) {
       console.warn('重新加载书架显示设置失败:', e);
     }
@@ -258,6 +265,7 @@ struct BookshelfSettingsPage {
     settings.showTypeBadge = this.bookshelfShowTypeBadge;
     settings.layoutMode = this.bookshelfLayoutMode;
     settings.lastReadLeafMode = this.bookshelfLastReadLeafMode;
+    settings.bookOpenAnimation = this.bookshelfBookOpenAnimation;
     BookshelfDisplaySettingsStore.applyToStorage(settings);
     BookshelfDisplaySettingsStore.save(getContext(this), settings).catch((e: Error) => {
       console.warn('保存书架显示设置失败:', e);
