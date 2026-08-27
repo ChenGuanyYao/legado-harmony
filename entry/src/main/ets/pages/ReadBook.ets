@@ -58,6 +58,7 @@ import { BookFieldSanitizer } from '../utils/BookFieldSanitizer';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 import { SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
 import { ChangeSourceResultCache } from '../utils/ChangeSourceResultCache';
+import { SearchBookShelfHelper } from '../utils/SearchBookShelfHelper';
 import { BookDisplayHelper } from '../utils/BookDisplayHelper';
 import { BookCoverCache } from '../utils/BookCoverCache';
 import { CoverGallerySettings } from '../utils/CoverGallerySettings';
@@ -9222,7 +9223,8 @@ struct ReadBookPage {
     const filtered: SearchBook[] = [];
     const seen = new Set<string>();
     for (const result of results) {
-      if (!result.bookUrl || (result.bookUrl === currentBookUrl && result.origin === currentOrigin)) {
+      if (!result.bookUrl || SearchBookShelfHelper.isNavigationResult(result) ||
+        (result.bookUrl === currentBookUrl && result.origin === currentOrigin)) {
         continue;
       }
       const key = `${result.origin || ''}\n${result.bookUrl}`;

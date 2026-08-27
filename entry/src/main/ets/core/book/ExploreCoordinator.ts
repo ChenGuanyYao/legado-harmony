@@ -362,7 +362,11 @@ export class ExploreCoordinator {
       .replace(/^\s*@?js:\s*/i, '')
       .replace(/^<js>\s*|\s*<\/js>$/gi, '');
     const runtime = BookSourceStageWebRuntime.get();
-    if (!runtime.isAvailable()) await runtime.waitUntilAvailable(1000);
+    // The Explore tab can start loading immediately after activation, while the hidden
+    // ArkWeb host is still between controller-attached and page-end.  Treat that as a
+    // normal startup window instead of turning a transient race into a permanent empty
+    // result.  Keep this in line with the response-script path below.
+    if (!runtime.isAvailable()) await runtime.waitUntilAvailable(5000);
     if (runtime.isAvailable()) {
       const request = new StageWebRuntimeRequest();
       request.applyStageBudget(SourceRuntimeStage.EXPLORE);

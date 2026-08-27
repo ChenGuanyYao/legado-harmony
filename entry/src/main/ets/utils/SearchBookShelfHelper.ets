@@ -31,6 +31,17 @@ export class SearchBookShelfHelper {
     return BookIdentity.keyOfSearchBook(book);
   }
 
+  /**
+   * Search pages often expose pagination links outside the actual result cards. A broad
+   * bookList rule can turn one of those links into a fake candidate (for example “下一页”),
+   * which must not be offered as a book when changing source.
+   */
+  static isNavigationResult(book: SearchBook): boolean {
+    const compact = (book.name || '').replace(/\s+/g, '')
+      .replace(/[»›>→…。]+$/g, '').toLowerCase();
+    return /^(?:下一页|下一頁|下页|下頁|上一页|上一頁|上页|上頁|首页|首頁|尾页|尾頁|末页|末頁|加载更多|載入更多|next|nextpage|previous|prev|home|more)$/.test(compact);
+  }
+
   static isInShelf(book: SearchBook, shelfBookKeys: string[]): boolean {
     const key = SearchBookShelfHelper.keyOf(book);
     return !!key && shelfBookKeys.includes(key);

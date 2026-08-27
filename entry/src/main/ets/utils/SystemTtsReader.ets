@@ -1774,7 +1774,7 @@ export class SystemTtsReader {
   }
 
   private normalizeChunkForSpeech(text: string): string {
-    return this.replaceUnsafeSpeechCharacters(text || '')
+    return this.normalizeMathNotationForSpeech(this.replaceUnsafeSpeechCharacters(text || ''))
       .replace(/\r\n/g, '\n')
       .replace(/\s*\n+\s*/g, '。')
       .replace(/[ \t]{2,}/g, ' ')
@@ -1783,6 +1783,39 @@ export class SystemTtsReader {
       .replace(/^[，。！？；;,.!?]+/, '')
       .replace(/[，,]+$/, '')
       .trim();
+  }
+
+  /**
+   * Make common mathematical notation explicit for Chinese TTS. This is applied only to
+   * the text sent to the synthesizer; TtsChunk offsets still refer to the original text so
+   * reader highlighting and resume positions remain unchanged.
+   */
+  private normalizeMathNotationForSpeech(text: string): string {
+    if (!text) return '';
+    let result = text;
+    result = result.replace(/(\d+(?:[.．]\d+)?)\s*[%％]/g,
+      (_match: string, value: string): string => `百分之${value}`);
+    result = result.replace(/(\d+)\s*[.．]\s*(\d+)/g,
+      (_match: string, left: string, right: string): string => `${left}点${right}`);
+    result = result.replace(/(\d+)\s*[\/／]\s*(\d+)/g,
+      (match: string, numerator: string, denominator: string): string => {
+        // Keep zero-padded date-like forms such as 03/04 unchanged. For ordinary proper
+        // fractions (3/4), Chinese reads the denominator first: “四分之三”.
+        if ((numerator.length > 1 && numerator.charAt(0) === '0') ||
+          (denominator.length > 1 && denominator.charAt(0) === '0')) return match;
+        const numeratorValue = Number(numerator);
+        const denominatorValue = Number(denominator);
+        if (!Number.isFinite(numeratorValue) || !Number.isFinite(denominatorValue) ||
+          numeratorValue <= 0 || denominatorValue <= numeratorValue || denominatorValue > 999) {
+          return match;
+        }
+        return `${denominator}分之${numerator}`;
+      });
+    result = result.replace(/(\d+)\s*[×*]\s*(\d+)/g,
+      (_match: string, left: string, right: string): string => `${left}乘以${right}`);
+    result = result.replace(/(\d+)\s*[÷]\s*(\d+)/g,
+      (_match: string, left: string, right: string): string => `${left}除以${right}`);
+    return result;
   }
 
   /**
@@ -2478,7 +2511,7 @@ export class SystemTtsReader {
 
   private findLastCloudBreak(text: string, from: number, to: number, strong: boolean): number {
     for (let index = Math.min(text.length, to) - 1; index >= from; index--) {
-      if (this.isCloudBreak(text.charAt(index), strong)) {
+      if (this.isCloudBreak(text.charAt(index), strong) && !this.isNumericDecimalPoint(text, index)) {
         return index + 1;
       }
     }
@@ -2487,7 +2520,7 @@ export class SystemTtsReader {
 
   private findFirstCloudBreak(text: string, from: number, to: number, strong: boolean): number {
     for (let index = Math.max(0, from); index < Math.min(text.length, to); index++) {
-      if (this.isCloudBreak(text.charAt(index), strong)) {
+      if (this.isCloudBreak(text.charAt(index), strong) && !this.isNumericDecimalPoint(text, index)) {
         return index + 1;
       }
     }
@@ -2521,7 +2554,7 @@ export class SystemTtsReader {
   private findSentenceBreak(text: string, start: number, limit: number, maxLength: number): number {
     const minBreak = start + Math.min(18, Math.floor(maxLength * 0.35));
     for (let i = start; i < limit; i++) {
-      if (i >= minBreak && this.isSentenceEnd(text.charAt(i))) {
+      if (i >= minBreak && this.isSentenceEnd(text.charAt(i)) && !this.isNumericDecimalPoint(text, i)) {
         return i + 1;
       }
       if (i >= minBreak && text.charAt(i) === '\n') {
@@ -2539,6 +2572,13 @@ export class SystemTtsReader {
       value === '；' || value === '，' || value === ',' || value === ';' || value === '、' ||
       value === '!' || value === '?' ||
       value === '.';
+  }
+
+  private isNumericDecimalPoint(text: string, index: number): boolean {
+    if (index <= 0 || index >= text.length - 1 || text.charAt(index) !== '.') return false;
+    const previous = text.charCodeAt(index - 1);
+    const next = text.charCodeAt(index + 1);
+    return previous >= 48 && previous <= 57 && next >= 48 && next <= 57;
   }
 
   private isTrimChar(value: string): boolean {

@@ -51,7 +51,7 @@ export class AppDatabase {
   private bookProgressWriteTasks: Map<string, Promise<void>> = new Map<string, Promise<void>>();
   private latestBookProgressWriteTimes: Map<string, number> = new Map<string, number>();
   private readonly DATABASE_NAME = 'legado.db';
-  private readonly SCHEMA_VERSION = 16;
+  private readonly SCHEMA_VERSION = 17;
 
   private constructor() {}
 

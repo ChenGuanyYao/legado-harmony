@@ -1630,7 +1630,8 @@ struct BookshelfPage {
     const filtered: SearchBook[] = [];
     const seen = new Set<string>();
     for (const result of results) {
-      if (!result.bookUrl || (result.bookUrl === currentBookUrl && result.origin === currentOrigin)) continue;
+      if (!result.bookUrl || SearchBookShelfHelper.isNavigationResult(result) ||
+        (result.bookUrl === currentBookUrl && result.origin === currentOrigin)) continue;
       const key = `${result.origin || ''}\n${result.bookUrl}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -6607,6 +6608,10 @@ struct BookshelfPage {
   applyBookshelfLayoutMode(mode: string): void {
     const next = mode === 'loose' || mode === 'tile' ? mode : 'compact';
     this.bookshelfLayoutMode = next;
+    // The tile data source excludes the expanded recent-read book only in tile mode.
+    // Rebuild it immediately when switching layouts so a compact-mode cache entry
+    // cannot be rendered alongside the expanded tile card.
+    this.reloadShelfDataSources(true);
     this.showShelfLayoutMenu = false;
     const settings = BookshelfDisplaySettingsStore.fromStorage();
     settings.layoutMode = next;
