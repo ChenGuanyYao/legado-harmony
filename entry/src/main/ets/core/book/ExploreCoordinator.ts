@@ -20,6 +20,7 @@ import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
 import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
 import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
 import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
+import { BookSourceDebugContext } from './BookSourceDebugModels';
 
 export interface ExploreEntry {
   title: string;
@@ -94,7 +95,8 @@ export class ExploreCoordinator {
     return options;
   }
 
-  async getEntries(platform: string = '', sourceUrl: string = ''): Promise<ExploreEntry[]> {
+  async getEntries(platform: string = '', sourceUrl: string = '',
+    debugContext: BookSourceDebugContext | null = null): Promise<ExploreEntry[]> {
     this.noticeMessage = '';
     const sources = await appDb.getEnabledBookSourcesForExplore();
     const entries: ExploreEntry[] = [];
@@ -112,20 +114,21 @@ export class ExploreCoordinator {
         console.warn('[ExploreCoordinator] skip source without explore rules:', source.bookSourceName);
         continue;
       }
-      const parsed = await this.parseExploreUrl(source, platform);
+      const parsed = await this.parseExploreUrl(source, platform, debugContext);
       entries.push(...parsed);
     }
     return entries;
   }
 
-  async explore(entry: ExploreEntry, page: number = 1, maxItems: number = 0): Promise<SearchBook[]> {
+  async explore(entry: ExploreEntry, page: number = 1, maxItems: number = 0,
+    debugContext: BookSourceDebugContext | null = null): Promise<SearchBook[]> {
     this.noticeMessage = '';
     const source = await appDb.getBookSource(entry.sourceUrl);
     if (!source) return [];
     try {
       VerificationSupport.clearVerification();
       const au = new AnalyzeUrl(source, this.http);
-      const reqUrl = await this.buildUrl(source, entry.url, page);
+      const reqUrl = await this.buildUrl(source, entry.url, page, debugContext);
       if (!reqUrl || /^\s*@?js:/i.test(reqUrl) ||
         (!/^https?:\/\//i.test(reqUrl) && !/^data:/i.test(reqUrl))) {
         console.warn('[ExploreCoordinator] invalid explore request:', source.bookSourceName,
@@ -135,11 +138,11 @@ export class ExploreCoordinator {
       }
       console.info('[ExploreCoordinator] explore:', `${entry.sourceName}/${entry.title}`, reqUrl);
       let resp = EncodedSourceUrl.canHandle(reqUrl) ?
-        await this.fetchEncodedDataUrl(reqUrl, source) : await au.fetch(reqUrl);
+        await this.fetchEncodedDataUrl(reqUrl, source) : await au.fetch(reqUrl, undefined, debugContext);
       const bodyJs = au.getConfig().bodyJs || '';
       if (bodyJs) {
         const scriptedBody = await this.executeResponseBodyScript(source, bodyJs, resp.body || '',
-          resp.url || reqUrl, page);
+          resp.url || reqUrl, page, debugContext);
         if (scriptedBody) {
           resp = { ...resp, body: scriptedBody, success: true, statusCode: 200 };
         }
@@ -198,12 +201,14 @@ export class ExploreCoordinator {
       fieldRequest.fields = [
         new RuleFieldRequest('name', exploreRule.name || ''),
         new RuleFieldRequest('author', exploreRule.author || ''),
-        new RuleFieldRequest('bookUrl', exploreRule.bookUrl || '', true),
-        new RuleFieldRequest('coverUrl', exploreRule.coverUrl || ''),
+        new RuleFieldRequest('bookUrl', this.applySimpleSourceUrlConstants(exploreRule.bookUrl || '', source.jsLib || ''), true),
+        new RuleFieldRequest('coverUrl', this.applySimpleSourceUrlConstants(exploreRule.coverUrl || '', source.jsLib || '')),
         new RuleFieldRequest('intro', exploreRule.intro || ''),
         new RuleFieldRequest('kind', exploreRule.kind || ''),
+        new RuleFieldRequest('status', exploreRule.status || ''),
         new RuleFieldRequest('lastChapter', exploreRule.lastChapter || ''),
-        new RuleFieldRequest('wordCount', exploreRule.wordCount || '')
+        new RuleFieldRequest('wordCount', exploreRule.wordCount || ''),
+        new RuleFieldRequest('updateTime', exploreRule.updateTime || '')
       ];
       if (sourceBackendHost) {
         fieldRequest.contextValues['host'] = sourceBackendHost;
@@ -211,6 +216,7 @@ export class ExploreCoordinator {
       }
       for (const key in encodedVariables) fieldRequest.contextValues[key] = encodedVariables[key];
       fieldRequest.timeoutMs = 30000;
+      fieldRequest.debugContext = debugContext;
       let fieldBatch = new RuleBatchExecutionResult();
       try {
         fieldBatch = await RuleExecutionService.get().executeBatch(fieldRequest);
@@ -235,19 +241,64 @@ export class ExploreCoordinator {
         }
         const book = new SearchBook();
         const fieldValues = itemIndex < fieldBatch.values.length ? fieldBatch.values[itemIndex] : {};
+        const sourceApiRecord = this.parseExploreJsonRecord(item);
         book.name = BookFieldSanitizer.clean(fieldValues['name'] || '');
+        if (!book.name && sourceApiRecord) {
+          book.name = BookFieldSanitizer.clean(this.exploreRecordValue(sourceApiRecord,
+            ['name', 'bookName', 'book_name', 'novelName', 'novel_name', 'title']));
+        }
         book.author = BookFieldSanitizer.clean(fieldValues['author'] || '');
+        if (!book.author && sourceApiRecord) {
+          book.author = BookFieldSanitizer.clean(this.exploreRecordValue(sourceApiRecord,
+            ['author', 'authorName', 'author_name', 'writer']));
+        }
         book.coverUrl = BookSourceDataUrlSupport.normalizeCoverUrlFromItem(source,
           fieldValues['coverUrl'] || '', item, baseUrl);
         book.intro = BookFieldSanitizer.clean(fieldValues['intro'] || '');
+        if (!book.intro && sourceApiRecord) {
+          book.intro = BookFieldSanitizer.clean(this.exploreRecordValue(sourceApiRecord,
+            ['desc', 'intro', 'description', 'abstract', 'summary', 'book_desc', 'book_intro',
+              'bookDesc', 'bookIntro', 'bookAbstract', 'bookDescription', 'book_abstract',
+              'book_description', 'introduction', 'synopsis', 'remark', 'content_desc', 'brief']));
+        }
         book.kind = BookFieldSanitizer.clean(fieldValues['kind'] || '');
+        if (!book.kind && sourceApiRecord) {
+          book.kind = [
+            this.exploreRecordValue(sourceApiRecord, ['category', 'categoryName', 'category_name']),
+            this.exploreRecordValue(sourceApiRecord, ['subCategory', 'subcategory'])
+          ].map((value: string): string => value.trim()).filter((value: string): boolean => !!value).join(' ');
+        }
+        book.status = BookFieldSanitizer.clean(fieldValues['status'] || '');
+        if (!book.status && sourceApiRecord) {
+          book.status = BookFieldSanitizer.clean(this.exploreRecordValue(sourceApiRecord,
+            ['status', 'state', 'serialStatus']));
+        }
         book.latestChapterTitle = BookFieldSanitizer.clean(fieldValues['lastChapter'] || '');
+        if (!book.latestChapterTitle && sourceApiRecord) {
+          book.latestChapterTitle = BookFieldSanitizer.clean(this.exploreRecordValue(sourceApiRecord,
+            ['lastChapter', 'lastChapterName', 'latestChapterTitle', 'latestChapter', 'lastChapterTitle']));
+        }
         book.wordCount = BookFieldSanitizer.clean(fieldValues['wordCount'] || '');
+        if (!book.wordCount && sourceApiRecord) {
+          book.wordCount = BookFieldSanitizer.clean(this.exploreRecordValue(sourceApiRecord,
+            ['wordsCount', 'wordCount', 'word_count']));
+        }
+        book.updateTime = BookFieldSanitizer.clean(fieldValues['updateTime'] || '');
+        if (!book.updateTime && sourceApiRecord) {
+          book.updateTime = BookFieldSanitizer.clean(this.exploreRecordValue(sourceApiRecord,
+            ['updateTime', 'updatedAt', 'lastUpdateTime', 'lastUpdated']));
+        }
         book.bookUrl = BookUrlResolver.resolveScalar(fieldValues['bookUrl'] || '', baseUrl);
+        // Explore rules use the same Legado field grammar as search rules. Some sources (notably
+        // API-backed sources such as 企点小说) return a JSONPath/result expression from the batch
+        // evaluator on the first pass; do the same scalar/fallback repair used by search so the
+        // detail route never receives an unevaluated expression.
+        book.bookUrl = this.repairExploreBookUrl(exploreRule.bookUrl || '', ir, item, book.bookUrl, baseUrl);
         book.variable = itemIndex < fieldBatch.contextValues.length ? fieldBatch.contextValues[itemIndex] :
           ir.getContext().toPersistentJson();
         book.origin = source.bookSourceUrl;
         BookSourceMetadataSupport.applySearchBook(source, book, [book.bookUrl]);
+        this.sanitizeExploreBook(book);
 
         if (book.name && book.bookUrl && !books.some(b => b.bookUrl === book.bookUrl && b.origin === book.origin)) {
           books.push(book);
@@ -268,6 +319,145 @@ export class ExploreCoordinator {
       this.noticeMessage = message ? `发现解析异常：${message}` : '发现解析异常';
       return [];
     }
+  }
+
+  private parseExploreJsonRecord(value: string): Record<string, Object> | null {
+    let current: Object;
+    try {
+      current = JSON.parse(value || '{}') as Object;
+    } catch (_) {
+      return null;
+    }
+    // API-backed explore rules may emit each item as a quoted JSON object.
+    for (let depth = 0; depth < 2 && typeof current === 'string'; depth++) {
+      try {
+        current = JSON.parse(current as string) as Object;
+      } catch (_) {
+        return null;
+      }
+    }
+    if (!current || typeof current !== 'object' || Array.isArray(current)) return null;
+    return current as Record<string, Object>;
+  }
+
+  private exploreRecordValue(value: Object | null | undefined, keys: string[], depth: number = 0): string {
+    if (!value || typeof value !== 'object' || depth > 5) return '';
+    if (Array.isArray(value)) {
+      for (const item of value as Object[]) {
+        const found = this.exploreRecordValue(item, keys, depth + 1);
+        if (found) return found;
+      }
+      return '';
+    }
+    const record = value as Record<string, Object>;
+    const wanted = keys.map((key: string): string => key.toLowerCase());
+    for (const key of Object.keys(record)) {
+      if (!wanted.includes(key.toLowerCase())) continue;
+      const candidate = record[key];
+      if (candidate === undefined || candidate === null || typeof candidate === 'object') continue;
+      const text = String(candidate).trim();
+      if (text) return text;
+    }
+    for (const key of Object.keys(record)) {
+      const found = this.exploreRecordValue(record[key], keys, depth + 1);
+      if (found) return found;
+    }
+    return '';
+  }
+
+  private sanitizeExploreBook(book: SearchBook): void {
+    book.name = this.cleanExploreText(book.name, 120);
+    book.author = this.cleanExploreText(book.author, 120);
+    book.kind = this.cleanExploreText(book.kind, 240);
+    book.status = this.cleanExploreText(book.status, 120);
+    // Keep the route payload bounded just like search results. Long API descriptions can otherwise
+    // be dropped by router parameter serialization, which appears in the detail page as an empty intro.
+    book.intro = this.cleanExploreText(book.intro, 1200);
+    book.latestChapterTitle = this.cleanExploreText(book.latestChapterTitle, 160);
+    book.wordCount = this.cleanExploreText(book.wordCount, 80);
+    book.updateTime = this.cleanExploreText(book.updateTime, 80);
+    book.bookUrl = BookUrlResolver.scalar(book.bookUrl);
+    book.tocUrl = BookUrlResolver.scalar(book.tocUrl);
+    book.coverUrl = BookUrlResolver.scalar(book.coverUrl);
+    book.origin = BookUrlResolver.scalar(book.origin);
+    book.originName = this.cleanExploreText(book.originName, 160);
+    book.bookSourceComment = this.cleanExploreText(book.bookSourceComment, 1200);
+  }
+
+  private cleanExploreText(value: string, maxLength: number): string {
+    const cleaned = BookFieldSanitizer.clean(value || '');
+    return cleaned.length > maxLength ? cleaned.substring(0, maxLength) : cleaned;
+  }
+
+  /** Resolve URL constants declared by a source's jsLib without executing unrelated library code. */
+  private applySimpleSourceUrlConstants(url: string, jsLib: string): string {
+    if (!url.includes('{{') || !jsLib) return url;
+    const constants: Record<string, string> = {};
+    const declaration = /(?:^|[\r\n])\s*(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*(['"])(https?:\/\/[^'"\r\n]+)\2\s*;?/g;
+    let match: RegExpExecArray | null;
+    while ((match = declaration.exec(jsLib)) !== null) {
+      const name = match[1] || '';
+      const value = match[3] || '';
+      if (name && value) constants[name] = value;
+    }
+    return url.replace(/\{\{\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*\}\}/g,
+      (placeholder: string, name: string): string => constants[name] || placeholder);
+  }
+
+  private repairExploreBookUrl(rule: string, ir: AnalyzeRule, item: string,
+    currentUrl: string, baseUrl: string): string {
+    let value = BookUrlResolver.resolveScalar(currentUrl || '', baseUrl);
+    const unresolved = !value || BookFieldSanitizer.isUnresolved(value) ||
+      /["']\s*\+\s*result|result\s*\+\s*["']|@js:/i.test(value);
+    if (!unresolved) return value;
+
+    // Preserve source-defined URL composition (prefix + result, result + suffix) before trying
+    // generic JSON field fallbacks; otherwise a raw numeric book id could be mistaken for a path.
+    const composed = this.repairExploreConcatUrl(rule, ir, baseUrl);
+    if (composed) return composed;
+
+    const candidates: string[] = [
+      ir.analyzeFirst('bookUrl'), ir.analyzeFirst('url'), ir.analyzeFirst('link'),
+      ir.analyzeFirst('href'), ir.analyzeFirst('_id'), ir.analyzeFirst('id'),
+      ir.getString('a@href', true), ir.getString('[href]@href', true)
+    ];
+    for (const candidate of candidates) {
+      const repaired = BookUrlResolver.resolveScalar(candidate || '', baseUrl);
+      if (repaired && !BookFieldSanitizer.isUnresolved(repaired)) {
+        value = repaired;
+        break;
+      }
+    }
+    if (!value || BookFieldSanitizer.isUnresolved(value)) {
+      try {
+        const raw = JSON.parse(item || '{}') as Record<string, Object>;
+        for (const key of ['bookUrl', 'url', 'link', 'href', 'book_id', 'bookId', 'id', 'nid', 'enid']) {
+          const candidate = BookUrlResolver.resolveScalar(String(raw[key] || ''), baseUrl);
+          if (candidate && !BookFieldSanitizer.isUnresolved(candidate)) {
+            value = candidate;
+            break;
+          }
+        }
+      } catch (_) {
+      }
+    }
+    return BookUrlResolver.resolveScalar(value || '', baseUrl);
+  }
+
+  private repairExploreConcatUrl(rule: string, ir: AnalyzeRule, baseUrl: string): string {
+    const jsIndex = String(rule || '').indexOf('@js:');
+    if (jsIndex < 0) return '';
+    const baseExpr = String(rule || '').substring(0, jsIndex).trim();
+    const jsExpr = String(rule || '').substring(jsIndex + 4).trim();
+    const baseValue = ir.analyzeFirst(baseExpr, false);
+    if (!baseValue) return '';
+    const prefixMatch = jsExpr.match(/^["']([\s\S]*?)["']\s*\+\s*result(?:\s*\+\s*["']([\s\S]*?)["'])?$/);
+    const suffixMatch = jsExpr.match(/^result\s*\+\s*["']([\s\S]*?)["']$/);
+    const headMatch = jsExpr.match(/^["']([\s\S]*?)["']\s*\+\s*result$/);
+    if (prefixMatch) return BookUrlResolver.resolve(prefixMatch[1] + baseValue + (prefixMatch[2] || ''), baseUrl);
+    if (suffixMatch) return BookUrlResolver.resolve(baseValue + suffixMatch[1], baseUrl);
+    if (headMatch) return BookUrlResolver.resolve(headMatch[1] + baseValue, baseUrl);
+    return '';
   }
 
   getDiscoveredPlatforms(sourceUrl: string): string[] {
@@ -293,14 +483,15 @@ export class ExploreCoordinator {
     return await this.executeExploreSelector(source, selector, selection);
   }
 
-  private async parseExploreUrl(source: BookSource, platform: string = ''): Promise<ExploreEntry[]> {
+  private async parseExploreUrl(source: BookSource, platform: string = '',
+    debugContext: BookSourceDebugContext | null = null): Promise<ExploreEntry[]> {
     const entries: ExploreEntry[] = [];
     const raw = source.exploreUrl.trim();
     if (!raw) return entries;
 
     if (raw.startsWith('@js:') || raw.startsWith('js:') || /^<js>[\s\S]*<\/js>$/i.test(raw)) {
       await this.applyExplorePlatform(source, platform);
-      const scriptItems = await this.evaluateExploreScript(raw, source);
+      const scriptItems = await this.evaluateExploreScript(raw, source, debugContext);
       if (scriptItems.length > 0) {
         this.captureExploreSelectors(source, scriptItems);
         this.appendExploreItems(entries, scriptItems, source);
@@ -357,7 +548,8 @@ export class ExploreCoordinator {
     return source.searchRule as ExploreRule;
   }
 
-  private async evaluateExploreScript(raw: string, source: BookSource): Promise<ExploreUrlItem[]> {
+  private async evaluateExploreScript(raw: string, source: BookSource,
+    debugContext: BookSourceDebugContext | null = null): Promise<ExploreUrlItem[]> {
     const code = raw.trim()
       .replace(/^\s*@?js:\s*/i, '')
       .replace(/^<js>\s*|\s*<\/js>$/gi, '');
@@ -374,6 +566,7 @@ export class ExploreCoordinator {
       request.code = code;
       request.baseUrl = source.bookSourceUrl;
       request.variables = { page: '1', pageIndex: '1' };
+      request.debugContext = debugContext;
       try {
         const runtimeResult = await runtime.execute(request);
         if (runtimeResult.toastMessage) this.noticeMessage = runtimeResult.toastMessage.trim();
@@ -688,7 +881,8 @@ export class ExploreCoordinator {
       value.includes('book_shelf') || value.includes('/user/') || value.includes('/login');
   }
 
-  private async buildUrl(source: BookSource, url: string, page: number): Promise<string> {
+  private async buildUrl(source: BookSource, url: string, page: number,
+    debugContext: BookSourceDebugContext | null = null): Promise<string> {
     url = this.applyLegacyPageAlternative(url, page);
     const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.URL,
       `${source.jsLib || ''}\n${url || ''}`);
@@ -702,6 +896,7 @@ export class ExploreCoordinator {
       request.source = source;
       request.baseUrl = source.bookSourceUrl;
       request.variables = { page: String(page), pageIndex: String(page) };
+      request.debugContext = debugContext;
       if (isFullJsUrl) {
         request.code = (url || '').trim()
           .replace(/^@?js:\s*/i, '')
@@ -757,7 +952,7 @@ export class ExploreCoordinator {
   }
 
   private async executeResponseBodyScript(source: BookSource, code: string, body: string,
-    baseUrl: string, page: number): Promise<string> {
+    baseUrl: string, page: number, debugContext: BookSourceDebugContext | null = null): Promise<string> {
     const runtime = BookSourceStageWebRuntime.get();
     if (!runtime.isAvailable()) await runtime.waitUntilAvailable(5000);
     if (!runtime.isAvailable()) {
@@ -771,6 +966,7 @@ export class ExploreCoordinator {
     request.content = body || '';
     request.baseUrl = baseUrl || source.bookSourceUrl;
     request.variables = { page: String(page), pageIndex: String(page) };
+    request.debugContext = debugContext;
     try {
       const result = await runtime.execute(request);
       return result.value || '';

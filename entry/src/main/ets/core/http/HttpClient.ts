@@ -3,6 +3,7 @@ import { util } from '@kit.ArkTS';
 import { CookieStore } from './CookieStore';
 import { TlsTrustStore } from './TlsTrustStore';
 import { WebBookFetchRuntime } from '../book/WebBookFetchRuntime';
+import { BookSourceDebugContext, BookSourceDebugNetworkTrace } from '../book/BookSourceDebugModels';
 
 export interface HttpRequest {
   url: string;
@@ -18,6 +19,7 @@ export interface HttpRequest {
   maxResponseBytes?: number;
   useWebView?: boolean;
   webJs?: string;
+  debugContext?: BookSourceDebugContext;
 }
 
 export interface HttpResponse {
@@ -53,6 +55,30 @@ export class HttpClient {
   }
 
   async execute(req: HttpRequest): Promise<HttpResponse> {
+    const startedAt = Date.now();
+    let response: HttpResponse;
+    try {
+      response = await this.executeInternal(req);
+    } catch (error) {
+      response = { url: req.url || '', statusCode: 0, headers: {}, body: '', success: false,
+        error: error instanceof Error ? error.message : String(error || 'network error') };
+    }
+    if (req.debugContext) {
+      const trace = new BookSourceDebugNetworkTrace();
+      trace.method = req.method || 'GET';
+      trace.url = req.url || '';
+      trace.finalUrl = response.url || req.url || '';
+      trace.statusCode = response.statusCode || 0;
+      trace.responseBytes = response.body ? response.body.length : 0;
+      trace.bodyPreview = response.body || '';
+      trace.elapsedMs = Math.max(0, Date.now() - startedAt);
+      trace.error = response.success ? '' : (response.error || 'request failed');
+      req.debugContext.addNetwork(trace);
+    }
+    return response;
+  }
+
+  private async executeInternal(req: HttpRequest): Promise<HttpResponse> {
     if (!req.url || req.url.trim() === '') {
       return { url: '', statusCode: 0, headers: {}, body: '', success: false, error: 'empty url' };
     }

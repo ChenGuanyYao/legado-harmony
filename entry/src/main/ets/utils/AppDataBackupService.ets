@@ -837,6 +837,7 @@ export class AppDataBackupService {
     rule.lastChapter = AppDataBackupService.ruleString(raw, 'lastChapter', 'lastchapter');
     rule.bookUrl = AppDataBackupService.ruleString(raw, 'bookUrl', 'bookurl');
     rule.wordCount = AppDataBackupService.ruleString(raw, 'wordCount', 'wordcount');
+    rule.updateTime = AppDataBackupService.ruleString(raw, 'updateTime', 'updatetime');
     return rule;
   }
 
@@ -854,6 +855,7 @@ export class AppDataBackupService {
     rule.lastChapter = AppDataBackupService.ruleString(raw, 'lastChapter', 'lastchapter');
     rule.bookUrl = AppDataBackupService.ruleString(raw, 'bookUrl', 'bookurl');
     rule.wordCount = AppDataBackupService.ruleString(raw, 'wordCount', 'wordcount');
+    rule.updateTime = AppDataBackupService.ruleString(raw, 'updateTime', 'updatetime');
     return rule;
   }
 
@@ -871,6 +873,7 @@ export class AppDataBackupService {
     rule.lastChapter = AppDataBackupService.ruleString(raw, 'lastChapter', 'lastchapter');
     rule.bookUrl = AppDataBackupService.ruleString(raw, 'bookUrl', 'bookurl');
     rule.wordCount = AppDataBackupService.ruleString(raw, 'wordCount', 'wordcount');
+    rule.updateTime = AppDataBackupService.ruleString(raw, 'updateTime', 'updatetime');
     return rule;
   }
 
@@ -884,6 +887,7 @@ export class AppDataBackupService {
     rule.coverUrl = AppDataBackupService.ruleString(raw, 'coverUrl');
     rule.intro = AppDataBackupService.ruleString(raw, 'intro', 'desc');
     rule.kind = AppDataBackupService.ruleString(raw, 'kind');
+    rule.status = AppDataBackupService.ruleString(raw, 'status');
     rule.lastChapter = AppDataBackupService.ruleString(raw, 'lastChapter', 'lastchapter');
     rule.wordCount = AppDataBackupService.ruleString(raw, 'wordCount', 'wordcount');
     rule.updateTime = AppDataBackupService.ruleString(raw, 'updateTime', 'updatetime');
@@ -930,6 +934,7 @@ export class AppDataBackupService {
     book.name = AppDataBackupService.limitedStringValue(raw['name'], 1024);
     book.author = AppDataBackupService.limitedStringValue(raw['author'], 1024);
     book.kind = AppDataBackupService.limitedStringValue(raw['kind'], 4096);
+    book.status = AppDataBackupService.limitedStringValue(raw['status'], 4096);
     book.customTag = AppDataBackupService.limitedStringValue(raw['customTag'], 4096);
     book.coverUrl = AppDataBackupService.limitedStringValue(raw['coverUrl'], 16384);
     book.customCoverUrl = AppDataBackupService.limitedStringValue(raw['customCoverUrl'], 16384);
@@ -1187,6 +1192,7 @@ export class AppDataBackupService {
     book.name = raw.name || '';
     book.author = raw.author || '';
     book.kind = raw.kind || '';
+    book.status = raw.status || '';
     book.customTag = raw.customTag || '';
     book.coverUrl = AppDataBackupService.replaceRoot(raw.coverUrl || '', oldRoot, newRoot);
     book.customCoverUrl = AppDataBackupService.replaceRoot(raw.customCoverUrl || '', oldRoot, newRoot);

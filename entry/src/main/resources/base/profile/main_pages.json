@@ -8,6 +8,7 @@
     "pages/SearchResultGroup",
     "pages/BookSource",
     "pages/BookSourceEdit",
+    "pages/BookSourceDebug",
     "pages/Settings",
     "pages/CustomFontManager",
     "pages/TtsSettings",

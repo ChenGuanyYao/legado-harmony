@@ -1502,9 +1502,11 @@ struct BookshelfPage {
         name: book.name,
         author: book.author,
         kind: book.kind,
+        status: book.status,
         coverUrl: book.customCoverUrl || book.coverUrl,
         intro: book.customIntro || book.intro,
         latestChapterTitle: book.latestChapterTitle,
+        updateTime: book.updateTime,
         wordCount: book.wordCount,
         type: `${book.type}`,
         variable: book.variable,
@@ -1702,12 +1704,13 @@ struct BookshelfPage {
     book.name = searchBook.name || oldBook.name;
     book.author = searchBook.author || oldBook.author;
     book.kind = BookFieldSanitizer.prefer(searchBook.kind, oldBook.kind);
+    book.status = BookFieldSanitizer.prefer(searchBook.status, oldBook.status);
     book.coverUrl = CoverUrlNormalizer.prefer(searchBook.coverUrl, oldBook.coverUrl);
     book.customCoverUrl = oldBook.customCoverUrl;
     book.intro = BookFieldSanitizer.prefer(searchBook.intro, oldBook.intro);
     book.customIntro = oldBook.customIntro;
     book.latestChapterTitle = BookFieldSanitizer.prefer(searchBook.latestChapterTitle, oldBook.latestChapterTitle);
-    book.updateTime = oldBook.updateTime;
+    book.updateTime = BookFieldSanitizer.prefer(searchBook.updateTime, oldBook.updateTime);
     book.wordCount = BookFieldSanitizer.prefer(searchBook.wordCount, oldBook.wordCount);
     book.variable = searchBook.variable || '';
     book.group = oldBook.group;
@@ -7425,6 +7428,11 @@ struct ExplorePage {
     this.verificationTitle = '';
     try {
       const entry = activeEntries[Math.min(this.selectedIndex, activeEntries.length - 1)];
+      if (forceRefresh) {
+        // A manual refresh must not leave a failed request able to resurrect stale discovery
+        // results on the next normal load. Clear the source cache before requesting new data.
+        await ExploreResultCache.clearSource(getContext(this), entry.sourceUrl);
+      }
       if (!forceRefresh) {
         try {
           const cached: ExploreCacheHit | null = await ExploreResultCache.load(
@@ -7905,9 +7913,11 @@ struct ExplorePage {
         name: book.name,
         author: book.author,
         kind: book.kind,
+        status: book.status,
         coverUrl: book.coverUrl,
         intro: book.intro,
         latestChapterTitle: book.latestChapterTitle,
+        updateTime: book.updateTime,
         wordCount: book.wordCount,
         type: String(book.type || 0),
         variable: book.variable || '',
@@ -8553,9 +8563,11 @@ struct ExplorePage {
     detail.name = task.book.name;
     detail.author = task.book.author;
     detail.kind = task.book.kind;
+    detail.status = task.book.status;
     detail.coverUrl = task.book.coverUrl;
     detail.intro = task.book.intro;
     detail.latestChapterTitle = task.book.latestChapterTitle;
+    detail.updateTime = task.book.updateTime;
     detail.wordCount = task.book.wordCount;
     detail.type = task.book.type;
     detail.variable = task.book.variable;
@@ -8573,6 +8585,14 @@ struct ExplorePage {
     if (!current.coverUrl && enriched.coverUrl) {
       current.coverUrl = CoverUrlNormalizer.normalize(enriched.coverUrl);
       changed = !!current.coverUrl || changed;
+    }
+    if (!current.status && enriched.status) {
+      current.status = BookFieldSanitizer.clean(enriched.status);
+      changed = !!current.status || changed;
+    }
+    if (!current.updateTime && enriched.updateTime) {
+      current.updateTime = BookFieldSanitizer.clean(enriched.updateTime);
+      changed = !!current.updateTime || changed;
     }
     if (changed) this.books = this.books.slice();
     if ((!needsAuthor || !!current.author) && (!needsCover || !!current.coverUrl)) {
@@ -10334,9 +10354,11 @@ struct SearchPage {
         name: book.name,
         author: book.author,
         kind: book.kind,
+        status: book.status,
         coverUrl: book.coverUrl,
         intro: book.intro,
         latestChapterTitle: book.latestChapterTitle,
+        updateTime: book.updateTime,
         wordCount: book.wordCount,
         type: String(book.type || 0),
         variable: book.variable || '',

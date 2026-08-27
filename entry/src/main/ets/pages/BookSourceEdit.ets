@@ -183,6 +183,16 @@ struct BookSourceEditPage {
             .onClick(() => {
               this.saveSource();
             })
+
+          Text('调试')
+            .fontSize(16)
+            .fontColor(this.accentColor())
+            .width(60)
+            .height(56)
+            .textAlign(TextAlign.Center)
+            .onClick(() => {
+              this.openDebugDraft();
+            })
         }
         .width('100%')
         .height(56 + this.statusBarHeight)
@@ -326,6 +336,16 @@ struct BookSourceEditPage {
     .width('100%')
     .height('100%')
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  openDebugDraft(): void {
+    if (!this.source.bookSourceUrl) {
+      promptAction.showToast({ message: '请先填写书源地址' });
+      return;
+    }
+    this.synchronizeRawSourceJson();
+    AppStorage.setOrCreate('bookSourceDebugDraftJson', JSON.stringify(this.source));
+    router.pushUrl({ url: 'pages/BookSourceDebug', params: { bookSourceUrl: this.source.bookSourceUrl } });
   }
 
   onBackPress(): boolean {
@@ -835,6 +855,10 @@ struct BookSourceEditPage {
         this.source.searchRule.status = value;
       })
 
+      this.inputItemBuilder('更新时间', this.source.searchRule.updateTime || '', (value: string) => {
+        this.source.searchRule.updateTime = value;
+      })
+
       this.inputItemBuilder('最新章节', this.source.searchRule.lastChapter, (value: string) => {
         this.source.searchRule.lastChapter = value;
       })
@@ -886,6 +910,10 @@ struct BookSourceEditPage {
         this.source.exploreRule.status = value;
       })
 
+      this.inputItemBuilder('更新时间', this.source.exploreRule.updateTime || '', (value: string) => {
+        this.source.exploreRule.updateTime = value;
+      })
+
       this.inputItemBuilder('最新章节', this.source.exploreRule.lastChapter, (value: string) => {
         this.source.exploreRule.lastChapter = value;
       })
@@ -931,6 +959,10 @@ struct BookSourceEditPage {
 
       this.inputItemBuilder('分类', this.source.bookInfoRule.kind, (value: string) => {
         this.source.bookInfoRule.kind = value;
+      })
+
+      this.inputItemBuilder('状态', this.source.bookInfoRule.status || '', (value: string) => {
+        this.source.bookInfoRule.status = value;
       })
 
       this.inputItemBuilder('最新章节', this.source.bookInfoRule.lastChapter, (value: string) => {

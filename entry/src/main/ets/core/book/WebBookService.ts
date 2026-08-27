@@ -25,6 +25,7 @@ import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
 import { BookSourceAudioWebRuntime } from './BookSourceAudioWebRuntime';
 import { BookSourceMetadataSupport } from './BookSourceMetadataSupport';
 import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
+import { BookSourceDebugContext } from './BookSourceDebugModels';
 
 class ContentPageData {
   content: string = '';
@@ -51,7 +52,8 @@ export class WebBookService {
     return shouldCancel ? shouldCancel() : false;
   }
 
-  async getBookInfo(source: BookSource, book: Book): Promise<Book> {
+  async getBookInfo(source: BookSource, book: Book,
+    debugContext: BookSourceDebugContext | null = null): Promise<Book> {
     // Imported rules may build the virtual detail URL while the field batch is still executing.
     // Preserve its request data and bridge the SearchBook identity that is already known.
     book.bookUrl = EncodedSourceUrl.repairBookName(book.bookUrl, book.name, 'details');
@@ -62,7 +64,7 @@ export class WebBookService {
     console.log('[WS] getBookInfo, URL:', book.bookUrl);
     const au = new AnalyzeUrl(source, this.http);
     const resp = EncodedSourceUrl.canHandle(book.bookUrl) ?
-      await this.fetchEncodedDataUrl(book.bookUrl, source) : await au.fetch(book.bookUrl);
+      await this.fetchEncodedDataUrl(book.bookUrl, source) : await au.fetch(book.bookUrl, undefined, debugContext);
     console.log('[WS] getBookInfo resp:', resp.success, 'len:', resp.body.length);
     if (this.requestVerificationIfNeeded(source, book.bookUrl, resp.body, resp.statusCode, source.bookInfoRule.init)) {
       return book;
@@ -82,7 +84,7 @@ export class WebBookService {
       // requesting the real detail endpoint, so preserve that virtual URL for the script.
       const stageBaseUrl = EncodedSourceUrl.decode(book.bookUrl) ? book.bookUrl : baseUrl;
       let initResult = await this.runStageRule(source, book, infoRule.init, content, stageBaseUrl,
-        SourceRuntimeStage.BOOK_INFO);
+        SourceRuntimeStage.BOOK_INFO, null, {}, debugContext);
       if (!initResult && !this.stageRuleCode(infoRule.init)) {
         const ir = new AnalyzeRule(content, baseUrl, ctx);
         this.seedSourceVariables(ctx, source);
@@ -107,12 +109,14 @@ export class WebBookService {
       new RuleFieldRequest('coverUrl', infoRule.coverUrl || ''),
       new RuleFieldRequest('intro', infoRule.intro || ''),
       new RuleFieldRequest('kind', infoRule.kind || ''),
+      new RuleFieldRequest('status', infoRule.status || ''),
       new RuleFieldRequest('lastChapter', infoRule.lastChapter || ''),
       new RuleFieldRequest('wordCount', infoRule.wordCount || ''),
       new RuleFieldRequest('updateTime', infoRule.updateTime || ''),
       new RuleFieldRequest('tocUrl', infoRule.tocUrl || '', true)
     ];
     fieldRequest.timeoutMs = 20000;
+    fieldRequest.debugContext = debugContext;
     let fieldValues: Record<string, string> = {};
     try {
       const batch = await RuleExecutionService.get().executeBatch(fieldRequest);
@@ -132,9 +136,11 @@ export class WebBookService {
     book.intro = BookFieldSanitizer.prefer(fieldValues['intro'] || '', book.intro);
     if (!book.intro) {
       book.intro = BookFieldSanitizer.clean(this.detailFallbackText(content,
-        ['desc', 'intro', 'description', 'abstract', 'summary']));
+        ['desc', 'intro', 'description', 'abstract', 'summary', 'book_desc', 'book_intro',
+          'book_abstract', 'book_description', 'content_desc', 'brief']));
     }
     book.kind = BookFieldSanitizer.prefer(fieldValues['kind'] || '', book.kind);
+    book.status = BookFieldSanitizer.prefer(fieldValues['status'] || '', book.status);
     book.latestChapterTitle = BookFieldSanitizer.prefer(fieldValues['lastChapter'] || '', book.latestChapterTitle);
     book.wordCount = BookFieldSanitizer.prefer(fieldValues['wordCount'] || '', book.wordCount);
     book.updateTime = BookFieldSanitizer.prefer(fieldValues['updateTime'] || '', book.updateTime);
@@ -175,13 +181,37 @@ export class WebBookService {
           parsed[0] as Record<string, Object> : null) :
         (parsed && typeof parsed === 'object' ? parsed as Record<string, Object> : null);
       if (!record) return '';
-      for (const key of keys) {
-        const field = record[key];
-        if (field !== undefined && field !== null && typeof field !== 'object') {
-          const text = String(field).trim();
-          if (text) return text;
+      const wanted = keys.map((key: string): string => key.toLowerCase());
+      const find = (node: Object, depth: number): string => {
+        if (!node || depth > 5) return '';
+        if (Array.isArray(node)) {
+          for (const item of node as Object[]) {
+            const found = item && typeof item === 'object' ? find(item, depth + 1) : '';
+            if (found) return found;
+          }
+          return '';
         }
-      }
+        const current = node as Record<string, Object>;
+        // API-backed sources commonly nest metadata under data/book/result. Search the requested
+        // keys at every object level instead of assuming the first JSON object is the detail record.
+        for (const key of Object.keys(current)) {
+          if (!wanted.includes(key.toLowerCase())) continue;
+          const field = current[key];
+          if (field !== undefined && field !== null && typeof field !== 'object') {
+            const text = String(field).trim();
+            if (text) return text;
+          }
+        }
+        for (const key of Object.keys(current)) {
+          const field = current[key];
+          if (field && typeof field === 'object') {
+            const found = find(field, depth + 1);
+            if (found) return found;
+          }
+        }
+        return '';
+      };
+      return find(record, 0);
     } catch (_) {
     }
     return '';
@@ -236,7 +266,8 @@ export class WebBookService {
   }
 
   async getChapterList(source: BookSource, book: Book, maxChapters: number = 0,
-    allowGenericFallback: boolean = true): Promise<BookChapter[]> {
+    allowGenericFallback: boolean = true,
+    debugContext: BookSourceDebugContext | null = null): Promise<BookChapter[]> {
     AppStorage.setOrCreate('bookSourceStageLastError', '');
     BookSourceMetadataSupport.applyBook(source, book, [book.bookUrl, book.tocUrl]);
     const chapterLimit = maxChapters > 0 ? Math.max(1, Math.round(maxChapters)) : 0;
@@ -248,7 +279,7 @@ export class WebBookService {
     const tocUrl = this.resolveTocUrl(source, book);
     const au = new AnalyzeUrl(source, this.http);
     let resp = EncodedSourceUrl.canHandle(tocUrl) ?
-      await this.fetchEncodedDataUrl(tocUrl, source) : await au.fetch(tocUrl);
+      await this.fetchEncodedDataUrl(tocUrl, source) : await au.fetch(tocUrl, undefined, debugContext);
     if (!resp.success || !resp.body) return [];
     const ctx = new RuleContext();
     ctx.loadFromJson(book.variable);
@@ -280,9 +311,11 @@ export class WebBookService {
         const runtimeInput = this.stageDataUrlInput(tocRule.chapterList, currentUrl, currentResp.body);
         const stageBaseUrl = EncodedSourceUrl.decode(currentUrl) ? currentUrl : baseUrl;
         const runtimeList = await this.runStageRule(source, book, tocRule.chapterList,
-          runtimeInput, stageBaseUrl, SourceRuntimeStage.TOC, null, EncodedSourceUrl.scalarVariables(currentUrl));
+          runtimeInput, stageBaseUrl, SourceRuntimeStage.TOC, null,
+          EncodedSourceUrl.scalarVariables(currentUrl), debugContext);
         if (runtimeList) {
-          const runtimeChapters = await this.parseStageChapterList(source, book, runtimeList, baseUrl, chapterLimit);
+            const runtimeChapters = await this.parseStageChapterList(source, book, runtimeList, baseUrl,
+              chapterLimit, debugContext);
           if (runtimeChapters.length > 0) {
             return runtimeChapters;
           }
@@ -296,7 +329,7 @@ export class WebBookService {
       const remainingLimit = chapterLimit > 0 ? Math.max(0, chapterLimit - chapters.length) : 0;
       if (chapterLimit > 0 && remainingLimit === 0) break;
       const pageChapters = await this.parseChapterPage(source, book, currentResp.body, baseUrl, ctx,
-        chapters.length, remainingLimit);
+        chapters.length, remainingLimit, debugContext);
       for (const chapter of pageChapters) {
         const chapterKey = this.urlWithoutFragment(chapter.url);
         if (seenChapterUrls.has(chapterKey)) continue;
@@ -308,12 +341,12 @@ export class WebBookService {
       if (chapterLimit > 0 && chapters.length >= chapterLimit) break;
       if (!tocRule.nextTocUrl) break;
       const nextUrl = await this.executeSingleRuleField(source, book, null, tocRule.nextTocUrl,
-        currentResp.body, baseUrl, SourceRuntimeStage.TOC, ctx, true);
+        currentResp.body, baseUrl, SourceRuntimeStage.TOC, ctx, true, debugContext);
       const nextKey = this.urlWithoutFragment(nextUrl);
       if (!nextUrl || seenPageUrls.has(nextKey)) break;
       currentUrl = nextUrl;
       currentResp = EncodedSourceUrl.canHandle(currentUrl) ?
-        await this.fetchEncodedDataUrl(currentUrl, source) : await au.fetch(currentUrl);
+        await this.fetchEncodedDataUrl(currentUrl, source) : await au.fetch(currentUrl, undefined, debugContext);
     }
 
     book.variable = ctx.toPersistentJson();
@@ -349,7 +382,8 @@ export class WebBookService {
   }
 
   private async parseChapterPage(source: BookSource, book: Book, body: string, baseUrl: string,
-    ctx: RuleContext, startIndex: number, maxItems: number = 0): Promise<BookChapter[]> {
+    ctx: RuleContext, startIndex: number, maxItems: number = 0,
+    debugContext: BookSourceDebugContext | null = null): Promise<BookChapter[]> {
     const tocRule = source.tocRule;
     // A complete list script has already been attempted through ArkWeb by getChapterList. Never
     // retry it synchronously when it returned no usable chapters.
@@ -380,6 +414,7 @@ export class WebBookService {
       new RuleFieldRequest('updateTime', tocRule.updateTime || '')
     ];
     fieldRequest.timeoutMs = 30000;
+    fieldRequest.debugContext = debugContext;
     let fieldValues: Record<string, string>[] = [];
     let contextValues: string[] = [];
     try {
@@ -433,7 +468,8 @@ export class WebBookService {
   }
 
   async getContent(source: BookSource, book: Book, chapter: BookChapter,
-    shouldCancel: (() => boolean) | null = null): Promise<string> {
+    shouldCancel: (() => boolean) | null = null,
+    debugContext: BookSourceDebugContext | null = null): Promise<string> {
     if (this.contentRequestCanceled(shouldCancel)) return '';
     // Validation and reader diagnostics must describe the current content request, not a
     // stale error left by a previous catalog/script stage.
@@ -465,7 +501,7 @@ export class WebBookService {
       const webViewAudioUrl = await this.tryResolveAudioWebViewUrl(source, chapter, directAudioUrl);
       if (webViewAudioUrl) return webViewAudioUrl;
     }
-    const stageContent = await this.tryGetStageContent(source, book, chapter);
+    const stageContent = await this.tryGetStageContent(source, book, chapter, debugContext);
     if (this.contentRequestCanceled(shouldCancel)) return '';
     if (stageContent) {
       if (isAudioContent) return stageContent.trim();
@@ -485,7 +521,7 @@ export class WebBookService {
     if (this.contentRequestCanceled(shouldCancel)) return '';
     const au = new AnalyzeUrl(source, this.http);
     let resp = EncodedSourceUrl.canHandle(chapter.url) ?
-      await this.fetchEncodedDataUrl(chapter.url, source) : await au.fetch(chapter.url);
+      await this.fetchEncodedDataUrl(chapter.url, source) : await au.fetch(chapter.url, undefined, debugContext);
     if (this.contentRequestCanceled(shouldCancel)) return '';
     console.log('[WS] getContent resp:', resp.success, 'len:', resp.body.length);
     if (!resp.success) {
@@ -527,7 +563,7 @@ export class WebBookService {
         page === 0 ? this.getChapterBaseUrl(chapter, book, source) : currentUrl,
         book.bookUrl || source.bookSourceUrl);
       const pageData = await this.parseContentPage(source, book, chapter, currentResp.body, baseUrl, ctx,
-        shouldCancel);
+        shouldCancel, debugContext);
       if (this.contentRequestCanceled(shouldCancel)) return '';
       if (pageData.content) {
         totalLength += pageData.content.length;
@@ -539,7 +575,7 @@ export class WebBookService {
       if (seenPageUrls.has(nextKey)) break;
       currentUrl = pageData.nextUrl;
       currentResp = EncodedSourceUrl.canHandle(currentUrl) ?
-        await this.fetchEncodedDataUrl(currentUrl, source) : await au.fetch(currentUrl);
+        await this.fetchEncodedDataUrl(currentUrl, source) : await au.fetch(currentUrl, undefined, debugContext);
       if (this.contentRequestCanceled(shouldCancel)) return '';
     }
     book.variable = ctx.toPersistentJson();
@@ -547,7 +583,8 @@ export class WebBookService {
   }
 
   private async parseContentPage(source: BookSource, book: Book, chapter: BookChapter, body: string,
-    baseUrl: string, ctx: RuleContext, shouldCancel: (() => boolean) | null = null): Promise<ContentPageData> {
+    baseUrl: string, ctx: RuleContext, shouldCancel: (() => boolean) | null = null,
+    debugContext: BookSourceDebugContext | null = null): Promise<ContentPageData> {
     const data = new ContentPageData();
     if (this.contentRequestCanceled(shouldCancel)) return data;
     const contentRule = source.contentRule;
@@ -574,6 +611,7 @@ export class WebBookService {
       new RuleFieldRequest('images', contentRule.images || '', false, true)
     ];
     fieldRequest.timeoutMs = 20000;
+    fieldRequest.debugContext = debugContext;
     let values: Record<string, string> = {};
     this.activeContentRuleOwners.add(fieldRequest.ownerId);
     try {
@@ -1399,7 +1437,7 @@ export class WebBookService {
 
   private async runStageRule(source: BookSource, book: Book, rawRule: string, content: string,
     baseUrl: string, stage: string, chapter: BookChapter | null = null,
-    variables: Record<string, string> = {}): Promise<string> {
+    variables: Record<string, string> = {}, debugContext: BookSourceDebugContext | null = null): Promise<string> {
     const code = this.stageRuleCode(rawRule);
     if (!code) return '';
     const decision = BookSourceRuntimeRouter.decide(stage, `${source.jsLib || ''}\n${code}`);
@@ -1423,6 +1461,7 @@ export class WebBookService {
     request.contextContent = '';
     request.baseUrl = baseUrl || book.bookUrl || source.bookSourceUrl;
     request.variables = { ...variables, ...(chapter ? EncodedSourceUrl.scalarVariables(chapter.url) : {}) };
+    request.debugContext = debugContext;
     try {
       const result = await runtime.execute(request);
       let value = result.value || '';
@@ -1444,7 +1483,7 @@ export class WebBookService {
 
   private async executeSingleRuleField(source: BookSource, book: Book, chapter: BookChapter | null,
     rawRule: string, content: string, baseUrl: string, stage: string, ctx: RuleContext,
-    resolveUrl: boolean = false): Promise<string> {
+    resolveUrl: boolean = false, debugContext: BookSourceDebugContext | null = null): Promise<string> {
     if (!rawRule) return '';
     const request = new RuleBatchExecutionRequest();
     request.source = source;
@@ -1459,6 +1498,7 @@ export class WebBookService {
     request.contextValues = ctx.toPersistentRecord();
     request.fields = [new RuleFieldRequest('value', rawRule, resolveUrl)];
     request.timeoutMs = 15000;
+    request.debugContext = debugContext;
     try {
       const batch = await RuleExecutionService.get().executeBatch(request);
       if (batch.contextValues.length > 0) ctx.loadFromJson(batch.contextValues[0]);
@@ -1527,7 +1567,8 @@ export class WebBookService {
   }
 
   private async parseStageChapterList(source: BookSource, book: Book, raw: string,
-    baseUrl: string, maxItems: number = 0): Promise<BookChapter[]> {
+    baseUrl: string, maxItems: number = 0,
+    debugContext: BookSourceDebugContext | null = null): Promise<BookChapter[]> {
     let values: Object[] = [];
     try {
       const parsed = JSON.parse(raw || '[]') as Object;
@@ -1568,6 +1609,7 @@ export class WebBookService {
       new RuleFieldRequest('updateTime', tocRule.updateTime || '')
     ];
     fieldRequest.timeoutMs = 30000;
+    fieldRequest.debugContext = debugContext;
     let parsedFields: Record<string, string>[] = [];
     try {
       const batch = await RuleExecutionService.get().executeBatch(fieldRequest);
@@ -1607,7 +1649,8 @@ export class WebBookService {
     return chapters;
   }
 
-  private async tryGetStageContent(source: BookSource, book: Book, chapter: BookChapter): Promise<string> {
+  private async tryGetStageContent(source: BookSource, book: Book, chapter: BookChapter,
+    debugContext: BookSourceDebugContext | null = null): Promise<string> {
     const rawRule = source.contentRule.content || '';
     const code = this.stageRuleCode(rawRule);
     if (!code) return '';
@@ -1635,7 +1678,7 @@ export class WebBookService {
       // this value to the content script as bytes; mirror that contract without interpreting it.
       content = this.textToHex(virtualChapterPayload);
     } else {
-      const response = await new AnalyzeUrl(source, this.http).fetch(chapter.url);
+      const response = await new AnalyzeUrl(source, this.http).fetch(chapter.url, undefined, debugContext);
       if (!response.success || !response.body) return '';
       content = response.body;
       baseUrl = BookUrlResolver.effectiveBase(response, chapter.url, book.bookUrl || source.bookSourceUrl);
@@ -1646,7 +1689,7 @@ export class WebBookService {
       }
     }
     return await this.runStageRule(source, book, rawRule, content, baseUrl,
-      SourceRuntimeStage.CONTENT, chapter);
+      SourceRuntimeStage.CONTENT, chapter, {}, debugContext);
   }
 
   private resolvedAudioChapterUrl(source: BookSource, book: Book, chapter: BookChapter): string {

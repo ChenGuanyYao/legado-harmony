@@ -6,6 +6,8 @@ export class Book {
   name: string = '';
   author: string = '';
   kind: string = '';
+  /** Source-provided publication status, e.g. 连载中/完本. */
+  status: string = '';
   customTag: string = '';
   coverUrl: string = '';
   customCoverUrl: string = '';
@@ -323,6 +325,7 @@ export class BookListRule {
   intro: string = '';
   kind: string = '';
   status: string = '';
+  updateTime: string = '';
   lastChapter: string = '';
   bookUrl: string = '';
   wordCount: string = '';
@@ -336,6 +339,7 @@ export class SearchRule {
   intro: string = '';
   kind: string = '';
   status: string = '';
+  updateTime: string = '';
   lastChapter: string = '';
   bookUrl: string = '';
   wordCount: string = '';
@@ -349,6 +353,7 @@ export class ExploreRule {
   intro: string = '';
   kind: string = '';
   status: string = '';
+  updateTime: string = '';
   lastChapter: string = '';
   bookUrl: string = '';
   wordCount: string = '';
@@ -361,6 +366,7 @@ export class BookInfoRule {
   coverUrl: string = '';
   intro: string = '';
   kind: string = '';
+  status: string = '';
   lastChapter: string = '';
   wordCount: string = '';
   updateTime: string = '';
@@ -439,10 +445,12 @@ export class SearchBook {
   name: string = '';
   author: string = '';
   kind: string = '';
+  status: string = '';
   coverUrl: string = '';
   intro: string = '';
   latestChapterTitle: string = '';
   wordCount: string = '';
+  updateTime: string = '';
   tocUrl: string = '';
   variable: string = '';
   bookSourceComment: string = '';

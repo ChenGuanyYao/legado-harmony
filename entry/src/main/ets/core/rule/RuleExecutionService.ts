@@ -10,6 +10,7 @@ import { QuickJsAsyncRouter } from '../script/QuickJsAsyncRouter';
 import { QuickJsScriptRuntime } from '../script/QuickJsScriptRuntime';
 import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
 import { RuleValue } from './RuleValue';
+import { BookSourceDebugRuleTrace } from '../book/BookSourceDebugModels';
 
 /**
  * The single public execution gateway for rule parsing.
@@ -56,8 +57,12 @@ export class RuleExecutionService {
       const slice = CooperativeScheduler.createTimeSlice(request.uiSliceMs);
       const itemChunkSize = Math.max(4, Math.min(Math.round(request.itemChunkSize || 16), 64));
       const fullJsValues: Record<string, string[]> = {};
+      const fieldStartedAt: Record<string, number> = {};
+      const fieldMatchedCount: Record<string, number> = {};
+      const fieldFirstValue: Record<string, string> = {};
 
       for (const field of request.fields) {
+        fieldStartedAt[field.name] = Date.now();
         const code = this.extractStandaloneJsCode(field.rule);
         const embeddedCandidate = code === null ? this.extractEmbeddedJsProcessor(field.rule) : null;
         const embeddedDecision = embeddedCandidate === null ? null :
@@ -85,6 +90,16 @@ export class RuleExecutionService {
           const canFallbackEmbedded = embeddedProcessor !== null &&
             this.canFallbackEmbeddedProcessor(embeddedDecision);
           result.errors.push(`${field.name}: ${message}${canFallbackEmbedded ? '，已回退兼容解析' : ''}`);
+          if (request.debugContext) {
+            const trace = new BookSourceDebugRuleTrace();
+            trace.field = field.name;
+            trace.rule = field.rule;
+            trace.ruleType = this.ruleType(field.rule);
+            trace.inputCount = itemCount;
+            trace.elapsedMs = Math.max(0, Date.now() - (fieldStartedAt[field.name] || startedAt));
+            trace.error = message;
+            request.debugContext.addRule(trace);
+          }
           // Leaving this field unset makes the item loop use AnalyzeRule, matching the 3.7.825
           // behavior. Never retry scripts with observable side effects in a second runtime.
           if (!canFallbackEmbedded) fullJsValues[field.name] = [];
@@ -125,6 +140,11 @@ export class RuleExecutionService {
             CooperativeScheduler.reportSynchronousOperation(`rule/${request.stage}/${field.name}`,
               Date.now() - fieldStartedAt, `input=${content.length}`);
           }
+          const extractedValue = itemValues[field.name] || '';
+          if (extractedValue && extractedValue !== '[]' && extractedValue !== '{}') {
+            fieldMatchedCount[field.name] = (fieldMatchedCount[field.name] || 0) + 1;
+            if (!fieldFirstValue[field.name]) fieldFirstValue[field.name] = extractedValue;
+          }
           if (await slice.checkpoint(token)) result.yieldedCount++;
           this.throwIfDeadlineExceeded(deadlineAt, request.stage);
         }
@@ -132,6 +152,20 @@ export class RuleExecutionService {
         // Static source fields (especially jsLib) are re-seeded for every stage and must not be
         // copied into every item's persistent context.
         result.contextValues.push(analyzer.getContext().toPersistentJson());
+      }
+      if (request.debugContext) {
+        for (const field of request.fields) {
+          if (result.errors.some((error: string): boolean => error.startsWith(`${field.name}:`))) continue;
+          const trace = new BookSourceDebugRuleTrace();
+          trace.field = field.name;
+          trace.rule = field.rule;
+          trace.ruleType = this.ruleType(field.rule);
+          trace.inputCount = itemCount;
+          trace.matchedCount = fieldMatchedCount[field.name] || 0;
+          trace.outputPreview = fieldFirstValue[field.name] || '';
+          trace.elapsedMs = Math.max(0, Date.now() - (fieldStartedAt[field.name] || startedAt));
+          request.debugContext.addRule(trace);
+        }
       }
       return result;
     } catch (error) {
@@ -207,6 +241,7 @@ export class RuleExecutionService {
     runtimeRequest.baseUrl = request.baseUrl || request.source.bookSourceUrl;
     runtimeRequest.variables = request.contextValues;
     runtimeRequest.ownerId = request.ownerId;
+    runtimeRequest.debugContext = request.debugContext;
     // Android Legado accepts a common field-script idiom where the script builds `let info = ...`
     // and a final conditional statement has no completion value.  A plain WebView eval returns
     // undefined in that case.  Bind that well-known intro accumulator to the surrounding field
@@ -307,6 +342,16 @@ export class RuleExecutionService {
       values = transformed;
     }
     return values;
+  }
+
+  private ruleType(rule: string): string {
+    const value = String(rule || '').trim();
+    if (!value) return 'empty';
+    if (value.startsWith('@js:') || value.includes('<js>')) return 'js';
+    if (value.startsWith('$.') || value.includes('$..')) return 'jsonpath';
+    if (value.startsWith('//') || value.startsWith('/') || value.includes('xpath')) return 'xpath';
+    if (value.startsWith(':') || value.includes('.') || value.includes('#')) return 'selector';
+    return 'text';
   }
 
   private extractStandaloneJsCode(rule: string): string | null {

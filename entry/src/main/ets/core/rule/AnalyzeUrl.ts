@@ -4,6 +4,7 @@ import { VerificationSupport } from '../http/VerificationSupport';
 import { RequestSessionConfig, RequestSessionSupport } from '../http/RequestSessionSupport';
 import { BookSourceRateLimiter } from '../http/BookSourceRateLimiter';
 import { util } from '@kit.ArkTS';
+import { BookSourceDebugContext } from '../book/BookSourceDebugModels';
 
 export interface UrlConfig {
   url: string;
@@ -431,12 +432,14 @@ export class AnalyzeUrl {
     return request;
   }
 
-  async fetch(urlTemplate: string, maxResponseBytes?: number): Promise<HttpResponse> {
+  async fetch(urlTemplate: string, maxResponseBytes?: number,
+    debugContext: BookSourceDebugContext | null = null): Promise<HttpResponse> {
     this.parse(urlTemplate);
     const req = this.buildRequest();
     if (maxResponseBytes !== undefined) {
       req.maxResponseBytes = maxResponseBytes;
     }
+    req.debugContext = debugContext || undefined;
     if (!req.url) {
       return { url: urlTemplate, statusCode: 0, headers: {}, body: '', success: false, error: 'empty url' };
     }

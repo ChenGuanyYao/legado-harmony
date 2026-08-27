@@ -508,6 +508,10 @@ struct ReadBookPage {
   private ttsChapterAdvanceError: string = '';
   private ttsLastMediaChapterCommandAt: number = 0;
   private ttsTextStartOffset: number = 0;
+  // The speech engine reports completion independently from the reader's page state. Keep the expected source
+  // tail so a premature onFinished callback cannot advance to the next chapter while trailing chunks are pending.
+  private ttsReadingExpectedSourceEnd: number = -1;
+  private ttsChapterCompletionRetryCount: number = 0;
   private ttsLastFocusChunk: TtsChunk | null = null;
   private ttsLastFocusPageIndex: number = -1;
   private ttsFocusGeneration: number = 0;
@@ -13157,6 +13161,14 @@ struct ReadBookPage {
       }
       return;
     }
+    if (readingStartOffset < 0) {
+      this.ttsChapterCompletionRetryCount = 0;
+    }
+    // A source may end in image/action markers which are stripped before synthesis. Treat an all-whitespace
+    // result as already complete; otherwise keep the full speech tail as the boundary we must confirm.
+    const speechEnd = text.trim().length === 0 ? this.ttsTextStartOffset : (this.readerV2ActiveSpeechText ?
+      this.readerV2ActiveSpeechText.sourceOffsetAt(text.length) : this.ttsTextStartOffset + text.length);
+    this.ttsReadingExpectedSourceEnd = Math.max(this.ttsTextStartOffset, speechEnd);
     const token = ++this.ttsReadToken;
     const focusGeneration = ++this.ttsFocusGeneration;
     const focusChapterIndex = this.currentChapterIndex;
@@ -13282,6 +13294,8 @@ struct ReadBookPage {
     this.ttsPendingHighlightChunk = null;
     this.ttsLastFocusChunk = null;
     this.ttsLastFocusPageIndex = -1;
+    this.ttsReadingExpectedSourceEnd = -1;
+    this.ttsChapterCompletionRetryCount = 0;
     this.ttsMediaControlsExpanded = false;
     this.ttsPageTurnSerial++;
     this.stopTtsBackgroundRunning();
@@ -13314,6 +13328,8 @@ struct ReadBookPage {
     this.ttsPendingHighlightChunk = null;
     this.ttsLastFocusChunk = null;
     this.ttsLastFocusPageIndex = -1;
+    this.ttsReadingExpectedSourceEnd = -1;
+    this.ttsChapterCompletionRetryCount = 0;
     this.ttsPageTurnSerial++;
     this.ttsReader.stop();
     this.isTtsSpeaking = false;
@@ -13440,6 +13456,29 @@ struct ReadBookPage {
     if (this.ttsChapterSwitching) {
       return;
     }
+    // onFinished is not a sufficient chapter-boundary proof on every TTS route. A delayed/early completion event
+    // can arrive while the final synthesized chunks are still absent from the audible queue. Replay from the last
+    // confirmed chunk instead of discarding the unspoken tail and entering the next chapter.
+    if (!this.isTtsReadingAtExpectedEnd()) {
+      if (this.ttsChapterCompletionRetryCount < 2) {
+        this.ttsChapterCompletionRetryCount++;
+        const resumeOffset = this.ttsLastFocusChunk ?
+          this.readerV2TtsSourceOffset(this.ttsLastFocusChunk.start) : this.ttsTextStartOffset;
+        console.warn(`[TTS] completion before chapter tail: chapter=${this.currentChapterIndex},` +
+          `resume=${resumeOffset},expected=${this.ttsReadingExpectedSourceEnd},` +
+          `retry=${this.ttsChapterCompletionRetryCount}`);
+        await this.startTtsReadingFromCurrentPosition(false, false, -1, resumeOffset, false);
+        return;
+      }
+      console.warn(`[TTS] chapter tail still not confirmed after retries: chapter=${this.currentChapterIndex},` +
+        `expected=${this.ttsReadingExpectedSourceEnd}`);
+      // Do not silently consume a chapter when the last focus cue never reached its tail. Stopping here
+      // leaves the reader on the current chapter so the user can retry/resume from the last confirmed chunk.
+      this.ttsChapterAdvanceError = '当前章节末尾朗读未确认，朗读已暂停';
+      this.finishTtsReading();
+      promptAction.showToast({ message: this.ttsChapterAdvanceError });
+      return;
+    }
     const advanced = await this.advanceTtsReadingToNextChapter();
     if (token !== this.ttsReadToken || !this.ttsAutoContinue) {
       return;
@@ -13453,6 +13492,15 @@ struct ReadBookPage {
       return;
     }
     await this.startTtsReadingFromCurrentPosition(false);
+  }
+
+  isTtsReadingAtExpectedEnd(): boolean {
+    if (this.ttsReadingExpectedSourceEnd < 0) return true;
+    const chunk = this.ttsLastFocusChunk;
+    if (!chunk) return false;
+    const spokenEnd = this.readerV2TtsSourceOffset(chunk.end);
+    // Chunk boundaries trim only whitespace; tolerate that small non-audible suffix but never a missing paragraph.
+    return spokenEnd >= this.ttsReadingExpectedSourceEnd - 4;
   }
 
   async advanceTtsReadingToNextChapter(): Promise<boolean> {
@@ -13547,6 +13595,8 @@ struct ReadBookPage {
     this.clearTtsHighlight();
     this.ttsLastFocusChunk = null;
     this.ttsLastFocusPageIndex = -1;
+    this.ttsReadingExpectedSourceEnd = -1;
+    this.ttsChapterCompletionRetryCount = 0;
     this.setTtsPagedScrollOverride(false);
     if (!this.readerPageVisible) {
       this.ttsReader.shutdown();

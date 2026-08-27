@@ -114,6 +114,15 @@ export struct SearchBookResultList {
                 .margin({ top: 7 })
               }
 
+              if (this.metadataLine(book)) {
+                Text(this.metadataLine(book))
+                  .fontSize(12)
+                  .fontColor(this.subTextColor)
+                  .margin({ top: 3 })
+                  .maxLines(2)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+
               if (this.showSourceLine) {
                 Text(this.sourceLine(book))
                   .fontSize(12)
@@ -264,10 +273,10 @@ export struct SearchBookResultList {
     if (!this.showResultTags) {
       return [];
     }
-    const key = `${this.itemKey(book)}\n${book.kind || ''}`;
+    const key = `${this.itemKey(book)}\n${book.kind || ''}\n${book.status || ''}`;
     const cached = this.tagCache.get(key);
     if (cached) return cached;
-    const tags = BookDisplayHelper.splitTags(this.safeText(book.kind, ''), '');
+    const tags = BookDisplayHelper.splitTags(this.safeText(book.kind, ''), this.safeText(book.status, ''));
     this.tagCache.set(key, tags);
     return tags;
   }
@@ -332,6 +341,14 @@ export struct SearchBookResultList {
     if (!result) result = this.safeText(book.coverUrl, '');
     this.coverCache.set(key, result);
     return result;
+  }
+
+  metadataLine(book: SearchBook): string {
+    const parts: string[] = [];
+    if (this.safeText(book.wordCount, '')) parts.push(`字数：${this.safeText(book.wordCount, '')}`);
+    if (this.safeText(book.latestChapterTitle, '')) parts.push(`最新：${this.safeText(book.latestChapterTitle, '')}`);
+    if (this.safeText(book.updateTime, '')) parts.push(`更新：${this.safeText(book.updateTime, '')}`);
+    return parts.join(' · ');
   }
 
   bookshelfGalleryCover(searchBook: SearchBook): string {

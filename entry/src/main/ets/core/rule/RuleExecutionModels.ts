@@ -1,5 +1,6 @@
 import { Book, BookChapter, BookSource } from '../../model/data/Book';
 import { RuleValue } from './RuleValue';
+import { BookSourceDebugContext } from '../book/BookSourceDebugModels';
 
 export class RuleExecutionPriority {
   static readonly BACKGROUND: number = 0;
@@ -42,6 +43,7 @@ export class RuleBatchExecutionRequest {
   uiSliceMs: number = 6;
   itemChunkSize: number = 16;
   readerActionMode: boolean = false;
+  debugContext: BookSourceDebugContext | null = null;
 }
 
 export class RuleBatchExecutionResult {

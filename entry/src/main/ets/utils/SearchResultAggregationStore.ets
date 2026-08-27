@@ -88,10 +88,12 @@ export class SearchResultAggregationStore {
     target.name = source.name || '';
     target.author = source.author || '';
     target.kind = source.kind || '';
+    target.status = source.status || '';
     target.coverUrl = source.coverUrl || '';
     target.intro = source.intro || '';
     target.latestChapterTitle = source.latestChapterTitle || '';
     target.wordCount = source.wordCount || '';
+    target.updateTime = source.updateTime || '';
     target.tocUrl = source.tocUrl || '';
     target.variable = source.variable || '';
     target.bookSourceComment = source.bookSourceComment || '';

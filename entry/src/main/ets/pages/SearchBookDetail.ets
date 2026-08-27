@@ -40,18 +40,23 @@ struct SearchBookDetailPage {
   @State name: string = '';
   @State author: string = '';
   @State kind: string = '';
+  @State status: string = '';
   @State coverUrl: string = '';
   @State intro: string = '';
   @State latestChapterTitle: string = '';
   @State wordCount: string = '';
+  @State updateTime: string = '';
   @State bookType: number = 0;
   private bookVariable: string = '';
   @State isInShelf: boolean = false;
   @State isSaving: boolean = false;
   @State isLoadingBookInfo: boolean = false;
+  @State bookInfoRenderVersion: number = 0;
   private hasLoadedBookInfo: boolean = false;
   private resolvedBookInfo: Book | null = null;
   private bookInfoPromise: Promise<Book | null> | null = null;
+  private bookInfoRetryTimerId: number = -1;
+  private bookInfoRetryCount: number = 0;
   private shelfCheckPromise: Promise<void> | null = null;
   private shelfCheckKey: string = '';
   private shelfCheckVersion: number = -1;
@@ -63,6 +68,7 @@ struct SearchBookDetailPage {
 
   aboutToAppear() {
     this.syncBars();
+    this.bookInfoRetryCount = 0;
     const params = router.getParams() as Record<string, string>;
     if (params) {
       // Heal result caches produced by older builds that joined every matching descendant URL.
@@ -74,15 +80,23 @@ struct SearchBookDetailPage {
       this.name = params['name'] || '';
       this.author = params['author'] || '';
       this.kind = params['kind'] || '';
+      this.status = params['status'] || '';
       this.coverUrl = params['coverUrl'] || '';
       this.intro = BookFieldSanitizer.clean(params['intro'] || '');
       this.latestChapterTitle = params['latestChapterTitle'] || '';
       this.wordCount = params['wordCount'] || '';
+      this.updateTime = params['updateTime'] || '';
       this.bookType = Number(params['type'] || 0) || 0;
       this.bookVariable = params['variable'] || '';
       this.promptAddToShelfOnBackFromResult = params['promptAddToShelfOnBack'] === 'true';
-      this.checkShelf();
-      this.loadBookInfo();
+      // Both operations initialize/read the same AppDatabase instance. Starting them at the
+      // same time can make getBookSource() observe the store before initialization has completed,
+      // leaving the detail page with an empty intro until the reader opens the book again.
+      // Serialize the source-detail request behind the shelf check so the first page visit uses
+      // the same initialized database path as the reader.
+      this.checkShelf().then((): void => {
+        this.loadBookInfo();
+      });
     }
   }
 
@@ -93,6 +107,18 @@ struct SearchBookDetailPage {
         this.showAddToShelfOnBackPrompt();
       }
     });
+    // Some source runtimes need one UI turn after the detail route is mounted (especially when the
+    // hidden Web transport is still attaching). Do not keep an empty first response cached forever.
+    if (!this.intro && !this.isLoadingBookInfo && this.bookUrl && this.origin) {
+      this.scheduleBookInfoRetry();
+    }
+  }
+
+  aboutToDisappear(): void {
+    if (this.bookInfoRetryTimerId >= 0) {
+      clearTimeout(this.bookInfoRetryTimerId);
+      this.bookInfoRetryTimerId = -1;
+    }
   }
 
   build() {
@@ -138,6 +164,16 @@ struct SearchBookDetailPage {
 
               if (this.wordCount) {
                 Text(this.wordCount)
+                  .fontSize(13)
+                  .fontColor(this.secondaryTextColor())
+                  .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+                  .backgroundColor(this.inputColor())
+                  .borderRadius(14)
+                  .margin({ right: 8, bottom: 8 })
+              }
+
+              if (this.updateTime) {
+                Text(`更新：${this.updateTime}`)
                   .fontSize(13)
                   .fontColor(this.secondaryTextColor())
                   .padding({ left: 10, right: 10, top: 5, bottom: 5 })
@@ -193,6 +229,7 @@ struct SearchBookDetailPage {
                 .lineHeight(26)
                 .copyOption(CopyOptions.LocalDevice)
                 .width('100%')
+                .id(`book_detail_intro_${this.bookInfoRenderVersion}`)
                 .margin({ top: 12 })
             }
             .width('100%')
@@ -344,9 +381,11 @@ struct SearchBookDetailPage {
           existing.coverUrl = nextCoverUrl;
         }
         existing.kind = BookFieldSanitizer.prefer(this.kind, existing.kind);
+        existing.status = BookFieldSanitizer.prefer(this.status, existing.status);
         existing.intro = BookFieldSanitizer.prefer(this.intro, existing.intro);
         existing.latestChapterTitle = BookFieldSanitizer.prefer(this.latestChapterTitle, existing.latestChapterTitle);
         existing.wordCount = BookFieldSanitizer.prefer(this.wordCount, existing.wordCount);
+        existing.updateTime = BookFieldSanitizer.prefer(this.updateTime, existing.updateTime);
         SearchExplorePendingBook.clearPendingAddToShelf(existing);
         await db.updateBook(existing, true, 'explicit_add_existing');
         AppStorage.setOrCreate('shelfUpdateTime', Date.now());
@@ -365,10 +404,12 @@ struct SearchBookDetailPage {
       book.name = this.name;
       book.author = this.author;
       book.kind = BookFieldSanitizer.clean(this.kind);
+      book.status = BookFieldSanitizer.clean(this.status);
       book.coverUrl = CoverUrlNormalizer.normalize(this.coverUrl);
       book.intro = BookFieldSanitizer.clean(this.intro);
       book.latestChapterTitle = BookFieldSanitizer.clean(this.latestChapterTitle);
       book.wordCount = BookFieldSanitizer.clean(this.wordCount);
+      book.updateTime = BookFieldSanitizer.clean(this.updateTime);
       book.group = -2147483645;
       book.type = this.bookType;
       book.variable = this.bookVariable;
@@ -384,6 +425,7 @@ struct SearchBookDetailPage {
         book.name = fullBook.name || book.name;
         book.author = fullBook.author || book.author;
         book.kind = BookFieldSanitizer.prefer(fullBook.kind, book.kind);
+        book.status = BookFieldSanitizer.prefer(fullBook.status, book.status);
         book.coverUrl = CoverUrlNormalizer.prefer(fallbackCoverUrl, fullBook.coverUrl || book.coverUrl);
         book.intro = BookFieldSanitizer.prefer(fullBook.intro, book.intro);
         book.latestChapterTitle = BookFieldSanitizer.prefer(fullBook.latestChapterTitle, book.latestChapterTitle);
@@ -400,6 +442,7 @@ struct SearchBookDetailPage {
           resolvedExisting.coverUrl = nextCoverUrl;
         }
         resolvedExisting.kind = BookFieldSanitizer.prefer(book.kind, resolvedExisting.kind);
+        resolvedExisting.status = BookFieldSanitizer.prefer(book.status, resolvedExisting.status);
         resolvedExisting.intro = BookFieldSanitizer.prefer(book.intro, resolvedExisting.intro);
         resolvedExisting.latestChapterTitle = BookFieldSanitizer.prefer(book.latestChapterTitle, resolvedExisting.latestChapterTitle);
         resolvedExisting.updateTime = BookFieldSanitizer.prefer(book.updateTime, resolvedExisting.updateTime);
@@ -438,9 +481,27 @@ struct SearchBookDetailPage {
     try {
       const fullBook = await this.resolveBookInfo();
       if (fullBook) this.syncStateFromBook(fullBook);
+      if (!this.intro) this.scheduleBookInfoRetry();
     } catch (e) {
       console.warn('加载书籍详情失败:', e);
+      this.scheduleBookInfoRetry();
     }
+  }
+
+  private scheduleBookInfoRetry(): void {
+    if (this.intro || !this.bookUrl || !this.origin || this.bookInfoRetryCount >= 4) return;
+    if (this.bookInfoRetryTimerId >= 0) return;
+    const retry = this.bookInfoRetryCount++;
+    const delay = retry === 0 ? 500 : (retry === 1 ? 1200 : (retry === 2 ? 2500 : 5000));
+    this.bookInfoRetryTimerId = setTimeout((): void => {
+      this.bookInfoRetryTimerId = -1;
+      if (this.intro || !this.bookUrl || !this.origin || this.isLoadingBookInfo) return;
+      // WebBookService returns the original Book instance when a request or rule yields no fields. Clear
+      // that incomplete cache so the next attempt can observe a newly attached runtime/session.
+      this.resolvedBookInfo = null;
+      this.hasLoadedBookInfo = false;
+      this.loadBookInfo();
+    }, delay);
   }
 
   private async resolveBookInfo(): Promise<Book | null> {
@@ -484,10 +545,12 @@ struct SearchBookDetailPage {
     book.name = this.name;
     book.author = this.author;
     book.kind = BookFieldSanitizer.clean(this.kind);
+    book.status = BookFieldSanitizer.clean(this.status);
     book.coverUrl = CoverUrlNormalizer.normalize(this.coverUrl);
     book.intro = BookFieldSanitizer.clean(this.intro);
     book.latestChapterTitle = BookFieldSanitizer.clean(this.latestChapterTitle);
     book.wordCount = BookFieldSanitizer.clean(this.wordCount);
+    book.updateTime = BookFieldSanitizer.clean(this.updateTime);
     book.type = this.bookType;
     book.variable = this.bookVariable;
     return book;
@@ -656,11 +719,17 @@ struct SearchBookDetailPage {
   private mergeResolvedDetailIntoBook(book: Book): boolean {
     let changed = false;
     const kind = BookFieldSanitizer.prefer(this.kind, book.kind);
+    const status = BookFieldSanitizer.prefer(this.status, book.status);
     const intro = BookFieldSanitizer.prefer(this.intro, book.intro);
     const latestChapterTitle = BookFieldSanitizer.prefer(this.latestChapterTitle, book.latestChapterTitle);
     const wordCount = BookFieldSanitizer.prefer(this.wordCount, book.wordCount);
+    const updateTime = BookFieldSanitizer.prefer(this.updateTime, book.updateTime);
     if (kind !== book.kind) {
       book.kind = kind;
+      changed = true;
+    }
+    if (status !== book.status) {
+      book.status = status;
       changed = true;
     }
     if (intro !== book.intro) {
@@ -673,6 +742,10 @@ struct SearchBookDetailPage {
     }
     if (wordCount !== book.wordCount) {
       book.wordCount = wordCount;
+      changed = true;
+    }
+    if (updateTime !== book.updateTime) {
+      book.updateTime = updateTime;
       changed = true;
     }
     if (this.tocUrl && this.tocUrl !== book.tocUrl) {
@@ -695,6 +768,7 @@ struct SearchBookDetailPage {
     book.name = this.name;
     book.author = this.author;
     book.kind = BookFieldSanitizer.clean(this.kind);
+    book.status = BookFieldSanitizer.clean(this.status);
     book.coverUrl = CoverUrlNormalizer.normalize(this.coverUrl);
     book.intro = BookFieldSanitizer.clean(this.intro);
     book.latestChapterTitle = BookFieldSanitizer.clean(this.latestChapterTitle);
@@ -714,6 +788,7 @@ struct SearchBookDetailPage {
       book.name = fullBook.name || book.name;
       book.author = fullBook.author || book.author;
       book.kind = BookFieldSanitizer.prefer(fullBook.kind, book.kind);
+      book.status = BookFieldSanitizer.prefer(fullBook.status, book.status);
       book.coverUrl = CoverUrlNormalizer.prefer(fallbackCoverUrl, fullBook.coverUrl || book.coverUrl);
       book.intro = BookFieldSanitizer.prefer(fullBook.intro, book.intro);
       book.latestChapterTitle = BookFieldSanitizer.prefer(fullBook.latestChapterTitle, book.latestChapterTitle);
@@ -793,12 +868,15 @@ struct SearchBookDetailPage {
     this.name = book.name || this.name;
     this.author = book.author || this.author;
     this.kind = book.kind || this.kind;
+    this.status = book.status || this.status;
     this.coverUrl = CoverUrlNormalizer.prefer(book.coverUrl, this.coverUrl);
     this.intro = book.intro || this.intro;
     this.latestChapterTitle = book.latestChapterTitle || this.latestChapterTitle;
     this.wordCount = book.wordCount || this.wordCount;
+    this.updateTime = book.updateTime || this.updateTime;
     this.bookType = book.type || this.bookType;
     this.bookVariable = book.variable || this.bookVariable;
+    this.bookInfoRenderVersion++;
   }
 
   detailTypeProbe(): Book {
@@ -822,7 +900,7 @@ struct SearchBookDetailPage {
   }
 
   getTags(): string[] {
-    return BookDisplayHelper.splitTags(this.kind, '');
+    return BookDisplayHelper.splitTags(this.kind, this.status);
   }
 
   displayCoverUrl(): string {

@@ -8,6 +8,7 @@ import { AnalyzeUrl } from '../rule/AnalyzeUrl';
 import { SourceRuntimeStage } from './BookSourceRuntimeRouter';
 import { BookSourceLoginCrypto } from './BookSourceLoginCrypto';
 import { BookSourceExecutionJournal, BookSourceHostActionKind } from './BookSourceExecutionJournal';
+import { BookSourceDebugContext } from './BookSourceDebugModels';
 
 export class StageWebRuntimeRequest {
   source: BookSource = new BookSource();
@@ -26,6 +27,7 @@ export class StageWebRuntimeRequest {
   maxRequestCount: number = 12;
   stage: string = SourceRuntimeStage.URL;
   ownerId: string = '';
+  debugContext: BookSourceDebugContext | null = null;
 
   applyStageBudget(stage: string): void {
     this.stage = stage || SourceRuntimeStage.URL;
@@ -82,6 +84,7 @@ class StageWebRuntimeStep extends StageWebRuntimeResult {
   cacheState: string = '{}';
   javaState: string = '{}';
   sourceState: string = '{}';
+  logs: string = '[]';
 }
 
 class StageWebRuntimeCookieOperation {
@@ -298,6 +301,16 @@ export class BookSourceStageWebRuntime {
       const raw = await this.runJavaScript(script);
       this.ensureNotCancelled(request);
       const step = this.parseStep(raw);
+      if (request.debugContext && step.logs) {
+        try {
+          const logs = JSON.parse(step.logs) as Object[];
+          for (const item of logs || []) {
+            const record = item as Record<string, Object>;
+            request.debugContext.addLog(String(record['level'] || 'info'), String(record['message'] || ''));
+          }
+        } catch (_) {
+        }
+      }
       request.source.variable = step.variable;
       request.source.loginHeader = step.loginHeader;
       // java.ajax() is synchronous from the source script's point of view, while this bridge fulfils it by
@@ -436,7 +449,8 @@ export class BookSourceStageWebRuntime {
         }
       } catch (_) {
       }
-      return await new AnalyzeUrl(request.source, client, runtimeHeaders).fetch(requestUrl, responseLimit);
+      return await new AnalyzeUrl(request.source, client, runtimeHeaders).fetch(requestUrl, responseLimit,
+        request.debugContext);
     } finally {
       if (this.activeHttpClient === client) this.activeHttpClient = null;
     }
@@ -684,7 +698,7 @@ export class BookSourceStageWebRuntime {
     const codeBase64 = this.encodeBase64(code);
     return `(function(){` +
       `function dec(v){try{return decodeURIComponent(escape(atob(v)));}catch(e){return atob(v);}}` +
-      `const S=JSON.parse(dec('${stateBase64}'));let pending='',pendingHeaders='{}',pendingCookie='',pendingCrypto='',url='',browserHtml='',toast='',error='';` +
+      `const S=JSON.parse(dec('${stateBase64}'));let pending='',pendingHeaders='{}',pendingCookie='',pendingCrypto='',url='',browserHtml='',toast='',error='',logs=[];` +
       `const cookieOps=[];const sourceData=Object.assign({},S.sourceState||{});` +
       `const cacheData=Object.assign({},S.cache||{});` +
       `const infoMap=Object.create(null);` +
@@ -809,7 +823,8 @@ export class BookSourceStageWebRuntime {
       `put:function(k,v){javaData[String(k??'')]=v;return v;},` +
       `get:function(k,h){if(arguments.length>1)return responseObject(requestSpec('GET',k,null,h));` +
       `k=String(k??'');return Object.prototype.hasOwnProperty.call(javaData,k)?javaData[k]:null;},` +
-      `log:function(v){return v===undefined?'':v;},logType:function(v){return v===undefined?'':v;},` +
+      `log:function(v){logs.push({level:'info',message:String(v??'')});return v===undefined?'':v;},` +
+      `logType:function(v){logs.push({level:'info',message:String(v??'')});return v===undefined?'':v;},` +
       `toast:function(v){toast=String(v??'');return toast;},longToast:function(v){toast=String(v??'');return toast;},` +
       `androidId:stableDeviceId,deviceID:function(){if(S.readerActionMode)return stableDeviceId();` +
       `throw new Error('deviceID unavailable');},qread:function(){throw new Error('qread unavailable');},` +
@@ -860,7 +875,7 @@ export class BookSourceStageWebRuntime {
       `cookieOperations:JSON.stringify(cookieOps),variable:S.variable||'',loginHeader:S.sourceLoginHeader||'',` +
       `bookVariable:JSON.stringify(bookData),bookType:String(book.type??''),chapterImgUrl:String(chapter.imgUrl??''),` +
       `bookDurChapterIndex:String(book.durChapterIndex??''),bookImageStyle:String(book.imageStyle??''),` +
-      `cacheState:JSON.stringify(cacheData),javaState:JSON.stringify(javaData),sourceState:JSON.stringify(sourceData),` +
+      `cacheState:JSON.stringify(cacheData),javaState:JSON.stringify(javaData),sourceState:JSON.stringify(sourceData),logs:JSON.stringify(logs),` +
       `value:value,requestedUrl:url,requestedHtml:browserHtml,toastMessage:toast,errorMessage:error}));})()`;
   }
 
@@ -897,6 +912,7 @@ export class BookSourceStageWebRuntime {
       step.cacheState = String(record['cacheState'] || '{}');
       step.javaState = String(record['javaState'] || '{}');
       step.sourceState = String(record['sourceState'] || '{}');
+      step.logs = String(record['logs'] || '[]');
       step.value = String(record['value'] || '');
       step.requestedUrl = String(record['requestedUrl'] || '');
       step.requestedHtml = String(record['requestedHtml'] || '');

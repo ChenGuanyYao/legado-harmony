@@ -63,6 +63,7 @@ class BookshelfSyncPayload {
   name: string = '';
   author: string = '';
   kind: string = '';
+  status: string = '';
   customTag: string = '';
   coverUrl: string = '';
   customCoverUrl: string = '';
@@ -463,6 +464,7 @@ export class CloudSyncCoordinator {
       shelf.name = book.name;
       shelf.author = book.author;
       shelf.kind = book.kind;
+      shelf.status = book.status;
       shelf.customTag = book.customTag;
       shelf.coverUrl = book.coverUrl;
       shelf.customCoverUrl = book.customCoverUrl;
@@ -1091,6 +1093,7 @@ export class CloudSyncCoordinator {
     book.name = payload.name || '';
     book.author = payload.author || '';
     book.kind = payload.kind || '';
+    book.status = payload.status || '';
     book.customTag = payload.customTag || '';
     book.coverUrl = payload.coverUrl || '';
     book.customCoverUrl = payload.customCoverUrl || '';

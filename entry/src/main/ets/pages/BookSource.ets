@@ -1790,6 +1790,8 @@ struct BookSourcePage {
         }
         this.contextActionItem($r('sys.symbol.checkmark_shield'), '校验', this.primaryTextColor(),
           () => this.checkActionSource())
+        this.contextActionItem($r('sys.symbol.gearshape'), '调试', this.primaryTextColor(),
+          () => this.openActionSourceDebug())
         if (this.actionSourceTlsTrusted()) {
           this.contextActionItem($r('sys.symbol.checkmark_shield'), '取消证书信任', '#B26A00',
             () => this.revokeActionSourceTlsTrust())
@@ -3674,10 +3676,11 @@ struct BookSourcePage {
 
   sourceActionMenuHeight(): number {
     const trustHeight = this.actionSourceTlsTrusted() ? 44 : 0;
+    const debugHeight = 44;
     if (this.actionSourceLocked()) {
-      return (this.actionSourceNeedsLogin() ? 320 : 276) + trustHeight;
+      return (this.actionSourceNeedsLogin() ? 320 : 276) + trustHeight + debugHeight;
     }
-    return (this.actionSourceNeedsLogin() ? 496 : 452) + trustHeight;
+    return (this.actionSourceNeedsLogin() ? 496 : 452) + trustHeight + debugHeight;
   }
 
   async revokeActionSourceTlsTrust(): Promise<void> {
@@ -4776,6 +4779,20 @@ struct BookSourcePage {
     this.closeSourceActions();
     router.pushUrl({
       url: 'pages/BookSourceEdit',
+      params: { bookSourceUrl: source.bookSourceUrl }
+    });
+  }
+
+  openActionSourceDebug(): void {
+    const source = this.actionSource();
+    if (!source) {
+      this.closeSourceActions();
+      promptAction.showToast({ message: '书源不存在' });
+      return;
+    }
+    this.closeSourceActions();
+    router.pushUrl({
+      url: 'pages/BookSourceDebug',
       params: { bookSourceUrl: source.bookSourceUrl }
     });
   }

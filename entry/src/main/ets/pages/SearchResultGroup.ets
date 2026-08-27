@@ -164,10 +164,12 @@ struct SearchResultGroupPage {
         name: book.name,
         author: book.author,
         kind: book.kind,
+        status: book.status,
         coverUrl: book.coverUrl,
         intro: book.intro,
         latestChapterTitle: book.latestChapterTitle,
         wordCount: book.wordCount,
+        updateTime: book.updateTime,
         type: String(book.type || 0),
         variable: book.variable || '',
         promptAddToShelfOnBack: this.promptAddToShelfOnBack ? 'true' : 'false'

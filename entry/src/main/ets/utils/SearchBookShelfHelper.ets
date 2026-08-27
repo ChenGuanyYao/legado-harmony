@@ -114,7 +114,9 @@ export class SearchBookShelfHelper {
         existing.coverUrl = nextCoverUrl;
       }
       existing.kind = BookFieldSanitizer.prefer(searchBook.kind, existing.kind);
+      existing.status = BookFieldSanitizer.prefer(searchBook.status, existing.status);
       existing.intro = BookFieldSanitizer.prefer(searchBook.intro, existing.intro);
+      existing.updateTime = BookFieldSanitizer.prefer(searchBook.updateTime, existing.updateTime);
       existing.latestChapterTitle = BookFieldSanitizer.prefer(searchBook.latestChapterTitle, existing.latestChapterTitle);
       existing.wordCount = BookFieldSanitizer.prefer(searchBook.wordCount, existing.wordCount);
       SearchExplorePendingBook.clearPendingAddToShelf(existing);
@@ -135,10 +137,11 @@ export class SearchBookShelfHelper {
       book.name = fullBook.name || book.name;
       book.author = fullBook.author || book.author;
       book.kind = BookFieldSanitizer.prefer(fullBook.kind, book.kind);
+      book.status = BookFieldSanitizer.prefer(fullBook.status, book.status);
       book.coverUrl = CoverUrlNormalizer.prefer(fallbackCoverUrl, fullBook.coverUrl || book.coverUrl);
       book.intro = BookFieldSanitizer.prefer(fullBook.intro, book.intro);
-      book.latestChapterTitle = BookFieldSanitizer.prefer(fullBook.latestChapterTitle, book.latestChapterTitle);
       book.updateTime = BookFieldSanitizer.prefer(fullBook.updateTime, book.updateTime);
+      book.latestChapterTitle = BookFieldSanitizer.prefer(fullBook.latestChapterTitle, book.latestChapterTitle);
       book.wordCount = BookFieldSanitizer.prefer(fullBook.wordCount, book.wordCount);
       book.variable = fullBook.variable || book.variable;
     }
@@ -152,9 +155,10 @@ export class SearchBookShelfHelper {
           resolvedExisting.coverUrl = nextCoverUrl;
         }
         resolvedExisting.kind = BookFieldSanitizer.prefer(book.kind, resolvedExisting.kind);
+        resolvedExisting.status = BookFieldSanitizer.prefer(book.status, resolvedExisting.status);
         resolvedExisting.intro = BookFieldSanitizer.prefer(book.intro, resolvedExisting.intro);
-        resolvedExisting.latestChapterTitle = BookFieldSanitizer.prefer(book.latestChapterTitle, resolvedExisting.latestChapterTitle);
         resolvedExisting.updateTime = BookFieldSanitizer.prefer(book.updateTime, resolvedExisting.updateTime);
+        resolvedExisting.latestChapterTitle = BookFieldSanitizer.prefer(book.latestChapterTitle, resolvedExisting.latestChapterTitle);
         resolvedExisting.wordCount = BookFieldSanitizer.prefer(book.wordCount, resolvedExisting.wordCount);
         SearchExplorePendingBook.clearPendingAddToShelf(resolvedExisting);
         await db.updateBook(resolvedExisting, true, 'search_result_explicit_add_resolved');
@@ -199,8 +203,10 @@ export class SearchBookShelfHelper {
     book.name = searchBook.name;
     book.author = searchBook.author;
     book.kind = BookFieldSanitizer.clean(searchBook.kind);
+    book.status = BookFieldSanitizer.clean(searchBook.status);
     book.coverUrl = CoverUrlNormalizer.normalize(searchBook.coverUrl);
     book.intro = BookFieldSanitizer.clean(searchBook.intro);
+    book.updateTime = BookFieldSanitizer.clean(searchBook.updateTime);
     book.latestChapterTitle = BookFieldSanitizer.clean(searchBook.latestChapterTitle);
     book.wordCount = BookFieldSanitizer.clean(searchBook.wordCount);
     book.variable = searchBook.variable;

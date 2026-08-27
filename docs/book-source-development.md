@@ -1,14 +1,14 @@
 # Legado Harmony 书源开发指南
 
-> 适用版本：`3.7.835`（2026-08-26）。本文以当前工作区代码为准；规则能力、字段消费方式和限制可能随版本继续调整。
+> 适用版本：`3.8.837`（2026-08-27）。本文以当前工作区代码为准；规则能力、字段消费方式和限制可能随版本继续调整。
 
 本文面向为开源轻页编写、迁移和调试书源的开发者，描述项目当前代码中**已经实现并实际调用**的规则能力。
 
 | 项目 | 信息 |
 | --- | --- |
 | 适用项目 | `legado-harmony` |
-| 适用版本 | `3.7.835`（以 `AppScope/app.json5` 为准） |
-| 最后核对 | 2026-08-26 |
+| 适用版本 | `3.8.837`（以 `AppScope/app.json5` 为准） |
+| 最后核对 | 2026-08-27 |
 | 文档性质 | 当前实现参考，不是 Android「阅读」全部规则的等价清单 |
 
 > [!IMPORTANT]
@@ -105,7 +105,8 @@
       "lastChapter": "$.lastChapter",
       "bookUrl": "/book/{{$.id}}",
       "wordCount": "$.wordCount",
-      "status": "$.status"
+      "status": "$.status",
+      "updateTime": "$.updateTime"
     },
     "ruleExplore": {
       "bookList": "$.data.books[*]",
@@ -117,7 +118,8 @@
       "lastChapter": "$.lastChapter",
       "bookUrl": "/book/{{$.id}}",
       "wordCount": "$.wordCount",
-      "status": "$.status"
+      "status": "$.status",
+      "updateTime": "$.updateTime"
     },
     "ruleBookInfo": {
       "init": "$.data",
@@ -126,6 +128,7 @@
       "coverUrl": "$.cover",
       "intro": "$.intro",
       "kind": "$.category",
+      "status": "$.status",
       "lastChapter": "$.lastChapter",
       "wordCount": "$.wordCount",
       "updateTime": "$.updateTime",
@@ -747,6 +750,7 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 | `bookUrl` | 是 | 单个书籍元素 | 详情页；空地址的结果会被丢弃。 |
 | `wordCount` | 否 | 单个书籍元素 | 搜索结果字数；常规搜索链会解析并写入结果，精简校验模式会省略该展示字段。 |
 | `status` | 否 | 单个书籍元素 | 书籍状态/连载状态文本。 |
+| `updateTime` | 否 | 单个书籍元素 | 书籍更新时间文本；写入搜索结果，并可在详情和书架中显示。 |
 
 每个源常规搜索最多保留 50 条有效结果，总搜索最多保留 1000 条，并按“来源 + URL”去重。搜索并发数最大为 12；后台结果每约 500 ms 合并一次，避免每条回调都打断列表手势，因此搜索未结束时仍可滑动已出现的结果。搜索会清理超长或异常字段；书名约 120 字符、作者约 120、简介约 1200、URL 约 2048 字符。
 
@@ -754,9 +758,9 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 
 ### 发现规则 `ruleExplore`
 
-至少需要：`exploreUrl`、`bookList`、`name`、`bookUrl`。字段语义与搜索相同。发现链会读取 `wordCount`，并按“来源 + 详情 URL”去重。
+至少需要：`exploreUrl`、`bookList`、`name`、`bookUrl`。字段语义与搜索相同。发现链会读取 `wordCount`、`status` 和 `updateTime`，并按“来源 + 详情 URL”去重。
 
-当前搜索/发现通用卡片直接显示书名、`author`、`kind`、来源和封面，**不会为 `wordCount` 单独创建一行**；`wordCount` 仍会被解析、保存，并可在详情页作为标签显示。如果 `.author@text` 同时命中“作者、字数、阅读量”等多个同 class 节点，解析器会用换行连接它们，卡片看起来像是在显示三个独立字段，实际它们都属于 `author`。语义正确的书源应尽量分别提取作者和字数；若为兼容现有卡片而有意把多行元数据放进 `author`，必须先把 `renderCount(...)` 一类脚本文本转换为最终可读值，并接受作者聚合、书籍匹配和入架元数据可能受到影响的代价。
+搜索/发现通用卡片显示书名、作者、状态/分类标签、字数、最新章节、更新时间、来源和封面。详情页会再次请求 `ruleBookInfo`，用详情结果补全列表缺失字段。如果 `.author@text` 同时命中“作者、字数、阅读量”等多个同 class 节点，解析器会用换行连接它们，卡片看起来像是在显示三个独立字段，实际它们都属于 `author`。语义正确的书源应尽量分别提取作者和字数；若为兼容现有卡片而有意把多行元数据放进 `author`，必须先把 `renderCount(...)` 一类脚本文本转换为最终可读值，并接受作者聚合、书籍匹配和入架元数据可能受到影响的代价。
 
 当 `ruleExplore` 为 `null`、空数组、空对象或缺少必要字段时，会自动回退到 `ruleSearch`。`exploreUrl` 以 `@js:` / `js:` 开头时会按能力路由执行，结果应为分类对象数组的 JSON 字符串；简单表达式可由轻量引擎处理，完整脚本或带 `jsLib` 函数的模板可进入分阶段 ArkWeb。阶段脚本返回 `/api/...` 等相对地址时会以 `bookSourceUrl` 补全后再请求。两条路径都有代码、输出、操作或响应大小限制。
 
@@ -772,10 +776,83 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 | `coverUrl` | 补充封面。当前逻辑优先保留列表页已有封面。 |
 | `intro` | 更新简介，经过字段清理后择优保留。 |
 | `kind` | 更新分类。 |
+| `status` | 更新连载/完结等状态；作为独立字段保存，不要求混入 `kind`。旧书源若仍将状态写在 `kind` 中，仍会按分类标签兼容显示。 |
 | `lastChapter` | 更新最新章节。 |
 | `wordCount` | 更新字数。 |
-| `updateTime` | 详情链会写入 `Book.updateTime`，保存到书架数据库并用于显示最后更新时间；旧书没有该字段时仍兼容从 `kind` 中提取日期。 |
+| `updateTime` | 详情链会写入 `Book.updateTime`，保存到书架数据库并用于显示最后更新时间；旧书没有该字段时会保留列表阶段已有值。 |
 | `tocUrl` | 目录请求地址；以 URL 模式解析相对地址。为空时会尝试依据书籍 URL 和规则模板兜底。 |
+
+#### 书籍元数据字段兼容映射
+
+搜索、发现和详情阶段使用同一套书籍元数据语义。书源规则中的字段名与应用对象的映射如下：
+
+| 书源字段 | 书籍对象 | 搜索/发现列表 | 详情页 | 书架 |
+| --- | --- | --- | --- | --- |
+| `name` | `Book.name` / `SearchBook.name` | 显示 | 更新 | 显示 |
+| `author` | `author` | 显示 | 更新 | 显示 |
+| `kind` | `kind` | 分类标签 | 更新 | 分类标签 |
+| `status` | `status` | 状态标签 | 更新 | 状态标签 |
+| `wordCount` | `wordCount` | 元数据行 | 标签/元数据 | 可用于详情 |
+| `lastChapter` | `latestChapterTitle` | 最新章节元数据 | 最新章节区块 | 书架最新章节 |
+| `intro` | `intro` | 进入详情后显示 | 简介区块 | 详情/阅读上下文 |
+| `updateTime` | `updateTime` | 更新时间元数据 | 更新时间标签 | 最后更新时间 |
+
+`lastChapter` 是 Android 阅读书源中常见的旧字段，本项目继续接受它，并统一写入 `latestChapterTitle`。`status` 不再需要借用 `kind`；不过旧书源把“连载中/完结”等文本放入 `kind` 时仍可正常显示。`updateTime` 应返回站点原始的日期或时间文本，应用不会擅自把它转换成时间戳或替换成设备本地时间。
+
+HTML 书源示例：
+
+```json
+{
+  "ruleSearch": {
+    "bookList": ".book-item",
+    "name": ".title@text",
+    "author": ".author@text",
+    "kind": ".category@text",
+    "status": ".status@text",
+    "wordCount": ".word-count@text",
+    "lastChapter": ".latest@text",
+    "intro": ".intro@text",
+    "updateTime": ".updated@text",
+    "bookUrl": "a.detail@href"
+  },
+  "ruleBookInfo": {
+    "status": ".book-status@text",
+    "lastChapter": ".last-chapter@text",
+    "wordCount": ".word-count@text",
+    "intro": ".description@text",
+    "updateTime": ".update-time@text"
+  }
+}
+```
+
+JSON 书源示例：
+
+```json
+{
+  "ruleExplore": {
+    "bookList": "$.data.books[*]",
+    "name": "$.title",
+    "author": "$.author",
+    "kind": "$.category",
+    "status": "$.status",
+    "wordCount": "$.wordCount",
+    "lastChapter": "$.latestChapter",
+    "intro": "$.intro",
+    "updateTime": "$.updatedAt",
+    "bookUrl": "$.url"
+  },
+  "ruleBookInfo": {
+    "status": "$.status",
+    "lastChapter": "$.latestChapter",
+    "wordCount": "$.wordCount",
+    "intro": "$.description",
+    "updateTime": "$.updatedAt",
+    "tocUrl": "$.catalogUrl"
+  }
+}
+```
+
+如果接口字段名不同，只需把右侧 JSONPath/CSS 选择器替换为实际字段；不要把多个语义字段都写到 `author`。状态和更新时间为空时，详情链会保留列表阶段已有值，不会用空值覆盖已有数据。
 
 `init` 返回的是字符串。如果 JSONPath 命中对象，会被序列化成 JSON，因此后续仍可用 JSONPath；如果 CSS 命中元素，建议显式用 `@html` 保留 HTML。
 
@@ -1064,6 +1141,21 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 运行应用时，搜索、发现和 WebBook 服务会输出包含 `[SC]`、`[ExploreCoordinator]`、`[WS]` 的日志，可重点查看：最终 URL、状态码、响应长度、列表命中数量和第一条结果。
 
+### 单书源调试
+
+书源管理页的操作菜单提供“调试”，书源编辑页在填写有效的 `bookSourceUrl` 后也可以直接进入调试页。调试页支持以下阶段：
+
+- **搜索**：输入测试关键词，执行当前书源的搜索请求和列表字段解析。
+- **发现**：输入可选关键词，使用第一个发现分类执行列表解析。
+- **详情**：输入书籍或详情 URL，检查 `ruleBookInfo` 字段和 `tocUrl`。
+- **目录**：输入书籍或目录 URL，最多抽样 32 章，检查章节名和章节地址。
+- **正文**：输入章节 URL，检查正文规则返回的内容。
+- **全链路**：从搜索或发现取得候选书，再依次执行详情、目录和首章正文。
+
+执行明细会记录网络请求的最终地址、状态码、响应大小和摘要，以及每个字段的规则类型、输入数、匹配数、耗时、输出预览和错误。调试信息只用于当前诊断会话，不改变书源规则；调试阶段仍使用应用的正常请求、Cookie、登录和 ArkWeb 路由，因此不能替代真实账号状态下的最终验收。正文阶段的输入是章节 URL，详情和目录阶段的输入应是书源能够处理的书籍/目录 URL。
+
+当出现“请求成功但字段为空”时，先查看对应字段的匹配数和输出预览；当出现地址未解析、目录为空或正文为空时，按网络请求 → URL 规则 → 字段规则的顺序检查。调试日志中若出现 401/403、验证码或登录页，应先完成书源登录/网页验证，再重新运行对应阶段。
+
 ### 常见故障定位
 
 | 现象 | 优先检查 |
@@ -1080,7 +1172,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 | 正式目录规则失败但阅读页仍有目录 | 首次打开可能正在使用临时通用 HTML 目录；查看 `[WS] 通用目录兜底` 日志或“正式目录规则未匹配”提示。修好 `chapterList`，不要把临时结果当作书源有效。 |
 | 目录末尾章节出现在最前面或重复 | 页面可能先渲染“最新章节”再渲染完整目录；优先让 `chapterList` 精确限制在完整目录容器，通用兜底只在正式规则 0 匹配时生效。 |
 | 发现页显示 `renderCount('...')万字` | 普通 HTTP 不执行页面内脚本；从局部 `@html` 提取数字并用 `<js>` 换算，或在确实依赖渲染时使用 `webView`/`webJs`。同时确认它来自 `wordCount`，而不是宽泛的 `author` 多命中。 |
-| `wordCount` 已解析但发现卡片没有单独一行 | 当前通用搜索/发现卡片不单独渲染 `wordCount`；它会保存并在详情页使用。不要误把多个同 class 元素都塞进 `author`，除非明确接受元数据污染。 |
+| `wordCount`、`lastChapter` 或 `updateTime` 已解析但卡片没有显示 | 确认使用的是当前版本的搜索/发现组件，并检查字段规则是否返回空字符串；卡片会以元数据行显示字数、最新章节和更新时间。不要误把多个同 class 元素都塞进 `author`，除非明确接受元数据污染。 |
 | 发现有封面、详情后封面仍错误 | 详情规则不会覆盖非空列表封面；先修正 `ruleSearch`/`ruleExplore.coverUrl`，或让不可靠的列表封面返回空值。 |
 | 正文返回整页文字 | `content` 选择器太宽；先缩到正文容器，再用 `replaceRegex`。 |
 | 正文是空字符串 | 请求失败、被验证拦截、提取规则为空，或提取结果被净化正则全部删除。 |
@@ -1143,7 +1235,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 | 状态 | 字段/能力 |
 | --- | --- |
-| 通用链已实际使用 | 搜索/发现的列表、书名、作者、封面、简介、分类、最新章节、字数、详情 URL；发现两级分组和动态原生筛选；`jsLib` URL 构建和持久化源变量；分阶段 ArkWeb；显式 `webView`/`webJs` 请求；动态登录输入/开关/选择/按钮、同站点 Cookie、幂等 Cookie 重放、浏览器等待；详情 `init`、书籍字段、详情 `updateTime`、目录 URL；目录列表、章节名、章节 URL、下一页、VIP、付费状态、更新时间；正文内容、图片、图片请求头、书源规则内图片解码、漫画模式、下一页、净化正则和 JS；普通书/漫画/有声书类型；书源请求限流。 |
+| 通用链已实际使用 | 搜索/发现的列表、书名、作者、封面、简介、分类、状态、最新章节、字数、更新时间、详情 URL；发现两级分组和动态原生筛选；`jsLib` URL 构建和持久化源变量；分阶段 ArkWeb；显式 `webView`/`webJs` 请求；动态登录输入/开关/选择/按钮、同站点 Cookie、幂等 Cookie 重放、浏览器等待；详情 `init`、书籍字段、状态、`updateTime`、目录 URL；目录列表、章节名、章节 URL、下一页、VIP、付费状态、更新时间；正文内容、图片、图片请求头、书源规则内图片解码、漫画模式、下一页、净化正则和 JS；普通书/漫画/有声书类型；书源请求限流。 |
 | 已接入并可安全灰度 | QuickJS 启动自检、持久化纯表达式比对、合格指纹灰度接管、失败回退和熔断；不直接执行主机函数，也不替代选择器或复杂 ArkWeb 脚本。 |
 | 编码数据已实际使用 | 标准 `data:` 文本、Base64 负载，以及带明确 HTTP(S) URL 的通用 `type: "request"` 请求描述。应用不提供平台协议、候选后端或站点专用会话补丁。 |
 | 可导入/编辑，但通用链目前未消费 | 正文 `title`。 |
@@ -1210,7 +1302,8 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
       "lastChapter": "",
       "bookUrl": "",
       "wordCount": "",
-      "status": ""
+      "status": "",
+      "updateTime": ""
     },
     "ruleExplore": {
       "bookList": "",
@@ -1222,7 +1315,8 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
       "lastChapter": "",
       "bookUrl": "",
       "wordCount": "",
-      "status": ""
+      "status": "",
+      "updateTime": ""
     },
     "ruleBookInfo": {
       "init": "",
@@ -1231,6 +1325,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
       "coverUrl": "",
       "intro": "",
       "kind": "",
+      "status": "",
       "lastChapter": "",
       "wordCount": "",
       "updateTime": "",
@@ -1294,6 +1389,8 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 - 书源管理页及导入、校验、批量操作：`entry/src/main/ets/pages/BookSource.ets`
 - 校验状态和后台校验任务：`BookSource.ets` 中的 `startCheckSources`、`bookSourceCheckProgressText`、`deleteFailedCheckedSources`
+- 单书源调试页及阶段执行：`entry/src/main/ets/pages/BookSourceDebug.ets`、`entry/src/main/ets/core/book/BookSourceDebugModels.ts`
+- 调试请求和规则轨迹：`HttpClient.ts`、`RuleExecutionService.ts`、`BookSourceStageWebRuntime.ts` 中的 `BookSourceDebugContext`
 - 发现/阅读全链路校验：`entry/src/main/ets/core/book/ExploreReadingValidator.ts`
 - 用户控制的精确主机证书例外：`entry/src/main/ets/core/http/TlsTrustStore.ts`
 - 规则执行快照与阅读交互桥接：`entry/src/main/ets/core/book/BookSourceRuntimeSnapshot.ts`、`entry/src/main/ets/core/book/ReaderInteractionProvider.ts`

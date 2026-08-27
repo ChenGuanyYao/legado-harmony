@@ -127,10 +127,12 @@ export class ChangeSourceResultCache {
     target.name = source.name || '';
     target.author = source.author || '';
     target.kind = '';
+    target.status = source.status || '';
     target.coverUrl = '';
     target.intro = '';
     target.latestChapterTitle = source.latestChapterTitle || '';
     target.wordCount = '';
+    target.updateTime = source.updateTime || '';
     target.tocUrl = source.tocUrl || '';
     target.variable = source.variable || '';
     target.bookSourceComment = '';

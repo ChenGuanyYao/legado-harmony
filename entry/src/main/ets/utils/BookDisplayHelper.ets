@@ -25,7 +25,7 @@ export class BookDisplayHelper {
   }
 
   static getBookTags(book: Book): string[] {
-    const sourceTags = BookDisplayHelper.splitTags(book.kind, '');
+    const sourceTags = BookDisplayHelper.splitTags(book.kind, book.status);
     const customTokens = BookDisplayHelper.splitTags('', book.customTag);
     const hiddenTags: string[] = [];
     const customTags: string[] = [];

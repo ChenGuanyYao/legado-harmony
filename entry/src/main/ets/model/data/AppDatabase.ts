@@ -51,7 +51,7 @@ export class AppDatabase {
   private bookProgressWriteTasks: Map<string, Promise<void>> = new Map<string, Promise<void>>();
   private latestBookProgressWriteTimes: Map<string, number> = new Map<string, number>();
   private readonly DATABASE_NAME = 'legado.db';
-  private readonly SCHEMA_VERSION = 17;
+  private readonly SCHEMA_VERSION = 18;
 
   private constructor() {}
 
@@ -107,6 +107,7 @@ export class AppDatabase {
         name TEXT DEFAULT '',
         author TEXT DEFAULT '',
         kind TEXT,
+        status TEXT DEFAULT '',
         customTag TEXT,
         coverUrl TEXT,
         customCoverUrl TEXT,
@@ -348,6 +349,7 @@ export class AppDatabase {
       { table: 'books', column: 'origin', definition: "origin TEXT DEFAULT 'local'" },
       { table: 'books', column: 'originName', definition: "originName TEXT DEFAULT ''" },
       { table: 'books', column: 'kind', definition: "kind TEXT DEFAULT ''" },
+      { table: 'books', column: 'status', definition: "status TEXT DEFAULT ''" },
       { table: 'books', column: 'customTag', definition: "customTag TEXT DEFAULT ''" },
       { table: 'books', column: 'coverUrl', definition: "coverUrl TEXT DEFAULT ''" },
       { table: 'books', column: 'customCoverUrl', definition: "customCoverUrl TEXT DEFAULT ''" },
@@ -568,6 +570,7 @@ export class AppDatabase {
       name: book.name,
       author: book.author,
       kind: book.kind,
+      status: book.status,
       customTag: book.customTag,
       coverUrl: book.coverUrl,
       customCoverUrl: book.customCoverUrl,
@@ -616,6 +619,7 @@ export class AppDatabase {
       name: book.name,
       author: book.author,
       kind: book.kind,
+      status: book.status,
       customTag: book.customTag,
       coverUrl: book.coverUrl,
       customCoverUrl: book.customCoverUrl,
@@ -672,6 +676,7 @@ export class AppDatabase {
       name: book.name,
       author: book.author,
       kind: book.kind,
+      status: book.status,
       customTag: book.customTag,
       coverUrl: book.coverUrl,
       customCoverUrl: book.customCoverUrl,
@@ -1207,6 +1212,7 @@ export class AppDatabase {
     book.name = this.getStringColumn(resultSet, 'name');
     book.author = this.getStringColumn(resultSet, 'author');
     book.kind = this.getStringColumn(resultSet, 'kind');
+    book.status = this.getStringColumn(resultSet, 'status');
     book.customTag = this.getStringColumn(resultSet, 'customTag');
     book.coverUrl = this.getStringColumn(resultSet, 'coverUrl');
     book.customCoverUrl = this.getStringColumn(resultSet, 'customCoverUrl');

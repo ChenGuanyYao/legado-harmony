@@ -11,7 +11,7 @@ class ExploreCacheEntry {
 }
 
 class ExploreCachePayload {
-  version: number = 3;
+  version: number = 4;
   entries: ExploreCacheEntry[] = [];
 }
 
@@ -23,10 +23,10 @@ export class ExploreCacheHit {
 }
 
 export class ExploreResultCache {
-  // v3 invalidates entries created before source-script cookie/auth refresh was
-  // supported. Those entries may contain short-lived signed book URLs which
-  // can still render in discovery but fail when the user opens the detail page.
-  private static readonly SCHEMA_VERSION: number = 3;
+  // v4 invalidates entries created before discovery metadata was recovered from
+  // the raw API item. Older entries can have an empty intro even though the
+  // current source response contains one.
+  private static readonly SCHEMA_VERSION: number = 4;
   private static readonly STORE_NAME: string = 'explore_result_cache';
   private static readonly CACHE_KEY: string = 'entries';
   private static readonly TTL_MS: number = 24 * 60 * 60 * 1000;
@@ -126,10 +126,12 @@ export class ExploreResultCache {
     target.name = source.name || '';
     target.author = source.author || '';
     target.kind = source.kind || '';
+    target.status = source.status || '';
     target.coverUrl = source.coverUrl || '';
     target.intro = source.intro || '';
     target.latestChapterTitle = source.latestChapterTitle || '';
     target.wordCount = source.wordCount || '';
+    target.updateTime = source.updateTime || '';
     target.tocUrl = source.tocUrl || '';
     target.variable = source.variable || '';
     target.bookSourceComment = source.bookSourceComment || '';

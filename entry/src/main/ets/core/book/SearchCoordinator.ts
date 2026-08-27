@@ -20,6 +20,7 @@ import { RuleBatchExecutionRequest, RuleFieldRequest } from '../rule/RuleExecuti
 import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
 import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
 import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
+import { BookSourceDebugContext } from './BookSourceDebugModels';
 
 export interface SearchProgress {
   done: number;
@@ -72,6 +73,7 @@ export interface SearchOptions {
   maxTotalResults?: number;
   stopAfterResults?: number;
   maxCandidatesPerSource?: number;
+  debugContext?: BookSourceDebugContext;
 }
 
 interface ScoredSearchBook {
@@ -240,6 +242,10 @@ export class SearchCoordinator {
   }
 
   private async searchOne(source: BookSource, keyword: string, options: SearchOptions): Promise<SearchSourceResult> {
+    const debugContext = options.debugContext;
+    if (debugContext) debugContext.beginStep(SourceRuntimeStage.SEARCH, `搜索：${keyword}`);
+    let debugPassed = false;
+    let debugError = '';
     try {
       if (this.cancelled) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
@@ -281,7 +287,7 @@ export class SearchCoordinator {
 
       const au = new AnalyzeUrl(source, this.http);
       let urlTemplate = await this.evalAndBuild(js, source, keyword, responseLimit,
-        options.validationOnly === true);
+        options.validationOnly === true, debugContext || null);
       if (!urlTemplate) {
         return this.sourceResult([], BookSource.VALIDATION_FAILED, '搜索地址无法解析');
       }
@@ -289,7 +295,9 @@ export class SearchCoordinator {
         console.log('[SC] search source:', source.bookSourceName, 'url:', urlTemplate);
       }
       const resp = EncodedSourceUrl.canHandle(urlTemplate) ?
-        await this.fetchEncodedDataUrl(urlTemplate, source, responseLimit) : await au.fetch(urlTemplate, responseLimit);
+        await this.fetchEncodedDataUrl(urlTemplate, source, responseLimit) :
+          await au.fetch(urlTemplate, responseLimit, debugContext || null);
+      if (debugContext) debugContext.setOutput('searchUrl', urlTemplate);
       if (this.cancelled) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
       }
@@ -363,7 +371,9 @@ export class SearchCoordinator {
           this.applySimpleSourceUrlConstants(searchRule.bookUrl || '', source.jsLib || ''), true),
         // 换源搜索同样需要展示各书源当前提供的最新章节。该字段通常与书名、作者
         // 位于同一搜索结果节点中，保留它不会引入额外网络请求。
-        new RuleFieldRequest('lastChapter', searchRule.lastChapter || '')
+        new RuleFieldRequest('lastChapter', searchRule.lastChapter || ''),
+        new RuleFieldRequest('status', searchRule.status || ''),
+        new RuleFieldRequest('updateTime', searchRule.updateTime || '')
       ];
       if (!options.leanResult) {
         fieldRequest.fields.push(new RuleFieldRequest('coverUrl',
@@ -378,6 +388,7 @@ export class SearchCoordinator {
       }
       for (const key in encodedVariables) fieldRequest.contextValues[key] = encodedVariables[key];
       fieldRequest.timeoutMs = options.validationOnly === true ? 15000 : 30000;
+      fieldRequest.debugContext = debugContext || null;
       const fieldBatch = await RuleExecutionService.get().executeBatch(fieldRequest);
       if (fieldBatch.cancelled || this.cancelled) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
@@ -423,7 +434,9 @@ export class SearchCoordinator {
           fieldValues['coverUrl'] || '', item, baseUrl);
         book.intro = BookFieldSanitizer.clean(fieldValues['intro'] || '');
         book.kind = BookFieldSanitizer.clean(fieldValues['kind'] || '');
+        book.status = BookFieldSanitizer.clean(fieldValues['status'] || '');
         book.latestChapterTitle = BookFieldSanitizer.clean(fieldValues['lastChapter'] || '');
+        book.updateTime = BookFieldSanitizer.clean(fieldValues['updateTime'] || '');
         book.wordCount = BookFieldSanitizer.clean(fieldValues['wordCount'] || '');
         if (sourceApiRecord) {
           if (!book.coverUrl) book.coverUrl = String(sourceApiRecord['cover'] || sourceApiRecord['coverUrl'] || '');
@@ -434,10 +447,13 @@ export class SearchCoordinator {
           if (!book.wordCount) book.wordCount = String(sourceApiRecord['wordsCount'] ||
             sourceApiRecord['wordCount'] || '');
           if (!book.kind) {
-            book.kind = [sourceApiRecord['status'], sourceApiRecord['category'], sourceApiRecord['subCategory']]
+            book.kind = [sourceApiRecord['category'], sourceApiRecord['subCategory']]
               .map((value: Object): string => String(value || '').trim()).filter((value: string): boolean => !!value)
               .join(' ');
           }
+          if (!book.status) book.status = BookFieldSanitizer.clean(String(sourceApiRecord['status'] || ''));
+          if (!book.updateTime) book.updateTime = BookFieldSanitizer.clean(String(sourceApiRecord['updateTime'] ||
+            sourceApiRecord['updatedAt'] || ''));
         }
         book.variable = itemIndex < fieldBatch.contextValues.length ? fieldBatch.contextValues[itemIndex] :
           ir.getContext().toPersistentJson();
@@ -497,6 +513,8 @@ export class SearchCoordinator {
         }
       }
       if (books.length > 0) {
+        debugPassed = true;
+        if (debugContext) debugContext.setOutput('resultCount', String(books.length));
         return this.sourceResult(books, BookSource.VALIDATION_PASSED, '');
       }
       if (items.length > 0) {
@@ -508,9 +526,12 @@ export class SearchCoordinator {
         console.error('[SC] search failed:', source.bookSourceName, e);
       }
       const reason = e instanceof Error ? e.message : String(e);
+      debugError = reason;
       return this.sourceResult([], this.isExplicitRuleError(reason) ?
         BookSource.VALIDATION_FAILED : BookSource.VALIDATION_TEMPORARY_ERROR,
       reason || '搜索过程中发生异常');
+    } finally {
+      if (debugContext) debugContext.finishStep(debugPassed ? 'passed' : 'failed', debugError);
     }
   }
 
@@ -611,9 +632,11 @@ export class SearchCoordinator {
     book.name = this.cleanTextField(book.name, 120);
     book.author = this.cleanTextField(book.author, 120);
     book.kind = this.cleanTextField(book.kind, 240);
+    book.status = this.cleanTextField(book.status, 120);
     book.intro = this.cleanTextField(book.intro, 1200);
     book.latestChapterTitle = this.cleanTextField(book.latestChapterTitle, 160);
     book.wordCount = this.cleanTextField(book.wordCount, 80);
+    book.updateTime = this.cleanTextField(book.updateTime, 80);
     book.bookUrl = this.cleanUrlField(book.bookUrl, 2048);
     book.tocUrl = this.cleanUrlField(book.tocUrl, 2048);
     book.coverUrl = this.cleanUrlField(book.coverUrl, 4096);
@@ -627,7 +650,9 @@ export class SearchCoordinator {
     book.coverUrl = '';
     book.intro = '';
     book.kind = '';
+    book.status = '';
     book.wordCount = '';
+    book.updateTime = '';
     book.bookSourceComment = '';
   }
 
@@ -968,7 +993,8 @@ export class SearchCoordinator {
   }
 
   private async evalAndBuild(js: JsRuntime, source: BookSource, keyword: string,
-    maxResponseBytes: number, validationOnly: boolean): Promise<string> {
+    maxResponseBytes: number, validationOnly: boolean,
+    debugContext: BookSourceDebugContext | null = null): Promise<string> {
     const searchUrl = source.searchUrl;
     const baseUrl = source.bookSourceUrl;
     if (!searchUrl) return `${baseUrl}/search?q={{key}}`;
@@ -986,7 +1012,7 @@ export class SearchCoordinator {
       `${source.jsLib || ''}\n${searchUrl}`);
     const requiresStageRuntime = isFullJsSearchUrl ||
       (searchUrl.includes('{{') && searchRuntimeDecision.runtime === 'arkweb');
-    const stageUrl = await this.tryBuildStageRuntimeSearchUrl(source, keyword, validationOnly);
+    const stageUrl = await this.tryBuildStageRuntimeSearchUrl(source, keyword, validationOnly, debugContext);
     if (stageUrl) return stageUrl;
     const scriptedFormUrl = await this.tryBuildScriptedFormSearchUrl(source, keyword, maxResponseBytes);
     if (scriptedFormUrl) return scriptedFormUrl;
@@ -1022,7 +1048,7 @@ export class SearchCoordinator {
   }
 
   private async tryBuildStageRuntimeSearchUrl(source: BookSource, keyword: string,
-    validationOnly: boolean): Promise<string> {
+    validationOnly: boolean, debugContext: BookSourceDebugContext | null = null): Promise<string> {
     const rawSearchUrl = source.searchUrl || '';
     const isFullJsUrl = this.isFullJsUrl(rawSearchUrl);
     const hostCode = `${source.jsLib || ''}\n${source.searchUrl || ''}`;
@@ -1038,6 +1064,7 @@ export class SearchCoordinator {
     request.source = source;
     request.baseUrl = source.bookSourceUrl;
     request.ownerId = this.stageRuntimeOwnerId;
+    request.debugContext = debugContext;
     if (validationOnly) {
       request.maxResponseBytes = MAX_VALIDATION_STAGE_RESPONSE_BYTES;
       request.maxTotalResponseBytes = MAX_VALIDATION_STAGE_TOTAL_RESPONSE_BYTES;
