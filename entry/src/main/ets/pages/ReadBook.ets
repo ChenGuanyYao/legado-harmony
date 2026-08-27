@@ -718,6 +718,7 @@ struct ReadBookPage {
   private readerGestureTurnAllowance: number = 0;
   private slideResetSerial: number = 0;
   @StorageLink('readerFontSize') @Watch('onReadLayoutChanged') readerFontSize: number = 20;
+  @StorageLink('readerLetterSpacing') @Watch('onReadLayoutChanged') readerLetterSpacing: number = 0;
   @StorageLink('readerLineHeight') @Watch('onReadLayoutChanged') readerLineHeight: number = 12;
   @StorageLink('readerParagraphSpacing') @Watch('onReadLayoutChanged') readerParagraphSpacing: number = 0;
   @StorageLink('readerMarginLeft') @Watch('onReadLayoutChanged') readerMarginLeft: number = 18;
@@ -751,6 +752,12 @@ struct ReadBookPage {
   @StorageLink('readerPreloadChapterCount') @Watch('onReaderPreloadChanged') readerPreloadChapterCount: number = 1;
   @StorageLink('readerUseTtsQuickAction') readerUseTtsQuickAction: boolean = true;
   @StorageLink('readerUseChapterQuickJump') readerUseChapterQuickJump: boolean = true;
+  @StorageLink('readerHeaderEnabled') @Watch('onReaderChromeChanged') readerHeaderEnabled: boolean = false;
+  @StorageLink('readerHeaderContentMode') @Watch('onReaderChromeChanged') readerHeaderContentMode: string = 'chapter';
+  @StorageLink('readerFooterEnabled') @Watch('onReaderChromeChanged') readerFooterEnabled: boolean = true;
+  @StorageLink('readerFooterLeftMode') @Watch('onReaderChromeChanged') readerFooterLeftMode: string = 'chapter';
+  @StorageLink('readerFooterProgressMode') @Watch('onReaderChromeChanged') readerFooterProgressMode: string = 'page';
+  @StorageLink('readerFooterShowProgressBar') @Watch('onReaderChromeChanged') readerFooterShowProgressBar: boolean = false;
   @StorageLink('readerReplaceRulesUpdateTime') @Watch('onReaderReplaceRulesChanged') readerReplaceRulesUpdateTime: number = 0;
   @StorageLink('readerFontFamily') @Watch('onReaderFontChanged') readerFontFamily: string = '';
   @StorageLink('readerFontFilePath') @Watch('onReaderFontChanged') readerFontFilePath: string = '';
@@ -833,6 +840,7 @@ struct ReadBookPage {
   private readerTypographyDraftPending: boolean = false;
   @State readerTypographyValueRevision: number = 0;
   @State readerTypographyFontSize: number = 20;
+  @State readerTypographyLetterSpacing: number = 0;
   @State readerTypographyLineHeight: number = 12;
   @State readerTypographyParagraphSpacing: number = 0;
   @State readerTypographyMarginLeft: number = 18;
@@ -2296,9 +2304,14 @@ struct ReadBookPage {
       })
 
       Column() {
+        if (this.readerHeaderEnabled && !!this.getReaderHeaderInfoText() && !this.isReaderComicModeActive()) {
+          this.readerHeaderInfoBar()
+        }
         Blank()
           .layoutWeight(1)
-        this.readerBottomInfoBar()
+        if (this.readerFooterEnabled && !this.isReaderComicModeActive()) {
+          this.readerBottomInfoBar()
+        }
       }
       .width('100%')
       .height('100%')
@@ -2567,9 +2580,14 @@ struct ReadBookPage {
               this.readerSimulationCurlCanvas()
             }
             Column() {
+              if (this.readerHeaderEnabled && !!this.getReaderHeaderInfoText()) {
+                this.readerHeaderInfoBar()
+              }
               Blank()
                 .layoutWeight(1)
-              this.readerBottomInfoBar()
+              if (this.readerFooterEnabled) {
+                this.readerBottomInfoBar()
+              }
             }
             .width('100%')
             .height('100%')
@@ -5292,6 +5310,51 @@ struct ReadBookPage {
     return `${index + 1}/${this.chapters.length} ${chapter ? this.getChapterTitle(index) : this.getChapterTitle()}`;
   }
 
+  getReaderHeaderInfoText(): string {
+    const mode = this.readerHeaderContentMode;
+    if (mode === 'book') return this.book?.name || '未命名书籍';
+    if (mode === 'book_chapter') {
+      const title = this.getChapterTitle(this.clampChapterIndex(this.currentChapterIndex));
+      return `${this.book?.name || '未命名书籍'} · ${title}`;
+    }
+    if (mode === 'none') return '';
+    return this.getChapterTitle(this.clampChapterIndex(this.currentChapterIndex));
+  }
+
+  getReaderFooterLeftText(): string {
+    if (this.readerFooterLeftMode === 'none') return '';
+    if (this.readerFooterLeftMode === 'title') {
+      return this.getChapterTitle(this.clampChapterIndex(this.currentChapterIndex));
+    }
+    return this.getChapterInfoText();
+  }
+
+  getReaderFooterProgressText(): string {
+    const mode = this.readerFooterProgressMode;
+    if (mode === 'none') return '';
+    if (mode === 'percentage') {
+      const total = Math.max(1, this.contentPages.length);
+      const page = Math.max(0, Math.min(this.currentPageIndex, total - 1));
+      return `${Math.round(((page + 1) / total) * 100)}%`;
+    }
+    if (mode === 'chapter') {
+      return `${this.currentChapterIndex + 1}/${Math.max(1, this.chapters.length)} 章`;
+    }
+    if (mode === 'book') {
+      const chapterCount = Math.max(1, this.chapters.length);
+      return `${Math.round(((this.currentChapterIndex + 1) / chapterCount) * 100)}%`;
+    }
+    return this.getPageInfoText();
+  }
+
+  getReaderFooterProgressValue(): number {
+    if (this.readerFooterProgressMode === 'book') {
+      return Math.max(0, Math.min(100, ((this.currentChapterIndex + 1) / Math.max(1, this.chapters.length)) * 100));
+    }
+    return Math.max(0, Math.min(100,
+      ((Math.max(0, this.currentPageIndex) + 1) / Math.max(1, this.contentPages.length)) * 100));
+  }
+
   getPageInfoText(): string {
     if (this.contentPages.length === 0) {
       return '1/1';
@@ -5877,7 +5940,23 @@ struct ReadBookPage {
   }
 
   getEffectiveReaderMarginTop(): number {
-    return this.getEffectiveReaderVerticalMargin(true);
+    return this.getEffectiveReaderVerticalMargin(true) + this.getReaderHeaderContentReserve();
+  }
+
+  getReaderHeaderInfoBarHeight(): number {
+    // 页眉采用固定单行高度，避免首次测量后再次触发整章分页。
+    return 18;
+  }
+
+  getReaderHeaderOverlayTopInset(): number {
+    // 普通阅读容器已经通过 getReaderTopSafePadding() 避让状态栏；叠页/仿真为了让纸张
+    // 覆盖全屏而不消费顶部安全区，需要在页眉自身补回这段高度。
+    return this.getReaderTopSafePadding() <= 0 ? this.getReaderPageContentTopPadding() : 0;
+  }
+
+  getReaderHeaderContentReserve(): number {
+    return this.readerHeaderEnabled && !!this.getReaderHeaderInfoText() && !this.isReaderComicModeActive() ?
+      this.getReaderHeaderInfoBarHeight() + 4 : 0;
   }
 
   getEffectiveReaderMarginBottom(): number {
@@ -5928,8 +6007,11 @@ struct ReadBookPage {
   }
 
   currentReaderV2ChapterSurfaceKeys(): string[] {
-    // Reuse one retained native canvas for every page in a chapter. Only a real document handoff replaces it.
-    return [`reader_v2_chapter_${this.currentChapterIndex}_${this.readerV2SurfaceGeneration}`];
+    // Keep the native canvas stable during an animation, but remount it after the settled page index changes.
+    // ArkUI can retain a NodeContainer even after updatePage() receives a new page object; keying by the settled
+    // page makes the declarative host and the retained FrameNode advance atomically instead of leaving old正文.
+    return [`reader_v2_chapter_${this.currentChapterIndex}_${this.currentPageIndex}_` +
+      `${this.readerV2SurfaceGeneration}`];
   }
 
   visibleCurrentPageText(): string {
@@ -6545,6 +6627,7 @@ struct ReadBookPage {
 
   applyLoadedReaderSettings(settings: ReaderSettings): void {
     this.readerFontSize = settings.fontSize;
+    this.readerLetterSpacing = settings.letterSpacing;
     this.readerLineHeight = settings.lineHeight;
     this.readerParagraphSpacing = settings.paragraphSpacing;
     this.readerMarginLeft = settings.marginLeft;
@@ -6577,6 +6660,12 @@ struct ReadBookPage {
     this.readerPreloadChapterCount = settings.preloadChapterCount;
     this.readerUseTtsQuickAction = settings.useTtsQuickAction;
     this.readerUseChapterQuickJump = settings.useChapterQuickJump;
+    this.readerHeaderEnabled = settings.readerHeaderEnabled;
+    this.readerHeaderContentMode = settings.readerHeaderContentMode;
+    this.readerFooterEnabled = settings.readerFooterEnabled;
+    this.readerFooterLeftMode = settings.readerFooterLeftMode;
+    this.readerFooterProgressMode = settings.readerFooterProgressMode;
+    this.readerFooterShowProgressBar = settings.readerFooterShowProgressBar;
     this.readerFontFamily = settings.fontFamily || '';
     this.readerFontFilePath = settings.fontFilePath || '';
     AppStorage.setOrCreate<string>('readerFontSourceName', settings.fontSourceName || '系统默认');
@@ -8040,6 +8129,7 @@ struct ReadBookPage {
   getReaderContentBottomReserve(): number {
     // The reader surface extends through the system navigation area. Reserve the footer line plus its visual
     // lift so the last正文 row cannot be painted underneath metadata moved above the gesture indicator.
+    if (!this.readerFooterEnabled || this.isReaderComicModeActive()) return 0;
     return Math.max(8, this.getReaderBottomInfoBarHeight() + this.getReaderBottomInfoBarBottomInset() +
       this.getReaderBottomInfoBarContentGap());
   }
@@ -8052,15 +8142,16 @@ struct ReadBookPage {
   }
 
   getReaderBottomInfoBarHeight(): number {
+    const fallbackHeight = 12 + (this.readerFooterShowProgressBar ? 5 : 0);
     if (this.readerBottomInfoBarMeasuredHeight > 0) {
-      return this.readerBottomInfoBarMeasuredHeight;
+      return Math.max(this.readerBottomInfoBarMeasuredHeight, fallbackHeight);
     }
     // Used only for the first layout pass. The rendered Text reports its real one-line box below,
     // including the current device's font scale, and immediately replaces this conversion.
     try {
-      return px2vp(Math.max(1, fp2px(12)));
+      return px2vp(Math.max(1, fp2px(fallbackHeight)));
     } catch (_) {
-      return 12;
+      return fallbackHeight;
     }
   }
 
@@ -8077,11 +8168,12 @@ struct ReadBookPage {
   getReaderV2BottomGuard(): number {
     // Native Paragraph pagination is created before the footer's first area callback. Use the deterministic
     // fallback line height here so measuring the real Text never invalidates a retained pagination session.
-    let footerHeight = 12;
+    if (!this.readerFooterEnabled || this.isReaderComicModeActive()) return 0;
+    let footerHeight = 12 + (this.readerFooterShowProgressBar ? 5 : 0);
     try {
       footerHeight = px2vp(Math.max(1, fp2px(12)));
     } catch (_) {
-      footerHeight = 12;
+      footerHeight = 12 + (this.readerFooterShowProgressBar ? 5 : 0);
     }
     return Math.max(8, footerHeight + this.getReaderBottomInfoBarBottomInset() +
       this.getReaderBottomInfoBarContentGap());
@@ -8265,9 +8357,10 @@ struct ReadBookPage {
       // on the same line without changing the user's chosen font size.
       const snappedWidthPx = Math.floor(widthPx);
       const charsPerLine = Math.max(8, Math.floor(availableWidth / Math.max(1, this.readerFontSize)));
-      return Math.max(-0.08, Math.min(0, px2fp((snappedWidthPx - widthPx) / charsPerLine)));
+      const adaptiveCorrection = Math.max(-0.08, Math.min(0, px2fp((snappedWidthPx - widthPx) / charsPerLine)));
+      return this.readerLetterSpacing + adaptiveCorrection;
     } catch (_) {
-      return 0;
+      return this.readerLetterSpacing;
     }
   }
 
@@ -8428,6 +8521,30 @@ struct ReadBookPage {
   onReadLayoutChanged(): void {
     if (this.readerEntryInitializing || this.readerLayoutCommitInProgress) return;
     this.scheduleReaderLayoutChange();
+  }
+
+  onReaderChromeChanged(): void {
+    if (this.readerEntryInitializing) return;
+    const readingOffset = this.getReaderStableReflowOffset();
+    this.readerTypographyRestoreOffset = readingOffset;
+    this.invalidateReaderTypographyLayout();
+    this.refreshReaderTextRender();
+    if (this.content) {
+      this.paginateContent(this.content);
+      if (this.hasPagedReaderArea() && this.pagedContentText) {
+        this.currentPageIndex = this.normalizeReaderSpreadPageIndex(
+          this.findPageIndexByOffset(readingOffset));
+        this.syncCurrentPageText();
+        // 页眉/页脚设置会清空 V2 的 retained controller。强制发布当前页，避免 NodeContainer
+        // 在下一次翻页前继续绘制设置变更前的旧正文。
+        this.forceCurrentReaderPageRender();
+        this.refreshCurrentReaderV2RetainedPages(true);
+      }
+    }
+    this.preloadNextChapterPaginationLater();
+    this.preloadPreviousChapterPaginationLater();
+    this.saveReaderChromeSettings();
+    this.saveReadingProgress();
   }
 
   scheduleReaderLayoutChange(): void {
@@ -9534,31 +9651,66 @@ struct ReadBookPage {
 
   @Builder
   readerBottomInfoBar() {
-    Row() {
-      Text(this.getChapterInfoText())
-        .fontSize(12)
-        .fontColor(this.getSubTextColor())
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .layoutWeight(1)
-        .onAreaChange((_oldValue: Area, newValue: Area) => {
-          this.rememberReaderBottomInfoBarHeight(newValue);
-        })
+    Column({ space: 3 }) {
+      if (this.readerFooterShowProgressBar) {
+        Progress({ value: this.getReaderFooterProgressValue(), total: 100, type: ProgressType.Linear })
+          .width('100%')
+          .height(2)
+          .color(this.accentColor())
+          .backgroundColor(this.readerChapterTrackColor())
+      }
+      Row() {
+        if (this.getReaderFooterLeftText()) {
+          Text(this.getReaderFooterLeftText())
+            .fontSize(12)
+            .fontColor(this.getSubTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+        } else {
+          Blank().layoutWeight(1)
+        }
 
-      Text(this.getPageInfoText())
-        .fontSize(12)
-        .fontColor(this.getSubTextColor())
-        .textAlign(TextAlign.End)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ left: 12 })
+        if (this.getReaderFooterProgressText()) {
+          Text(this.getReaderFooterProgressText())
+            .fontSize(12)
+            .fontColor(this.getSubTextColor())
+            .textAlign(TextAlign.End)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .margin({ left: 12 })
+        }
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
     }
     .width('100%')
     .padding({ left: 28, right: 28, top: 0, bottom: 0 })
-    .alignItems(VerticalAlign.Center)
+    .alignItems(HorizontalAlign.Center)
     .backgroundColor(Color.Transparent)
     .translate({ y: this.getReaderBottomInfoBarVisualOffsetY() })
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+    .onAreaChange((_oldValue: Area, newValue: Area) => {
+      this.rememberReaderBottomInfoBarHeight(newValue);
+    })
+  }
+
+  @Builder
+  readerHeaderInfoBar() {
+    Row() {
+      Text(this.getReaderHeaderInfoText())
+        .fontSize(12)
+        .fontColor(this.getSubTextColor())
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+    }
+    .width('100%')
+    .height(this.getReaderHeaderInfoBarHeight() + this.getReaderHeaderOverlayTopInset())
+    .padding({ top: this.getReaderHeaderOverlayTopInset(), left: 28, right: 28 })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(Color.Transparent)
+    .hitTestBehavior(HitTestMode.None)
   }
 
   currentChapterProgressPageCount(): number {
@@ -10665,6 +10817,7 @@ struct ReadBookPage {
   @Builder
   readerTypographySettingsPanel() {
     Column({ space: 4 }) {
+      this.readerHeaderFooterSettingsPanel()
       this.readerFontEntryItem()
 
       this.readerSwitchSettingItem('正文扩展至状态栏', '开启后正文同时延伸到顶部状态栏和底部系统安全区', this.readerExtendToStatusBar,
@@ -10673,14 +10826,59 @@ struct ReadBookPage {
         })
 
       this.readerTypographySlider('字号', 0, 14, 50, 1)
-      this.readerTypographySlider('行距', 1, 0, 52, 1)
-      this.readerTypographySlider('段距', 2, 0, 32, 1)
-      this.readerTypographySlider('左边距', 3, 0, 80, 1)
-      this.readerTypographySlider('右边距', 4, 0, 80, 1)
-      this.readerTypographySlider('上边距', 5, 0, 120, 1)
-      this.readerTypographySlider('下边距', 6, 0, 120, 1)
+      this.readerTypographySlider('字距', 1, 0, 8, 1)
+      this.readerTypographySlider('行距', 2, 0, 52, 1)
+      this.readerTypographySlider('段距', 3, 0, 32, 1)
+      this.readerTypographySlider('左边距', 4, 0, 80, 1)
+      this.readerTypographySlider('右边距', 5, 0, 80, 1)
+      this.readerTypographySlider('上边距', 6, 0, 120, 1)
+      this.readerTypographySlider('下边距', 7, 0, 120, 1)
     }
     .width('100%')
+  }
+
+  @Builder
+  readerHeaderFooterSettingsPanel() {
+    Column({ space: 4 }) {
+      this.readerSwitchSettingItem('显示页眉', '在正文顶部显示书名或当前章节标题', this.readerHeaderEnabled,
+        (checked: boolean) => {
+          this.readerHeaderEnabled = checked;
+        })
+
+      if (this.readerHeaderEnabled) {
+        this.readerSelectSettingItem('页眉内容', '选择页眉中显示的信息', this.readerHeaderContentOptions(),
+          this.readerHeaderContentSelectedIndex(), (index: number) => {
+            const values = this.readerHeaderContentValues();
+            this.readerHeaderContentMode = index >= 0 && index < values.length ? values[index] : 'chapter';
+          }, 'reader_header_content_select')
+      }
+
+      this.readerSwitchSettingItem('显示页脚', '显示章节信息和阅读进度', this.readerFooterEnabled,
+        (checked: boolean) => {
+          this.readerFooterEnabled = checked;
+        })
+
+      if (this.readerFooterEnabled) {
+        this.readerSelectSettingItem('页脚左侧', '选择页脚左侧显示的信息', this.readerFooterLeftOptions(),
+          this.readerFooterLeftSelectedIndex(), (index: number) => {
+            const values = this.readerFooterLeftValues();
+            this.readerFooterLeftMode = index >= 0 && index < values.length ? values[index] : 'chapter';
+          }, 'reader_footer_left_select')
+
+        this.readerSelectSettingItem('阅读进度', '选择页脚右侧显示的进度类型', this.readerFooterProgressOptions(),
+          this.readerFooterProgressSelectedIndex(), (index: number) => {
+            const values = this.readerFooterProgressValues();
+            this.readerFooterProgressMode = index >= 0 && index < values.length ? values[index] : 'page';
+          }, 'reader_footer_progress_select')
+
+        this.readerSwitchSettingItem('显示进度条', '在页脚上方显示本章阅读进度', this.readerFooterShowProgressBar,
+          (checked: boolean) => {
+            this.readerFooterShowProgressBar = checked;
+          })
+      }
+    }
+    .width('100%')
+    .padding({ bottom: 8 })
   }
 
   @Builder
@@ -10748,11 +10946,12 @@ struct ReadBookPage {
 
   readerTypographyValue(settingIndex: number): number {
     if (settingIndex === 0) return this.readerTypographyFontSize;
-    if (settingIndex === 1) return this.readerTypographyLineHeight;
-    if (settingIndex === 2) return this.readerTypographyParagraphSpacing;
-    if (settingIndex === 3) return this.readerTypographyMarginLeft;
-    if (settingIndex === 4) return this.readerTypographyMarginRight;
-    if (settingIndex === 5) return this.readerTypographyMarginTop;
+    if (settingIndex === 1) return this.readerTypographyLetterSpacing;
+    if (settingIndex === 2) return this.readerTypographyLineHeight;
+    if (settingIndex === 3) return this.readerTypographyParagraphSpacing;
+    if (settingIndex === 4) return this.readerTypographyMarginLeft;
+    if (settingIndex === 5) return this.readerTypographyMarginRight;
+    if (settingIndex === 6) return this.readerTypographyMarginTop;
     return this.readerTypographyMarginBottom;
   }
 
@@ -10761,14 +10960,16 @@ struct ReadBookPage {
     if (settingIndex === 0) {
       this.readerTypographyFontSize = Math.max(14, Math.min(rounded, 50));
     } else if (settingIndex === 1) {
-      this.readerTypographyLineHeight = Math.max(0, Math.min(rounded, 52));
+      this.readerTypographyLetterSpacing = Math.max(0, Math.min(rounded, 8));
     } else if (settingIndex === 2) {
-      this.readerTypographyParagraphSpacing = Math.max(0, Math.min(rounded, 32));
+      this.readerTypographyLineHeight = Math.max(0, Math.min(rounded, 52));
     } else if (settingIndex === 3) {
-      this.readerTypographyMarginLeft = Math.max(0, Math.min(rounded, 80));
+      this.readerTypographyParagraphSpacing = Math.max(0, Math.min(rounded, 32));
     } else if (settingIndex === 4) {
-      this.readerTypographyMarginRight = Math.max(0, Math.min(rounded, 80));
+      this.readerTypographyMarginLeft = Math.max(0, Math.min(rounded, 80));
     } else if (settingIndex === 5) {
+      this.readerTypographyMarginRight = Math.max(0, Math.min(rounded, 80));
+    } else if (settingIndex === 6) {
       this.readerTypographyMarginTop = Math.max(0, Math.min(rounded, 120));
     } else {
       this.readerTypographyMarginBottom = Math.max(0, Math.min(rounded, 120));
@@ -10785,6 +10986,7 @@ struct ReadBookPage {
 
   syncReaderTypographyDraft(): void {
     this.readerTypographyFontSize = this.readerFontSize;
+    this.readerTypographyLetterSpacing = this.readerLetterSpacing;
     this.readerTypographyLineHeight = this.readerLineHeight;
     this.readerTypographyParagraphSpacing = this.readerParagraphSpacing;
     this.readerTypographyMarginLeft = this.readerMarginLeft;
@@ -10798,6 +11000,7 @@ struct ReadBookPage {
     if (!this.readerTypographyDraftPending) return;
     this.readerLayoutCommitInProgress = true;
     this.readerFontSize = this.readerTypographyFontSize;
+    this.readerLetterSpacing = this.readerTypographyLetterSpacing;
     this.readerLineHeight = this.readerTypographyLineHeight;
     this.readerParagraphSpacing = this.readerTypographyParagraphSpacing;
     this.readerMarginLeft = this.readerTypographyMarginLeft;
@@ -12072,7 +12275,8 @@ struct ReadBookPage {
       this.readerMarginLeft,
       this.readerMarginRight,
       this.readerMarginTop,
-      this.readerMarginBottom
+      this.readerMarginBottom,
+      this.readerLetterSpacing
     ).catch((e: Error) => {
       console.warn('保存阅读排版设置失败:', e);
     });
@@ -15433,6 +15637,59 @@ struct ReadBookPage {
       this.scheduleTtsFocusRepublishAfterPageTurn(this.currentChapterIndex, pageIndex,
         this.readerV2TtsSourceStart, this.readerV2TtsSourceEnd);
     }
+  }
+
+  readerHeaderContentOptions(): SelectOption[] {
+    return [{ value: '当前章节标题' }, { value: '书名' }, { value: '书名 + 章节标题' }, { value: '不显示' }];
+  }
+
+  readerHeaderContentValues(): string[] {
+    return ['chapter', 'book', 'book_chapter', 'none'];
+  }
+
+  readerHeaderContentSelectedIndex(): number {
+    const index = this.readerHeaderContentValues().indexOf(this.readerHeaderContentMode);
+    return index >= 0 ? index : 0;
+  }
+
+  readerFooterLeftOptions(): SelectOption[] {
+    return [{ value: '章节序号 + 标题' }, { value: '章节标题' }, { value: '不显示' }];
+  }
+
+  readerFooterLeftValues(): string[] {
+    return ['chapter', 'title', 'none'];
+  }
+
+  readerFooterLeftSelectedIndex(): number {
+    const index = this.readerFooterLeftValues().indexOf(this.readerFooterLeftMode);
+    return index >= 0 ? index : 0;
+  }
+
+  readerFooterProgressOptions(): SelectOption[] {
+    return [{ value: '当前页 / 总页数' }, { value: '阅读百分比' }, { value: '章节进度' }, { value: '全书进度' }, { value: '不显示' }];
+  }
+
+  readerFooterProgressValues(): string[] {
+    return ['page', 'percentage', 'chapter', 'book', 'none'];
+  }
+
+  readerFooterProgressSelectedIndex(): number {
+    const index = this.readerFooterProgressValues().indexOf(this.readerFooterProgressMode);
+    return index >= 0 ? index : 0;
+  }
+
+  saveReaderChromeSettings(): void {
+    ReaderSettingsStore.saveReaderChromeSettings(
+      getContext(this),
+      this.readerHeaderEnabled,
+      this.readerHeaderContentMode,
+      this.readerFooterEnabled,
+      this.readerFooterLeftMode,
+      this.readerFooterProgressMode,
+      this.readerFooterShowProgressBar
+    ).catch((e: Error) => {
+      console.warn('保存阅读页眉页脚设置失败:', e);
+    });
   }
 
   syncTtsFocusAfterResumeLater(delayMs: number): void {
@@ -20662,9 +20919,12 @@ struct ReadBookPage {
       Math.round(this.getReaderBottomInfoBarHeight() * 100) / 100;
     const layoutMode = this.isReaderComicModeActive() ? 'comic' :
       (this.isReaderNovelContinuousScrollModeActive() ? 'continuous' : 'paged');
-    return `reader_page_v79_${layoutMode}_${chapterIndex}_${this.pageViewWidth}_` +
+    const headerReserve = Math.round(this.getReaderHeaderContentReserve() * 100) / 100;
+    return `reader_page_v80_${layoutMode}_${chapterIndex}_${this.pageViewWidth}_` +
       `${this.getReaderPaginationViewportHeight()}_` +
-      `${footerHeight}_` +
+      `${headerReserve}_${footerHeight}_${this.readerHeaderEnabled}_${this.readerHeaderContentMode}_` +
+      `${this.readerFooterEnabled}_${this.readerFooterLeftMode}_${this.readerFooterProgressMode}_` +
+      `${this.readerFooterShowProgressBar}_` +
       `${this.readerExtendToStatusBar}_${this.isLandscapeDoublePageActive()}_${this.readerTypographyCacheIdentity()}_` +
       `${this.readerParagraphCommentPaginationIdentity()}_` +
       `${source.length}_${this.hashText(source)}`;
@@ -20675,7 +20935,7 @@ struct ReadBookPage {
       `${this.readerRegexFontPattern}_${this.readerRegexFontMode}_${this.readerRegexFontFamily}_` +
       `${this.readerRegexFontSize}_${this.readerRegexShadowColor}_${this.themeRevision}_` +
       `${this.themeRegexEmphasisMode()}_${this.themeRegexBubbleStyleId()}_reader_action_layout_v5`;
-    return `${this.readerFontSize}_${this.readerLineHeight}_${this.readerParagraphSpacing}_` +
+    return `${this.readerFontSize}_${this.readerLetterSpacing}_${this.readerLineHeight}_${this.readerParagraphSpacing}_` +
       `${this.readerMarginLeft}_${this.readerMarginRight}_${this.readerMarginTop}_${this.readerMarginBottom}_` +
       `${this.readerBodyFontMode}_${this.readerBodyFontFamily}_${this.getBodyReaderFontFamily()}_` +
       `${this.readerTitleFontSize}_${this.readerTitleFontMode}_${this.readerTitleFontFamily}_` +

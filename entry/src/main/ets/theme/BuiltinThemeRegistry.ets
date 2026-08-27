@@ -515,9 +515,11 @@ export class BuiltinThemeRegistry {
   }
 
   private static readerLayout(fontSize: number, lineHeight: number, paragraphSpacing: number,
-    marginLeft: number, marginRight: number, marginTop: number, marginBottom: number): ThemeReaderLayoutTokens {
+    marginLeft: number, marginRight: number, marginTop: number, marginBottom: number,
+    letterSpacing: number = 0): ThemeReaderLayoutTokens {
     const layout = new ThemeReaderLayoutTokens();
     layout.fontSize = fontSize;
+    layout.letterSpacing = letterSpacing;
     layout.lineHeight = lineHeight;
     layout.paragraphSpacing = paragraphSpacing;
     layout.marginLeft = marginLeft;
@@ -620,7 +622,8 @@ export class BuiltinThemeRegistry {
     theme.typography.appFontFamily = source.typography.appFontFamily;
     theme.readerLayout = BuiltinThemeRegistry.readerLayout(source.readerLayout.fontSize,
       source.readerLayout.lineHeight, source.readerLayout.paragraphSpacing, source.readerLayout.marginLeft,
-      source.readerLayout.marginRight, source.readerLayout.marginTop, source.readerLayout.marginBottom);
+      source.readerLayout.marginRight, source.readerLayout.marginTop, source.readerLayout.marginBottom,
+      source.readerLayout.letterSpacing);
     theme.book.coverAssetId = source.book.coverAssetId;
     theme.book.shelfFrameAssetId = source.book.shelfFrameAssetId;
     theme.book.shelfFolderAssetId = source.book.shelfFolderAssetId;

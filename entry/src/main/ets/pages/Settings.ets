@@ -32,6 +32,7 @@ struct SettingsPage {
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @StorageLink('readerFontSize') readerFontSize: number = 20;
+  @StorageLink('readerLetterSpacing') readerLetterSpacing: number = 0;
   @StorageLink('readerLineHeight') readerLineHeight: number = 12;
   @StorageLink('readerParagraphSpacing') readerParagraphSpacing: number = 0;
   @StorageLink('readerMarginLeft') readerMarginLeft: number = 18;
@@ -68,6 +69,12 @@ struct SettingsPage {
   @StorageLink('readerScreenTimeoutMinutes') readerScreenTimeoutMinutes: number =
     ReaderSettingsStore.SCREEN_TIMEOUT_ALWAYS_ON;
   @StorageLink('readerExtendToStatusBar') readerExtendToStatusBar: boolean = false;
+  @StorageLink('readerHeaderEnabled') readerHeaderEnabled: boolean = false;
+  @StorageLink('readerHeaderContentMode') readerHeaderContentMode: string = 'chapter';
+  @StorageLink('readerFooterEnabled') readerFooterEnabled: boolean = true;
+  @StorageLink('readerFooterLeftMode') readerFooterLeftMode: string = 'chapter';
+  @StorageLink('readerFooterProgressMode') readerFooterProgressMode: string = 'page';
+  @StorageLink('readerFooterShowProgressBar') readerFooterShowProgressBar: boolean = false;
   @StorageLink('readerEyeTurnEnabled') readerEyeTurnEnabled: boolean = false;
   @StorageLink('readerEyeTurnPortraitCalibration') readerEyeTurnPortraitCalibration: string = '';
   @StorageLink('readerEyeTurnLandscapeCalibration') readerEyeTurnLandscapeCalibration: string = '';
@@ -144,6 +151,7 @@ struct SettingsPage {
           this.sectionTitle('排版')
           Column() {
             this.typographyStepper()
+            this.readerHeaderFooterSettingsPanel()
             this.readerFontEntryItem()
             this.readerReplaceRulesEntryItem()
           }
@@ -523,6 +531,7 @@ struct SettingsPage {
 
   applyLoadedReaderSettings(settings: ReaderSettings): void {
     this.readerFontSize = settings.fontSize;
+    this.readerLetterSpacing = settings.letterSpacing;
     this.readerLineHeight = settings.lineHeight;
     this.readerParagraphSpacing = settings.paragraphSpacing;
     this.readerMarginLeft = settings.marginLeft;
@@ -545,6 +554,12 @@ struct SettingsPage {
     this.readerVolumeTurnPage = settings.volumeTurnPage;
     this.readerScreenTimeoutMinutes = settings.screenTimeoutMinutes;
     this.readerExtendToStatusBar = settings.extendToStatusBar;
+    this.readerHeaderEnabled = settings.readerHeaderEnabled;
+    this.readerHeaderContentMode = settings.readerHeaderContentMode;
+    this.readerFooterEnabled = settings.readerFooterEnabled;
+    this.readerFooterLeftMode = settings.readerFooterLeftMode;
+    this.readerFooterProgressMode = settings.readerFooterProgressMode;
+    this.readerFooterShowProgressBar = settings.readerFooterShowProgressBar;
     this.readerEyeTurnEnabled = settings.eyeTurnEnabled;
     this.readerEyeTurnPortraitCalibration = settings.eyeTurnPortraitCalibration;
     this.readerEyeTurnLandscapeCalibration = settings.eyeTurnLandscapeCalibration;
@@ -961,6 +976,59 @@ struct SettingsPage {
     return 0;
   }
 
+  readerHeaderContentOptions(): SelectOption[] {
+    return [{ value: '当前章节标题' }, { value: '书名' }, { value: '书名 + 章节标题' }, { value: '不显示' }];
+  }
+
+  readerHeaderContentValues(): string[] {
+    return ['chapter', 'book', 'book_chapter', 'none'];
+  }
+
+  readerHeaderContentSelectedIndex(): number {
+    const index = this.readerHeaderContentValues().indexOf(this.readerHeaderContentMode);
+    return index >= 0 ? index : 0;
+  }
+
+  readerFooterLeftOptions(): SelectOption[] {
+    return [{ value: '章节序号 + 标题' }, { value: '章节标题' }, { value: '不显示' }];
+  }
+
+  readerFooterLeftValues(): string[] {
+    return ['chapter', 'title', 'none'];
+  }
+
+  readerFooterLeftSelectedIndex(): number {
+    const index = this.readerFooterLeftValues().indexOf(this.readerFooterLeftMode);
+    return index >= 0 ? index : 0;
+  }
+
+  readerFooterProgressOptions(): SelectOption[] {
+    return [{ value: '页码' }, { value: '本章百分比' }, { value: '章节进度' }, { value: '全书百分比' }, { value: '不显示' }];
+  }
+
+  readerFooterProgressValues(): string[] {
+    return ['page', 'percentage', 'chapter', 'book', 'none'];
+  }
+
+  readerFooterProgressSelectedIndex(): number {
+    const index = this.readerFooterProgressValues().indexOf(this.readerFooterProgressMode);
+    return index >= 0 ? index : 0;
+  }
+
+  saveReaderChromeSettings(): void {
+    ReaderSettingsStore.saveReaderChromeSettings(
+      getContext(this),
+      this.readerHeaderEnabled,
+      this.readerHeaderContentMode,
+      this.readerFooterEnabled,
+      this.readerFooterLeftMode,
+      this.readerFooterProgressMode,
+      this.readerFooterShowProgressBar
+    ).catch((e: Error) => {
+      console.warn('保存页眉页脚设置失败:', e);
+    });
+  }
+
   saveReaderLayoutSettings(): void {
     ReaderSettingsStore.saveLayoutSettings(
       getContext(this),
@@ -970,7 +1038,8 @@ struct SettingsPage {
       this.readerMarginLeft,
       this.readerMarginRight,
       this.readerMarginTop,
-      this.readerMarginBottom
+      this.readerMarginBottom,
+      this.readerLetterSpacing
     ).catch((e: Error) => {
       console.warn('保存阅读排版设置失败:', e);
     });
@@ -978,6 +1047,11 @@ struct SettingsPage {
 
   setReaderFontSize(fontSize: number): void {
     this.readerFontSize = Math.max(14, Math.min(Math.round(fontSize), 50));
+    this.saveReaderLayoutSettings();
+  }
+
+  setReaderLetterSpacing(letterSpacing: number): void {
+    this.readerLetterSpacing = Math.max(0, Math.min(Math.round(letterSpacing), 8));
     this.saveReaderLayoutSettings();
   }
 
@@ -1032,6 +1106,7 @@ struct SettingsPage {
   typographySettingOptions(): SelectOption[] {
     return [
       { value: '字号' },
+      { value: '字距' },
       { value: '行距' },
       { value: '段落间距' },
       { value: '左边距' },
@@ -1042,7 +1117,7 @@ struct SettingsPage {
   }
 
   typographySettingTitle(): string {
-    const titles: string[] = ['字号', '行距', '段落间距', '左边距', '右边距', '上边距', '下边距'];
+    const titles: string[] = ['字号', '字距', '行距', '段落间距', '左边距', '右边距', '上边距', '下边距'];
     const index = Math.max(0, Math.min(this.typographySettingIndex, titles.length - 1));
     return titles[index];
   }
@@ -1050,16 +1125,18 @@ struct SettingsPage {
   currentTypographySettingValue(): number {
     switch (this.typographySettingIndex) {
       case 1:
-        return this.readerLineHeight;
+        return this.readerLetterSpacing;
       case 2:
-        return this.readerParagraphSpacing;
+        return this.readerLineHeight;
       case 3:
-        return this.readerMarginLeft;
+        return this.readerParagraphSpacing;
       case 4:
-        return this.readerMarginRight;
+        return this.readerMarginLeft;
       case 5:
-        return this.readerMarginTop;
+        return this.readerMarginRight;
       case 6:
+        return this.readerMarginTop;
+      case 7:
         return this.readerMarginBottom;
       default:
         return this.readerFontSize;
@@ -1070,21 +1147,24 @@ struct SettingsPage {
     const next = this.currentTypographySettingValue() + delta;
     switch (this.typographySettingIndex) {
       case 1:
-        this.setReaderLineHeight(next);
+        this.setReaderLetterSpacing(next);
         return;
       case 2:
-        this.setReaderParagraphSpacing(next);
+        this.setReaderLineHeight(next);
         return;
       case 3:
-        this.setReaderMarginLeft(next);
+        this.setReaderParagraphSpacing(next);
         return;
       case 4:
-        this.setReaderMarginRight(next);
+        this.setReaderMarginLeft(next);
         return;
       case 5:
-        this.setReaderMarginTop(next);
+        this.setReaderMarginRight(next);
         return;
       case 6:
+        this.setReaderMarginTop(next);
+        return;
+      case 7:
         this.setReaderMarginBottom(next);
         return;
       default:
@@ -2234,6 +2314,47 @@ struct SettingsPage {
     .padding({ left: 16, right: 16, top: 12, bottom: 12 })
     .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  readerHeaderFooterSettingsPanel() {
+    Column({ space: 4 }) {
+      this.switchItem('显示页眉', '在正文顶部显示书名或当前章节标题', this.readerHeaderEnabled, (value: boolean) => {
+        this.readerHeaderEnabled = value;
+        this.saveReaderChromeSettings();
+      })
+      if (this.readerHeaderEnabled) {
+        this.selectItem('页眉内容', '选择页眉中显示的信息', this.readerHeaderContentOptions(),
+          this.readerHeaderContentSelectedIndex(), (index: number) => {
+            const values = this.readerHeaderContentValues();
+            this.readerHeaderContentMode = index >= 0 && index < values.length ? values[index] : 'chapter';
+            this.saveReaderChromeSettings();
+          }, 'settings_reader_header_content_select')
+      }
+      this.switchItem('显示页脚', '显示章节信息和阅读进度', this.readerFooterEnabled, (value: boolean) => {
+        this.readerFooterEnabled = value;
+        this.saveReaderChromeSettings();
+      })
+      if (this.readerFooterEnabled) {
+        this.selectItem('页脚左侧', '选择页脚左侧显示的信息', this.readerFooterLeftOptions(),
+          this.readerFooterLeftSelectedIndex(), (index: number) => {
+            const values = this.readerFooterLeftValues();
+            this.readerFooterLeftMode = index >= 0 && index < values.length ? values[index] : 'chapter';
+            this.saveReaderChromeSettings();
+          }, 'settings_reader_footer_left_select')
+        this.selectItem('阅读进度', '选择页脚右侧显示的进度类型', this.readerFooterProgressOptions(),
+          this.readerFooterProgressSelectedIndex(), (index: number) => {
+            const values = this.readerFooterProgressValues();
+            this.readerFooterProgressMode = index >= 0 && index < values.length ? values[index] : 'page';
+            this.saveReaderChromeSettings();
+          }, 'settings_reader_footer_progress_select')
+        this.switchItem('显示进度条', '在页脚上方显示本章阅读进度', this.readerFooterShowProgressBar, (value: boolean) => {
+          this.readerFooterShowProgressBar = value;
+          this.saveReaderChromeSettings();
+        })
+      }
+    }
+    .width('100%')
   }
 
   @Builder

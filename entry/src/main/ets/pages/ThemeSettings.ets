@@ -318,7 +318,8 @@ struct ThemeSettingsPage {
         getContext(this), previous.themeId, settings.themeId);
       const layout = theme.readerLayout;
       await ReaderSettingsStore.saveLayoutSettings(getContext(this), layout.fontSize, layout.lineHeight,
-        layout.paragraphSpacing, layout.marginLeft, layout.marginRight, layout.marginTop, layout.marginBottom);
+        layout.paragraphSpacing, layout.marginLeft, layout.marginRight, layout.marginTop, layout.marginBottom,
+        layout.letterSpacing);
       await ReaderSettingsStore.saveThemeSettings(getContext(this), ReaderThemeHelper.APP_THEME_INDEX,
         ReaderThemeHelper.APP_THEME_INDEX, readerSettings.lightCustomThemeBackgroundColor,
         readerSettings.lightCustomThemeTextColor, readerSettings.darkCustomThemeBackgroundColor,

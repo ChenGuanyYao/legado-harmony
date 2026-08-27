@@ -99,6 +99,7 @@ export class ThemeTypographyTokens {
 
 export class ThemeReaderLayoutTokens {
   fontSize: number = 20;
+  letterSpacing: number = 0;
   lineHeight: number = 12;
   paragraphSpacing: number = 0;
   marginLeft: number = 18;

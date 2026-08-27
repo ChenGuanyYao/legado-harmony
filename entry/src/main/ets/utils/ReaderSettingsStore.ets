@@ -5,6 +5,7 @@ import { CloudSyncChangeTracker } from '../account/CloudSyncChangeTracker';
 
 export class ReaderSettings {
   fontSize: number = 20;
+  letterSpacing: number = 0;
   lineHeight: number = 12;
   paragraphSpacing: number = 0;
   marginLeft: number = 18;
@@ -38,6 +39,13 @@ export class ReaderSettings {
   preloadChapterCount: number = 1;
   useTtsQuickAction: boolean = true;
   useChapterQuickJump: boolean = true;
+  // 阅读页眉页脚配置。默认页眉关闭、页脚保持现有章节/页码信息。
+  readerHeaderEnabled: boolean = false;
+  readerHeaderContentMode: string = 'chapter';
+  readerFooterEnabled: boolean = true;
+  readerFooterLeftMode: string = 'chapter';
+  readerFooterProgressMode: string = 'page';
+  readerFooterShowProgressBar: boolean = false;
   fontFamily: string = '';
   fontFilePath: string = '';
   fontSourceName: string = '系统默认';
@@ -71,6 +79,7 @@ export class ReaderSettingsStore {
   static readonly SCREEN_ORIENTATION_PORTRAIT: string = 'portrait';
   static readonly SCREEN_ORIENTATION_LANDSCAPE: string = 'landscape';
   static readonly KEY_FONT_SIZE: string = 'readerFontSize';
+  static readonly KEY_LETTER_SPACING: string = 'readerLetterSpacing';
   static readonly KEY_LINE_HEIGHT: string = 'readerLineHeight';
   static readonly KEY_LINE_HEIGHT_MODE: string = 'readerLineHeightMode';
   static readonly KEY_PARAGRAPH_SPACING: string = 'readerParagraphSpacing';
@@ -105,6 +114,12 @@ export class ReaderSettingsStore {
   static readonly KEY_PRELOAD_CHAPTER_COUNT: string = 'readerPreloadChapterCount';
   static readonly KEY_USE_TTS_QUICK_ACTION: string = 'readerUseTtsQuickAction';
   static readonly KEY_USE_CHAPTER_QUICK_JUMP: string = 'readerUseChapterQuickJump';
+  static readonly KEY_HEADER_ENABLED: string = 'readerHeaderEnabled';
+  static readonly KEY_HEADER_CONTENT_MODE: string = 'readerHeaderContentMode';
+  static readonly KEY_FOOTER_ENABLED: string = 'readerFooterEnabled';
+  static readonly KEY_FOOTER_LEFT_MODE: string = 'readerFooterLeftMode';
+  static readonly KEY_FOOTER_PROGRESS_MODE: string = 'readerFooterProgressMode';
+  static readonly KEY_FOOTER_SHOW_PROGRESS_BAR: string = 'readerFooterShowProgressBar';
   static readonly KEY_FONT_FAMILY: string = 'readerFontFamily';
   static readonly KEY_FONT_FILE_PATH: string = 'readerFontFilePath';
   static readonly KEY_FONT_SOURCE_NAME: string = 'readerFontSourceName';
@@ -129,6 +144,7 @@ export class ReaderSettingsStore {
   private static cachedThemeId: string = '';
   private static readerFontStyleSaveQueue: Promise<void> = Promise.resolve();
   private static layoutElementSaveQueue: Promise<void> = Promise.resolve();
+  private static readerChromeSaveQueue: Promise<void> = Promise.resolve();
 
   static async load(context: Context): Promise<ReaderSettings> {
     const activeThemeId = ReaderSettingsStore.activeThemeId();
@@ -149,6 +165,8 @@ export class ReaderSettingsStore {
       20,
       'fontSize'
     );
+    settings.letterSpacing = await ReaderSettingsStore.getNumber(
+      store, ReaderSettingsStore.KEY_LETTER_SPACING, 0, 'letterSpacing');
     settings.lineHeight = await ReaderSettingsStore.getNumber(
       store,
       ReaderSettingsStore.KEY_LINE_HEIGHT,
@@ -332,6 +350,18 @@ export class ReaderSettingsStore {
       ReaderSettingsStore.KEY_USE_CHAPTER_QUICK_JUMP,
       AppStorage.get<boolean>(ReaderSettingsStore.KEY_USE_CHAPTER_QUICK_JUMP) ?? true
     );
+    settings.readerHeaderEnabled = await ReaderSettingsStore.getBoolean(
+      store, ReaderSettingsStore.KEY_HEADER_ENABLED, false);
+    settings.readerHeaderContentMode = ReaderSettingsStore.normalizeHeaderContentMode(
+      await ReaderSettingsStore.getString(store, ReaderSettingsStore.KEY_HEADER_CONTENT_MODE, 'chapter'));
+    settings.readerFooterEnabled = await ReaderSettingsStore.getBoolean(
+      store, ReaderSettingsStore.KEY_FOOTER_ENABLED, true);
+    settings.readerFooterLeftMode = ReaderSettingsStore.normalizeFooterLeftMode(
+      await ReaderSettingsStore.getString(store, ReaderSettingsStore.KEY_FOOTER_LEFT_MODE, 'chapter'));
+    settings.readerFooterProgressMode = ReaderSettingsStore.normalizeFooterProgressMode(
+      await ReaderSettingsStore.getString(store, ReaderSettingsStore.KEY_FOOTER_PROGRESS_MODE, 'page'));
+    settings.readerFooterShowProgressBar = await ReaderSettingsStore.getBoolean(
+      store, ReaderSettingsStore.KEY_FOOTER_SHOW_PROGRESS_BAR, false);
     settings.fontFamily = await ReaderSettingsStore.getString(store, ReaderSettingsStore.KEY_FONT_FAMILY, '');
     settings.fontFilePath = await ReaderSettingsStore.getString(store, ReaderSettingsStore.KEY_FONT_FILE_PATH, '');
     settings.fontSourceName = await ReaderSettingsStore.getString(store, ReaderSettingsStore.KEY_FONT_SOURCE_NAME, '系统默认');
@@ -398,10 +428,12 @@ export class ReaderSettingsStore {
     marginLeft: number = 18,
     marginRight: number = 18,
     marginTop: number = 18,
-    marginBottom: number = 18
+    marginBottom: number = 18,
+    letterSpacing: number = 0
   ): Promise<void> {
     const settings = ReaderSettingsStore.cachedSettings || ReaderSettingsStore.fromStorage();
     settings.fontSize = ReaderSettingsStore.normalizeFontSize(fontSize);
+    settings.letterSpacing = ReaderSettingsStore.normalizeLetterSpacing(letterSpacing);
     settings.lineHeight = ReaderSettingsStore.normalizeLineHeight(lineHeight);
     settings.paragraphSpacing = ReaderSettingsStore.normalizeParagraphSpacing(paragraphSpacing);
     settings.marginLeft = ReaderSettingsStore.normalizeHorizontalMargin(marginLeft);
@@ -412,6 +444,7 @@ export class ReaderSettingsStore {
     ReaderSettingsStore.applyLayoutToStorage(settings);
     const store = await preferences.getPreferences(context, ReaderSettingsStore.STORE_NAME);
     await store.put(ReaderSettingsStore.KEY_FONT_SIZE, settings.fontSize);
+    await store.put(ReaderSettingsStore.KEY_LETTER_SPACING, settings.letterSpacing);
     await store.put(ReaderSettingsStore.KEY_LINE_HEIGHT, settings.lineHeight);
     await store.put(ReaderSettingsStore.KEY_LINE_HEIGHT_MODE, 'spacing');
     await store.put(ReaderSettingsStore.KEY_PARAGRAPH_SPACING, settings.paragraphSpacing);
@@ -693,6 +726,37 @@ export class ReaderSettingsStore {
     }
   }
 
+  static saveReaderChromeSettings(context: Context, headerEnabled: boolean,
+    headerContentMode: string, footerEnabled: boolean, footerLeftMode: string,
+    footerProgressMode: string, footerShowProgressBar: boolean): Promise<void> {
+    const settings = ReaderSettingsStore.cachedSettings || ReaderSettingsStore.fromStorage();
+    settings.readerHeaderEnabled = headerEnabled === true;
+    settings.readerHeaderContentMode = ReaderSettingsStore.normalizeHeaderContentMode(headerContentMode);
+    settings.readerFooterEnabled = footerEnabled !== false;
+    settings.readerFooterLeftMode = ReaderSettingsStore.normalizeFooterLeftMode(footerLeftMode);
+    settings.readerFooterProgressMode = ReaderSettingsStore.normalizeFooterProgressMode(footerProgressMode);
+    settings.readerFooterShowProgressBar = footerShowProgressBar === true;
+    const snapshot = ReaderSettingsStore.clone(settings);
+    ReaderSettingsStore.cachedSettings = snapshot;
+    ReaderSettingsStore.applyReaderChromeToStorage(snapshot);
+    const themeId = ReaderSettingsStore.activeThemeId();
+    const previous = ReaderSettingsStore.readerChromeSaveQueue.catch(() => {
+    });
+    const next = previous.then(async () => {
+      const store = await preferences.getPreferences(context, ReaderSettingsStore.STORE_NAME);
+      await store.put(ReaderSettingsStore.KEY_HEADER_ENABLED, snapshot.readerHeaderEnabled);
+      await store.put(ReaderSettingsStore.KEY_HEADER_CONTENT_MODE, snapshot.readerHeaderContentMode);
+      await store.put(ReaderSettingsStore.KEY_FOOTER_ENABLED, snapshot.readerFooterEnabled);
+      await store.put(ReaderSettingsStore.KEY_FOOTER_LEFT_MODE, snapshot.readerFooterLeftMode);
+      await store.put(ReaderSettingsStore.KEY_FOOTER_PROGRESS_MODE, snapshot.readerFooterProgressMode);
+      await store.put(ReaderSettingsStore.KEY_FOOTER_SHOW_PROGRESS_BAR, snapshot.readerFooterShowProgressBar);
+      await ReaderSettingsStore.persistThemeProfile(store, themeId, snapshot);
+      await store.flush();
+    });
+    ReaderSettingsStore.readerChromeSaveQueue = next;
+    return next;
+  }
+
   static async savePageTurnAnimationType(context: Context, type: number): Promise<void> {
     const settings = ReaderSettingsStore.cachedSettings || ReaderSettingsStore.fromStorage();
     settings.pageTurnAnimationType = ReaderSettingsStore.normalizePageTurnAnimationType(type);
@@ -744,7 +808,8 @@ export class ReaderSettingsStore {
       settings.marginLeft,
       settings.marginRight,
       settings.marginTop,
-      settings.marginBottom
+      settings.marginBottom,
+      settings.letterSpacing
     );
     await ReaderSettingsStore.saveThemeSettings(
       context,
@@ -793,6 +858,15 @@ export class ReaderSettingsStore {
       settings.useTtsQuickAction,
       settings.useChapterQuickJump
     );
+    await ReaderSettingsStore.saveReaderChromeSettings(
+      context,
+      settings.readerHeaderEnabled,
+      settings.readerHeaderContentMode,
+      settings.readerFooterEnabled,
+      settings.readerFooterLeftMode,
+      settings.readerFooterProgressMode,
+      settings.readerFooterShowProgressBar
+    );
     ReaderSettingsStore.applyToStorage(settings);
   }
 
@@ -817,6 +891,7 @@ export class ReaderSettingsStore {
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_PRELOAD_CHAPTER_COUNT, normalized.preloadChapterCount);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_USE_TTS_QUICK_ACTION, normalized.useTtsQuickAction);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_USE_CHAPTER_QUICK_JUMP, normalized.useChapterQuickJump);
+    ReaderSettingsStore.applyReaderChromeToStorage(normalized);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_FONT_FAMILY, normalized.fontFamily);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_FONT_FILE_PATH, normalized.fontFilePath);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_FONT_SOURCE_NAME, normalized.fontSourceName);
@@ -848,6 +923,15 @@ export class ReaderSettingsStore {
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_EXTEND_TO_STATUS_BAR, settings.extendToStatusBar);
   }
 
+  private static applyReaderChromeToStorage(settings: ReaderSettings): void {
+    AppStorage.setOrCreate(ReaderSettingsStore.KEY_HEADER_ENABLED, settings.readerHeaderEnabled);
+    AppStorage.setOrCreate(ReaderSettingsStore.KEY_HEADER_CONTENT_MODE, settings.readerHeaderContentMode);
+    AppStorage.setOrCreate(ReaderSettingsStore.KEY_FOOTER_ENABLED, settings.readerFooterEnabled);
+    AppStorage.setOrCreate(ReaderSettingsStore.KEY_FOOTER_LEFT_MODE, settings.readerFooterLeftMode);
+    AppStorage.setOrCreate(ReaderSettingsStore.KEY_FOOTER_PROGRESS_MODE, settings.readerFooterProgressMode);
+    AppStorage.setOrCreate(ReaderSettingsStore.KEY_FOOTER_SHOW_PROGRESS_BAR, settings.readerFooterShowProgressBar);
+  }
+
   private static applyEyeTurnToStorage(settings: ReaderSettings): void {
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_EYE_TURN_ENABLED, settings.eyeTurnEnabled);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_EYE_TURN_PORTRAIT_CALIBRATION,
@@ -862,6 +946,7 @@ export class ReaderSettingsStore {
 
   private static applyLayoutToStorage(settings: ReaderSettings): void {
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_FONT_SIZE, settings.fontSize);
+    AppStorage.setOrCreate(ReaderSettingsStore.KEY_LETTER_SPACING, settings.letterSpacing);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_LINE_HEIGHT, settings.lineHeight);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_LINE_HEIGHT_MODE, 'spacing');
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_PARAGRAPH_SPACING, settings.paragraphSpacing);
@@ -999,6 +1084,9 @@ export class ReaderSettingsStore {
   ): number {
     if (type === 'fontSize') {
       return ReaderSettingsStore.normalizeFontSize(value);
+    }
+    if (type === 'letterSpacing') {
+      return ReaderSettingsStore.normalizeLetterSpacing(value);
     }
     if (type === 'lineHeight') {
       return ReaderSettingsStore.normalizeLineHeight(value);
@@ -1149,6 +1237,27 @@ export class ReaderSettingsStore {
     return result.join(',');
   }
 
+  private static normalizeLetterSpacing(letterSpacing: number): number {
+    const value = typeof letterSpacing === 'number' && Number.isFinite(letterSpacing) ?
+      Math.round(letterSpacing) : 0;
+    return Math.max(0, Math.min(value, 8));
+  }
+
+  private static normalizeHeaderContentMode(mode: string): string {
+    const value = (mode || '').trim().toLowerCase();
+    return value === 'book' || value === 'book_chapter' || value === 'none' ? value : 'chapter';
+  }
+
+  private static normalizeFooterLeftMode(mode: string): string {
+    const value = (mode || '').trim().toLowerCase();
+    return value === 'none' || value === 'title' ? value : 'chapter';
+  }
+
+  private static normalizeFooterProgressMode(mode: string): string {
+    const value = (mode || '').trim().toLowerCase();
+    return value === 'percentage' || value === 'chapter' || value === 'book' || value === 'none' ? value : 'page';
+  }
+
   private static normalizeFontMode(mode: string): string {
     if (mode === 'system' || mode === 'custom') {
       return mode;
@@ -1159,6 +1268,7 @@ export class ReaderSettingsStore {
   private static clone(source: ReaderSettings): ReaderSettings {
     const settings = new ReaderSettings();
     settings.fontSize = ReaderSettingsStore.normalizeFontSize(source.fontSize);
+    settings.letterSpacing = ReaderSettingsStore.normalizeLetterSpacing(source.letterSpacing);
     settings.lineHeight = ReaderSettingsStore.normalizeLineHeight(source.lineHeight);
     settings.paragraphSpacing = ReaderSettingsStore.normalizeParagraphSpacing(source.paragraphSpacing);
     settings.marginLeft = ReaderSettingsStore.normalizeHorizontalMargin(source.marginLeft);
@@ -1215,6 +1325,12 @@ export class ReaderSettingsStore {
       (AppStorage.get<boolean>(ReaderSettingsStore.KEY_USE_TTS_QUICK_ACTION) ?? true);
     settings.useChapterQuickJump = typeof source.useChapterQuickJump === 'boolean' ? source.useChapterQuickJump :
       (AppStorage.get<boolean>(ReaderSettingsStore.KEY_USE_CHAPTER_QUICK_JUMP) ?? true);
+    settings.readerHeaderEnabled = source.readerHeaderEnabled === true;
+    settings.readerHeaderContentMode = ReaderSettingsStore.normalizeHeaderContentMode(source.readerHeaderContentMode);
+    settings.readerFooterEnabled = source.readerFooterEnabled !== false;
+    settings.readerFooterLeftMode = ReaderSettingsStore.normalizeFooterLeftMode(source.readerFooterLeftMode);
+    settings.readerFooterProgressMode = ReaderSettingsStore.normalizeFooterProgressMode(source.readerFooterProgressMode);
+    settings.readerFooterShowProgressBar = source.readerFooterShowProgressBar === true;
     settings.fontFamily = source.fontFamily || '';
     settings.fontFilePath = source.fontFilePath || '';
     settings.fontSourceName = source.fontSourceName || '系统默认';
@@ -1241,6 +1357,8 @@ export class ReaderSettingsStore {
     settings.fontSize = ReaderSettingsStore.normalizeFontSize(
       AppStorage.get<number>(ReaderSettingsStore.KEY_FONT_SIZE) ?? 20
     );
+    settings.letterSpacing = ReaderSettingsStore.normalizeLetterSpacing(
+      AppStorage.get<number>(ReaderSettingsStore.KEY_LETTER_SPACING) ?? 0);
     const storageLineHeight = AppStorage.get<number>(ReaderSettingsStore.KEY_LINE_HEIGHT) ?? 32;
     settings.lineHeight = AppStorage.get<string>(ReaderSettingsStore.KEY_LINE_HEIGHT_MODE) === 'spacing' ?
       ReaderSettingsStore.normalizeLineHeight(storageLineHeight) :
@@ -1331,6 +1449,15 @@ export class ReaderSettingsStore {
     );
     settings.useTtsQuickAction = AppStorage.get<boolean>(ReaderSettingsStore.KEY_USE_TTS_QUICK_ACTION) ?? true;
     settings.useChapterQuickJump = AppStorage.get<boolean>(ReaderSettingsStore.KEY_USE_CHAPTER_QUICK_JUMP) ?? true;
+    settings.readerHeaderEnabled = AppStorage.get<boolean>(ReaderSettingsStore.KEY_HEADER_ENABLED) ?? false;
+    settings.readerHeaderContentMode = ReaderSettingsStore.normalizeHeaderContentMode(
+      AppStorage.get<string>(ReaderSettingsStore.KEY_HEADER_CONTENT_MODE) || 'chapter');
+    settings.readerFooterEnabled = AppStorage.get<boolean>(ReaderSettingsStore.KEY_FOOTER_ENABLED) ?? true;
+    settings.readerFooterLeftMode = ReaderSettingsStore.normalizeFooterLeftMode(
+      AppStorage.get<string>(ReaderSettingsStore.KEY_FOOTER_LEFT_MODE) || 'chapter');
+    settings.readerFooterProgressMode = ReaderSettingsStore.normalizeFooterProgressMode(
+      AppStorage.get<string>(ReaderSettingsStore.KEY_FOOTER_PROGRESS_MODE) || 'page');
+    settings.readerFooterShowProgressBar = AppStorage.get<boolean>(ReaderSettingsStore.KEY_FOOTER_SHOW_PROGRESS_BAR) ?? false;
     settings.fontFamily = AppStorage.get<string>(ReaderSettingsStore.KEY_FONT_FAMILY) || '';
     settings.fontFilePath = AppStorage.get<string>(ReaderSettingsStore.KEY_FONT_FILE_PATH) || '';
     settings.fontSourceName = AppStorage.get<string>(ReaderSettingsStore.KEY_FONT_SOURCE_NAME) || '系统默认';
