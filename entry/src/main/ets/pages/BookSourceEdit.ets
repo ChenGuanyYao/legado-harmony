@@ -1,4 +1,4 @@
-import { router } from '@kit.ArkUI';
+import { router, window } from '@kit.ArkUI';
 import { BookSource } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { promptAction } from '@kit.ArkUI';
@@ -32,12 +32,21 @@ struct BookSourceEditPage {
   @State savedSourceSnapshot: string = '';
   @State showUnsavedDialog: boolean = false;
   @State showDraftConflictDialog: boolean = false;
+  @State keyboardInset: number = 0;
   private sourceInitialized: boolean = false;
   private draftSaveTimerId: number = -1;
   private conflictingDraftRaw: string = '';
+  private keyboardWindow: window.Window | null = null;
+  private keyboardAvoidAreaCallback: (data: window.AvoidAreaOptions) => void =
+    (data: window.AvoidAreaOptions): void => {
+      if (data.type === window.AvoidAreaType.TYPE_KEYBOARD) {
+        this.keyboardInset = this.keyboardAvoidAreaHeight(data.area);
+      }
+    };
 
   aboutToAppear() {
     this.syncBars();
+    this.registerKeyboardAvoidance();
     if (this.sourceInitialized) return;
     this.sourceInitialized = true;
     const params = router.getParams() as Record<string, string>;
@@ -47,10 +56,12 @@ struct BookSourceEditPage {
 
   onPageShow(): void {
     this.syncBars();
+    this.registerKeyboardAvoidance();
   }
 
   onPageHide(): void {
     this.persistDraftNow();
+    this.unregisterKeyboardAvoidance();
   }
 
   async initializeSourceForm(): Promise<void> {
@@ -313,7 +324,7 @@ struct BookSourceEditPage {
             }
             .id(`book_source_form_${this.currentTab}_${this.sourceLoadedVersion}`)
             .width('100%')
-            .padding({ left: 16, right: 16, top: 16, bottom: 16 + this.navBarHeight })
+            .padding({ left: 16, right: 16, top: 16, bottom: 16 + this.navBarHeight + this.keyboardInset })
           }
           .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .layoutWeight(1)
@@ -1124,5 +1135,49 @@ struct BookSourceEditPage {
 
   syncBars(): void {
     syncSystemBars(getContext(this), this.appDarkMode, this.pageColor());
+  }
+
+  private registerKeyboardAvoidance(): void {
+    window.getLastWindow(getContext(this)).then((mainWindow: window.Window): void => {
+      if (this.keyboardWindow === mainWindow) {
+        this.refreshKeyboardInset(mainWindow);
+        return;
+      }
+      if (this.keyboardWindow) {
+        try {
+          this.keyboardWindow.off('avoidAreaChange', this.keyboardAvoidAreaCallback);
+        } catch (_) {
+        }
+      }
+      this.keyboardWindow = mainWindow;
+      mainWindow.on('avoidAreaChange', this.keyboardAvoidAreaCallback);
+      this.refreshKeyboardInset(mainWindow);
+    }).catch((error: Error): void => {
+      console.warn('注册键盘避让监听失败:', error.message);
+    });
+  }
+
+  private unregisterKeyboardAvoidance(): void {
+    if (this.keyboardWindow) {
+      try {
+        this.keyboardWindow.off('avoidAreaChange', this.keyboardAvoidAreaCallback);
+      } catch (_) {
+      }
+    }
+    this.keyboardWindow = null;
+    this.keyboardInset = 0;
+  }
+
+  private refreshKeyboardInset(mainWindow: window.Window): void {
+    try {
+      const area = mainWindow.getWindowAvoidArea(window.AvoidAreaType.TYPE_KEYBOARD);
+      this.keyboardInset = this.keyboardAvoidAreaHeight(area);
+    } catch (_) {
+      this.keyboardInset = 0;
+    }
+  }
+
+  private keyboardAvoidAreaHeight(area: window.AvoidArea): number {
+    return px2vp(Math.max(0, area.bottomRect.height));
   }
 }

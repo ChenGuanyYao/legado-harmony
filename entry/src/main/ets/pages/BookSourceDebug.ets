@@ -1,5 +1,8 @@
-import { router } from '@kit.ArkUI';
+import { router, window, promptAction } from '@kit.ArkUI';
 import { Context } from '@kit.AbilityKit';
+import { util } from '@kit.ArkTS';
+import picker from '@ohos.file.picker';
+import fs from '@ohos.file.fs';
 import { Book, BookChapter, BookSource, SearchBook } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { SearchCoordinator } from '../core/book/SearchCoordinator';
@@ -7,10 +10,20 @@ import { ExploreCoordinator, ExploreEntry } from '../core/book/ExploreCoordinato
 import { WebBookService } from '../core/book/WebBookService';
 import { SourceRuntimeStage } from '../core/book/BookSourceRuntimeRouter';
 import { BookSourceDebugContext, BookSourceDebugSession, BookSourceDebugStep,
-  BookSourceDebugNetworkTrace, BookSourceDebugRuleTrace, BookSourceDebugLog } from '../core/book/BookSourceDebugModels';
+  BookSourceDebugNetworkTrace, BookSourceDebugRuleTrace, BookSourceDebugLog,
+  BookSourceDebugRedactor } from '../core/book/BookSourceDebugModels';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
+
+class BookSourceDebugExportReport {
+  reportVersion: number = 1;
+  exportedAt: string = '';
+  sourceUrl: string = '';
+  sourceName: string = '';
+  stage: string = '';
+  session: BookSourceDebugSession = new BookSourceDebugSession();
+}
 
 @Entry
 @Component
@@ -25,11 +38,21 @@ struct BookSourceDebugPage {
   @State running: boolean = false;
   @State status: string = '准备就绪';
   @State session: BookSourceDebugSession = new BookSourceDebugSession();
+  @State keyboardInset: number = 0;
+  @State exporting: boolean = false;
   private coordinator: SearchCoordinator | null = null;
   private initialized: boolean = false;
+  private keyboardWindow: window.Window | null = null;
+  private keyboardAvoidAreaCallback: (data: window.AvoidAreaOptions) => void =
+    (data: window.AvoidAreaOptions): void => {
+      if (data.type === window.AvoidAreaType.TYPE_KEYBOARD) {
+        this.keyboardInset = this.keyboardAvoidAreaHeight(data.area);
+      }
+    };
 
   aboutToAppear(): void {
     this.syncBars();
+    this.registerKeyboardAvoidance();
     if (this.initialized) return;
     this.initialized = true;
     const params = router.getParams() as Record<string, string>;
@@ -47,10 +70,12 @@ struct BookSourceDebugPage {
 
   onPageShow(): void {
     this.syncBars();
+    this.registerKeyboardAvoidance();
   }
 
   onPageHide(): void {
     if (this.running) this.coordinator?.cancel();
+    this.unregisterKeyboardAvoidance();
   }
 
   build() {
@@ -62,7 +87,7 @@ struct BookSourceDebugPage {
           this.resultCard()
         }
         .width('100%')
-        .padding({ top: 68 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
+        .padding({ top: 68 + this.statusBarHeight, bottom: 32 + this.navBarHeight + this.keyboardInset })
       }
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
@@ -83,6 +108,13 @@ struct BookSourceDebugPage {
         onBack: () => router.back() })
       Text('书源调试').fontSize(20).fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor()).layoutWeight(1)
+      Text('导出报告').fontSize(14).fontColor(this.accentColor())
+        .width(88)
+        .height(56)
+        .textAlign(TextAlign.Center)
+        .margin({ right: 12 })
+        .opacity(this.hasDebugReport() ? 1 : 0.45)
+        .onClick(() => this.exportDebugReport())
     }
     .width('100%').height(56 + this.statusBarHeight).padding({ top: this.statusBarHeight })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
@@ -382,6 +414,96 @@ struct BookSourceDebugPage {
   private publishSession(debug: BookSourceDebugContext): void {
     this.session = JSON.parse(JSON.stringify(debug.session)) as BookSourceDebugSession;
   }
+  private hasDebugReport(): boolean {
+    return this.session.steps.length > 0 || this.session.logs.length > 0;
+  }
+
+  private async exportDebugReport(): Promise<void> {
+    if (!this.hasDebugReport()) {
+      promptAction.showToast({ message: '请先运行一次调试' });
+      return;
+    }
+    if (this.exporting) return;
+    let file: fs.File | null = null;
+    this.exporting = true;
+    try {
+      const options: picker.DocumentSaveOptions = new picker.DocumentSaveOptions();
+      options.newFileNames = [`legado_book_source_debug_${this.exportTimestamp()}.json`];
+      options.fileSuffixChoices = ['JSON 文件|.json'];
+      const result = await new picker.DocumentViewPicker(getContext(this)).save(options);
+      if (!result || result.length === 0) return;
+      const session = JSON.parse(JSON.stringify(this.session)) as BookSourceDebugSession;
+      session.sourceUrl = BookSourceDebugRedactor.url(session.sourceUrl);
+      session.sourceName = BookSourceDebugRedactor.url(session.sourceName || session.sourceUrl);
+      const report = new BookSourceDebugExportReport();
+      report.exportedAt = new Date().toISOString();
+      report.sourceUrl = BookSourceDebugRedactor.url(this.source.bookSourceUrl || this.sourceUrl);
+      report.sourceName = this.source.bookSourceName || BookSourceDebugRedactor.url(session.sourceName);
+      report.stage = this.stage;
+      report.session = session;
+      const json = JSON.stringify(report, null, 2);
+      const bytes = new util.TextEncoder().encodeInto(json);
+      file = await fs.open(result[0], fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
+      await fs.write(file.fd, bytes.buffer, { offset: 0, length: bytes.byteLength });
+      await fs.close(file);
+      file = null;
+      promptAction.showToast({ message: '调试报告已导出' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || '未知错误');
+      promptAction.showToast({ message: `导出失败：${message}` });
+    } finally {
+      if (file) {
+        try { await fs.close(file); } catch (_) {}
+      }
+      this.exporting = false;
+    }
+  }
+
+  private exportTimestamp(): string {
+    const now = new Date();
+    const pad = (value: number): string => value.toString().padStart(2, '0');
+    return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_` +
+      `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  }
+
+  private registerKeyboardAvoidance(): void {
+    window.getLastWindow(getContext(this)).then((mainWindow: window.Window): void => {
+      if (this.keyboardWindow === mainWindow) {
+        this.refreshKeyboardInset(mainWindow);
+        return;
+      }
+      if (this.keyboardWindow) {
+        try { this.keyboardWindow.off('avoidAreaChange', this.keyboardAvoidAreaCallback); } catch (_) {}
+      }
+      this.keyboardWindow = mainWindow;
+      mainWindow.on('avoidAreaChange', this.keyboardAvoidAreaCallback);
+      this.refreshKeyboardInset(mainWindow);
+    }).catch((error: Error): void => {
+      console.warn('注册调试页键盘避让监听失败:', error.message);
+    });
+  }
+
+  private unregisterKeyboardAvoidance(): void {
+    if (this.keyboardWindow) {
+      try { this.keyboardWindow.off('avoidAreaChange', this.keyboardAvoidAreaCallback); } catch (_) {}
+    }
+    this.keyboardWindow = null;
+    this.keyboardInset = 0;
+  }
+
+  private refreshKeyboardInset(mainWindow: window.Window): void {
+    try {
+      const area = mainWindow.getWindowAvoidArea(window.AvoidAreaType.TYPE_KEYBOARD);
+      this.keyboardInset = this.keyboardAvoidAreaHeight(area);
+    } catch (_) {
+      this.keyboardInset = 0;
+    }
+  }
+
+  private keyboardAvoidAreaHeight(area: window.AvoidArea): number {
+    return px2vp(Math.max(0, area.bottomRect.height));
+  }
+
   private pageColor(): string { return ThemeRuntime.pageColor(this.appDarkMode); }
   private cardColor(): string { return ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'); }
   private inputColor(): string { return this.appDarkMode ? '#252525' : '#F2F3F5'; }
