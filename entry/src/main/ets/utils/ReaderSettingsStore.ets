@@ -29,6 +29,9 @@ export class ReaderSettings {
   eyeTurnEnabled: boolean = false;
   eyeTurnPortraitCalibration: string = '';
   eyeTurnLandscapeCalibration: string = '';
+  // 眼动方向开关：上一页（向前）默认关闭，下一页（向后）默认开启。
+  eyeTurnPreviousEnabled: boolean = false;
+  eyeTurnNextEnabled: boolean = true;
   eyeTurnPreviousDwellMs: number = 850;
   eyeTurnNextDwellMs: number = 650;
   screenTimeoutMinutes: number = -1;
@@ -105,6 +108,8 @@ export class ReaderSettingsStore {
   static readonly KEY_EYE_TURN_ENABLED: string = 'readerEyeTurnEnabled';
   static readonly KEY_EYE_TURN_PORTRAIT_CALIBRATION: string = 'readerEyeTurnPortraitCalibration';
   static readonly KEY_EYE_TURN_LANDSCAPE_CALIBRATION: string = 'readerEyeTurnLandscapeCalibration';
+  static readonly KEY_EYE_TURN_PREVIOUS_ENABLED: string = 'readerEyeTurnPreviousEnabled';
+  static readonly KEY_EYE_TURN_NEXT_ENABLED: string = 'readerEyeTurnNextEnabled';
   static readonly KEY_EYE_TURN_PREVIOUS_DWELL_MS: string = 'readerEyeTurnPreviousDwellMs';
   static readonly KEY_EYE_TURN_NEXT_DWELL_MS: string = 'readerEyeTurnNextDwellMs';
   static readonly KEY_SCREEN_TIMEOUT_MINUTES: string = 'readerScreenTimeoutMinutes';
@@ -305,6 +310,16 @@ export class ReaderSettingsStore {
     settings.eyeTurnLandscapeCalibration = await ReaderSettingsStore.getString(
       store, ReaderSettingsStore.KEY_EYE_TURN_LANDSCAPE_CALIBRATION,
       AppStorage.get<string>(ReaderSettingsStore.KEY_EYE_TURN_LANDSCAPE_CALIBRATION) || '');
+    settings.eyeTurnPreviousEnabled = await ReaderSettingsStore.getBoolean(
+      store,
+      ReaderSettingsStore.KEY_EYE_TURN_PREVIOUS_ENABLED,
+      AppStorage.get<boolean>(ReaderSettingsStore.KEY_EYE_TURN_PREVIOUS_ENABLED) ?? false
+    );
+    settings.eyeTurnNextEnabled = await ReaderSettingsStore.getBoolean(
+      store,
+      ReaderSettingsStore.KEY_EYE_TURN_NEXT_ENABLED,
+      AppStorage.get<boolean>(ReaderSettingsStore.KEY_EYE_TURN_NEXT_ENABLED) ?? true
+    );
     settings.eyeTurnPreviousDwellMs = await ReaderSettingsStore.getNumber(
       store, ReaderSettingsStore.KEY_EYE_TURN_PREVIOUS_DWELL_MS, 850, 'eyeTurnDwell');
     settings.eyeTurnNextDwellMs = await ReaderSettingsStore.getNumber(
@@ -547,6 +562,8 @@ export class ReaderSettingsStore {
     enabled: boolean,
     portraitCalibration: string,
     landscapeCalibration: string,
+    previousEnabled: boolean,
+    nextEnabled: boolean,
     previousDwellMs: number,
     nextDwellMs: number
   ): Promise<void> {
@@ -554,6 +571,8 @@ export class ReaderSettingsStore {
     settings.eyeTurnEnabled = enabled;
     settings.eyeTurnPortraitCalibration = portraitCalibration || '';
     settings.eyeTurnLandscapeCalibration = landscapeCalibration || '';
+    settings.eyeTurnPreviousEnabled = previousEnabled === true;
+    settings.eyeTurnNextEnabled = nextEnabled !== false;
     settings.eyeTurnPreviousDwellMs = ReaderSettingsStore.normalizeEyeTurnDwell(previousDwellMs);
     settings.eyeTurnNextDwellMs = ReaderSettingsStore.normalizeEyeTurnDwell(nextDwellMs);
     ReaderSettingsStore.cachedSettings = ReaderSettingsStore.clone(settings);
@@ -564,6 +583,10 @@ export class ReaderSettingsStore {
       settings.eyeTurnPortraitCalibration);
     await store.put(ReaderSettingsStore.KEY_EYE_TURN_LANDSCAPE_CALIBRATION,
       settings.eyeTurnLandscapeCalibration);
+    await store.put(ReaderSettingsStore.KEY_EYE_TURN_PREVIOUS_ENABLED,
+      settings.eyeTurnPreviousEnabled);
+    await store.put(ReaderSettingsStore.KEY_EYE_TURN_NEXT_ENABLED,
+      settings.eyeTurnNextEnabled);
     await store.put(ReaderSettingsStore.KEY_EYE_TURN_PREVIOUS_DWELL_MS,
       settings.eyeTurnPreviousDwellMs);
     await store.put(ReaderSettingsStore.KEY_EYE_TURN_NEXT_DWELL_MS,
@@ -837,6 +860,8 @@ export class ReaderSettingsStore {
       settings.eyeTurnEnabled,
       settings.eyeTurnPortraitCalibration,
       settings.eyeTurnLandscapeCalibration,
+      settings.eyeTurnPreviousEnabled,
+      settings.eyeTurnNextEnabled,
       settings.eyeTurnPreviousDwellMs,
       settings.eyeTurnNextDwellMs
     );
@@ -938,6 +963,10 @@ export class ReaderSettingsStore {
       settings.eyeTurnPortraitCalibration);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_EYE_TURN_LANDSCAPE_CALIBRATION,
       settings.eyeTurnLandscapeCalibration);
+    AppStorage.setOrCreate(ReaderSettingsStore.KEY_EYE_TURN_PREVIOUS_ENABLED,
+      settings.eyeTurnPreviousEnabled);
+    AppStorage.setOrCreate(ReaderSettingsStore.KEY_EYE_TURN_NEXT_ENABLED,
+      settings.eyeTurnNextEnabled);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_EYE_TURN_PREVIOUS_DWELL_MS,
       settings.eyeTurnPreviousDwellMs);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_EYE_TURN_NEXT_DWELL_MS,
@@ -1305,6 +1334,8 @@ export class ReaderSettingsStore {
     settings.eyeTurnEnabled = source.eyeTurnEnabled === true;
     settings.eyeTurnPortraitCalibration = source.eyeTurnPortraitCalibration || '';
     settings.eyeTurnLandscapeCalibration = source.eyeTurnLandscapeCalibration || '';
+    settings.eyeTurnPreviousEnabled = source.eyeTurnPreviousEnabled === true;
+    settings.eyeTurnNextEnabled = source.eyeTurnNextEnabled !== false;
     settings.eyeTurnPreviousDwellMs = ReaderSettingsStore.normalizeEyeTurnDwell(
       typeof source.eyeTurnPreviousDwellMs === 'number' ? source.eyeTurnPreviousDwellMs : 850);
     settings.eyeTurnNextDwellMs = ReaderSettingsStore.normalizeEyeTurnDwell(
@@ -1429,6 +1460,10 @@ export class ReaderSettingsStore {
       AppStorage.get<string>(ReaderSettingsStore.KEY_EYE_TURN_PORTRAIT_CALIBRATION) || '';
     settings.eyeTurnLandscapeCalibration =
       AppStorage.get<string>(ReaderSettingsStore.KEY_EYE_TURN_LANDSCAPE_CALIBRATION) || '';
+    settings.eyeTurnPreviousEnabled = AppStorage.get<boolean>(
+      ReaderSettingsStore.KEY_EYE_TURN_PREVIOUS_ENABLED) ?? false;
+    settings.eyeTurnNextEnabled = AppStorage.get<boolean>(
+      ReaderSettingsStore.KEY_EYE_TURN_NEXT_ENABLED) ?? true;
     settings.eyeTurnPreviousDwellMs = ReaderSettingsStore.normalizeEyeTurnDwell(
       AppStorage.get<number>(ReaderSettingsStore.KEY_EYE_TURN_PREVIOUS_DWELL_MS) ?? 850);
     settings.eyeTurnNextDwellMs = ReaderSettingsStore.normalizeEyeTurnDwell(

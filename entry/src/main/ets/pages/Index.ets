@@ -1153,6 +1153,8 @@ struct BookshelfPage {
   @State cacheTargetBook: Book | null = null;
   @State cacheChapters: BookChapter[] = [];
   @State cacheStatus: string = '';
+  @State cacheRangeDraft: string = '';
+  @State cacheRangeCaching: boolean = false;
   @State isCaching: boolean = false;
   @State activeFullTextCacheBookUrls: string[] = [];
   @State isCacheTocLoading: boolean = false;
@@ -1476,7 +1478,7 @@ struct BookshelfPage {
           console.warn('后台生成本地书籍简介失败:', book.name, e);
         }
         // Keep migrations behind user input and list animation work.
-        await new Promise<void>((resolve) => setTimeout(resolve, 16));
+        await new Promise<void>((resolve: () => void) => setTimeout(() => resolve(), 16));
       }
     } finally {
       this.localBookIntroMigrationRunning = false;
@@ -2869,7 +2871,7 @@ struct BookshelfPage {
           Blank()
             .layoutWeight(1)
             .onClick(() => {
-              if (!this.isCacheTargetBookCaching()) {
+              if (!this.isCacheTargetBookCaching() && !this.cacheRangeCaching) {
                 this.closeCacheDialog();
               }
             })
@@ -2923,10 +2925,7 @@ struct BookshelfPage {
           .width('100%')
           .padding({ left: 18, right: 18, top: 18, bottom: 18 })
           .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
-          .borderRadius({
-            topLeft: ThemeRuntime.glassCornerRadius(18, 'panel'),
-            topRight: ThemeRuntime.glassCornerRadius(18, 'panel')
-          })
+          .borderRadius(ThemeRuntime.glassCornerRadius(18, 'panel'))
           .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
           .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
           .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
@@ -2959,7 +2958,7 @@ struct BookshelfPage {
                 .fontSize(13)
                 .borderRadius(17)
                 .onClick(() => {
-                  if (!this.isCacheTargetBookCaching()) {
+                  if (!this.isCacheTargetBookCaching() && !this.cacheRangeCaching) {
                     this.closeCacheDialog();
                   }
                 })
@@ -2974,6 +2973,37 @@ struct BookshelfPage {
                 .width('100%')
                 .margin({ bottom: 8 })
             }
+
+            Row({ space: 8 }) {
+              TextInput({ placeholder: '章节范围，如 1-10', text: this.cacheRangeDraft })
+                .type(InputType.Normal)
+                .fontSize(14)
+                .fontColor(this.primaryTextColor())
+                .placeholderColor(this.subTextColor())
+                .layoutWeight(1)
+                .height(42)
+                .padding({ left: 10, right: 10 })
+                .backgroundColor(this.appDarkMode ? '#1FFFFFFF' : '#0D000000')
+                .borderRadius(10)
+                .enabled(!this.isCacheTargetBookCaching() && !this.cacheRangeCaching)
+                .onChange((value: string) => {
+                  this.cacheRangeDraft = value;
+                })
+              Button(this.cacheRangeCaching ? '缓存中…' : '缓存范围')
+                .width(96)
+                .height(42)
+                .fontSize(13)
+                .fontColor('#FFFFFF')
+                .backgroundColor(this.buttonColor())
+                .enabled(!this.isCacheTargetBookCaching() && !this.cacheRangeCaching)
+                .onClick(() => this.cacheChapterRange())
+            }
+            .width('100%')
+            Text('支持 1-10、1,3,5-8 等格式')
+              .fontSize(11)
+              .fontColor(this.subTextColor())
+              .width('100%')
+              .margin({ top: 4, bottom: 6 })
 
             List({ space: 2 }) {
               ForEach(this.cacheChapters, (chapter: BookChapter, index: number) => {
@@ -3011,10 +3041,7 @@ struct BookshelfPage {
           .width('100%')
           .padding({ left: 18, right: 18, top: 18, bottom: 18 })
           .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
-          .borderRadius({
-            topLeft: ThemeRuntime.glassCornerRadius(18, 'panel'),
-            topRight: ThemeRuntime.glassCornerRadius(18, 'panel')
-          })
+          .borderRadius(ThemeRuntime.glassCornerRadius(18, 'panel'))
           .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
           .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
           .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
@@ -5205,6 +5232,7 @@ struct BookshelfPage {
     this.cacheTargetBook = book;
     this.cacheChapters = [];
     this.cacheStatus = this.isBookCaching(book) ? this.currentFullTextCacheDialogStatus(book) : '正在加载目录...';
+    this.cacheRangeDraft = '';
     this.cacheDialogOpenedAt = Date.now();
     this.showCacheDialog = true;
     if (!this.isBookCaching(book)) {
@@ -5367,11 +5395,13 @@ struct BookshelfPage {
   }
 
   closeCacheDialog(resetCaching: boolean = true): void {
+    if (this.cacheRangeCaching) return;
     this.showCacheDialog = false;
     this.showChapterCacheDialog = false;
     this.cacheTargetBook = null;
     this.cacheChapters = [];
     this.cacheStatus = '';
+    this.cacheRangeDraft = '';
     this.isCacheTocLoading = false;
     this.cacheTocLoadToken++;
     this.cacheTocLoadBookUrl = '';
@@ -6142,13 +6172,97 @@ struct BookshelfPage {
   }
 
   sleep(ms: number): Promise<void> {
-    return new Promise((resolve: () => void) => {
-      setTimeout(resolve, ms);
+    return new Promise<void>((resolve: () => void) => {
+      setTimeout(() => resolve(), ms);
     });
   }
 
+  parseChapterRange(raw: string, total: number): number[] {
+    const value = (raw || '').trim();
+    if (!value || total <= 0) return [];
+    const normalized = value.replace(/[，、；;]/g, ',').replace(/[～至]/g, '-');
+    const result = new Set<number>();
+    for (const part of normalized.split(/[\s,]+/)) {
+      if (!part) continue;
+      const range = part.match(/^(\d+)\s*-\s*(\d+)$/);
+      if (range) {
+        const start = Number.parseInt(range[1], 10);
+        const end = Number.parseInt(range[2], 10);
+        if (start < 1 || end < 1 || start > total || end > total) return [];
+        const low = Math.min(start, end);
+        const high = Math.max(start, end);
+        for (let chapterNumber = low; chapterNumber <= high; chapterNumber++) {
+          result.add(chapterNumber - 1);
+        }
+        continue;
+      }
+      if (!/^\d+$/.test(part)) return [];
+      const chapterNumber = Number.parseInt(part, 10);
+      if (chapterNumber < 1 || chapterNumber > total) return [];
+      result.add(chapterNumber - 1);
+    }
+    return Array.from(result).sort((left: number, right: number) => left - right);
+  }
+
+  async cacheChapterRange(): Promise<void> {
+    const total = this.cacheChapters.length;
+    const indexes = this.parseChapterRange(this.cacheRangeDraft, total);
+    if (indexes.length === 0) {
+      promptAction.showToast({ message: `请输入有效章节范围（1-${total}）` });
+      return;
+    }
+    if (!this.cacheTargetBook || this.isCacheTargetBookCaching() || this.cacheRangeCaching || this.isCaching) {
+      return;
+    }
+    if (this.cacheTargetBook.origin === 'local') {
+      promptAction.showToast({ message: '本地书籍无需缓存' });
+      return;
+    }
+    this.cacheRangeCaching = true;
+    let successCount = 0;
+    let failedCount = 0;
+    try {
+      const targetBook = this.cacheTargetBook;
+      const engine = ReadBookEngine.createBackgroundWorker();
+      await engine.openBook(targetBook);
+      await engine.syncChapterCacheDates();
+      for (const index of indexes) {
+        const chapter = engine.chapters[index];
+        if (!chapter || chapter.cacheDate > 0) continue;
+        this.cacheStatus = `正在缓存第 ${index + 1} 章...`;
+        let cached = false;
+        for (let attempt = 0; attempt < 2 && !cached; attempt++) {
+          try {
+            cached = await engine.cacheChapter(index);
+          } catch (error) {
+            if (attempt === 1) console.warn(`缓存第 ${index + 1} 章失败:`, error);
+          }
+          if (!cached && attempt === 0) await this.sleep(300);
+        }
+        if (cached) successCount++;
+        else failedCount++;
+        await this.sleep(0);
+      }
+      await engine.syncChapterCacheDates();
+      this.cacheChapters = [...engine.chapters];
+      this.cacheStatus = failedCount > 0 ?
+        `缓存完成：${successCount}章成功，${failedCount}章失败` :
+        (successCount > 0 ? `已缓存 ${successCount} 章` : '所选章节均已缓存');
+      promptAction.showToast({
+        message: failedCount > 0 ? `缓存完成，${failedCount} 章失败` : `已缓存 ${successCount} 章`
+      });
+      AppStorage.setOrCreate('shelfUpdateTime', Date.now());
+    } catch (error) {
+      console.error('缓存指定章节范围失败:', error);
+      this.cacheStatus = '章节缓存失败';
+      promptAction.showToast({ message: '章节缓存失败' });
+    } finally {
+      this.cacheRangeCaching = false;
+    }
+  }
+
   async cacheSingleChapter(index: number): Promise<void> {
-    if (!this.cacheTargetBook || this.isCacheTargetBookCaching()) {
+    if (!this.cacheTargetBook || this.isCacheTargetBookCaching() || this.cacheRangeCaching) {
       return;
     }
     if (this.isCaching) {
@@ -7340,6 +7454,10 @@ struct ExplorePage {
 
   async loadEntries(platformOverride: string = '', forceRefresh: boolean = false) {
     const loadVersion = this.beginExploreLoad();
+    const previousActiveEntries = this.getActiveEntries();
+    const previousEntry = previousActiveEntries.length > 0 ?
+      previousActiveEntries[Math.min(this.selectedIndex, previousActiveEntries.length - 1)] : null;
+    const previousEntryKey = previousEntry ? `${previousEntry.title}\n${previousEntry.url}` : '';
     this.hasLoaded = true;
     this.exploreContentLoadedAt = 0;
     this.status = '正在加载发现分类...';
@@ -7396,7 +7514,12 @@ struct ExplorePage {
       this.platformNames = this.getSelectedSourcePlatforms();
       this.normalizeSelectedPlatform();
       if (this.entries.length > 0) {
-        this.selectedIndex = 0;
+        // Keep the group that was visible before refresh. Resetting to index 0 made a refresh
+        // from (for example) “玄幻” reload the first group and leave the visible group stale.
+        const refreshedActiveEntries = this.getActiveEntries();
+        const restoredIndex = previousEntryKey ? refreshedActiveEntries.findIndex((entry: ExploreEntry): boolean =>
+          `${entry.title}\n${entry.url}` === previousEntryKey) : -1;
+        this.selectedIndex = restoredIndex >= 0 ? restoredIndex : 0;
         await this.loadBooks(loadVersion, forceRefresh);
       } else {
         this.books = [];

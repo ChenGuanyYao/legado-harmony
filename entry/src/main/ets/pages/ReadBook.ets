@@ -747,6 +747,8 @@ struct ReadBookPage {
   @StorageLink('readerEyeTurnEnabled') readerEyeTurnEnabled: boolean = false;
   @StorageLink('readerEyeTurnPortraitCalibration') readerEyeTurnPortraitCalibration: string = '';
   @StorageLink('readerEyeTurnLandscapeCalibration') readerEyeTurnLandscapeCalibration: string = '';
+  @StorageLink('readerEyeTurnPreviousEnabled') readerEyeTurnPreviousEnabled: boolean = false;
+  @StorageLink('readerEyeTurnNextEnabled') readerEyeTurnNextEnabled: boolean = true;
   @StorageLink('readerEyeTurnPreviousDwellMs') readerEyeTurnPreviousDwellMs: number = 850;
   @StorageLink('readerEyeTurnNextDwellMs') readerEyeTurnNextDwellMs: number = 650;
   @StorageLink('readerScreenTimeoutMinutes') readerScreenTimeoutMinutes: number =
@@ -820,6 +822,13 @@ struct ReadBookPage {
   @State fullTextCacheDone: number = 0;
   @State fullTextCacheTotal: number = 0;
   @State fullTextCacheStatus: string = '';
+  @State showReaderCacheDialog: boolean = false;
+  @State showReaderChapterCacheDialog: boolean = false;
+  @State readerCacheChapters: BookChapter[] = [];
+  @State readerCacheStatus: string = '';
+  @State readerCacheRangeDraft: string = '';
+  @State readerCacheRangeCaching: boolean = false;
+  private readerCacheLoadSerial: number = 0;
   private fullTextCacheTaskId: number = 0;
   private fullTextCacheCancelRequested: boolean = false;
   private fullTextCacheCancelSeenNonce: number = 0;
@@ -1754,6 +1763,193 @@ struct ReadBookPage {
     }
   }
 
+  readerCachePanelStatus(): string {
+    if (this.fullTextCaching) {
+      return this.fullTextCacheStatus || this.fullTextCacheProgressText();
+    }
+    return this.readerCacheStatus;
+  }
+
+  openReaderCacheDialog(): void {
+    if (!this.book || LocalBookService.isLocalBook(this.book)) {
+      promptAction.showToast({ message: '当前书籍暂无可缓存章节' });
+      return;
+    }
+    this.showReaderActionMenu = false;
+    this.showMenu = false;
+    this.showReaderChapterCacheDialog = false;
+    this.showReaderCacheDialog = true;
+    this.readerCacheRangeDraft = '';
+    this.readerCacheStatus = '';
+    this.refreshReaderCacheChapters();
+  }
+
+  openReaderChapterCacheDialog(): void {
+    if (!this.book || LocalBookService.isLocalBook(this.book) || this.fullTextCaching ||
+      this.readerCacheRangeCaching) {
+      return;
+    }
+    this.showReaderCacheDialog = false;
+    this.showReaderChapterCacheDialog = true;
+    this.readerCacheRangeDraft = '';
+    this.readerCacheStatus = '正在加载目录...';
+    this.refreshReaderCacheChapters();
+  }
+
+  closeReaderCacheDialog(): void {
+    if (this.fullTextCaching || this.readerCacheRangeCaching) return;
+    this.readerCacheLoadSerial++;
+    this.showReaderCacheDialog = false;
+    this.showReaderChapterCacheDialog = false;
+    this.readerCacheChapters = [];
+    this.readerCacheStatus = '';
+    this.readerCacheRangeDraft = '';
+  }
+
+  async refreshReaderCacheChapters(): Promise<void> {
+    const bookUrl = this.book?.bookUrl || this.bookUrl;
+    if (!bookUrl) return;
+    const serial = ++this.readerCacheLoadSerial;
+    try {
+      const engine = ReadBookEngine.get();
+      if (engine.book?.bookUrl !== bookUrl) return;
+      await engine.syncChapterCacheDates();
+      if (serial !== this.readerCacheLoadSerial || this.book?.bookUrl !== bookUrl) return;
+      this.chapters = [...engine.chapters];
+      this.readerCacheChapters = [...engine.chapters];
+      const cachedCount = this.countCachedChapters(engine.chapters);
+      this.readerCacheStatus = engine.chapters.length > 0 ?
+        `${cachedCount}章已缓存 ${engine.chapters.length - cachedCount}章待缓存` : '暂未获取到目录';
+    } catch (error) {
+      console.warn('读取阅读页缓存目录失败:', error);
+      if (serial === this.readerCacheLoadSerial) this.readerCacheStatus = '目录加载失败，请稍后重试';
+    }
+  }
+
+  readerCachedChapterTextColor(): string {
+    return this.isReaderThemeDark() ? '#DDEFE5' : '#244B35';
+  }
+
+  parseReaderChapterRange(raw: string, total: number): number[] {
+    const value = (raw || '').trim();
+    if (!value || total <= 0) return [];
+    const normalized = value.replace(/[，、；;]/g, ',').replace(/[～至]/g, '-');
+    const result = new Set<number>();
+    for (const part of normalized.split(/[\s,]+/)) {
+      if (!part) continue;
+      const range = part.match(/^(\d+)\s*-\s*(\d+)$/);
+      if (range) {
+        const start = Number.parseInt(range[1], 10);
+        const end = Number.parseInt(range[2], 10);
+        if (start < 1 || end < 1 || start > total || end > total) return [];
+        const low = Math.min(start, end);
+        const high = Math.max(start, end);
+        for (let chapterNumber = low; chapterNumber <= high; chapterNumber++) {
+          result.add(chapterNumber - 1);
+        }
+        continue;
+      }
+      if (!/^\d+$/.test(part)) return [];
+      const chapterNumber = Number.parseInt(part, 10);
+      if (chapterNumber < 1 || chapterNumber > total) return [];
+      result.add(chapterNumber - 1);
+    }
+    return Array.from(result).sort((left: number, right: number) => left - right);
+  }
+
+  async cacheReaderSingleChapter(index: number): Promise<void> {
+    await this.cacheReaderChapterIndexes([index]);
+  }
+
+  async cacheReaderChapterRange(): Promise<void> {
+    const total = this.readerCacheChapters.length > 0 ? this.readerCacheChapters.length : this.chapters.length;
+    const indexes = this.parseReaderChapterRange(this.readerCacheRangeDraft, total);
+    if (indexes.length === 0) {
+      promptAction.showToast({ message: `请输入有效章节范围（1-${total}）` });
+      return;
+    }
+    await this.cacheReaderChapterIndexes(indexes);
+  }
+
+  async cacheReaderChapterIndexes(indexes: number[]): Promise<void> {
+    if (!this.book || LocalBookService.isLocalBook(this.book) || this.fullTextCaching ||
+      this.readerCacheRangeCaching || indexes.length === 0) {
+      return;
+    }
+    const targetBook = this.book;
+    this.readerCacheRangeCaching = true;
+    let successCount = 0;
+    let failedCount = 0;
+    try {
+      const engine = ReadBookEngine.createBackgroundWorker();
+      await engine.openBook(targetBook);
+      await engine.syncChapterCacheDates();
+      for (const index of indexes) {
+        const chapter = engine.chapters[index];
+        if (!chapter || chapter.cacheDate > 0) continue;
+        this.readerCacheStatus = `正在缓存第 ${index + 1} 章...`;
+        let cached = false;
+        for (let attempt = 0; attempt < 2 && !cached; attempt++) {
+          try {
+            cached = await engine.cacheChapter(index);
+          } catch (error) {
+            if (attempt === 1) console.warn(`缓存第 ${index + 1} 章失败:`, error);
+          }
+          if (!cached && attempt === 0) await this.sleep(300);
+        }
+        if (cached) successCount++;
+        else failedCount++;
+        await this.sleep(0);
+      }
+      await engine.syncChapterCacheDates();
+      this.chapters = [...engine.chapters];
+      this.readerCacheChapters = [...engine.chapters];
+      this.readerCacheStatus = failedCount > 0 ?
+        `缓存完成：${successCount}章成功，${failedCount}章失败` :
+        (successCount > 0 ? `已缓存 ${successCount} 章` : '所选章节均已缓存');
+      promptAction.showToast({
+        message: failedCount > 0 ? `缓存完成，${failedCount} 章失败` : `已缓存 ${successCount} 章`
+      });
+      AppStorage.setOrCreate('shelfUpdateTime', Date.now());
+    } catch (error) {
+      console.error('阅读页缓存指定章节失败:', error);
+      this.readerCacheStatus = '章节缓存失败';
+      promptAction.showToast({ message: '章节缓存失败' });
+    } finally {
+      this.readerCacheRangeCaching = false;
+    }
+  }
+
+  async clearReaderCachedChapters(): Promise<void> {
+    if (!this.book || this.fullTextCaching || this.readerCacheRangeCaching) return;
+    const bookUrl = this.book.bookUrl;
+    if (!bookUrl) return;
+    try {
+      const db = AppDatabase.getInstance();
+      await db.initWithContext(getContext(this));
+      await db.deleteBookCachedContent(bookUrl);
+      const engine = ReadBookEngine.get();
+      if (engine.book?.bookUrl === bookUrl) {
+        engine.clearCurrentBookMemoryCache();
+        await engine.syncChapterCacheDates();
+        this.chapters = [...engine.chapters];
+        this.readerCacheChapters = [...engine.chapters];
+      } else {
+        this.readerCacheChapters = this.readerCacheChapters.map((chapter: BookChapter) => {
+          chapter.cacheDate = 0;
+          return chapter;
+        });
+      }
+      this.readerCacheStatus = '已清除缓存章节';
+      promptAction.showToast({ message: '已清除缓存章节' });
+      AppStorage.setOrCreate('shelfUpdateTime', Date.now());
+    } catch (error) {
+      console.error('阅读页清除缓存章节失败:', error);
+      this.readerCacheStatus = '清除缓存失败';
+      promptAction.showToast({ message: '清除缓存失败' });
+    }
+  }
+
   startFullTextCache(): void {
     if (this.fullTextCaching) {
       promptAction.showToast({ message: this.fullTextCacheStatus || '全文缓存正在后台进行' });
@@ -2132,8 +2328,8 @@ struct ReadBookPage {
   }
 
   sleep(ms: number): Promise<void> {
-    return new Promise((resolve: () => void) => {
-      setTimeout(resolve, ms);
+    return new Promise<void>((resolve: () => void) => {
+      setTimeout(() => resolve(), ms);
     });
   }
 
@@ -2652,6 +2848,14 @@ struct ReadBookPage {
 
       if (this.showMenu && this.showReaderActionMenu && !this.showToc && !this.showSettings) {
         this.readerActionMenu()
+      }
+
+      if (this.showReaderCacheDialog) {
+        this.readerCacheDialog()
+      }
+
+      if (this.showReaderChapterCacheDialog) {
+        this.readerChapterCacheDialog()
       }
 
       if (this.showLayoutElementSettings) {
@@ -3564,52 +3768,9 @@ struct ReadBookPage {
   tocPanelSummary() {
     Column({ space: 8 }) {
       Row() {
-        Stack({ alignContent: Alignment.Center }) {
-          Column({ space: 0 }) {
-            SymbolGlyph($r('sys.symbol.chevron_up'))
-              .fontSize(11)
-              .fontColor([this.tocReverseOrder ? this.accentColor() : this.getTextColor()])
-            SymbolGlyph($r('sys.symbol.chevron_down'))
-              .fontSize(11)
-              .fontColor([this.tocReverseOrder ? this.accentColor() : this.getTextColor()])
-          }
-          .alignItems(HorizontalAlign.Center)
-        }
-          .width(34)
-          .height(34)
-          .borderRadius(17)
-          .backgroundColor(this.tocReverseOrder ?
-            (this.isReaderThemeDark() ? '#24384A' : '#E8F1FF') :
-            (this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000'))
-          .accessibilityText(this.tocReverseOrder ? '切换为正序目录' : '切换为倒序目录')
-          .onClick(() => this.toggleTocOrder())
-        Text(this.isTocSearchActive() ? `找到 ${this.tocSearchChapterIndexes.length} 章` : `共 ${this.chapters.length} 章`)
-          .fontSize(14)
-          .fontColor(this.getSubTextColor())
-          .margin({ left: 6 })
-        SymbolGlyph($r('sys.symbol.chevron_up'))
-          .fontSize(20)
-          .fontColor([this.getTextColor()])
-          .width(32)
-          .height(36)
-          .accessibilityText('跳到目录开头')
-          .onClick(() => {
-            this.scrollTocVisibleEdge(false);
-          })
-        SymbolGlyph($r('sys.symbol.chevron_down'))
-          .fontSize(20)
-          .fontColor([this.getTextColor()])
-          .width(32)
-          .height(36)
-          .accessibilityText('跳到目录末尾')
-          .onClick(() => {
-            this.scrollTocVisibleEdge(true);
-          })
-        Blank()
-          .layoutWeight(1)
         if (this.tocQuickJumpInputVisible && !this.isTocSearchActive()) {
           TextInput({ text: this.tocQuickJumpDraft, placeholder: `1-${this.chapters.length}` })
-            .type(InputType.Number)
+            .type(InputType.Normal)
             .enterKeyType(EnterKeyType.Go)
             .key('tocQuickJumpChapterInput')
             .defaultFocus(true)
@@ -3629,6 +3790,46 @@ struct ReadBookPage {
               this.submitTocQuickJump();
             })
         } else if (this.isTocSearchActive()) {
+          Text(`找到 ${this.tocSearchChapterIndexes.length} 章`)
+            .fontSize(14)
+            .fontColor(this.getSubTextColor())
+            .margin({ left: 6 })
+        } else {
+          Text(`共 ${this.chapters.length} 章`)
+            .fontSize(14)
+            .fontColor(this.getSubTextColor())
+            .margin({ left: 6 })
+            .padding({ left: 8, right: 8 })
+            .height(34)
+            .textAlign(TextAlign.Center)
+            .accessibilityText(this.tocQuickJumpArmed ? '再次点击输入目标章节' : '点击回到当前章节')
+            .onClick(() => {
+              this.handleTocCurrentPositionClick();
+            })
+        }
+        Stack({ alignContent: Alignment.Center }) {
+          Column({ space: 0 }) {
+            SymbolGlyph($r('sys.symbol.chevron_up'))
+              .fontSize(11)
+              .fontColor([this.tocReverseOrder ? this.accentColor() : this.getTextColor()])
+            SymbolGlyph($r('sys.symbol.chevron_down'))
+              .fontSize(11)
+              .fontColor([this.tocReverseOrder ? this.accentColor() : this.getTextColor()])
+          }
+          .alignItems(HorizontalAlign.Center)
+        }
+          .width(34)
+          .height(34)
+          .borderRadius(17)
+          .backgroundColor(this.tocReverseOrder ?
+            (this.isReaderThemeDark() ? '#24384A' : '#E8F1FF') :
+            (this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000'))
+          .accessibilityText(this.tocReverseOrder ? '切换为正序目录' : '切换为倒序目录')
+          .onClick(() => this.toggleTocOrder())
+          .margin({ left: 4 })
+        Blank()
+          .layoutWeight(1)
+        if (this.isTocSearchActive()) {
           Text(`匹配 ${this.tocSearchChapterIndexes.length}`)
             .fontSize(12)
             .fontColor(this.getTextColor())
@@ -3637,19 +3838,6 @@ struct ReadBookPage {
             .textAlign(TextAlign.Center)
             .borderRadius(16)
             .backgroundColor(this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000')
-        } else {
-          Text(`当前${Math.min(this.currentChapterIndex + 1, this.chapters.length)}`)
-            .fontSize(12)
-            .fontColor(this.getTextColor())
-            .height(34)
-            .padding({ left: 12, right: 12 })
-            .textAlign(TextAlign.Center)
-            .borderRadius(16)
-            .backgroundColor(this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000')
-            .accessibilityText(this.tocQuickJumpArmed ? '再次点击输入目标章节' : '回到当前章节')
-            .onClick(() => {
-              this.handleTocCurrentPositionClick();
-            })
         }
         ImmersiveBackButton({
           icon: $r('sys.symbol.arrow_clockwise'),
@@ -4045,6 +4233,13 @@ struct ReadBookPage {
         true,
         this.readerSourceNeedsLogin() || this.readerCanRetry() || !this.isReaderComicModeActive()
       )
+      if (this.book && !LocalBookService.isLocalBook(this.book)) {
+        this.readerActionMenuItem(
+          $r('sys.symbol.download'),
+          '缓存',
+          () => this.openReaderCacheDialog()
+        )
+      }
       if (!this.isReaderComicModeActive()) {
         this.readerActionMenuItem(
           this.isTtsSpeaking && !this.isTtsPaused ? $r('sys.symbol.pause') : $r('sys.symbol.play'),
@@ -4153,6 +4348,211 @@ struct ReadBookPage {
       this.showReaderActionMenu = false;
       action();
     })
+  }
+
+  @Builder
+  readerCacheDialog() {
+    Stack() {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.isReaderThemeDark() ? '#66000000' : '#26000000')
+        .backdropBlur(ThemeRuntime.glassBlur('overlay', 18))
+        .onClick(() => {
+          if (!this.fullTextCaching && !this.readerCacheRangeCaching) {
+            this.closeReaderCacheDialog();
+          }
+        })
+
+      Column() {
+        Text(`缓存《${this.book?.name || '当前书籍'}》`)
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.getTextColor())
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .margin({ bottom: 8 })
+
+        if (this.readerCachePanelStatus()) {
+          Text(this.readerCachePanelStatus())
+            .fontSize(13)
+            .fontColor(this.getSubTextColor())
+            .width('100%')
+            .textAlign(TextAlign.Center)
+            .margin({ bottom: 8 })
+        }
+
+        this.readerCacheActionItem(this.fullTextCaching ? '正在缓存...' : '缓存全文', () => {
+          this.startFullTextCache();
+        }, this.fullTextCaching || this.readerCacheRangeCaching)
+        this.readerCacheActionItem('缓存指定章节', () => {
+          this.openReaderChapterCacheDialog();
+        }, this.fullTextCaching || this.readerCacheRangeCaching)
+        this.readerCacheActionItem('清除已缓存章节', () => {
+          this.clearReaderCachedChapters();
+        }, this.fullTextCaching || this.readerCacheRangeCaching, '#E53935')
+
+        Button('取消')
+          .width('100%')
+          .height(44)
+          .margin({ top: 10 })
+          .backgroundColor(this.isReaderThemeDark() ? '#24272D' : '#F5F5F5')
+          .fontColor(this.getTextColor())
+          .enabled(!this.fullTextCaching && !this.readerCacheRangeCaching)
+          .onClick(() => this.closeReaderCacheDialog())
+      }
+      .width('calc(100% - 32vp)')
+      .constraintSize({ maxWidth: 520 })
+      .padding({ left: 18, right: 18, top: 18, bottom: 18 })
+      .backgroundColor(this.readerGlassPanelColor())
+      .borderRadius(ThemeRuntime.glassCornerRadius(18, 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.readerGlassBorderColor() })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: this.readerGlassShadowColor(), offsetX: 0, offsetY: 4 })
+      .margin({ bottom: this.readerFloatingPanelBottomInset() })
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder
+  readerCacheActionItem(label: string, action: () => void, disabled: boolean = false,
+    color: string = '') {
+    Button(label)
+      .width('100%')
+      .height(44)
+      .margin({ top: 6 })
+      .backgroundColor(this.isReaderThemeDark() ? '#24272D' : '#F5F5F5')
+      .fontColor(color || this.getTextColor())
+      .enabled(!disabled)
+      .opacity(disabled ? 0.5 : 1)
+      .onClick(action)
+  }
+
+  @Builder
+  readerChapterCacheDialog() {
+    Stack() {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.isReaderThemeDark() ? '#66000000' : '#26000000')
+        .backdropBlur(ThemeRuntime.glassBlur('overlay', 18))
+        .onClick(() => {
+          if (!this.fullTextCaching && !this.readerCacheRangeCaching) {
+            this.closeReaderCacheDialog();
+          }
+        })
+
+      Column() {
+        Row() {
+          Text('选择章节缓存')
+            .fontSize(18)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.getTextColor())
+            .layoutWeight(1)
+          Button('关闭')
+            .height(34)
+            .fontSize(13)
+            .borderRadius(17)
+            .enabled(!this.fullTextCaching && !this.readerCacheRangeCaching)
+            .onClick(() => this.closeReaderCacheDialog())
+        }
+        .width('100%')
+        .height(46)
+
+        if (this.readerCachePanelStatus()) {
+          Text(this.readerCachePanelStatus())
+            .fontSize(13)
+            .fontColor(this.getSubTextColor())
+            .width('100%')
+            .margin({ bottom: 8 })
+        }
+
+        Row({ space: 8 }) {
+          TextInput({ placeholder: '章节范围，如 1-10', text: this.readerCacheRangeDraft })
+            .type(InputType.Normal)
+            .fontSize(14)
+            .fontColor(this.getTextColor())
+            .placeholderColor(this.getSubTextColor())
+            .layoutWeight(1)
+            .height(42)
+            .padding({ left: 10, right: 10 })
+            .backgroundColor(this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000')
+            .borderRadius(10)
+            .enabled(!this.fullTextCaching && !this.readerCacheRangeCaching)
+            .onChange((value: string) => {
+              this.readerCacheRangeDraft = value;
+            })
+          Button(this.readerCacheRangeCaching ? '缓存中…' : '缓存范围')
+            .width(96)
+            .height(42)
+            .fontSize(13)
+            .fontColor('#FFFFFF')
+            .backgroundColor(this.accentColor())
+            .enabled(!this.fullTextCaching && !this.readerCacheRangeCaching)
+            .onClick(() => this.cacheReaderChapterRange())
+        }
+        .width('100%')
+        Text('支持 1-10、1,3,5-8 等格式')
+          .fontSize(11)
+          .fontColor(this.getSubTextColor())
+          .width('100%')
+          .margin({ top: 4, bottom: 6 })
+
+        if (this.readerCacheChapters.length === 0) {
+          Text('暂未获取到目录')
+            .fontSize(13)
+            .fontColor(this.getSubTextColor())
+            .width('100%')
+            .textAlign(TextAlign.Center)
+            .layoutWeight(1)
+        } else {
+          List({ space: 2 }) {
+            ForEach(this.readerCacheChapters, (chapter: BookChapter, index: number) => {
+              ListItem() {
+                Row({ space: 8 }) {
+                  Text(chapter.title)
+                    .fontSize(15)
+                    .fontColor(chapter.cacheDate > 0 ? this.readerCachedChapterTextColor() : this.getTextColor())
+                    .maxLines(2)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .layoutWeight(1)
+                  if (chapter.cacheDate > 0) {
+                    Text('已缓存')
+                      .fontSize(11)
+                      .fontColor(this.isReaderThemeDark() ? '#7CC7A0' : '#1F8F55')
+                      .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                      .backgroundColor(this.isReaderThemeDark() ? '#24382F' : '#E6F4EC')
+                      .borderRadius(4)
+                  }
+                }
+                .width('100%')
+                .padding({ left: 2, right: 2, top: 12, bottom: 12 })
+                .onClick(() => this.cacheReaderSingleChapter(index))
+              }
+            }, (chapter: BookChapter, index: number) => `${index}_${chapter.url || chapter.title}`)
+          }
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .width('100%')
+          .layoutWeight(1)
+          .scrollBar(BarState.Auto)
+        }
+      }
+      .width('calc(100% - 32vp)')
+      .constraintSize({ maxWidth: 560 })
+      .height(Math.min(660, Math.max(420, this.pageViewHeight - 72)))
+      .padding({ left: 18, right: 18, top: 18, bottom: 18 })
+      .backgroundColor(this.readerGlassPanelColor())
+      .borderRadius(ThemeRuntime.glassCornerRadius(18, 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.readerGlassBorderColor() })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: this.readerGlassShadowColor(), offsetX: 0, offsetY: 4 })
+      .margin({ bottom: this.readerFloatingPanelBottomInset() })
+    }
+    .width('100%')
+    .height('100%')
   }
 
   openLayoutElementSettings(): void {
@@ -6655,6 +7055,8 @@ struct ReadBookPage {
     this.readerEyeTurnEnabled = settings.eyeTurnEnabled;
     this.readerEyeTurnPortraitCalibration = settings.eyeTurnPortraitCalibration || '';
     this.readerEyeTurnLandscapeCalibration = settings.eyeTurnLandscapeCalibration || '';
+    this.readerEyeTurnPreviousEnabled = settings.eyeTurnPreviousEnabled;
+    this.readerEyeTurnNextEnabled = settings.eyeTurnNextEnabled;
     this.readerEyeTurnPreviousDwellMs = settings.eyeTurnPreviousDwellMs || 850;
     this.readerEyeTurnNextDwellMs = settings.eyeTurnNextDwellMs || 650;
     this.readerScreenTimeoutMinutes = settings.screenTimeoutMinutes;
@@ -11063,6 +11465,14 @@ struct ReadBookPage {
 
       if (this.readerEyeTurnEnabled) {
         this.readerEyeTurnCalibrationSettingItem()
+        this.readerSwitchSettingItem('眼动向前翻页', '注视上侧边缘后翻到上一页', this.readerEyeTurnPreviousEnabled,
+          (checked: boolean) => {
+            this.setReaderEyeTurnDirectionEnabled(true, checked);
+          })
+        this.readerSwitchSettingItem('眼动向后翻页', '注视下侧边缘后翻到下一页', this.readerEyeTurnNextEnabled,
+          (checked: boolean) => {
+            this.setReaderEyeTurnDirectionEnabled(false, checked);
+          })
         this.readerSelectSettingItem('注视上侧停留', '达到上侧边缘后翻到上一页', this.readerEyeDwellOptions(),
           this.readerEyeDwellSelectedIndex(this.readerEyeTurnPreviousDwellMs), (index: number) => {
             this.setReaderEyeDwell(true, index);
@@ -11943,8 +12353,8 @@ struct ReadBookPage {
 
   readerEyeTurnEdgeDirection(): number {
     const status = this.readerEyeTurnStatus || '';
-    if (status.indexOf('正在注视顶部') >= 0) return -1;
-    if (status.indexOf('正在注视底部') >= 0) return 1;
+    if (status.indexOf('正在注视顶部') >= 0) return this.readerEyeTurnPreviousEnabled ? -1 : 0;
+    if (status.indexOf('正在注视底部') >= 0) return this.readerEyeTurnNextEnabled ? 1 : 0;
     return 0;
   }
 
@@ -12506,12 +12916,21 @@ struct ReadBookPage {
       this.readerEyeTurnEnabled,
       this.readerEyeTurnPortraitCalibration,
       this.readerEyeTurnLandscapeCalibration,
+      this.readerEyeTurnPreviousEnabled,
+      this.readerEyeTurnNextEnabled,
       this.readerEyeTurnPreviousDwellMs,
       this.readerEyeTurnNextDwellMs
     ).catch((error: Error): void => {
       console.warn('[EyeTurn] save settings failed:', error.message);
     });
     this.saveReadConfig();
+  }
+
+  setReaderEyeTurnDirectionEnabled(previous: boolean, enabled: boolean): void {
+    if (previous) this.readerEyeTurnPreviousEnabled = enabled;
+    else this.readerEyeTurnNextEnabled = enabled;
+    this.configureReaderEyeTurnController();
+    this.saveReaderEyeTurnSettings();
   }
 
   readerEyeDwellOptions(): SelectOption[] {
@@ -12593,6 +13012,11 @@ struct ReadBookPage {
       },
       (sample: EyeTurnSample): void => this.consumeReaderEyeCalibrationSample(sample),
       (direction: number): void => {
+        if ((direction < 0 && !this.readerEyeTurnPreviousEnabled) ||
+          (direction > 0 && !this.readerEyeTurnNextEnabled)) {
+          this.readerEyeTurnStatus = '请回看屏幕中央';
+          return;
+        }
         if (!this.readerEyeTurnCanTrigger()) return;
         this.runPageTurnAnimation(direction, 'tap').catch((error: Error): void => {
           console.warn('[EyeTurn] page turn failed:', error.message);
@@ -19798,6 +20222,10 @@ struct ReadBookPage {
     this.menuChapterSliderActive = false;
     this.menuChapterTooltipVisible = false;
     this.showReaderActionMenu = false;
+    if (!this.fullTextCaching && !this.readerCacheRangeCaching) {
+      this.showReaderCacheDialog = false;
+      this.showReaderChapterCacheDialog = false;
+    }
     this.showLayoutElementSettings = false;
     if (!this.txtCharsetApplying) this.showTxtCharsetDialog = false;
     this.showMenu = false;

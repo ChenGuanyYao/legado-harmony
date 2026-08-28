@@ -78,6 +78,8 @@ struct SettingsPage {
   @StorageLink('readerEyeTurnEnabled') readerEyeTurnEnabled: boolean = false;
   @StorageLink('readerEyeTurnPortraitCalibration') readerEyeTurnPortraitCalibration: string = '';
   @StorageLink('readerEyeTurnLandscapeCalibration') readerEyeTurnLandscapeCalibration: string = '';
+  @StorageLink('readerEyeTurnPreviousEnabled') readerEyeTurnPreviousEnabled: boolean = false;
+  @StorageLink('readerEyeTurnNextEnabled') readerEyeTurnNextEnabled: boolean = true;
   @StorageLink('readerEyeTurnPreviousDwellMs') readerEyeTurnPreviousDwellMs: number = 850;
   @StorageLink('readerEyeTurnNextDwellMs') readerEyeTurnNextDwellMs: number = 650;
   @StorageLink('readerPreloadEnabled') readerPreloadEnabled: boolean = true;
@@ -200,6 +202,14 @@ struct SettingsPage {
             })
           if (this.readerEyeTurnEnabled) {
             this.eyeTurnCalibrationStatusItem()
+            this.switchItem('眼动向前翻页', '注视上侧边缘后翻到上一页', this.readerEyeTurnPreviousEnabled,
+              (value: boolean) => {
+                this.setReaderEyeTurnDirectionEnabled(true, value);
+              })
+            this.switchItem('眼动向后翻页', '注视下侧边缘后翻到下一页', this.readerEyeTurnNextEnabled,
+              (value: boolean) => {
+                this.setReaderEyeTurnDirectionEnabled(false, value);
+              })
             this.selectItem('注视上侧停留', '达到上侧边缘后翻到上一页', this.readerEyeDwellOptions(),
               this.readerEyeDwellSelectedIndex(this.readerEyeTurnPreviousDwellMs), (index: number) => {
                 this.setReaderEyeDwell(true, index);
@@ -563,6 +573,8 @@ struct SettingsPage {
     this.readerEyeTurnEnabled = settings.eyeTurnEnabled;
     this.readerEyeTurnPortraitCalibration = settings.eyeTurnPortraitCalibration;
     this.readerEyeTurnLandscapeCalibration = settings.eyeTurnLandscapeCalibration;
+    this.readerEyeTurnPreviousEnabled = settings.eyeTurnPreviousEnabled;
+    this.readerEyeTurnNextEnabled = settings.eyeTurnNextEnabled;
     this.readerEyeTurnPreviousDwellMs = settings.eyeTurnPreviousDwellMs;
     this.readerEyeTurnNextDwellMs = settings.eyeTurnNextDwellMs;
     this.readerPreloadEnabled = settings.preloadEnabled;
@@ -1458,11 +1470,19 @@ struct SettingsPage {
       this.readerEyeTurnEnabled,
       this.readerEyeTurnPortraitCalibration,
       this.readerEyeTurnLandscapeCalibration,
+      this.readerEyeTurnPreviousEnabled,
+      this.readerEyeTurnNextEnabled,
       this.readerEyeTurnPreviousDwellMs,
       this.readerEyeTurnNextDwellMs
     ).catch((error: Error): void => {
       console.warn('保存眼动翻页设置失败:', error.message);
     });
+  }
+
+  setReaderEyeTurnDirectionEnabled(previous: boolean, enabled: boolean): void {
+    if (previous) this.readerEyeTurnPreviousEnabled = enabled;
+    else this.readerEyeTurnNextEnabled = enabled;
+    this.saveReaderEyeTurnSettings();
   }
 
   readerEyeDwellOptions(): SelectOption[] {

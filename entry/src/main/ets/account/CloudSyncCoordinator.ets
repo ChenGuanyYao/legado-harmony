@@ -920,6 +920,14 @@ export class CloudSyncCoordinator {
         readerSettings.eyeTurnLandscapeCalibration = localReaderSettings.eyeTurnLandscapeCalibration;
         needsEyeTurnBackfill = true;
       }
+      if (typeof readerSettings.eyeTurnPreviousEnabled !== 'boolean') {
+        readerSettings.eyeTurnPreviousEnabled = localReaderSettings.eyeTurnPreviousEnabled;
+        needsEyeTurnBackfill = true;
+      }
+      if (typeof readerSettings.eyeTurnNextEnabled !== 'boolean') {
+        readerSettings.eyeTurnNextEnabled = localReaderSettings.eyeTurnNextEnabled;
+        needsEyeTurnBackfill = true;
+      }
       if (typeof readerSettings.eyeTurnPreviousDwellMs !== 'number') {
         readerSettings.eyeTurnPreviousDwellMs = localReaderSettings.eyeTurnPreviousDwellMs;
         needsEyeTurnBackfill = true;

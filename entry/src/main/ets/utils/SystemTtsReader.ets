@@ -56,7 +56,13 @@ interface CloudTtsAudioJob {
   index: number;
   chunk: TtsChunk;
   text: string;
+  sourceToSpeechOffsets: number[];
   promise: Promise<CloudTtsAudioResult>;
+}
+
+interface NormalizedSpeechText {
+  text: string;
+  sourceToSpeechOffsets: number[];
 }
 
 interface SystemPcmSegment {
@@ -381,7 +387,7 @@ export class SystemTtsReader {
       console.info(`[TTS] reusing pcm output across chapter handoff: ${this.pcmPlayer.debugState()}`);
     }
     const cleanText = this.normalizeText(text);
-    if (!cleanText) {
+    if (!cleanText || !cleanText.trim()) {
       throw new Error('朗读内容为空');
     }
     if (this.active || this.currentRequestId || this.chunks.length > 0) {
@@ -916,7 +922,8 @@ export class SystemTtsReader {
       jobs.length < prefetchWindow && this.chunkIndex < this.chunks.length) {
       const index = this.chunkIndex;
       const chunk = this.chunks[this.chunkIndex++];
-      const speakText = this.normalizeChunkForSpeech(chunk.text);
+      const normalized = this.normalizeChunkForSpeechWithMap(chunk.text);
+      const speakText = normalized.text;
       if (!speakText) continue;
       const promise = this.cloudReader.synthesize(voiceId, speakText, this.getTtsSpeed())
         .then((audio: CloudTtsAudio): CloudTtsAudioResult => {
@@ -926,7 +933,8 @@ export class SystemTtsReader {
           return { audio };
         })
         .catch((error: Error): CloudTtsAudioResult => ({ error }));
-      jobs.push({ index, chunk, text: speakText, promise });
+      jobs.push({ index, chunk, text: speakText,
+        sourceToSpeechOffsets: normalized.sourceToSpeechOffsets, promise });
     }
   }
 
@@ -952,7 +960,8 @@ export class SystemTtsReader {
     for (let focusIndex = 0; focusIndex < focusChunks.length; focusIndex++) {
       const focusChunk = focusChunks[focusIndex];
       const sourceOffset = Math.max(0, focusChunk.start - job.chunk.start);
-      const speechOffset = this.cloudSpeechOffset(job.chunk.text, job.text, sourceOffset);
+      const speechOffset = this.cloudSpeechOffset(job.chunk.text, job.text, sourceOffset,
+        job.sourceToSpeechOffsets);
       const startTime = focusIndex === 0 ? 0 :
         this.cloudTimingAtOffset(audio.timings, speechOffset, durationMs, job.text.length);
       const frameOffset = Math.max(0, Math.round(startTime * audio.sampleRate / 1000));
@@ -993,7 +1002,12 @@ export class SystemTtsReader {
     return cues;
   }
 
-  private cloudSpeechOffset(sourceText: string, speechText: string, sourceOffset: number): number {
+  private cloudSpeechOffset(sourceText: string, speechText: string, sourceOffset: number,
+    sourceToSpeechOffsets: number[] = []): number {
+    if (sourceToSpeechOffsets.length === sourceText.length + 1) {
+      const safeOffset = Math.max(0, Math.min(sourceText.length, Math.round(sourceOffset)));
+      return Math.max(0, Math.min(speechText.length, sourceToSpeechOffsets[safeOffset] || 0));
+    }
     if (!sourceText || sourceText === speechText) {
       return Math.max(0, Math.min(speechText.length, sourceOffset));
     }
@@ -1750,7 +1764,10 @@ export class SystemTtsReader {
     return text.split('\n').map((line: string): string => {
       const trimmed = line.trim();
       if (!trimmed) return line;
-      const dimensionOnly = /^\d{1,5}\s*[*x×]\s*\d{1,5}$/.test(trimmed);
+      // Treat x/× dimensions and two-or-more-digit multiplication layouts as structural.
+      // A standalone expression such as "3*4" must remain available to the math normalizer.
+      const dimensionOnly = /^\d{1,5}\s*[x×]\s*\d{1,5}$/.test(trimmed) ||
+        /^\d{2,5}\s*\*\s*\d{2,5}$/.test(trimmed);
       const signatures = [
         /\bjava\.(?:ajax|base64Decode|put|get)\s*\(/i,
         /\.match\s*\(\s*\//i,
@@ -1766,8 +1783,18 @@ export class SystemTtsReader {
       // Sources commonly use long runs of *, #, &, dashes or similar symbols as scene separators.
       // Do not cap the run length: a rendered separator often contains dozens of characters and the
       // old 16-character limit let exactly those lines through to be spoken one symbol at a time.
-      const decorativePunctuationOnly = /^[\s=;{}()[\].,+*#&＊＃＆_~～·•—–|｜\/\\-]+$/.test(trimmed);
-      if (!dimensionOnly && !decorativePunctuationOnly && signatureCount < 1) return line;
+      const decorativePunctuationOnly = /^[\s=;:{}()[\].,+*#&＊＃＆_~～·•—–|｜\/\\\-!！?？%％^＾@＠<>《》]+$/.test(trimmed);
+      let sanitized = line;
+      if (!dimensionOnly && !decorativePunctuationOnly && signatureCount < 1) {
+        // Remove only long repeated decorative runs embedded in otherwise readable text.
+        // Single punctuation and short runs remain meaningful (e.g. "啊！！").
+        const hasUrl = /\b(?:https?|ftp):\/\//i.test(trimmed);
+        if (!hasUrl) {
+          sanitized = sanitized.replace(/([*#&=+＋~～·•—–|｜_\/\\\-!！?？%％^＾@＠:：<>《》])\1{2,}/g,
+            (match: string): string => ' '.repeat(match.length));
+        }
+        return sanitized;
+      }
       // Replace one-for-one so chunk/focus offsets continue to map to the original reader document.
       return ' '.repeat(line.length);
     }).join('\n');
@@ -1780,9 +1807,28 @@ export class SystemTtsReader {
       .replace(/[ \t]{2,}/g, ' ')
       .replace(/，{2,}/g, '，')
       .replace(/。{2,}/g, '。')
-      .replace(/^[，。！？；;,.!?]+/, '')
+      .replace(/([！!?！？])\1+/g, '$1')
+      .replace(/(?:\.{3,}|…{2,})/g, '…')
+      .replace(/^[，。！？；;：:,.!?…]+/, '')
       .replace(/[，,]+$/, '')
       .trim();
+  }
+
+  /**
+   * Normalize once and retain a source-code-unit to speech-code-unit map. The map is deliberately
+   * calculated from prefixes so every replacement (math, whitespace, punctuation and trimming)
+   * follows the exact same rules as the text sent to the service.
+   */
+  private normalizeChunkForSpeechWithMap(text: string): NormalizedSpeechText {
+    const source = text || '';
+    const offsets: number[] = [];
+    for (let index = 0; index <= source.length; index++) {
+      offsets.push(this.normalizeChunkForSpeech(source.substring(0, index)).length);
+    }
+    return {
+      text: this.normalizeChunkForSpeech(source),
+      sourceToSpeechOffsets: offsets
+    };
   }
 
   /**
@@ -1793,6 +1839,26 @@ export class SystemTtsReader {
   private normalizeMathNotationForSpeech(text: string): string {
     if (!text) return '';
     let result = text;
+    const english = (this.getTtsLanguage() || '').toLowerCase().startsWith('en');
+    if (english) {
+      result = result.replace(/(\d+(?:[.．]\d+)?)\s*[%％]/g,
+        (_match: string, value: string): string => `${value} percent`);
+      result = result.replace(/(\d+)\s*[.．]\s*(\d+)/g,
+        (_match: string, left: string, right: string): string => `${left} point ${right}`);
+      result = result.replace(/(\d+)\s*[\/／]\s*(\d+)/g,
+        (match: string, numerator: string, denominator: string): string => {
+          return (numerator.length > 1 && numerator.charAt(0) === '0') ||
+            (denominator.length > 1 && denominator.charAt(0) === '0') ? match :
+            `${numerator} over ${denominator}`;
+        });
+      result = result.replace(/(\d+)\s*[×*]\s*(\d+)/g,
+        (_match: string, left: string, right: string): string => `${left} times ${right}`);
+      result = result.replace(/(\d+)\s*[÷]\s*(\d+)/g,
+        (_match: string, left: string, right: string): string => `${left} divided by ${right}`);
+      result = result.replace(/(\d+)\s*=\s*(\d+)/g,
+        (_match: string, left: string, right: string): string => `${left} equals ${right}`);
+      return result;
+    }
     result = result.replace(/(\d+(?:[.．]\d+)?)\s*[%％]/g,
       (_match: string, value: string): string => `百分之${value}`);
     result = result.replace(/(\d+)\s*[.．]\s*(\d+)/g,
@@ -1815,6 +1881,8 @@ export class SystemTtsReader {
       (_match: string, left: string, right: string): string => `${left}乘以${right}`);
     result = result.replace(/(\d+)\s*[÷]\s*(\d+)/g,
       (_match: string, left: string, right: string): string => `${left}除以${right}`);
+    result = result.replace(/(\d+)\s*=\s*(\d+)/g,
+      (_match: string, left: string, right: string): string => `${left}等于${right}`);
     return result;
   }
 
@@ -2531,10 +2599,10 @@ export class SystemTtsReader {
     if (strong) {
       return value === '。' || value === '！' || value === '？' ||
         value === '；' || value === ';' || value === '!' || value === '?' ||
-        value === '.' || value === '\n';
+        value === '.' || value === '…' || value === '\n';
     }
     return value === '，' || value === ',' || value === '、' ||
-      value === '：' || value === ':';
+      value === '：' || value === ':' || value === '—' || value === '–';
   }
 
   private extendCloudBreak(text: string, end: number, limit: number): number {
@@ -2571,7 +2639,7 @@ export class SystemTtsReader {
     return value === '。' || value === '！' || value === '？' ||
       value === '；' || value === '，' || value === ',' || value === ';' || value === '、' ||
       value === '!' || value === '?' ||
-      value === '.';
+      value === '.' || value === '…' || value === '：' || value === ':';
   }
 
   private isNumericDecimalPoint(text: string, index: number): boolean {
@@ -2582,7 +2650,7 @@ export class SystemTtsReader {
   }
 
   private isTrimChar(value: string): boolean {
-    return value === ' ' || value === '\t' || value === '\n' || value === '\r';
+    return value === ' ' || value === '\t' || value === '\n' || value === '\r' || value === '\u3000';
   }
 
   private createRequestId(): string {
