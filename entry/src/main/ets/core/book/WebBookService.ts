@@ -488,7 +488,8 @@ export class WebBookService {
       this.seedSourceVariables(shortcutContext, source);
       this.seedChapterVariables(shortcutContext, chapter);
       return await this.normalizeReaderContent(source,
-        this.applyContentReplaceRule(interactiveContent, source.contentRule.replaceRegex, shortcutContext, chapter),
+        this.applyContentReplaceRule(interactiveContent, source.contentRule.replaceRegex, shortcutContext, chapter,
+          debugContext),
         chapter.url || book.bookUrl || source.bookSourceUrl);
     }
     const isAudioContent = source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
@@ -510,7 +511,7 @@ export class WebBookService {
       if (this.contentRequestCanceled(shouldCancel)) return '';
       return await this.normalizeReaderContent(source,
         this.applyContentReplaceRule(interactiveContent, source.contentRule.replaceRegex,
-          new RuleContext(), chapter), chapter.url);
+          new RuleContext(), chapter, debugContext), chapter.url);
     }
     if (this.stageRuleCode(source.contentRule.content || '')) {
       // The complete content script was already executed in ArkWeb. Retrying an empty/error result
@@ -636,7 +637,8 @@ export class WebBookService {
     // Preserve that value so the audio page can resolve relative, escaped and tagged URLs.
     if (isAudioContent) {
       if (!content) return data;
-      data.content = this.applyContentReplaceRule(content, contentRule.replaceRegex, ctx, chapter).trim();
+      data.content = this.applyContentReplaceRule(content, contentRule.replaceRegex, ctx, chapter,
+        debugContext).trim();
       return data;
     }
     if (!content || this.isBadExtractedContent(content)) {
@@ -644,7 +646,7 @@ export class WebBookService {
       if (fallbackContent) content = fallbackContent;
     }
     if (!content && imageRuleValues.length === 0) return data;
-    content = this.applyContentReplaceRule(content, contentRule.replaceRegex, ctx, chapter);
+    content = this.applyContentReplaceRule(content, contentRule.replaceRegex, ctx, chapter, debugContext);
     if (this.contentRequestCanceled(shouldCancel)) return data;
     data.content = await this.normalizeReaderContent(source, content, baseUrl, imageRuleValues);
     if (this.contentRequestCanceled(shouldCancel)) data.content = '';
@@ -1378,11 +1380,16 @@ export class WebBookService {
   }
 
   private applyContentReplaceRule(content: string, replaceRule: string, ctx: RuleContext,
-    chapter: BookChapter): string {
-    if (!content || !replaceRule) return content;
+    chapter: BookChapter, debugContext: BookSourceDebugContext | null = null): string {
+    if (!content) return content;
     let value = content
       .replace(/<\/p>\s*<p/gi, '</p>\n<p')
       .replace(/<br\s*\/?>/gi, (match: string) => `${match}\n`);
+    const beforeReplace = value;
+    if (!replaceRule) {
+      if (debugContext) debugContext.recordContentReplaceComparison(beforeReplace, value);
+      return value;
+    }
     const jsIndex = replaceRule.indexOf('@js:');
     const regexPart = (jsIndex >= 0 ? replaceRule.substring(0, jsIndex) : replaceRule).trim();
     const jsPart = jsIndex >= 0 ? replaceRule.substring(jsIndex + 4).trim() : '';
@@ -1417,6 +1424,7 @@ export class WebBookService {
       const result = new ScriptEngine(new JsRuntime()).evalResultJs(jsPart, value, env);
       if (result.handled) value = result.value;
     }
+    if (debugContext) debugContext.recordContentReplaceComparison(beforeReplace, value);
     return value;
   }
 

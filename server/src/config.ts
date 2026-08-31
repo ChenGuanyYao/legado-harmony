@@ -65,7 +65,11 @@ export const config = {
     upstreamTimeoutMs: positiveInt('UPSTREAM_HTTP_TIMEOUT_MS', 15_000),
     globalRateLimitPerMinute: positiveInt('GLOBAL_RATE_LIMIT_PER_MINUTE', 120),
     authRateLimitPerMinute: positiveInt('AUTH_RATE_LIMIT_PER_MINUTE', 10),
-    sensitiveRateLimitPerMinute: positiveInt('SENSITIVE_RATE_LIMIT_PER_MINUTE', 20)
+    sensitiveRateLimitPerMinute: positiveInt('SENSITIVE_RATE_LIMIT_PER_MINUTE', 20),
+    // Sync exchange is a paginated bulk operation. It needs a separate budget
+    // from point/TTS redemption endpoints, otherwise a normal first download
+    // is rejected after only twenty pages.
+    syncRateLimitPerMinute: positiveInt('SYNC_RATE_LIMIT_PER_MINUTE', 120)
   },
   auth: {
     sessionTtlDays: positiveInt('SESSION_TTL_DAYS', 7)

@@ -3,6 +3,7 @@ import { Context } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import picker from '@ohos.file.picker';
 import fs from '@ohos.file.fs';
+import pasteboard from '@ohos.pasteboard';
 import { Book, BookChapter, BookSource, SearchBook } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { SearchCoordinator } from '../core/book/SearchCoordinator';
@@ -25,6 +26,15 @@ class BookSourceDebugExportReport {
   session: BookSourceDebugSession = new BookSourceDebugSession();
 }
 
+class BookSourceDebugClipboardReport {
+  sourceName: string = '';
+  sourceUrl: string = '';
+  stage: string = '';
+  status: string = '';
+  session: BookSourceDebugSession = new BookSourceDebugSession();
+  content: string = '';
+}
+
 @Entry
 @Component
 struct BookSourceDebugPage {
@@ -34,12 +44,15 @@ struct BookSourceDebugPage {
   @State source: BookSource = new BookSource();
   @State sourceUrl: string = '';
   @State keyword: string = '';
-  @State stage: string = SourceRuntimeStage.SEARCH;
+  @State stage: string = 'full';
   @State running: boolean = false;
   @State status: string = '准备就绪';
   @State session: BookSourceDebugSession = new BookSourceDebugSession();
   @State keyboardInset: number = 0;
   @State exporting: boolean = false;
+  @State debugContent: string = '';
+  @State debugSearchLinks: string[] = [];
+  @State debugExploreLinks: string[] = [];
   private coordinator: SearchCoordinator | null = null;
   private initialized: boolean = false;
   private keyboardWindow: window.Window | null = null;
@@ -140,14 +153,8 @@ struct BookSourceDebugPage {
     Column({ space: 10 }) {
       Text('调试阶段').fontSize(16).fontWeight(FontWeight.Medium)
         .fontColor(this.primaryTextColor()).width('100%')
-      Row({ space: 6 }) {
-        this.stageButton(SourceRuntimeStage.SEARCH, '搜索')
-        this.stageButton(SourceRuntimeStage.EXPLORE, '发现')
-        this.stageButton(SourceRuntimeStage.BOOK_INFO, '详情')
-        this.stageButton(SourceRuntimeStage.TOC, '目录')
-        this.stageButton(SourceRuntimeStage.CONTENT, '正文')
-        this.stageButton('full', '全链路')
-      }.width('100%')
+      Text('默认执行全链路：搜索 → 发现 → 详情 → 目录 → 正文')
+        .fontSize(13).fontColor(this.subTextColor()).width('100%')
       TextInput({ text: this.keyword, placeholder: this.stageInputPlaceholder() })
         .height(44).width('100%').fontColor(this.primaryTextColor())
         .backgroundColor(this.inputColor()).onChange((value: string) => this.keyword = value)
@@ -157,7 +164,7 @@ struct BookSourceDebugPage {
           .backgroundColor(this.accentColor()).fontColor('#FFFFFF').onClick(() => this.runDebug())
         Button('清空', { type: ButtonType.Capsule }).height(44).width(82)
           .backgroundColor(this.inputColor()).fontColor(this.primaryTextColor())
-          .onClick(() => this.session = new BookSourceDebugSession())
+          .onClick(() => this.clearDebugResult())
       }.width('100%')
     }
     .width('calc(100% - 24vp)').padding(16).borderRadius(16).backgroundColor(this.cardColor())
@@ -165,22 +172,40 @@ struct BookSourceDebugPage {
   }
 
   @Builder
-  stageButton(value: string, label: string) {
-    Text(label)
-      .fontSize(12).height(32).layoutWeight(1).textAlign(TextAlign.Center)
-      .fontColor(this.stage === value ? '#FFFFFF' : this.primaryTextColor())
-      .padding({ left: 5, right: 5 })
-      .borderRadius(16)
-      .backgroundColor(this.stage === value ? this.accentColor() : this.inputColor())
-      .border({ width: this.stage === value ? 0 : 1, color: this.appDarkMode ? '#454545' : '#D9DDE3' })
-      .onClick(() => this.stage = value)
-  }
-
-  @Builder
   resultCard() {
     Column({ space: 10 }) {
-      Text('执行明细').fontSize(16).fontWeight(FontWeight.Medium)
-        .fontColor(this.primaryTextColor()).width('100%')
+      Row({ space: 10 }) {
+        Text('执行明细').fontSize(16).fontWeight(FontWeight.Medium)
+          .fontColor(this.primaryTextColor()).layoutWeight(1)
+        if (this.hasDebugReport() || this.debugContent.length > 0) {
+          Button('复制调试内容', { type: ButtonType.Capsule })
+            .height(34).fontSize(12).backgroundColor(this.inputColor()).fontColor(this.primaryTextColor())
+            .onClick(() => this.copyDebugReport())
+        }
+      }.width('100%')
+      if (this.debugContent.length > 0) {
+        Row({ space: 10 }) {
+          Text(`正文内容（${this.debugContent.length} 字符）`).fontSize(13)
+            .fontColor(this.subTextColor()).layoutWeight(1)
+          Button('复制正文', { type: ButtonType.Capsule })
+            .height(34).fontSize(12).backgroundColor(this.accentColor()).fontColor('#FFFFFF')
+            .onClick(() => this.copyDebugContent())
+        }.width('100%')
+      }
+      if (this.debugSearchLinks.length > 0) {
+        Text('搜索链接（点击填入）').fontSize(13).fontWeight(FontWeight.Medium)
+          .fontColor(this.primaryTextColor()).width('100%')
+        ForEach(this.debugSearchLinks, (url: string) => {
+          this.debugLinkItem(url, SourceRuntimeStage.SEARCH)
+        }, (url: string) => `search_${url}`)
+      }
+      if (this.debugExploreLinks.length > 0) {
+        Text('发现链接（点击填入）').fontSize(13).fontWeight(FontWeight.Medium)
+          .fontColor(this.primaryTextColor()).width('100%')
+        ForEach(this.debugExploreLinks, (url: string) => {
+          this.debugLinkItem(url, SourceRuntimeStage.EXPLORE)
+        }, (url: string) => `explore_${url}`)
+      }
       if (this.session.steps.length === 0 && this.session.logs.length === 0) {
         Text('运行后显示请求、规则匹配和错误详情').fontSize(13).fontColor(this.subTextColor()).width('100%')
       }
@@ -189,6 +214,8 @@ struct BookSourceDebugPage {
       }, (step: BookSourceDebugStep) => `${step.stage}_${step.startedAt}`)
       ForEach(this.session.logs, (log: BookSourceDebugLog) => {
         Text(`[${log.level}] ${log.message}`).fontSize(12).fontColor(this.subTextColor()).width('100%')
+          .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
+          .copyOption(CopyOptions.LocalDevice)
       }, (log: BookSourceDebugLog) => `${log.timestamp}_${log.message}`)
     }
     .width('calc(100% - 24vp)').padding(16).borderRadius(16).backgroundColor(this.cardColor())
@@ -199,30 +226,54 @@ struct BookSourceDebugPage {
   stepView(step: BookSourceDebugStep) {
     Column({ space: 8 }) {
       Row() {
-        Text(step.name).fontSize(15).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
+      Text(step.name).fontSize(15).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
           .layoutWeight(1)
         Text(`${step.status} · ${step.elapsedMs}ms`).fontSize(12)
           .fontColor(step.status === 'passed' ? '#20A464' : '#E84040')
       }.width('100%')
       if (step.error) Text(`错误：${step.error}`).fontSize(12).fontColor('#E84040').width('100%')
+        .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
+        .copyOption(CopyOptions.LocalDevice)
       ForEach(step.requests, (item: BookSourceDebugNetworkTrace) => {
         Text(`${item.method} ${item.url}\nHTTP ${item.statusCode} · ${item.responseBytes} 字符 · ${item.elapsedMs}ms${item.error ? `\n${item.error}` : ''}`)
           .fontSize(12).fontColor(this.subTextColor()).width('100%')
+          .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
+          .copyOption(CopyOptions.LocalDevice)
         if (item.bodyPreview) {
           Text(`响应预览：${item.bodyPreview}`).fontSize(11).fontColor(this.subTextColor())
             .width('100%').maxLines(8)
+            .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
+            .copyOption(CopyOptions.LocalDevice)
         }
       }, (item: BookSourceDebugNetworkTrace) => `${item.method}_${item.url}_${item.elapsedMs}`)
       ForEach(step.rules, (item: BookSourceDebugRuleTrace) => {
         Text(`${item.field} [${item.ruleType}] 匹配 ${item.matchedCount}/${item.inputCount} · ${item.elapsedMs}ms\n规则：${item.rule}${item.error ? `\n${item.error}` : ''}${item.outputPreview ? `\n结果：${item.outputPreview}` : ''}`)
           .fontSize(12).fontColor(this.subTextColor()).width('100%')
+          .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
+          .copyOption(CopyOptions.LocalDevice)
       }, (item: BookSourceDebugRuleTrace) => `${item.field}_${item.elapsedMs}`)
       ForEach(Object.keys(step.outputs), (key: string) => {
-        Text(`${key}：${step.outputs[key]}`).fontSize(12).fontColor(this.subTextColor()).width('100%')
+        Text(`${key}：${step.outputs[key]}`).fontSize(
+          key.indexOf('正文替换净化前') >= 0 || key.indexOf('正文替换净化后') >= 0 ? 11 : 12)
+          .fontColor(this.subTextColor()).width('100%')
+          .maxLines(key.indexOf('正文替换净化前') >= 0 || key.indexOf('正文替换净化后') >= 0 ? 14 : 4)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
+          .copyOption(CopyOptions.LocalDevice)
       }, (key: string) => key)
     }
     .width('100%').padding(12).borderRadius(10).backgroundColor(this.inputColor())
     .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  debugLinkItem(url: string, stage: string) {
+    Text(url).fontSize(11).fontColor(this.accentColor()).width('100%')
+      .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
+      .onClick(() => this.fillDebugLink(url, stage))
+      .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
+      .copyOption(CopyOptions.LocalDevice)
+      .padding({ top: 4, bottom: 4 })
   }
 
   private async loadSource(): Promise<void> {
@@ -258,14 +309,17 @@ struct BookSourceDebugPage {
     if (!this.source.bookSourceUrl) return;
     this.running = true;
     this.status = '执行中';
+    this.debugContent = '';
+    this.debugSearchLinks = [];
+    this.debugExploreLinks = [];
     const debug = new BookSourceDebugContext(this.source.bookSourceUrl, this.source.bookSourceName, this.stage);
     this.session = debug.session;
     try {
       if (this.stage === SourceRuntimeStage.SEARCH) {
         this.coordinator = new SearchCoordinator(1);
         await this.coordinator.search(this.keyword.trim(), (progress) => {
-          this.status = progress.finished ? progress.status : progress.status;
-          this.publishSession(debug);
+          this.status = progress.status;
+          this.collectDebugLinks(debug.session);
         }, { targetSources: [this.source], validationOnly: false, maxResultsPerSource: 5,
           maxTotalResults: 5, debugContext: debug, onSourceComplete: async (_source, result) => {
             debug.addLog(result.validationStatus === BookSource.VALIDATION_PASSED ? 'info' : 'error',
@@ -282,11 +336,13 @@ struct BookSourceDebugPage {
       } else {
         await this.runFullDebug(debug);
       }
+      this.collectDebugLinks(debug.session);
       debug.finish(this.session.steps.some((step: BookSourceDebugStep): boolean => step.status === 'passed') ? 'passed' : 'failed');
       this.publishSession(debug);
     } catch (error) {
       debug.addLog('error', error instanceof Error ? error.message : String(error));
       debug.finish('failed');
+      this.collectDebugLinks(debug.session);
       this.publishSession(debug);
       this.status = '执行失败';
     } finally {
@@ -347,7 +403,9 @@ struct BookSourceDebugPage {
     chapter.bookUrl = book.bookUrl;
     chapter.title = '调试章节';
     debug.beginStep(SourceRuntimeStage.CONTENT, '章节正文');
+    debug.setOutput('正文替换净化规则', this.source.contentRule.replaceRegex || '未配置');
     const content = await new WebBookService().getContent(this.source, book, chapter, null, debug);
+    this.debugContent = content;
     debug.setOutput('contentLength', String(content.length));
     debug.finishStep(content.length > 0 ? 'passed' : 'failed', content.length > 0 ? '' : '正文规则返回空结果');
   }
@@ -357,7 +415,7 @@ struct BookSourceDebugPage {
     const searchCoordinator = new SearchCoordinator(1);
     candidates = await searchCoordinator.search(this.keyword.trim(), (progress) => {
       this.status = progress.status;
-      this.publishSession(debug);
+      this.collectDebugLinks(debug.session);
     }, { targetSources: [this.source], maxResultsPerSource: 1, maxTotalResults: 1,
       debugContext: debug });
     if (candidates.length === 0 && !this.source.enabledExplore) {
@@ -393,7 +451,9 @@ struct BookSourceDebugPage {
     debug.finishStep(chapters.length > 0 ? 'passed' : 'failed', chapters.length > 0 ? '' : '目录为空');
     if (chapters.length === 0) return;
     debug.beginStep(SourceRuntimeStage.CONTENT, '章节正文');
+    debug.setOutput('正文替换净化规则', this.source.contentRule.replaceRegex || '未配置');
     const content = await service.getContent(this.source, fullBook, chapters[0], null, debug);
+    this.debugContent = content;
     debug.setOutput('contentLength', String(content.length));
     debug.finishStep(content.length > 0 ? 'passed' : 'failed', content.length > 0 ? '' : '正文为空');
   }
@@ -411,6 +471,78 @@ struct BookSourceDebugPage {
   }
 
   private syncBars(): void { syncSystemBars(getContext(this) as Context, this.appDarkMode); }
+
+  private collectDebugLinks(session: BookSourceDebugSession): void {
+    const searchLinks: string[] = [];
+    const exploreLinks: string[] = [];
+    for (const step of session.steps) {
+      const target = step.stage === SourceRuntimeStage.SEARCH ? searchLinks :
+        (step.stage === SourceRuntimeStage.EXPLORE ? exploreLinks : null);
+      if (!target) continue;
+      for (const request of step.requests) {
+        const url = (request.finalUrl || request.url || '').trim();
+        if (!url || target.includes(url)) continue;
+        target.push(url);
+        if (target.length >= 8) break;
+      }
+    }
+    this.debugSearchLinks = searchLinks;
+    this.debugExploreLinks = exploreLinks;
+  }
+
+  private clearDebugResult(): void {
+    this.session = new BookSourceDebugSession();
+    this.debugContent = '';
+    this.debugSearchLinks = [];
+    this.debugExploreLinks = [];
+    this.status = '准备就绪';
+  }
+
+  private fillDebugLink(url: string, stage: string): void {
+    this.keyword = url;
+    this.status = `已填入${stage === SourceRuntimeStage.EXPLORE ? '发现' : '搜索'}链接`;
+  }
+
+  private async copyDebugContent(): Promise<void> {
+    if (this.debugContent.length === 0) {
+      promptAction.showToast({ message: '暂无可复制的正文内容' });
+      return;
+    }
+    const maxCopyLength = 200000;
+    const text = this.debugContent.substring(0, maxCopyLength);
+    await this.writeClipboardText(text, this.debugContent.length > maxCopyLength ?
+      '正文已复制（已截取前 20 万字符）' : '正文已复制');
+  }
+
+  private async copyDebugReport(): Promise<void> {
+    if (!this.hasDebugReport() && this.debugContent.length === 0) {
+      promptAction.showToast({ message: '暂无可复制的调试内容' });
+      return;
+    }
+    const report = new BookSourceDebugClipboardReport();
+    report.sourceName = this.source.bookSourceName;
+    report.sourceUrl = this.source.bookSourceUrl || this.sourceUrl;
+    report.stage = this.stage;
+    report.status = this.status;
+    report.session = this.session;
+    report.content = this.debugContent;
+    const serialized = JSON.stringify(report, null, 2);
+    const maxCopyLength = 200000;
+    const text = serialized.substring(0, maxCopyLength);
+    await this.writeClipboardText(text, serialized.length > maxCopyLength ?
+      '调试内容已复制（已截取前 20 万字符）' : '调试内容已复制');
+  }
+
+  private async writeClipboardText(text: string, successMessage: string): Promise<void> {
+    try {
+      const board = pasteboard.getSystemPasteboard();
+      await board.setData(pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, text));
+      promptAction.showToast({ message: successMessage });
+    } catch (error) {
+      console.error('复制调试内容失败:', error);
+      promptAction.showToast({ message: '复制失败，请稍后重试' });
+    }
+  }
   private publishSession(debug: BookSourceDebugContext): void {
     this.session = JSON.parse(JSON.stringify(debug.session)) as BookSourceDebugSession;
   }

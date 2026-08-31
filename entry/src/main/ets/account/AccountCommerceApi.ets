@@ -22,6 +22,7 @@ import {
 class ApiErrorBody {
   code: string = '';
   message: string = '';
+  retryAfter: number = 0;
 }
 
 export class AccountCommerceApi {
@@ -186,7 +187,12 @@ export class AccountCommerceApi {
       const value = AccountCommerceApi.responseText(response.result);
       if (statusCode < 200 || statusCode >= 300) {
         const error = AccountCommerceApi.parseError(value);
-        throw new AccountApiError(error.message || `服务请求失败（${statusCode}）`, statusCode, error.code);
+        throw new AccountApiError(
+          error.message || `服务请求失败（${statusCode}）`,
+          statusCode,
+          error.code,
+          error.retryAfter
+        );
       }
       return value;
     } finally {

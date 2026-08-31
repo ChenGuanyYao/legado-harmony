@@ -6,6 +6,7 @@ import { connection } from '@kit.NetworkKit';
 import deviceInfo from '@ohos.deviceInfo';
 import display from '@ohos.display';
 import { AccountCommerceApi } from './AccountCommerceApi';
+import { AccountApiError } from './AccountCommerceModels';
 import { AccountSessionStore } from './AccountSessionStore';
 import {
   CloudSyncAcknowledgement,
@@ -197,6 +198,7 @@ export class CloudSyncCoordinator {
   // operation envelope while staying well below the server's 2 MiB request limit.
   private static readonly MAX_BATCH_BYTES: number = 768 * 1024;
   private static readonly MAX_EXCHANGE_PAGES: number = 1000;
+  private static readonly MAX_RATE_LIMIT_RETRIES: number = 3;
   private static protectedLocalBooksDuringSync: number = 0;
   private static protectedLocalBookEntityIdsDuringSync: Set<string> = new Set<string>();
   // Older reader_settings payloads predate eye-turn support. Keep track of a
@@ -348,7 +350,7 @@ export class CloudSyncCoordinator {
         const cursorBeforeExchange = state.cursor;
         const request = await CloudSyncCoordinator.exchangeRequest(
           context, deviceId, state.cursor, batch, conflictPolicy);
-        const response = await AccountCommerceApi.exchangeSync(request, AccountSessionStore.token());
+        const response = await CloudSyncCoordinator.exchangeSyncWithRetry(request);
         CloudSyncCoordinator.validateResponse(response);
         const operationMap = CloudSyncCoordinator.operationEntityMap(batch, localEntities);
         CloudSyncChangeTracker.beginRemoteApply();
@@ -427,6 +429,38 @@ export class CloudSyncCoordinator {
       estimatedBytes += operationBytes;
     }
     return result;
+  }
+
+  /**
+   * A sync exchange is idempotent (the server stores operation receipts), so a
+   * 429 can be resumed safely after the server's minute window rolls over.
+   * Previously the first large initial download stopped permanently at the
+   * rate-limit boundary and surfaced as a sync failure.
+   */
+  private static async exchangeSyncWithRetry(
+    request: CloudSyncExchangeRequest
+  ): Promise<CloudSyncExchangeResponse> {
+    let retries = 0;
+    while (true) {
+      try {
+        return await AccountCommerceApi.exchangeSync(request, AccountSessionStore.token());
+      } catch (error) {
+        if (!(error instanceof AccountApiError) || error.statusCode !== 429 ||
+          error.errorCode !== 'RATE_LIMITED' ||
+          retries >= CloudSyncCoordinator.MAX_RATE_LIMIT_RETRIES) {
+          throw error instanceof Error ? error : new Error(String(error));
+        }
+        retries++;
+        const serverDelay = Math.max(1, Math.floor(Number(error.retryAfterSeconds) || 60));
+        // Add a small cushion so the next request is not sent just before the
+        // database minute bucket changes on a busy server.
+        const delayMs = Math.min(120, serverDelay) * 1000 + 250;
+        console.warn(`同步请求被限流，将在 ${Math.ceil(delayMs / 1000)} 秒后继续`);
+        await new Promise<void>((resolve) => {
+          setTimeout(() => resolve(), delayMs);
+        });
+      }
+    }
   }
 
   private static async buildLocalEntities(context: Context, db: AppDatabase,

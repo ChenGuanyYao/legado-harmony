@@ -102,11 +102,14 @@ export class TtsPackageRedeemResponse {
 export class AccountApiError extends Error {
   statusCode: number = 0;
   errorCode: string = '';
+  retryAfterSeconds: number = 0;
 
-  constructor(message: string, statusCode: number = 0, errorCode: string = '') {
+  constructor(message: string, statusCode: number = 0, errorCode: string = '',
+    retryAfterSeconds: number = 0) {
     super(message);
     this.name = 'AccountApiError';
     this.statusCode = statusCode;
     this.errorCode = errorCode;
+    this.retryAfterSeconds = Math.max(0, Math.floor(Number(retryAfterSeconds) || 0));
   }
 }

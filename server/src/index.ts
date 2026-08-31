@@ -201,7 +201,11 @@ app.setErrorHandler((error, _request, reply) => {
   }
   if (error instanceof AccountRateLimitError) {
     reply.header('Retry-After', error.retryAfterSeconds);
-    void reply.status(429).send({ code: 'RATE_LIMITED', message: error.message });
+    void reply.status(429).send({
+      code: 'RATE_LIMITED',
+      message: error.message,
+      retryAfter: error.retryAfterSeconds
+    });
     return;
   }
   app.log.error(error);
@@ -340,7 +344,7 @@ app.post<{ Body: SyncExchangeBody }>(
     await enforceAccountRateLimit(
       userId,
       'sync-exchange',
-      config.http.sensitiveRateLimitPerMinute
+      config.http.syncRateLimitPerMinute
     );
     return exchangeSync(userId, request.body);
   }

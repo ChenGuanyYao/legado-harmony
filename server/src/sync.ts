@@ -88,7 +88,9 @@ const DEVICE_KINDS = new Set(['phone', 'tablet', '2in1', 'foldable', 'unknown'])
 const MAX_OPERATIONS = 100;
 const MAX_PAYLOAD_BYTES = 64 * 1024;
 const MAX_BOOK_SOURCE_PAYLOAD_BYTES = 512 * 1024;
-const PULL_LIMIT = 20;
+// Keep each exchange useful for initial downloads. The response byte budget
+// still caps large book-source payloads below this count when necessary.
+const PULL_LIMIT = 100;
 
 export async function exchangeSync(userId: string, body: SyncExchangeBody) {
   const request = normalizeExchange(body);

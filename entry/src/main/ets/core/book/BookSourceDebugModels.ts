@@ -118,6 +118,19 @@ export class BookSourceDebugContext {
     this.currentStep.outputs[name] = this.safe(BookSourceDebugRedactor.text(value), BookSourceDebugLimits.MAX_VALUE_PREVIEW);
   }
 
+  /** Records a bounded first-page before/after preview for content replacement debugging. */
+  recordContentReplaceComparison(before: string, after: string): void {
+    if (!this.currentStep) return;
+    if (!this.currentStep.outputs['正文替换净化前（首段预览）']) {
+      this.setOutput('正文替换净化前（首段预览）', before);
+      this.setOutput('正文替换净化后（首段预览）', after);
+    }
+    const changed = before !== after;
+    if (changed || !this.currentStep.outputs['正文替换净化是否有变化']) {
+      this.setOutput('正文替换净化是否有变化', changed ? '是' : '否');
+    }
+  }
+
   addLog(level: string, message: string): void {
     if (this.session.logs.length >= BookSourceDebugLimits.MAX_LOGS) return;
     const log = new BookSourceDebugLog();
