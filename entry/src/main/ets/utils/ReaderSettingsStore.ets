@@ -42,6 +42,7 @@ export class ReaderSettings {
   preloadChapterCount: number = 1;
   useTtsQuickAction: boolean = true;
   useChapterQuickJump: boolean = true;
+  quickBookmarkEnabled: boolean = true;
   // 阅读页眉页脚配置。默认页眉关闭、页脚保持现有章节/页码信息。
   readerHeaderEnabled: boolean = false;
   readerHeaderContentMode: string = 'chapter';
@@ -119,6 +120,7 @@ export class ReaderSettingsStore {
   static readonly KEY_PRELOAD_CHAPTER_COUNT: string = 'readerPreloadChapterCount';
   static readonly KEY_USE_TTS_QUICK_ACTION: string = 'readerUseTtsQuickAction';
   static readonly KEY_USE_CHAPTER_QUICK_JUMP: string = 'readerUseChapterQuickJump';
+  static readonly KEY_QUICK_BOOKMARK_ENABLED: string = 'readerQuickBookmarkEnabled';
   static readonly KEY_HEADER_ENABLED: string = 'readerHeaderEnabled';
   static readonly KEY_HEADER_CONTENT_MODE: string = 'readerHeaderContentMode';
   static readonly KEY_FOOTER_ENABLED: string = 'readerFooterEnabled';
@@ -364,6 +366,11 @@ export class ReaderSettingsStore {
       store,
       ReaderSettingsStore.KEY_USE_CHAPTER_QUICK_JUMP,
       AppStorage.get<boolean>(ReaderSettingsStore.KEY_USE_CHAPTER_QUICK_JUMP) ?? true
+    );
+    settings.quickBookmarkEnabled = await ReaderSettingsStore.getBoolean(
+      store,
+      ReaderSettingsStore.KEY_QUICK_BOOKMARK_ENABLED,
+      AppStorage.get<boolean>(ReaderSettingsStore.KEY_QUICK_BOOKMARK_ENABLED) ?? true
     );
     settings.readerHeaderEnabled = await ReaderSettingsStore.getBoolean(
       store, ReaderSettingsStore.KEY_HEADER_ENABLED, false);
@@ -626,6 +633,17 @@ export class ReaderSettingsStore {
     await store.flush();
   }
 
+  static async saveQuickBookmarkEnabled(context: Context, enabled: boolean): Promise<void> {
+    const settings = ReaderSettingsStore.cachedSettings || ReaderSettingsStore.fromStorage();
+    settings.quickBookmarkEnabled = enabled;
+    ReaderSettingsStore.cachedSettings = ReaderSettingsStore.clone(settings);
+    AppStorage.setOrCreate(ReaderSettingsStore.KEY_QUICK_BOOKMARK_ENABLED, enabled);
+    const store = await preferences.getPreferences(context, ReaderSettingsStore.STORE_NAME);
+    await store.put(ReaderSettingsStore.KEY_QUICK_BOOKMARK_ENABLED, enabled);
+    await ReaderSettingsStore.persistActiveThemeProfile(store, settings);
+    await store.flush();
+  }
+
   static async saveFontSettings(
     context: Context,
     fontFamily: string,
@@ -868,6 +886,7 @@ export class ReaderSettingsStore {
     await ReaderSettingsStore.saveTapZoneActions(context, settings.tapZoneActions);
     await ReaderSettingsStore.savePreloadEnabled(context, settings.preloadEnabled);
     await ReaderSettingsStore.savePreloadChapterCount(context, settings.preloadChapterCount);
+    await ReaderSettingsStore.saveQuickBookmarkEnabled(context, settings.quickBookmarkEnabled);
     await ReaderSettingsStore.saveFontSettings(
       context,
       settings.fontFamily,
@@ -916,6 +935,7 @@ export class ReaderSettingsStore {
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_PRELOAD_CHAPTER_COUNT, normalized.preloadChapterCount);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_USE_TTS_QUICK_ACTION, normalized.useTtsQuickAction);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_USE_CHAPTER_QUICK_JUMP, normalized.useChapterQuickJump);
+    AppStorage.setOrCreate(ReaderSettingsStore.KEY_QUICK_BOOKMARK_ENABLED, normalized.quickBookmarkEnabled);
     ReaderSettingsStore.applyReaderChromeToStorage(normalized);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_FONT_FAMILY, normalized.fontFamily);
     AppStorage.setOrCreate(ReaderSettingsStore.KEY_FONT_FILE_PATH, normalized.fontFilePath);
@@ -1356,6 +1376,8 @@ export class ReaderSettingsStore {
       (AppStorage.get<boolean>(ReaderSettingsStore.KEY_USE_TTS_QUICK_ACTION) ?? true);
     settings.useChapterQuickJump = typeof source.useChapterQuickJump === 'boolean' ? source.useChapterQuickJump :
       (AppStorage.get<boolean>(ReaderSettingsStore.KEY_USE_CHAPTER_QUICK_JUMP) ?? true);
+    settings.quickBookmarkEnabled = typeof source.quickBookmarkEnabled === 'boolean' ? source.quickBookmarkEnabled :
+      (AppStorage.get<boolean>(ReaderSettingsStore.KEY_QUICK_BOOKMARK_ENABLED) ?? true);
     settings.readerHeaderEnabled = source.readerHeaderEnabled === true;
     settings.readerHeaderContentMode = ReaderSettingsStore.normalizeHeaderContentMode(source.readerHeaderContentMode);
     settings.readerFooterEnabled = source.readerFooterEnabled !== false;
@@ -1484,6 +1506,7 @@ export class ReaderSettingsStore {
     );
     settings.useTtsQuickAction = AppStorage.get<boolean>(ReaderSettingsStore.KEY_USE_TTS_QUICK_ACTION) ?? true;
     settings.useChapterQuickJump = AppStorage.get<boolean>(ReaderSettingsStore.KEY_USE_CHAPTER_QUICK_JUMP) ?? true;
+    settings.quickBookmarkEnabled = AppStorage.get<boolean>(ReaderSettingsStore.KEY_QUICK_BOOKMARK_ENABLED) ?? true;
     settings.readerHeaderEnabled = AppStorage.get<boolean>(ReaderSettingsStore.KEY_HEADER_ENABLED) ?? false;
     settings.readerHeaderContentMode = ReaderSettingsStore.normalizeHeaderContentMode(
       AppStorage.get<string>(ReaderSettingsStore.KEY_HEADER_CONTENT_MODE) || 'chapter');

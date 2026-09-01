@@ -1520,7 +1520,7 @@ export class AnalyzeRule {
   private isLegacySelector(part: string): boolean {
     return /^(class|id|tag)\.[^@]+/.test(part) || /^[-]?\d+$/.test(part) ||
       part.startsWith('.') || part.startsWith('#') || part.startsWith('@css:') || part.includes('[') || part.includes('!') ||
-      /^[a-zA-Z][a-zA-Z0-9_-]*(\.-?\d+(:-?\d+)?)?$/.test(part);
+      /^[a-zA-Z][a-zA-Z0-9_-]*(\.-?\d+(?::-?\d+)*)?$/.test(part);
   }
 
   private isAttrName(part: string): boolean {
@@ -1718,10 +1718,11 @@ export class AnalyzeRule {
         res.push(this.sliceWholeElement(html, m.index, fullStartTag, m[1]));
         if (res.length > 5000) break;
       }
-      let filtered = parsed.excludeIndex === null ? res : this.excludeIndex(res, parsed.excludeIndex);
+      let filtered = parsed.excludeIndices.length === 0 ? res : this.excludeIndices(res, parsed.excludeIndices);
       if (containsText) filtered = filtered.filter(item => this.stripHtml(item).includes(containsText));
       if (hasSelector) filtered = filtered.filter(item => new AnalyzeRule(item, this.baseUrl, this.ctx).matchElements(hasSelector).length > 0);
       if (notSelector) filtered = filtered.filter(item => !this.elementMatchesSelector(item, notSelector));
+      if (parsed.indexValues.length > 0) return this.pickIndices(filtered, parsed.indexValues);
       if (parsed.indexStart !== null) return this.pickRange(filtered, parsed.indexStart, parsed.indexEnd);
       if (positionMode === 'first') return this.pickIndex(filtered, 0);
       if (positionMode === 'last') return this.pickIndex(filtered, -1);
@@ -1845,7 +1846,8 @@ export class AnalyzeRule {
     nthOfType: number | null,
     indexStart: number | null,
     indexEnd: number | null,
-    excludeIndex: number | null
+    indexValues: number[],
+    excludeIndices: number[]
   } | null {
     let s = sel.trim();
     const notAttrs: Array<Record<string, string>> = [];
@@ -1864,19 +1866,36 @@ export class AnalyzeRule {
       nthOfType = parseInt(index);
       return '';
     });
-    let excludeIndex: number | null = null;
-    const excludeMatch = s.match(/!(\-?\d+)$/);
+    // `!0` remains the original single-index exclusion. Multiple values such as
+    // `!0:-1:-2` are treated as an explicit exclusion list.
+    const excludeIndices: number[] = [];
+    const excludeMatch = s.match(/!(-?\d+(?::-?\d+)*)$/);
     if (excludeMatch) {
-      excludeIndex = parseInt(excludeMatch[1]);
+      excludeMatch[1].split(':').forEach((value: string) => {
+        const index = parseInt(value);
+        if (!Number.isNaN(index)) excludeIndices.push(index);
+      });
       s = s.substring(0, excludeMatch.index).trim();
     }
 
     let indexStart: number | null = null;
     let indexEnd: number | null = null;
-    const indexMatch = s.match(/\.(-?\d+)(?::(-?\d+))?$/);
+    // Keep the historical `.start:end` range semantics. Three or more values
+    // switch to the concise explicit index-list form, e.g. `.0:1:2:3`.
+    const indexValues: number[] = [];
+    const indexMatch = s.match(/\.(-?\d+(?::-?\d+)*)$/);
     if (indexMatch) {
-      indexStart = parseInt(indexMatch[1]);
-      if (indexMatch[2] !== undefined) indexEnd = parseInt(indexMatch[2]);
+      const values: number[] = [];
+      indexMatch[1].split(':').forEach((value: string) => {
+        const index = parseInt(value);
+        if (!Number.isNaN(index)) values.push(index);
+      });
+      if (values.length >= 3) {
+        indexValues.push(...values);
+      } else if (values.length > 0) {
+        indexStart = values[0];
+        if (values.length > 1) indexEnd = values[1];
+      }
       s = s.substring(0, indexMatch.index).trim();
     }
 
@@ -1907,7 +1926,7 @@ export class AnalyzeRule {
       if (ch === '#') id = value;
       i = j;
     }
-    return { tag, id, classes, attrs, notAttrs, nthChild, nthOfType, indexStart, indexEnd, excludeIndex };
+    return { tag, id, classes, attrs, notAttrs, nthChild, nthOfType, indexStart, indexEnd, indexValues, excludeIndices };
   }
 
   private matchSelectorAttrs(attrText: string, id: string, classes: string[], attrs: Array<Record<string, string>>): boolean {
@@ -2132,6 +2151,24 @@ export class AnalyzeRule {
   private excludeIndex(values: string[], index: number): string[] {
     const real = index < 0 ? values.length + index : index;
     return values.filter((_, i) => i !== real);
+  }
+
+  private excludeIndices(values: string[], indices: number[]): string[] {
+    const realIndices = indices.map((index: number) => index < 0 ? values.length + index : index);
+    return values.filter((_: string, i: number) => !realIndices.includes(i));
+  }
+
+  private pickIndices(values: string[], indices: number[]): string[] {
+    const selected: string[] = [];
+    const selectedIndices: number[] = [];
+    indices.forEach((index: number) => {
+      const real = index < 0 ? values.length + index : index;
+      if (real >= 0 && real < values.length && !selectedIndices.includes(real)) {
+        selectedIndices.push(real);
+        selected.push(values[real]);
+      }
+    });
+    return selected;
   }
 
   private pickRange(values: string[], start: number, end: number | null): string[] {
@@ -2804,7 +2841,9 @@ export class AnalyzeRule {
     return html
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/p>/gi, '\n\n')
-      .replace(/<\/div>/gi, '\n')
+      // Treat div blocks as paragraph boundaries. Keeping two newlines prevents
+      // later soft-line joining from collapsing separate novel paragraphs.
+      .replace(/<\/div>/gi, '\n\n')
       .replace(/<\/li>/gi, '\n')
       .replace(/<[^>]+>/g, '')
       .replace(/&nbsp;/g, ' ')

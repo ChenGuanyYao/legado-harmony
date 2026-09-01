@@ -758,6 +758,7 @@ struct ReadBookPage {
   @StorageLink('readerPreloadChapterCount') @Watch('onReaderPreloadChanged') readerPreloadChapterCount: number = 1;
   @StorageLink('readerUseTtsQuickAction') readerUseTtsQuickAction: boolean = true;
   @StorageLink('readerUseChapterQuickJump') readerUseChapterQuickJump: boolean = true;
+  @StorageLink('readerQuickBookmarkEnabled') readerQuickBookmarkEnabled: boolean = true;
   @StorageLink('readerHeaderEnabled') @Watch('onReaderChromeChanged') readerHeaderEnabled: boolean = false;
   @StorageLink('readerHeaderContentMode') @Watch('onReaderChromeChanged') readerHeaderContentMode: string = 'chapter';
   @StorageLink('readerFooterEnabled') @Watch('onReaderChromeChanged') readerFooterEnabled: boolean = true;
@@ -7066,6 +7067,7 @@ struct ReadBookPage {
     this.readerPreloadChapterCount = settings.preloadChapterCount;
     this.readerUseTtsQuickAction = settings.useTtsQuickAction;
     this.readerUseChapterQuickJump = settings.useChapterQuickJump;
+    this.readerQuickBookmarkEnabled = settings.quickBookmarkEnabled;
     this.readerHeaderEnabled = settings.readerHeaderEnabled;
     this.readerHeaderContentMode = settings.readerHeaderContentMode;
     this.readerFooterEnabled = settings.readerFooterEnabled;
@@ -10597,7 +10599,7 @@ struct ReadBookPage {
   }
 
   canHandleBookmarkPull(offsetX: number, offsetY: number): boolean {
-    return this.readerEffectivePageTurnMode() !== 0 &&
+    return this.readerQuickBookmarkEnabled && this.readerEffectivePageTurnMode() !== 0 &&
       offsetY >= this.readerBookmarkPullStartDistance &&
       offsetY > Math.abs(offsetX) * this.readerBookmarkPullDirectionRatio;
   }
@@ -10608,7 +10610,7 @@ struct ReadBookPage {
   }
 
   canCommitBookmarkPull(offsetX: number, offsetY: number): boolean {
-    return this.readerEffectivePageTurnMode() !== 0 &&
+    return this.readerQuickBookmarkEnabled && this.readerEffectivePageTurnMode() !== 0 &&
       offsetY >= this.bookmarkPullCommitDistance() &&
       offsetY > Math.abs(offsetX) * this.readerBookmarkPullDirectionRatio;
   }
@@ -11456,6 +11458,11 @@ struct ReadBookPage {
       this.readerSwitchSettingItem('音量键翻页', '阅读页获得焦点时使用音量上/下键翻页', this.readerVolumeTurnPage,
         (checked: boolean) => {
           this.setReaderVolumeTurnPage(checked);
+        })
+
+      this.readerSwitchSettingItem('快速添加书签', '正文下拉时快速添加或删除当前页书签', this.readerQuickBookmarkEnabled,
+        (checked: boolean) => {
+          this.setReaderQuickBookmarkEnabled(checked);
         })
 
       this.readerSwitchSettingItem('眼动翻页（beta）', '注视屏幕上/下边缘并停留，翻到上一页/下一页；图像仅在设备本地处理',
@@ -13437,6 +13444,17 @@ struct ReadBookPage {
       console.error('保存预缓存章节数失败:', e);
     });
     this.preloadReaderContentLater();
+    this.saveReadConfig();
+  }
+
+  setReaderQuickBookmarkEnabled(enabled: boolean): void {
+    this.readerQuickBookmarkEnabled = enabled;
+    if (!enabled && this.bookmarkPullActive) {
+      this.finishBookmarkPull(false);
+    }
+    ReaderSettingsStore.saveQuickBookmarkEnabled(getContext(this), enabled).catch((e: Error) => {
+      console.error('保存快速添加书签设置失败:', e);
+    });
     this.saveReadConfig();
   }
 
@@ -17343,11 +17361,12 @@ struct ReadBookPage {
           key: `special_${paragraph.key}`
         });
       } else {
+        // Do not put separate novel paragraphs into one justified Text node. ArkUI can treat the newline Span
+        // between them as an ordinary line and stretch its whitespace across the full width, which makes a
+        // div-separated chapter look like one paragraph with unusually long gaps. A one-paragraph group still
+        // keeps inline annotations in the same Text node while ensuring every paragraph gets its own line box.
         mergeableParagraphs.push(paragraph);
-        // ArkUI accumulates custom lineHeight from a newline-only Span at the end of the merged Text instead of
-        // applying it at that paragraph boundary. With visible paragraph spacing, retain one Text per paragraph
-        // and render the bubble as a Span inside that Text; the bubble itself is still never a separate Text node.
-        if (this.readerParagraphSpacing > 0) flushMergeableParagraphs();
+        flushMergeableParagraphs();
       }
     }
     flushMergeableParagraphs();

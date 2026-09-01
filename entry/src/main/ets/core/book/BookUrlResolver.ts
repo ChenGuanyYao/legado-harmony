@@ -39,6 +39,29 @@ export class BookUrlResolver {
 
     const cleanBase = this.cleanBaseUrl(base);
     if (!cleanBase) return value;
+
+    // A URL that starts with `?` is a query-only reference.  It keeps the
+    // current document path and replaces its query string.  This is common
+    // in catalogue pages such as `/read.php?name=...`, whose next chapter is
+    // emitted as `?name=...&page=...`.  Treating it like a normal relative
+    // path would derive the directory (`/`) and silently drop `read.php`.
+    if (value.startsWith('?')) {
+      const fragmentIndex = cleanBase.indexOf('#');
+      const withoutFragment = fragmentIndex >= 0 ? cleanBase.substring(0, fragmentIndex) : cleanBase;
+      const queryIndex = withoutFragment.indexOf('?');
+      const documentPath = queryIndex >= 0 ? withoutFragment.substring(0, queryIndex) : withoutFragment;
+      return documentPath + value;
+    }
+
+    // Fragment-only references keep the complete current URL and only add a
+    // fragment.  They are not chapter pages, but handling them here avoids
+    // turning `#page-2` into a sibling path when a source uses one.
+    if (value.startsWith('#')) {
+      const fragmentIndex = cleanBase.indexOf('#');
+      const withoutFragment = fragmentIndex >= 0 ? cleanBase.substring(0, fragmentIndex) : cleanBase;
+      return withoutFragment + value;
+    }
+
     if (value.startsWith('/')) {
       const m = cleanBase.match(/^(https?:\/\/[^/]+)/);
       return m ? m[0] + value : cleanBase + value;

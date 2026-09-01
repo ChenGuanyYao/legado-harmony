@@ -84,6 +84,7 @@ struct SettingsPage {
   @StorageLink('readerEyeTurnNextDwellMs') readerEyeTurnNextDwellMs: number = 650;
   @StorageLink('readerPreloadEnabled') readerPreloadEnabled: boolean = true;
   @StorageLink('readerPreloadChapterCount') readerPreloadChapterCount: number = 1;
+  @StorageLink('readerQuickBookmarkEnabled') readerQuickBookmarkEnabled: boolean = true;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
   @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
@@ -156,6 +157,9 @@ struct SettingsPage {
             this.readerHeaderFooterSettingsPanel()
             this.readerFontEntryItem()
             this.readerReplaceRulesEntryItem()
+            this.switchItem('正文扩展至状态栏', '开启后正文阅读区域会延伸到顶部状态栏安全区', this.readerExtendToStatusBar, (value: boolean) => {
+              this.setReaderExtendToStatusBar(value);
+            })
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
@@ -165,68 +169,85 @@ struct SettingsPage {
 
           this.sectionTitle('阅读背景')
           Column() {
-          this.readerThemePanel()
+            this.readerThemePanel()
+          }
+          .width('calc(100% - 24vp)')
+          .margin({ left: 12, right: 12 })
+          .borderRadius(16)
+          .clip(true)
+          .backgroundColor(this.cardColor())
 
-          this.selectItem('翻页方式', '选择上下滑动、横向滑动或滚动阅读',
-            this.pageTurnModeOptions(), this.pageTurnModeSelectedIndex(), (index: number) => {
-              this.setReaderPageTurnMode(this.pageTurnModeByIndex(index));
-            }, 'settings_page_turn_mode_select')
-          if (this.readerPageTurnMode === 2) {
-            this.tapZoneSettingItem()
-          }
-          if (this.readerPageTurnMode === 2) {
-            this.selectItem('翻页动画', '选择翻页时使用的页面切换效果',
-              this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
-                this.setReaderPageTurnAnimationType(index);
-              }, 'settings_page_turn_animation_select_horizontal')
-          } else if (this.readerPageTurnMode === 0) {
-            this.selectItem('翻页动画', '选择翻页时使用的页面切换效果',
-              this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
-                this.setReaderPageTurnAnimationType(index);
-              }, 'settings_page_turn_animation_select_vertical')
-          }
-          this.switchItem('使用双翻页', '横屏或折叠屏展开等宽屏状态下同时显示左右两页',
-            this.readerLandscapeDoublePage, (value: boolean) => {
-              this.setReaderLandscapeDoublePage(value);
-            })
-          this.selectItem('屏幕方向', '设置正文阅读时使用的屏幕方向',
-            this.screenOrientationOptions(), this.screenOrientationSelectedIndex(), (index: number) => {
-              this.setReaderScreenOrientationByIndex(index);
-            }, 'settings_screen_orientation_select')
-          this.switchItem('音量键翻页', '阅读页获得焦点时使用音量上/下键切换上一页/下一页', this.readerVolumeTurnPage, (value: boolean) => {
-            this.setReaderVolumeTurnPage(value);
-          })
-          this.switchItem('眼动翻页（beta）', '注视屏幕上/下边缘并停留翻页；摄像头图像仅在本机处理',
-            this.readerEyeTurnEnabled, (value: boolean) => {
-              this.setReaderEyeTurnEnabled(value);
-            })
-          if (this.readerEyeTurnEnabled) {
-            this.eyeTurnCalibrationStatusItem()
-            this.switchItem('眼动向前翻页', '注视上侧边缘后翻到上一页', this.readerEyeTurnPreviousEnabled,
-              (value: boolean) => {
-                this.setReaderEyeTurnDirectionEnabled(true, value);
+          this.sectionTitle('操作')
+          Column() {
+            this.selectItem('翻页方式', '选择上下滑动、横向滑动或滚动阅读',
+              this.pageTurnModeOptions(), this.pageTurnModeSelectedIndex(), (index: number) => {
+                this.setReaderPageTurnMode(this.pageTurnModeByIndex(index));
+              }, 'settings_page_turn_mode_select')
+            if (this.readerPageTurnMode === 2) {
+              this.tapZoneSettingItem()
+            }
+            if (this.readerPageTurnMode === 2) {
+              this.selectItem('翻页动画', '选择翻页时使用的页面切换效果',
+                this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
+                  this.setReaderPageTurnAnimationType(index);
+                }, 'settings_page_turn_animation_select_horizontal')
+            } else if (this.readerPageTurnMode === 0) {
+              this.selectItem('翻页动画', '选择翻页时使用的页面切换效果',
+                this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
+                  this.setReaderPageTurnAnimationType(index);
+                }, 'settings_page_turn_animation_select_vertical')
+            }
+            this.switchItem('使用双翻页', '横屏或折叠屏展开等宽屏状态下同时显示左右两页',
+              this.readerLandscapeDoublePage, (value: boolean) => {
+                this.setReaderLandscapeDoublePage(value);
               })
-            this.switchItem('眼动向后翻页', '注视下侧边缘后翻到下一页', this.readerEyeTurnNextEnabled,
-              (value: boolean) => {
-                this.setReaderEyeTurnDirectionEnabled(false, value);
+            this.selectItem('屏幕方向', '设置正文阅读时使用的屏幕方向',
+              this.screenOrientationOptions(), this.screenOrientationSelectedIndex(), (index: number) => {
+                this.setReaderScreenOrientationByIndex(index);
+              }, 'settings_screen_orientation_select')
+            this.switchItem('音量键翻页', '阅读页获得焦点时使用音量上/下键切换上一页/下一页', this.readerVolumeTurnPage, (value: boolean) => {
+              this.setReaderVolumeTurnPage(value);
+            })
+            this.switchItem('快速添加书签', '正文下拉时快速添加或删除当前页书签', this.readerQuickBookmarkEnabled, (value: boolean) => {
+              this.setReaderQuickBookmarkEnabled(value);
+            })
+            this.switchItem('眼动翻页（beta）', '注视屏幕上/下边缘并停留翻页；摄像头图像仅在本机处理',
+              this.readerEyeTurnEnabled, (value: boolean) => {
+                this.setReaderEyeTurnEnabled(value);
               })
-            this.selectItem('注视上侧停留', '达到上侧边缘后翻到上一页', this.readerEyeDwellOptions(),
-              this.readerEyeDwellSelectedIndex(this.readerEyeTurnPreviousDwellMs), (index: number) => {
-                this.setReaderEyeDwell(true, index);
-              }, 'settings_eye_previous_dwell_select')
-            this.selectItem('注视下侧停留', '达到下侧边缘后翻到下一页', this.readerEyeDwellOptions(),
-              this.readerEyeDwellSelectedIndex(this.readerEyeTurnNextDwellMs), (index: number) => {
-                this.setReaderEyeDwell(false, index);
-              }, 'settings_eye_next_dwell_select')
+            if (this.readerEyeTurnEnabled) {
+              this.eyeTurnCalibrationStatusItem()
+              this.switchItem('眼动向前翻页', '注视上侧边缘后翻到上一页', this.readerEyeTurnPreviousEnabled,
+                (value: boolean) => {
+                  this.setReaderEyeTurnDirectionEnabled(true, value);
+                })
+              this.switchItem('眼动向后翻页', '注视下侧边缘后翻到下一页', this.readerEyeTurnNextEnabled,
+                (value: boolean) => {
+                  this.setReaderEyeTurnDirectionEnabled(false, value);
+                })
+              this.selectItem('注视上侧停留', '达到上侧边缘后翻到上一页', this.readerEyeDwellOptions(),
+                this.readerEyeDwellSelectedIndex(this.readerEyeTurnPreviousDwellMs), (index: number) => {
+                  this.setReaderEyeDwell(true, index);
+                }, 'settings_eye_previous_dwell_select')
+              this.selectItem('注视下侧停留', '达到下侧边缘后翻到下一页', this.readerEyeDwellOptions(),
+                this.readerEyeDwellSelectedIndex(this.readerEyeTurnNextDwellMs), (index: number) => {
+                  this.setReaderEyeDwell(false, index);
+                }, 'settings_eye_next_dwell_select')
+            }
           }
-          this.selectItem('亮屏时间设置', '无操作达到所选时长后恢复系统息屏',
-            this.screenTimeoutOptions(), this.screenTimeoutSelectedIndex(), (index: number) => {
-              this.setReaderScreenTimeoutByIndex(index);
-            }, 'settings_screen_timeout_select')
-          this.switchItem('正文扩展至状态栏', '开启后正文阅读区域会延伸到顶部状态栏安全区', this.readerExtendToStatusBar, (value: boolean) => {
-            this.setReaderExtendToStatusBar(value);
-          })
-          this.preloadSettingPanel()
+          .width('calc(100% - 24vp)')
+          .margin({ left: 12, right: 12 })
+          .borderRadius(16)
+          .clip(true)
+          .backgroundColor(this.cardColor())
+
+          this.sectionTitle('其他')
+          Column() {
+            this.selectItem('亮屏时间设置', '无操作达到所选时长后恢复系统息屏',
+              this.screenTimeoutOptions(), this.screenTimeoutSelectedIndex(), (index: number) => {
+                this.setReaderScreenTimeoutByIndex(index);
+              }, 'settings_screen_timeout_select')
+            this.preloadSettingPanel()
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
@@ -579,6 +600,7 @@ struct SettingsPage {
     this.readerEyeTurnNextDwellMs = settings.eyeTurnNextDwellMs;
     this.readerPreloadEnabled = settings.preloadEnabled;
     this.readerPreloadChapterCount = settings.preloadChapterCount;
+    this.readerQuickBookmarkEnabled = settings.quickBookmarkEnabled;
     this.readerFontFamily = settings.fontFamily || '';
     this.readerFontFilePath = settings.fontFilePath || '';
     this.readerFontSourceName = settings.fontSourceName || '系统默认';
@@ -1582,6 +1604,13 @@ struct SettingsPage {
     this.readerPreloadChapterCount = value;
     ReaderSettingsStore.savePreloadChapterCount(getContext(this), value).catch((e: Error) => {
       console.error('保存预缓存章节数失败:', e);
+    });
+  }
+
+  setReaderQuickBookmarkEnabled(enabled: boolean): void {
+    this.readerQuickBookmarkEnabled = enabled;
+    ReaderSettingsStore.saveQuickBookmarkEnabled(getContext(this), enabled).catch((e: Error) => {
+      console.error('保存快速添加书签设置失败:', e);
     });
   }
 

@@ -1,4 +1,5 @@
 import { router, window } from '@kit.ArkUI';
+import { KeyboardAvoidMode } from '@ohos.arkui.UIContext';
 import { BookSource } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { promptAction } from '@kit.ArkUI';
@@ -33,6 +34,8 @@ struct BookSourceEditPage {
   @State showUnsavedDialog: boolean = false;
   @State showDraftConflictDialog: boolean = false;
   @State keyboardInset: number = 0;
+  private keyboardAvoidModeConfigured: boolean = false;
+  private previousKeyboardAvoidMode: KeyboardAvoidMode = KeyboardAvoidMode.OFFSET;
   private sourceInitialized: boolean = false;
   private draftSaveTimerId: number = -1;
   private conflictingDraftRaw: string = '';
@@ -46,6 +49,7 @@ struct BookSourceEditPage {
 
   aboutToAppear() {
     this.syncBars();
+    this.configureKeyboardAvoidanceMode();
     this.registerKeyboardAvoidance();
     if (this.sourceInitialized) return;
     this.sourceInitialized = true;
@@ -56,12 +60,14 @@ struct BookSourceEditPage {
 
   onPageShow(): void {
     this.syncBars();
+    this.configureKeyboardAvoidanceMode();
     this.registerKeyboardAvoidance();
   }
 
   onPageHide(): void {
     this.persistDraftNow();
     this.unregisterKeyboardAvoidance();
+    this.restoreKeyboardAvoidanceMode();
   }
 
   async initializeSourceForm(): Promise<void> {
@@ -324,7 +330,10 @@ struct BookSourceEditPage {
             }
             .id(`book_source_form_${this.currentTab}_${this.sourceLoadedVersion}`)
             .width('100%')
-            .padding({ left: 16, right: 16, top: 16, bottom: 16 + this.navBarHeight + this.keyboardInset })
+            // RESIZE mode already reduces this Scroll viewport above the keyboard.
+            // Do not add the full keyboard avoid height again, otherwise the form
+            // gets a large blank tail and the last editor can be pushed out of view.
+            .padding({ left: 16, right: 16, top: 16, bottom: 16 + this.navBarHeight })
           }
           .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .layoutWeight(1)
@@ -1135,6 +1144,34 @@ struct BookSourceEditPage {
 
   syncBars(): void {
     syncSystemBars(getContext(this), this.appDarkMode, this.pageColor());
+  }
+
+  /**
+   * The default OFFSET mode pans the whole page when a lower form field gets focus,
+   * which can move the title and tab bars off-screen. RESIZE keeps those bars fixed
+   * and gives the Scroll content the reduced viewport above the keyboard.
+   */
+  private configureKeyboardAvoidanceMode(): void {
+    try {
+      const uiContext = this.getUIContext();
+      if (!this.keyboardAvoidModeConfigured) {
+        this.previousKeyboardAvoidMode = uiContext.getKeyboardAvoidMode();
+        this.keyboardAvoidModeConfigured = true;
+      }
+      uiContext.setKeyboardAvoidMode(KeyboardAvoidMode.RESIZE);
+    } catch (error) {
+      console.warn('设置书源编辑页键盘避让模式失败:', error);
+    }
+  }
+
+  private restoreKeyboardAvoidanceMode(): void {
+    if (!this.keyboardAvoidModeConfigured) return;
+    try {
+      this.getUIContext().setKeyboardAvoidMode(this.previousKeyboardAvoidMode);
+    } catch (error) {
+      console.warn('恢复键盘避让模式失败:', error);
+    }
+    this.keyboardAvoidModeConfigured = false;
   }
 
   private registerKeyboardAvoidance(): void {

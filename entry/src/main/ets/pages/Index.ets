@@ -1137,6 +1137,8 @@ struct BookshelfPage {
   @State networkCoverCandidates: SearchBook[] = [];
   @State networkCoverSearching: boolean = false;
   @State networkCoverStatus: string = '';
+  @State showCustomNetworkCoverDialog: boolean = false;
+  @State customNetworkCoverUrl: string = '';
   @State pendingDeleteBook: Book | null = null;
   @State pendingActionBook: Book | null = null;
   @State showShelfChangeSourceDialog: boolean = false;
@@ -2029,13 +2031,50 @@ struct BookshelfPage {
       `${progressChapterIndex}_${progressPageCount}_cover_${this.shelfCoverRenderVersions.get(book.bookUrl) || 0}`;
   }
 
+  openCustomNetworkCoverDialog(): void {
+    if (!this.networkCoverTargetBook) return;
+    this.customNetworkCoverUrl = this.networkCoverTargetBook.customCoverUrl || '';
+    this.showNetworkCoverDialog = false;
+    this.showCustomNetworkCoverDialog = true;
+  }
+
+  async applyCustomNetworkCover(): Promise<void> {
+    const target = this.networkCoverTargetBook;
+    const coverUrl = (this.customNetworkCoverUrl || '').trim();
+    if (!target) return;
+    if (!/^https?:\/\/[^\s]+$/i.test(coverUrl)) {
+      promptAction.showToast({ message: '请输入有效的 http 或 https 图片链接' });
+      return;
+    }
+    try {
+      const db = AppDatabase.getInstance();
+      const current = await db.getBook(target.bookUrl);
+      if (!current) {
+        promptAction.showToast({ message: '书籍已不在书架中' });
+        this.closeNetworkCoverPicker();
+        return;
+      }
+      current.customCoverUrl = coverUrl;
+      await db.updateBook(current);
+      this.applyShelfBookCoverState(current);
+      this.closeNetworkCoverPicker();
+      AppStorage.setOrCreate('shelfUpdateTime', Date.now());
+      promptAction.showToast({ message: '自定义封面已启用' });
+    } catch (e) {
+      console.error('应用自定义封面失败:', e);
+      promptAction.showToast({ message: '应用自定义封面失败' });
+    }
+  }
+
   closeNetworkCoverPicker(): void {
     this.cancelNetworkCoverSearch();
     this.showNetworkCoverDialog = false;
+    this.showCustomNetworkCoverDialog = false;
     this.networkCoverTargetBook = null;
     this.networkCoverCandidates = [];
     this.networkCoverStatus = '';
     this.networkCoverSearching = false;
+    this.customNetworkCoverUrl = '';
   }
 
   cancelNetworkCoverSearch(): void {
@@ -2661,11 +2700,19 @@ struct BookshelfPage {
               .layoutWeight(1)
               .alignItems(HorizontalAlign.Start)
 
-              Button('取消')
-                .height(36)
-                .backgroundColor(this.inputColor())
-                .fontColor(this.primaryTextColor())
-                .onClick(() => this.closeNetworkCoverPicker())
+              Row({ space: 8 }) {
+                Button('自定义链接')
+                  .height(36)
+                  .fontSize(12)
+                  .backgroundColor(this.buttonColor())
+                  .fontColor('#FFFFFF')
+                  .onClick(() => this.openCustomNetworkCoverDialog())
+                Button('取消')
+                  .height(36)
+                  .backgroundColor(this.inputColor())
+                  .fontColor(this.primaryTextColor())
+                  .onClick(() => this.closeNetworkCoverPicker())
+              }
             }
             .width('100%')
             .alignItems(VerticalAlign.Center)
@@ -2775,6 +2822,75 @@ struct BookshelfPage {
         }
         .width('100%')
         .height('100%')
+        .backgroundColor('#66000000')
+      }
+
+      if (this.showCustomNetworkCoverDialog && this.networkCoverTargetBook) {
+        Column() {
+          Column({ space: 16 }) {
+            Text('使用自定义链接')
+              .fontSize(18)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.primaryTextColor())
+              .width('100%')
+            Text(`《${this.networkCoverTargetBook.name}》`)
+              .fontSize(13)
+              .fontColor(this.secondaryTextColor())
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .width('100%')
+            TextInput({ placeholder: '请输入图片 URL', text: this.customNetworkCoverUrl })
+              .type(InputType.Normal)
+              .width('100%')
+              .height(44)
+              .fontColor(this.primaryTextColor())
+              .placeholderColor(this.subTextColor())
+              .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'popover'))
+              .backdropBlur(ThemeRuntime.glassBlur('popover', 18))
+              .border({ width: ThemeRuntime.glassBorderWidth('popover'),
+                color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'popover') })
+              .borderRadius(12)
+              .onChange((value: string) => {
+                this.customNetworkCoverUrl = value;
+              })
+            Text('仅支持 http 或 https 图片链接，图片是否可用由网络资源决定。')
+              .fontSize(12)
+              .fontColor(this.subTextColor())
+              .width('100%')
+            Row({ space: 12 }) {
+              Button('取消', { type: ButtonType.Normal })
+                .layoutWeight(1)
+                .height(42)
+                .borderRadius(10)
+                .backgroundColor(this.glassCardColor())
+                .fontColor(this.primaryTextColor())
+                .onClick(() => {
+                  this.showCustomNetworkCoverDialog = false;
+                  this.showNetworkCoverDialog = true;
+                })
+              Button('设为封面', { type: ButtonType.Normal })
+                .layoutWeight(1)
+                .height(42)
+                .borderRadius(10)
+                .backgroundColor(this.buttonColor())
+                .fontColor('#FFFFFF')
+                .enabled(/^https?:\/\/[^\s]+$/i.test(this.customNetworkCoverUrl.trim()))
+                .onClick(() => this.applyCustomNetworkCover())
+            }
+            .width('100%')
+          }
+          .width('92%')
+          .padding({ left: 16, right: 16, top: 20, bottom: Math.max(this.navBarHeight, 12) + 12 })
+          .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+          .borderRadius(ThemeRuntime.glassCornerRadius(22, 'panel'))
+          .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+          .border({ width: ThemeRuntime.glassBorderWidth('panel'),
+            color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
+
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
         .backgroundColor('#66000000')
       }
 
@@ -4129,6 +4245,9 @@ struct BookshelfPage {
         Row({ space: 2 }) {
           Stack() {
             this.coverView(book, '100%', '100%', ImageFit.Fill)
+            if (!this.isBookMultiSelect) {
+              this.bookPinnedCoverIndicator(book)
+            }
           }
           .layoutWeight(1)
           .height('100%')
@@ -4181,13 +4300,13 @@ struct BookshelfPage {
           .lineHeight(18)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
-          .maxLines(1)
+          .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .wordBreak(WordBreak.BREAK_WORD)
           .layoutWeight(1)
-        this.bookPinnedIndicator(book, true)
       }
       .width('100%')
-      .height(18)
+      .height(36)
       .alignItems(VerticalAlign.Center)
 
       Row({ space: 5 }) {
@@ -4324,6 +4443,10 @@ struct BookshelfPage {
       Stack({ alignContent: Alignment.TopStart }) {
         this.coverView(book, '100%', '100%', ImageFit.Cover)
 
+        if (!this.isBookMultiSelect) {
+          this.bookPinnedCoverIndicator(book)
+        }
+
         if (this.isBookMultiSelect) {
           Stack({ alignContent: Alignment.Center }) {
             if (this.isBookSelected(book.bookUrl)) {
@@ -4370,13 +4493,13 @@ struct BookshelfPage {
           .lineHeight(18)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
-          .maxLines(1)
+          .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .wordBreak(WordBreak.BREAK_WORD)
           .layoutWeight(1)
-        this.bookPinnedIndicator(book, true)
       }
       .width('100%')
-      .height(18)
+      .height(36)
       .alignItems(VerticalAlign.Center)
 
       Row({ space: 5 }) {
@@ -4996,6 +5119,23 @@ struct BookshelfPage {
       .height(compact ? 18 : 22)
       .borderRadius(compact ? 9 : 11)
       .backgroundColor(this.inputColor())
+      .accessibilityText(`${book.name}已置顶`)
+    }
+  }
+
+  @Builder
+  bookPinnedCoverIndicator(book: Book) {
+    if (book.isPinned) {
+      Stack({ alignContent: Alignment.Center }) {
+        SymbolGlyph($r('sys.symbol.pin'))
+          .fontSize(12)
+          .fontColor([this.accentColor()])
+      }
+      .width(18)
+      .height(18)
+      .borderRadius(9)
+      .backgroundColor(this.inputColor())
+      .margin({ left: 6, top: 6 })
       .accessibilityText(`${book.name}已置顶`)
     }
   }

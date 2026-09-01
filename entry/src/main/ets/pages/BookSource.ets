@@ -118,6 +118,9 @@ struct BookSourcePage {
   @State sourceSortMode: string = 'custom';
   @State showAddDialog: boolean = false;
   @State showImportUrlDialog: boolean = false;
+  @State showImportSourceSelectionDialog: boolean = false;
+  @State pendingImportSources: BookSource[] = [];
+  @State selectedImportSourceUrls: string[] = [];
   @State selectionMode: boolean = false;
   @State selectedSourceUrls: string[] = [];
   @State showBatchDeleteDialog: boolean = false;
@@ -746,6 +749,10 @@ struct BookSourcePage {
         .onClick(() => {
           this.showImportUrlDialog = false;
         })
+      }
+
+      if (this.showImportSourceSelectionDialog) {
+        this.importSourceSelectionDialog()
       }
 
       if (this.showBatchDeleteDialog) {
@@ -2347,6 +2354,118 @@ struct BookSourcePage {
 
   sourceListTopInset(): number {
     return 56 + this.statusBarHeight + 98;
+  }
+
+  @Builder
+  importSourceSelectionDialog() {
+    Column() {
+      Column({ space: 12 }) {
+        Text('选择要导入的书源')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .width('100%')
+          .textAlign(TextAlign.Center)
+
+        Text(`共 ${this.pendingImportSources.length} 个书源，已选择 ${this.selectedImportSourceUrls.length} 个`)
+          .fontSize(13)
+          .fontColor(this.secondaryTextColor())
+          .width('100%')
+          .textAlign(TextAlign.Center)
+
+        Row() {
+          Toggle({ type: ToggleType.Checkbox, isOn: this.areAllImportSourcesSelected() })
+            .selectedColor(this.buttonColor())
+            .onChange((isOn: boolean) => {
+              // ArkUI may invoke onChange again while the controlled `isOn`
+              // value is being refreshed. Only handle a genuine user change;
+              // otherwise a single-item toggle could clear every selection.
+              if (isOn !== this.areAllImportSourcesSelected()) {
+                this.selectAllImportSources(isOn);
+              }
+            })
+          Text(this.areAllImportSourcesSelected() ? '取消全选' : '全选')
+            .fontSize(14)
+            .fontColor(this.accentColor())
+            .margin({ left: 8 })
+          Blank().layoutWeight(1)
+        }
+        .width('100%')
+
+        Scroll() {
+          Column({ space: 6 }) {
+            ForEach(this.pendingImportSources, (source: BookSource) => {
+              Row() {
+                Toggle({ type: ToggleType.Checkbox, isOn: this.isImportSourceSelected(source) })
+                  .selectedColor(this.buttonColor())
+                  .onChange((isOn: boolean) => {
+                    // Ignore callbacks caused by the controlled value being
+                    // re-rendered after another checkbox changes.
+                    if (isOn !== this.isImportSourceSelected(source)) {
+                      this.setImportSourceSelected(source, isOn);
+                    }
+                  })
+                Column() {
+                  Text(source.bookSourceName || '未命名书源')
+                    .fontSize(15)
+                    .fontColor(this.primaryTextColor())
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  Text(source.bookSourceUrl || '')
+                    .fontSize(11)
+                    .fontColor(this.subTextColor())
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .margin({ top: 2 })
+                }
+                .layoutWeight(1)
+                .margin({ left: 8 })
+              }
+              .width('100%')
+              .padding({ left: 6, right: 6, top: 8, bottom: 8 })
+              .borderRadius(10)
+              .backgroundColor(this.inputColor())
+            }, (source: BookSource) => source.bookSourceUrl)
+          }
+          .width('100%')
+        }
+        .width('100%')
+        .constraintSize({ maxHeight: 360 })
+        .scrollBar(BarState.Auto)
+
+        Row({ space: 10 }) {
+          Button('取消', { type: ButtonType.Normal })
+            .layoutWeight(1)
+            .height(42)
+            .borderRadius(10)
+            .backgroundColor(this.glassCardColor())
+            .fontColor(this.primaryTextColor())
+            .onClick(() => this.cancelImportSourceSelection())
+          Button('导入所选', { type: ButtonType.Normal })
+            .layoutWeight(1)
+            .height(42)
+            .borderRadius(10)
+            .enabled(this.selectedImportSourceUrls.length > 0 && !this.isImporting)
+            .backgroundColor(this.buttonColor())
+            .fontColor('#FFFFFF')
+            .onClick(() => this.confirmImportSourceSelection())
+        }
+        .width('100%')
+      }
+      .width('90%')
+      .constraintSize({ maxWidth: 520 })
+      .padding(22)
+      .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
+      .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
+      .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
+      .border({ width: ThemeRuntime.glassBorderWidth('overlay'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'overlay') })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius('overlay'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'overlay'), offsetX: ThemeRuntime.glassShadowOffsetX('overlay'), offsetY: ThemeRuntime.glassShadowOffsetY('overlay') })
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor('#80000000')
   }
 
   @Builder
@@ -6446,52 +6565,112 @@ struct BookSourcePage {
         return;
       }
 
-      const db = AppDatabase.getInstance();
-      await db.initWithContext(getContext(this));
-      let importCount = 0;
-      let failedCount = 0;
-      let lockedCount = 0;
-      let lastInsertError = '';
-      for (const source of sources) {
-        if (source.bookSourceUrl && source.bookSourceName) {
-          try {
-            const stored = await db.insertBookSource(source);
-            if (stored) {
-              if (!await this.verifyImportedBookSource(db, source)) {
-                throw new Error('写入后校验失败，书源内容未完整保存');
-              }
-              importCount++;
-            } else {
-              lockedCount++;
-            }
-          } catch (insertErr) {
-            failedCount++;
-            lastInsertError = this.importErrorMessage(insertErr as Object);
-            console.error('插入书源失败:', source.bookSourceName, insertErr);
-          }
-        }
+      // Multiple sources require an explicit choice so a large import does not
+      // unexpectedly add every source to the local database.
+      if (sources.length > 1) {
+        this.pendingImportSources = sources;
+        this.selectedImportSourceUrls = sources.map((source: BookSource) => source.bookSourceUrl);
+        this.showImportSourceSelectionDialog = true;
+        return;
       }
 
-      if (importCount === 0) {
-        if (lockedCount > 0 && failedCount === 0) {
-          promptAction.showToast({ message: `未导入：${lockedCount} 个同地址书源已锁定，请先解锁后重试` });
-          return;
-        }
-        throw new Error(lastInsertError || '书源未能写入本地数据库');
-      }
-
-      const loginCount = sources.filter((source: BookSource) => this.sourceNeedsLogin(source)).length;
-      const loginMessage = loginCount > 0 ? `，其中 ${loginCount} 个需要登录` : '';
-      const failedMessage = failedCount > 0 ? `，${failedCount} 个失败` : '';
-      const lockedMessage = lockedCount > 0 ? `，${lockedCount} 个已锁定未覆盖` : '';
-      promptAction.showToast({
-        message: `成功导入 ${importCount} 个书源${failedMessage}${lockedMessage}${loginMessage}`
-      });
-      await this.loadSources();
+      await this.persistImportedSources(sources);
     } catch (e) {
       console.error('解析书源失败:', e);
       const errMsg = this.importErrorMessage(e as Object);
       promptAction.showToast({ message: `书源格式错误: ${errMsg}` });
+    }
+  }
+
+  async persistImportedSources(sources: BookSource[]): Promise<void> {
+    const db = AppDatabase.getInstance();
+    await db.initWithContext(getContext(this));
+    let importCount = 0;
+    let failedCount = 0;
+    let lockedCount = 0;
+    let lastInsertError = '';
+    for (const source of sources) {
+      if (source.bookSourceUrl && source.bookSourceName) {
+        try {
+          const stored = await db.insertBookSource(source);
+          if (stored) {
+            if (!await this.verifyImportedBookSource(db, source)) {
+              throw new Error('写入后校验失败，书源内容未完整保存');
+            }
+            importCount++;
+          } else {
+            lockedCount++;
+          }
+        } catch (insertErr) {
+          failedCount++;
+          lastInsertError = this.importErrorMessage(insertErr as Object);
+          console.error('插入书源失败:', source.bookSourceName, insertErr);
+        }
+      }
+    }
+
+    if (importCount === 0) {
+      if (lockedCount > 0 && failedCount === 0) {
+        promptAction.showToast({ message: `未导入：${lockedCount} 个同地址书源已锁定，请先解锁后重试` });
+        return;
+      }
+      throw new Error(lastInsertError || '书源未能写入本地数据库');
+    }
+
+    const loginCount = sources.filter((source: BookSource) => this.sourceNeedsLogin(source)).length;
+    const loginMessage = loginCount > 0 ? `，其中 ${loginCount} 个需要登录` : '';
+    const failedMessage = failedCount > 0 ? `，${failedCount} 个失败` : '';
+    const lockedMessage = lockedCount > 0 ? `，${lockedCount} 个已锁定未覆盖` : '';
+    promptAction.showToast({
+      message: `成功导入 ${importCount} 个书源${failedMessage}${lockedMessage}${loginMessage}`
+    });
+    await this.loadSources();
+  }
+
+  isImportSourceSelected(source: BookSource): boolean {
+    return this.selectedImportSourceUrls.includes(source.bookSourceUrl);
+  }
+
+  setImportSourceSelected(source: BookSource, selected: boolean): void {
+    if (selected) {
+      if (!this.isImportSourceSelected(source)) {
+        this.selectedImportSourceUrls = this.selectedImportSourceUrls.concat([source.bookSourceUrl]);
+      }
+      return;
+    }
+    this.selectedImportSourceUrls = this.selectedImportSourceUrls.filter((url: string) => url !== source.bookSourceUrl);
+  }
+
+  areAllImportSourcesSelected(): boolean {
+    return this.pendingImportSources.length > 0 &&
+      this.selectedImportSourceUrls.length === this.pendingImportSources.length;
+  }
+
+  selectAllImportSources(selected: boolean): void {
+    this.selectedImportSourceUrls = selected ?
+      this.pendingImportSources.map((source: BookSource) => source.bookSourceUrl) : [];
+  }
+
+  cancelImportSourceSelection(): void {
+    this.showImportSourceSelectionDialog = false;
+    this.pendingImportSources = [];
+    this.selectedImportSourceUrls = [];
+  }
+
+  async confirmImportSourceSelection(): Promise<void> {
+    if (this.selectedImportSourceUrls.length === 0 || this.isImporting) return;
+    const selected = this.pendingImportSources.filter((source: BookSource) =>
+      this.selectedImportSourceUrls.includes(source.bookSourceUrl));
+    if (selected.length === 0) return;
+    this.isImporting = true;
+    try {
+      await this.persistImportedSources(selected);
+      this.cancelImportSourceSelection();
+    } catch (e) {
+      console.error('导入所选书源失败:', e);
+      promptAction.showToast({ message: `导入失败: ${this.importErrorMessage(e as Object)}` });
+    } finally {
+      this.isImporting = false;
     }
   }
 

@@ -997,7 +997,9 @@ export class WebBookService {
       .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/p>/gi, '\n')
-      .replace(/<\/div>/gi, '\n')
+      // A number of novel sites use one <div> per paragraph. Keep a blank line
+      // so the reader's soft-line normalizer cannot merge adjacent paragraphs.
+      .replace(/<\/div>/gi, '\n\n')
       .replace(/<\/li>/gi, '\n')
       .replace(/<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>/gi, '\n')
       .replace(/<[^>]+>/g, '\n')
@@ -1160,9 +1162,11 @@ export class WebBookService {
     const normalized = lines.join('\n')
       .replace(/<br\s*\/?>/gi, '\n')
       .replace(/<\/p>/gi, '\n\n')
-      .replace(/<\/div>/gi, '\n')
+      // Preserve block-level paragraph boundaries from div-based chapter HTML.
+      .replace(/<\/div>/gi, '\n\n')
       .replace(/<[^>]+>/g, '')
       .replace(/&nbsp;/g, ' ')
+      .replace(/[ \t]{2,}/g, ' ')
       .replace(/&amp;/g, '&')
       .replace(/\n{3,}/g, '\n\n')
       .trim();
