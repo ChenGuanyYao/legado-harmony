@@ -4243,11 +4243,12 @@ struct BookshelfPage {
     Column({ space: 4 }) {
       Stack({ alignContent: Alignment.TopStart }) {
         Row({ space: 2 }) {
-          Stack() {
+          Stack({ alignContent: Alignment.TopStart }) {
             this.coverView(book, '100%', '100%', ImageFit.Fill)
             if (!this.isBookMultiSelect) {
               this.bookPinnedCoverIndicator(book)
             }
+            this.bookTypeCoverBadge(book)
           }
           .layoutWeight(1)
           .height('100%')
@@ -4294,10 +4295,10 @@ struct BookshelfPage {
       .borderRadius(7)
 
       Row({ space: 4 }) {
-        this.bookTypeNameBadge(book, true)
         Text(this.shelfTileBookDisplayName(book))
           .fontSize(12)
           .lineHeight(18)
+          .height(36)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
           .maxLines(2)
@@ -4322,7 +4323,7 @@ struct BookshelfPage {
       }
       .width('100%')
       .height(18)
-      .alignItems(VerticalAlign.Center)
+      .alignItems(VerticalAlign.Bottom)
 
       if (this.bookshelfShowProgressBar) {
         Progress({ value: this.getReadProgressValue(book), total: 100, type: ProgressType.Linear })
@@ -4363,44 +4364,48 @@ struct BookshelfPage {
   @Builder
   shelfTileGroupFolder(group: BookGroup) {
     Column({ space: 4 }) {
-      if (this.shouldUseThemeBookCover()) {
-        Stack() {
+      // Use one outer surface for both the themed folder artwork and the
+      // four-cover preview so folders carry the same radius, border and shadow
+      // weight as ordinary shelf cards.
+      Stack() {
+        if (this.shouldUseThemeBookCover()) {
           Image(this.activeThemeShelfFolder())
             .width('100%')
             .height('100%')
             .objectFit(ImageFit.Fill)
+        } else {
+          Grid() {
+            ForEach(this.getTileGroupPreviewBooks(group.groupId), (book: Book) => {
+              GridItem() {
+                this.coverView(book, '100%', '100%', ImageFit.Cover)
+              }
+            }, (book: Book) => this.shelfBookRenderKey(book, `group_${group.groupId}`))
+          }
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .width('100%')
+          .height('100%')
+          .columnsTemplate('1fr 1fr')
+          .rowsTemplate('1fr 1fr')
+          .columnsGap(6)
+          .rowsGap(6)
+          .padding(8)
+          .backgroundColor(this.glassCardColor())
+          .scrollBar(BarState.Off)
         }
-        .width('100%')
-        .aspectRatio(0.735)
-        .borderRadius(7)
-        .clip(true)
-      } else {
-        Grid() {
-          ForEach(this.getTileGroupPreviewBooks(group.groupId), (book: Book) => {
-            GridItem() {
-              this.coverView(book, '100%', '100%', ImageFit.Cover)
-            }
-          }, (book: Book) => this.shelfBookRenderKey(book, `group_${group.groupId}`))
-        }
-        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-        .width('100%')
-        .aspectRatio(0.735)
-        .columnsTemplate('1fr 1fr')
-        .rowsTemplate('1fr 1fr')
-        .columnsGap(6)
-        .rowsGap(6)
-        .padding(8)
-        .borderRadius(7)
-        .backgroundColor(this.glassCardColor())
-        .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
-        .scrollBar(BarState.Off)
       }
+      .width('100%')
+      .aspectRatio(0.735)
+      .borderRadius(7)
+      .clip(true)
+      .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius(), color: this.glassShadowColor(),
+        offsetX: ThemeRuntime.glassShadowOffsetX(), offsetY: ThemeRuntime.glassShadowOffsetY() })
 
       Text(group.groupName)
         .width('100%')
-        .height(30)
-        .fontSize(14)
-        .lineHeight(15)
+        .height(36)
+        .fontSize(12)
+        .lineHeight(18)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.primaryTextColor())
         .maxLines(2)
@@ -4415,7 +4420,7 @@ struct BookshelfPage {
           .fontColor(this.subTextColor())
       }
       .width('100%')
-      .height(13)
+      .height(18)
       .alignItems(VerticalAlign.Bottom)
     }
     .width('100%')
@@ -4446,6 +4451,7 @@ struct BookshelfPage {
         if (!this.isBookMultiSelect) {
           this.bookPinnedCoverIndicator(book)
         }
+        this.bookTypeCoverBadge(book)
 
         if (this.isBookMultiSelect) {
           Stack({ alignContent: Alignment.Center }) {
@@ -4481,16 +4487,18 @@ struct BookshelfPage {
       .width('100%')
       .aspectRatio(0.735)
       .border({
-        width: this.isBookSelected(book.bookUrl) ? 2 : 0,
-        color: this.accentColor()
+        width: this.isBookSelected(book.bookUrl) ? 2 : ThemeRuntime.glassBorderWidth(),
+        color: this.isBookSelected(book.bookUrl) ? this.accentColor() : this.glassBorderColor()
       })
       .borderRadius(7)
+      .shadow({ radius: ThemeRuntime.glassShadowRadius(), color: this.glassShadowColor(),
+        offsetX: ThemeRuntime.glassShadowOffsetX(), offsetY: ThemeRuntime.glassShadowOffsetY() })
 
       Row({ space: 4 }) {
-        this.bookTypeNameBadge(book, true)
         Text(this.shelfTileBookDisplayName(book))
           .fontSize(12)
           .lineHeight(18)
+          .height(36)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
           .maxLines(2)
@@ -4515,7 +4523,7 @@ struct BookshelfPage {
       }
       .width('100%')
       .height(18)
-      .alignItems(VerticalAlign.Center)
+      .alignItems(VerticalAlign.Bottom)
 
       if (this.bookshelfShowProgressBar) {
         Progress({ value: this.getReadProgressValue(book), total: 100, type: ProgressType.Linear })
@@ -5128,16 +5136,36 @@ struct BookshelfPage {
     if (book.isPinned) {
       Stack({ alignContent: Alignment.Center }) {
         SymbolGlyph($r('sys.symbol.pin'))
-          .fontSize(12)
+          .fontSize(10)
           .fontColor([this.accentColor()])
       }
-      .width(18)
-      .height(18)
-      .borderRadius(9)
-      .backgroundColor(this.inputColor())
-      .margin({ left: 6, top: 6 })
+      .width(16)
+      .height(16)
+      .borderRadius(8)
+      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, this.inputColor(), 'button'))
+      .margin({ left: 5, top: 5 })
+      .shadow({ radius: 3, color: '#55000000', offsetX: 0, offsetY: 1 })
       .accessibilityText(`${book.name}已置顶`)
     }
+  }
+
+  @Builder
+  bookTypeCoverBadge(book: Book) {
+    Text(this.bookTypeBadgeText(book))
+      .fontSize(9)
+      .fontWeight(FontWeight.Bold)
+      .fontColor('#FFFFFF')
+      .textAlign(TextAlign.Center)
+      .width(18)
+      .height(16)
+      .borderRadius(5)
+      .backgroundColor(this.bookTypeBadgeColor(book))
+      .opacity(0.92)
+      .border({ width: 1, color: '#66FFFFFF' })
+      .position({ x: 5, y: '100%' })
+      .translate({ x: 0, y: -21 })
+      .shadow({ radius: 3, color: '#55000000', offsetX: 0, offsetY: 1 })
+      .accessibilityText(`${book.name}${this.bookTypeBadgeText(book)}类型`)
   }
 
   @Builder
