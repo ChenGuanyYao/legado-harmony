@@ -5,7 +5,7 @@
 | 项目 | 信息 |
 | --- | --- |
 | 应用包名 | `io.legado.read` |
-| 当前版本 | `3.8.901`（以 `AppScope/app.json5` 为准） |
+| 当前版本 | `3.8.902`（以 `AppScope/app.json5` 为准） |
 | 支持设备 | `phone`、`tablet`、`2in1` |
 | 最低 API | HarmonyOS API 12 |
 | 目标 API | HarmonyOS API 23 |
