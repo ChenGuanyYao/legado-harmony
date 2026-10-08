@@ -39,6 +39,26 @@ class BookLifecycleMigrationRecord {
   shelfModifiedTime: number = 0;
 }
 
+export class ReadStatsEntry {
+  dayKey: string = '';
+  bookUrl: string = '';
+  durationMs: number = 0;
+  lastReadAt: number = 0;
+}
+
+export class ReadStatsRow {
+  dayKey: string = '';
+  bookUrl: string = '';
+  durationMs: number = 0;
+}
+
+export class ReadStatsBookMeta {
+  bookUrl: string = '';
+  name: string = '';
+  author: string = '';
+  coverUrl: string = '';
+}
+
 export class AppDatabase {
   private static readonly BATCH_INSERT_CHUNK_SIZE: number = 400;
   private static instance: AppDatabase | null = null;
@@ -50,6 +70,7 @@ export class AppDatabase {
   private readerPaginationWriteTasks: Map<string, Promise<void>> = new Map<string, Promise<void>>();
   private bookProgressWriteTasks: Map<string, Promise<void>> = new Map<string, Promise<void>>();
   private latestBookProgressWriteTimes: Map<string, number> = new Map<string, number>();
+  private readStatsWriteTask: Promise<void> = Promise.resolve();
   private readonly DATABASE_NAME = 'legado.db';
   private readonly SCHEMA_VERSION = 18;
 
@@ -274,6 +295,16 @@ export class AppDatabase {
         pendingAddToShelf INTEGER DEFAULT 0,
         eventTime INTEGER DEFAULT 0,
         details TEXT DEFAULT ''
+      )
+    `);
+
+    await this.store.executeSql(`
+      CREATE TABLE IF NOT EXISTS read_stats (
+        dayKey TEXT NOT NULL,
+        bookUrl TEXT NOT NULL,
+        durationMs INTEGER DEFAULT 0,
+        lastReadAt INTEGER DEFAULT 0,
+        PRIMARY KEY (dayKey, bookUrl)
       )
     `);
 
@@ -2257,6 +2288,92 @@ export class AppDatabase {
     const predicates = new relationalStore.RdbPredicates('search_keywords');
     predicates.equalTo('keyword', keyword);
     await this.store.delete(predicates);
+  }
+
+  async addReadStats(entries: ReadStatsEntry[]): Promise<void> {
+    if (!this.store || entries.length === 0) return;
+    const task = this.readStatsWriteTask.catch(() => {
+    }).then(async (): Promise<void> => {
+      for (const entry of entries) {
+        if (!entry.dayKey || !entry.bookUrl || entry.durationMs <= 0) continue;
+        await this.performReadStatsUpsert(entry);
+      }
+    });
+    this.readStatsWriteTask = task;
+    try {
+      await task;
+    } catch (error) {
+      console.warn('累计阅读时长入库失败', error);
+    }
+  }
+
+  private async performReadStatsUpsert(entry: ReadStatsEntry): Promise<void> {
+    if (!this.store) return;
+    const predicates = new relationalStore.RdbPredicates('read_stats');
+    predicates.equalTo('dayKey', entry.dayKey);
+    predicates.and();
+    predicates.equalTo('bookUrl', entry.bookUrl);
+    const resultSet = await this.store.query(predicates, ['durationMs']);
+    let existingMs = 0;
+    try {
+      if (resultSet.goToFirstRow()) {
+        existingMs = resultSet.getLong(resultSet.getColumnIndex('durationMs'));
+      }
+    } finally {
+      resultSet.close();
+    }
+    const bucket: relationalStore.ValuesBucket = {
+      durationMs: existingMs + entry.durationMs,
+      lastReadAt: entry.lastReadAt
+    };
+    if (existingMs > 0) {
+      await this.store.update(bucket, predicates);
+    } else {
+      bucket.dayKey = entry.dayKey;
+      bucket.bookUrl = entry.bookUrl;
+      await this.store.insert('read_stats', bucket);
+    }
+  }
+
+  async getReadStatsByDayRange(startDayKey: string, endDayKey: string): Promise<ReadStatsRow[]> {
+    const rows: ReadStatsRow[] = [];
+    if (!this.store || !startDayKey || !endDayKey || startDayKey > endDayKey) return rows;
+    const predicates = new relationalStore.RdbPredicates('read_stats');
+    predicates.between('dayKey', startDayKey, endDayKey);
+    const resultSet = await this.store.query(predicates, ['dayKey', 'bookUrl', 'durationMs']);
+    try {
+      while (resultSet.goToNextRow()) {
+        const row = new ReadStatsRow();
+        row.dayKey = resultSet.getString(resultSet.getColumnIndex('dayKey'));
+        row.bookUrl = resultSet.getString(resultSet.getColumnIndex('bookUrl'));
+        row.durationMs = resultSet.getLong(resultSet.getColumnIndex('durationMs'));
+        rows.push(row);
+      }
+    } finally {
+      resultSet.close();
+    }
+    return rows;
+  }
+
+  async getReadStatsBookMeta(bookUrls: string[]): Promise<Map<string, ReadStatsBookMeta>> {
+    const metaMap = new Map<string, ReadStatsBookMeta>();
+    if (!this.store || bookUrls.length === 0) return metaMap;
+    const predicates = new relationalStore.RdbPredicates('books');
+    predicates.in('bookUrl', bookUrls);
+    const resultSet = await this.store.query(predicates, ['bookUrl', 'name', 'author', 'coverUrl']);
+    try {
+      while (resultSet.goToNextRow()) {
+        const meta = new ReadStatsBookMeta();
+        meta.bookUrl = resultSet.getString(resultSet.getColumnIndex('bookUrl'));
+        meta.name = resultSet.getString(resultSet.getColumnIndex('name'));
+        meta.author = resultSet.getString(resultSet.getColumnIndex('author'));
+        meta.coverUrl = resultSet.getString(resultSet.getColumnIndex('coverUrl'));
+        metaMap.set(meta.bookUrl, meta);
+      }
+    } finally {
+      resultSet.close();
+    }
+    return metaMap;
   }
 }
 

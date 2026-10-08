@@ -1364,6 +1364,18 @@ struct BookshelfPage {
     this.showActionDialog = true;
   }
 
+  async saveLocalBookSource(book: Book): Promise<void> {
+    try {
+      const savedUri = await LocalBookService.exportSourceFile(getContext(this), book);
+      if (savedUri) {
+        HdsFeedback.showToast(`已保存《${book.name}》源文件`);
+      }
+    } catch (e) {
+      console.error('保存本地书籍源文件失败:', e);
+      HdsFeedback.showToast(`保存失败：${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   async toggleBookPinned(book: Book): Promise<void> {
     const nextPinned = !book.isPinned;
     const modifiedTime = Date.now();
@@ -1732,7 +1744,7 @@ struct BookshelfPage {
   }
 
   bookActionMenuHeight(book: Book): number {
-    const baseHeight = 364;
+    const baseHeight = 408;
     return baseHeight + (LocalBookService.isLocalBook(book) ? 0 : 44) + (book.customCoverUrl ? 44 : 0);
   }
 
@@ -2198,6 +2210,18 @@ struct BookshelfPage {
                     this.editingBookAuthor = this.pendingActionBook.author;
                     this.showActionDialog = false;
                     this.openEditBookInfoDialog();
+                  }
+                })
+            }
+            if (LocalBookService.isLocalBook(this.pendingActionBook)) {
+              this.contextActionItem($r('sys.symbol.arrow_right_up_and_square'), '保存源文件',
+                this.primaryTextColor(), () => {
+                  if (this.pendingActionBook) {
+                    const book = this.pendingActionBook;
+                    this.showActionDialog = false;
+                    setTimeout(() => {
+                      this.saveLocalBookSource(book);
+                    }, 0);
                   }
                 })
             }
@@ -7287,6 +7311,10 @@ struct ExplorePage {
   @State exploreSourceVariableValue: string = '';
   @State exploreSourceVariableComment: string = '';
   @State savingExploreSourceVariable: boolean = false;
+  private exploreSourceDeleteDialogSession: SystemDialogSession = new SystemDialogSession();
+  @State showExploreSourceDeleteDialog: boolean = false;
+  @State exploreSourceDeleteUrl: string = '';
+  @State exploreSourceDeleteName: string = '';
   @State exploreContextMenuX: number = 16;
   @State exploreContextMenuY: number = 96;
   @State exploreSourceFilterInput: string = '';
@@ -8125,6 +8153,21 @@ struct ExplorePage {
         .height(44)
         .padding({ left: 10, right: 10 })
         .onClick(() => this.editActionExploreSource())
+
+        Row() {
+          SymbolGlyph($r('sys.symbol.trash'))
+            .fontSize(19)
+            .fontColor(['#E53935'])
+            .width(34)
+          Text('删除')
+            .fontSize(15)
+            .fontColor('#E53935')
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(44)
+        .padding({ left: 10, right: 10 })
+        .onClick(() => this.deleteActionExploreSource())
       }
       .width(132)
       .padding({ top: 6, bottom: 6 })
@@ -8136,7 +8179,7 @@ struct ExplorePage {
       .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'),
         color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'),
         offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-      .position({ x: this.exploreContextMenuLeft(132), y: this.exploreContextMenuTop(144) })
+      .position({ x: this.exploreContextMenuLeft(132), y: this.exploreContextMenuTop(188) })
     }
     .width('100%')
     .height('100%')
@@ -8218,6 +8261,54 @@ struct ExplorePage {
       autoCancel: false,
       maskColor: this.appDarkMode ? '#99000000' : '#33000000',
       warnTag: '显示编辑源变量弹窗失败:'
+    });
+  }
+
+  @Builder
+  exploreSourceDeleteDialogContent() {
+    Column() {
+      Text('删除书源')
+        .fontSize(18)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryTextColor())
+        .width('100%')
+        .textAlign(TextAlign.Center)
+
+      Text(`确定删除“${this.exploreSourceDeleteName || this.exploreSourceDeleteUrl}”吗？删除后不可恢复。`)
+        .fontSize(14)
+        .fontColor(this.secondaryTextColor())
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .margin({ top: 12, bottom: 20 })
+
+      Row({ space: 10 }) {
+        Button('取消')
+          .layoutWeight(1)
+          .height(44)
+          .backgroundColor(this.inputColor())
+          .fontColor(this.primaryTextColor())
+          .onClick(() => this.closeExploreSourceDeleteDialog())
+
+        Button('删除')
+          .layoutWeight(1)
+          .height(44)
+          .backgroundColor('#B71C1C')
+          .fontColor('#FFFFFF')
+          .onClick(() => this.confirmDeleteExploreSource())
+      }
+      .width('100%')
+    }
+    .padding(22)
+  }
+
+  openExploreSourceDeleteDialog(): void {
+    this.showExploreSourceDeleteDialog = true;
+    this.exploreSourceDeleteDialogSession.open(this.getUIContext(), (): void => {
+      this.exploreSourceDeleteDialogContent();
+    }, {
+      autoCancel: true,
+      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      warnTag: '显示删除书源弹窗失败:'
     });
   }
 
@@ -8430,6 +8521,61 @@ struct ExplorePage {
       url: 'pages/BookSource',
       params: { openLoginSourceUrl: sourceUrl }
     });
+  }
+
+  async deleteActionExploreSource(): Promise<void> {
+    const sourceUrl = this.actionExploreSourceUrl;
+    if (!sourceUrl) return;
+    this.closeExploreSourceActions();
+    try {
+      const db = AppDatabase.getInstance();
+      await db.initWithContext(getContext(this));
+      const source = await db.getBookSource(sourceUrl);
+      if (!source) {
+        HdsFeedback.showToast('书源不存在');
+        return;
+      }
+      if (source.isLocked) {
+        HdsFeedback.showToast('锁定的书源不能删除');
+        return;
+      }
+      this.exploreSourceDeleteUrl = source.bookSourceUrl;
+      this.exploreSourceDeleteName = source.bookSourceName || source.bookSourceUrl;
+      this.openExploreSourceDeleteDialog();
+    } catch (error) {
+      console.error('读取书源失败:', error);
+      HdsFeedback.showToast('读取书源失败');
+    }
+  }
+
+  closeExploreSourceDeleteDialog(): void {
+    this.showExploreSourceDeleteDialog = false;
+    this.exploreSourceDeleteDialogSession.close(this.getUIContext());
+    this.exploreSourceDeleteUrl = '';
+    this.exploreSourceDeleteName = '';
+  }
+
+  async confirmDeleteExploreSource(): Promise<void> {
+    const sourceUrl = this.exploreSourceDeleteUrl;
+    if (!sourceUrl) return;
+    this.showExploreSourceDeleteDialog = false;
+    this.exploreSourceDeleteDialogSession.close(this.getUIContext());
+    try {
+      const db = AppDatabase.getInstance();
+      await db.initWithContext(getContext(this));
+      await db.deleteBookSource(sourceUrl);
+      await ExploreResultCache.clearSource(getContext(this), sourceUrl);
+      this.exploreSourceDeleteUrl = '';
+      this.exploreSourceDeleteName = '';
+      HdsFeedback.showToast('书源已删除');
+      // 删除后重载发现页：若删的是当前源，loadEntries 会自动回退到首个可用源。
+      if (this.isActive) {
+        await this.loadEntries('', true);
+      }
+    } catch (e) {
+      console.error('删除书源失败:', e);
+      HdsFeedback.showToast('删除书源失败');
+    }
   }
 
   exploreContextMenuLeft(menuWidth: number): number {
@@ -10733,6 +10879,9 @@ struct SettingsPage {
           this.accountSummaryCard()
           Column() {
             this.syncMenuItem()
+            this.menuItem($r('sys.symbol.timer'), '阅读统计', true, () => {
+              router.pushUrl({ url: 'pages/ReadingStats' });
+            })
             this.menuItem($r('sys.symbol.externaldrive'), '书源管理', true, () => {
               router.pushUrl({ url: 'pages/BookSource' });
             })

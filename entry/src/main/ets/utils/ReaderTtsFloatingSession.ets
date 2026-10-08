@@ -1,3 +1,5 @@
+import { readStatsTracker } from '../core/stats/ReadStatsTracker';
+
 export class ReaderTtsFloatingSession {
   private static ownerId: string = '';
   private static toggleAction: (() => Promise<void>) | null = null;
@@ -31,6 +33,7 @@ export class ReaderTtsFloatingSession {
     AppStorage.setOrCreate('globalTtsActive', true);
     AppStorage.setOrCreate('globalTtsPaused', paused);
     AppStorage.setOrCreate('globalTtsBookUrl', bookUrl);
+    readStatsTracker.setTtsActive(paused ? '' : bookUrl);
     AppStorage.setOrCreate('globalTtsBookName', bookName || '正在朗读');
     AppStorage.setOrCreate('globalTtsChapterTitle', chapterTitle || '');
     AppStorage.setOrCreate('globalTtsMode', 'tts');
@@ -52,6 +55,7 @@ export class ReaderTtsFloatingSession {
     AppStorage.setOrCreate('globalTtsPaused', paused);
     AppStorage.setOrCreate('globalTtsBookName', nextName);
     AppStorage.setOrCreate('globalTtsChapterTitle', nextTitle);
+    readStatsTracker.setTtsActive(paused ? '' : AppStorage.get<string>('globalTtsBookUrl') || '');
     ReaderTtsFloatingSession.notifyChanged();
   }
 
@@ -300,7 +304,10 @@ export class ReaderTtsFloatingSession {
       await action();
       const pausedState = ReaderTtsFloatingSession.pausedState;
       if (pausedState && ReaderTtsFloatingSession.isActive()) {
-        AppStorage.setOrCreate('globalTtsPaused', pausedState());
+        const paused = pausedState();
+        AppStorage.setOrCreate('globalTtsPaused', paused);
+        readStatsTracker.setTtsActive(
+          paused ? '' : AppStorage.get<string>('globalTtsBookUrl') || '');
         ReaderTtsFloatingSession.notifyChanged();
       }
     }
@@ -398,6 +405,7 @@ export class ReaderTtsFloatingSession {
     AppStorage.setOrCreate('globalTtsActive', false);
     AppStorage.setOrCreate('globalTtsPaused', false);
     AppStorage.setOrCreate('globalTtsBookUrl', '');
+    readStatsTracker.setTtsActive('');
     AppStorage.setOrCreate('globalTtsBookName', '');
     AppStorage.setOrCreate('globalTtsChapterTitle', '');
     AppStorage.setOrCreate('globalTtsMode', '');

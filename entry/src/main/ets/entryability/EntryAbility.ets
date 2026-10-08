@@ -29,6 +29,7 @@ import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
 import { FullTextCacheCancelCoordinator } from '../utils/FullTextCacheCancelCoordinator';
 import { lanReaderServer } from '../core/lan/LanReaderServer';
+import { readStatsTracker } from '../core/stats/ReadStatsTracker';
 
 export default class EntryAbility extends UIAbility {
   private appliedColorMode: number = -1;
@@ -61,6 +62,7 @@ export default class EntryAbility extends UIAbility {
     AccountSessionStore.initializeStorage();
     CloudSyncSettingsStore.initializeStorage();
     CloudSyncChangeTracker.initializeStorage();
+    readStatsTracker.init(this.context);
     TlsTrustStore.load(this.context).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Load TLS trust settings failed: %{public}s', JSON.stringify(e));
     });
@@ -233,6 +235,7 @@ export default class EntryAbility extends UIAbility {
 
   onDestroy(): void {
     lanReaderServer.stop().catch(() => undefined);
+    readStatsTracker.flush();
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
@@ -295,6 +298,7 @@ export default class EntryAbility extends UIAbility {
 
   onForeground(): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onForeground');
+    readStatsTracker.setAppForeground(true);
     AppStorage.setOrCreate<number>('appLifecycleForegroundRevision', Date.now());
     if (AppStorage.get<boolean>('lanReaderEnabled') && !lanReaderServer.isRunning()) {
       lanReaderServer.start(this.context).catch((e: Error) => {
@@ -348,6 +352,7 @@ export default class EntryAbility extends UIAbility {
 
   onBackground(): void {
     hilog.info(0x0000, 'testTag', '%{public}s', 'Ability onBackground');
+    readStatsTracker.setAppForeground(false);
     // Page.onPageShow is shared by real route returns and a simple Home/lock-screen resume. Publish a
     // background revision so retained pages do not treat the foreground transition as a settings change.
     AppStorage.setOrCreate<number>('appLifecycleBackgroundRevision', Date.now());

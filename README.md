@@ -5,7 +5,7 @@
 | 项目 | 信息 |
 | --- | --- |
 | 应用包名 | `io.legado.read` |
-| 当前版本 | `3.10.908`（以 `AppScope/app.json5` 为准） |
+| 当前版本 | `3.10.910`（以 `AppScope/app.json5` 为准） |
 | 支持设备 | `phone`、`tablet`、`2in1` |
 | 最低 API | HarmonyOS API 12 |
 | 目标 API | HarmonyOS API 26 |
@@ -180,8 +180,8 @@ legado-harmony/
 | --- | --- |
 | 主模块 | `entry` |
 | 入口 Ability | `EntryAbility` |
-| `versionName` | `3.10.908` |
-| `versionCode` / `buildVersion` | `3100908` |
+| `versionName` | `3.10.910` |
+| `versionCode` / `buildVersion` | `3100910` |
 | `minAPIVersion` | `12` |
 | `targetAPIVersion` | `26` |
 | 权限 | `INTERNET`、`GET_NETWORK_INFO`、`KEEP_BACKGROUND_RUNNING`、`CAMERA`（仅在用户启用眼动翻页时请求） |

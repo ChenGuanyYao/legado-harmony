@@ -27,6 +27,7 @@
     "pages/ThemeSettings",
     "pages/AccountCenter",
     "pages/DataSync",
+    "pages/ReadingStats",
     "pages/SyncDevices",
     "pages/GlassSettings",
     "pages/FontSettings",

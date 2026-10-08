@@ -23,6 +23,7 @@ import { TtsVoiceInfo } from '../account/AccountCommerceModels';
 import { Book, BookChapter, Bookmark, BookSource, SearchBook, HttpTTS } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { ReadBookEngine } from '../core/book/ReadBookEngine';
+import { readStatsTracker } from '../core/stats/ReadStatsTracker';
 import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { LocalBookService } from '../core/book/LocalBookService';
 import { WebDavBookService } from '../webdav/WebDavBookService';
@@ -827,6 +828,7 @@ struct ReadBookPage {
 
   onPageShow(): void {
     this.readerPageVisible = true;
+    readStatsTracker.setReadingActive(this.bookUrl);
     const backgroundRevision = AppStorage.get<number>('appLifecycleBackgroundRevision') || 0;
     const returningFromBackground = backgroundRevision > this.readerObservedBackgroundRevision;
     this.readerObservedBackgroundRevision = backgroundRevision;
@@ -1004,6 +1006,7 @@ struct ReadBookPage {
     AppStorage.setOrCreate<boolean>('shelfReaderDirectTransition', false);
     this.resetReaderScreenOrientation();
     this.readerPageVisible = false;
+    readStatsTracker.setReadingActive('');
     this.stopArEyeTurnHost();
     this.readerEyeTurnController.stop().catch((error: Error): void => {
       console.warn('[EyeTurn] reader disappear release failed:', error.message);
@@ -1072,6 +1075,7 @@ struct ReadBookPage {
   onPageHide(): void {
     this.shortcutRoutingActive = false;
     this.readerPageVisible = false;
+    readStatsTracker.setReadingActive('');
     this.stopArEyeTurnHost();
     this.readerEyeTurnController.stop().catch((error: Error): void => {
       console.warn('[EyeTurn] reader background release failed:', error.message);

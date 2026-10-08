@@ -269,6 +269,28 @@ export class LocalBookService {
     return `webdav://${connectionId}/${LocalBookService.hashText(remotePath)}`;
   }
 
+  static sanitizeFileName(value: string): string {
+    const cleaned = value.replace(/[\\/:*?"<>|\r\n\t]/g, ' ').replace(/\s+/g, ' ').trim();
+    return cleaned || '未命名';
+  }
+
+  static async exportSourceFile(context: Context, book: Book): Promise<string> {
+    const localPath = book.getVariable('localFilePath') || '';
+    const format = (book.getVariable('localFormat') || 'txt').toLowerCase();
+    if (!localPath || !LocalBookService.exists(localPath)) {
+      throw new Error('源文件不存在或已被清理');
+    }
+    const author = book.author ? ` - ${book.author}` : '';
+    const options = new picker.DocumentSaveOptions();
+    options.newFileNames = [`${LocalBookService.sanitizeFileName(book.name + author)}.${format}`];
+    const result = await new picker.DocumentViewPicker(context).save(options);
+    if (!result || result.length === 0) {
+      return '';
+    }
+    await fs.copy(fileUri.getUriFromPath(localPath), result[0]);
+    return result[0];
+  }
+
   private static async importBook(context: Context, sourceUri: string,
     formatHint: string = '', sourceName: string = '', bookUrlOverride: string = '',
     webDavConnectionId: string = '', webDavRemotePath: string = '', webDavETag: string = '',
