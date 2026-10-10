@@ -17512,51 +17512,84 @@ struct ReadBookPage {
     }
   }
 
-  @Builder
+  onReaderV2NativeSelectionChanged(page: ReaderV2PageLayout, chapterIndex: number, pageIndex: number,
+    selectionStart: number, selectionEnd: number): void {
+    const textLength = page.selectionText.length;
+    this.readerTextSelectionUntil = Date.now() + 900;
+    this.suppressReaderTapClick = true;
+    this.readerTouchActive = false;
+    this.readerPanActive = false;
+    const safeStart = Math.max(0, Math.min(selectionStart, textLength));
+    const safeEnd = Math.max(safeStart, Math.min(selectionEnd, textLength));
+    if (safeEnd > safeStart) {
+      this.readerV2SelectionChapterIndex = chapterIndex;
+      this.readerV2SelectionPageIndex = pageIndex;
+      this.readerV2SelectionDisplayStart = this.readerV2DisplayOffsetForPageSelection(page, safeStart);
+      this.readerV2SelectionDisplayEnd = this.readerV2DisplayOffsetForPageSelection(page, safeEnd);
+      this.readerV2SelectionPaintVersion++;
+    }
+  }
+
   // The transparent system Text that owns the selection handles and menu. It wraps its content at the top of
   // its host, and its measured height calibrates the paragraph gaps (see calibrateReaderV2NativeSelection),
   // so handles stay on the painted glyphs however many paragraphs the selection is dragged across.
+  @Builder
   readerV2NativeSelectionText(role: string, chapterIndex: number, pageIndex: number,
     page: ReaderV2PageLayout, fragmentIndex: number, offsetX: number, offsetY: number) {
     Stack({ alignContent: Alignment.TopStart }) {
-      Text('', { controller: this.readerV2NativeSelectionController(
-        this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex, page), page) })
-        .lineSpacing(LengthMetrics.vp(px2vp(this.toMeasureNonNegativePx(this.readerLineHeight))),
-          { onlyBetweenLines: true })
-        .halfLeading(false)
-        .includeFontPadding(true)
-        .textAlign(this.readerTextAlignValue())
-        .wordBreak(WordBreak.BREAK_WORD)
-        .lineBreakStrategy(LineBreakStrategy.GREEDY)
-        .copyOption(CopyOptions.LocalDevice)
-        .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
-        .editMenuOptions(this.readerTextEditMenuOptions(() => page.selectionText))
-        .onCopy(() => this.scheduleReaderTextSelectionClear())
-        .selectedBackgroundColor(Color.Transparent)
-        .width('100%')
-        .hitTestBehavior(HitTestMode.None)
-        .onTextSelectionChange((selectionStart: number, selectionEnd: number) => {
-          const textLength = page.selectionText.length;
-          this.readerTextSelectionUntil = Date.now() + 900;
-          this.suppressReaderTapClick = true;
-          this.readerTouchActive = false;
-          this.readerPanActive = false;
-          const safeStart = Math.max(0, Math.min(selectionStart, textLength));
-          const safeEnd = Math.max(safeStart, Math.min(selectionEnd, textLength));
-          if (safeEnd > safeStart) {
-            this.readerV2SelectionChapterIndex = chapterIndex;
-            this.readerV2SelectionPageIndex = pageIndex;
-            this.readerV2SelectionDisplayStart = this.readerV2DisplayOffsetForPageSelection(page, safeStart);
-            this.readerV2SelectionDisplayEnd = this.readerV2DisplayOffsetForPageSelection(page, safeEnd);
-            this.readerV2SelectionPaintVersion++;
-          }
-        })
-        .id(`reader_v2_selection_${role}_${chapterIndex}_${pageIndex}`)
-        .onSizeChange((_oldValue: SizeOptions, newValue: SizeOptions) => {
-          this.calibrateReaderV2NativeSelection(page, fragmentIndex,
-            this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex, page),
-            vp2px(Number(newValue.height)), this.readerV2NativeSelectionHostVersion);
-        })
+      if (deviceInfo.sdkApiVersion >= 23) {
+        Text('', { controller: this.readerV2NativeSelectionController(
+          this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex, page), page) })
+          .lineSpacing(LengthMetrics.vp(px2vp(this.toMeasureNonNegativePx(this.readerLineHeight))),
+            { onlyBetweenLines: true })
+          .halfLeading(false)
+          .includeFontPadding(true)
+          .textAlign(this.readerTextAlignValue())
+          .wordBreak(WordBreak.BREAK_WORD)
+          .lineBreakStrategy(LineBreakStrategy.GREEDY)
+          .copyOption(CopyOptions.LocalDevice)
+          .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
+          .editMenuOptions(this.readerTextEditMenuOptions(() => page.selectionText))
+          .onCopy(() => this.scheduleReaderTextSelectionClear())
+          .selectedBackgroundColor(Color.Transparent)
+          .width('100%')
+          .hitTestBehavior(HitTestMode.None)
+          .onTextSelectionChange((selectionStart: number, selectionEnd: number) => {
+            this.onReaderV2NativeSelectionChanged(page, chapterIndex, pageIndex, selectionStart, selectionEnd);
+          })
+          .id(`reader_v2_selection_${role}_${chapterIndex}_${pageIndex}`)
+          .onSizeChange((_oldValue: SizeOptions, newValue: SizeOptions) => {
+            this.calibrateReaderV2NativeSelection(page, fragmentIndex,
+              this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex, page),
+              vp2px(Number(newValue.height)), this.readerV2NativeSelectionHostVersion);
+          })
+      } else {
+        // 选区文本层的 onlyBetweenLines 行距（API 20）、includeFontPadding（API 23）和透明选中底色（API 14）
+        // 在旧系统上不存在，调用会抛错。这里退回基础属性：手柄位置靠高度自校准兜底，
+        // 系统自带的选中底色会和绘制的高亮叠在一起。
+        Text('', { controller: this.readerV2NativeSelectionController(
+          this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex, page), page) })
+          .lineSpacing(LengthMetrics.vp(px2vp(this.toMeasureNonNegativePx(this.readerLineHeight))))
+          .halfLeading(false)
+          .textAlign(this.readerTextAlignValue())
+          .wordBreak(WordBreak.BREAK_WORD)
+          .lineBreakStrategy(LineBreakStrategy.GREEDY)
+          .copyOption(CopyOptions.LocalDevice)
+          .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
+          .editMenuOptions(this.readerTextEditMenuOptions(() => page.selectionText))
+          .onCopy(() => this.scheduleReaderTextSelectionClear())
+          .width('100%')
+          .hitTestBehavior(HitTestMode.None)
+          .onTextSelectionChange((selectionStart: number, selectionEnd: number) => {
+            this.onReaderV2NativeSelectionChanged(page, chapterIndex, pageIndex, selectionStart, selectionEnd);
+          })
+          .id(`reader_v2_selection_${role}_${chapterIndex}_${pageIndex}`)
+          .onSizeChange((_oldValue: SizeOptions, newValue: SizeOptions) => {
+            this.calibrateReaderV2NativeSelection(page, fragmentIndex,
+              this.readerV2NativeSelectionKey(role, chapterIndex, pageIndex, page),
+              vp2px(Number(newValue.height)), this.readerV2NativeSelectionHostVersion);
+          })
+      }
     }
     .width(px2vp(page.selectionWidth))
     .height(px2vp(Math.max(1, page.selectionHeight)))

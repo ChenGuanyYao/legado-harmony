@@ -132,6 +132,8 @@ export class ReaderV2Paginator {
       let topInkGuardApplied = false;
       let mustEndPage = false;
       let previousWasImage = false;
+      // Index of the first hit area each fragment contributed, so fragments can be moved with their areas.
+      const fragmentActionStarts: number[] = [];
 
       while (session.blockIndex < session.document.blocks.length && !mustEndPage) {
         const imageBlock = session.document.blocks[session.blockIndex];
@@ -184,6 +186,7 @@ export class ReaderV2Paginator {
           imageFragment.localEnd = imageBlock.text.length;
           imageFragment.displayStart = imageBlock.displayStart;
           imageFragment.displayEnd = imageBlock.displayEnd;
+          fragmentActionStarts.push(page.actions.length);
           page.fragments.push(imageFragment);
           if (!hasContent) page.displayStart = imageFragment.displayStart;
           page.displayEnd = imageFragment.displayEnd;
@@ -257,6 +260,7 @@ export class ReaderV2Paginator {
         const fragment = ReaderV2Paginator.createFragment(session.document, current, session.blockIndex,
           fragmentFirstLine, fragmentLastLine, column.left, y, paragraphLineTop, fragmentBottom,
           session.snapshot, session.currentBlockStyles(), session.width);
+        fragmentActionStarts.push(page.actions.length);
         page.fragments.push(fragment);
         ReaderV2Paginator.appendActionAreas(page, fragment, session.document.actions);
         if (!hasContent) page.displayStart = fragment.displayStart;
@@ -275,6 +279,10 @@ export class ReaderV2Paginator {
       }
 
       if (!hasContent) break;
+      if (!session.continuous && session.blockIndex < session.document.blocks.length) {
+        // More of the chapter follows, so this page ended because the next line did not fit.
+        ReaderV2Paginator.alignPageBottom(page, fragmentActionStarts, column.bottom - y, session.snapshot);
+      }
       ReaderV2Paginator.finalizePageSelection(page);
       for (const fragment of page.fragments) {
         page.contentBottomPx = Math.max(page.contentBottomPx, fragment.clipRect.bottom);
@@ -289,6 +297,40 @@ export class ReaderV2Paginator {
     }
     result.complete = session.blockIndex >= session.document.blocks.length;
     return appended;
+  }
+
+  /**
+   * 页底对齐：一页排满后底部通常剩不到一行的空白，每页剩的还不一样。把这点空白均分到本页各块之间，
+   * 让末行落在版心底边。只调整块间距，不动行距和断行；每个间隙最多加半个字高，
+   * 块太少摊不完时保留剩余空白，避免段间距被拉得突兀。
+   */
+  private static alignPageBottom(page: ReaderV2PageLayout, fragmentActionStarts: number[], leftoverPx: number,
+    snapshot: ReaderV2LayoutSnapshot): void {
+    const gaps = page.fragments.length - 1;
+    // 剩余超过两行说明这一页是被整页插图或放不下的大块提前结束的，不属于要对齐的情况。
+    if (gaps <= 0 || leftoverPx <= 0.5 || leftoverPx > (snapshot.fontSizePx + snapshot.lineSpacingPx) * 2) return;
+    const perGapPx = Math.min(leftoverPx / gaps, snapshot.fontSizePx * 0.5);
+    for (let index = 1; index < page.fragments.length; index++) {
+      const shiftPx = perGapPx * index;
+      const fragment = page.fragments[index];
+      fragment.paragraphY += shiftPx;
+      fragment.clipRect.top += shiftPx;
+      fragment.clipRect.bottom += shiftPx;
+      if (fragment.imageRect !== fragment.clipRect) {
+        fragment.imageRect.top += shiftPx;
+        fragment.imageRect.bottom += shiftPx;
+      }
+      for (const segment of fragment.regexBubbleSegments) {
+        segment.rect.top += shiftPx;
+        segment.rect.bottom += shiftPx;
+      }
+      const actionEnd = index + 1 < fragmentActionStarts.length ? fragmentActionStarts[index + 1] :
+        page.actions.length;
+      for (let actionIndex = fragmentActionStarts[index]; actionIndex < actionEnd; actionIndex++) {
+        page.actions[actionIndex].rect.top += shiftPx;
+        page.actions[actionIndex].rect.bottom += shiftPx;
+      }
+    }
   }
 
   /** 滚动阅读里尺寸未知的图片按 高/宽 = 这个比例占位。 */

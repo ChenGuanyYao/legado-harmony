@@ -1,4 +1,5 @@
 import drawing from '@ohos.graphics.drawing';
+import common2D from '@ohos.graphics.common2D';
 import { UIContext } from '@ohos.arkui.UIContext';
 import {
   DrawContext,
@@ -82,6 +83,17 @@ class ReaderV2PageFrameNode extends FrameNode {
     }
   }
 
+  // Brush.setColor(number) only exists from API 18; the colour-object overload works on every supported API.
+  private static brushColor(value: number): common2D.Color {
+    const color = value >>> 0;
+    return {
+      alpha: (color >>> 24) & 0xFF,
+      red: (color >>> 16) & 0xFF,
+      green: (color >>> 8) & 0xFF,
+      blue: color & 0xFF
+    };
+  }
+
   private drawRegexBubble(canvas: drawing.Canvas, segment: ReaderV2RegexBubbleSegment): void {
     const left = segment.rect.left;
     const top = segment.rect.top;
@@ -90,7 +102,7 @@ class ReaderV2PageFrameNode extends FrameNode {
     if (right <= left || bottom <= top) return;
 
     const brush = new drawing.Brush();
-    brush.setColor(segment.backgroundColor);
+    brush.setColor(ReaderV2PageFrameNode.brushColor(segment.backgroundColor));
     if (segment.shadowEnabled && segment.shadowRadiusPx > 0) {
       try {
         brush.setShadowLayer(drawing.ShadowLayer.create(segment.shadowRadiusPx,
@@ -127,7 +139,7 @@ class ReaderV2PageFrameNode extends FrameNode {
       // Use the ink-tight vertical bounds so the focus remains visually centred on the spoken text.
       graphicsText.RectWidthStyle.TIGHT, graphicsText.RectHeightStyle.TIGHT);
     const brush = new drawing.Brush();
-    brush.setColor(color);
+    brush.setColor(ReaderV2PageFrameNode.brushColor(color));
     canvas.attachBrush(brush);
     for (const box of boxes) {
       const left = Math.max(fragment.clipRect.left, fragment.paragraphX + box.rect.left);
