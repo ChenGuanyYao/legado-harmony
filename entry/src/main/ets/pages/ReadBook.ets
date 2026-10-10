@@ -93,6 +93,7 @@ import { ReaderFullTextCacheController } from '../core/reader/ReaderFullTextCach
 import { ReaderTtsMediaInfo, ReaderTtsMediaSession } from '../core/reader/ReaderTtsMediaSession';
 import { TtsVoiceCatalog } from '../utils/TtsVoiceCatalog';
 import { ReaderTtsQuickSettingsPanel, ReaderTtsVoicePickerPanel } from '../components/reader/ReaderTtsSettingsPanels';
+import { ReaderHeaderFooterSettings, ReaderTypographyField, ReaderTypographyStepper } from '../components/reader/ReaderLayoutSettings';
 import { ReaderCacheDialogContent } from '../components/reader/ReaderCacheDialogContent';
 import { ReaderTxtCharsetDialogContent, ReaderTxtCharsets } from '../components/reader/ReaderTxtCharsetDialogContent';
 import { ReaderLayoutElementSettingsPanel } from '../components/reader/ReaderLayoutElementSettingsPanel';
@@ -208,9 +209,6 @@ struct ReadBookPage {
   @State showSettings: boolean = false;
   @State @Watch('onSystemDialogFlagChanged') showTapZoneSettings: boolean = false;
   @State settingsPanelTab: number = 0;
-  @State readerTypographySelection: number = 0;
-  @State showReaderTypographyValueInput: boolean = false;
-  @State readerTypographyValueDraft: string = '';
   @State loadStatus: string = '正在加载...';
   @State verificationUrl: string = '';
   @State verificationTitle: string = '网页验证';
@@ -650,15 +648,7 @@ struct ReadBookPage {
   private readerPageContentTopPaddingSnapshot: number = -1;
   private readerLayoutCommitInProgress: boolean = false;
   private readerTypographyDraftPending: boolean = false;
-  @State readerTypographyValueRevision: number = 0;
-  @State readerTypographyFontSize: number = 20;
-  @State readerTypographyLetterSpacing: number = 0;
-  @State readerTypographyLineHeight: number = 12;
-  @State readerTypographyParagraphSpacing: number = 0;
-  @State readerTypographyMarginLeft: number = 18;
-  @State readerTypographyMarginRight: number = 18;
-  @State readerTypographyMarginTop: number = 18;
-  @State readerTypographyMarginBottom: number = 18;
+  private readerTypographyDraft: number[] = [];
   private readingProgressSaveQueue: Promise<void> = Promise.resolve();
   private readerProgressAnchorChapterIndex: number = -1;
   private readerProgressAnchorPageIndex: number = 0;
@@ -5845,8 +5835,6 @@ struct ReadBookPage {
 
   openTypographySettingsPanel(): void {
     if (this.isReaderComicModeActive()) return;
-    if (!this.readerTypographyDraftPending) this.syncReaderTypographyDraft();
-    this.showReaderTypographyValueInput = false;
     this.showReaderActionMenu = false;
     this.settingsPanelTab = 2;
     this.showToc = false;
@@ -8447,30 +8435,6 @@ struct ReadBookPage {
     .width('100%')
   }
 
-  readerTypographyOptions(): SelectOption[] {
-    return [
-      { value: '字号' },
-      { value: '字距' },
-      { value: '行距' },
-      { value: '段落间距' },
-      { value: '左边距' },
-      { value: '右边距' },
-      { value: '上边距' },
-      { value: '下边距' }
-    ];
-  }
-
-  readerTypographySelectedLabel(): string {
-    if (this.readerTypographySelection === 1) return '字距';
-    if (this.readerTypographySelection === 2) return '行距';
-    if (this.readerTypographySelection === 3) return '段落间距';
-    if (this.readerTypographySelection === 4) return '左边距';
-    if (this.readerTypographySelection === 5) return '右边距';
-    if (this.readerTypographySelection === 6) return '上边距';
-    if (this.readerTypographySelection === 7) return '下边距';
-    return '字号';
-  }
-
   readerTextAlignOptions(): SelectOption[] {
     return [{ value: '两端对齐' }, { value: '左对齐' }, { value: '右对齐' }];
   }
@@ -8492,218 +8456,61 @@ struct ReadBookPage {
 
   @Builder
   readerTypographyCombinedSettings() {
-    Row({ space: 8 }) {
-      Select(this.readerTypographyOptions())
-        .id('reader_typography_selector')
-        .selected(this.readerTypographySelection)
-        .value(this.readerTypographySelectedLabel())
-        .font({ size: 15 })
-        .fontColor(this.getSubTextColor())
-        .backgroundColor(Color.Transparent)
-        .arrowPosition(ArrowPosition.START)
-        .padding({ left: 0, right: 0 })
-        .borderRadius(16)
-        .border({ width: 0 })
-        .optionBgColor(Color.Transparent)
-        .divider(null)
-        .optionFontColor(this.getTextColor())
-        .selectedOptionFontColor(this.accentColor())
-        .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
-        .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
-        .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
-        .onSelect((index: number) => {
-          this.showReaderTypographyValueInput = false;
-          this.readerTypographySelection = Math.max(0, Math.min(index, 7));
-        })
-      Blank()
-        .layoutWeight(1)
-      this.readerSliderStepButton($r('sys.symbol.minus'), '减小当前排版参数',
-        this.readerTypographyValue(this.readerTypographySelection) > this.readerTypographyMin(this.readerTypographySelection),
-        () => this.stepReaderTypographyValue(this.readerTypographySelection, -1))
-      if (this.showReaderTypographyValueInput) {
-        TextInput({ text: this.readerTypographyValueDraft,
-          placeholder: `${this.readerTypographyValue(this.readerTypographySelection)}` })
-          .type(InputType.Number)
-          .enterKeyType(EnterKeyType.Done)
-          .defaultFocus(true)
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-          .width(52)
-          .height(36)
-          .padding(0)
-          .textAlign(TextAlign.Center)
-          .backgroundColor(this.readerSolidPanelColor())
-          .borderRadius(6)
-          .onChange((value: string) => {
-            this.readerTypographyValueDraft = value.replace(/[^0-9]/g, '').substring(0, 3);
-          })
-          .onSubmit(() => {
-            this.applyReaderTypographyValueInput();
-          })
-          .onBlur(() => {
-            this.applyReaderTypographyValueInput();
-          })
-      } else {
-        Text(`${Math.round(this.readerTypographyValue(this.readerTypographySelection))}`)
-          .fontSize(15)
-          .fontColor(this.getTextColor())
-          .width(52)
-          .height(36)
-          .textAlign(TextAlign.Center)
-          .onClick(() => {
-            this.openReaderTypographyValueInput();
-          })
-      }
-      this.readerSliderStepButton($r('sys.symbol.plus'), '增大当前排版参数',
-        this.readerTypographyValue(this.readerTypographySelection) < this.readerTypographyMax(this.readerTypographySelection),
-        () => this.stepReaderTypographyValue(this.readerTypographySelection, 1))
-    }
-    .width('100%')
-    // Keep the selector on the same content baseline as the settings below.
-    .padding({ left: 0, right: 0, top: 12, bottom: 12 })
-    .alignItems(VerticalAlign.Center)
-  }
-
-  readerTypographyMin(index: number): number {
-    if (index === 0) return 14;
-    return 0;
-  }
-
-  readerTypographyMax(index: number): number {
-    if (index === 0) return 50;
-    if (index === 1) return 8;
-    if (index === 2) return 52;
-    if (index === 3) return 32;
-    if (index === 4 || index === 5) return 80;
-    return 120;
+    ReaderTypographyStepper({
+      initialValues: this.readerTypographyInitialValues(),
+      dark: this.isReaderThemeDark(),
+      textColor: this.getTextColor(),
+      subTextColor: this.getSubTextColor(),
+      accentColor: this.accentColor(),
+      inputColor: this.readerSolidPanelColor(),
+      menuColor: ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()),
+      onChange: (values: number[]): void => this.onReaderTypographyDraftChange(values)
+    })
   }
 
   @Builder
   readerHeaderFooterSettingsPanel() {
-    Column({ space: 4 }) {
-      this.readerSwitchSettingItem('显示页眉', '在正文顶部显示书名或当前章节标题', this.readerHeaderEnabled,
-        (checked: boolean) => {
-          this.readerHeaderEnabled = checked;
-        })
+    ReaderHeaderFooterSettings({
+      dark: this.isReaderThemeDark(),
+      textColor: this.getTextColor(),
+      subTextColor: this.getSubTextColor(),
+      accentColor: this.accentColor(),
+      switchColor: this.buttonColor(),
+      menuColor: ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor())
+    })
+  }
 
-      if (this.readerHeaderEnabled) {
-        this.readerSelectSettingItem('页眉内容', '选择页眉中显示的信息', this.readerHeaderContentOptions(),
-          this.readerHeaderContentSelectedIndex(), (index: number) => {
-            const values = this.readerHeaderContentValues();
-            this.readerHeaderContentMode = index >= 0 && index < values.length ? values[index] : 'chapter';
-          }, 'reader_header_content_select')
-      }
-
-      this.readerSwitchSettingItem('显示页脚', '显示章节信息和阅读进度', this.readerFooterEnabled,
-        (checked: boolean) => {
-          this.readerFooterEnabled = checked;
-        })
-
-      if (this.readerFooterEnabled) {
-        this.readerSelectSettingItem('页脚左侧', '选择页脚左侧显示的信息', this.readerFooterLeftOptions(),
-          this.readerFooterLeftSelectedIndex(), (index: number) => {
-            const values = this.readerFooterLeftValues();
-            this.readerFooterLeftMode = index >= 0 && index < values.length ? values[index] : 'chapter';
-          }, 'reader_footer_left_select')
-
-        this.readerSelectSettingItem('阅读进度', '选择页脚右侧显示的进度类型', this.readerFooterProgressOptions(),
-          this.readerFooterProgressSelectedIndex(), (index: number) => {
-            const values = this.readerFooterProgressValues();
-            this.readerFooterProgressMode = index >= 0 && index < values.length ? values[index] : 'page';
-          }, 'reader_footer_progress_select')
-
-        this.readerSwitchSettingItem('显示进度条', '在页脚上方显示本章阅读进度', this.readerFooterShowProgressBar,
-          (checked: boolean) => {
-            this.readerFooterShowProgressBar = checked;
-          })
-      }
+  // The stepper edits a draft; nothing is laid out until the short debounce below commits the whole set at once.
+  readerTypographyInitialValues(): number[] {
+    if (this.readerTypographyDraftPending && this.readerTypographyDraft.length === ReaderTypographyField.COUNT) {
+      return [...this.readerTypographyDraft];
     }
-    .width('100%')
-    .padding({ bottom: 8 })
+    return [this.readerFontSize, this.readerLetterSpacing, this.readerLineHeight, this.readerParagraphSpacing,
+      this.readerMarginLeft, this.readerMarginRight, this.readerMarginTop, this.readerMarginBottom];
   }
 
-  readerTypographyValue(settingIndex: number): number {
-    if (settingIndex === 0) return this.readerTypographyFontSize;
-    if (settingIndex === 1) return this.readerTypographyLetterSpacing;
-    if (settingIndex === 2) return this.readerTypographyLineHeight;
-    if (settingIndex === 3) return this.readerTypographyParagraphSpacing;
-    if (settingIndex === 4) return this.readerTypographyMarginLeft;
-    if (settingIndex === 5) return this.readerTypographyMarginRight;
-    if (settingIndex === 6) return this.readerTypographyMarginTop;
-    return this.readerTypographyMarginBottom;
-  }
-
-  openReaderTypographyValueInput(): void {
-    this.readerTypographyValueDraft = '';
-    this.showReaderTypographyValueInput = true;
-  }
-
-  applyReaderTypographyValueInput(): void {
-    if (!this.showReaderTypographyValueInput) return;
-    const value = Number(this.readerTypographyValueDraft);
-    if (!this.readerTypographyValueDraft.trim() || !Number.isFinite(value)) {
-      this.showReaderTypographyValueInput = false;
-      return;
-    }
-    this.applyReaderTypographyValue(this.readerTypographySelection, value);
-    this.showReaderTypographyValueInput = false;
-  }
-
-  applyReaderTypographyValue(settingIndex: number, value: number): void {
-    const rounded = Math.round(value);
-    if (settingIndex === 0) {
-      this.readerTypographyFontSize = Math.max(14, Math.min(rounded, 50));
-    } else if (settingIndex === 1) {
-      this.readerTypographyLetterSpacing = Math.max(0, Math.min(rounded, 8));
-    } else if (settingIndex === 2) {
-      this.readerTypographyLineHeight = Math.max(0, Math.min(rounded, 52));
-    } else if (settingIndex === 3) {
-      this.readerTypographyParagraphSpacing = Math.max(0, Math.min(rounded, 32));
-    } else if (settingIndex === 4) {
-      this.readerTypographyMarginLeft = Math.max(0, Math.min(rounded, 80));
-    } else if (settingIndex === 5) {
-      this.readerTypographyMarginRight = Math.max(0, Math.min(rounded, 80));
-    } else if (settingIndex === 6) {
-      this.readerTypographyMarginTop = Math.max(0, Math.min(rounded, 120));
-    } else {
-      this.readerTypographyMarginBottom = Math.max(0, Math.min(rounded, 120));
-    }
+  onReaderTypographyDraftChange(values: number[]): void {
+    if (values.length !== ReaderTypographyField.COUNT) return;
+    this.readerTypographyDraft = values;
     this.readerTypographyDraftPending = true;
-    this.readerTypographyValueRevision++;
     this.scheduleReaderTypographyChange();
-  }
-
-  stepReaderTypographyValue(settingIndex: number, delta: number): void {
-    const nextValue = this.readerTypographyValue(settingIndex) + delta;
-    this.applyReaderTypographyValue(settingIndex, nextValue);
-  }
-
-  syncReaderTypographyDraft(): void {
-    this.readerTypographyFontSize = this.readerFontSize;
-    this.readerTypographyLetterSpacing = this.readerLetterSpacing;
-    this.readerTypographyLineHeight = this.readerLineHeight;
-    this.readerTypographyParagraphSpacing = this.readerParagraphSpacing;
-    this.readerTypographyMarginLeft = this.readerMarginLeft;
-    this.readerTypographyMarginRight = this.readerMarginRight;
-    this.readerTypographyMarginTop = this.readerMarginTop;
-    this.readerTypographyMarginBottom = this.readerMarginBottom;
-    this.readerTypographyValueRevision++;
   }
 
   commitReaderTypographyDraft(): void {
     if (!this.readerTypographyDraftPending) return;
-    this.readerLayoutCommitInProgress = true;
-    this.readerFontSize = this.readerTypographyFontSize;
-    this.readerLetterSpacing = this.readerTypographyLetterSpacing;
-    this.readerLineHeight = this.readerTypographyLineHeight;
-    this.readerParagraphSpacing = this.readerTypographyParagraphSpacing;
-    this.readerMarginLeft = this.readerTypographyMarginLeft;
-    this.readerMarginRight = this.readerTypographyMarginRight;
-    this.readerMarginTop = this.readerTypographyMarginTop;
-    this.readerMarginBottom = this.readerTypographyMarginBottom;
-    this.readerLayoutCommitInProgress = false;
+    const draft = this.readerTypographyDraft;
     this.readerTypographyDraftPending = false;
+    if (draft.length !== ReaderTypographyField.COUNT) return;
+    this.readerLayoutCommitInProgress = true;
+    this.readerFontSize = draft[ReaderTypographyField.FONT_SIZE];
+    this.readerLetterSpacing = draft[ReaderTypographyField.LETTER_SPACING];
+    this.readerLineHeight = draft[ReaderTypographyField.LINE_HEIGHT];
+    this.readerParagraphSpacing = draft[ReaderTypographyField.PARAGRAPH_SPACING];
+    this.readerMarginLeft = draft[ReaderTypographyField.MARGIN_LEFT];
+    this.readerMarginRight = draft[ReaderTypographyField.MARGIN_RIGHT];
+    this.readerMarginTop = draft[ReaderTypographyField.MARGIN_TOP];
+    this.readerMarginBottom = draft[ReaderTypographyField.MARGIN_BOTTOM];
+    this.readerLayoutCommitInProgress = false;
   }
 
   @Builder
@@ -9073,24 +8880,6 @@ struct ReadBookPage {
     }
     .width('100%')
     .height('100%')
-  }
-
-  @Builder
-  readerSliderStepButton(icon: Resource, accessibilityText: string, enabled: boolean, action: () => void) {
-    ImmersiveBackButton({
-      icon: icon,
-      accessibilityLabel: accessibilityText,
-      iconColor: this.readerControlIconColor(),
-      disabledIconColor: this.getSubTextColor(),
-      darkMode: this.isReaderThemeDark(),
-      buttonEnabled: enabled,
-      buttonSize: 34,
-      containerWidth: 34,
-      containerHeight: 34,
-      startInset: 0,
-      compactLayout: true,
-      onBack: action
-    })
   }
 
   pageTurnModeOptions(): SelectOption[] {
@@ -11658,45 +11447,6 @@ struct ReadBookPage {
       this.scheduleTtsFocusRepublishAfterPageTurn(this.currentChapterIndex, pageIndex,
         this.readerV2TtsSourceStart, this.readerV2TtsSourceEnd);
     }
-  }
-
-  readerHeaderContentOptions(): SelectOption[] {
-    return [{ value: '当前章节标题' }, { value: '书名' }, { value: '书名 + 章节标题' }, { value: '不显示' }];
-  }
-
-  readerHeaderContentValues(): string[] {
-    return ['chapter', 'book', 'book_chapter', 'none'];
-  }
-
-  readerHeaderContentSelectedIndex(): number {
-    const index = this.readerHeaderContentValues().indexOf(this.readerHeaderContentMode);
-    return index >= 0 ? index : 0;
-  }
-
-  readerFooterLeftOptions(): SelectOption[] {
-    return [{ value: '章节序号 + 标题' }, { value: '章节标题' }, { value: '不显示' }];
-  }
-
-  readerFooterLeftValues(): string[] {
-    return ['chapter', 'title', 'none'];
-  }
-
-  readerFooterLeftSelectedIndex(): number {
-    const index = this.readerFooterLeftValues().indexOf(this.readerFooterLeftMode);
-    return index >= 0 ? index : 0;
-  }
-
-  readerFooterProgressOptions(): SelectOption[] {
-    return [{ value: '当前页 / 总页数' }, { value: '阅读百分比' }, { value: '章节进度' }, { value: '全书进度' }, { value: '不显示' }];
-  }
-
-  readerFooterProgressValues(): string[] {
-    return ['page', 'percentage', 'chapter', 'book', 'none'];
-  }
-
-  readerFooterProgressSelectedIndex(): number {
-    const index = this.readerFooterProgressValues().indexOf(this.readerFooterProgressMode);
-    return index >= 0 ? index : 0;
   }
 
   saveReaderChromeSettings(): void {

@@ -51,6 +51,7 @@ const regexModel = read('entry/src/main/ets/model/reader/ReaderRegexFontRule.ets
 const regexSettings = read('entry/src/main/ets/pages/ReaderFontSettings.ets');
 const reader = read('entry/src/main/ets/pages/ReadBook.ets');
 const readerPaginator = read('entry/src/main/ets/core/reader/ReaderV2Paginator.ets');
+const readerLayoutSettings = read('entry/src/main/ets/components/reader/ReaderLayoutSettings.ets');
 const readerBackgroundComponent = read('entry/src/main/ets/components/ReaderThemeBackground.ets');
 const indexPage = read('entry/src/main/ets/pages/Index.ets');
 const bookModel = read('entry/src/main/ets/model/data/Book.ts');
@@ -376,11 +377,10 @@ assert(reader.includes('input.bodyFontFamily = this.getBodyReaderFontFamily()') 
   'Reader pagination measurement must use the same body font as rendering');
 assert(reader.includes('this.readerTypographySettingsPanel()') &&
   reader.includes('readerTypographyCombinedSettings()') &&
-  reader.includes("{ value: '左边距' }") &&
-  reader.includes("{ value: '右边距' }") &&
-  reader.includes("{ value: '上边距' }") &&
-  reader.includes("{ value: '下边距' }") &&
-  reader.includes('applyReaderTypographyValue') &&
+  reader.includes('ReaderTypographyStepper({') &&
+  readerLayoutSettings.includes("'左边距', '右边距', '上边距', '下边距'") &&
+  readerLayoutSettings.includes('static clamp(field: number, value: number)') &&
+  reader.includes('onReaderTypographyDraftChange') &&
   reader.includes('commitReaderTypographyDraft'),
   'In-reader settings do not provide the shared typography controls');
 assert(bookModel.includes('static hasStartedReading(book: Book | null)') &&
