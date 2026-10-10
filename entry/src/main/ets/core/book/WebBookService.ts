@@ -27,6 +27,7 @@ import { BookSourceAudioWebRuntime } from './BookSourceAudioWebRuntime';
 import { BookSourceMetadataSupport } from './BookSourceMetadataSupport';
 import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
 import { BookSourceDebugContext } from './BookSourceDebugModels';
+import { LogText } from '../../utils/LogText';
 
 class ContentPageData {
   content: string = '';
@@ -756,7 +757,7 @@ export class WebBookService {
     }
     const verifyUrl = VerificationSupport.pickVerificationUrl(source, requestUrl, rule);
     VerificationSupport.requestVerification(verifyUrl, `${source.bookSourceName} 验证`, source);
-    console.warn('[WS] source needs browser verification:', source.bookSourceName, verifyUrl);
+    console.warn('[WS] source needs browser verification:', source.bookSourceName, LogText.url(verifyUrl));
     return true;
   }
 

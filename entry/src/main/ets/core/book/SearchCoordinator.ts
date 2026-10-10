@@ -22,6 +22,7 @@ import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
 import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
 import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
 import { BookSourceDebugContext } from './BookSourceDebugModels';
+import { LogText } from '../../utils/LogText';
 
 export interface SearchProgress {
   done: number;
@@ -310,7 +311,7 @@ export class SearchCoordinator {
         const verifyUrl = VerificationSupport.pickVerificationUrl(source, urlTemplate, source.searchUrl);
         VerificationSupport.requestVerification(verifyUrl, `${source.bookSourceName} 验证`, source);
         if (ENABLE_SEARCH_DEBUG_LOG) {
-          console.warn('[SC] source needs browser verification:', source.bookSourceName, verifyUrl);
+          console.warn('[SC] source needs browser verification:', source.bookSourceName, LogText.url(verifyUrl));
         }
         return this.sourceResult([], BookSource.VALIDATION_NEEDS_VERIFICATION, '需要登录或网页验证');
       }

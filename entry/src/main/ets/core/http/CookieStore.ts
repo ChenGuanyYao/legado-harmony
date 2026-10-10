@@ -1,5 +1,6 @@
 import { webview } from '@kit.ArkWeb';
 import { util } from '@kit.ArkTS';
+import { LogText } from '../../utils/LogText';
 
 export class CookieStore {
   private static readonly TOMBSTONE_VALUE = '__removed__';
@@ -89,7 +90,9 @@ export class CookieStore {
       }
       try {
         webview.WebCookieManager.configCookieSync(target, value);
-      } catch (_) {
+      } catch (error) {
+        // Never log the cookie itself; a write that fails here silently drops the login state of that site.
+        console.warn('[CookieStore] 写入 Cookie 失败:', LogText.url(target), (error as Error).message);
       }
     }
   }
@@ -97,13 +100,17 @@ export class CookieStore {
   static clearAll(): void {
     try {
       webview.WebCookieManager.clearAllCookiesSync();
-    } catch (_) {}
+    } catch (error) {
+      console.warn('[CookieStore] 清空 Cookie 失败:', (error as Error).message);
+    }
   }
 
   static saveAsync(): void {
     try {
       webview.WebCookieManager.saveCookieAsync();
-    } catch (_) {}
+    } catch (error) {
+      console.warn('[CookieStore] 持久化 Cookie 失败:', (error as Error).message);
+    }
   }
 
   static saveSync(): void {

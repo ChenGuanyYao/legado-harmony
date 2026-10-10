@@ -22,6 +22,7 @@ import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
 import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
 import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
 import { BookSourceDebugContext } from './BookSourceDebugModels';
+import { LogText } from '../../utils/LogText';
 
 export interface ExploreEntry {
   title: string;
@@ -168,11 +169,11 @@ export class ExploreCoordinator {
       if (!reqUrl || /^\s*@?js:/i.test(reqUrl) ||
         (!/^https?:\/\//i.test(reqUrl) && !/^data:/i.test(reqUrl))) {
         console.warn('[ExploreCoordinator] invalid explore request:', source.bookSourceName,
-          'entry:', (entry.url || '').substring(0, 600), 'built:', (reqUrl || '').substring(0, 600));
+          'entry:', LogText.url(entry.url), 'built:', LogText.url(reqUrl));
         this.noticeMessage = '发现地址脚本未能生成有效请求地址';
         return [];
       }
-      console.info('[ExploreCoordinator] explore:', `${entry.sourceName}/${entry.title}`, reqUrl);
+      console.info('[ExploreCoordinator] explore:', `${entry.sourceName}/${entry.title}`, LogText.url(reqUrl));
       let resp = EncodedSourceUrl.canHandle(reqUrl) ?
         await this.fetchEncodedDataUrl(reqUrl, source) : await au.fetch(reqUrl, undefined, debugContext);
       const bodyJs = au.getConfig().bodyJs || '';
@@ -183,11 +184,11 @@ export class ExploreCoordinator {
           resp = { ...resp, body: scriptedBody, success: true, statusCode: 200 };
         }
       }
-      console.info('[ExploreCoordinator] response:', resp.statusCode, 'len:', resp.body?.length || 0, 'url:', resp.url);
+      console.info('[ExploreCoordinator] response:', resp.statusCode, 'len:', resp.body?.length || 0, 'url:', LogText.url(resp.url));
       if (VerificationSupport.shouldRequestBrowserVerification(source, resp.body, resp.statusCode, entry.url)) {
         const verifyUrl = VerificationSupport.pickVerificationUrl(source, reqUrl, entry.url);
         VerificationSupport.requestVerification(verifyUrl, `${source.bookSourceName} 验证`, source);
-        console.warn('[ExploreCoordinator] source needs browser verification:', source.bookSourceName, verifyUrl);
+        console.warn('[ExploreCoordinator] source needs browser verification:', source.bookSourceName, LogText.url(verifyUrl));
         return [];
       }
       if (!resp.success || !resp.body) {

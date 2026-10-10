@@ -1585,7 +1585,12 @@ export class AppDataBackupService {
   }
 
   private static async ensureDir(path: string): Promise<void> {
-    try { await fs.mkdir(path, true); } catch (_) {}
+    try {
+      await fs.mkdir(path, true);
+    } catch (error) {
+      // Already existing is fine; any other failure surfaces at the first write, this only records the cause.
+      if (!AppDataBackupService.exists(path)) console.warn('创建备份目录失败:', (error as Error).message);
+    }
   }
 
   private static parentPath(path: string): string {

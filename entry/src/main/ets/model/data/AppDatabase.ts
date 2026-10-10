@@ -356,6 +356,8 @@ export class AppDatabase {
         resultSet.close();
       }
     } catch (e) {
+      // Expected on first launch (no schema_meta yet). Anything else makes the migrations start from zero again.
+      console.info('读取数据库版本失败，按全新数据库处理:', e);
     }
     return 0;
   }
