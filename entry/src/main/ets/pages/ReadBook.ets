@@ -115,6 +115,7 @@ import { ReaderTextNormalizer } from '../core/reader/ReaderTextNormalizer';
 import { ReaderImageSizeResolver } from '../core/reader/ReaderImageSizeResolver';
 import { ReaderChunkPagination, ReaderChunkResult } from '../core/reader/ReaderChunkPagination';
 import { ReaderPageOffsets } from '../core/reader/ReaderPageOffsets';
+import { ReaderPageTurnQueue } from '../core/reader/ReaderPageTurnQueue';
 import { EpubChapterPlanner } from '../core/book/EpubChapterPlanner';
 import { EpubHeading } from '../core/book/EpubHtmlConverter';
 
@@ -407,11 +408,8 @@ struct ReadBookPage {
   private bookLoadSerial: number = 0;
   private contentLoadSerial: number = 0;
   private isPageTurning: boolean = false;
-  private queuedPageTurnDirection: number = 0;
-  private queuedPageTurnStyle: string = '';
-  private queuedPageTurnCount: number = 0;
-  private queuedPageTurnVelocity: number = 0;
-  private queuedPageTurnGeneration: number = 0;
+  private pageTurnQueue: ReaderPageTurnQueue = new ReaderPageTurnQueue();
+  private readerFontRefreshSerial: number = 0;
   private pendingScrollPreviousChapterTurn: boolean = false;
   private pageTurnCrossChapterHandoff: boolean = false;
 
@@ -1336,10 +1334,7 @@ struct ReadBookPage {
     this.pageTurnIncomingDocumentSource = '';
     this.pageTurnIncomingRenderVersion = 0;
     this.isPageTurning = false;
-    this.queuedPageTurnDirection = 0;
-    this.queuedPageTurnStyle = '';
-    this.queuedPageTurnCount = 0;
-    this.queuedPageTurnVelocity = 0;
+    this.pageTurnQueue.reset();
     this.pageTurnCrossChapterHandoff = false;
     this.clearPageTurnPreviewState();
     this.clearTtsHighlight();
@@ -5338,8 +5333,7 @@ struct ReadBookPage {
   activateRegisteredReaderFont(familyName: string): void {
     if (this.readerFontRegistered && this.activeReaderFontFamily === familyName) {
       this.readerFontRenderReady = false;
-      this.refreshRegisteredReaderFontLater(familyName, 80);
-      this.refreshRegisteredReaderFontLater(familyName, 240);
+      this.scheduleRegisteredReaderFontRefresh(familyName);
       return;
     }
     this.readerActiveFontFamily = familyName;
@@ -5355,13 +5349,20 @@ struct ReadBookPage {
       this.refreshReaderTextRender();
       this.paginateContent(this.content);
     }, 0);
-    this.refreshRegisteredReaderFontLater(familyName, 80);
-    this.refreshRegisteredReaderFontLater(familyName, 240);
+    this.scheduleRegisteredReaderFontRefresh(familyName);
   }
 
-  refreshRegisteredReaderFontLater(familyName: string, delayMs: number): void {
+  // The engine picks a newly registered font up some frames later, so the text is refreshed twice. Activations can
+  // overlap (page show registers twice); only the timers of the latest activation run, so they do not multiply.
+  scheduleRegisteredReaderFontRefresh(familyName: string): void {
+    const serial = ++this.readerFontRefreshSerial;
+    this.refreshRegisteredReaderFontLater(familyName, 80, serial);
+    this.refreshRegisteredReaderFontLater(familyName, 240, serial);
+  }
+
+  refreshRegisteredReaderFontLater(familyName: string, delayMs: number, serial: number): void {
     setTimeout(() => {
-      if (!familyName || this.activeReaderFontFamily !== familyName) {
+      if (!familyName || this.activeReaderFontFamily !== familyName || serial !== this.readerFontRefreshSerial) {
         return;
       }
       this.readerFontRenderReady = true;
@@ -9031,7 +9032,7 @@ struct ReadBookPage {
     if (this.readerTouchActive) return 'readerTouchActive';
     if (this.readerComicChapterSwitching) return 'comicSwitching';
     if (this.pageSlideDirection !== 0) return 'pageSlide';
-    if (this.queuedPageTurnCount > 0 || this.queuedPageTurnDirection !== 0) return 'queuedTurn';
+    if (this.pageTurnQueue.hasPending()) return 'queuedTurn';
     if (Date.now() < this.readerPaginationInteractionIdleUntil) return 'interactionIdle';
     if (this.isReaderPaginationInteractionBusy()) return 'paginationBusy';
     return 'ok';
@@ -9507,7 +9508,7 @@ struct ReadBookPage {
     this.ttsManualPageTurnResumeTimerId = setTimeout(() => {
       this.ttsManualPageTurnResumeTimerId = -1;
       if (serial !== this.ttsManualPageTurnResumeSerial || !this.ttsManualPageTurnResumePending) return;
-      if (this.isPageTurning || this.queuedPageTurnCount > 0 || this.queuedPageTurnDirection !== 0 ||
+      if (this.isPageTurning || this.pageTurnQueue.hasPending() ||
         !this.isReaderPageTurnPositionReadyForTts()) {
         this.scheduleTtsResumeAfterManualPageTurn();
         return;
@@ -14363,10 +14364,10 @@ struct ReadBookPage {
   }
 
   isReaderPaginationInteractionBusy(): boolean {
-    const deferredPreviousTurn = this.queuedPageTurnDirection < 0 && this.queuedPageTurnCount > 0 &&
+    const deferredPreviousTurn = this.pageTurnQueue.hasPendingBackward() &&
       this.currentPageIndex <= 0 && !this.isPreviousChapterTurnReady();
     const queuedTurnBusy = !deferredPreviousTurn && this.pendingRestorePageIndex < 0 &&
-      (this.queuedPageTurnCount > 0 || this.queuedPageTurnDirection !== 0);
+      this.pageTurnQueue.hasPending();
     return this.showReaderCommentPanel || this.isPageTurning || this.readerPanActive || this.readerTouchActive ||
       this.readerComicPanMoved || this.readerComicBoundaryDirection !== 0 || this.readerComicChapterSwitching ||
       this.pageSlideDirection !== 0 || this.pageTurnAnimating || queuedTurnBusy ||
@@ -14408,8 +14409,7 @@ struct ReadBookPage {
       if (restoredPendingPosition || restoredTypographyPosition) this.scheduleReaderComicScrollRestore();
     }
     this.scheduleTtsFocusSyncAfterPagination();
-    if (restoredPendingPosition && !this.isPageTurning && this.queuedPageTurnCount > 0 &&
-      this.queuedPageTurnDirection !== 0) {
+    if (restoredPendingPosition && !this.isPageTurning && this.pageTurnQueue.pendingCount() > 0) {
       // A queued physical tap may have arrived while the previous chapter's authoritative tail was rebuilding.
       // Resume it only after the pending index has resolved, so one tap remains one page turn.
       setTimeout(() => this.runQueuedPageTurnLater(), 0);
@@ -14521,18 +14521,29 @@ struct ReadBookPage {
         setTimeout(runBatch, READER_PAGINATION_BUSY_RETRY_DELAY_MS);
         return;
       }
-      const startedAt = Date.now();
-      this.appendReaderPaginationBatch(result, targetChapterIndex, 1);
-      if (result.complete) {
-        this.persistReaderPagination(targetChapterIndex, key, result);
-        console.info(`[ReaderPreload] next chapter=${targetChapterIndex} pages=${result.pages.length} ` +
-          `lastBatch=${Date.now() - startedAt}ms`);
-        return;
+      try {
+        const startedAt = Date.now();
+        this.appendReaderPaginationBatch(result, targetChapterIndex, 1);
+        if (result.complete) {
+          this.persistReaderPagination(targetChapterIndex, key, result);
+          console.info(`[ReaderPreload] next chapter=${targetChapterIndex} pages=${result.pages.length} ` +
+            `lastBatch=${Date.now() - startedAt}ms`);
+          return;
+        }
+        const elapsedMs = Math.max(0, Date.now() - startedAt);
+        const nextDelay = elapsedMs >= CooperativeScheduler.SLOW_OPERATION_MS ?
+          Math.min(240, Math.max(batchDelay, elapsedMs * 2)) : batchDelay;
+        setTimeout(runBatch, nextDelay);
+      } catch (error) {
+        // Same protection as the previous-chapter session: a throwing batch must release the active-session
+        // marker, otherwise the dedupe treats the dead session as alive and the next chapter is never prepared.
+        console.error(`[ReaderPreload] 下一章预排版批次异常 chapter=${targetChapterIndex} ` +
+          `pages=${result.pages.length} cursor=${result.cursor}:`, error);
+        if (serial === this.adjacentPaginationPreloadSerial &&
+          this.adjacentPaginationPreloadActiveSerial === serial) {
+          this.adjacentPaginationPreloadActiveSerial = -1;
+        }
       }
-      const elapsedMs = Math.max(0, Date.now() - startedAt);
-      const nextDelay = elapsedMs >= CooperativeScheduler.SLOW_OPERATION_MS ?
-        Math.min(240, Math.max(batchDelay, elapsedMs * 2)) : batchDelay;
-      setTimeout(runBatch, nextDelay);
     };
     setTimeout(runBatch, 0);
   }
@@ -14861,7 +14872,7 @@ struct ReadBookPage {
       this.loadPrevChapter(true, false, true);
       return;
     }
-    if (!this.isPageTurning && this.queuedPageTurnDirection < 0 && this.queuedPageTurnCount > 0) {
+    if (!this.isPageTurning && this.pageTurnQueue.hasPendingBackward()) {
       this.runQueuedPageTurnLater();
     }
   }
@@ -15098,10 +15109,7 @@ struct ReadBookPage {
       return;
     }
     if (!this.canTurnPage(direction)) {
-      this.queuedPageTurnDirection = 0;
-      this.queuedPageTurnStyle = '';
-      this.queuedPageTurnCount = 0;
-      this.queuedPageTurnVelocity = 0;
+      this.pageTurnQueue.reset();
       this.resetSlidePageEffect();
       if (direction > 0 && this.chapters.length > 0 &&
         this.currentChapterIndex >= this.chapters.length - 1 &&
@@ -15147,7 +15155,7 @@ struct ReadBookPage {
       console.info(`[TTS-Turn] visual ${turnCompleted ? 'completed' : 'cancelled'} in ` +
         `${Math.max(0, Date.now() - visualStartedAt)}ms,request=${Math.max(0, Date.now() - turnRequestStartedAt)}ms,` +
         `prepare=${ttsPrepareElapsed}ms,chapter=${this.currentChapterIndex},` +
-        `page=${this.currentPageIndex},queued=${this.queuedPageTurnCount}`);
+        `page=${this.currentPageIndex},queued=${this.pageTurnQueue.pendingCount()}`);
     }
     this.runQueuedPageTurnLater();
     if (resumeMirroredTtsAfterTurn) {
@@ -15175,7 +15183,7 @@ struct ReadBookPage {
     this.mirroredTtsManualTurnTimerId = setTimeout(() => {
       this.mirroredTtsManualTurnTimerId = -1;
       if (serial !== this.mirroredTtsManualTurnSerial || !this.mirroredTtsManualTurnPending) return;
-      if (this.isPageTurning || this.queuedPageTurnCount > 0 || this.queuedPageTurnDirection !== 0 ||
+      if (this.isPageTurning || this.pageTurnQueue.hasPending() ||
         !this.isReaderPageTurnPositionReadyForTts()) {
         this.scheduleMirroredTtsResumeAfterManualPageTurn();
         return;
@@ -15214,44 +15222,22 @@ struct ReadBookPage {
   }
 
   enqueueReaderPageTurn(direction: number, style: string, releaseVelocity: number): void {
-    if (this.queuedPageTurnDirection === direction && this.queuedPageTurnStyle === style) {
-      this.queuedPageTurnCount = Math.min(2, this.queuedPageTurnCount + 1);
-      this.queuedPageTurnVelocity = Math.max(this.queuedPageTurnVelocity, releaseVelocity);
-    } else {
-      this.queuedPageTurnDirection = direction;
-      this.queuedPageTurnStyle = style;
-      this.queuedPageTurnCount = 1;
-      this.queuedPageTurnVelocity = releaseVelocity;
-    }
+    this.pageTurnQueue.enqueue(direction, style, releaseVelocity);
   }
 
   runQueuedPageTurnLater(): void {
-    const direction = this.queuedPageTurnDirection;
-    const style = this.queuedPageTurnStyle;
-    const releaseVelocity = this.queuedPageTurnVelocity;
-    if (direction === 0 || this.queuedPageTurnCount <= 0) return;
     if (this.pendingRestorePageIndex >= 0) return;
-    const generation = this.queuedPageTurnGeneration;
-    this.queuedPageTurnCount--;
-    if (this.queuedPageTurnCount <= 0) {
-      this.queuedPageTurnDirection = 0;
-      this.queuedPageTurnStyle = '';
-      this.queuedPageTurnVelocity = 0;
-    }
+    const turn = this.pageTurnQueue.take();
+    if (!turn) return;
     setTimeout(() => {
-      if (generation !== this.queuedPageTurnGeneration) return;
-      this.runPageTurnAnimation(direction, style, true, releaseVelocity);
+      if (!this.pageTurnQueue.isCurrent(turn)) return;
+      this.runPageTurnAnimation(turn.direction, turn.style, true, turn.velocity);
     }, 0);
   }
 
   clearQueuedReaderPageTurns(): void {
-    this.queuedPageTurnGeneration++;
-    this.queuedPageTurnDirection = 0;
-    this.queuedPageTurnStyle = '';
-    this.queuedPageTurnCount = 0;
-    this.queuedPageTurnVelocity = 0;
+    this.pageTurnQueue.cancel();
     this.pendingScrollPreviousChapterTurn = false;
-    this.queuedPageTurnGeneration++;
   }
 
   async runNoAnimationPageTurn(direction: number): Promise<void> {

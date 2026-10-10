@@ -20,6 +20,7 @@ const MODULES = [
   'core/reader/ReaderPageOffsets.ts',
   'core/reader/ReaderChunkPagination.ts',
   'core/reader/ReaderChapterRange.ts',
+  'core/reader/ReaderPageTurnQueue.ts',
 ];
 
 export async function loadReaderModules() {

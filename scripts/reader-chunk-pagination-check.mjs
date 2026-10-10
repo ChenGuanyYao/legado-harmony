@@ -5,8 +5,8 @@
 
 import { loadReaderModules } from './lib/load-reader-modules.mjs';
 
-const { ReaderChunkPagination: C, ReaderChapterRange, ReaderActionMarker, ReaderImageMarker, cleanup } =
-  await loadReaderModules();
+const { ReaderChunkPagination: C, ReaderChapterRange, ReaderPageTurnQueue, ReaderActionMarker, ReaderImageMarker,
+  cleanup } = await loadReaderModules();
 
 let failures = 0;
 function check(condition, label, detail = '') {
@@ -136,6 +136,31 @@ try {
   check(range('0-3') === '[]' && range('99-101') === '[]' && range('101') === '[]', '范围：越界整体无效');
   check(range('1-3,abc') === '[]' && range('一到三') === '[]', '范围：无法识别整体无效');
   check(range('') === '[]' && range('1-3', 0) === '[]', '范围：空输入或没有目录');
+
+  // ---- 翻页排队 ----
+  const queue = new ReaderPageTurnQueue();
+  check(!queue.hasPending() && queue.take() === null, '排队：空队列取不到');
+  queue.enqueue(1, 'tap', 0);
+  queue.enqueue(1, 'tap', 3);
+  queue.enqueue(1, 'tap', 1);
+  check(queue.pendingCount() === 2, '排队：同方向最多保留两次');
+  const first = queue.take();
+  check(first.direction === 1 && first.style === 'tap' && first.velocity === 3, '排队：保留最大的松手速度');
+  check(queue.hasPending() && queue.pendingCount() === 1, '排队：取走一次后还剩一次');
+  queue.take();
+  check(!queue.hasPending() && queue.take() === null, '排队：取完即空');
+  queue.enqueue(1, 'tap', 0);
+  queue.enqueue(-1, 'gesture', 2);
+  check(queue.pendingCount() === 1 && queue.hasPendingBackward(), '排队：换方向时替换而不是累加');
+  const taken = queue.take();
+  check(queue.isCurrent(taken), '排队：未取消时已取出的翻页有效');
+  queue.cancel();
+  check(!queue.isCurrent(taken), '排队：取消后已取出但未开始的翻页作废');
+  queue.enqueue(1, 'tap', 0);
+  const survivor = queue.take();
+  queue.enqueue(1, 'tap', 0);
+  queue.reset();
+  check(!queue.hasPending() && queue.isCurrent(survivor), '排队：清空等待项不影响已取出的翻页');
 } finally {
   cleanup();
 }
