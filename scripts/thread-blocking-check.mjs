@@ -20,7 +20,10 @@ const stageRuntime = read('entry/src/main/ets/core/book/BookSourceStageWebRuntim
 const search = read('entry/src/main/ets/core/book/SearchCoordinator.ts');
 const explore = read('entry/src/main/ets/core/book/ExploreCoordinator.ts');
 const webBook = read('entry/src/main/ets/core/book/WebBookService.ts');
-const index = read('entry/src/main/ets/pages/Index.ets');
+// 首页各页签已拆到 components/home，检查时与入口页拼在一起看。
+const index = read('entry/src/main/ets/pages/Index.ets') + '\n' +
+  ['HomeTabShells', 'BookshelfPage', 'ExplorePage', 'SearchPage', 'SettingsTabPage']
+    .map((name) => read(`entry/src/main/ets/components/home/${name}.ets`)).join('\n');
 const reader = read('entry/src/main/ets/pages/ReadBook.ets');
 const paginator = read('entry/src/main/ets/core/reader/ReaderV2Paginator.ets');
 

@@ -53,7 +53,10 @@ const reader = read('entry/src/main/ets/pages/ReadBook.ets');
 const readerPaginator = read('entry/src/main/ets/core/reader/ReaderV2Paginator.ets');
 const readerLayoutSettings = read('entry/src/main/ets/components/reader/ReaderLayoutSettings.ets');
 const readerBackgroundComponent = read('entry/src/main/ets/components/ReaderThemeBackground.ets');
-const indexPage = read('entry/src/main/ets/pages/Index.ets');
+// 首页各页签已拆到 components/home，检查时与入口页拼在一起看。
+const indexPage = read('entry/src/main/ets/pages/Index.ets') + '\n' +
+  ['HomeTabShells', 'BookshelfPage', 'ExplorePage', 'SearchPage', 'SettingsTabPage']
+    .map((name) => read(`entry/src/main/ets/components/home/${name}.ets`)).join('\n');
 const bookModel = read('entry/src/main/ets/model/data/Book.ts');
 const themePage = read('entry/src/main/ets/pages/ThemeSettings.ets');
 const readerSettingsPage = read('entry/src/main/ets/pages/Settings.ets');
