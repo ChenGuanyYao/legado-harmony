@@ -11,11 +11,11 @@
 > 本项目不内置、不托管、不分发小说正文、章节、封面、付费资源或书源订阅。应用仅处理用户自行导入且具备合法使用权限的书源规则与本地文件。使用前请确认内容授权、目标站点协议及所在地法律法规要求。
 
 <p align="center">
-  <img src="output/app_intro_v2/app-intro-v2-01.png" width="19%" alt="应用介绍 1" />
-  <img src="output/app_intro_v2/app-intro-v2-02.png" width="19%" alt="应用介绍 2" />
-  <img src="output/app_intro_v2/app-intro-v2-03.png" width="19%" alt="应用介绍 3" />
-  <img src="output/app_intro_v2/app-intro-v2-04.png" width="19%" alt="应用介绍 4" />
-  <img src="output/app_intro_v2/app-intro-v2-05.png" width="19%" alt="应用介绍 5" />
+  <img src="docs/images/app-intro-01.png" width="19%" alt="应用介绍 1" />
+  <img src="docs/images/app-intro-02.png" width="19%" alt="应用介绍 2" />
+  <img src="docs/images/app-intro-03.png" width="19%" alt="应用介绍 3" />
+  <img src="docs/images/app-intro-04.png" width="19%" alt="应用介绍 4" />
+  <img src="docs/images/app-intro-05.png" width="19%" alt="应用介绍 5" />
 </p>
 
 | 项目 | 信息 |
