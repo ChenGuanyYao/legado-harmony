@@ -13,6 +13,7 @@ import { BookTypeSupport } from '../book/BookTypeSupport';
 import { SearchCoordinator } from '../book/SearchCoordinator';
 import { ExploreCoordinator, ExploreEntry } from '../book/ExploreCoordinator';
 import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
+import { LanReaderPasswordStore } from './LanReaderPasswordStore';
 
 interface LanHttpResponse {
   status: number;
@@ -178,6 +179,9 @@ export class LanReaderServer {
 
   async start(context: Context): Promise<void> {
     this.context = context;
+    // The password is decrypted asynchronously at launch; binding the port before it is known would briefly serve
+    // a password-protected bookshelf without one.
+    await LanReaderPasswordStore.restore(context);
     this.enabled = true;
     this.password = AppStorage.get<string>('lanReaderPassword') || '';
     if (!this.token) {

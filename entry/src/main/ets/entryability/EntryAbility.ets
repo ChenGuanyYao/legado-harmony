@@ -29,6 +29,7 @@ import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
 import { FullTextCacheCancelCoordinator } from '../utils/FullTextCacheCancelCoordinator';
 import { lanReaderServer } from '../core/lan/LanReaderServer';
+import { LanReaderPasswordStore } from '../core/lan/LanReaderPasswordStore';
 import { readStatsTracker } from '../core/stats/ReadStatsTracker';
 
 export default class EntryAbility extends UIAbility {
@@ -98,6 +99,8 @@ export default class EntryAbility extends UIAbility {
     PersistentStorage.persistProp('readerRegexShadowColor', '');
     PersistentStorage.persistProp('readerRegexFontRulesRaw', '');
     PersistentStorage.persistProp('lanReaderEnabled', false);
+    // Only read here to pick up a plain-text password left by older versions; LanReaderPasswordStore moves it
+    // into encrypted storage and stops persisting this entry.
     PersistentStorage.persistProp('lanReaderPassword', '');
     AppStorage.setOrCreate('lanReaderAddress', '');
     AppStorage.setOrCreate('lanReaderStatus', '已关闭');
@@ -221,7 +224,7 @@ export default class EntryAbility extends UIAbility {
       if (AppStorage.get<boolean>('lanReaderEnabled')) {
         return lanReaderServer.start(this.context);
       }
-      return Promise.resolve();
+      return LanReaderPasswordStore.restore(this.context);
     }).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Sync reader settings failed: %{public}s', JSON.stringify(e));
     });

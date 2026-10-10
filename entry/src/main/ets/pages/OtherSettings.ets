@@ -5,6 +5,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { lanReaderServer } from '../core/lan/LanReaderServer';
+import { LanReaderPasswordStore } from '../core/lan/LanReaderPasswordStore';
 import { HdsFeedback } from '../utils/HdsFeedback';
 
 @Entry
@@ -20,13 +21,14 @@ struct OtherSettingsPage {
   @StorageLink('lanReaderStatus') lanReaderStatus: string = '已关闭';
   @StorageLink('lanReaderToken') lanReaderToken: string = '';
   @StorageLink('lanReaderPassword') lanReaderPassword: string = '';
+  @StorageProp('lanReaderPasswordUnreadable') lanReaderPasswordUnreadable: boolean = false;
   @StorageLink('lanReaderBackgroundStatus') lanReaderBackgroundStatus: string = '未启动';
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State lanReaderPasswordDraft: string = '';
 
   aboutToAppear(): void {
-    this.lanReaderPasswordDraft = this.lanReaderPassword;
+    this.lanReaderPasswordDraft = this.lanReaderPasswordUnreadable ? '' : this.lanReaderPassword;
     this.syncBars();
   }
 
@@ -224,7 +226,8 @@ struct OtherSettingsPage {
       }
       .width('100%')
       .margin({ top: 8 })
-      Text(this.lanReaderPassword ? '已设置密码，访问地址无需携带 token' : '未设置密码，局域网内打开地址即可进入')
+      Text(this.lanReaderPasswordUnreadable ? '已保存的密码无法读取，浏览器访问已锁定，请重新设置密码' :
+        (this.lanReaderPassword ? '已设置密码，访问地址无需携带 token' : '未设置密码，局域网内打开地址即可进入'))
         .fontSize(12)
         .fontColor(this.subTextColor())
         .margin({ top: 5 })
@@ -238,6 +241,12 @@ struct OtherSettingsPage {
     const password = this.lanReaderPasswordDraft.trim();
     if (password.length > 64) {
       HdsFeedback.showToast('密码最多 64 个字符');
+      return;
+    }
+    try {
+      await LanReaderPasswordStore.save(getContext(this), password);
+    } catch (error) {
+      HdsFeedback.showToast(`访问密码保存失败：${(error as Error).message}`);
       return;
     }
     lanReaderServer.setPassword(password);
