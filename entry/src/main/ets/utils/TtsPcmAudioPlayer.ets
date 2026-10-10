@@ -515,8 +515,7 @@ export class TtsPcmAudioPlayer {
       this.pausePlaybackTimelineAt(this.lastReachedFrame);
       return;
     }
-    if (deviceInfo.sdkApiVersion >= 19 && renderer &&
-      renderer.state === audio.AudioState.STATE_RUNNING) {
+    if (renderer && renderer.state === audio.AudioState.STATE_RUNNING) {
       try {
         const timestamp = renderer.getAudioTimestampInfoSync();
         const rendererFrame = Math.max(0, Math.round(timestamp.framePos));

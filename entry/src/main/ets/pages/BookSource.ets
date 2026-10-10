@@ -5994,7 +5994,6 @@ struct BookSourcePage {
   }
 
   recordCertificateTrustCandidate(source: BookSource, reason: string): void {
-    if (!TlsTrustStore.isRemoteValidationSupported()) return;
     const host = TlsTrustStore.certificateErrorHost(reason, source.bookSourceUrl);
     if (!host || TlsTrustStore.isTrustedHost(host)) return;
     if (!this.checkTlsTrustHosts.includes(host)) {

@@ -45,7 +45,7 @@
       {
         "name": "default",
         "signingConfig": "accountDebug",
-        "compatibleSdkVersion": "5.0.0(12)",
+        "compatibleSdkVersion": "6.0.0(20)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
           "strictMode": {
@@ -58,7 +58,7 @@
       {
         "name": "release",
         "signingConfig": "release",
-        "compatibleSdkVersion": "5.0.0(12)",
+        "compatibleSdkVersion": "6.0.0(20)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
           "strictMode": {

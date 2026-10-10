@@ -821,10 +821,6 @@ struct TtsSettingsPage {
   }
 
   async downloadAndSelectVoice(voice: TtsVoiceOption): Promise<void> {
-    if (!SystemTtsReader.supportsVoiceDownload()) {
-      HdsFeedback.showToast('当前系统版本不支持下载系统音色，请升级系统后重试');
-      return;
-    }
     if (this.downloadingVoiceKey) {
       HdsFeedback.showToast('正在下载音色，请稍候');
       return;

@@ -451,7 +451,7 @@ export class HttpClient {
   }
 
   private applyTlsTrust(options: http.HttpRequestOptions, url: string): void {
-    if (TlsTrustStore.isRemoteValidationSupported() && TlsTrustStore.isTrustedUrl(url)) {
+    if (TlsTrustStore.isTrustedUrl(url)) {
       options.remoteValidation = 'skip';
     }
   }

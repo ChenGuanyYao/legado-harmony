@@ -1,6 +1,5 @@
 import { common } from '@kit.AbilityKit';
 import preferences from '@ohos.data.preferences';
-import deviceInfo from '@ohos.deviceInfo';
 
 /**
  * Local, user-controlled exceptions for hosts whose TLS certificate cannot be
@@ -31,10 +30,6 @@ export class TlsTrustStore {
 
   static isTrustedUrl(url: string): boolean {
     return TlsTrustStore.isTrustedHost(TlsTrustStore.hostFromUrl(url));
-  }
-
-  static isRemoteValidationSupported(): boolean {
-    return Number(deviceInfo.sdkApiVersion || 0) >= 18;
   }
 
   static isTrustedHost(host: string): boolean {

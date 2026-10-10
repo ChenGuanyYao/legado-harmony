@@ -7,7 +7,7 @@
 | 应用包名 | `io.legado.read` |
 | 当前版本 | `3.10.910`（以 `AppScope/app.json5` 为准） |
 | 支持设备 | `phone`、`tablet`、`2in1` |
-| 最低 API | HarmonyOS API 12 |
+| 最低 API | HarmonyOS 6.0.0（API 20） |
 | 目标 API | HarmonyOS API 26 |
 | 开源协议 | GPL-3.0 |
 
@@ -58,7 +58,7 @@
 - 校验提供“搜索能力”和“发现/阅读链路”两种模式；后者使用与界面相同的发现、详情、目录和首个非付费章节链路，并分别验证文本、漫画图片或音频结果。
 - 支持进入书源调试页，按搜索、发现、详情、目录、正文或全链路单独运行，并查看请求、规则匹配、输出和错误详情。
 - 校验进度聚焦已完成数量和状态，不使用“命中 X 本”作为规则有效性的判断。
-- API 18 及以上设备可在证书校验明确失败后，由用户按精确主机选择是否信任并重试；信任仅保存在本机、可撤销，默认仍执行严格证书校验。
+- 证书校验明确失败后，可由用户按精确主机选择是否信任并重试；信任仅保存在本机、可撤销，默认仍执行严格证书校验。
 - 支持动态 `loginUi`、登录检测 JS、网页验证、同站点 Cookie 同步和登录状态持久化。
 - 登录脚本重放会去重已执行的 Cookie 写入/删除操作，并兼容常见登录信息键名差异；脚本在 `java.ajax` 前写入的 source/login 状态会立即用于当前请求。
 - 网页登录/验证页按页面加载重新注入预载脚本，并向同源会话开放 `getVariable`/`putVariable`/`reLoginView` 桥接；完成登录时书源变量改动会写回书源并热更新运行时，书源登录脚本定义了 `login()` 且面板有输入项时提供“确认登录”按钮。
@@ -188,7 +188,7 @@ legado-harmony/
 | 入口 Ability | `EntryAbility` |
 | `versionName` | `3.10.910` |
 | `versionCode` / `buildVersion` | `3100910` |
-| `minAPIVersion` | `12` |
+| `minAPIVersion` | `20` |
 | `targetAPIVersion` | `26` |
 | 权限 | `INTERNET`、`GET_NETWORK_INFO`、`KEEP_BACKGROUND_RUNNING`、`CAMERA`（仅在用户启用眼动翻页时请求） |
 

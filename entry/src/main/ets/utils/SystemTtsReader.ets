@@ -1,6 +1,5 @@
 import { textToSpeech } from '@kit.CoreSpeechKit';
 import { connection } from '@kit.NetworkKit';
-import deviceInfo from '@ohos.deviceInfo';
 import { CloudTtsAudio, CloudTtsClient, CloudTtsTiming } from '../account/CloudTtsClient';
 import { HttpTTS } from '../model/data/Book';
 import { HttpTtsAudio, HttpTtsReader } from './HttpTtsReader';
@@ -201,22 +200,13 @@ export class SystemTtsReader {
         voices = SystemTtsReader.knownVoiceOptions().concat(voices);
       }
       const parsed = SystemTtsReader.dedupeVoices(voices);
-      return SystemTtsReader.applyVoiceFeatureAvailability(
-        parsed.length > 0 ? parsed : SystemTtsReader.defaultVoices());
+      return parsed.length > 0 ? parsed : SystemTtsReader.defaultVoices();
     } catch (_) {
-      return SystemTtsReader.applyVoiceFeatureAvailability(
-        SystemTtsReader.dedupeVoices(SystemTtsReader.knownVoiceOptions()));
+      return SystemTtsReader.dedupeVoices(SystemTtsReader.knownVoiceOptions());
     }
-  }
-
-  static supportsVoiceDownload(): boolean {
-    return deviceInfo.sdkApiVersion >= 19;
   }
 
   static async downloadVoice(voice: TtsVoiceOption, callbacks?: TtsVoiceDownloadCallbacks): Promise<void> {
-    if (!SystemTtsReader.supportsVoiceDownload()) {
-      throw new Error('当前系统版本不支持下载系统音色，请升级至 API 19 或更高版本');
-    }
     const variants = SystemTtsReader.createVoiceDownloadVariants(voice);
     let lastError: Error | undefined = undefined;
     for (const params of variants) {
@@ -363,9 +353,6 @@ export class SystemTtsReader {
   }
 
   private static async listModuleVoices(online: number): Promise<TtsVoiceOption[]> {
-    if (deviceInfo.sdkApiVersion < 19) {
-      return SystemTtsReader.listLegacyEngineVoices(online);
-    }
     try {
       const voices = await textToSpeech.listVoices({
         requestId: `module_voices_${online}_${Date.now()}`,
@@ -2237,44 +2224,6 @@ export class SystemTtsReader {
     } catch (_) {
       return [];
     }
-  }
-
-  private static async listLegacyEngineVoices(online: number): Promise<TtsVoiceOption[]> {
-    let engine: textToSpeech.TextToSpeechEngine | null = null;
-    try {
-      engine = await SystemTtsReader.createEngineWithMode(0, online, '', 'zh-CN');
-      const voices = await engine.listVoices({
-        requestId: `legacy_engine_voices_${online}_${Date.now()}`,
-        online: online
-      });
-      console.info(`[TTS] legacy engine listVoices online=${online}: ` +
-        `${SystemTtsReader.voiceInfosSummary(voices)}`);
-      return SystemTtsReader.parseVoices(voices, online);
-    } catch (error) {
-      console.warn(`[TTS] legacy engine listVoices failed online=${online}: ` +
-        `${SystemTtsReader.formatStaticError(error as Object)}`);
-      return [];
-    } finally {
-      if (engine) {
-        try {
-          engine.shutdown();
-        } catch (_) {
-        }
-      }
-    }
-  }
-
-  private static applyVoiceFeatureAvailability(voices: TtsVoiceOption[]): TtsVoiceOption[] {
-    if (SystemTtsReader.supportsVoiceDownload()) {
-      return voices;
-    }
-    for (const voice of voices) {
-      voice.downloadable = false;
-      if (voice.id === 0) {
-        voice.available = true;
-      }
-    }
-    return voices;
   }
 
   static serializeCustomVoices(voices: HttpTTS[]): string {

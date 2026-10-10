@@ -11,7 +11,7 @@
     "buildVersion": "3100910",
     "distributedNotificationEnabled": true,
     "keepAlive": false,
-    "minAPIVersion": 12,
+    "minAPIVersion": 20,
     "targetAPIVersion": 26
   }
 }
