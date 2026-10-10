@@ -92,6 +92,7 @@ import { ReaderTtsMediaInfo, ReaderTtsMediaSession } from '../core/reader/Reader
 import { TtsVoiceCatalog } from '../utils/TtsVoiceCatalog';
 import { ReaderTtsQuickSettingsPanel, ReaderTtsVoicePickerPanel } from '../components/reader/ReaderTtsSettingsPanels';
 import { ReaderCustomThemeEditor } from '../components/reader/ReaderCustomThemeEditor';
+import { ReaderTtsCapsule, ReaderTtsMediaControlsBar } from '../components/reader/ReaderTtsControls';
 import { ReaderHeaderFooterSettings, ReaderTypographyField, ReaderTypographyStepper } from '../components/reader/ReaderLayoutSettings';
 import { ReaderCacheDialogContent } from '../components/reader/ReaderCacheDialogContent';
 import { ReaderTxtCharsetDialogContent, ReaderTxtCharsets } from '../components/reader/ReaderTxtCharsetDialogContent';
@@ -3592,7 +3593,7 @@ struct ReadBookPage {
 
   ttsMiniPlayerTop(): number {
     const viewportHeight = this.pageViewHeight > 0 ? this.pageViewHeight : 720;
-    const capsuleHeight = 46;
+    const capsuleHeight = ReaderTtsCapsule.HEIGHT;
     const menuGap = 8;
     // The capsule is only shown while the reader menu is open. Keep its default anchor above the
     // whole bottom menu (including the optional chapter quick-jump track), instead of merely
@@ -3605,7 +3606,7 @@ struct ReadBookPage {
 
   clampTtsMiniPlayerPositionX(position: number): number {
     const viewportWidth = this.pageViewWidth > 0 ? this.pageViewWidth : 360;
-    const capsuleWidth = 184;
+    const capsuleWidth = ReaderTtsCapsule.WIDTH;
     const edgeInset = 8;
     const minLeft = edgeInset;
     const maxLeft = Math.max(minLeft, viewportWidth - capsuleWidth - edgeInset);
@@ -3631,145 +3632,77 @@ struct ReadBookPage {
 
   @Builder
   ttsMiniPlayer() {
-    Row({ space: 7 }) {
-      Row({ space: 7 }) {
-        Stack({ alignContent: Alignment.Center }) {
-          Circle().width(30).height(30).fill(this.accentColor())
-          SymbolGlyph($r('sys.symbol.speaker_wave_3'))
-            .fontSize(15)
-            .fontColor(['#FFFFFF'])
-        }
-        Column({ space: 1 }) {
-          Text(this.isTtsPaused ? '已暂停' : '朗读中')
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.getTextColor())
-          Text(`${this.currentChapterIndex + 1}/${Math.max(1, this.chapters.length)}章`)
-            .fontSize(9)
-            .fontColor(this.getSubTextColor())
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
+    ReaderTtsCapsule({
+      title: this.isTtsPaused ? '已暂停' : '朗读中',
+      subtitle: `${this.currentChapterIndex + 1}/${Math.max(1, this.chapters.length)}章`,
+      paused: this.isTtsPaused,
+      playbackKey: `tts_capsule_playback_${this.isTtsSpeaking}_${this.isTtsPaused}`,
+      panelColor: this.readerGlassPanelColor(),
+      panelBorderColor: this.readerGlassBorderColor(),
+      panelShadowColor: this.readerGlassShadowColor(),
+      textColor: this.getTextColor(),
+      subTextColor: this.getSubTextColor(),
+      accentColor: this.accentColor(),
+      onCapsuleDragStart: (): void => this.beginTtsMiniPlayerDrag(),
+      onCapsuleDragMove: (offsetX: number, offsetY: number): void => this.moveTtsMiniPlayer(offsetX, offsetY),
+      onOpen: (): void => {
+        this.openTtsQuickPlayer();
+      },
+      onToggle: (): void => {
+        this.toggleTtsReading();
+      },
+      onClose: (): void => {
+        this.stopTtsReading();
       }
-      .layoutWeight(1)
-      .onClick(() => this.openTtsQuickPlayer())
-      SymbolGlyph(this.isTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
-        .id(`tts_capsule_playback_${this.isTtsSpeaking}_${this.isTtsPaused}`)
-        .fontSize(17)
-        .fontColor([this.getTextColor()])
-        .width(28)
-        .height(34)
-        .onClick(() => this.toggleTtsReading())
-      SymbolGlyph($r('sys.symbol.xmark'))
-        .fontSize(14)
-        .fontColor([this.getSubTextColor()])
-        .width(24)
-        .height(34)
-        .onClick(() => this.stopTtsReading())
-    }
-    .width(184)
-    .height(46)
-    .padding({ left: 8, right: 5 })
-    .borderRadius(23)
-    .clip(true)
-    .backgroundColor(this.readerGlassPanelColor())
-    .backdropBlur(ThemeRuntime.glassBlur('button', 18))
-    .border({ width: ThemeRuntime.glassBorderWidth('button'), color: this.readerGlassBorderColor() })
-    .shadow({ radius: ThemeRuntime.glassShadowRadius('button'), color: this.readerGlassShadowColor(),
-      offsetX: ThemeRuntime.glassShadowOffsetX('button'), offsetY: ThemeRuntime.glassShadowOffsetY('button') })
-    .position({ x: 0, y: 0 })
-    .translate({
-      x: this.ttsMiniPlayerLeft(),
-      y: this.ttsMiniPlayerTop()
     })
-    .parallelGesture(
-      PanGesture({ direction: PanDirection.All, distance: 4 })
-        .onActionStart(() => {
-          this.ttsMiniPlayerDragOriginX = this.ttsMiniPlayerLeft();
-          this.ttsMiniPlayerDragOriginY = this.ttsMiniPlayerTop();
-        })
-        .onActionUpdate((event: GestureEvent) => {
-          this.ttsMiniPlayerPositionX = this.clampTtsMiniPlayerPositionX(
-            this.ttsMiniPlayerDragOriginX + event.offsetX);
-          this.ttsMiniPlayerPositionY = this.clampTtsMiniPlayerPositionY(
-            this.ttsMiniPlayerDragOriginY + event.offsetY);
-        })
-    )
-    .transition(this.ttsMiniPlayerTransition())
+      .position({ x: 0, y: 0 })
+      .translate({
+        x: this.ttsMiniPlayerLeft(),
+        y: this.ttsMiniPlayerTop()
+      })
+      .transition(this.ttsMiniPlayerTransition())
   }
 
   @Builder
   globalTtsMiniPlayer() {
-    Row({ space: 7 }) {
-      Row({ space: 7 }) {
-        Stack({ alignContent: Alignment.Center }) {
-          Circle().width(30).height(30).fill(this.accentColor())
-          SymbolGlyph($r('sys.symbol.speaker_wave_3'))
-            .fontSize(15)
-            .fontColor(['#FFFFFF'])
-        }
-        Column({ space: 1 }) {
-          Text(this.globalTtsPaused ? '已暂停' : (this.globalTtsMode === 'audio' ? '听书中' : '朗读中'))
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(this.getTextColor())
-          Text(this.globalTtsChapterProgress || (this.globalTtsMode === 'audio' ? '后台听书' : '后台朗读'))
-            .fontSize(9)
-            .fontColor(this.getSubTextColor())
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
+    ReaderTtsCapsule({
+      title: this.globalTtsPaused ? '已暂停' : (this.globalTtsMode === 'audio' ? '听书中' : '朗读中'),
+      subtitle: this.globalTtsChapterProgress || (this.globalTtsMode === 'audio' ? '后台听书' : '后台朗读'),
+      paused: this.globalTtsPaused,
+      playbackKey: `global_tts_capsule_playback_${this.globalTtsPaused}`,
+      panelColor: this.readerGlassPanelColor(),
+      panelBorderColor: this.readerGlassBorderColor(),
+      panelShadowColor: this.readerGlassShadowColor(),
+      textColor: this.getTextColor(),
+      subTextColor: this.getSubTextColor(),
+      accentColor: this.accentColor(),
+      onCapsuleDragStart: (): void => this.beginTtsMiniPlayerDrag(),
+      onCapsuleDragMove: (offsetX: number, offsetY: number): void => this.moveTtsMiniPlayer(offsetX, offsetY),
+      onOpen: (): void => this.openGlobalTtsQuickPlayer(),
+      onToggle: (): void => {
+        ReaderTtsFloatingSession.toggle();
+      },
+      onClose: (): void => {
+        this.closeGlobalTtsQuickPlayer();
+        ReaderTtsFloatingSession.stop();
       }
-      .layoutWeight(1)
-      .onClick(() => this.openGlobalTtsQuickPlayer())
-      SymbolGlyph(this.globalTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
-        .id(`global_tts_capsule_playback_${this.globalTtsPaused}`)
-        .fontSize(17)
-        .fontColor([this.getTextColor()])
-        .width(28)
-        .height(34)
-        .onClick(() => ReaderTtsFloatingSession.toggle())
-      SymbolGlyph($r('sys.symbol.xmark'))
-        .fontSize(14)
-        .fontColor([this.getSubTextColor()])
-        .width(24)
-        .height(34)
-        .onClick(() => {
-          this.closeGlobalTtsQuickPlayer();
-          ReaderTtsFloatingSession.stop();
-        })
-    }
-    .width(184)
-    .height(46)
-    .padding({ left: 8, right: 5 })
-    .borderRadius(23)
-    .clip(true)
-    .backgroundColor(this.readerGlassPanelColor())
-    .backdropBlur(ThemeRuntime.glassBlur('button', 18))
-    .border({ width: ThemeRuntime.glassBorderWidth('button'), color: this.readerGlassBorderColor() })
-    .shadow({ radius: ThemeRuntime.glassShadowRadius('button'), color: this.readerGlassShadowColor(),
-      offsetX: ThemeRuntime.glassShadowOffsetX('button'), offsetY: ThemeRuntime.glassShadowOffsetY('button') })
-    .position({ x: 0, y: 0 })
-    .translate({
-      x: this.ttsMiniPlayerLeft(),
-      y: this.ttsMiniPlayerTop()
     })
-    .parallelGesture(
-      PanGesture({ direction: PanDirection.All, distance: 4 })
-        .onActionStart(() => {
-          this.ttsMiniPlayerDragOriginX = this.ttsMiniPlayerLeft();
-          this.ttsMiniPlayerDragOriginY = this.ttsMiniPlayerTop();
-        })
-        .onActionUpdate((event: GestureEvent) => {
-          this.ttsMiniPlayerPositionX = this.clampTtsMiniPlayerPositionX(
-            this.ttsMiniPlayerDragOriginX + event.offsetX);
-          this.ttsMiniPlayerPositionY = this.clampTtsMiniPlayerPositionY(
-            this.ttsMiniPlayerDragOriginY + event.offsetY);
-        })
-    )
-    .transition(this.ttsMiniPlayerTransition())
+      .position({ x: 0, y: 0 })
+      .translate({
+        x: this.ttsMiniPlayerLeft(),
+        y: this.ttsMiniPlayerTop()
+      })
+      .transition(this.ttsMiniPlayerTransition())
+  }
+
+  beginTtsMiniPlayerDrag(): void {
+    this.ttsMiniPlayerDragOriginX = this.ttsMiniPlayerLeft();
+    this.ttsMiniPlayerDragOriginY = this.ttsMiniPlayerTop();
+  }
+
+  moveTtsMiniPlayer(offsetX: number, offsetY: number): void {
+    this.ttsMiniPlayerPositionX = this.clampTtsMiniPlayerPositionX(this.ttsMiniPlayerDragOriginX + offsetX);
+    this.ttsMiniPlayerPositionY = this.clampTtsMiniPlayerPositionY(this.ttsMiniPlayerDragOriginY + offsetY);
   }
 
   @Builder
@@ -7295,140 +7228,28 @@ struct ReadBookPage {
 
   @Builder
   ttsExpandedMediaControlsBar() {
-    HdsTabs({ barPosition: BarPosition.End, index: 0 }) {
-      TabContent() {
-        Column()
-      }
-      .height(48)
-      .tabBar(this.ttsMediaTimerControl())
-
-      TabContent() {
-        Column()
-      }
-      .height(48)
-      .tabBar(this.ttsMediaSymbolControl($r('sys.symbol.arrow_left'),
-        this.canPlayPreviousTtsChapter(), '上一章'))
-
-      TabContent() {
-        Column()
-      }
-      .height(48)
-      .tabBar(this.ttsMediaSymbolControl(this.isTtsSpeaking && !this.isTtsPaused ?
-        $r('sys.symbol.pause') : $r('sys.symbol.play'), true,
-        this.isTtsSpeaking && !this.isTtsPaused ? '暂停朗读' : '播放朗读'))
-
-      TabContent() {
-        Column()
-      }
-      .height(48)
-      .tabBar(this.ttsMediaSymbolControl($r('sys.symbol.arrow_right'),
-        this.canPlayNextTtsChapter(), '下一章'))
-
-      TabContent() {
-        Column()
-      }
-      .height(48)
-      .tabBar(this.ttsMediaSpeedControl())
-
-      TabContent() {
-        Column()
-      }
-      .height(48)
-      .tabBar(this.ttsMediaSymbolControl($r('sys.symbol.xmark'), true, '关闭朗读控制'))
-    }
-    .key(`reader_tts_controls_bar_${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`)
-    .barBackgroundColor(this.readerGlassPanelColor())
-    .barMode(BarMode.Fixed)
-    .barHeight(48)
-    .barOverlap(true)
-    .barFloatingStyle({
-      barWidth: {
-        smallWidth: this.readerTtsExpandedControlWidth(),
-        mediumWidth: this.readerTtsExpandedControlWidth(),
-        largeWidth: this.readerTtsExpandedControlWidth()
-      },
-      systemMaterialEffect: {
-        materialType: ImmersiveMaterialRuntime.materialType(),
-        materialLevel: ImmersiveMaterialRuntime.materialLevel()
-      },
-      barSideMargin: 0,
-      barBottomMargin: 4,
-      gradientMask: {
-        maskColor: '#00000000',
-        maskHeight: 56
-      },
-      adaptToHandedness: false,
-      thermoCtrl: true,
-      barOpacity: 1
+    ReaderTtsMediaControlsBar({
+      playing: this.isTtsSpeaking && !this.isTtsPaused,
+      canPrevious: this.canPlayPreviousTtsChapter(),
+      canNext: this.canPlayNextTtsChapter(),
+      speed: this.ttsSpeed,
+      sleepTimerMinutes: this.ttsSleepTimerMinutes,
+      sleepTimerRemainingSeconds: this.ttsSleepTimerRemainingSeconds,
+      themeKey: `${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`,
+      textColor: this.getTextColor(),
+      subTextColor: this.getSubTextColor(),
+      accentColor: this.accentColor(),
+      panelColor: this.readerGlassPanelColor(),
+      onControl: (index: number): void => this.handleTtsExpandedControl(index)
     })
-    .scrollable(false)
-    .onContentWillChange(() => false)
-    .onTabBarClick((index: number) => {
-      this.handleTtsExpandedControl(index);
-    })
-    .width(this.readerTtsExpandedControlWidth())
-    .height(56)
-    .position({ x: this.readerTtsExpandedControlLeft(), y: '100%' })
-    .translate({
-      y: -(this.readerBottomMenuOverlayHeight() + 66)
-    })
-  }
-
-  @Builder
-  ttsMediaTimerControl() {
-    Stack({ alignContent: Alignment.Center }) {
-      SymbolGlyph($r('sys.symbol.timer'))
-        .fontSize(22)
-        .fontColor([this.getTextColor()])
-
-      if (this.ttsSleepTimerMinutes > 0) {
-        Text(`${Math.max(1, Math.ceil(this.ttsSleepTimerRemainingSeconds / 60))}`)
-          .fontSize(8)
-          .fontWeight(FontWeight.Bold)
-          .fontColor('#FFFFFF')
-          .textAlign(TextAlign.Center)
-          .width(16)
-          .height(16)
-          .borderRadius(8)
-          .backgroundColor(this.accentColor())
-          .position({ x: 25, y: 2 })
-      }
-    }
-    .width('100%')
-    .height(48)
-    .accessibilityText(this.ttsSleepTimerMinutes > 0 ?
-      `朗读定时剩余 ${Math.max(1, Math.ceil(this.ttsSleepTimerRemainingSeconds / 60))} 分钟` : '设置朗读定时')
-    .translate({ y: -2 })
-  }
-
-  @Builder
-  ttsMediaSymbolControl(icon: Resource, enabled: boolean, accessibilityLabel: string) {
-    Stack({ alignContent: Alignment.Center }) {
-      SymbolGlyph(icon)
-        .fontSize(22)
-        .fontColor([enabled ? this.getTextColor() : this.getSubTextColor()])
-    }
-    .width('100%')
-    .height(48)
-    .opacity(enabled ? 1 : 0.45)
-    .accessibilityText(accessibilityLabel)
-    .translate({ y: -2 })
-  }
-
-  @Builder
-  ttsMediaSpeedControl() {
-    Text(`${this.ttsSpeed.toFixed(1)}x`)
-      .fontSize(13)
-      .fontWeight(FontWeight.Bold)
-      .fontColor(this.getTextColor())
-      .textAlign(TextAlign.Center)
-      .width('100%')
-      .height(48)
-      .translate({ y: -2 })
+      .position({ x: this.readerTtsExpandedControlLeft(), y: '100%' })
+      .translate({
+        y: -(this.readerBottomMenuOverlayHeight() + 66)
+      })
   }
 
   readerTtsExpandedControlWidth(): number {
-    return 264;
+    return ReaderTtsMediaControlsBar.WIDTH;
   }
 
   handleTtsExpandedControl(index: number): void {
