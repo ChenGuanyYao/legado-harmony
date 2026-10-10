@@ -12518,35 +12518,69 @@ struct ReadBookPage {
 
   buildReaderV2RegexStyles(document: ReaderV2Document): ReaderV2SpanStyleRange[] {
     if (!this.readerRegexFontEnabled || !document.displayText) return [];
+    const startedAt = Date.now();
     const slices = this.getRegexTextSlices(document.displayText);
     const result: ReaderV2SpanStyleRange[] = [];
+    // Every hit of one rule shares the same resolved style. Resolving the theme emphasis per hit cost
+    // about 1 ms each on the UI thread (300 ms for a dialogue-heavy chapter), so it is done once per rule.
+    const templates: Map<number, ReaderV2SpanStyleRange> = new Map<number, ReaderV2SpanStyleRange>();
     for (const slice of slices) {
       if (!slice.highlighted || slice.end <= slice.start) continue;
-      const resolved = this.resolvedRegexEmphasis(this.getRegexRuleBySlice(slice));
+      let template = templates.get(slice.ruleIndex);
+      if (!template) {
+        template = this.buildReaderV2RegexStyleTemplate(slice);
+        templates.set(slice.ruleIndex, template);
+      }
       const style = new ReaderV2SpanStyleRange(slice.start, slice.end);
-      style.fontSizePx = this.toMeasureFontPx(this.getRegexSliceFontSize(slice));
-      style.fontFamily = this.getRegexSliceFontFamily(slice);
-      style.color = ReaderV2Color.parse(this.getStyledSliceFontColor(slice),
-        ReaderV2Color.parse(this.getTextColor(), 0xFF202124));
-      style.backgroundEnabled = resolved.backgroundEnabled;
-      style.backgroundColor = ReaderV2Color.parse(resolved.backgroundColor, 0x00000000);
-      style.radiusTopLeftPx = this.toMeasurePx(resolved.radiusTopLeft);
-      style.radiusTopRightPx = this.toMeasurePx(resolved.radiusTopRight);
-      style.radiusBottomRightPx = this.toMeasurePx(resolved.radiusBottomRight);
-      style.radiusBottomLeftPx = this.toMeasurePx(resolved.radiusBottomLeft);
-      style.shadowEnabled = resolved.textShadowRadius > 0;
-      style.shadowColor = ReaderV2Color.parse(resolved.textShadowColor, 0x00000000);
-      style.shadowRadiusPx = this.toMeasurePx(Math.max(0, resolved.textShadowRadius));
-      style.shadowOffsetXPx = this.toMeasurePx(Math.max(0, resolved.textShadowOffsetX));
-      style.shadowOffsetYPx = this.toMeasurePx(Math.max(0, resolved.textShadowOffsetY));
-      style.decorationEnabled = resolved.bubbleDecorationEnabled &&
-        ThemeAssetRegistry.hasRegexBubbleCap(resolved.bubbleStyleId);
-      style.decorationStyleId = style.decorationEnabled ? resolved.bubbleStyleId : '';
-      style.decorationSizePx = style.decorationEnabled ?
-        this.toMeasurePx(Math.max(15, Math.min(22, this.getRegexSliceFontSize(slice) * 0.72))) : 0;
+      style.fontSizePx = template.fontSizePx;
+      style.fontFamily = template.fontFamily;
+      style.color = template.color;
+      style.backgroundEnabled = template.backgroundEnabled;
+      style.backgroundColor = template.backgroundColor;
+      style.radiusTopLeftPx = template.radiusTopLeftPx;
+      style.radiusTopRightPx = template.radiusTopRightPx;
+      style.radiusBottomRightPx = template.radiusBottomRightPx;
+      style.radiusBottomLeftPx = template.radiusBottomLeftPx;
+      style.shadowEnabled = template.shadowEnabled;
+      style.shadowColor = template.shadowColor;
+      style.shadowRadiusPx = template.shadowRadiusPx;
+      style.shadowOffsetXPx = template.shadowOffsetXPx;
+      style.shadowOffsetYPx = template.shadowOffsetYPx;
+      style.decorationEnabled = template.decorationEnabled;
+      style.decorationStyleId = template.decorationStyleId;
+      style.decorationSizePx = template.decorationSizePx;
       result.push(style);
     }
+    CooperativeScheduler.reportSynchronousOperation('reader/v2-regex-styles', Date.now() - startedAt,
+      `chapter=${document.chapterIndex},chars=${document.displayText.length},hits=${result.length}`);
     return result;
+  }
+
+  // The style shared by every hit of the rule that produced `slice`; its range is left empty.
+  buildReaderV2RegexStyleTemplate(slice: ReadTextSlice): ReaderV2SpanStyleRange {
+    const resolved = this.resolvedRegexEmphasis(this.getRegexRuleBySlice(slice));
+    const style = new ReaderV2SpanStyleRange();
+    style.fontSizePx = this.toMeasureFontPx(this.getRegexSliceFontSize(slice));
+    style.fontFamily = this.getRegexSliceFontFamily(slice);
+    style.color = ReaderV2Color.parse(this.getStyledSliceFontColor(slice),
+      ReaderV2Color.parse(this.getTextColor(), 0xFF202124));
+    style.backgroundEnabled = resolved.backgroundEnabled;
+    style.backgroundColor = ReaderV2Color.parse(resolved.backgroundColor, 0x00000000);
+    style.radiusTopLeftPx = this.toMeasurePx(resolved.radiusTopLeft);
+    style.radiusTopRightPx = this.toMeasurePx(resolved.radiusTopRight);
+    style.radiusBottomRightPx = this.toMeasurePx(resolved.radiusBottomRight);
+    style.radiusBottomLeftPx = this.toMeasurePx(resolved.radiusBottomLeft);
+    style.shadowEnabled = resolved.textShadowRadius > 0;
+    style.shadowColor = ReaderV2Color.parse(resolved.textShadowColor, 0x00000000);
+    style.shadowRadiusPx = this.toMeasurePx(Math.max(0, resolved.textShadowRadius));
+    style.shadowOffsetXPx = this.toMeasurePx(Math.max(0, resolved.textShadowOffsetX));
+    style.shadowOffsetYPx = this.toMeasurePx(Math.max(0, resolved.textShadowOffsetY));
+    style.decorationEnabled = resolved.bubbleDecorationEnabled &&
+      ThemeAssetRegistry.hasRegexBubbleCap(resolved.bubbleStyleId);
+    style.decorationStyleId = style.decorationEnabled ? resolved.bubbleStyleId : '';
+    style.decorationSizePx = style.decorationEnabled ?
+      this.toMeasurePx(Math.max(15, Math.min(22, this.getRegexSliceFontSize(slice) * 0.72))) : 0;
+    return style;
   }
 
   createIncrementalReaderV2Pagination(source: string, chapterIndex: number,
