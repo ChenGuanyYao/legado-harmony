@@ -12,9 +12,8 @@ import { LengthMetrics } from '@ohos.arkui.node';
 import deviceInfo from '@ohos.deviceInfo';
 import display from '@ohos.display';
 import Animator, { AnimatorResult } from '@ohos.animator';
-import { HdsTabs, HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
+import { HdsTabs } from '@kit.UIDesignKit';
 import { ARView } from '@kit.AREngine';
-import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { AccountCommerceApi } from '../account/AccountCommerceApi';
 import { AccountSessionStore } from '../account/AccountSessionStore';
 import { CloudSyncCoordinator } from '../account/CloudSyncCoordinator';
@@ -74,7 +73,6 @@ import {
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
-import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
 import { ReaderContentPreprocessor } from '../core/concurrency/ReaderContentPreprocessor';
 import { CooperativeScheduler } from '../core/concurrency/CooperativeScheduler';
 import {
@@ -96,6 +94,7 @@ import { ReaderFullTextCacheController } from '../core/reader/ReaderFullTextCach
 import { ReaderCacheDialogContent } from '../components/reader/ReaderCacheDialogContent';
 import { ReaderTxtCharsetDialogContent, ReaderTxtCharsets } from '../components/reader/ReaderTxtCharsetDialogContent';
 import { ReaderLayoutElementSettingsPanel } from '../components/reader/ReaderLayoutElementSettingsPanel';
+import { ReaderTocPanel, ReaderTocPanelController } from '../components/reader/ReaderTocPanel';
 import { ReaderComicPageDataSource } from '../core/reader/ReaderDataSources';
 import { ReaderCustomFontItem, ReaderCustomFontData } from '../core/reader/ReaderSettingsModels';
 import {
@@ -134,8 +133,6 @@ const DEFAULT_EYE_CALIBRATION_RAW: string = 'v3,0,0,0,0.5,-0.04,0.04,0,1';
 // runtime uses the camera pipeline and the AR code below stays dormant.
 const READER_EYE_TURN_AR_ENABLED: boolean = false;
 
-const TOC_WINDOW_PAGE_SIZE = 72;
-const TOC_SCROLLBAR_DRAG_UPDATE_INTERVAL_MS = 90;
 const READER_CURRENT_PAGINATION_AHEAD_PAGE_COUNT = 4;
 const READER_ADJACENT_PAGINATION_PREVIEW_PAGE_COUNT = 2;
 const READER_PAGINATION_BATCH_DELAY_MS = 64;
@@ -162,28 +159,8 @@ struct ReadBookPage {
   @State bookUrl: string = '';
   @State book: Book | null = null;
   @State chapters: BookChapter[] = [];
-  @State tocVisibleChapters: BookChapter[] = [];
-  @State tocWindowStart: number = 0;
-  @State tocQuickJumpArmed: boolean = false;
-  @State tocQuickJumpInputVisible: boolean = false;
-  @State tocQuickJumpDraft: string = '';
-  @State tocSearchVisible: boolean = false;
-  @State tocSearchQuery: string = '';
-  @State tocSearchChapterIndexes: number[] = [];
-  @State tocSearchLoading: boolean = false;
-  @State tocSearchResultActive: boolean = false;
   @State tocReverseOrder: boolean = false;
-  @State tocOrderRevision: number = 0;
-  @State tocDatabaseChapterCount: number = 0;
-  @State tocListViewportHeight: number = 0;
-  @State tocFirstVisibleGlobalIndex: number = 0;
-  @State tocVisibleItemCount: number = 1;
-  @State tocScrollbarDragging: boolean = false;
-  @State tocScrollbarDragOffset: number = 0;
-  private tocSearchRequestSerial: number = 0;
-  private tocScrollbarPointerAnchor: number = 0;
-  private tocScrollbarPendingIndex: number = -1;
-  private tocScrollbarUpdateTimer: number = -1;
+  private tocPanelController: ReaderTocPanelController = new ReaderTocPanelController();
   @State currentChapterIndex: number = 0;
   @State menuChapterPreviewIndex: number = 0;
   @State menuChapterSliderActive: boolean = false;
@@ -221,10 +198,7 @@ struct ReadBookPage {
   private readerCommentPanelDragStartWindowY: number = 0;
   private readerCommentPanelDragging: boolean = false;
   @State showToc: boolean = false;
-  @State tocPanelTab: number = 0;
   @State bookmarks: Bookmark[] = [];
-  @State bookmarkMultiSelectMode: boolean = false;
-  @State selectedBookmarkIds: number[] = [];
   @State showBookmarkActionMenu: boolean = false;
   @State pendingBookmarkAction: Bookmark | null = null;
   @State bookmarkActionMenuX: number = 16;
@@ -310,12 +284,6 @@ struct ReadBookPage {
   private ttsMiniPlayerDragOriginY: number = 0;
   private pendingRestorePageIndex: number = -1;
   private readerRestoreWatchdogRunning: boolean = false;
-  private tocScroller: Scroller = new Scroller();
-  private tocLoadingPreviousPage: boolean = false;
-  private tocLoadingNextPage: boolean = false;
-  private tocPositioning: boolean = false;
-  private tocPositionRequestSerial: number = 0;
-  private bookmarkScroller: ListScroller = new ListScroller();
   private globalTtsCatalogScroller: ListScroller = new ListScroller();
   private globalTtsCatalogSource: CatalogTitleDataSource = new CatalogTitleDataSource();
   private readerComicScroller: ListScroller = new ListScroller();
@@ -1349,18 +1317,6 @@ struct ReadBookPage {
     this.readerWebFetchRuntimeNeeded = false;
     this.content = '';
     this.chapters = [];
-    this.tocVisibleChapters = [];
-    this.tocWindowStart = 0;
-    this.tocSearchVisible = false;
-    this.tocSearchQuery = '';
-    this.tocSearchChapterIndexes = [];
-    this.tocSearchLoading = false;
-    this.tocSearchResultActive = false;
-    this.tocOrderRevision = 0;
-    this.tocDatabaseChapterCount = 0;
-    this.tocFirstVisibleGlobalIndex = 0;
-    this.tocVisibleItemCount = 1;
-    this.tocSearchRequestSerial++;
     this.currentChapterIndex = 0;
     this.contentPages = [];
     this.contentPageStarts = [];
@@ -2849,7 +2805,6 @@ struct ReadBookPage {
     }
     if (index === 0) {
       if (fromToc) {
-        this.cancelBookmarkMultiSelect();
         this.showToc = false;
         this.showMenu = true;
       } else if (fromSettings) {
@@ -3091,131 +3046,52 @@ struct ReadBookPage {
           this.showToc = false;
         })
 
-      Column() {
-        Row({ space: 14 }) {
-          if (this.getTocCover()) {
-            Image(this.getTocCover())
-              .width(52)
-              .height(68)
-              .borderRadius(8)
-              .objectFit(ImageFit.Cover)
-          } else {
-            Text(this.getTocBookInitial())
-              .fontSize(22)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#FFFFFF')
-              .textAlign(TextAlign.Center)
-              .width(52)
-              .height(68)
-              .borderRadius(8)
-              .backgroundColor(this.accentColor())
-          }
-
-          Column({ space: 5 }) {
-            Text(this.book?.name || '目录')
-              .fontSize(20)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(this.getTextColor())
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-            Text(this.book?.author || '未知作者')
-              .fontSize(12)
-              .fontColor(this.getSubTextColor())
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-          .layoutWeight(1)
-          .alignItems(HorizontalAlign.Start)
-
-          ImmersiveBackButton({
-            icon: $r('sys.symbol.xmark'),
-            iconOffsetX: 0,
-            iconColor: this.readerControlIconColor(),
-            darkMode: this.isReaderThemeDark(),
-            buttonSize: 40,
-            containerWidth: 40,
-            containerHeight: 40,
-            startInset: 0,
-            materialScale: 0.83,
-            compactLayout: true,
-            accessibilityLabel: '关闭目录',
-            onBack: () => {
-              this.showToc = false;
-            }
-          })
-          .alignSelf(ItemAlign.Start)
-          .margin({ top: 4 })
-        }
-        .width('100%')
-        .padding({ left: 20, right: 16, top: 12, bottom: 10 })
-        .alignItems(VerticalAlign.Center)
-
-        Row() {
-          Text('目录')
-            .fontSize(15)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.tocPanelTab === 0 ? this.getTextColor() : this.getSubTextColor())
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .height(40)
-            .borderRadius(20)
-            .backgroundColor(this.tocPanelTab === 0 ? this.readerSolidPanelColor() : Color.Transparent)
-            .shadow({ radius: this.tocPanelTab === 0 ? 6 : 0,
-              color: this.tocPanelTab === 0 ? this.readerGlassShadowColor() : Color.Transparent,
-              offsetX: 0, offsetY: 2 })
-            .onClick(() => {
-              this.tocPanelTab = 0;
-              this.cancelBookmarkMultiSelect();
-              this.scrollTocToCurrentChapter(false);
-            })
-          Text('书签')
-            .fontSize(15)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.tocPanelTab === 1 ? this.getTextColor() : this.getSubTextColor())
-            .textAlign(TextAlign.Center)
-            .layoutWeight(1)
-            .height(40)
-            .borderRadius(20)
-            .backgroundColor(this.tocPanelTab === 1 ? this.readerSolidPanelColor() : Color.Transparent)
-            .shadow({ radius: this.tocPanelTab === 1 ? 6 : 0,
-              color: this.tocPanelTab === 1 ? this.readerGlassShadowColor() : Color.Transparent,
-              offsetX: 0, offsetY: 2 })
-            .onClick(() => {
-              this.tocPanelTab = 1;
-              this.loadBookmarks();
-            })
-        }
-        .width('calc(100% - 40vp)')
-        .height(44)
-        .padding(2)
-        .borderRadius(22)
-        .backgroundColor(this.isReaderThemeDark() ? '#20FFFFFF' : '#12000000')
-        .margin({ left: 20, right: 20 })
-
-        if (this.tocPanelTab === 0) {
-          this.tocPanelSummary()
-          this.tocChapterList()
-        } else {
-          this.bookmarkPanelSummary()
-          this.bookmarkList()
-        }
-      }
-      .width(this.readerFloatingBarWidth())
-      .height(this.readerTocPanelHeight())
-      .borderRadius(ThemeRuntime.glassCornerRadius(28, 'panel'))
-      .clip(true)
-      .backgroundColor(this.readerGlassPanelColor())
-      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
-      .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.readerGlassBorderColor() })
-      .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: this.readerGlassShadowColor(), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-      .position({ x: this.readerFloatingBarLeft(), y: '100%' })
-      .translate({ y: -(this.readerTocPanelHeight() + this.readerFloatingPanelBottomInset()) })
-      .transition(this.readerPanelTransition())
+      ReaderTocPanel({
+        chapters: $chapters,
+        bookmarks: $bookmarks,
+        reverseOrder: $tocReverseOrder,
+        currentChapterIndex: this.currentChapterIndex,
+        dark: this.isReaderThemeDark(),
+        textColor: this.getTextColor(),
+        subTextColor: this.getSubTextColor(),
+        accentColor: this.accentColor(),
+        swipeButtonColor: this.buttonColor(),
+        panelColor: this.readerGlassPanelColor(),
+        solidPanelColor: this.readerSolidPanelColor(),
+        panelBorderColor: this.readerGlassBorderColor(),
+        panelShadowColor: this.readerGlassShadowColor(),
+        selectedColor: this.tocSelectedBackgroundColor(),
+        panelWidth: this.readerFloatingBarWidth(),
+        panelHeight: this.readerTocPanelHeight(),
+        book: this.book,
+        controller: this.tocPanelController,
+        chapterTitle: (chapterIndex: number): string => this.getChapterTitle(chapterIndex),
+        onClose: (): void => {
+          this.showToc = false;
+        },
+        onJumpToChapter: (chapterIndex: number): void => {
+          this.showToc = false;
+          this.showMenu = false;
+          this.jumpToReaderPositionKeepingTts(chapterIndex, 0);
+        },
+        onJumpToBookmark: (bookmark: Bookmark): void => {
+          this.jumpToBookmark(bookmark);
+        },
+        onRefreshToc: (): Promise<void> => this.retryFetchChapters(),
+        onLoadBookmarks: (): void => {
+          this.loadBookmarks();
+        },
+        onShowBookmarkActions: (bookmark: Bookmark, globalX: number, globalY: number): void =>
+          this.showBookmarkActions(bookmark, globalX, globalY)
+      })
+        .position({ x: this.readerFloatingBarLeft(), y: '100%' })
+        .translate({ y: -(this.readerTocPanelHeight() + this.readerFloatingPanelBottomInset()) })
+        .transition(this.readerPanelTransition())
 
       if (!this.supportsReaderImmersiveMaterial()) {
         Row() {
           this.readerFloatingIconMenuItem($r('sys.symbol.list_bullet'), true, () => {
-            this.tocPanelTab = 0;
+            this.tocPanelController.showTocTab();
           })
           this.readerFloatingIconMenuItem($r('sys.symbol.gearshape'), false, () => {
             this.showToc = false;
@@ -3241,407 +3117,6 @@ struct ReadBookPage {
     }
     .width('100%')
     .height('100%')
-  }
-
-  @Builder
-  tocPanelSummary() {
-    Column({ space: 8 }) {
-      Row() {
-        if (this.tocQuickJumpInputVisible && !this.isTocSearchActive()) {
-          TextInput({ text: this.tocQuickJumpDraft, placeholder: `1-${this.chapters.length}` })
-            .type(InputType.Normal)
-            .enterKeyType(EnterKeyType.Go)
-            .key('tocQuickJumpChapterInput')
-            .defaultFocus(true)
-            .fontSize(13)
-            .fontColor(this.getTextColor())
-            .textAlign(TextAlign.Center)
-            .width(92)
-            .height(34)
-            .padding({ left: 8, right: 8 })
-            .borderRadius(17)
-            .backgroundColor(this.isReaderThemeDark() ? '#2BFFFFFF' : '#14000000')
-            .accessibilityText('输入目标章节序号，按回车定位')
-            .onChange((value: string) => {
-              this.tocQuickJumpDraft = value.replace(/[^0-9]/g, '').substring(0, 6);
-            })
-            .onSubmit(() => {
-              this.submitTocQuickJump();
-            })
-        } else if (this.isTocSearchActive()) {
-          Text(`找到 ${this.tocSearchChapterIndexes.length} 章`)
-            .fontSize(14)
-            .fontColor(this.getSubTextColor())
-            .margin({ left: 6 })
-        } else {
-          Text(`共 ${this.chapters.length} 章`)
-            .fontSize(14)
-            .fontColor(this.getSubTextColor())
-            .margin({ left: 6 })
-            .padding({ left: 8, right: 8 })
-            .height(34)
-            .textAlign(TextAlign.Center)
-            .accessibilityText(this.tocQuickJumpArmed ? '再次点击输入目标章节' : '点击回到当前章节')
-            .onClick(() => {
-              this.handleTocCurrentPositionClick();
-            })
-        }
-        Stack({ alignContent: Alignment.Center }) {
-          Column({ space: 0 }) {
-            SymbolGlyph($r('sys.symbol.chevron_up'))
-              .fontSize(11)
-              .fontColor([this.tocReverseOrder ? this.accentColor() : this.getTextColor()])
-            SymbolGlyph($r('sys.symbol.chevron_down'))
-              .fontSize(11)
-              .fontColor([this.tocReverseOrder ? this.accentColor() : this.getTextColor()])
-          }
-          .alignItems(HorizontalAlign.Center)
-        }
-          .width(34)
-          .height(34)
-          .borderRadius(17)
-          .backgroundColor(this.tocReverseOrder ?
-            (this.isReaderThemeDark() ? '#24384A' : '#E8F1FF') :
-            (this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000'))
-          .accessibilityText(this.tocReverseOrder ? '切换为正序目录' : '切换为倒序目录')
-          .onClick(() => this.toggleTocOrder())
-          .margin({ left: 4 })
-        Blank()
-          .layoutWeight(1)
-        if (this.isTocSearchActive()) {
-          Text(`匹配 ${this.tocSearchChapterIndexes.length}`)
-            .fontSize(12)
-            .fontColor(this.getTextColor())
-            .height(34)
-            .padding({ left: 12, right: 12 })
-            .textAlign(TextAlign.Center)
-            .borderRadius(16)
-            .backgroundColor(this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000')
-        }
-        ImmersiveBackButton({
-          icon: $r('sys.symbol.arrow_clockwise'),
-          iconOffsetX: 0,
-          iconColor: this.readerControlIconColor(),
-          darkMode: this.isReaderThemeDark(),
-          buttonSize: 34,
-          containerWidth: 34,
-          containerHeight: 34,
-          startInset: 0,
-          materialScale: 0.7,
-          compactLayout: true,
-          accessibilityLabel: '刷新目录',
-          onBack: () => {
-            this.refreshTocFromPanel();
-          }
-        })
-          .margin({ left: 8 })
-        ImmersiveBackButton({
-          icon: $r('sys.symbol.magnifyingglass'),
-          iconOffsetX: 0,
-          iconColor: this.tocSearchVisible ? this.accentColor() : this.getTextColor(),
-          darkMode: this.isReaderThemeDark(),
-          buttonSize: 34,
-          containerWidth: 34,
-          containerHeight: 34,
-          startInset: 0,
-          materialScale: 0.7,
-          compactLayout: true,
-          accessibilityLabel: '搜索目录',
-          onBack: () => {
-            this.toggleTocSearch();
-          }
-        })
-          .margin({ left: 8 })
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-
-      if (this.tocSearchVisible) {
-        Row({ space: 8 }) {
-          SymbolGlyph($r('sys.symbol.magnifyingglass'))
-            .fontSize(18)
-            .fontColor([this.getSubTextColor()])
-          TextInput({ text: this.tocSearchQuery,
-            placeholder: this.tocSearchLoading ? '正在载入完整目录…' : '搜索章节名称' })
-            .key('tocChapterSearchInput')
-            .defaultFocus(true)
-            .fontSize(14)
-            .fontColor(this.getTextColor())
-            .layoutWeight(1)
-            .height(38)
-            .padding({ left: 0, right: 0 })
-            .backgroundColor(Color.Transparent)
-            .enterKeyType(EnterKeyType.Search)
-            .onChange((value: string) => {
-              this.tocSearchQuery = value;
-            })
-            .onSubmit(() => {
-              this.submitTocSearch();
-            })
-          if (this.tocSearchQuery) {
-            Text('×')
-              .fontSize(22)
-              .fontColor(this.getSubTextColor())
-              .width(32)
-              .height(38)
-              .textAlign(TextAlign.Center)
-              .accessibilityText('清空目录搜索')
-              .onClick(() => {
-                this.clearTocSearchResult();
-                setTimeout(() => focusControl.requestFocus('tocChapterSearchInput'), 30);
-              })
-          }
-        }
-        .width('100%')
-        .height(40)
-        .padding({ left: 12, right: 8 })
-        .borderRadius(20)
-        .backgroundColor(this.isReaderThemeDark() ? '#2BFFFFFF' : '#14000000')
-      }
-    }
-    .width('100%')
-    .padding({ left: 20, right: 16, top: 18, bottom: 10 })
-    .alignItems(HorizontalAlign.Start)
-  }
-
-  @Builder
-  tocChapterList() {
-    Stack({ alignContent: Alignment.TopEnd }) {
-      List({ space: 0, scroller: this.tocScroller }) {
-        if (this.isTocSearchActive() && this.tocVisibleChapters.length === 0) {
-          ListItem() {
-            Column({ space: 8 }) {
-              SymbolGlyph($r('sys.symbol.magnifyingglass'))
-                .fontSize(28)
-                .fontColor([this.getSubTextColor()])
-              Text('未找到匹配章节')
-                .fontSize(14)
-                .fontColor(this.getSubTextColor())
-            }
-            .width('100%')
-            .padding({ top: 44, bottom: 44 })
-          }
-        }
-        ForEach(this.tocVisibleChapters, (chapter: BookChapter, localIndex: number) => {
-          ListItem() {
-            Row({ space: 10 }) {
-              Text(this.tocGlobalIndex(localIndex) === this.currentChapterIndex ? '•' : '·')
-                .fontSize(this.tocGlobalIndex(localIndex) === this.currentChapterIndex ? 22 : 18)
-                .fontColor(this.tocGlobalIndex(localIndex) === this.currentChapterIndex ?
-                  this.accentColor() : this.getSubTextColor())
-                .width(18)
-                .textAlign(TextAlign.Center)
-
-              Text(this.getChapterTitle(this.tocGlobalIndex(localIndex)))
-                .fontSize(15)
-                .fontWeight(this.tocGlobalIndex(localIndex) === this.currentChapterIndex ?
-                  FontWeight.Medium : FontWeight.Regular)
-                .fontColor(this.getTocTitleColor(chapter, this.tocGlobalIndex(localIndex)))
-                .maxLines(2)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .layoutWeight(1)
-
-              if (this.book?.origin !== 'local' && chapter.cacheDate > 0) {
-                Text('已缓存')
-                  .fontSize(10)
-                  .fontColor(this.isReaderThemeDark() ? '#7CC7A0' : '#1F8F55')
-                  .padding({ left: 7, right: 7, top: 3, bottom: 3 })
-                  .backgroundColor(this.isReaderThemeDark() ? '#24382F' : '#E6F4EC')
-                  .borderRadius(10)
-              }
-            }
-            .width('100%')
-            .padding({ left: 14, right: 16, top: 14, bottom: 14 })
-            .backgroundColor(this.tocGlobalIndex(localIndex) === this.currentChapterIndex ?
-              this.tocSelectedBackgroundColor() : Color.Transparent)
-            .border({ width: { bottom: 0.5 }, color: this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000' })
-            .onClick(async () => {
-              const targetChapterIndex = this.tocGlobalIndex(localIndex);
-              this.showToc = false;
-              this.showMenu = false;
-              await this.jumpToReaderPositionKeepingTts(targetChapterIndex, 0);
-            })
-          }
-        }, (chapter: BookChapter, localIndex: number) =>
-          `${this.tocOrderRevision}_${this.tocGlobalIndex(localIndex)}_${chapter.url || chapter.title}`)
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      .scrollBar(BarState.Off)
-      .onScrollIndex((start: number, end: number) => {
-        this.updateTocScrollbarPosition(start, end);
-      })
-      .onReachStart(() => this.loadPreviousTocPage())
-      .onReachEnd(() => this.loadNextTocPage())
-
-      this.tocVirtualScrollbar()
-    }
-    .layoutWeight(1)
-    .width('100%')
-    .onAreaChange((_oldValue: Area, newValue: Area) => {
-      this.tocListViewportHeight = Number(newValue.height);
-    })
-  }
-
-  @Builder
-  tocVirtualScrollbar() {
-    if (this.tocShouldShowVirtualScrollbar()) {
-      Stack({ alignContent: Alignment.TopEnd }) {
-        Column()
-          .width(3)
-          .height(this.tocListViewportHeight)
-          .borderRadius(2)
-          .backgroundColor(this.isReaderThemeDark() ? '#18FFFFFF' : '#14000000')
-          .margin({ right: 3 })
-          .hitTestBehavior(HitTestMode.None)
-        Column()
-          .width(this.tocScrollbarDragging ? 6 : 4)
-          .height(this.tocScrollbarThumbLength())
-          .borderRadius(3)
-          .backgroundColor(this.isReaderThemeDark() ? '#BFD5D8DE' : '#A87A6F63')
-          .margin({ right: 2 })
-          .translate({ y: this.tocDisplayedScrollbarThumbOffset() })
-          .hitTestBehavior(HitTestMode.None)
-      }
-      .width(24)
-      .height(this.tocListViewportHeight)
-      .zIndex(10)
-      .gesture(
-        GestureGroup(GestureMode.Exclusive,
-          PanGesture({ direction: PanDirection.Vertical, distance: 1 })
-            .onActionStart((event: GestureEvent) => this.beginTocScrollbarDrag(event))
-            .onActionUpdate((event: GestureEvent) => this.updateTocScrollbarDrag(event))
-            .onActionEnd((event: GestureEvent) => this.endTocScrollbarDrag(event))
-            .onActionCancel(() => this.cancelTocScrollbarDrag()),
-          TapGesture().onAction((event: GestureEvent) => this.jumpTocScrollbarToPointer(event))
-        )
-      )
-    }
-  }
-
-  @Builder
-  bookmarkPanelSummary() {
-    if (this.bookmarkMultiSelectMode) {
-      Row({ space: 16 }) {
-        Text(`已选 ${this.selectedBookmarkIds.length} 项`)
-          .fontSize(14)
-          .fontColor(this.getTextColor())
-          .layoutWeight(1)
-        Text(this.selectedBookmarkIds.length === this.bookmarks.length ? '取消全选' : '全选')
-          .fontSize(13)
-          .fontColor(this.accentColor())
-          .onClick(() => {
-            this.toggleSelectAllBookmarks();
-          })
-        Text('删除')
-          .fontSize(13)
-          .fontColor(this.selectedBookmarkIds.length > 0 ? '#D94841' : this.getSubTextColor())
-          .enabled(this.selectedBookmarkIds.length > 0)
-          .onClick(() => {
-            this.deleteSelectedBookmarks();
-          })
-        Text('取消')
-          .fontSize(13)
-          .fontColor(this.getSubTextColor())
-          .onClick(() => {
-            this.cancelBookmarkMultiSelect();
-          })
-      }
-      .width('100%')
-      .height(52)
-      .padding({ left: 20, right: 20 })
-      .alignItems(VerticalAlign.Center)
-    } else {
-      Row() {
-        Text(`${this.bookmarks.length} 条书签`)
-          .fontSize(14)
-          .fontColor(this.getSubTextColor())
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .padding({ left: 20, right: 20, top: 18, bottom: 10 })
-    }
-  }
-
-  @Builder
-  bookmarkList() {
-    if (this.bookmarks.length === 0) {
-      Column({ space: 12 }) {
-        SymbolGlyph($r('sys.symbol.bookmark'))
-          .fontSize(34)
-          .fontColor([this.getSubTextColor()])
-        Text('暂无书签')
-          .fontSize(15)
-          .fontColor(this.getSubTextColor())
-        Text('可使用底栏最右侧按钮添加当前阅读位置')
-          .fontSize(12)
-          .fontColor(this.getSubTextColor())
-      }
-      .layoutWeight(1)
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Center)
-    } else {
-      List({ space: 0, scroller: this.bookmarkScroller }) {
-        ForEach(this.bookmarks, (bookmark: Bookmark) => {
-          if (deviceInfo.sdkApiVersion >= 26) {
-            // API 26+ uses one left-swipe action panel. Keep multi-select and
-            // delete together instead of exposing multi-select on right swipe.
-            HdsListItem({
-              customItemBuilder: () => {
-                this.bookmarkSwipeCard(bookmark)
-              },
-              swipeActionOptions: this.bookmarkSwipeActions(bookmark)
-            })
-          } else {
-            // Older systems use the native ListItem fallback with the same
-            // two-button left-swipe action panel.
-            ListItem() {
-              this.bookmarkSwipeCard(bookmark)
-            }
-            .width('100%')
-            .clip(true)
-            .swipeAction({
-              end: {
-                builder: () => {
-                  this.bookmarkFallbackSwipeActions(bookmark)
-                },
-                actionAreaDistance: 128,
-                onAction: () => this.deleteBookmark(bookmark)
-              },
-              edgeEffect: SwipeEdgeEffect.Spring
-            })
-          }
-        }, (bookmark: Bookmark) => `${bookmark.id}`)
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .layoutWeight(1)
-      .width('100%')
-      .clip(true)
-      .scrollBar(BarState.Auto)
-      .scrollBarColor(this.isReaderThemeDark() ? '#668A8F98' : '#667A6F63')
-    }
-  }
-
-  @Builder
-  bookmarkDeleteAction(bookmark: Bookmark) {
-    Column({ space: 4 }) {
-      SymbolGlyph($r('sys.symbol.trash'))
-        .fontSize(22)
-        .fontColor(['#FFFFFF'])
-      Text('删除')
-        .fontSize(11)
-        .fontColor('#FFFFFF')
-    }
-    .width(64)
-    .height('100%')
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-    .backgroundColor('#D94841')
-    .onClick(() => {
-      this.deleteBookmark(bookmark);
-    })
   }
 
   @Builder
@@ -3769,65 +3244,6 @@ struct ReadBookPage {
       this.showReaderActionMenu = false;
       action();
     })
-  }
-
-  @Builder
-  bookmarkSwipeCard(bookmark: Bookmark) {
-    Column({ space: 5 }) {
-      Row() {
-        SymbolGlyph($r('sys.symbol.bookmark'))
-          .fontSize(18)
-          .fontColor([this.accentColor()])
-          .width(26)
-        Text(bookmark.chapterName || `第 ${bookmark.chapterIndex + 1} 章`)
-          .fontSize(15)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.getTextColor())
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .layoutWeight(1)
-        Text(`第 ${bookmark.pageIndex + 1} 页`)
-          .fontSize(11)
-          .fontColor(this.getSubTextColor())
-      }
-      Text(bookmark.content || '已保存阅读位置')
-        .fontSize(12)
-        .fontColor(this.getSubTextColor())
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
-      Text(this.formatBookmarkTime(bookmark.createTime))
-        .fontSize(10)
-        .fontColor(this.getSubTextColor())
-        .width('100%')
-    }
-    .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-    .backgroundColor(this.isBookmarkSelected(bookmark.id) ? this.tocSelectedBackgroundColor() : Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000' })
-    .onClick(() => {
-      if (this.bookmarkMultiSelectMode) this.toggleBookmarkSelection(bookmark.id)
-      else this.jumpToBookmark(bookmark)
-    })
-    .gesture(LongPressGesture({ repeat: false }).onAction((event: GestureEvent) => {
-      if (!this.bookmarkMultiSelectMode) this.showBookmarkActions(bookmark, event)
-    }))
-  }
-
-  private bookmarkSwipeActions(bookmark: Bookmark): HdsSwipeActionOptions {
-    return { icons: [
-      { icon: new SymbolGlyphModifier($r('sys.symbol.checkmark_circle')), backgroundColor: this.buttonColor(), iconOptions: { accessibilityText: '多选' }, onAction: () => this.enterBookmarkMultiSelect(bookmark.id) },
-      { icon: new SymbolGlyphModifier($r('sys.symbol.trash')), backgroundColor: ThemeRuntime.dangerColor(this.appDarkMode), iconOptions: { accessibilityText: '删除书签' }, onAction: () => this.deleteBookmark(bookmark) }
-    ] };
-  }
-
-  @Builder
-  bookmarkFallbackSwipeActions(bookmark: Bookmark) {
-    Row() {
-      this.bookmarkMultiSelectAction(bookmark)
-      this.bookmarkDeleteAction(bookmark)
-    }
-    .height('100%')
   }
 
   onSystemDialogFlagChanged(): void {
@@ -4543,32 +3959,9 @@ struct ReadBookPage {
       ((this.currentChapterIndex + (this.currentPageIndex + 1) / pageCount) / chapterCount) * 100));
   }
 
-  @Builder
-  bookmarkMultiSelectAction(bookmark: Bookmark) {
-    Column({ space: 4 }) {
-      SymbolGlyph($r('sys.symbol.checkmark_circle'))
-        .fontSize(22)
-        .fontColor(['#FFFFFF'])
-      Text('多选')
-        .fontSize(11)
-        .fontColor('#FFFFFF')
-    }
-    .width(64)
-    .height('100%')
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-    .backgroundColor(this.accentColor())
-    .onClick(() => {
-      this.enterBookmarkMultiSelect(bookmark.id);
-    })
-  }
-
-  showBookmarkActions(bookmark: Bookmark, event: GestureEvent): void {
-    if (event.fingerList.length > 0) {
-      const finger = event.fingerList[0];
-      this.bookmarkActionMenuX = finger.globalX;
-      this.bookmarkActionMenuY = finger.globalY;
-    }
+  showBookmarkActions(bookmark: Bookmark, globalX: number, globalY: number): void {
+    this.bookmarkActionMenuX = globalX;
+    this.bookmarkActionMenuY = globalY;
     this.pendingBookmarkAction = bookmark;
     this.showBookmarkActionMenu = true;
   }
@@ -4609,14 +4002,14 @@ struct ReadBookPage {
           if (this.pendingBookmarkAction) {
             const bookmarkId = this.pendingBookmarkAction.id;
             this.closeBookmarkActionMenu();
-            this.enterBookmarkMultiSelect(bookmarkId);
+            this.tocPanelController.enterBookmarkMultiSelect(bookmarkId);
           }
         })
         this.bookmarkContextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
           if (this.pendingBookmarkAction) {
             const bookmark = this.pendingBookmarkAction;
             this.closeBookmarkActionMenu();
-            this.deleteBookmark(bookmark);
+            this.tocPanelController.deleteBookmark(bookmark);
           }
         })
       }
@@ -6270,54 +5663,15 @@ struct ReadBookPage {
     }
   }
 
-  getTocTitleColor(chapter: BookChapter, index: number): string {
-    if (index === this.currentChapterIndex) {
-      return this.accentColor();
-    }
-    if (chapter.cacheDate > 0) {
-      return this.isReaderThemeDark() ? '#DDEFE5' : '#244B35';
-    }
-    return this.isReaderThemeDark() ? '#B8BDC7' : '#333333';
-  }
-
   setReaderContent(text: string): void {
     this.content = text;
     this.paginateContent(text);
   }
 
+  // The panel is created each time it opens and positions itself on the current chapter.
   openTocPanel(): void {
-    this.tocPanelTab = 0;
-    this.tocSearchVisible = false;
-    this.tocSearchQuery = '';
-    this.tocSearchChapterIndexes = [];
-    this.tocSearchLoading = false;
-    this.tocSearchResultActive = false;
-    this.tocSearchRequestSerial++;
-    this.tocDatabaseChapterCount = this.chapters.length;
-    this.tocFirstVisibleGlobalIndex = this.currentChapterIndex;
-    this.tocQuickJumpArmed = false;
-    this.tocQuickJumpInputVisible = false;
-    this.tocQuickJumpDraft = '';
-    this.cancelBookmarkMultiSelect();
-    this.setTocWindowAround(this.currentChapterIndex, ScrollAlign.CENTER);
     this.showToc = true;
     this.showMenu = false;
-    this.scrollTocToCurrentChapter(false);
-    this.loadBookmarks();
-    this.loadTocDatabaseChapterCount();
-  }
-
-  async refreshTocFromPanel(): Promise<void> {
-    const searchQuery = this.tocSearchQuery;
-    await this.retryFetchChapters();
-    this.tocDatabaseChapterCount = this.chapters.length;
-    if (this.tocSearchVisible && this.tocSearchResultActive && searchQuery.trim()) {
-      await this.submitTocSearch();
-    } else {
-      this.setTocWindowAround(this.currentChapterIndex, ScrollAlign.CENTER);
-      this.scrollTocToCurrentChapter(false);
-    }
-    HdsFeedback.showToast('目录已刷新');
   }
 
   async loadBookmarks(): Promise<void> {
@@ -6461,69 +5815,10 @@ struct ReadBookPage {
       await db.initWithContext(getContext(this));
       await db.deleteBookmark(bookmark.id);
       this.bookmarks = this.bookmarks.filter((item: Bookmark) => item.id !== bookmark.id);
-      this.selectedBookmarkIds = this.selectedBookmarkIds.filter((id: number) => id !== bookmark.id);
-      if (this.bookmarkMultiSelectMode && this.bookmarks.length === 0) {
-        this.cancelBookmarkMultiSelect();
-      }
       HdsFeedback.showToast('书签已删除');
     } catch (e) {
       console.error('删除书签失败:', e);
       HdsFeedback.showToast('删除书签失败');
-    }
-  }
-
-  enterBookmarkMultiSelect(bookmarkId: number): void {
-    this.bookmarkMultiSelectMode = true;
-    if (!this.selectedBookmarkIds.includes(bookmarkId)) {
-      this.selectedBookmarkIds = [...this.selectedBookmarkIds, bookmarkId];
-    }
-    setTimeout(() => {
-      try {
-        this.bookmarkScroller.closeAllSwipeActions();
-      } catch (error) {
-        console.warn('关闭书签滑动操作失败:', error);
-      }
-    }, 0);
-  }
-
-  isBookmarkSelected(bookmarkId: number): boolean {
-    return this.selectedBookmarkIds.includes(bookmarkId);
-  }
-
-  toggleBookmarkSelection(bookmarkId: number): void {
-    if (this.selectedBookmarkIds.includes(bookmarkId)) {
-      this.selectedBookmarkIds = this.selectedBookmarkIds.filter((id: number) => id !== bookmarkId);
-    } else {
-      this.selectedBookmarkIds = [...this.selectedBookmarkIds, bookmarkId];
-    }
-  }
-
-  toggleSelectAllBookmarks(): void {
-    if (this.selectedBookmarkIds.length === this.bookmarks.length) {
-      this.selectedBookmarkIds = [];
-    } else {
-      this.selectedBookmarkIds = this.bookmarks.map((bookmark: Bookmark) => bookmark.id);
-    }
-  }
-
-  cancelBookmarkMultiSelect(): void {
-    this.bookmarkMultiSelectMode = false;
-    this.selectedBookmarkIds = [];
-  }
-
-  async deleteSelectedBookmarks(): Promise<void> {
-    const ids = [...this.selectedBookmarkIds];
-    if (ids.length === 0) return;
-    try {
-      const db = AppDatabase.getInstance();
-      await db.initWithContext(getContext(this));
-      await db.deleteBookmarks(ids);
-      this.bookmarks = this.bookmarks.filter((bookmark: Bookmark) => !ids.includes(bookmark.id));
-      this.cancelBookmarkMultiSelect();
-      HdsFeedback.showToast(`已删除 ${ids.length} 条书签`);
-    } catch (e) {
-      console.error('批量删除书签失败:', e);
-      HdsFeedback.showToast('批量删除书签失败');
     }
   }
 
@@ -6532,16 +5827,6 @@ struct ReadBookPage {
     this.showToc = false;
     this.showMenu = false;
     await this.jumpToReaderPositionKeepingTts(targetChapterIndex, Math.max(0, bookmark.pageIndex));
-  }
-
-  formatBookmarkTime(timestamp: number): string {
-    if (timestamp <= 0) return '';
-    const date = new Date(timestamp);
-    const month = `${date.getMonth() + 1}`.padStart(2, '0');
-    const day = `${date.getDate()}`.padStart(2, '0');
-    const hour = `${date.getHours()}`.padStart(2, '0');
-    const minute = `${date.getMinutes()}`.padStart(2, '0');
-    return `${month}-${day} ${hour}:${minute}`;
   }
 
   openSettingsPanel(): void {
@@ -7020,30 +6305,6 @@ struct ReadBookPage {
     return value || 'zh-CN';
   }
 
-  tocGlobalIndex(localIndex: number): number {
-    if (this.isTocSearchActive()) {
-      return this.tocSearchChapterIndexes[localIndex] ?? 0;
-    }
-    const displayIndex = this.tocWindowStart + localIndex;
-    return this.tocReverseOrder ? this.chapters.length - 1 - displayIndex : displayIndex;
-  }
-
-  tocChapterAtDisplayIndex(displayIndex: number): BookChapter {
-    const canonicalIndex = this.tocReverseOrder ? this.chapters.length - 1 - displayIndex : displayIndex;
-    return this.chapters[canonicalIndex];
-  }
-
-  toggleTocOrder(): void {
-    this.tocReverseOrder = !this.tocReverseOrder;
-    this.tocOrderRevision++;
-    this.tocSearchRequestSerial++;
-    this.tocSearchQuery = '';
-    this.tocSearchChapterIndexes = [];
-    this.tocSearchLoading = false;
-    this.tocSearchResultActive = false;
-    this.scrollTocToCurrentChapter(false);
-  }
-
   applyCloudTtsVoice(voice: TtsVoiceInfo, restartSpeaking: boolean): void {
     if (!AccountSessionStore.isLoggedIn()) {
       HdsFeedback.showToast('请先登录华为账号后使用在线音色');
@@ -7169,379 +6430,6 @@ struct ReadBookPage {
     if (systemIndex >= 0 && systemIndex < systemVoices.length) {
       this.applyTtsVoice(systemVoices[systemIndex], true);
     }
-  }
-
-  isTocSearchActive(): boolean {
-    return this.tocSearchVisible && this.tocSearchResultActive;
-  }
-
-  toggleTocSearch(): void {
-    if (this.tocSearchVisible) {
-      this.tocSearchVisible = false;
-      this.tocSearchQuery = '';
-      this.tocSearchChapterIndexes = [];
-      this.tocSearchLoading = false;
-      this.tocSearchResultActive = false;
-      this.tocSearchRequestSerial++;
-      this.setTocWindowAround(this.currentChapterIndex, ScrollAlign.CENTER);
-      this.scrollTocToCurrentChapter(false);
-      return;
-    }
-    this.tocSearchVisible = true;
-    this.tocQuickJumpArmed = false;
-    this.tocQuickJumpInputVisible = false;
-    this.tocQuickJumpDraft = '';
-    setTimeout(() => {
-      focusControl.requestFocus('tocChapterSearchInput');
-    }, 50);
-  }
-
-  async submitTocSearch(): Promise<void> {
-    const keyword = this.tocSearchQuery.trim();
-    if (!keyword) {
-      this.clearTocSearchResult();
-      return;
-    }
-    const requestSerial = ++this.tocSearchRequestSerial;
-    const bookUrl = this.book?.bookUrl || this.bookUrl;
-    this.tocSearchLoading = true;
-    try {
-      let matches: BookChapter[] = [];
-      let totalCount = this.chapters.length;
-      let searchSource = '内存';
-      if (this.chapters.length > 0) {
-        const normalizedKeyword = keyword.toLowerCase();
-        matches = this.chapters.filter((chapter: BookChapter) =>
-          (chapter.title || '').toLowerCase().includes(normalizedKeyword));
-      } else {
-        searchSource = '数据库';
-        const db = AppDatabase.getInstance();
-        await db.initWithContext(getContext(this));
-        matches = await db.searchBookChapters(bookUrl, keyword);
-        totalCount = await db.getBookChapterCount(bookUrl);
-      }
-      if (requestSerial !== this.tocSearchRequestSerial || !this.tocSearchVisible) return;
-      if (this.tocReverseOrder) {
-        matches = matches.slice().reverse();
-      }
-      const indexes: number[] = [];
-      for (const chapter of matches) {
-        indexes.push(chapter.index);
-      }
-      this.tocDatabaseChapterCount = totalCount;
-      this.tocSearchChapterIndexes = indexes;
-      this.tocVisibleChapters = matches;
-      this.tocWindowStart = 0;
-      this.tocSearchResultActive = true;
-      this.tocFirstVisibleGlobalIndex = indexes.length > 0 ? indexes[0] : 0;
-      this.tocVisibleItemCount = 1;
-      console.info(`[TOC] ${searchSource}目录搜索: keyword=${keyword}, total=${totalCount}, matches=${matches.length}`);
-      setTimeout(() => {
-        if (matches.length > 0) {
-          this.tocScroller.scrollToIndex(0, false, ScrollAlign.START);
-        }
-      }, 0);
-    } catch (e) {
-      console.warn('目录搜索失败:', e);
-      if (requestSerial === this.tocSearchRequestSerial) {
-        HdsFeedback.showToast('目录搜索失败');
-      }
-    } finally {
-      if (requestSerial === this.tocSearchRequestSerial) {
-        this.tocSearchLoading = false;
-      }
-    }
-  }
-
-  clearTocSearchResult(): void {
-    this.tocSearchRequestSerial++;
-    this.tocSearchQuery = '';
-    this.tocSearchLoading = false;
-    this.tocSearchResultActive = false;
-    this.tocSearchChapterIndexes = [];
-    const localIndex = this.setTocWindowAround(this.currentChapterIndex, ScrollAlign.CENTER);
-    setTimeout(() => {
-      try {
-        this.tocScroller.scrollToIndex(localIndex, false, ScrollAlign.CENTER);
-      } catch (e) {
-        console.warn('清空目录搜索后恢复定位失败:', e);
-      }
-    }, 0);
-  }
-
-  async loadTocDatabaseChapterCount(): Promise<void> {
-    const bookUrl = this.book?.bookUrl || this.bookUrl;
-    if (!bookUrl) return;
-    try {
-      const db = AppDatabase.getInstance();
-      await db.initWithContext(getContext(this));
-      this.tocDatabaseChapterCount = Math.max(await db.getBookChapterCount(bookUrl), this.chapters.length);
-    } catch (e) {
-      console.warn('读取数据库章节总数失败:', e);
-    }
-  }
-
-  updateTocScrollbarPosition(start: number, end: number): void {
-    const localStart = Math.max(0, start);
-    this.tocFirstVisibleGlobalIndex = this.tocGlobalIndex(localStart);
-    this.tocVisibleItemCount = Math.max(1, end - start + 1);
-  }
-
-  tocShouldShowVirtualScrollbar(): boolean {
-    return this.tocListViewportHeight > 0 && this.tocDatabaseChapterCount > this.tocVisibleItemCount;
-  }
-
-  tocScrollbarThumbLength(): number {
-    return VirtualListScrollbar.thumbLength(this.tocListViewportHeight,
-      this.tocDatabaseChapterCount, this.tocVisibleItemCount);
-  }
-
-  tocScrollbarThumbOffset(): number {
-    const thumbLength = this.tocScrollbarThumbLength();
-    const firstVisibleIndex = this.tocReverseOrder ?
-      this.tocDatabaseChapterCount - 1 - this.tocFirstVisibleGlobalIndex : this.tocFirstVisibleGlobalIndex;
-    return VirtualListScrollbar.thumbOffset(this.tocListViewportHeight, thumbLength,
-      this.tocDatabaseChapterCount, firstVisibleIndex, this.tocVisibleItemCount);
-  }
-
-  tocDisplayedScrollbarThumbOffset(): number {
-    return this.tocScrollbarDragging ? this.tocScrollbarDragOffset : this.tocScrollbarThumbOffset();
-  }
-
-  tocScrollbarPointerY(event: GestureEvent): number {
-    const finger = event.fingerList.length > 0 ? event.fingerList[0] : undefined;
-    return finger ? finger.localY : 0;
-  }
-
-  beginTocScrollbarDrag(event: GestureEvent): void {
-    const thumbLength = this.tocScrollbarThumbLength();
-    const currentOffset = this.tocScrollbarThumbOffset();
-    const pointerY = this.tocScrollbarPointerY(event);
-    this.tocScrollbarDragging = true;
-    this.tocScrollbarDragOffset = currentOffset;
-    if (pointerY >= currentOffset && pointerY <= currentOffset + thumbLength) {
-      this.tocScrollbarPointerAnchor = pointerY - currentOffset;
-    } else {
-      this.tocScrollbarPointerAnchor = thumbLength / 2;
-      this.updateTocScrollbarFromPointer(pointerY);
-    }
-  }
-
-  updateTocScrollbarDrag(event: GestureEvent): void {
-    if (!this.tocScrollbarDragging) return;
-    this.updateTocScrollbarFromPointer(this.tocScrollbarPointerY(event));
-  }
-
-  endTocScrollbarDrag(event: GestureEvent): void {
-    if (!this.tocScrollbarDragging) return;
-    this.updateTocScrollbarFromPointer(this.tocScrollbarPointerY(event));
-    this.tocScrollbarDragging = false;
-    this.flushTocScrollbarTarget();
-  }
-
-  cancelTocScrollbarDrag(): void {
-    this.tocScrollbarDragging = false;
-    this.tocScrollbarPendingIndex = -1;
-    if (this.tocScrollbarUpdateTimer >= 0) {
-      clearTimeout(this.tocScrollbarUpdateTimer);
-      this.tocScrollbarUpdateTimer = -1;
-    }
-  }
-
-  jumpTocScrollbarToPointer(event: GestureEvent): void {
-    this.tocScrollbarPointerAnchor = this.tocScrollbarThumbLength() / 2;
-    this.updateTocScrollbarFromPointer(this.tocScrollbarPointerY(event));
-  }
-
-  updateTocScrollbarFromPointer(pointerY: number): void {
-    const thumbLength = this.tocScrollbarThumbLength();
-    const offset = VirtualListScrollbar.clampThumbOffset(this.tocListViewportHeight, thumbLength,
-      pointerY - this.tocScrollbarPointerAnchor);
-    this.tocScrollbarDragOffset = offset;
-    const targetIndex = VirtualListScrollbar.firstVisibleIndex(this.tocListViewportHeight, thumbLength,
-      this.tocDatabaseChapterCount, this.tocVisibleItemCount, offset);
-    const targetChapterIndex = this.tocReverseOrder ?
-      this.tocDatabaseChapterCount - 1 - targetIndex : targetIndex;
-    this.tocFirstVisibleGlobalIndex = targetChapterIndex;
-    if (this.tocScrollbarDragging) {
-      this.queueTocScrollbarTarget(targetChapterIndex, TOC_SCROLLBAR_DRAG_UPDATE_INTERVAL_MS);
-      return;
-    }
-    this.queueTocScrollbarTarget(targetChapterIndex);
-  }
-
-  flushTocScrollbarTarget(): void {
-    if (this.tocScrollbarUpdateTimer >= 0) {
-      clearTimeout(this.tocScrollbarUpdateTimer);
-      this.tocScrollbarUpdateTimer = -1;
-    }
-    const pending = this.tocScrollbarPendingIndex;
-    this.tocScrollbarPendingIndex = -1;
-    this.applyTocScrollbarTarget(pending);
-  }
-
-  queueTocScrollbarTarget(targetIndex: number, delayMs: number = 16): void {
-    this.tocScrollbarPendingIndex = targetIndex;
-    if (this.tocScrollbarUpdateTimer >= 0) return;
-    this.tocScrollbarUpdateTimer = setTimeout(() => {
-      this.tocScrollbarUpdateTimer = -1;
-      const pending = this.tocScrollbarPendingIndex;
-      this.tocScrollbarPendingIndex = -1;
-      this.applyTocScrollbarTarget(pending);
-    }, delayMs);
-  }
-
-  applyTocScrollbarTarget(targetIndex: number): void {
-    if (targetIndex < 0) return;
-    if (this.isTocSearchActive()) {
-      const localIndex = this.nearestTocSearchResultIndex(targetIndex);
-      if (localIndex < 0) return;
-      this.tocFirstVisibleGlobalIndex = this.tocSearchChapterIndexes[localIndex] ?? targetIndex;
-      try {
-        this.tocScroller.scrollToIndex(localIndex, false, ScrollAlign.START);
-      } catch (e) {
-        console.warn('拖动目录滚动条定位搜索结果失败:', e);
-      }
-      return;
-    }
-    if (this.chapters.length === 0) return;
-    const target = Math.max(0, Math.min(targetIndex, this.chapters.length - 1));
-    const requestSerial = ++this.tocPositionRequestSerial;
-    this.tocPositioning = true;
-    const localIndex = this.setTocWindowAround(target, ScrollAlign.START);
-    setTimeout(() => {
-      if (requestSerial !== this.tocPositionRequestSerial) return;
-      try {
-        this.tocScroller.scrollToIndex(localIndex, false, ScrollAlign.START);
-      } catch (e) {
-        console.warn('拖动目录滚动条定位章节失败:', e);
-      } finally {
-        if (requestSerial === this.tocPositionRequestSerial) this.tocPositioning = false;
-      }
-    }, 0);
-  }
-
-  nearestTocSearchResultIndex(targetIndex: number): number {
-    const indexes = this.tocSearchChapterIndexes;
-    if (indexes.length === 0) return -1;
-    let low = 0;
-    let high = indexes.length - 1;
-    while (low < high) {
-      const mid = Math.floor((low + high) / 2);
-      if (this.tocReverseOrder ? indexes[mid] > targetIndex : indexes[mid] < targetIndex) low = mid + 1;
-      else high = mid;
-    }
-    if (low > 0 && Math.abs(indexes[low - 1] - targetIndex) <= Math.abs(indexes[low] - targetIndex)) {
-      return low - 1;
-    }
-    return low;
-  }
-
-  setTocWindowAround(index: number, align: ScrollAlign): number {
-    this.tocLoadingPreviousPage = false;
-    this.tocLoadingNextPage = false;
-    if (this.chapters.length === 0) {
-      this.tocWindowStart = 0;
-      this.tocVisibleChapters = [];
-      return 0;
-    }
-    const canonicalTarget = Math.max(0, Math.min(index, this.chapters.length - 1));
-    const target = this.tocReverseOrder ? this.chapters.length - 1 - canonicalTarget : canonicalTarget;
-    let start = target - Math.floor(TOC_WINDOW_PAGE_SIZE / 2);
-    if (align === ScrollAlign.START) {
-      start = target;
-    } else if (align === ScrollAlign.END) {
-      start = target - TOC_WINDOW_PAGE_SIZE + 1;
-    }
-    start = Math.max(0, Math.min(start, Math.max(0, this.chapters.length - TOC_WINDOW_PAGE_SIZE)));
-    const end = Math.min(this.chapters.length, start + TOC_WINDOW_PAGE_SIZE);
-    const visibleChapters: BookChapter[] = [];
-    for (let displayIndex = start; displayIndex < end; displayIndex++) {
-      visibleChapters.push(this.tocChapterAtDisplayIndex(displayIndex));
-    }
-    this.tocWindowStart = start;
-    this.tocVisibleChapters = visibleChapters;
-    return target - start;
-  }
-
-  loadNextTocPage(): void {
-    if (this.isTocSearchActive() || this.tocPositioning || this.tocLoadingNextPage) {
-      return;
-    }
-    const loadedEnd = this.tocWindowStart + this.tocVisibleChapters.length;
-    if (loadedEnd >= this.chapters.length) {
-      return;
-    }
-    this.tocLoadingNextPage = true;
-    const nextEnd = Math.min(this.chapters.length, loadedEnd + TOC_WINDOW_PAGE_SIZE);
-    const nextChapters: BookChapter[] = [];
-    for (let displayIndex = loadedEnd; displayIndex < nextEnd; displayIndex++) {
-      nextChapters.push(this.tocChapterAtDisplayIndex(displayIndex));
-    }
-    this.tocVisibleChapters = this.tocVisibleChapters.concat(nextChapters);
-    setTimeout(() => {
-      this.tocLoadingNextPage = false;
-    }, 0);
-  }
-
-  loadPreviousTocPage(): void {
-    if (this.isTocSearchActive() || this.tocPositioning || this.tocLoadingPreviousPage ||
-      this.tocWindowStart <= 0) {
-      return;
-    }
-    this.tocLoadingPreviousPage = true;
-    const oldStart = this.tocWindowStart;
-    const nextStart = Math.max(0, oldStart - TOC_WINDOW_PAGE_SIZE);
-    const added = oldStart - nextStart;
-    const previousChapters: BookChapter[] = [];
-    for (let displayIndex = nextStart; displayIndex < oldStart; displayIndex++) {
-      previousChapters.push(this.tocChapterAtDisplayIndex(displayIndex));
-    }
-    this.tocWindowStart = nextStart;
-    this.tocVisibleChapters = previousChapters.concat(this.tocVisibleChapters);
-    setTimeout(() => {
-      try {
-        this.tocScroller.scrollToIndex(added, false, ScrollAlign.START);
-      } catch (e) {
-        console.warn('向前加载目录失败:', e);
-      } finally {
-        this.tocLoadingPreviousPage = false;
-      }
-    }, 0);
-  }
-
-  scrollTocToCurrentChapter(smooth: boolean = true): void {
-    if (this.chapters.length === 0) {
-      return;
-    }
-    const index = Math.max(0, Math.min(this.currentChapterIndex, this.chapters.length - 1));
-    this.scrollTocToChapter(index, ScrollAlign.CENTER, smooth);
-  }
-
-  scrollTocToChapter(index: number, align: ScrollAlign, smooth: boolean = true): void {
-    if (this.chapters.length === 0) {
-      return;
-    }
-    const targetIndex = Math.max(0, Math.min(index, this.chapters.length - 1));
-    const requestSerial = ++this.tocPositionRequestSerial;
-    this.tocPositioning = true;
-    const localIndex = this.setTocWindowAround(targetIndex, align);
-    setTimeout(() => {
-      if (requestSerial !== this.tocPositionRequestSerial) {
-        return;
-      }
-      try {
-        this.tocScroller.scrollToIndex(localIndex, smooth, align);
-      } catch (e) {
-        console.warn('定位目录章节失败:', e);
-      } finally {
-        setTimeout(() => {
-          if (requestSerial === this.tocPositionRequestSerial) {
-            this.tocPositioning = false;
-          }
-        }, 0);
-      }
-    }, 50);
   }
 
   getSubTextColor(): string {
@@ -15526,39 +14414,6 @@ struct ReadBookPage {
     const suffix = key.substring(start + legacyPrefix.length);
     const match = suffix.match(/^\d+/);
     return match ? Number(match[0]) : -1;
-  }
-
-  handleTocCurrentPositionClick(): void {
-    if (this.tocQuickJumpArmed) {
-      this.tocQuickJumpDraft = '';
-      this.tocQuickJumpInputVisible = true;
-      this.tocQuickJumpArmed = false;
-      setTimeout(() => {
-        focusControl.requestFocus('tocQuickJumpChapterInput');
-      }, 50);
-      return;
-    }
-    this.scrollTocToCurrentChapter();
-    this.tocQuickJumpArmed = true;
-  }
-
-  submitTocQuickJump(): void {
-    if (this.chapters.length === 0) {
-      HdsFeedback.showToast('暂无可定位的章节');
-      return;
-    }
-    const chapterNumber = Number.parseInt(this.tocQuickJumpDraft, 10);
-    if (!Number.isFinite(chapterNumber) || chapterNumber < 1 || chapterNumber > this.chapters.length) {
-      HdsFeedback.showToast(`章节序号范围为 1～${this.chapters.length}，请重新输入`);
-      setTimeout(() => {
-        focusControl.requestFocus('tocQuickJumpChapterInput');
-      }, 50);
-      return;
-    }
-    this.tocQuickJumpInputVisible = false;
-    this.tocQuickJumpDraft = '';
-    this.tocQuickJumpArmed = false;
-    this.scrollTocToChapter(chapterNumber - 1, ScrollAlign.CENTER);
   }
 
   getStyledSliceFontColor(slice: ReadTextSlice): string {
