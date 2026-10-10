@@ -92,7 +92,7 @@ import { ReaderTtsMediaInfo, ReaderTtsMediaSession } from '../core/reader/Reader
 import { TtsVoiceCatalog } from '../utils/TtsVoiceCatalog';
 import { ReaderTtsQuickSettingsPanel, ReaderTtsVoicePickerPanel } from '../components/reader/ReaderTtsSettingsPanels';
 import { ReaderCustomThemeEditor } from '../components/reader/ReaderCustomThemeEditor';
-import { ReaderTtsCapsule, ReaderTtsMediaControlsBar } from '../components/reader/ReaderTtsControls';
+import { ReaderTtsCapsule } from '../components/reader/ReaderTtsControls';
 import { ReaderHeaderFooterSettings, ReaderTypographyField, ReaderTypographyStepper } from '../components/reader/ReaderLayoutSettings';
 import { ReaderCacheDialogContent } from '../components/reader/ReaderCacheDialogContent';
 import { ReaderTxtCharsetDialogContent, ReaderTxtCharsets } from '../components/reader/ReaderTxtCharsetDialogContent';
@@ -233,7 +233,6 @@ struct ReadBookPage {
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State isTtsSpeaking: boolean = false;
   @State isTtsPaused: boolean = false;
-  @State ttsMediaControlsExpanded: boolean = false;
   @State showTtsQuickPlayer: boolean = false;
   @StorageLink('globalTtsCapsulePositionX') ttsMiniPlayerPositionX: number = 16;
   @StorageLink('globalTtsCapsulePositionY') ttsMiniPlayerPositionY: number = -1;
@@ -2190,14 +2189,9 @@ struct ReadBookPage {
         } else {
           this.readerFloatingBottomMenu()
         }
-        if (this.readerUseTtsQuickAction && !this.isReaderComicModeActive() && !this.ttsMediaControlsExpanded &&
+        if (this.readerUseTtsQuickAction && !this.isReaderComicModeActive() &&
           !this.isTtsSpeaking && !this.ttsReader.isSpeaking() && !this.globalTtsActive) {
           this.readerTtsQuickActionButton()
-        }
-        // The bar is an HDS floating tab bar, which needs API 23.
-        if (this.readerUseTtsQuickAction && ImmersiveMaterialRuntime.supportsHdsTabs() &&
-          this.shouldShowTtsMediaControls()) {
-          this.ttsExpandedMediaControlsBar()
         }
       }
 
@@ -3351,9 +3345,6 @@ struct ReadBookPage {
       onClose: (): void => {
         this.showLayoutElementSettings = false;
       },
-      onTtsQuickActionChanged: (enabled: boolean): void => {
-        if (!enabled) this.ttsMediaControlsExpanded = false;
-      },
       onChapterQuickJumpChanged: (enabled: boolean): void => {
         if (!enabled) this.resetMenuChapterPreview();
       }
@@ -3468,14 +3459,12 @@ struct ReadBookPage {
     this.showMenu = false;
     this.showToc = false;
     this.showSettings = false;
-    this.ttsMediaControlsExpanded = false;
     animateTo({ duration: 280, curve: Curve.Friction }, () => {
       this.showTtsQuickPlayer = true;
     });
     this.loadTtsSettingsAndVoices();
     if (!this.isTtsSpeaking && !this.ttsReader.isSpeaking()) {
       await this.startTtsReadingFromCurrentPosition(true);
-      this.ttsMediaControlsExpanded = false;
     }
   }
 
@@ -4121,7 +4110,6 @@ struct ReadBookPage {
     if (this.readerComicMode) {
       this.stopTtsReading();
       this.showSettings = false;
-      this.ttsMediaControlsExpanded = false;
     }
     this.enterReaderImmersive();
   }
@@ -4149,7 +4137,6 @@ struct ReadBookPage {
       this.book?.getVariable('readerComicManualMode') === 'text') return;
     this.readerComicMode = true;
     this.showSettings = false;
-    this.ttsMediaControlsExpanded = false;
     this.stopTtsReading();
     this.enterReaderImmersive();
   }
@@ -4167,7 +4154,6 @@ struct ReadBookPage {
     });
     this.showReaderActionMenu = false;
     this.showSettings = false;
-    this.ttsMediaControlsExpanded = false;
     this.resetSlidePageEffect();
     this.syncReaderComicPageDataSource();
     if (next) {
@@ -6319,13 +6305,6 @@ struct ReadBookPage {
     return this.readerFloatingBarRight() - 48;
   }
 
-  readerTtsExpandedControlLeft(): number {
-    if (this.readerUsesSideAnchoredControls() && this.readerMenuAnchorSide < 0) {
-      return this.readerFloatingBarLeft();
-    }
-    return this.readerFloatingBarRight() - this.readerTtsExpandedControlWidth();
-  }
-
   readerBottomMenuOverlayHeight(): number {
     return (this.readerUseChapterQuickJump ? 120 : 56) + this.readerFloatingBarBottomMargin();
   }
@@ -7230,58 +7209,6 @@ struct ReadBookPage {
     this.saveReadConfig();
   }
 
-  @Builder
-  ttsExpandedMediaControlsBar() {
-    ReaderTtsMediaControlsBar({
-      playing: this.isTtsSpeaking && !this.isTtsPaused,
-      canPrevious: this.canPlayPreviousTtsChapter(),
-      canNext: this.canPlayNextTtsChapter(),
-      speed: this.ttsSpeed,
-      sleepTimerMinutes: this.ttsSleepTimerMinutes,
-      sleepTimerRemainingSeconds: this.ttsSleepTimerRemainingSeconds,
-      themeKey: `${this.themeRevision}_${this.isReaderThemeDark() ? 'dark' : 'light'}`,
-      textColor: this.getTextColor(),
-      subTextColor: this.getSubTextColor(),
-      accentColor: this.accentColor(),
-      panelColor: this.readerGlassPanelColor(),
-      onControl: (index: number): void => this.handleTtsExpandedControl(index)
-    })
-      .position({ x: this.readerTtsExpandedControlLeft(), y: '100%' })
-      .translate({
-        y: -(this.readerBottomMenuOverlayHeight() + 66)
-      })
-  }
-
-  readerTtsExpandedControlWidth(): number {
-    return ReaderTtsMediaControlsBar.WIDTH;
-  }
-
-  handleTtsExpandedControl(index: number): void {
-    if (index === 0) {
-      this.cycleTtsSleepTimer();
-    } else if (index === 1 && this.canPlayPreviousTtsChapter()) {
-      this.playPreviousChapterFromMediaSession();
-    } else if (index === 2) {
-      this.toggleTtsReading();
-      this.showMenu = true;
-    } else if (index === 3 && this.canPlayNextTtsChapter()) {
-      this.playNextChapterFromMediaSession();
-    } else if (index === 4) {
-      this.cycleTtsSpeed();
-    } else if (index === 5) {
-      this.ttsMediaControlsExpanded = false;
-      this.showMenu = true;
-      this.ttsMediaSession().syncSystemMediaControls();
-    }
-  }
-
-  cycleTtsSleepTimer(): void {
-    const options: number[] = [0, 15, 30, 60, 90, 120];
-    const currentIndex = options.indexOf(this.ttsSleepTimerMinutes);
-    const nextMinutes = options[(currentIndex + 1) % options.length];
-    this.setTtsSleepTimer(nextMinutes);
-  }
-
   setTtsSleepTimer(minutes: number): void {
     this.clearTtsSleepTimer();
     if (minutes <= 0) {
@@ -7315,22 +7242,6 @@ struct ReadBookPage {
     this.ttsSleepTimerMinutes = 0;
     this.ttsSleepTimerRemainingSeconds = 0;
     this.updateTtsFloatingSession();
-  }
-
-  cycleTtsSpeed(): void {
-    const speeds: number[] = [0.8, 1.0, 1.2, 1.5, 2.0];
-    let nextIndex = speeds.findIndex((speed: number) => speed > this.ttsSpeed + 0.01);
-    if (nextIndex < 0) {
-      nextIndex = 0;
-    }
-    this.applyTtsSpeed(speeds[nextIndex]);
-    HdsFeedback.showToast(`朗读倍速 ${speeds[nextIndex].toFixed(1)}x`);
-  }
-
-  shouldShowTtsMediaControls(): boolean {
-    return !this.isReaderComicModeActive() && this.ttsMediaControlsExpanded &&
-      (this.isTtsSpeaking || this.ttsReader.isSpeaking()) &&
-      this.showMenu && !this.showToc && !this.showSettings && !this.shouldBlockReaderInteraction();
   }
 
   canPlayPreviousTtsChapter(): boolean {
@@ -9222,7 +9133,6 @@ struct ReadBookPage {
       }
       return;
     }
-    this.ttsMediaControlsExpanded = false;
     await this.startTtsReadingFromCurrentPosition(true);
   }
 
@@ -9239,7 +9149,6 @@ struct ReadBookPage {
       this.finishTtsReading();
       return;
     }
-    this.ttsMediaControlsExpanded = false;
     // A scrolling chunk spans several screens, so its start can be far above what is on screen. Begin with
     // the first visible line instead.
     const visibleOffset = readingStartOffset < 0 && this.usesReaderContinuousV2() ?
@@ -9418,7 +9327,6 @@ struct ReadBookPage {
     this.ttsLastFocusPageIndex = -1;
     this.ttsReadingExpectedSourceEnd = -1;
     this.ttsChapterCompletionRetryCount = 0;
-    this.ttsMediaControlsExpanded = false;
     this.ttsPageTurnSerial++;
     this.ttsMediaSession().stopBackgroundRunning();
     if (!this.isTtsSpeaking && !this.ttsReader.isSpeaking()) {
@@ -9695,7 +9603,6 @@ struct ReadBookPage {
     this.isTtsPaused = false;
     ReaderTtsFloatingSession.clear(this.ttsFloatingSessionOwnerId);
     this.updateVolumeKeySubscription();
-    this.ttsMediaControlsExpanded = false;
     this.ttsReader.stop();
     this.invalidateTtsFocusSession();
     this.ttsMediaSession().stopBackgroundRunning();

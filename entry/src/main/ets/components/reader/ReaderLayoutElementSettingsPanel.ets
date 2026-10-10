@@ -19,9 +19,6 @@ export struct ReaderLayoutElementSettingsPanel {
   panelWidth: number = 420;
   onClose: () => void = (): void => {
   };
-  /** 关掉快速朗读组件时，页面要收起已展开的朗读控制条。 */
-  onTtsQuickActionChanged: (enabled: boolean) => void = (_enabled: boolean): void => {
-  };
   /** 关掉章节快速跳转组件时，页面要复位章节滑杆的预览。 */
   onChapterQuickJumpChanged: (enabled: boolean) => void = (_enabled: boolean): void => {
   };
@@ -76,10 +73,9 @@ export struct ReaderLayoutElementSettingsPanel {
           .width('100%')
           .margin({ bottom: 8 })
 
-        this.toggleRow('使用快速朗读组件', '显示朗读快捷按钮与展开控制条', this.readerUseTtsQuickAction,
+        this.toggleRow('使用快速朗读组件', '显示朗读快捷按钮与朗读悬浮胶囊', this.readerUseTtsQuickAction,
           (enabled: boolean) => {
             this.readerUseTtsQuickAction = enabled;
-            this.onTtsQuickActionChanged(enabled);
             this.save();
           })
         this.toggleRow('使用章节快速跳转组件', '显示章节滑杆与上一章、下一章按钮', this.readerUseChapterQuickJump,
