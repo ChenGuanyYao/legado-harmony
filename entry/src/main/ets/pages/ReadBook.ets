@@ -1817,9 +1817,10 @@ struct ReadBookPage {
       .height('100%')
       // In continuous reading the configured vertical margins describe the viewport, not only the first and
       // last pagination fragment. Keep every scrolled line inside those edges and avoid adding a second reserve.
+      // 上下内边距都包含页眉/页脚的占位：List 只在内容区内绘制，正文滚到页眉页脚处即被裁掉，不会从文字下方透出。
       .padding({
         top: this.isReaderNovelContinuousScrollModeActive() ? this.getEffectiveReaderMarginTop() : 0,
-        bottom: this.isReaderNovelContinuousScrollModeActive() ? this.getEffectiveReaderMarginBottom() : 0
+        bottom: this.isReaderNovelContinuousScrollModeActive() ? this.getReaderContinuousScrollBottomPadding() : 0
       })
       .enableScrollInteraction(!this.readerTextSelectionActive)
       .scrollBar(BarState.Off)
@@ -4787,6 +4788,12 @@ struct ReadBookPage {
     return this.getEffectiveReaderVerticalMargin(false);
   }
 
+  getReaderContinuousScrollBottomPadding(): number {
+    // 与顶部的页眉占位对应：滚动模式下把页脚占位并入列表底部内边距。用按字号推算的固定高度，
+    // 页脚首次测量不会改变列表视口。
+    return this.getEffectiveReaderMarginBottom() + this.getReaderV2BottomGuard();
+  }
+
   getEffectiveReaderVerticalMargin(top: boolean): number {
     const rawTop = Math.max(0, this.readerMarginTop);
     const rawBottom = Math.max(0, this.readerMarginBottom);
@@ -4941,7 +4948,7 @@ struct ReadBookPage {
     this.readerCommentPageAreaTop = this.parseAreaDimension(globalY);
     this.readerCommentPageAreaHeight = height;
     if (Math.abs(this.pageViewWidth - width) < 0.5 && Math.abs(this.pageViewHeight - height) < 0.5 &&
-      !navigationReserveChanged) {
+      !(navigationReserveChanged && !this.readerFooterEnabled)) {
       return;
     }
     const preservingStoredOffset = !this.readerProgressRestoreConfirmed &&
@@ -6249,12 +6256,11 @@ struct ReadBookPage {
   getReaderContentBottomReserve(): number {
     // The reader surface extends through the system navigation area. Reserve the footer line plus its visual
     // lift so the last正文 row cannot be painted underneath metadata moved above the gesture indicator.
-    // The footer itself is painted inside the navigation area, just above the gesture indicator, so the two
-    // reserves overlap: take the larger one instead of stacking them.
+    // The footer itself is painted inside the navigation area, just above the gesture indicator. With the
+    // footer on,正文 only has to clear the footer; the navigation reserve applies only when there is no footer.
     if (this.isReaderComicModeActive()) return 0;
-    const navigationReserve = this.getReaderNavigationBottomReserve();
-    if (!this.readerFooterEnabled) return navigationReserve;
-    return Math.max(8, navigationReserve, this.getReaderBottomInfoBarHeight() +
+    if (!this.readerFooterEnabled) return this.getReaderNavigationBottomReserve();
+    return Math.max(8, this.getReaderBottomInfoBarHeight() +
       this.getReaderBottomInfoBarBottomInset() + this.getReaderBottomInfoBarContentGap());
   }
 
@@ -6287,8 +6293,8 @@ struct ReadBookPage {
     // Native Paragraph pagination is created before the footer's first area callback. Use the deterministic
     // fallback line height here so measuring the real Text never invalidates a retained pagination session.
     if (this.isReaderComicModeActive()) return 0;
-    const navigationReserve = this.getReaderNavigationBottomReserve();
-    if (!this.readerFooterEnabled) return navigationReserve;
+    // 页脚开启时正文只需让开页脚（页脚已经画在手势条上方）；没有页脚时才按导航条高度避让。
+    if (!this.readerFooterEnabled) return this.getReaderNavigationBottomReserve();
     const infoBarConfig = this.getReaderInfoBarConfig();
     let footerHeight = infoBarConfig.fontSize;
     try {
@@ -6297,7 +6303,7 @@ struct ReadBookPage {
       footerHeight = infoBarConfig.fontSize;
     }
     footerHeight += infoBarConfig.footerExtraHeight();
-    return Math.max(8, navigationReserve, footerHeight + this.getReaderBottomInfoBarBottomInset() +
+    return Math.max(8, footerHeight + this.getReaderBottomInfoBarBottomInset() +
       this.getReaderBottomInfoBarContentGap());
   }
 
@@ -13882,7 +13888,8 @@ struct ReadBookPage {
       const rect = this.getUIContext().getComponentUtils().getRectangleById(READER_CONTINUOUS_LIST_ID);
       if (rect.size.height <= 0) return [];
       return [rect.windowOffset.y + this.toMeasureNonNegativePx(this.getEffectiveReaderMarginTop()),
-        rect.windowOffset.y + rect.size.height - this.toMeasureNonNegativePx(this.getEffectiveReaderMarginBottom())];
+        rect.windowOffset.y + rect.size.height -
+          this.toMeasureNonNegativePx(this.getReaderContinuousScrollBottomPadding())];
     } catch (_) {
       return [];
     }
@@ -14146,7 +14153,8 @@ struct ReadBookPage {
     const headerReserve = Math.round(this.getReaderHeaderContentReserve() * 100) / 100;
     return `reader_page_v84_${layoutMode}_${chapterIndex}_${this.pageViewWidth}_` +
       `${this.getReaderPaginationViewportHeight()}_` +
-      `${headerReserve}_${footerHeight}_${Math.round(this.getReaderNavigationBottomReserve() * 100) / 100}_` +
+      `${headerReserve}_${footerHeight}_` +
+      `${this.readerFooterEnabled ? 0 : Math.round(this.getReaderNavigationBottomReserve() * 100) / 100}_` +
       `${this.readerHeaderEnabled}_${this.readerFooterEnabled}_` +
       `${this.readerExtendToStatusBar}_${this.isLandscapeDoublePageActive()}_${this.readerTypographyCacheIdentity()}_` +
       `${this.readerParagraphCommentPaginationIdentity()}_` +
