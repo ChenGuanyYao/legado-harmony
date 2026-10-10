@@ -1,5 +1,5 @@
 import { Book, BookChapter, BookSource } from '../../model/data/Book';
-import { HttpClient } from '../http/HttpClient';
+import { HttpClient, HttpResponse } from '../http/HttpClient';
 import { AnalyzeUrl } from '../rule/AnalyzeUrl';
 import { AnalyzeRule } from '../rule/AnalyzeRule';
 import { RuleContext } from '../rule/RuleContext';
@@ -267,6 +267,9 @@ export class WebBookService {
     return '';
   }
 
+  // Catalog pages listed all at once by nextTocUrl are fetched this many at a time.
+  private static readonly TOC_PAGE_FETCH_BATCH: number = 4;
+
   async getChapterList(source: BookSource, book: Book, maxChapters: number = 0,
     allowGenericFallback: boolean = true,
     debugContext: BookSourceDebugContext | null = null): Promise<BookChapter[]> {
@@ -311,57 +314,119 @@ export class WebBookService {
     // Pagination is already protected by seenPageUrls and the optional chapterLimit. The old
     // 100-page ceiling truncated long novels at roughly 2,000 chapters (20 chapters/page).
     // Keep a generous abuse guard while allowing common 4,000–10,000 chapter catalogs.
+    const hasStageRule = !!this.stageRuleCode(tocRule.chapterList || '');
+    const appendChapters = (pageChapters: BookChapter[]): void => {
+      for (const chapter of pageChapters) {
+        if (chapterLimit > 0 && chapters.length >= chapterLimit) return;
+        const chapterKey = this.urlWithoutFragment(chapter.url);
+        // Chapters without an address (volume headings, script-built entries) are never duplicates of each other.
+        if (chapterKey) {
+          if (seenChapterUrls.has(chapterKey)) continue;
+          seenChapterUrls.add(chapterKey);
+        }
+        chapter.index = chapters.length;
+        chapters.push(chapter);
+      }
+    };
+    // Chapters of one catalog page. The chapterList rule runs on every page, scripts included, as Legado's
+    // BookChapterList does; null means the source asked for browser verification and paging must stop.
+    const parsePage = async (pageResp: HttpResponse, pageUrl: string, first: boolean): Promise<BookChapter[] | null> => {
+      if (this.requestVerificationIfNeeded(source, pageUrl, pageResp.body, pageResp.statusCode, tocRule.chapterList)) {
+        return null;
+      }
+      const baseUrl = BookUrlResolver.effectiveBase(pageResp, pageUrl, book.bookUrl || source.bookSourceUrl);
+      if (first) {
+        firstBody = pageResp.body;
+        firstBaseUrl = baseUrl;
+      }
+      const remainingLimit = chapterLimit > 0 ? Math.max(0, chapterLimit - chapters.length) : 0;
+      if (first || hasStageRule) {
+        const runtimeInput = this.stageDataUrlInput(tocRule.chapterList, pageUrl, pageResp.body);
+        const stageBaseUrl = EncodedSourceUrl.decode(pageUrl) ? pageUrl : baseUrl;
+        const runtimeList = await this.runStageRule(source, book, tocRule.chapterList,
+          runtimeInput, stageBaseUrl, SourceRuntimeStage.TOC, null,
+          EncodedSourceUrl.scalarVariables(pageUrl), debugContext);
+        if (runtimeList) {
+          const runtimeChapters = await this.parseStageChapterList(source, book, runtimeList, baseUrl,
+            first ? chapterLimit : remainingLimit, debugContext);
+          if (runtimeChapters.length > 0) return runtimeChapters;
+          if (first) {
+            AppStorage.setOrCreate('bookSourceStageLastError',
+              `目录脚本已返回内容，但没有转换出章节（返回 ${runtimeList.length} 字符）`);
+          }
+        } else if (first && hasStageRule) {
+          const lastError = AppStorage.get<string>('bookSourceStageLastError') || '';
+          if (!lastError) AppStorage.setOrCreate('bookSourceStageLastError', '目录脚本返回空结果');
+        }
+      }
+      return await this.parseChapterPage(source, book, pageResp.body, baseUrl, ctx,
+        chapters.length, remainingLimit, debugContext);
+    };
+    const fetchPage = async (pageUrl: string): Promise<HttpResponse> => EncodedSourceUrl.canHandle(pageUrl) ?
+      await this.fetchEncodedDataUrl(pageUrl, source) : await au.fetch(pageUrl, undefined, debugContext);
+
     for (let page = 0; page < 1000; page++) {
       if (!currentResp.success || !currentResp.body) break;
       const pageKey = this.urlWithoutFragment(currentResp.url || currentUrl);
       if (seenPageUrls.has(pageKey)) break;
       seenPageUrls.add(pageKey);
-      if (this.requestVerificationIfNeeded(source, currentUrl, currentResp.body, currentResp.statusCode, tocRule.chapterList)) {
-        break;
+      if (chapterLimit > 0 && chapters.length >= chapterLimit) break;
+      const pageChapters = await parsePage(currentResp, currentUrl, page === 0);
+      if (pageChapters === null) break;
+      if (page === 0 && !tocRule.nextTocUrl && hasStageRule && pageChapters.length > 0) {
+        // A script-built single-page catalog is returned exactly as the script produced it.
+        const lastError = AppStorage.get<string>('bookSourceStageLastError') || '';
+        if (!lastError) return pageChapters;
       }
-      const baseUrl = BookUrlResolver.effectiveBase(currentResp, currentUrl, book.bookUrl || source.bookSourceUrl);
-      if (page === 0) {
-        firstBody = currentResp.body;
-        firstBaseUrl = baseUrl;
-        const runtimeInput = this.stageDataUrlInput(tocRule.chapterList, currentUrl, currentResp.body);
-        const stageBaseUrl = EncodedSourceUrl.decode(currentUrl) ? currentUrl : baseUrl;
-        const runtimeList = await this.runStageRule(source, book, tocRule.chapterList,
-          runtimeInput, stageBaseUrl, SourceRuntimeStage.TOC, null,
-          EncodedSourceUrl.scalarVariables(currentUrl), debugContext);
-        if (runtimeList) {
-            const runtimeChapters = await this.parseStageChapterList(source, book, runtimeList, baseUrl,
-              chapterLimit, debugContext);
-          if (runtimeChapters.length > 0) {
-            return runtimeChapters;
-          }
-          AppStorage.setOrCreate('bookSourceStageLastError',
-            `目录脚本已返回内容，但没有转换出章节（返回 ${runtimeList.length} 字符）`);
-        } else if (this.stageRuleCode(tocRule.chapterList || '')) {
-          const lastError = AppStorage.get<string>('bookSourceStageLastError') || '';
-          if (!lastError) AppStorage.setOrCreate('bookSourceStageLastError', '目录脚本返回空结果');
-        }
-      }
-      const remainingLimit = chapterLimit > 0 ? Math.max(0, chapterLimit - chapters.length) : 0;
-      if (chapterLimit > 0 && remainingLimit === 0) break;
-      const pageChapters = await this.parseChapterPage(source, book, currentResp.body, baseUrl, ctx,
-        chapters.length, remainingLimit, debugContext);
-      for (const chapter of pageChapters) {
-        const chapterKey = this.urlWithoutFragment(chapter.url);
-        if (seenChapterUrls.has(chapterKey)) continue;
-        seenChapterUrls.add(chapterKey);
-        chapter.index = chapters.length;
-        chapters.push(chapter);
-        if (chapterLimit > 0 && chapters.length >= chapterLimit) break;
-      }
+      appendChapters(pageChapters);
+      // A later page produced chapters: a diagnostic left by an empty earlier attempt is no longer the outcome.
+      if (page > 0 && pageChapters.length > 0) AppStorage.setOrCreate('bookSourceStageLastError', '');
       if (chapterLimit > 0 && chapters.length >= chapterLimit) break;
       if (!tocRule.nextTocUrl) break;
-      const nextUrl = await this.executeSingleRuleField(source, book, null, tocRule.nextTocUrl,
-        currentResp.body, baseUrl, SourceRuntimeStage.TOC, ctx, true, debugContext);
-      const nextKey = this.urlWithoutFragment(nextUrl);
-      if (!nextUrl || seenPageUrls.has(nextKey)) break;
-      currentUrl = nextUrl;
-      currentResp = EncodedSourceUrl.canHandle(currentUrl) ?
-        await this.fetchEncodedDataUrl(currentUrl, source) : await au.fetch(currentUrl, undefined, debugContext);
+
+      const baseUrl = BookUrlResolver.effectiveBase(currentResp, currentUrl, book.bookUrl || source.bookSourceUrl);
+      const pendingUrls: string[] = [];
+      for (const nextUrl of await this.evaluateNextTocUrls(source, book, currentResp.body, baseUrl, ctx,
+        debugContext)) {
+        const nextKey = this.urlWithoutFragment(nextUrl);
+        if (!nextKey || seenPageUrls.has(nextKey) || pendingUrls.indexOf(nextUrl) >= 0) continue;
+        pendingUrls.push(nextUrl);
+      }
+      if (pendingUrls.length === 0) break;
+      if (pendingUrls.length === 1) {
+        currentUrl = pendingUrls[0];
+        currentResp = await fetchPage(currentUrl);
+        continue;
+      }
+      // Legado semantics: nextTocUrl yielding several addresses lists every remaining page at once. Fetch them
+      // a few at a time and parse in the listed order; their own nextTocUrl is not followed.
+      const remainingPages = pendingUrls.slice(0, Math.max(0, 1000 - seenPageUrls.size));
+      let stopped = false;
+      for (let offset = 0; offset < remainingPages.length && !stopped; offset += WebBookService.TOC_PAGE_FETCH_BATCH) {
+        const batchUrls = remainingPages.slice(offset, offset + WebBookService.TOC_PAGE_FETCH_BATCH);
+        const batchResponses = await Promise.all(batchUrls.map((url: string): Promise<HttpResponse | null> =>
+          fetchPage(url).catch((error: Error): null => {
+            console.warn('[WS] toc page fetch failed:', source.bookSourceName, error.message);
+            return null;
+          })));
+        for (let index = 0; index < batchUrls.length; index++) {
+          const listedResp = batchResponses[index];
+          seenPageUrls.add(this.urlWithoutFragment(batchUrls[index]));
+          if (!listedResp || !listedResp.success || !listedResp.body) continue;
+          const listedChapters = await parsePage(listedResp, batchUrls[index], false);
+          if (listedChapters === null) {
+            stopped = true;
+            break;
+          }
+          appendChapters(listedChapters);
+          if (listedChapters.length > 0) AppStorage.setOrCreate('bookSourceStageLastError', '');
+          if (chapterLimit > 0 && chapters.length >= chapterLimit) {
+            stopped = true;
+            break;
+          }
+        }
+      }
+      break;
     }
 
     book.variable = ctx.toPersistentJson();
@@ -1619,6 +1684,57 @@ export class WebBookService {
     } finally {
       RuleExecutionService.get().clearOwner(request.ownerId);
     }
+  }
+
+  /**
+   * nextTocUrl as a list of addresses, the way Legado reads it: one address means "the next page", several mean
+   * "all remaining pages". Falls back to the single-value evaluation when the list form yields nothing.
+   */
+  private async evaluateNextTocUrls(source: BookSource, book: Book, content: string, baseUrl: string,
+    ctx: RuleContext, debugContext: BookSourceDebugContext | null): Promise<string[]> {
+    const rawRule = source.tocRule.nextTocUrl || '';
+    if (!rawRule) return [];
+    const request = new RuleBatchExecutionRequest();
+    request.source = source;
+    request.book = book;
+    request.chapter = null;
+    request.readerActionMode = false;
+    request.stage = SourceRuntimeStage.TOC;
+    request.ownerId = `${SourceRuntimeStage.TOC}_next_${Date.now()}_${book.bookUrl}`;
+    request.typedContents = [RuleValue.fromExternal(content)];
+    request.contents = [content];
+    request.baseUrl = baseUrl;
+    request.contextValues = ctx.toPersistentRecord();
+    request.fields = [new RuleFieldRequest('value', rawRule, false, true)];
+    request.timeoutMs = 15000;
+    request.debugContext = debugContext;
+    const urls: string[] = [];
+    try {
+      const batch = await RuleExecutionService.get().executeBatch(request);
+      if (batch.contextValues.length > 0) ctx.loadFromJson(batch.contextValues[0]);
+      if (batch.errors.length > 0) {
+        console.warn('[WS] toc next urls error:', source.bookSourceName, batch.errors.join('; '));
+      }
+      const raw = batch.values.length > 0 ? batch.values[0]['value'] || '' : '';
+      const listedValues = this.parseStringListValue(raw);
+      // Whole-rule scripts are answered as plain text rather than a JSON array.
+      if (listedValues.length === 0 && raw.trim() && !raw.trim().startsWith('[')) listedValues.push(raw);
+      for (const listed of listedValues) {
+        // A script may hand back one string holding several lines instead of an array.
+        for (const item of listed.split(/\r?\n/)) {
+          const url = item.trim() ? BookUrlResolver.resolve(item.trim(), baseUrl) : '';
+          if (url && urls.indexOf(url) < 0) urls.push(url);
+        }
+      }
+    } catch (error) {
+      console.warn('[WS] toc next urls failed:', source.bookSourceName, (error as Error).message);
+    } finally {
+      RuleExecutionService.get().clearOwner(request.ownerId);
+    }
+    if (urls.length > 0) return urls;
+    const single = await this.executeSingleRuleField(source, book, null, rawRule, content, baseUrl,
+      SourceRuntimeStage.TOC, ctx, true, debugContext);
+    return single ? [single] : [];
   }
 
   private parseStringListValue(value: string): string[] {
