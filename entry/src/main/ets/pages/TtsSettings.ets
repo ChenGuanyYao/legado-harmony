@@ -15,6 +15,7 @@ import { HttpTTS } from '../model/data/Book';
 import { HttpClient } from '../core/http/HttpClient';
 import { syncSystemBars } from '../utils/SystemBars';
 import { SystemTtsReader, TtsVoiceOption } from '../utils/SystemTtsReader';
+import { TtsVoiceCatalog } from '../utils/TtsVoiceCatalog';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { AdaptiveIconButton } from '../components/AdaptiveIconButton';
 import { TtsSettings, TtsSettingsStore } from '../utils/TtsSettingsStore';
@@ -48,7 +49,7 @@ struct TtsSettingsPage {
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
 
-  @State voices: TtsVoiceOption[] = [TtsSettingsPage.defaultVoice()];
+  @State voices: TtsVoiceOption[] = [TtsVoiceCatalog.defaultVoice()];
   @State cloudVoices: TtsVoiceInfo[] = [];
   @State ttsCatalog: TtsCatalogResponse = new TtsCatalogResponse();
   @State ttsStandardChars: number = 0;
@@ -279,11 +280,11 @@ struct TtsSettingsPage {
   selectedVoiceTitle(): string {
     const cloudVoice = this.findCurrentCloudVoice();
     if (cloudVoice) {
-      return this.cloudVoiceTitle(cloudVoice);
+      return TtsVoiceCatalog.cloudVoiceTitle(cloudVoice);
     }
     const customVoice = this.findCurrentCustomVoice();
     if (customVoice && customVoice.enabled !== false) {
-      return this.customVoiceTitle(customVoice);
+      return TtsVoiceCatalog.customVoiceTitle(customVoice);
     }
     const systemVoice = this.findCurrentVoice();
     if (systemVoice) {
@@ -341,19 +342,19 @@ struct TtsSettingsPage {
               this.voiceDropdownSectionTitle('自定义音色')
               ForEach(this.enabledCustomVoices(), (voice: HttpTTS) => {
                 this.customVoiceDropdownOption(voice, false)
-              }, (voice: HttpTTS) => `${this.customVoiceKey(voice)}_enabled`)
+              }, (voice: HttpTTS) => `${TtsVoiceCatalog.customVoiceKey(voice)}_enabled`)
             }
 
             this.voiceDropdownSectionTitle('系统音色')
             ForEach(this.voices, (voice: TtsVoiceOption) => {
               this.systemVoiceDropdownOption(voice)
-            }, (voice: TtsVoiceOption) => this.voiceKey(voice))
+            }, (voice: TtsVoiceOption) => TtsVoiceCatalog.voiceKey(voice))
 
             if (this.disabledCustomVoices().length > 0) {
               this.voiceDropdownSectionTitle('已禁用')
               ForEach(this.disabledCustomVoices(), (voice: HttpTTS) => {
                 this.customVoiceDropdownOption(voice, true)
-              }, (voice: HttpTTS) => `${this.customVoiceKey(voice)}_disabled`)
+              }, (voice: HttpTTS) => `${TtsVoiceCatalog.customVoiceKey(voice)}_disabled`)
             }
           }
           .width('100%')
@@ -391,7 +392,7 @@ struct TtsSettingsPage {
   @Builder
   customVoiceDropdownOption(voice: HttpTTS, disabled: boolean) {
     Row() {
-      Text(this.customVoiceTitle(voice))
+      Text(TtsVoiceCatalog.customVoiceTitle(voice))
         .fontSize(15)
         .fontColor(disabled ? this.subTextColor() : this.primaryTextColor())
         .layoutWeight(1)
@@ -457,7 +458,7 @@ struct TtsSettingsPage {
   @Builder
   cloudVoiceDropdownOption(voice: TtsVoiceInfo) {
     Row() {
-      Text(this.cloudVoiceTitle(voice))
+      Text(TtsVoiceCatalog.cloudVoiceTitle(voice))
         .fontSize(15)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -480,7 +481,7 @@ struct TtsSettingsPage {
 
   normalizeDefaultOnlineVoice(): void {
     if (this.ttsOnline === 0 && this.ttsPerson === 0 && !this.ttsStyle &&
-      this.sameLanguage(this.ttsLanguage || 'zh-CN', 'zh-CN')) {
+      TtsVoiceCatalog.sameLanguage(this.ttsLanguage || 'zh-CN', 'zh-CN')) {
       this.ttsOnline = 1;
       this.saveSettings();
     }
@@ -623,16 +624,6 @@ struct TtsSettingsPage {
     });
   }
 
-  static defaultVoice(): TtsVoiceOption {
-    const option = new TtsVoiceOption();
-    option.id = 0;
-    option.name = '默认音色';
-    option.online = 1;
-    option.status = 'default';
-    option.language = 'zh-CN';
-    return option;
-  }
-
   async loadVoices(): Promise<void> {
     if (this.isLoadingVoices) {
       return;
@@ -660,7 +651,7 @@ struct TtsSettingsPage {
         fallbackCloudVoice.name = '云端音色';
         this.cloudVoices = [fallbackCloudVoice];
       }
-      this.voices = this.applyInstalledOverrides(this.mergeWithDefaultVoice(voices));
+      this.voices = this.applyInstalledOverrides(TtsVoiceCatalog.mergeWithDefault(voices));
       const currentCloudVoice = this.findCurrentCloudVoice();
       if (currentCloudVoice) {
         this.selectedVoiceKey = `cloud_${currentCloudVoice.id}`;
@@ -668,7 +659,7 @@ struct TtsSettingsPage {
       }
       const currentCustomVoice = this.findCurrentCustomVoice();
       if (currentCustomVoice) {
-        this.selectedVoiceKey = this.customVoiceKey(currentCustomVoice);
+        this.selectedVoiceKey = TtsVoiceCatalog.customVoiceKey(currentCustomVoice);
         return;
       }
       const currentVoice = this.findCurrentVoice();
@@ -676,10 +667,10 @@ struct TtsSettingsPage {
         const defaultVoice = this.firstAvailableVoice();
         this.applyVoice(defaultVoice, false);
       } else {
-        this.selectedVoiceKey = this.voiceKey(currentVoice);
+        this.selectedVoiceKey = TtsVoiceCatalog.voiceKey(currentVoice);
       }
     } catch (_) {
-      this.voices = [TtsSettingsPage.defaultVoice()];
+      this.voices = [TtsVoiceCatalog.defaultVoice()];
       this.ttsPerson = 0;
       this.ttsOnline = 1;
       this.ttsStyle = '';
@@ -692,59 +683,9 @@ struct TtsSettingsPage {
     }
   }
 
-  mergeWithDefaultVoice(voices: TtsVoiceOption[]): TtsVoiceOption[] {
-    const options: TtsVoiceOption[] = [TtsSettingsPage.defaultVoice()];
-    for (const voice of voices) {
-      const existingIndex = options.findIndex((item: TtsVoiceOption) =>
-        this.isSameVoiceOption(item, voice) || this.isSameDisplayVoice(item, voice));
-      if (existingIndex < 0) {
-        options.push(voice);
-      } else if (this.shouldPreferVoiceOption(voice, options[existingIndex])) {
-        options[existingIndex] = voice;
-      }
-    }
-    return options;
-  }
-
-  isSameVoiceOption(left: TtsVoiceOption, right: TtsVoiceOption): boolean {
-    if (left.id !== right.id || left.online !== right.online ||
-      !this.sameLanguage(left.language || 'zh-CN', right.language || 'zh-CN')) {
-      return false;
-    }
-    if (this.isKnownVoiceId(left.id)) {
-      return true;
-    }
-    return (left.style || '') === (right.style || '');
-  }
-
-  isSameDisplayVoice(left: TtsVoiceOption, right: TtsVoiceOption): boolean {
-    if (this.voiceTitle(left) === this.voiceTitle(right)) {
-      return true;
-    }
-    return (left.name || '') === (right.name || '') && left.online === right.online &&
-      this.sameLanguage(left.language || 'zh-CN', right.language || 'zh-CN');
-  }
-
-  shouldPreferVoiceOption(candidate: TtsVoiceOption, current: TtsVoiceOption): boolean {
-    if (candidate.available !== current.available) {
-      return candidate.available;
-    }
-    if (this.isKnownVoiceId(candidate.id) !== this.isKnownVoiceId(current.id)) {
-      return this.isKnownVoiceId(candidate.id);
-    }
-    if (candidate.downloadable !== current.downloadable) {
-      return candidate.downloadable;
-    }
-    return !current.style && !!candidate.style;
-  }
-
-  isKnownVoiceId(id: number): boolean {
-    return id === 0 || id === 8 || id === 13 || id === 21;
-  }
-
   firstAvailableVoice(): TtsVoiceOption {
     return this.voices.find((voice: TtsVoiceOption) => voice.available) || this.voices[0] ||
-      TtsSettingsPage.defaultVoice();
+      TtsVoiceCatalog.defaultVoice();
   }
 
   async selectVoice(voice: TtsVoiceOption): Promise<void> {
@@ -770,7 +711,7 @@ struct TtsSettingsPage {
     this.ttsLanguage = voice.language;
     this.ttsCustomVoiceId = '';
     this.ttsCloudVoiceId = '';
-    this.selectedVoiceKey = this.voiceKey(voice);
+    this.selectedVoiceKey = TtsVoiceCatalog.voiceKey(voice);
     this.saveSettings();
   }
 
@@ -785,7 +726,7 @@ struct TtsSettingsPage {
     }
     this.ttsCustomVoiceId = String(voice.id);
     this.ttsCloudVoiceId = '';
-    this.selectedVoiceKey = this.customVoiceKey(voice);
+    this.selectedVoiceKey = TtsVoiceCatalog.customVoiceKey(voice);
     this.saveSettings();
     HdsFeedback.showToast(`已启用 ${voice.name}`);
   }
@@ -812,20 +753,12 @@ struct TtsSettingsPage {
     return this.cloudVoices.find((voice: TtsVoiceInfo) => voice.id === id);
   }
 
-  cloudVoiceTitle(voice: TtsVoiceInfo): string {
-    const tier = voice.tier === 'PREMIUM' ? '精品' : '标准';
-    const description = (voice.description || '').trim();
-    return description
-      ? `${voice.name} · ${description} · 云端${tier}`
-      : `${voice.name} · 云端${tier}`;
-  }
-
   async downloadAndSelectVoice(voice: TtsVoiceOption): Promise<void> {
     if (this.downloadingVoiceKey) {
       HdsFeedback.showToast('正在下载音色，请稍候');
       return;
     }
-    const key = this.voiceKey(voice);
+    const key = TtsVoiceCatalog.voiceKey(voice);
     this.downloadingVoiceKey = key;
     this.downloadProgressText = '';
     try {
@@ -842,8 +775,8 @@ struct TtsSettingsPage {
       await this.loadVoices();
       let downloaded = this.findMatchingVoice(voice, true);
       if (!downloaded) {
-        downloaded = this.markVoiceOptionInstalled(voice);
-        this.voices = this.applyInstalledOverrides(this.mergeWithDefaultVoice(this.voices.concat([downloaded])));
+        downloaded = TtsVoiceCatalog.markInstalled(voice);
+        this.voices = this.applyInstalledOverrides(TtsVoiceCatalog.mergeWithDefault(this.voices.concat([downloaded])));
       }
       this.applyVoice(downloaded, true);
       HdsFeedback.showToast(`已启用 ${downloaded.name}`);
@@ -862,13 +795,13 @@ struct TtsSettingsPage {
   applyInstalledOverrides(voices: TtsVoiceOption[]): TtsVoiceOption[] {
     const options: TtsVoiceOption[] = [];
     for (const voice of voices) {
-      options.push(this.isLocallyInstalledVoice(voice) ? this.markVoiceOptionInstalled(voice) : voice);
+      options.push(this.isLocallyInstalledVoice(voice) ? TtsVoiceCatalog.markInstalled(voice) : voice);
     }
     return options;
   }
 
   markVoiceInstalled(voice: TtsVoiceOption): void {
-    const key = this.installedVoiceKey(voice);
+    const key = TtsVoiceCatalog.installedKey(voice);
     if (!key || this.installedVoiceKeyExists(key)) {
       return;
     }
@@ -878,7 +811,7 @@ struct TtsSettingsPage {
   }
 
   isLocallyInstalledVoice(voice: TtsVoiceOption): boolean {
-    return this.installedVoiceKeyExists(this.installedVoiceKey(voice));
+    return this.installedVoiceKeyExists(TtsVoiceCatalog.installedKey(voice));
   }
 
   installedVoiceKeyExists(key: string): boolean {
@@ -889,63 +822,12 @@ struct TtsSettingsPage {
     return keys.includes(key);
   }
 
-  installedVoiceKey(voice: TtsVoiceOption): string {
-    const style = this.isKnownVoiceId(voice.id) ? '' : (voice.style || '');
-    return `${voice.id}_${voice.online}_${this.normalizeLanguage(voice.language || 'zh-CN')}_${style}`;
-  }
-
-  markVoiceOptionInstalled(voice: TtsVoiceOption): TtsVoiceOption {
-    const option = this.copyVoiceOption(voice);
-    option.available = true;
-    option.downloadable = false;
-    option.status = 'INSTALLED';
-    option.systemStatus = 'INSTALLED';
-    return option;
-  }
-
-  copyVoiceOption(voice: TtsVoiceOption): TtsVoiceOption {
-    const option = new TtsVoiceOption();
-    option.id = voice.id;
-    option.name = voice.name;
-    option.online = voice.online;
-    option.status = voice.status;
-    option.systemStatus = voice.systemStatus;
-    option.style = voice.style;
-    option.language = voice.language;
-    option.downloadLanguage = voice.downloadLanguage;
-    option.gender = voice.gender;
-    option.available = voice.available;
-    option.downloadable = voice.downloadable;
-    return option;
-  }
-
   voiceTitle(voice: TtsVoiceOption): string {
-    if (voice.status === 'default') {
-      return `${voice.name} · 系统默认`;
-    }
-    if (this.isVoiceDownloading(voice)) {
+    if (voice.status !== 'default' && this.isVoiceDownloading(voice)) {
       const progress = this.downloadProgressText ? ` · ${this.downloadProgressText}` : '';
       return `${voice.name} · 下载中${progress}`;
     }
-    const suffix = voice.online === 0 ? '在线' : '离线';
-    const gender = this.voiceGenderText(voice);
-    const state = voice.available ? '' : (voice.downloadable ? ' · 需下载' : ' · 不可用');
-    return `${voice.name} · ${suffix}${gender}${state}`;
-  }
-
-  voiceGenderText(voice: TtsVoiceOption): string {
-    const value = (voice.gender || '').toLowerCase();
-    if (value === 'male' || value === '男' || value === '男声') {
-      return ' · 男声';
-    }
-    if (value === 'female' || value === '女' || value === '女声') {
-      return ' · 女声';
-    }
-    return '';
-  }
-
-  voiceKey(voice: TtsVoiceOption): string {
-    return `${voice.id}_${voice.online}_${voice.language || 'zh-CN'}_${voice.style || ''}_${voice.name || ''}`;
+    return TtsVoiceCatalog.voiceTitle(voice);
   }
 
   currentVoiceKey(): string {
@@ -954,10 +836,10 @@ struct TtsSettingsPage {
     }
     const customVoice = this.findCurrentCustomVoice();
     if (customVoice) {
-      return this.customVoiceKey(customVoice);
+      return TtsVoiceCatalog.customVoiceKey(customVoice);
     }
     const matched = this.findCurrentVoice();
-    return matched ? this.voiceKey(matched) :
+    return matched ? TtsVoiceCatalog.voiceKey(matched) :
       `${this.ttsPerson}_${this.ttsOnline}_${this.ttsLanguage || 'zh-CN'}_${this.ttsStyle || ''}_`;
   }
 
@@ -971,7 +853,7 @@ struct TtsSettingsPage {
     }
     return voice.id === this.ttsPerson && voice.online === this.ttsOnline &&
       (voice.style || '') === (this.ttsStyle || '') &&
-      this.sameLanguage(voice.language || 'zh-CN', this.ttsLanguage || 'zh-CN');
+      TtsVoiceCatalog.sameLanguage(voice.language || 'zh-CN', this.ttsLanguage || 'zh-CN');
   }
 
   findCurrentCustomVoice(): HttpTTS | undefined {
@@ -980,15 +862,6 @@ struct TtsSettingsPage {
       return undefined;
     }
     return this.customVoices.find((voice: HttpTTS) => String(voice.id) === selectedId);
-  }
-
-  customVoiceKey(voice: HttpTTS): string {
-    return `custom_${voice.id}_${voice.name || ''}`;
-  }
-
-  customVoiceTitle(voice: HttpTTS): string {
-    const state = voice.enabled === false ? ' · 已禁用' : '';
-    return `${voice.name || '未命名音色'} · 自定义${state}`;
   }
 
   isCustomVoiceSelected(voice: HttpTTS): boolean {
@@ -1072,7 +945,7 @@ struct TtsSettingsPage {
     this.ttsCustomVoices = SystemTtsReader.serializeCustomVoices(merged);
     if (!this.ttsCustomVoiceId && incoming.length > 0) {
       this.ttsCustomVoiceId = String(incoming[0].id);
-      this.selectedVoiceKey = this.customVoiceKey(incoming[0]);
+      this.selectedVoiceKey = TtsVoiceCatalog.customVoiceKey(incoming[0]);
     }
     this.saveSettings();
     HdsFeedback.showToast(`已导入 ${changed} 个自定义音色`);
@@ -1114,13 +987,13 @@ struct TtsSettingsPage {
   findMatchingVoice(target: TtsVoiceOption, availableOnly: boolean): TtsVoiceOption | undefined {
     const exact = this.voices.find((voice: TtsVoiceOption) => voice.id === target.id && voice.online === target.online &&
       (voice.style || '') === (target.style || '') &&
-      this.sameLanguage(voice.language || 'zh-CN', target.language || 'zh-CN') &&
+      TtsVoiceCatalog.sameLanguage(voice.language || 'zh-CN', target.language || 'zh-CN') &&
       (!availableOnly || voice.available));
     if (exact) {
       return exact;
     }
     const sameModule = this.voices.find((voice: TtsVoiceOption) => voice.id === target.id &&
-      voice.online === target.online && this.sameLanguage(voice.language || 'zh-CN', target.language || 'zh-CN') &&
+      voice.online === target.online && TtsVoiceCatalog.sameLanguage(voice.language || 'zh-CN', target.language || 'zh-CN') &&
       (!availableOnly || voice.available));
     if (sameModule) {
       return sameModule;
@@ -1129,23 +1002,8 @@ struct TtsSettingsPage {
       (!availableOnly || voice.available));
   }
 
-  sameLanguage(left: string, right: string): boolean {
-    return this.normalizeLanguage(left) === this.normalizeLanguage(right);
-  }
-
-  normalizeLanguage(language: string): string {
-    const value = (language || 'zh-CN').trim().replace(/_/g, '-').toLowerCase();
-    if (value === 'zh' || value === 'zh-cn' || value.startsWith('zh-hans')) {
-      return 'zh-CN';
-    }
-    if (value === 'en' || value === 'en-us') {
-      return 'en-US';
-    }
-    return value || 'zh-CN';
-  }
-
   isVoiceDownloading(voice: TtsVoiceOption): boolean {
-    return this.downloadingVoiceKey === this.voiceKey(voice);
+    return this.downloadingVoiceKey === TtsVoiceCatalog.voiceKey(voice);
   }
 
   formatDownloadProgress(progress: string): string {
