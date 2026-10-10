@@ -4,6 +4,7 @@ import { common, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { Context } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
+import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { appDb } from '../../model/data/AppDatabase';
 import { Book, BookChapter, BookSource, SearchBook } from '../../model/data/Book';
 import { ReadBookEngine } from '../book/ReadBookEngine';
@@ -150,6 +151,16 @@ export class LanReaderServer {
   private readonly bookIds: Map<string, string> = new Map();
   private readonly idBooks: Map<string, string> = new Map();
   private readonly httpClient: HttpClient = new HttpClient(12000);
+  private readonly idleTimers: Map<number, number> = new Map();
+  private authFailureCount: number = 0;
+  private authLockedUntil: number = 0;
+
+  // A request that has not arrived completely within this time is dropped, so a handful of idle sockets cannot
+  // occupy every connection slot.
+  private static readonly REQUEST_TIMEOUT_MS: number = 15000;
+  private static readonly AUTH_FREE_ATTEMPTS: number = 5;
+  private static readonly AUTH_LOCK_BASE_MS: number = 30000;
+  private static readonly AUTH_LOCK_MAX_MS: number = 10 * 60 * 1000;
 
   private constructor() {
   }
@@ -201,6 +212,8 @@ export class LanReaderServer {
   setPassword(password: string): void {
     const next = password.trim().substring(0, 64);
     this.password = next;
+    this.authFailureCount = 0;
+    this.authLockedUntil = 0;
     AppStorage.setOrCreate('lanReaderPassword', next);
     // Invalidate any browser sessions when the access password changes.
     if (this.enabled) {
@@ -270,6 +283,8 @@ export class LanReaderServer {
     });
     this.connections.clear();
     this.buffers.clear();
+    this.idleTimers.forEach((timer: number) => clearTimeout(timer));
+    this.idleTimers.clear();
     if (server) {
       try {
         await server.close();
@@ -321,6 +336,11 @@ export class LanReaderServer {
     const id = client.clientId;
     this.connections.set(id, client);
     this.buffers.set(id, '');
+    this.idleTimers.set(id, setTimeout(() => {
+      this.idleTimers.delete(id);
+      // Still buffered means the request never completed; a request being answered has left the buffer map.
+      if (this.buffers.has(id)) client.close().catch(() => undefined);
+    }, LanReaderServer.REQUEST_TIMEOUT_MS));
     client.on('message', (info: socket.SocketMessageInfo) => {
       const previous = this.buffers.get(id) || '';
       const text = util.TextDecoder.create('utf-8').decodeWithStream(
@@ -351,6 +371,11 @@ export class LanReaderServer {
   private cleanupConnection(id: number): void {
     this.connections.delete(id);
     this.buffers.delete(id);
+    const timer = this.idleTimers.get(id);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.idleTimers.delete(id);
+    }
   }
 
   private async tryHandleRequest(client: socket.TCPSocketConnection, id: number): Promise<void> {
@@ -404,12 +429,27 @@ export class LanReaderServer {
   }
 
   private async route(request: LanHttpRequest): Promise<LanHttpResponse> {
+    // The page is only ever opened as http://<lan ip>:<port>. A different Host means the browser was pointed here
+    // through another name (DNS rebinding); a foreign Origin means another website is scripting requests at us.
+    if (!this.isOwnHost(request.headers.get('host') || '') ||
+      !this.isOwnOrigin(request.headers.get('origin') || '')) {
+      return { status: 403, contentType: 'text/plain; charset=utf-8', body: 'Forbidden' };
+    }
     const supplied = request.query.get('token') || this.authorizationToken(request.headers.get('authorization') || '');
     if (request.method === 'POST' && request.path === '/api/auth') {
+      const lockedMs = this.authLockedUntil - Date.now();
+      if (lockedMs > 0) {
+        return {
+          status: 429,
+          contentType: 'application/json; charset=utf-8',
+          body: JSON.stringify({ ok: false, message: `尝试次数过多，请 ${Math.ceil(lockedMs / 1000)} 秒后再试` })
+        };
+      }
       try {
         const payload = JSON.parse(request.body || '{}') as Record<string, Object>;
         const candidate = String(payload['password'] || '');
-        if (this.password.length > 0 && candidate === this.password) {
+        if (this.password.length > 0 && this.sameSecret(candidate, this.password)) {
+          this.authFailureCount = 0;
           const result = new LanAuthDto();
           result.ok = true;
           result.token = this.token;
@@ -417,6 +457,7 @@ export class LanReaderServer {
         }
       } catch (_) {
       }
+      this.registerAuthFailure();
       return { status: 401, contentType: 'application/json; charset=utf-8', body: JSON.stringify({ ok: false, message: '密码错误' }) };
     }
     // The document shell is intentionally public; it contains no book data and
@@ -425,7 +466,7 @@ export class LanReaderServer {
     // With no password configured the LAN reader is intentionally open, so
     // direct ip:port access does not depend on a generated token or a stale
     // browser session. Password mode keeps all APIs session-protected.
-    if (this.password.length > 0 && (!this.token || supplied !== this.token)) {
+    if (this.password.length > 0 && (!this.token || !this.sameSecret(supplied, this.token))) {
       return { status: 401, contentType: 'text/plain; charset=utf-8', body: 'Unauthorized' };
     }
     if (request.method === 'GET' && request.path === '/api/health') {
@@ -478,6 +519,36 @@ export class LanReaderServer {
       return await this.imageProxyResponse(request.query.get('url') || '');
     }
     return { status: 404, contentType: 'text/plain; charset=utf-8', body: 'Not Found' };
+  }
+
+  private isOwnHost(hostHeader: string): boolean {
+    // HTTP/1.0 clients and simple tools may omit Host; browsers (the rebinding vector) always send it.
+    if (!hostHeader) return true;
+    const host = hostHeader.trim().toLowerCase();
+    return host === this.ipAddress || host === `${this.ipAddress}:${this.port}`;
+  }
+
+  private isOwnOrigin(originHeader: string): boolean {
+    if (!originHeader) return true;
+    return originHeader.trim().toLowerCase() === `http://${this.ipAddress}:${this.port}`;
+  }
+
+  /** Compares without stopping at the first different character, so timing does not reveal a matching prefix. */
+  private sameSecret(candidate: string, expected: string): boolean {
+    let difference = candidate.length ^ expected.length;
+    for (let i = 0; i < expected.length; i++) {
+      difference |= (i < candidate.length ? candidate.charCodeAt(i) : 0) ^ expected.charCodeAt(i);
+    }
+    return difference === 0;
+  }
+
+  /** After a few free attempts every further wrong password locks sign-in, doubling up to ten minutes. */
+  private registerAuthFailure(): void {
+    this.authFailureCount++;
+    const extra = this.authFailureCount - LanReaderServer.AUTH_FREE_ATTEMPTS;
+    if (extra < 0) return;
+    this.authLockedUntil = Date.now() +
+      Math.min(LanReaderServer.AUTH_LOCK_MAX_MS, LanReaderServer.AUTH_LOCK_BASE_MS * Math.pow(2, Math.min(extra, 10)));
   }
 
   private authorizationToken(value: string): string {
@@ -763,30 +834,85 @@ export class LanReaderServer {
     if (!response.success || response.data.byteLength === 0) {
       return { status: 404, contentType: 'text/plain; charset=utf-8', body: 'Cover Not Found' };
     }
-    const contentType = this.header(response.headers, 'content-type') || 'image/jpeg';
+    const contentType = this.imageContentType(this.header(response.headers, 'content-type'));
+    if (!contentType) return { status: 404, contentType: 'text/plain; charset=utf-8', body: 'Cover Not Found' };
     return { status: 200, contentType, body: response.data.buffer as ArrayBuffer };
   }
 
   private async imageProxyResponse(url: string): Promise<LanHttpResponse> {
-    if (!/^https?:\/\//i.test(url) || this.isPrivateProxyTarget(url)) {
+    if (!/^https?:\/\//i.test(url) || await this.isPrivateProxyTarget(url)) {
       return { status: 400, contentType: 'text/plain; charset=utf-8', body: 'Invalid image URL' };
     }
     const response = await this.httpClient.executeBinary({ url, method: 'GET', headers: {}, maxResponseBytes: 12 * 1024 * 1024 });
     if (!response.success || response.data.byteLength === 0) {
       return { status: 404, contentType: 'text/plain; charset=utf-8', body: 'Image Not Found' };
     }
-    const contentType = this.header(response.headers, 'content-type') || 'image/jpeg';
+    const contentType = this.imageContentType(this.header(response.headers, 'content-type'));
+    if (!contentType) return { status: 404, contentType: 'text/plain; charset=utf-8', body: 'Image Not Found' };
     return { status: 200, contentType, body: response.data.buffer as ArrayBuffer };
   }
 
-  private isPrivateProxyTarget(url: string): boolean {
+  /**
+   * These endpoints relay bytes fetched from other sites under this server's own origin. Only bitmap image types
+   * are passed on: an HTML or SVG document served from here could script the reader page and read its session.
+   */
+  private imageContentType(header: string): string {
+    const type = (header || '').split(';')[0].trim().toLowerCase();
+    if (!type || type === 'application/octet-stream' || type === 'binary/octet-stream') return 'image/jpeg';
+    if (!type.startsWith('image/') || type.indexOf('svg') >= 0) return '';
+    return type;
+  }
+
+  /** True when the address must not be fetched on behalf of a browser: this device, the LAN, or unparsable. */
+  private async isPrivateProxyTarget(url: string): Promise<boolean> {
     try {
-      const host = url.replace(/^https?:\/\//i, '').split(/[/?#:]/)[0];
-      if (!host || host === 'localhost' || host === '::1') return true;
-      return this.isPrivateIpv4(host) || host.endsWith('.local') || host.endsWith('.lan');
+      let authority = url.replace(/^https?:\/\//i, '').split(/[/?#]/)[0];
+      // user:pass@host — the part after the last @ is what is actually contacted
+      const at = authority.lastIndexOf('@');
+      if (at >= 0) authority = authority.substring(at + 1);
+      // IPv6 literals are never needed for book images; refuse them instead of classifying every range
+      if (!authority || authority.indexOf('[') >= 0 || authority.indexOf(']') >= 0) return true;
+      const host = authority.split(':')[0].trim().toLowerCase().replace(/\.$/, '');
+      if (!host || host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') ||
+        host.endsWith('.lan') || host.endsWith('.internal') || host.indexOf('.') < 0) {
+        return true;
+      }
+      if (/^[0-9.]+$/.test(host) || /^0x[0-9a-f]+$/.test(host)) {
+        // Dotted quads are checked by range; other numeric spellings (decimal, short forms) are refused outright.
+        return !/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || this.isNonPublicIpv4(host);
+      }
+      // A public-looking name can still point at the LAN.
+      const addresses = await connection.getAddressesByName(host);
+      for (const item of addresses) {
+        const address = item.address || '';
+        if (address.indexOf(':') >= 0 ? this.isNonPublicIpv6(address) : this.isNonPublicIpv4(address)) return true;
+      }
+      return addresses.length === 0;
     } catch (_) {
       return true;
     }
+  }
+
+  private isNonPublicIpv4(ip: string): boolean {
+    const parts = ip.split('.').map((item: string) => Number(item));
+    if (parts.length !== 4 || parts.some((item: number) => !Number.isFinite(item) || item < 0 || item > 255)) {
+      return true;
+    }
+    return parts[0] === 0 || parts[0] === 10 || parts[0] === 127 || parts[0] >= 224 ||
+      (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) ||
+      (parts[0] === 169 && parts[1] === 254) ||
+      (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) ||
+      (parts[0] === 192 && parts[1] === 168) ||
+      (parts[0] === 198 && (parts[1] === 18 || parts[1] === 19));
+  }
+
+  private isNonPublicIpv6(ip: string): boolean {
+    const text = ip.toLowerCase();
+    const mapped = text.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (mapped) return this.isNonPublicIpv4(mapped[1]);
+    return text === '::' || text === '::1' || text.startsWith('fc') || text.startsWith('fd') ||
+      text.startsWith('fe8') || text.startsWith('fe9') || text.startsWith('fea') || text.startsWith('feb') ||
+      text.startsWith('ff');
   }
 
   private htmlResponse(): LanHttpResponse {
@@ -839,7 +965,8 @@ export class LanReaderServer {
     // empty response or throw before anything is written to the socket.
     if (typeof response.body === 'string') {
       const header = `HTTP/1.1 ${response.status} ${this.statusText(response.status)}\r\n` +
-        `Content-Type: ${response.contentType}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n`;
+        `Content-Type: ${response.contentType}\r\nX-Content-Type-Options: nosniff\r\n` +
+        `Cache-Control: no-store\r\nConnection: close\r\n\r\n`;
       console.info(`[LanReader] sending HTTP ${response.status} text response`);
       await client.send({ data: header + response.body, encoding: 'UTF-8' });
       await client.close();
@@ -848,6 +975,7 @@ export class LanReaderServer {
     const body = new Uint8Array(response.body);
     const header = `HTTP/1.1 ${response.status} ${this.statusText(response.status)}\r\n` +
       `Content-Type: ${response.contentType}\r\nContent-Length: ${body.byteLength}\r\n` +
+      `X-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'none'; sandbox\r\n` +
       `Cache-Control: no-store\r\nConnection: close\r\n\r\n`;
     console.info(`[LanReader] sending HTTP ${response.status}, ${body.byteLength} bytes`);
     await client.send({ data: header, encoding: 'UTF-8' });
@@ -863,6 +991,8 @@ export class LanReaderServer {
     if (status === 200) return 'OK';
     if (status === 400) return 'Bad Request';
     if (status === 401) return 'Unauthorized';
+    if (status === 403) return 'Forbidden';
+    if (status === 429) return 'Too Many Requests';
     if (status === 404) return 'Not Found';
     return 'Error';
   }
@@ -912,11 +1042,12 @@ export class LanReaderServer {
       (parts[0] === 192 && parts[1] === 168) || parts[0] === 169 && parts[1] === 254;
   }
 
+  /** 128 random bits from the system generator; the token only lives in memory for the current run. */
   private createToken(): string {
-    const seed = `${Date.now()}-${Math.random()}-${Math.random()}`;
-    let value = 0;
-    for (let i = 0; i < seed.length; i++) value = Math.imul(value ^ seed.charCodeAt(i), 16777619);
-    return `${(value >>> 0).toString(36)}${Date.now().toString(36)}`;
+    const bytes = cryptoFramework.createRandom().generateRandomSync(16).data;
+    let token = '';
+    for (let i = 0; i < bytes.length; i++) token += bytes[i].toString(16).padStart(2, '0');
+    return token;
   }
 
   private escapeHtml(value: string): string {
