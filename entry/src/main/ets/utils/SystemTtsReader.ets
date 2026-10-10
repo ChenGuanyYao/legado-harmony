@@ -1898,6 +1898,20 @@ export class SystemTtsReader {
     return result;
   }
 
+  /**
+   * End offset of the last character start() can turn into an audible chunk. It must run the same
+   * sanitizing as start(): a trailing decorative line (a lone ">", "***", "---" ...) is blanked there
+   * and trimmed off the final chunk, so measuring the raw text would point past anything ever spoken.
+   */
+  speechTextEnd(text: string): number {
+    const cleanText = this.normalizeText(text);
+    let end = cleanText.length;
+    while (end > 0 && this.isTrimChar(cleanText.charAt(end - 1))) {
+      end--;
+    }
+    return end;
+  }
+
   private normalizeText(text: string): string {
     return this.sanitizeStructuralSpeechArtifacts(
       this.replaceUnsafeSpeechCharacters((text || '').replace(/\r\n/g, '\n')));
