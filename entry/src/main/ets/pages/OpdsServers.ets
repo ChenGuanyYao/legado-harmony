@@ -155,7 +155,7 @@ struct OpdsServersPage {
       if (this.servers.length === 0) {
         this.emptyGuide()
       } else {
-        List({ space: 1 }) {
+        List({ space: 8 }) {
           ListItem() {
             Row()
               .height(this.listTopInset())
@@ -175,6 +175,8 @@ struct OpdsServersPage {
               ListItem() {
                 this.serverRow(server)
               }
+              .borderRadius(8)
+              .clip(true)
               .swipeAction(this.busy ? {} : {
                 end: {
                   builder: (): void => {
@@ -250,6 +252,7 @@ struct OpdsServersPage {
     .width('100%')
     .padding({ left: 16, right: 16, top: 10, bottom: 10 })
     .backgroundColor(this.cardColor())
+    .borderRadius(8)
     .gesture(
       LongPressGesture({ repeat: false })
         .onAction((event: GestureEvent) => {

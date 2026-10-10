@@ -136,7 +136,7 @@ struct WebDavPage {
       if (this.connections.length === 0) {
         this.emptyGuide()
       } else {
-        List({ space: 1 }) {
+        List({ space: 8 }) {
           ListItem() {
             Row()
               .height(this.listTopInset())
@@ -156,6 +156,8 @@ struct WebDavPage {
               ListItem() {
                 this.connectionRow(connection)
               }
+              .borderRadius(8)
+              .clip(true)
               .swipeAction(this.busy ? {} : {
                 end: {
                   builder: (): void => {
@@ -231,6 +233,7 @@ struct WebDavPage {
     .width('100%')
     .padding({ left: 16, right: 16, top: 10, bottom: 10 })
     .backgroundColor(this.cardColor())
+    .borderRadius(8)
     .gesture(
       LongPressGesture({ repeat: false })
         .onAction((event: GestureEvent) => {
