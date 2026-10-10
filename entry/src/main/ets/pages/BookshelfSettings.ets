@@ -1,4 +1,4 @@
-import { router } from '@kit.ArkUI';
+import { router, promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { syncSystemBars } from '../utils/SystemBars';
 import { AppDatabase } from '../model/data/AppDatabase';
@@ -11,6 +11,12 @@ import { BookshelfDisplaySettings, BookshelfDisplaySettingsStore } from '../util
 import { SearchExplorePendingBook } from '../utils/SearchExplorePendingBook';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
+import { PrivateShelfStore } from '../utils/PrivateShelfStore';
+import { SystemDialogSession } from '../utils/SystemDialogSession';
+import { HdsFeedback } from '../utils/HdsFeedback';
+import { LocalBookService } from '../core/book/LocalBookService';
+import { BookDisplayHelper } from '../utils/BookDisplayHelper';
+import { BookCoverCache } from '../utils/BookCoverCache';
 
 @Entry
 @Component
@@ -48,12 +54,29 @@ struct BookshelfSettingsPage {
   @State targetBooksLoading: boolean = false;
   @State showTargetBookList: boolean = false;
   @State settingsRenderTick: number = 0;
+  @StorageLink('privateShelfEnabled') @Watch('onPrivateShelfEnabledChanged') privateShelfEnabled: boolean = false;
+  @StorageLink('privateShelfHasPassword') privateShelfHasPassword: boolean = false;
+  // 开关的显示值。关闭需要先验证密码，验证期间它与真实状态可以暂时不一致。
+  @State privateShelfSwitchOn: boolean = false;
+  // 'disable'：关闭隐私书架前验证密码；'password'：设置、修改或清除密码。
+  @State privatePasswordDialogMode: string = 'password';
+  @State privatePasswordCurrent: string = '';
+  @State privatePasswordNew: string = '';
+  @State privatePasswordConfirm: string = '';
+  @State privatePasswordError: string = '';
+  @State privateShelfBusy: boolean = false;
+  private privatePasswordDialogSession: SystemDialogSession = new SystemDialogSession();
   private skipNextCoverGalleryReload: boolean = false;
 
   aboutToAppear(): void {
     this.reloadCoverSettings();
     this.reloadDisplaySettings();
+    this.reloadPrivateShelfSettings();
     this.syncBars();
+  }
+
+  aboutToDisappear(): void {
+    this.privatePasswordDialogSession.close(this.getUIContext());
   }
 
   onPageShow(): void {
@@ -139,9 +162,21 @@ struct BookshelfSettingsPage {
           .clip(true)
           .backgroundColor(this.cardColor())
 
-          this.sectionTitle('本地书籍')
+          this.sectionTitle('隐私书架')
           Column() {
-            this.navItem('添加书籍', '选择并导入 TXT 和 EPUB 书籍文件', 'pages/LocalBookSettings')
+            this.privateShelfSwitchItem()
+            if (this.privateShelfEnabled) {
+              this.itemDivider()
+              this.actionItem('隐私书架密码',
+                this.privateShelfHasPassword ? '已设置，进入隐私书架时需要输入' : '未设置，设置后进入隐私书架需要输入密码',
+                this.primaryTextColor(), () => {
+                  this.openPrivatePasswordDialog('password');
+                })
+              this.itemDivider()
+              this.actionItem('重置隐私书架', '删除所有隐私书籍并关闭隐私书架，忘记密码时使用', '#E53935', () => {
+                this.confirmResetPrivateShelf();
+              })
+            }
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
@@ -253,6 +288,137 @@ struct BookshelfSettingsPage {
     }
   }
 
+  async reloadPrivateShelfSettings(): Promise<void> {
+    try {
+      await PrivateShelfStore.load(getContext(this));
+    } catch (e) {
+      console.warn('加载隐私书架设置失败:', e);
+    }
+    this.privateShelfSwitchOn = this.privateShelfEnabled;
+  }
+
+  onPrivateShelfEnabledChanged(): void {
+    this.privateShelfSwitchOn = this.privateShelfEnabled;
+  }
+
+  onPrivateShelfSwitchChanged(value: boolean): void {
+    if (value === this.privateShelfEnabled) return;
+    this.privateShelfSwitchOn = value;
+    if (!value && this.privateShelfHasPassword) {
+      this.openPrivatePasswordDialog('disable');
+      return;
+    }
+    this.applyPrivateShelfEnabled(value);
+  }
+
+  async applyPrivateShelfEnabled(enabled: boolean): Promise<void> {
+    try {
+      await PrivateShelfStore.setEnabled(getContext(this), enabled);
+    } catch (e) {
+      console.warn('保存隐私书架开关失败:', e);
+      HdsFeedback.showToast('保存失败');
+    }
+    this.privateShelfSwitchOn = this.privateShelfEnabled;
+  }
+
+  openPrivatePasswordDialog(mode: string): void {
+    this.privatePasswordDialogMode = mode;
+    this.privatePasswordCurrent = '';
+    this.privatePasswordNew = '';
+    this.privatePasswordConfirm = '';
+    this.privatePasswordError = '';
+    // 只能用按钮关闭：点蒙层关掉的话，“关闭隐私书架”的开关会停在错误的位置。
+    this.privatePasswordDialogSession.open(this.getUIContext(), (): void => {
+      this.privatePasswordDialogContent();
+    }, {
+      autoCancel: false,
+      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      warnTag: '显示隐私书架密码弹窗失败:'
+    });
+  }
+
+  closePrivatePasswordDialog(): void {
+    this.privatePasswordDialogSession.close(this.getUIContext());
+    this.privatePasswordCurrent = '';
+    this.privatePasswordNew = '';
+    this.privatePasswordConfirm = '';
+    this.privatePasswordError = '';
+    this.privateShelfSwitchOn = this.privateShelfEnabled;
+  }
+
+  async submitPrivatePasswordDialog(): Promise<void> {
+    if (this.privateShelfBusy) return;
+    this.privateShelfBusy = true;
+    try {
+      const context = getContext(this);
+      if (this.privateShelfHasPassword &&
+        !(await PrivateShelfStore.verifyPassword(context, this.privatePasswordCurrent))) {
+        this.privatePasswordError = '当前密码不正确';
+        return;
+      }
+      if (this.privatePasswordDialogMode === 'disable') {
+        await PrivateShelfStore.setEnabled(context, false);
+        this.closePrivatePasswordDialog();
+        return;
+      }
+      if (this.privatePasswordNew !== this.privatePasswordConfirm) {
+        this.privatePasswordError = '两次输入的新密码不一致';
+        return;
+      }
+      if (!this.privatePasswordNew && !this.privateShelfHasPassword) {
+        this.privatePasswordError = '请输入密码';
+        return;
+      }
+      const cleared = !this.privatePasswordNew;
+      await PrivateShelfStore.setPassword(context, this.privatePasswordNew);
+      this.closePrivatePasswordDialog();
+      HdsFeedback.showToast(cleared ? '已清除隐私书架密码' : '隐私书架密码已设置');
+    } catch (e) {
+      console.warn('保存隐私书架密码失败:', e);
+      this.privatePasswordError = '保存失败，请重试';
+    } finally {
+      this.privateShelfBusy = false;
+    }
+  }
+
+  async confirmResetPrivateShelf(): Promise<void> {
+    const confirmation = await promptAction.showDialog({
+      title: '重置隐私书架',
+      message: '该操作会删除所有隐私书籍，包括进度、书签等，并关闭隐私书架选项',
+      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '确认', color: '#D9485F' }]
+    });
+    if (confirmation.index !== 1 || this.privateShelfBusy) return;
+    this.privateShelfBusy = true;
+    try {
+      const context = getContext(this);
+      const db = AppDatabase.getInstance();
+      await db.initWithContext(context);
+      const privateBooks = (await db.getAllBooks()).filter((book: Book) => book.isPrivate);
+      for (const book of privateBooks) {
+        const covers = [
+          ...BookDisplayHelper.decodeCoverList(book.customCoverUrl),
+          ...BookDisplayHelper.decodeCoverList(book.coverUrl)
+        ];
+        for (const cover of covers) {
+          BookCoverCache.deleteCachedCover(context, cover);
+        }
+        LocalBookService.deleteLocalBookFiles(context, book);
+        await db.deleteBook(book.bookUrl, 'private_shelf_reset');
+        // 阅读时长的 dayKey 形如 2026-10-10，这个区间覆盖全部日期。
+        await db.deleteReadStatsForBook(book.bookUrl, '0000-00-00', '9999-99-99');
+      }
+      await PrivateShelfStore.reset(context);
+      AppStorage.setOrCreate('shelfUpdateTime', Date.now());
+      HdsFeedback.showToast('隐私书架已重置');
+    } catch (e) {
+      console.error('重置隐私书架失败:', e);
+      HdsFeedback.showToast('重置失败');
+    } finally {
+      this.privateShelfBusy = false;
+      this.privateShelfSwitchOn = this.privateShelfEnabled;
+    }
+  }
+
   onDisplaySettingChanged(): void {
     AppStorage.setOrCreate('shelfUpdateTime', Date.now());
     const settings = new BookshelfDisplaySettings();
@@ -302,7 +468,8 @@ struct BookshelfSettingsPage {
     try {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
-      this.books = SearchExplorePendingBook.filterShelfBooks(await db.getAllBooks()).slice();
+      this.books = PrivateShelfStore.publicBooks(
+        SearchExplorePendingBook.filterShelfBooks(await db.getAllBooks())).slice();
     } catch (e) {
       console.warn('加载书籍列表失败:', e);
       this.books = [];
@@ -721,6 +888,140 @@ struct BookshelfSettingsPage {
       .onChange((checked: boolean) => {
         this.toggleTargetBook(book, checked);
       })
+  }
+
+  // 不走 switchItem：取消关闭时开关要能弹回去，按值传参的 Builder 不会跟随状态刷新。
+  @Builder
+  privateShelfSwitchItem() {
+    Row() {
+      Column() {
+        Text('隐私书架')
+          .fontSize(16)
+          .fontColor(this.primaryTextColor())
+        Text('开启后书架左上角增加“隐私”入口；关闭后隐私书籍继续隐藏')
+          .fontSize(12)
+          .fontColor(this.subTextColor())
+          .margin({ top: 4 })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Toggle({ type: ToggleType.Switch, isOn: this.privateShelfSwitchOn })
+        .selectedColor(this.buttonColor())
+        .onChange((checked: boolean) => {
+          this.onPrivateShelfSwitchChanged(checked);
+        })
+    }
+    .width('calc(100% - 32vp)')
+    .constraintSize({ minHeight: 64 })
+    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
+    .margin({ left: 16, right: 16 })
+    .backgroundColor(Color.Transparent)
+  }
+
+  @Builder
+  actionItem(title: string, desc: string, titleColor: string, onClick: () => void) {
+    Row() {
+      Column() {
+        Text(title)
+          .fontSize(16)
+          .fontColor(titleColor)
+        Text(desc)
+          .fontSize(12)
+          .fontColor(this.subTextColor())
+          .margin({ top: 4 })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(18)
+        .fontColor([this.subTextColor()])
+        .width(24)
+    }
+    .width('calc(100% - 32vp)')
+    .constraintSize({ minHeight: 66 })
+    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
+    .margin({ left: 16, right: 16 })
+    .backgroundColor(Color.Transparent)
+    .alignItems(VerticalAlign.Center)
+    .onClick(onClick)
+  }
+
+  @Builder
+  privatePasswordField(placeholder: string, value: string, onChange: (value: string) => void) {
+    TextInput({ placeholder: placeholder, text: value })
+      .type(InputType.Password)
+      .width('100%')
+      .height(44)
+      .fontColor(this.primaryTextColor())
+      .placeholderColor(this.subTextColor())
+      .backgroundColor(this.inputColor())
+      .borderRadius(12)
+      .margin({ bottom: 10 })
+      .onChange((text: string) => {
+        onChange(text);
+      })
+  }
+
+  @Builder
+  privatePasswordDialogContent() {
+    Column() {
+      Text(this.privatePasswordDialogMode === 'disable' ? '关闭隐私书架' : '隐私书架密码')
+        .fontSize(18)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryTextColor())
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .margin({ bottom: 18 })
+
+      if (this.privateShelfHasPassword) {
+        this.privatePasswordField('当前密码', this.privatePasswordCurrent, (value: string) => {
+          this.privatePasswordCurrent = value;
+          this.privatePasswordError = '';
+        })
+      }
+      if (this.privatePasswordDialogMode !== 'disable') {
+        this.privatePasswordField(this.privateShelfHasPassword ? '新密码（留空则清除密码）' : '密码',
+          this.privatePasswordNew, (value: string) => {
+            this.privatePasswordNew = value;
+            this.privatePasswordError = '';
+          })
+        this.privatePasswordField(this.privateShelfHasPassword ? '再次输入新密码' : '再次输入密码',
+          this.privatePasswordConfirm, (value: string) => {
+            this.privatePasswordConfirm = value;
+            this.privatePasswordError = '';
+          })
+      }
+
+      if (this.privatePasswordError) {
+        Text(this.privatePasswordError)
+          .fontSize(12)
+          .fontColor('#E53935')
+          .width('100%')
+      }
+
+      Row({ space: 10 }) {
+        Button('取消')
+          .layoutWeight(1)
+          .height(44)
+          .backgroundColor(this.inputColor())
+          .fontColor(this.primaryTextColor())
+          .onClick(() => this.closePrivatePasswordDialog())
+
+        Button(this.privatePasswordDialogMode === 'disable' ? '关闭' : '保存')
+          .layoutWeight(1)
+          .height(44)
+          .backgroundColor(this.buttonColor())
+          .fontColor('#FFFFFF')
+          .onClick(() => {
+            this.submitPrivatePasswordDialog();
+          })
+      }
+      .width('100%')
+      .margin({ top: 12 })
+    }
+    .padding(20)
   }
 
   @Builder

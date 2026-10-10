@@ -8,6 +8,7 @@ import { BookshelfSortHelper } from './BookshelfSortHelper';
 import { CoverGallerySettings } from './CoverGallerySettings';
 import { CoverGallerySnapshot, CoverGalleryStore } from './CoverGalleryStore';
 import { SearchExplorePendingBook } from './SearchExplorePendingBook';
+import { PrivateShelfStore } from './PrivateShelfStore';
 import { AppThemeSettingsStore } from './AppThemeSettingsStore';
 
 export const RECENT_READ_FORM_NAME = 'RecentReadForm';
@@ -74,7 +75,7 @@ export class RecentReadCardDataProvider {
     const db = AppDatabase.getInstance();
     await db.initWithContext(context);
     const books = BookshelfSortHelper.getRecentReadBooks(
-      SearchExplorePendingBook.filterShelfBooks(await db.getAllBooks()), 3);
+      PrivateShelfStore.publicBooks(SearchExplorePendingBook.filterShelfBooks(await db.getAllBooks())), 3);
     let coverSettings = new CoverGallerySnapshot();
     try {
       coverSettings = await CoverGalleryStore.load(context);

@@ -10,6 +10,7 @@ import { Book, BookChapter, BookSource, SearchBook } from '../../model/data/Book
 import { ReadBookEngine } from '../book/ReadBookEngine';
 import { HttpClient } from '../http/HttpClient';
 import { BookTypeSupport } from '../book/BookTypeSupport';
+import { PrivateShelfStore } from '../../utils/PrivateShelfStore';
 import { SearchCoordinator } from '../book/SearchCoordinator';
 import { ExploreCoordinator, ExploreEntry } from '../book/ExploreCoordinator';
 import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
@@ -561,7 +562,7 @@ export class LanReaderServer {
   }
 
   private async booksResponse(): Promise<LanHttpResponse> {
-    const books = await appDb.getAllBooks();
+    const books = PrivateShelfStore.publicBooks(await appDb.getAllBooks());
     const groups = await appDb.getCustomBookGroups();
     const groupNames = new Map<number, string>();
     const groupOrders = new Map<number, number>();

@@ -39,6 +39,8 @@ export class Book {
   identityKey: string = '';
   /** Temporary search/explore read state, stored in its own database column. */
   pendingAddToShelf: boolean = false;
+  /** Private shelf member: only listed under the bookshelf's private scope. */
+  isPrivate: boolean = false;
   /** Last explicit local bookshelf add/keep time, used to reject stale cloud tombstones. */
   shelfModifiedTime: number = 0;
 

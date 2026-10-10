@@ -72,7 +72,7 @@ export class AppDatabase {
   private latestBookProgressWriteTimes: Map<string, number> = new Map<string, number>();
   private readStatsWriteTask: Promise<void> = Promise.resolve();
   private readonly DATABASE_NAME = 'legado.db';
-  private readonly SCHEMA_VERSION = 18;
+  private readonly SCHEMA_VERSION = 19;
 
   private constructor() {}
 
@@ -157,6 +157,7 @@ export class AppDatabase {
         syncTime INTEGER DEFAULT 0,
         identityKey TEXT DEFAULT '',
         pendingAddToShelf INTEGER DEFAULT 0,
+        isPrivate INTEGER DEFAULT 0,
         shelfModifiedTime INTEGER DEFAULT 0
       )
     `);
@@ -411,6 +412,7 @@ export class AppDatabase {
       { table: 'books', column: 'syncTime', definition: 'syncTime INTEGER DEFAULT 0' },
       { table: 'books', column: 'identityKey', definition: "identityKey TEXT DEFAULT ''" },
       { table: 'books', column: 'pendingAddToShelf', definition: 'pendingAddToShelf INTEGER DEFAULT 0' },
+      { table: 'books', column: 'isPrivate', definition: 'isPrivate INTEGER DEFAULT 0' },
       { table: 'books', column: 'shelfModifiedTime', definition: 'shelfModifiedTime INTEGER DEFAULT 0' },
       { table: 'book_sources', column: 'searchUrl', definition: "searchUrl TEXT DEFAULT ''" },
       { table: 'book_sources', column: 'exploreUrl', definition: "exploreUrl TEXT DEFAULT ''" },
@@ -632,6 +634,7 @@ export class AppDatabase {
       syncTime: book.syncTime,
       identityKey: book.identityKey,
       pendingAddToShelf: book.pendingAddToShelf ? 1 : 0,
+      isPrivate: book.isPrivate ? 1 : 0,
       shelfModifiedTime: book.shelfModifiedTime
     };
 
@@ -681,6 +684,7 @@ export class AppDatabase {
       syncTime: book.syncTime,
       identityKey: book.identityKey,
       pendingAddToShelf: book.pendingAddToShelf ? 1 : 0,
+      isPrivate: book.isPrivate ? 1 : 0,
       shelfModifiedTime: book.shelfModifiedTime
     };
 
@@ -738,6 +742,7 @@ export class AppDatabase {
       syncTime: book.syncTime,
       identityKey: book.identityKey,
       pendingAddToShelf: book.pendingAddToShelf ? 1 : 0,
+      isPrivate: book.isPrivate ? 1 : 0,
       shelfModifiedTime: book.shelfModifiedTime
     };
     const chapterBuckets: relationalStore.ValuesBucket[] = [];
@@ -1089,6 +1094,17 @@ export class AppDatabase {
     return books;
   }
 
+  /** 隐私标记只存在本机，不参与云同步，所以不更新 shelfModifiedTime，也不触发同步。 */
+  async setBookPrivate(bookUrl: string, isPrivate: boolean): Promise<void> {
+    if (!this.store || !bookUrl) return;
+    const predicates = new relationalStore.RdbPredicates('books');
+    predicates.equalTo('bookUrl', bookUrl);
+    const affected = await this.store.update({ isPrivate: isPrivate ? 1 : 0 }, predicates);
+    if (affected <= 0) {
+      throw new Error(`标记隐私书籍未命中数据库记录: ${bookUrl}`);
+    }
+  }
+
   async setBookPinned(bookUrl: string, pinned: boolean, modifiedTime: number = Date.now()): Promise<void> {
     if (!this.store || !bookUrl) return;
     const predicates = new relationalStore.RdbPredicates('books');
@@ -1298,6 +1314,7 @@ export class AppDatabase {
     book.syncTime = this.getLongColumn(resultSet, 'syncTime');
     book.identityKey = this.getStringColumn(resultSet, 'identityKey') || BookIdentity.keyOfBook(book);
     book.pendingAddToShelf = this.getLongColumn(resultSet, 'pendingAddToShelf') === 1;
+    book.isPrivate = this.getLongColumn(resultSet, 'isPrivate') === 1;
     book.shelfModifiedTime = this.getLongColumn(resultSet, 'shelfModifiedTime');
     return book;
   }

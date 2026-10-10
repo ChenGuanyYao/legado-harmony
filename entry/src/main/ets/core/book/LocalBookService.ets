@@ -13,6 +13,11 @@ import { LocalChapterContentLoader } from './LocalChapterContentLoader';
 import { EpubChapterPlanner, EpubPlannedChapter, EpubTocEntry } from './EpubChapterPlanner';
 import { EpubConvertResult, EpubHtmlConverter } from './EpubHtmlConverter';
 
+export class LocalBookExportResult {
+  savedCount: number = 0;
+  failedNames: string[] = [];
+}
+
 export class LocalBookFile {
   uri: string = '';
   name: string = '';
@@ -316,6 +321,58 @@ export class LocalBookService {
     }
     await fs.copy(fileUri.getUriFromPath(localPath), result[0]);
     return result[0];
+  }
+
+  /**
+   * 批量导出源文件：和单本保存一样拉起保存选择器，由用户选择保存位置，一次存入全部文件。
+   * 用户取消时返回 null。
+   */
+  static async exportSourceFiles(context: Context, books: Book[]): Promise<LocalBookExportResult | null> {
+    const result = new LocalBookExportResult();
+    const localPaths: string[] = [];
+    const fileNames: string[] = [];
+    const bookNames: string[] = [];
+    for (const book of books) {
+      const localPath = book.getVariable('localFilePath') || '';
+      if (!localPath || !LocalBookService.exists(localPath)) {
+        result.failedNames.push(book.name);
+        continue;
+      }
+      const format = (book.getVariable('localFormat') || 'txt').toLowerCase();
+      const author = book.author ? ` - ${book.author}` : '';
+      const baseName = LocalBookService.sanitizeFileName(book.name + author);
+      // 同名的书（同一本书的不同版本）要给出不同的文件名，否则会互相覆盖。
+      let fileName = `${baseName}.${format}`;
+      for (let index = 1; fileNames.includes(fileName); index++) {
+        fileName = `${baseName} (${index}).${format}`;
+      }
+      localPaths.push(localPath);
+      fileNames.push(fileName);
+      bookNames.push(book.name);
+    }
+    if (fileNames.length === 0) {
+      return result;
+    }
+    const options = new picker.DocumentSaveOptions();
+    options.newFileNames = fileNames;
+    const savedUris = await new picker.DocumentViewPicker(context).save(options);
+    if (!savedUris || savedUris.length === 0) {
+      return null;
+    }
+    for (let index = 0; index < localPaths.length; index++) {
+      if (index >= savedUris.length) {
+        result.failedNames.push(bookNames[index]);
+        continue;
+      }
+      try {
+        await fs.copy(fileUri.getUriFromPath(localPaths[index]), savedUris[index]);
+        result.savedCount++;
+      } catch (e) {
+        console.warn('导出本地书籍源文件失败:', bookNames[index], e);
+        result.failedNames.push(bookNames[index]);
+      }
+    }
+    return result;
   }
 
   private static async importBook(context: Context, sourceUri: string,

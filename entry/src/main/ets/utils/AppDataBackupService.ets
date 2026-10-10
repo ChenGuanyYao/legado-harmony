@@ -1205,6 +1205,7 @@ export class AppDataBackupService {
     book.type = raw.type || 0;
     book.group = raw.group || 0;
     book.isPinned = raw.isPinned === true;
+    book.isPrivate = raw.isPrivate === true;
     book.latestChapterTitle = raw.latestChapterTitle || '';
     book.updateTime = raw.updateTime || '';
     book.latestChapterTime = raw.latestChapterTime || 0;

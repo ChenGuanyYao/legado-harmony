@@ -374,6 +374,7 @@ export class ReadBookEngine {
     probe.group = staleBook.group;
     probe.isPinned = staleBook.isPinned;
     probe.pendingAddToShelf = staleBook.pendingAddToShelf;
+    probe.isPrivate = staleBook.isPrivate;
     probe.shelfModifiedTime = staleBook.shelfModifiedTime;
     probe.latestChapterTitle = candidate.latestChapterTitle || staleBook.latestChapterTitle;
     probe.updateTime = staleBook.updateTime;
@@ -394,6 +395,7 @@ export class ReadBookEngine {
     target.group = source.group;
     target.isPinned = source.isPinned;
     target.pendingAddToShelf = source.pendingAddToShelf;
+    target.isPrivate = source.isPrivate;
     target.shelfModifiedTime = source.shelfModifiedTime;
     target.updateTime = source.updateTime || target.updateTime;
     target.order = source.order;

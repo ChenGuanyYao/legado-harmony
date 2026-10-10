@@ -31,6 +31,8 @@ import { ReaderOpenTrace } from '../../utils/ReaderOpenTrace';
 import { FullTextCacheCancelCoordinator, FullTextCacheCancelSignal } from '../../utils/FullTextCacheCancelCoordinator';
 import { ShelfTileSortEntry, ShelfBookDataSource, ShelfTileEntryDataSource } from '../../core/book/ShelfDataSources';
 import { sleepMs } from '../../utils/Sleep';
+import { PrivateShelfStore } from '../../utils/PrivateShelfStore';
+import { RecentReadCardUpdater } from '../../utils/RecentReadCardUpdater';
 
 const SHELF_FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS: number = 5000;
 const SHELF_COVER_INITIAL_PREFETCH_COUNT: number = 16;
@@ -79,6 +81,11 @@ export struct BookshelfPage {
   private shelfTileEntriesCacheKey: string = '';
   private shelfTileEntriesCache: ShelfTileSortEntry[] = [];
   @State shelfScope: string = 'all';
+  @StorageLink('privateShelfEnabled') @Watch('onPrivateShelfEnabledChanged') privateShelfEnabled: boolean = false;
+  @StorageLink('privateShelfHasPassword') privateShelfHasPassword: boolean = false;
+  @State privateShelfPasswordInput: string = '';
+  @State privateShelfPasswordError: string = '';
+  private privateShelfUnlockDialogSession: SystemDialogSession = new SystemDialogSession();
   @State showShelfScopeOptions: boolean = false;
   @State showShelfSortMenu: boolean = false;
   @State showShelfLayoutMenu: boolean = false;
@@ -99,6 +106,8 @@ export struct BookshelfPage {
   @State openingBookCoverAngle: number = 0;
   @State openingBookWaiting: boolean = false;
   @State selectedBookUrls: string[] = [];
+  @State showMultiSelectMoreMenu: boolean = false;
+  private batchExportDialogSession: SystemDialogSession = new SystemDialogSession();
   @State showBookGroupPicker: boolean = false;
   @State groupPickerSingleBookUrl: string = '';
   private addBookGroupDialogSession: SystemDialogSession = new SystemDialogSession();
@@ -317,6 +326,12 @@ export struct BookshelfPage {
     this.scheduleLoadBooks();
   }
 
+  onPrivateShelfEnabledChanged(): void {
+    if (!this.privateShelfEnabled && this.shelfScope === 'private') {
+      this.setShelfScope('all');
+    }
+  }
+
   onShelfCoverSettingsChanged(): void {
     this.shelfCoverMap = new Map();
     this.shelfCoverRawUrls.clear();
@@ -332,6 +347,7 @@ export struct BookshelfPage {
     try {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
+      await PrivateShelfStore.load(getContext(this));
       const loadedBooks = SearchExplorePendingBook.filterShelfBooks(await db.getAllBooks());
       const loadedGroups = await db.getCustomBookGroups();
       if (loadSerial !== this.shelfLoadSerial) return;
@@ -450,6 +466,25 @@ export struct BookshelfPage {
     } catch (e) {
       console.error('更新书籍置顶状态失败:', e);
       HdsFeedback.showToast(nextPinned ? '置顶失败' : '取消置顶失败');
+    }
+  }
+
+  async toggleBookPrivate(book: Book): Promise<void> {
+    const nextPrivate = !book.isPrivate;
+    try {
+      await AppDatabase.getInstance().setBookPrivate(book.bookUrl, nextPrivate);
+      book.isPrivate = nextPrivate;
+      this.allBooks = this.allBooks.map((item: Book) => item.bookUrl === book.bookUrl ? book : item);
+      this.applyShelfScope();
+      this.reloadShelfDataSources(true);
+      // 桌面“最近阅读”卡片不应再展示刚移入隐私书架的书。
+      RecentReadCardUpdater.reload(getContext(this) as common.UIAbilityContext).catch((e: Error) => {
+        console.warn('刷新最近阅读卡片失败:', e);
+      });
+      HdsFeedback.showToast(nextPrivate ? `已将《${book.name}》移入隐私书架` : `已将《${book.name}》移出隐私书架`);
+    } catch (e) {
+      console.error('更新书籍隐私状态失败:', e);
+      HdsFeedback.showToast(nextPrivate ? '标记为隐私失败' : '取消隐私失败');
     }
   }
 
@@ -805,7 +840,8 @@ export struct BookshelfPage {
 
   bookActionMenuHeight(book: Book): number {
     const baseHeight = 408;
-    return baseHeight + (LocalBookService.isLocalBook(book) ? 0 : 44) + (book.customCoverUrl ? 44 : 0);
+    return baseHeight + (LocalBookService.isLocalBook(book) ? 0 : 44) + (book.customCoverUrl ? 44 : 0) +
+      (this.privateShelfEnabled ? 44 : 0);
   }
 
   contextMenuBottomInset(): number {
@@ -1294,6 +1330,16 @@ export struct BookshelfPage {
                 this.showBookGroupPicker = true;
               }
             })
+            if (this.privateShelfEnabled) {
+              this.contextActionItem(this.pendingActionBook.isPrivate ? $r('sys.symbol.lock_open') : $r('sys.symbol.lock'),
+                this.pendingActionBook.isPrivate ? '取消隐私' : '标记为隐私', this.primaryTextColor(), () => {
+                  if (this.pendingActionBook) {
+                    const book = this.pendingActionBook;
+                    this.closeBookActions();
+                    this.toggleBookPrivate(book);
+                  }
+                })
+            }
             this.contextActionItem($r('sys.symbol.bookmark'), '自定义标签', this.primaryTextColor(), () => {
               if (this.pendingActionBook) {
                 this.editingTags = BookDisplayHelper.getBookTags(this.pendingActionBook);
@@ -1503,6 +1549,9 @@ export struct BookshelfPage {
       if (this.isBookMultiSelect) {
         this.bookMultiSelectBar()
       }
+      if (this.isBookMultiSelect && this.showMultiSelectMoreMenu) {
+        this.multiSelectMoreMenu()
+      }
       if (this.showBookGroupPicker) {
         this.bookGroupPickerDialog()
       }
@@ -1647,12 +1696,99 @@ export struct BookshelfPage {
             this.showBookGroupPicker = true;
           }
         })
+      Button('更多', { type: ButtonType.Normal })
+        .layoutWeight(1)
+        .height(42)
+        .fontSize(14)
+        .borderRadius(10)
+        .backgroundColor(this.inputColor())
+        .fontColor(this.primaryTextColor())
+        .enabled(this.selectedBookUrls.length > 0)
+        .onClick(() => {
+          if (this.selectedBookUrls.length > 0) this.showMultiSelectMoreMenu = true;
+        })
     }
     .width('100%')
     .padding({ left: 16, right: 16, top: 10, bottom: this.multiSelectBottomPadding() })
     .backgroundColor(this.glassCardColor())
     .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
     .alignSelf(ItemAlign.End)
+  }
+
+  @Builder
+  multiSelectMoreMenu() {
+    Stack({ alignContent: Alignment.BottomEnd }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.appDarkMode ? '#52000000' : '#26FFFFFF')
+        .backdropBlur(ThemeRuntime.glassBlur('popover', 18))
+        .onClick(() => {
+          this.showMultiSelectMoreMenu = false;
+        })
+
+      Column() {
+        if (this.privateShelfEnabled) {
+          this.contextActionItem(this.shelfScope === 'private' ? $r('sys.symbol.lock_open') : $r('sys.symbol.lock'),
+            this.shelfScope === 'private' ? '取消隐私' : '标记为隐私', this.primaryTextColor(), () => {
+              this.showMultiSelectMoreMenu = false;
+              this.setSelectedBooksPrivate(this.shelfScope !== 'private');
+            })
+        }
+        // 选中的书里没有本地书籍时置灰且不可点。
+        this.contextActionItem($r('sys.symbol.arrow_right_up_and_square'), '保存源文件',
+          this.selectedLocalBooks().length > 0 ? this.primaryTextColor() : this.subTextColor(), () => {
+            if (this.selectedLocalBooks().length === 0) return;
+            this.showMultiSelectMoreMenu = false;
+            this.openBatchExportDialog();
+          })
+      }
+      .width(158)
+      .padding({ top: 6, bottom: 6 })
+      .margin({ right: 16, bottom: 58 + this.multiSelectBottomPadding() })
+      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+      .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder
+  batchExportDialogContent() {
+    Column({ space: 16 }) {
+      Text('保存源文件').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
+      Text(`只能保存本地书籍的源文件，缓存书籍无法保存。将导出选中的 ${this.selectedLocalBooks().length} 本本地书籍。`)
+        .fontSize(14).fontColor(this.secondaryTextColor()).textAlign(TextAlign.Center)
+      Row({ space: 12 }) {
+        Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(10)
+          .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
+          .onClick(() => this.closeBatchExportDialog())
+        Button('确认', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(10)
+          .backgroundColor(this.buttonColor()).fontColor('#FFFFFF')
+          .onClick(() => {
+            this.closeBatchExportDialog();
+            this.exportSelectedLocalBooks();
+          })
+      }.width('100%')
+    }
+    .padding(22)
+  }
+
+  openBatchExportDialog(): void {
+    this.batchExportDialogSession.open(this.getUIContext(), (): void => {
+      this.batchExportDialogContent();
+    }, {
+      autoCancel: true,
+      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      warnTag: '显示保存源文件弹窗失败:'
+    });
+  }
+
+  closeBatchExportDialog(): void {
+    this.batchExportDialogSession.close(this.getUIContext());
   }
 
   @Builder
@@ -2254,7 +2390,60 @@ export struct BookshelfPage {
     this.selectedBookUrls = [];
     this.showBookGroupPicker = false;
     this.groupPickerSingleBookUrl = '';
+    this.showMultiSelectMoreMenu = false;
     this.closeBatchDeleteDialog();
+    this.closeBatchExportDialog();
+  }
+
+  selectedLocalBooks(): Book[] {
+    return this.allBooks.filter((book: Book) =>
+      this.selectedBookUrls.includes(book.bookUrl) && LocalBookService.isLocalBook(book));
+  }
+
+  async setSelectedBooksPrivate(nextPrivate: boolean): Promise<void> {
+    const urls = [...this.selectedBookUrls];
+    const targets = this.allBooks.filter((book: Book) =>
+      urls.includes(book.bookUrl) && book.isPrivate !== nextPrivate);
+    const db = AppDatabase.getInstance();
+    let changed = 0;
+    for (const book of targets) {
+      try {
+        await db.setBookPrivate(book.bookUrl, nextPrivate);
+        book.isPrivate = nextPrivate;
+        changed++;
+      } catch (e) {
+        console.error('批量更新书籍隐私状态失败:', book.name, e);
+      }
+    }
+    this.exitBookMultiSelect();
+    await this.loadBooks(true);
+    RecentReadCardUpdater.reload(getContext(this) as common.UIAbilityContext).catch((e: Error) => {
+      console.warn('刷新最近阅读卡片失败:', e);
+    });
+    const failed = targets.length - changed;
+    const summary = nextPrivate ? `已将 ${changed} 本书移入隐私书架` : `已将 ${changed} 本书移出隐私书架`;
+    HdsFeedback.showToast(failed > 0 ? `${summary}，${failed} 本失败` : summary);
+  }
+
+  async exportSelectedLocalBooks(): Promise<void> {
+    const targets = this.selectedLocalBooks();
+    if (targets.length === 0) return;
+    try {
+      const result = await LocalBookService.exportSourceFiles(getContext(this), targets);
+      if (!result) return;
+      this.exitBookMultiSelect();
+      const failed = result.failedNames.length;
+      if (result.savedCount === 0) {
+        HdsFeedback.showToast('保存失败：源文件不存在或已被清理');
+      } else {
+        HdsFeedback.showToast(failed > 0 ?
+          `已保存 ${result.savedCount} 本书的源文件，${failed} 本失败` :
+          `已保存 ${result.savedCount} 本书的源文件`);
+      }
+    } catch (e) {
+      console.error('批量保存本地书籍源文件失败:', e);
+      HdsFeedback.showToast(`保存失败：${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   closeBookGroupPicker(): void {
@@ -4178,8 +4367,11 @@ export struct BookshelfPage {
   }
 
   shelfScopeEmptyHint(): string {
+    if (this.shelfScope === 'private') {
+      return '长按书籍并选择“标记为隐私”，即可移入隐私书架';
+    }
     if (this.shelfScope === 'local') {
-      return '请在书架设置中添加本地书籍';
+      return '请在“我的 - 书籍导入”中添加本地书籍';
     }
     if (this.shelfScope === 'network') {
       return '搜索并加入喜欢的书籍吧';
@@ -4189,8 +4381,10 @@ export struct BookshelfPage {
 
   booksForShelfScope(scope: string): Book[] {
     return this.allBooks.filter((book: Book) => {
+      // 隐私书籍只出现在隐私书架里；隐私书架关闭后它们继续隐藏。
+      if (book.isPrivate !== (scope === 'private')) return false;
       const isLocal = LocalBookService.isLocalBook(book);
-      const scopeMatches = scope === 'all' || (scope === 'local' ? isLocal : !isLocal);
+      const scopeMatches = scope === 'all' || scope === 'private' || (scope === 'local' ? isLocal : !isLocal);
       const groupMatches = this.activeShelfGroupId === 0 ||
         (this.activeShelfGroupId === -1 ? book.group <= 0 : book.group === this.activeShelfGroupId);
       return scopeMatches && groupMatches;
@@ -4198,7 +4392,8 @@ export struct BookshelfPage {
   }
 
   setShelfScope(scope: string): void {
-    const next = scope === 'local' ? 'local' : (scope === 'network' ? 'network' : 'all');
+    const next = scope === 'local' || scope === 'network' || (scope === 'private' && this.privateShelfEnabled) ?
+      scope : 'all';
     this.showShelfScopeOptions = false;
     if (this.shelfScope === next) return;
     this.shelfScope = next;
@@ -4219,10 +4414,14 @@ export struct BookshelfPage {
       Math.abs(offsetX) < 56) {
       return;
     }
-    const scopes: string[] = ['all', 'network', 'local'];
+    const scopes: string[] = this.shelfScopeOrder();
     const currentIndex = scopes.indexOf(this.shelfScope);
     const nextIndex = offsetX < 0 ? currentIndex + 1 : currentIndex - 1;
     if (currentIndex < 0 || nextIndex < 0 || nextIndex >= scopes.length) {
+      return;
+    }
+    // 设了密码的隐私书架不能靠滑动进入，只能从下拉菜单输入密码后进入。
+    if (scopes[nextIndex] === 'private' && this.privateShelfHasPassword) {
       return;
     }
     this.animateShelfScopeSwitch(scopes[nextIndex], offsetX < 0 ? -1 : 1);
@@ -4245,14 +4444,115 @@ export struct BookshelfPage {
     if (this.shelfScopeSwitchAnimating) {
       return;
     }
-    const scopes: string[] = ['all', 'network', 'local'];
+    const scopes: string[] = this.shelfScopeOrder();
     const currentIndex = scopes.indexOf(this.shelfScope);
     const nextIndex = scopes.indexOf(scope);
     this.showShelfScopeOptions = false;
     if (currentIndex < 0 || nextIndex < 0 || currentIndex === nextIndex) {
       return;
     }
+    if (scope === 'private' && this.privateShelfHasPassword) {
+      this.openPrivateShelfUnlockDialog();
+      return;
+    }
     this.animateShelfScopeSwitch(scope, nextIndex > currentIndex ? -1 : 1);
+  }
+
+  shelfScopeOrder(): string[] {
+    return this.privateShelfEnabled ? ['all', 'network', 'local', 'private'] : ['all', 'network', 'local'];
+  }
+
+  @Builder
+  privateShelfUnlockDialogContent() {
+    Column() {
+      Text('隐私书架')
+        .fontSize(18)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryTextColor())
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .margin({ bottom: 18 })
+
+      TextInput({ placeholder: '请输入隐私书架密码', text: this.privateShelfPasswordInput })
+        .type(InputType.Password)
+        .width('100%')
+        .height(44)
+        .fontColor(this.primaryTextColor())
+        .placeholderColor(this.subTextColor())
+        .backgroundColor(this.inputColor())
+        .borderRadius(12)
+        .onChange((value: string) => {
+          this.privateShelfPasswordInput = value;
+          this.privateShelfPasswordError = '';
+        })
+        .onSubmit(() => this.submitPrivateShelfUnlock())
+
+      if (this.privateShelfPasswordError) {
+        Text(this.privateShelfPasswordError)
+          .fontSize(12)
+          .fontColor('#E53935')
+          .width('100%')
+          .margin({ top: 8 })
+      }
+
+      Row({ space: 10 }) {
+        Button('取消')
+          .layoutWeight(1)
+          .height(44)
+          .backgroundColor(this.inputColor())
+          .fontColor(this.primaryTextColor())
+          .onClick(() => this.closePrivateShelfUnlockDialog())
+
+        Button('确定')
+          .layoutWeight(1)
+          .height(44)
+          .backgroundColor(this.buttonColor())
+          .fontColor('#FFFFFF')
+          .enabled(this.privateShelfPasswordInput.length > 0)
+          .opacity(this.privateShelfPasswordInput.length > 0 ? 1 : 0.45)
+          .onClick(() => this.submitPrivateShelfUnlock())
+      }
+      .width('100%')
+      .margin({ top: 22 })
+    }
+    .padding(20)
+  }
+
+  openPrivateShelfUnlockDialog(): void {
+    this.privateShelfPasswordInput = '';
+    this.privateShelfPasswordError = '';
+    this.privateShelfUnlockDialogSession.open(this.getUIContext(), (): void => {
+      this.privateShelfUnlockDialogContent();
+    }, {
+      autoCancel: true,
+      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      warnTag: '显示隐私书架密码弹窗失败:'
+    });
+  }
+
+  closePrivateShelfUnlockDialog(): void {
+    this.privateShelfUnlockDialogSession.close(this.getUIContext());
+    this.privateShelfPasswordInput = '';
+    this.privateShelfPasswordError = '';
+  }
+
+  async submitPrivateShelfUnlock(): Promise<void> {
+    const input = this.privateShelfPasswordInput;
+    if (!input) return;
+    let passed = false;
+    try {
+      passed = await PrivateShelfStore.verifyPassword(getContext(this), input);
+    } catch (e) {
+      console.warn('校验隐私书架密码失败:', e);
+    }
+    if (!passed) {
+      this.privateShelfPasswordError = '密码不正确';
+      return;
+    }
+    this.closePrivateShelfUnlockDialog();
+    if (this.privateShelfEnabled && this.shelfScope !== 'private' && !this.shelfScopeSwitchAnimating) {
+      this.animateShelfScopeSwitch('private', -1);
+    }
   }
 
   animateShelfScopeSwitch(scope: string, outgoingDirection: number): void {
@@ -5563,6 +5863,9 @@ export struct BookshelfPage {
       this.scopeDropdownItem('全部', 'all')
       this.scopeDropdownItem('网络', 'network')
       this.scopeDropdownItem('本地', 'local')
+      if (this.privateShelfEnabled) {
+        this.scopeDropdownItem('隐私', 'private')
+      }
     }
     .width(116)
     .padding(6)
@@ -5605,6 +5908,9 @@ export struct BookshelfPage {
     }
     if (this.shelfScope === 'local') {
       return '本地';
+    }
+    if (this.shelfScope === 'private') {
+      return '隐私';
     }
     return '全部';
   }

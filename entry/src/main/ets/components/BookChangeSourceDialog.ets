@@ -264,6 +264,7 @@ export struct BookChangeSourceDialog {
     book.durChapterTitle = oldBook.durChapterTitle;
     book.durChapterTime = oldBook.durChapterTime;
     book.pendingAddToShelf = oldBook.pendingAddToShelf;
+    book.isPrivate = oldBook.isPrivate;
     if (this.markReadOnSwitch) {
       book.putVariable('readStarted', '1');
       book.putVariable('lastReadTime', `${Date.now()}`);
@@ -289,6 +290,7 @@ export struct BookChangeSourceDialog {
     target.durChapterTime = oldBook.durChapterTime;
     target.syncTime = oldBook.syncTime;
     target.pendingAddToShelf = oldBook.pendingAddToShelf;
+    target.isPrivate = oldBook.isPrivate;
     if (this.markReadOnSwitch) {
       target.putVariable('readStarted', '1');
       target.putVariable('lastReadTime', `${Date.now()}`);
