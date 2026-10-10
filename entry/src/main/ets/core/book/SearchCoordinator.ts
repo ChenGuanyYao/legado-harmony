@@ -50,6 +50,13 @@ const MAX_SEARCH_CONCURRENCY = 12;
 // A search does not queue longer than this behind one source's own rate limit; the source is reported as
 // rate-limited and the worker moves on.
 const SEARCH_RATE_LIMIT_MAX_WAIT_MS = 60000;
+// Overall budget for one source: request, scripts and result parsing together.
+const SEARCH_SOURCE_TIMEOUT_MS = 60000;
+
+/** Tells an abandoned source run that its result is no longer wanted. */
+class SearchSourceAbort {
+  timedOut: boolean = false;
+}
 const MAX_VALIDATION_CONCURRENCY = 1;
 // Batch source results so background searching does not continuously interrupt list gestures.
 const SEARCH_PROGRESS_EMIT_INTERVAL_MS = 500;
@@ -210,7 +217,7 @@ export class SearchCoordinator {
         currentSourceLabel = sources[sourceIndex].bookSourceName || `书源 ${sourceIndex + 1}`;
         AppStorage.setOrCreate('searchLastSource', currentSourceLabel);
         AppStorage.setOrCreate('searchLastSourceIndex', sourceIndex + 1);
-        const sourceResult = await this.searchOne(sources[sourceIndex], keyword, options);
+        const sourceResult = await this.searchOneWithDeadline(sources[sourceIndex], keyword, options);
         if (sourceResult.books.length === 0 && sourceResult.reason && sourceResult.reason !== '未搜索到结果') {
           this.lastFailureReason = `${sources[sourceIndex].bookSourceName || '书源'}：${sourceResult.reason}`;
         }
@@ -250,13 +257,44 @@ export class SearchCoordinator {
     }
   }
 
-  private async searchOne(source: BookSource, keyword: string, options: SearchOptions): Promise<SearchSourceResult> {
+  /**
+   * Runs one source under an overall deadline. A dead or very slow source would otherwise keep its worker for as
+   * long as the source cares to stall, and enough of them bring the whole search to a standstill.
+   *
+   * On timeout the worker moves on and the abandoned run stops at its next checkpoint; a request already on the
+   * wire ends through the HTTP client's own timeout.
+   */
+  private async searchOneWithDeadline(source: BookSource, keyword: string,
+    options: SearchOptions): Promise<SearchSourceResult> {
+    const abort = new SearchSourceAbort();
+    // Time spent queueing behind the source's own rate limit is capped separately and comes on top.
+    const deadlineMs = SEARCH_SOURCE_TIMEOUT_MS + (source.concurrentRate ? SEARCH_RATE_LIMIT_MAX_WAIT_MS : 0);
+    let timerId = -1;
+    const timeout = new Promise<SearchSourceResult>((resolve: (result: SearchSourceResult) => void): void => {
+      timerId = setTimeout((): void => {
+        timerId = -1;
+        abort.timedOut = true;
+        console.warn(`[SC] source timed out after ${deadlineMs}ms:`, source.bookSourceName);
+        resolve(this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR,
+          `书源响应超时（超过 ${Math.round(deadlineMs / 1000)} 秒）`));
+      }, deadlineMs);
+    });
+    try {
+      return await Promise.race([this.searchOne(source, keyword, options, abort), timeout]);
+    } finally {
+      if (timerId >= 0) clearTimeout(timerId);
+    }
+  }
+
+  private async searchOne(source: BookSource, keyword: string, options: SearchOptions,
+    abort: SearchSourceAbort): Promise<SearchSourceResult> {
+    const stopped = (): boolean => this.cancelled || abort.timedOut;
     const debugContext = options.debugContext;
     if (debugContext) debugContext.beginStep(SourceRuntimeStage.SEARCH, `搜索：${keyword}`);
     let debugPassed = false;
     let debugError = '';
     try {
-      if (this.cancelled) {
+      if (stopped()) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
       }
       if (options.validationOnly === true) {
@@ -272,7 +310,7 @@ export class SearchCoordinator {
         MAX_VALIDATION_RESPONSE_BYTES : MAX_SEARCH_RESPONSE_BYTES;
       const resultLimit = options.validationOnly === true ? 1 : this.normalizedLimit(options.maxResultsPerSource,
         MAX_RESULTS_PER_SOURCE, 1, MAX_RESULTS_PER_SOURCE);
-      if (this.cancelled) {
+      if (stopped()) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
       }
       if (!source.searchUrl || !source.searchRule?.bookList || !source.searchRule?.name || !source.searchRule?.bookUrl) {
@@ -296,7 +334,7 @@ export class SearchCoordinator {
 
       const searchSerial = this.searchSerial;
       const au = new AnalyzeUrl(source, this.http)
-        .setCancelCheck((): boolean => this.cancelled || searchSerial !== this.searchSerial,
+        .setCancelCheck((): boolean => stopped() || searchSerial !== this.searchSerial,
           SEARCH_RATE_LIMIT_MAX_WAIT_MS);
       let urlTemplate = await this.evalAndBuild(js, source, keyword, responseLimit,
         options.validationOnly === true, debugContext || null);
@@ -310,7 +348,7 @@ export class SearchCoordinator {
         await this.fetchEncodedDataUrl(urlTemplate, source, responseLimit) :
           await au.fetch(urlTemplate, responseLimit, debugContext || null);
       if (debugContext) debugContext.setOutput('searchUrl', urlTemplate);
-      if (this.cancelled) {
+      if (stopped()) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
       }
 
@@ -347,7 +385,7 @@ export class SearchCoordinator {
         options.validationOnly === true ? MAX_VALIDATION_STAGE_RESPONSE_BYTES : 8 * 1024 * 1024,
         options.validationOnly === true ? MAX_VALIDATION_STAGE_TOTAL_RESPONSE_BYTES : 16 * 1024 * 1024,
         encodedVariables);
-      if (this.cancelled) {
+      if (stopped()) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
       }
       const allTypedItems = stageItems === null ?
@@ -358,7 +396,7 @@ export class SearchCoordinator {
       const typedItems = allTypedItems.length > candidateLimit ?
         allTypedItems.slice(0, candidateLimit) : allTypedItems;
       const items = typedItems.map((item: RuleValue): string => item.asString());
-      if (this.cancelled) {
+      if (stopped()) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
       }
       if (ENABLE_SEARCH_DEBUG_LOG) {
@@ -402,7 +440,7 @@ export class SearchCoordinator {
       fieldRequest.timeoutMs = options.validationOnly === true ? 15000 : 30000;
       fieldRequest.debugContext = debugContext || null;
       const fieldBatch = await RuleExecutionService.get().executeBatch(fieldRequest);
-      if (fieldBatch.cancelled || this.cancelled) {
+      if (fieldBatch.cancelled || stopped()) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
       }
       if (fieldBatch.errors.length > 0) {
@@ -414,7 +452,7 @@ export class SearchCoordinator {
         // fast selectors could then accumulate past HarmonyOS' 3-second foreground freeze threshold.
         if (itemIndex > 0) await parsingSlice.checkpoint();
         const item = items[itemIndex];
-        if (this.cancelled) {
+        if (stopped()) {
           return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
         }
         const ir = new AnalyzeRule(item, baseUrl);
