@@ -362,9 +362,11 @@ export class CloudTtsClient {
     const dir = root ? `${root}/${CloudTtsClient.CACHE_DIR_NAME}` : '';
     if (!dir) return;
     try {
-      const files = fs.listFileSync(dir).filter((name: string) =>
+      const listed = fs.listFileSync(dir).filter((name: string) =>
         name.endsWith('.bin') || name.endsWith('.json'));
-      const removeCount = Math.max(0, files.length - CloudTtsClient.MAX_CACHE_FILES);
+      const removeCount = Math.max(0, listed.length - CloudTtsClient.MAX_CACHE_FILES);
+      if (removeCount === 0) return;
+      const files = this.oldestFirst(dir, listed);
       for (let index = 0; index < removeCount; index++) {
         try {
           fs.unlinkSync(`${dir}/${files[index]}`);
@@ -373,6 +375,19 @@ export class CloudTtsClient {
       }
     } catch (_) {
     }
+  }
+
+  /** Cache files of a directory, least recently written first, so pruning removes the stalest audio. */
+  private oldestFirst(dir: string, names: string[]): string[] {
+    const times = new Map<string, number>();
+    for (const name of names) {
+      try {
+        times.set(name, fs.statSync(`${dir}/${name}`).mtime);
+      } catch (_) {
+        times.set(name, 0);
+      }
+    }
+    return [...names].sort((left: string, right: string): number => (times.get(left) || 0) - (times.get(right) || 0));
   }
 
   private ensureDir(path: string): void {

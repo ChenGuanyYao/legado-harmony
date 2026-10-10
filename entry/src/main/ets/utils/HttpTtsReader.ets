@@ -787,8 +787,9 @@ export class HttpTtsReader {
     const dir = this.cacheDir();
     if (!dir) return;
     try {
-      const files = fs.listFileSync(dir).filter((name: string) => !!name);
-      if (files.length <= HttpTtsReader.MAX_CACHE_FILES) return;
+      const listed = fs.listFileSync(dir).filter((name: string) => !!name);
+      if (listed.length <= HttpTtsReader.MAX_CACHE_FILES) return;
+      const files = this.oldestFirst(dir, listed);
       const removeCount = files.length - HttpTtsReader.MAX_CACHE_FILES;
       let removed = 0;
       for (let i = 0; i < files.length && removed < removeCount; i++) {
@@ -802,6 +803,19 @@ export class HttpTtsReader {
       }
     } catch (_) {
     }
+  }
+
+  /** Cache files of a directory, least recently written first, so pruning removes the stalest audio. */
+  private oldestFirst(dir: string, names: string[]): string[] {
+    const times = new Map<string, number>();
+    for (const name of names) {
+      try {
+        times.set(name, fs.statSync(`${dir}/${name}`).mtime);
+      } catch (_) {
+        times.set(name, 0);
+      }
+    }
+    return [...names].sort((left: string, right: string): number => (times.get(left) || 0) - (times.get(right) || 0));
   }
 
   private cacheDir(): string {

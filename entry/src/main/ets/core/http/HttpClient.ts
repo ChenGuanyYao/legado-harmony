@@ -235,10 +235,13 @@ export class HttpClient {
     if (!req.url || req.url.trim() === '') {
       return { url: '', statusCode: 0, headers: {}, data: new Uint8Array(), success: false, error: 'empty url' };
     }
-    const response = await this.executeBinaryWithProtocol(req, maxResponseBytes, false);
+    // A limit carried by the request itself is honoured too; it used to be ignored on this path.
+    const limit = req.maxResponseBytes && req.maxResponseBytes > 0 ?
+      Math.min(req.maxResponseBytes, maxResponseBytes) : maxResponseBytes;
+    const response = await this.executeBinaryWithProtocol(req, limit, false);
     if (!response.success && this.shouldRetryWithHttp1(req.url, response.error || '')) {
       console.info('[HttpClient] binary HTTP/2 failed; retrying once with HTTP/1.1:', this.hostForLog(req.url));
-      return await this.executeBinaryWithProtocol(req, maxResponseBytes, true);
+      return await this.executeBinaryWithProtocol(req, limit, true);
     }
     return response;
   }
