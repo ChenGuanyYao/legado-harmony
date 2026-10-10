@@ -97,6 +97,10 @@ export class ReaderTextNormalizer {
     if (ReaderActionMarker.has(prev) || ReaderActionMarker.has(next)) {
       return false;
     }
+    // 图片标记必须独占一行才会成为图片块；并进相邻段落后只能被当作行内标记隐藏掉。
+    if (ReaderImageMarker.isMarker(prev) || ReaderImageMarker.isMarker(next)) {
+      return false;
+    }
     if (!prev || !next) {
       return false;
     }

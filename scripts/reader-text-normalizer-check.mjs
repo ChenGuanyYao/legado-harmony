@@ -38,6 +38,9 @@ try {
   const action = ReaderActionMarker.create('12', 'https://example.invalid/c', '段评');
   equal(N.mergeSoftWrappedLines(`短行${action}\n另一短行`), `短行${action}\n另一短行`, '带动作标记的行不合并');
 
+  const inlineImage = ReaderImageMarker.create('images/b.png');
+  equal(N.mergeSoftWrappedLines(`短行\n${inlineImage}\n，后续`), `短行\n${inlineImage}\n，后续`, '图片标记行不与相邻行合并');
+
   // ---- 段首缩进 ----
   equal(N.indentChapterBody('第一段。\n  第二段。\n　　第三段。'), '　　第一段。\n　　第二段。\n　　第三段。', '统一为两个全角空格缩进');
   equal(N.indentLine(''), '', '空行不缩进');

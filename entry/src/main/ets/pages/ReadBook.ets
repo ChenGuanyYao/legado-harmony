@@ -106,6 +106,7 @@ import { ReaderCustomFontItem, ReaderCustomFontData, ReaderTxtCharsetOption } fr
 import { PageTurnPreview, ReaderParagraphMetrics, ReaderInlineActionBoundsTask, ReaderMergedActionBoundsTask, ReaderTextParagraph, ReadTextSlice, ReaderPaginationResult, ReaderViewportSize, ReaderTextParagraphGroup, ReaderParagraphMeasureFallback, ReaderV2HighlightRect, ReaderMixedPaginationMetrics } from '../core/reader/ReaderPageModels';
 import { ReaderEyeCalibrationPoint } from '../core/reader/ReaderEyeModels';
 import { ReaderTextNormalizer } from '../core/reader/ReaderTextNormalizer';
+import { ReaderImageSizeResolver } from '../core/reader/ReaderImageSizeResolver';
 import { ReaderPageOffsets } from '../core/reader/ReaderPageOffsets';
 import { ReaderMixedImageBox, ReaderMixedPageHost, ReaderMixedPageLayout } from '../core/reader/ReaderMixedPageLayout';
 import { EpubChapterPlanner } from '../core/book/EpubChapterPlanner';
@@ -153,9 +154,6 @@ const READER_REPLACE_MENU_ITEM_ID: string = 'reader_replace_rule';
 // compared with the previous half-resolution capture. This matters most on dialogue-heavy pages.
 const READER_PAGE_CURL_SNAPSHOT_SCALE = 0.42;
 const READER_PROGRESS_OFFSET_KEY = 'readProgressCharOffsetV2';
-// 本地 EPUB 的图文混排章节交给 V2 原生段落引擎排版（与纯文字章节同一套断行和字形度量）。
-// 关闭后这些章节退回旧的 ArkUI Text 混排路径。
-const READER_V2_IMAGE_BLOCKS_ENABLED = true;
 const READER_V2_NO_FRAGMENTS: ReaderV2PageFragment[] = [];
 const READER_PROGRESS_OFFSET_CHAPTER_KEY = 'readProgressCharOffsetChapterV2';
 const READER_PAGINATION_HEIGHT_SCALE_CACHE: Map<string, number> = new Map<string, number>();
@@ -303,6 +301,7 @@ struct ReadBookPage {
   @State ttsHighlightEnd: number = -1;
   @State ttsHighlightRenderVersion: number = 0;
   @State readerV2TtsPaintVersion: number = 0;
+  @State readerV2BrokenImageSources: string[] = [];
   @State readerV2SelectionPaintVersion: number = 0;
   @State ttsSleepTimerMinutes: number = 0;
   @State ttsSleepTimerRemainingSeconds: number = 0;
@@ -423,7 +422,6 @@ struct ReadBookPage {
   private readerParagraphMetricsCache: Map<string, ReaderParagraphMetrics> = new Map();
   private readerAdaptiveLineHeightCache: Map<string, number> = new Map();
   private readerMixedImageBoxCache: Map<string, ReaderMixedImageBox[]> = new Map();
-  private readerV2ImageSourceSupport: Map<string, boolean> = new Map();
   // 滚动模式下每个分块的正文解析在选择层、渲染层、测量层被反复调用；按块文本缓存切分结果，
   // 避免快速滑动时每个新 LazyForEach 项重复做整块正则归一化与逐段切分。
   private readerTextParagraphsCache: Map<string, ReaderTextParagraph[]> = new Map();
@@ -5545,14 +5543,23 @@ struct ReadBookPage {
     return this.readerPreparedContentCache.get(this.readerPreparedContentKey(content, chapterIndex)) || '';
   }
 
+  // Whether the raw chapter body differs from what pagination consumes. Synchronous callers must not
+  // paginate the raw body in that case: its cache key would never match the prepared chapter.
+  readerContentNeedsPreparation(content: string): boolean {
+    return ReaderContentPreprocessor.hasActiveContentRules(this.readerReplaceRules) ||
+      (!this.isReaderComicModeActive() && ReaderImageSizeResolver.needsSizes(content));
+  }
+
   async prepareReaderContentRules(content: string, chapterIndex: number): Promise<string> {
     if (!content) return '';
     const key = this.readerPreparedContentKey(content, chapterIndex);
     const cached = this.readerPreparedContentCache.get(key);
     if (cached !== undefined) return cached;
     const startedAt = Date.now();
-    const processed = ReaderActionMarker.limit(
+    const replaced = ReaderActionMarker.limit(
       await ReaderContentPreprocessor.apply(content, this.readerReplaceRules, this.book));
+    // Comic chapters size their images from the decoded bitmap; probing every file up front only delays opening.
+    const processed = this.isReaderComicModeActive() ? replaced : await ReaderImageSizeResolver.annotate(replaced);
     const elapsedMs = Math.max(0, Date.now() - startedAt);
     if (elapsedMs >= CooperativeScheduler.DANGEROUS_OPERATION_MS) {
       console.info(`[ReaderPreprocessor] worker elapsed=${elapsedMs}ms input=${content.length}`);
@@ -19762,32 +19769,10 @@ struct ReadBookPage {
     }
   }
 
+  // Every paged chapter is laid out by V2, with or without images. Comics and continuous scrolling keep
+  // their own list surface.
   shouldUseReaderLayoutV2(source: string = this.pagedContentText || this.content): boolean {
-    return !!source && !this.isReaderContinuousScrollSurfaceActive() && !this.isReaderComicModeActive() &&
-      (!LocalBookService.hasEpubImageMarkers(source) || this.readerV2SupportsImageSource(source));
-  }
-
-  // V2 lays out image blocks only for local EPUB chapters that mix text and images: their markers are
-  // standalone lines carrying a file path. Image-only chapters (covers, galleries) keep the legacy
-  // full-bleed page, and remote sources keep the legacy mixed path because their markers can also be
-  // inline SVG bubbles or author cards.
-  readerV2SupportsImageSource(source: string): boolean {
-    if (!READER_V2_IMAGE_BLOCKS_ENABLED || !this.book || this.book.origin !== LocalBookService.ORIGIN ||
-      this.book.type !== LocalBookService.TYPE_EPUB) {
-      return false;
-    }
-    // This runs from builders on every animation frame; the strip below must not.
-    const key = `${this.book.bookUrl}_${source.length}_${this.buildTextSliceKey(source)}`;
-    const cached = this.readerV2ImageSourceSupport.get(key);
-    if (cached !== undefined) return cached;
-    const supported = !this.isReaderImageOnlySource(source);
-    this.readerV2ImageSourceSupport.set(key, supported);
-    while (this.readerV2ImageSourceSupport.size > 8) {
-      const oldest = this.readerV2ImageSourceSupport.keys().next().value as string | undefined;
-      if (oldest === undefined) break;
-      this.readerV2ImageSourceSupport.delete(oldest);
-    }
-    return supported;
+    return !!source && !this.isReaderContinuousScrollSurfaceActive() && !this.isReaderComicModeActive();
   }
 
   // In-chapter headings recorded when the EPUB was imported. V2 styles the matching paragraphs as headings.
@@ -20247,7 +20232,18 @@ struct ReadBookPage {
           .hitTestBehavior(HitTestMode.None)
           .onError((error: ImageError) => {
             console.error(`[Reader] EPUB 图片加载失败 path=${fragment.imageSource} message=${error?.message || ''}`);
+            this.markReaderV2ImageBroken(fragment.imageSource);
           })
+        if (this.readerV2BrokenImageSources.includes(fragment.imageSource)) {
+          Text('图片加载失败')
+            .fontSize(13)
+            .fontColor(this.getSubTextColor())
+            .textAlign(TextAlign.Center)
+            .width(px2vp(fragment.imageRect.width()))
+            .height(px2vp(fragment.imageRect.height()))
+            .position({ x: px2vp(fragment.imageRect.left), y: px2vp(fragment.imageRect.top) })
+            .hitTestBehavior(HitTestMode.None)
+        }
       }, (fragment: ReaderV2PageFragment) => `reader_v2_image_${fragment.blockId}_` +
         `${Math.round(fragment.imageRect.left)}_${Math.round(fragment.imageRect.top)}_` +
         `${Math.round(fragment.imageRect.right)}_${Math.round(fragment.imageRect.bottom)}`)
@@ -20463,6 +20459,11 @@ struct ReadBookPage {
   readerV2PageFragments(chapterIndex: number, pageIndex: number, source: string): ReaderV2PageFragment[] {
     const page = this.readerV2Page(chapterIndex, pageIndex, source);
     return page ? page.fragments : [];
+  }
+
+  markReaderV2ImageBroken(imageSource: string): void {
+    if (!imageSource || this.readerV2BrokenImageSources.includes(imageSource)) return;
+    this.readerV2BrokenImageSources = [...this.readerV2BrokenImageSources.slice(-63), imageSource];
   }
 
   readerV2ImageFragments(chapterIndex: number, pageIndex: number, source: string): ReaderV2PageFragment[] {
@@ -21977,7 +21978,7 @@ struct ReadBookPage {
     const body = ReadBookEngine.get().getCachedContent(targetChapterIndex);
     if (!body) return false;
     const prepared = this.getPreparedReaderContent(body, targetChapterIndex);
-    if (!prepared && ReaderContentPreprocessor.hasActiveContentRules(this.readerReplaceRules)) return false;
+    if (!prepared && this.readerContentNeedsPreparation(body)) return false;
     const source = this.buildPagedSourceText(targetChapterIndex, prepared || body);
     return this.getCachedReaderPagination(targetChapterIndex, source)?.complete === true;
   }
@@ -22735,7 +22736,7 @@ struct ReadBookPage {
       return { text: '', pageIndex: 0, chapterIndex: chapterIndex };
     }
     const prepared = this.getPreparedReaderContent(body, chapterIndex);
-    if (!prepared && ReaderContentPreprocessor.hasActiveContentRules(this.readerReplaceRules)) {
+    if (!prepared && this.readerContentNeedsPreparation(body)) {
       return { text: '', pageIndex: 0, chapterIndex: chapterIndex };
     }
     return this.buildAdjacentPageTurnPreview(direction, chapterIndex, prepared || body);

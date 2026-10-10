@@ -36,6 +36,8 @@ export class ReaderV2PaginationSession {
   lineIndex: number = 0;
   pageIndex: number = 0;
   measuredBlock: ReaderV2MeasuredBlock | null = null;
+  /** 整章只有图片（封面页、插图页）：整页插图铺满页面，不留正文边距。 */
+  imageOnly: boolean = false;
   private blockStyles: ReaderV2SpanStyleRange[] = [];
   private blockStylesIndex: number = -1;
 
@@ -64,6 +66,8 @@ export class ReaderV2PaginationSession {
     this.pageSet.layoutIdentity = snapshot.identity;
     this.width = snapshot.columnRects.length > 0 ? snapshot.columnRects[0].width() : 0;
     this.pageSet.complete = document.blocks.length === 0 || snapshot.columnRects.length === 0;
+    this.imageOnly = document.blocks.length > 0 &&
+      document.blocks.every((block: ReaderV2Block): boolean => !!block.image);
   }
 }
 
@@ -139,7 +143,10 @@ export class ReaderV2Paginator {
               mustEndPage = true;
               continue;
             }
-            imageRect = new ReaderV2Rect(column.left, y + gap, column.right, column.bottom);
+            const viewport = session.snapshot.viewport;
+            imageRect = session.imageOnly && !hasContent ?
+              new ReaderV2Rect(viewport.left, viewport.top, viewport.right, column.bottom) :
+              new ReaderV2Rect(column.left, y + gap, column.right, column.bottom);
             endsPage = true;
           }
           const imageFragment = new ReaderV2PageFragment();
