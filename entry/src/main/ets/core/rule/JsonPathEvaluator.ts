@@ -14,8 +14,8 @@ interface JsonPathBudget {
 }
 
 export class JsonPathEvaluator {
-  private static readonly MAX_RESULTS = 5000;
-  private static readonly MAX_VISITED_NODES = 20000;
+  private static readonly MAX_RESULTS = 50000;
+  private static readonly MAX_VISITED_NODES = 200000;
   private static readonly MAX_RECURSION_DEPTH = 64;
 
   static evaluate(root: Object, path: string): Object[] {

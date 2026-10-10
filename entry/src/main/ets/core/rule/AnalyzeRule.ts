@@ -12,6 +12,10 @@ import { RuleExecutionTarget, RuleValue, RuleValueKind } from './RuleValue';
 const MAX_HTML_PARSE_LENGTH = 4 * 1024 * 1024;
 
 export class AnalyzeRule {
+  // Abuse guards for a single rule evaluation. The former 5,000 / 20,000 ceilings silently cut
+  // catalogs of long novels (8,000+ chapters) down to 5,001 entries.
+  private static readonly MAX_LIST_RESULTS: number = 50000;
+  private static readonly MAX_VISITED_NODES: number = 200000;
   private content: string = '';
   private baseUrl: string = '';
   private ctx: RuleContext;
@@ -191,7 +195,7 @@ export class AnalyzeRule {
           } else {
             concatenated += match[0] || '';
           }
-          if (values.length > 5000) break;
+          if (values.length > AnalyzeRule.MAX_LIST_RESULTS) break;
           if ((match[0] || '').length === 0) regex.lastIndex++;
         }
         if (last) return values;
@@ -1038,13 +1042,13 @@ export class AnalyzeRule {
     const values: Object[] = [];
     const stack: Object[] = [obj];
     let visited = 0;
-    while (stack.length > 0 && visited < 20000 && values.length < 5000) {
+    while (stack.length > 0 && visited < AnalyzeRule.MAX_VISITED_NODES && values.length < AnalyzeRule.MAX_LIST_RESULTS) {
       const current = stack.pop();
       visited++;
       if (Array.isArray(current)) {
         const array = current as Object[];
         for (let i = array.length - 1; i >= 0; i--) {
-          if (stack.length >= 20000) break;
+          if (stack.length >= AnalyzeRule.MAX_VISITED_NODES) break;
           stack.push(array[i]);
         }
       } else if (typeof current === 'object' && current !== null) {
@@ -1055,7 +1059,7 @@ export class AnalyzeRule {
           childKeys.push(childKey);
         }
         for (let i = childKeys.length - 1; i >= 0; i--) {
-          if (stack.length >= 20000) break;
+          if (stack.length >= AnalyzeRule.MAX_VISITED_NODES) break;
           stack.push(rec[childKeys[i]]);
         }
       }
@@ -1068,13 +1072,13 @@ export class AnalyzeRule {
     for (const value of values) {
       if (Array.isArray(value)) {
         for (const item of value as Object[]) {
-          if (flattened.length >= 5000) break;
+          if (flattened.length >= AnalyzeRule.MAX_LIST_RESULTS) break;
           flattened.push(item);
         }
       } else {
         flattened.push(value);
       }
-      if (flattened.length >= 5000) break;
+      if (flattened.length >= AnalyzeRule.MAX_LIST_RESULTS) break;
     }
     if (!index || index === '*') return flattened;
     const idx = parseInt(index);
@@ -1084,13 +1088,13 @@ export class AnalyzeRule {
   private deepFind(obj: Object, key: string): Object | string | undefined {
     const stack: Object[] = [obj];
     let visited = 0;
-    while (stack.length > 0 && visited < 20000) {
+    while (stack.length > 0 && visited < AnalyzeRule.MAX_VISITED_NODES) {
       const current = stack.pop();
       visited++;
       if (Array.isArray(current)) {
         const array = current as Object[];
         for (let i = array.length - 1; i >= 0; i--) {
-          if (stack.length >= 20000) break;
+          if (stack.length >= AnalyzeRule.MAX_VISITED_NODES) break;
           stack.push(array[i]);
         }
       } else if (typeof current === 'object' && current !== null) {
@@ -1101,7 +1105,7 @@ export class AnalyzeRule {
           childKeys.push(childKey);
         }
         for (let i = childKeys.length - 1; i >= 0; i--) {
-          if (stack.length >= 20000) break;
+          if (stack.length >= AnalyzeRule.MAX_VISITED_NODES) break;
           stack.push(rec[childKeys[i]]);
         }
       }
@@ -1190,14 +1194,14 @@ export class AnalyzeRule {
       const pending: Object[] = [root];
       let pendingIndex = 0;
       let visited = 0;
-      while (pendingIndex < pending.length && visited < 20000 && result.length < 5000) {
+      while (pendingIndex < pending.length && visited < AnalyzeRule.MAX_VISITED_NODES && result.length < AnalyzeRule.MAX_LIST_RESULTS) {
         const candidate = pending[pendingIndex++];
         visited++;
         if (Array.isArray(candidate)) {
           const values = JsonPathEvaluator.evaluate(candidate, filterPath);
           for (const item of values) {
             result.push(item);
-            if (result.length >= 5000) break;
+            if (result.length >= AnalyzeRule.MAX_LIST_RESULTS) break;
           }
           if (values.length === 0 && existenceParts.length > 0) {
             for (const item of candidate as Object[]) {
@@ -1210,7 +1214,7 @@ export class AnalyzeRule {
                 current = (current as Record<string, Object>)[part];
               }
               if (current !== undefined && current !== null) result.push(item);
-              if (result.length >= 5000) break;
+              if (result.length >= AnalyzeRule.MAX_LIST_RESULTS) break;
             }
           }
           // Once an array satisfies the filter it is the intended list. Avoid returning
@@ -1712,7 +1716,7 @@ export class AnalyzeRule {
         if (this.matchExcludedAttrs(attrText, parsed.notAttrs)) continue;
         if (!this.matchNthPseudo(html, m.index, m[1], parsed.nthChild, parsed.nthOfType)) continue;
         res.push(this.sliceWholeElement(html, m.index, fullStartTag, m[1]));
-        if (res.length > 5000) break;
+        if (res.length > AnalyzeRule.MAX_LIST_RESULTS) break;
       }
       let filtered = parsed.excludeIndices.length === 0 ? res : this.excludeIndices(res, parsed.excludeIndices);
       if (containsText) filtered = filtered.filter(item => this.stripHtml(item).includes(containsText));
@@ -2057,7 +2061,7 @@ export class AnalyzeRule {
     let m: RegExpExecArray | null;
     while ((m = re.exec(inner)) !== null) {
       children.push(this.sliceWholeElement(inner, m.index, m[0], m[1]));
-      if (children.length > 5000) break;
+      if (children.length > AnalyzeRule.MAX_LIST_RESULTS) break;
       re.lastIndex = m.index + children[children.length - 1].length;
     }
     return children;
@@ -2077,7 +2081,7 @@ export class AnalyzeRule {
         } else {
           values.push(m[0]);
         }
-        if (values.length > 5000) break;
+        if (values.length > AnalyzeRule.MAX_LIST_RESULTS) break;
         if (m[0].length === 0) re.lastIndex++;
       }
       return values;
