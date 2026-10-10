@@ -564,6 +564,9 @@ struct ReadBookPage {
   // 分页区域下缘到窗口下缘的实测距离（vp）。窗口为全屏布局时分页区域本身就铺到窗口底部，该值为 0；
   // 只有系统仍为导航条保留了布局安全区时才大于 0。-1 表示尚未测量。
   private readerPageAreaBottomGap: number = -1;
+  // 重新排版（改排版设置、折叠屏展开合上、窗口尺寸变化）后，新的分页会话可能还没排到当前页，
+  // 可见页面此时挂载的是纯文本兜底。等当前页排出来后需要重新挂载一次页面宿主。
+  private readerRelayoutRepaintPending: boolean = false;
   @StorageLink('readerReplaceRulesUpdateTime') @Watch('onReaderReplaceRulesChanged') readerReplaceRulesUpdateTime: number = 0;
   @StorageLink('readerFontFamily') @Watch('onReaderFontChanged') readerFontFamily: string = '';
   @StorageLink('readerFontFilePath') @Watch('onReaderFontChanged') readerFontFilePath: string = '';
@@ -14286,6 +14289,13 @@ struct ReadBookPage {
           // A pure comic page is already delimited by an image marker and requires no text measurement. Parse a small
           // group per idle slice so large comics finish promptly without turning the whole chapter into one UI task.
           this.appendReaderPaginationBatch(result, chapterIndex, imageOnlyPagination ? 8 : 1);
+          // 重新排版后不必等整章排完：阅读位置所在的页和它的下一页（双页时的右页）一排出来就发布，
+          // 让正文尽快从纯文本兜底换回正式排版。其余页面照旧在后台排完后一次发布。
+          if (!result.complete && this.readerRelayoutRepaintPending && this.readerTypographyRestoreOffset >= 0 &&
+            result.ends.length >= 2 &&
+            this.readerTypographyRestoreOffset < result.ends[result.ends.length - 2]) {
+            this.publishCurrentReaderPagination(result);
+          }
         }
         const batchElapsedMs = Math.max(0, Date.now() - batchStartedAt);
         failureCount = 0;
@@ -14444,6 +14454,20 @@ struct ReadBookPage {
       if (restoredPendingPosition || restoredTypographyPosition) this.scheduleReaderComicScrollRestore();
     }
     this.scheduleTtsFocusSyncAfterPagination();
+    if (this.readerRelayoutRepaintPending && (result.complete || restoredTypographyPosition)) {
+      this.readerRelayoutRepaintPending = false;
+      // 页面宿主在重新排版的那一刻就按新版式重新挂载了，但新的分页会话当时往往还没排到当前页，
+      // 挂上去的是纯文本兜底：只按旧分页的文字量铺开（字号变小时只占半屏），也没有强调气泡。
+      // "有没有原生页面"这个判断读的是普通缓存，不会随缓存填充自动重算；宿主的 key 只含章节、页码
+      // 和代数，页码没变就一直停在兜底上，直到下一次翻页。当前页排出来后换一个代数，重新挂载一次。
+      // 翻页动画进行中不处理，动画落定时页码变化本来就会重新挂载。
+      if (!this.isReaderContinuousScrollSurfaceActive() && !this.isPageTurning && !this.pageTurnAnimating &&
+        this.pageSlideDirection === 0) {
+        this.readerV2SurfaceGeneration++;
+        this.forceCurrentReaderPageRender();
+        this.refreshCurrentReaderV2RetainedPages(true);
+      }
+    }
     if (restoredPendingPosition && !this.isPageTurning && this.pageTurnQueue.pendingCount() > 0) {
       // A queued physical tap may have arrived while the previous chapter's authoritative tail was rebuilding.
       // Resume it only after the pending index has resolved, so one tap remains one page turn.
@@ -14752,6 +14776,8 @@ struct ReadBookPage {
       // Do not replace a completed on-screen page set with the first one/two pages of a new incremental session.
       // That transient snapshot made a foreground resume visibly jump from e.g. 3-4/8 to 1-2/2 before returning.
       // scheduleReaderPaginationCompletion() still owns the private result and publishes it once complete.
+      // 这期间新会话可能还没有当前页，可见页面挂载的是纯文本兜底，见 publishCurrentReaderPagination。
+      this.readerRelayoutRepaintPending = true;
       return;
     }
     const pages: string[] = result.pages.length > 0 ? result.pages : [fallbackContent];
