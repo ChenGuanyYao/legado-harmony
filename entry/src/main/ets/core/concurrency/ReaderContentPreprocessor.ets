@@ -1,10 +1,13 @@
 import taskpool from '@ohos.taskpool';
 import { Book } from '../../model/data/Book';
+import { BudgetedRegexReplace } from '../rule/BudgetedRegexReplace';
+import { JavaRegexCompat } from '../rule/JavaRegexCompat';
 import { ReaderReplaceRule } from '../../utils/ReaderReplaceRuleStore';
 
 /**
- * Pure TaskPool entry. It deliberately owns no UI or database state so a pathological imported
- * replacement rule cannot block ArkUI's event loop.
+ * Pure TaskPool entry. It deliberately owns no UI or database state. Running off the UI thread is
+ * not enough on its own: a long regex call here blocks shared-heap GC and the UI thread with it,
+ * so rules run through BudgetedRegexReplace (short native calls plus a time budget).
  */
 @Concurrent
 function applyReaderRulesInTask(text: string, rulesJson: string, scopeText: string): string {
@@ -23,11 +26,20 @@ function applyReaderRulesInTask(text: string, rulesJson: string, scopeText: stri
   // comics) — the same exemption applies: a rule matching inside an encoded payload corrupts the
   // path (e.g. "base" -> "ba色") and every comic page then fails to load.
   const hasMarkers = (text || '').indexOf('[[LEGADO_') >= 0;
-  const segments: string[] = hasMarkers ?
+  let segments: string[] = hasMarkers ?
     (text || '').split(/(\[\[LEGADO_(?:READER_ACTION(?:_V[23])?|EPUB_IMAGE):[\s\S]*?\]\])/g) : [text || ''];
   const target = (scopeText || '').toLowerCase();
+  const textHasCarriageReturn = (text || '').indexOf('\r') >= 0;
+  // A regex running here still stalls the UI thread through shared-heap GC, so every rule gets a
+  // time budget (its own timeoutMs, 3 s at most) and the whole task a hard ceiling.
+  const taskDeadline = Date.now() + 8000;
   for (let index = 0; index < rules.length; index++) {
     const rule = rules[index];
+    const ruleStartedAt = Date.now();
+    if (ruleStartedAt >= taskDeadline) {
+      console.warn('[ReaderPreprocessor] task budget exhausted, remaining rules skipped from #' + index);
+      break;
+    }
     if (rule['enabled'] === false || rule['applyToContent'] === false) continue;
     const pattern = String(rule['pattern'] || '');
     if (!pattern || pattern.length > 4096) continue;
@@ -81,23 +93,48 @@ function applyReaderRulesInTask(text: string, rulesJson: string, scopeText: stri
     if (excluded) continue;
 
     try {
-      const replacement = String(rule['replacement'] || '');
-      let matcher: RegExp | null = null;
+      let replacement = String(rule['replacement'] || '');
+      let matcher: BudgetedRegexReplace | null = null;
       let plain = '';
+      let budget = Number(rule['timeoutMs']);
+      if (!(budget > 0)) budget = 3000;
+      const deadline = Math.min(taskDeadline, ruleStartedAt + Math.min(3000, Math.max(100, budget)));
       if (rule['isRegex'] !== false) {
+        // 规则多数来自 Android 阅读，按 Java 正则方言转换后再编译，与标题净化和规则检查页保持一致。
+        const conversion = JavaRegexCompat.convert(pattern, 'g');
         // Nested unbounded quantifiers are a common source of catastrophic backtracking. Imported
         // rules with this shape are skipped instead of occupying a TaskPool worker indefinitely.
-        if (/(?:\([^)]*[+*][^)]*\)|\[[^\]]+\][+*])[+*{]/.test(pattern)) continue;
-        matcher = new RegExp(pattern, 'g');
+        // The guard reads the converted source: a Java possessive quantifier such as `[abc]*+` is
+        // already downgraded to a plain greedy one there and must not be mistaken for nesting.
+        if (/(?:\([^)]*[+*][^)]*\)|\[[^\]]+\][+*])[+*{]/.test(conversion.source)) continue;
+        matcher = new BudgetedRegexReplace(conversion.source, conversion.flags, textHasCarriageReturn);
+        replacement = JavaRegexCompat.convertReplacement(replacement);
       } else {
         plain = pattern;
       }
       // Even indices are plain text; odd indices are captured markers kept out of rule scope.
-      for (let si = 0; si < segments.length; si += 2) {
-        const segment = segments[si];
+      // A rule is applied to a copy and committed only when it finishes inside its budget, so a
+      // timed-out rule leaves the text exactly as the previous rule produced it.
+      const next: string[] = segments.slice();
+      let timedOut = false;
+      for (let si = 0; si < next.length; si += 2) {
+        const segment = next[si];
         if (!segment) continue;
-        if (matcher !== null) segments[si] = segment.replace(matcher, replacement);
-        else segments[si] = segment.split(plain).join(replacement);
+        if (matcher !== null) {
+          const replaced = matcher.replace(segment, replacement, deadline);
+          if (replaced === null) {
+            timedOut = true;
+            break;
+          }
+          next[si] = replaced;
+        } else {
+          next[si] = segment.split(plain).join(replacement);
+        }
+      }
+      if (timedOut) {
+        console.warn('[ReaderPreprocessor] rule timed out and was skipped: ' + String(rule['name'] || rule['id'] || index));
+      } else {
+        segments = next;
       }
     } catch (_) {
     }

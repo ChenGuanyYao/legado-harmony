@@ -14,8 +14,11 @@
  * - possessive quantifiers `a*+`, `a++`, `a?+`, `a{2,3}+` — JS 只有贪婪/惰性，降级为贪婪。
  * - atomic groups `(?>…)` — JS 无原子组，降级为普通分组。
  * - `\Q…\E` 字面量引用、`\h`/`\H`/`\v`/`\V`/`\R`、`\z`/`\Z`、`\p{…}`。
+ * - `\w`/`\W`/`\b`/`\B`/`\d`/`\D` — Android（ICU）按 Unicode 判定单词字符和数字，JS 只认 ASCII，
+ *   改用同一字符集。
  * - replacement 串里的 `$0`（Java 的整个匹配）与 `\` 转义。
  */
+
 export interface JavaRegexConversion {
   source: string;
   flags: string;
@@ -44,6 +47,71 @@ export class JavaRegexCompat {
   private static readonly INPUT_END = '(?![\\s\\S])';
   private static readonly INPUT_END_OR_TERMINATOR =
     '(?=(?:\\r\\n|[\\n\\r\\x85\\u2028\\u2029])?(?![\\s\\S]))';
+  // Android 的 \w、\d（ICU 语义）在基本多文种平面内的字符范围及各自的补集，都是“字符类内容”。
+  // 代理项（BMP 之外的字符）按非单词字符处理。由 scripts/generate-java-regex-word-class.mjs 生成，请勿手改。
+  // <generated:word-class>
+  private static readonly WORD_CONTENT: string =
+    '\\u0030-\\u0039\\u0041-\\u005A\\u005F\\u0061-\\u007A\\u00AA\\u00B5\\u00BA\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-' +
+    '\\u02C1\\u02C6-\\u02D1\\u02E0-\\u02E4\\u02EC\\u02EE\\u0300-\\u0374\\u0376-\\u037D\\u037F\\u0386\\u0388-\\u03F5' +
+    '\\u03F7-\\u0481\\u0483-\\u0559\\u0560-\\u0588\\u0591-\\u05BD\\u05BF\\u05C1\\u05C2\\u05C4\\u05C5\\u05C7-\\u05F2' +
+    '\\u0610-\\u061A\\u0620-\\u0669\\u066E-\\u06D3\\u06D5-\\u06DC\\u06DF-\\u06E8\\u06EA-\\u06FC\\u06FF\\u0710-' +
+    '\\u07F5\\u07FA-\\u07FD\\u0800-\\u082D\\u0840-\\u085B\\u0860-\\u0887\\u0889-\\u088F\\u0897-\\u08E1\\u08E3-' +
+    '\\u0963\\u0966-\\u096F\\u0971-\\u09F1\\u09FC\\u09FE-\\u0A75\\u0A81-\\u0AEF\\u0AF9-\\u0B6F\\u0B71\\u0B82-\\u0BEF' +
+    '\\u0C00-\\u0C6F\\u0C80-\\u0C83\\u0C85-\\u0D4E\\u0D54-\\u0D57\\u0D5F-\\u0D6F\\u0D7A-\\u0DF3\\u0E01-\\u0E3A' +
+    '\\u0E40-\\u0E4E\\u0E50-\\u0E59\\u0E81-\\u0F00\\u0F18\\u0F19\\u0F20-\\u0F29\\u0F35\\u0F37\\u0F39\\u0F3E-\\u0F84' +
+    '\\u0F86-\\u0FBC\\u0FC6\\u1000-\\u1049\\u1050-\\u109D\\u10A0-\\u10FA\\u10FC-\\u135F\\u1380-\\u138F\\u13A0-' +
+    '\\u13FD\\u1401-\\u166C\\u166F-\\u167F\\u1681-\\u169A\\u16A0-\\u16EA\\u16EE-\\u1734\\u1740-\\u17D3\\u17D7' +
+    '\\u17DC-\\u17E9\\u180B-\\u180D\\u180F-\\u193B\\u1946-\\u19D9\\u1A00-\\u1A1B\\u1A20-\\u1A99\\u1AA7\\u1AB0-' +
+    '\\u1B4C\\u1B50-\\u1B59\\u1B6B-\\u1B73\\u1B80-\\u1BF3\\u1C00-\\u1C37\\u1C40-\\u1C7D\\u1C80-\\u1CBF\\u1CD0-' +
+    '\\u1CD2\\u1CD4-\\u1FBC\\u1FBE\\u1FC2-\\u1FCC\\u1FD0-\\u1FDB\\u1FE0-\\u1FEC\\u1FF2-\\u1FFC\\u200C\\u200D\\u203F' +
+    '\\u2040\\u2054\\u2071\\u207F\\u2090-\\u209C\\u20D0-\\u20F0\\u2102\\u2107\\u210A-\\u2113\\u2115\\u2119-\\u211D' +
+    '\\u2124\\u2126\\u2128\\u212A-\\u212D\\u212F-\\u2139\\u213C-\\u213F\\u2145-\\u2149\\u214E\\u2160-\\u2188\\u24B6-' +
+    '\\u24E9\\u2C00-\\u2CE4\\u2CEB-\\u2CF3\\u2D00-\\u2D6F\\u2D7F-\\u2DFF\\u2E2F\\u3005-\\u3007\\u3021-\\u302F' +
+    '\\u3031-\\u3035\\u3038-\\u303C\\u3041-\\u309A\\u309D-\\u309F\\u30A1-\\u30FA\\u30FC-\\u318E\\u31A0-\\u31BF' +
+    '\\u31F0-\\u31FF\\u3400-\\u4DBF\\u4E00-\\uA48C\\uA4D0-\\uA4FD\\uA500-\\uA60C\\uA610-\\uA672\\uA674-\\uA67D' +
+    '\\uA67F-\\uA6F1\\uA717-\\uA71F\\uA722-\\uA788\\uA78B-\\uA827\\uA82C\\uA840-\\uA873\\uA880-\\uA8C5\\uA8D0-' +
+    '\\uA8F7\\uA8FB\\uA8FD-\\uA92D\\uA930-\\uA953\\uA960-\\uA9C0\\uA9CF-\\uA9D9\\uA9E0-\\uAA59\\uAA60-\\uAA76' +
+    '\\uAA7A-\\uAADD\\uAAE0-\\uAAEF\\uAAF2-\\uAB5A\\uAB5C-\\uAB69\\uAB70-\\uABEA\\uABEC-\\uD7FB\\uF900-\\uFB28' +
+    '\\uFB2A-\\uFBB1\\uFBD3-\\uFD3D\\uFD50-\\uFD8F\\uFD92-\\uFDC7\\uFDF0-\\uFDFB\\uFE00-\\uFE0F\\uFE20-\\uFE2F' +
+    '\\uFE33\\uFE34\\uFE4D-\\uFE4F\\uFE70-\\uFEFC\\uFF10-\\uFF19\\uFF21-\\uFF3A\\uFF3F\\uFF41-\\uFF5A\\uFF66-\\uFFDC';
+  private static readonly NON_WORD_CONTENT: string =
+    '\\u0000-\\u002F\\u003A-\\u0040\\u005B-\\u005E\\u0060\\u007B-\\u00A9\\u00AB-\\u00B4\\u00B6-\\u00B9\\u00BB-' +
+    '\\u00BF\\u00D7\\u00F7\\u02C2-\\u02C5\\u02D2-\\u02DF\\u02E5-\\u02EB\\u02ED\\u02EF-\\u02FF\\u0375\\u037E\\u0380-' +
+    '\\u0385\\u0387\\u03F6\\u0482\\u055A-\\u055F\\u0589-\\u0590\\u05BE\\u05C0\\u05C3\\u05C6\\u05F3-\\u060F\\u061B-' +
+    '\\u061F\\u066A-\\u066D\\u06D4\\u06DD\\u06DE\\u06E9\\u06FD\\u06FE\\u0700-\\u070F\\u07F6-\\u07F9\\u07FE\\u07FF' +
+    '\\u082E-\\u083F\\u085C-\\u085F\\u0888\\u0890-\\u0896\\u08E2\\u0964\\u0965\\u0970\\u09F2-\\u09FB\\u09FD\\u0A76-' +
+    '\\u0A80\\u0AF0-\\u0AF8\\u0B70\\u0B72-\\u0B81\\u0BF0-\\u0BFF\\u0C70-\\u0C7F\\u0C84\\u0D4F-\\u0D53\\u0D58-\\u0D5E' +
+    '\\u0D70-\\u0D79\\u0DF4-\\u0E00\\u0E3B-\\u0E3F\\u0E4F\\u0E5A-\\u0E80\\u0F01-\\u0F17\\u0F1A-\\u0F1F\\u0F2A-' +
+    '\\u0F34\\u0F36\\u0F38\\u0F3A-\\u0F3D\\u0F85\\u0FBD-\\u0FC5\\u0FC7-\\u0FFF\\u104A-\\u104F\\u109E\\u109F\\u10FB' +
+    '\\u1360-\\u137F\\u1390-\\u139F\\u13FE-\\u1400\\u166D\\u166E\\u1680\\u169B-\\u169F\\u16EB-\\u16ED\\u1735-\\u173F' +
+    '\\u17D4-\\u17D6\\u17D8-\\u17DB\\u17EA-\\u180A\\u180E\\u193C-\\u1945\\u19DA-\\u19FF\\u1A1C-\\u1A1F\\u1A9A-' +
+    '\\u1AA6\\u1AA8-\\u1AAF\\u1B4D-\\u1B4F\\u1B5A-\\u1B6A\\u1B74-\\u1B7F\\u1BF4-\\u1BFF\\u1C38-\\u1C3F\\u1C7E\\u1C7F' +
+    '\\u1CC0-\\u1CCF\\u1CD3\\u1FBD\\u1FBF-\\u1FC1\\u1FCD-\\u1FCF\\u1FDC-\\u1FDF\\u1FED-\\u1FF1\\u1FFD-\\u200B' +
+    '\\u200E-\\u203E\\u2041-\\u2053\\u2055-\\u2070\\u2072-\\u207E\\u2080-\\u208F\\u209D-\\u20CF\\u20F1-\\u2101' +
+    '\\u2103-\\u2106\\u2108\\u2109\\u2114\\u2116-\\u2118\\u211E-\\u2123\\u2125\\u2127\\u2129\\u212E\\u213A\\u213B' +
+    '\\u2140-\\u2144\\u214A-\\u214D\\u214F-\\u215F\\u2189-\\u24B5\\u24EA-\\u2BFF\\u2CE5-\\u2CEA\\u2CF4-\\u2CFF' +
+    '\\u2D70-\\u2D7E\\u2E00-\\u2E2E\\u2E30-\\u3004\\u3008-\\u3020\\u3030\\u3036\\u3037\\u303D-\\u3040\\u309B\\u309C' +
+    '\\u30A0\\u30FB\\u318F-\\u319F\\u31C0-\\u31EF\\u3200-\\u33FF\\u4DC0-\\u4DFF\\uA48D-\\uA4CF\\uA4FE\\uA4FF\\uA60D-' +
+    '\\uA60F\\uA673\\uA67E\\uA6F2-\\uA716\\uA720\\uA721\\uA789\\uA78A\\uA828-\\uA82B\\uA82D-\\uA83F\\uA874-\\uA87F' +
+    '\\uA8C6-\\uA8CF\\uA8F8-\\uA8FA\\uA8FC\\uA92E\\uA92F\\uA954-\\uA95F\\uA9C1-\\uA9CE\\uA9DA-\\uA9DF\\uAA5A-\\uAA5F' +
+    '\\uAA77-\\uAA79\\uAADE\\uAADF\\uAAF0\\uAAF1\\uAB5B\\uAB6A-\\uAB6F\\uABEB\\uD7FC-\\uF8FF\\uFB29\\uFBB2-\\uFBD2' +
+    '\\uFD3E-\\uFD4F\\uFD90\\uFD91\\uFDC8-\\uFDEF\\uFDFC-\\uFDFF\\uFE10-\\uFE1F\\uFE30-\\uFE32\\uFE35-\\uFE4C' +
+    '\\uFE50-\\uFE6F\\uFEFD-\\uFF0F\\uFF1A-\\uFF20\\uFF3B-\\uFF3E\\uFF40\\uFF5B-\\uFF65\\uFFDD-\\uFFFF';
+  private static readonly DIGIT_CONTENT: string =
+    '\\u0030-\\u0039\\u0660-\\u0669\\u06F0-\\u06F9\\u07C0-\\u07C9\\u0966-\\u096F\\u09E6-\\u09EF\\u0A66-\\u0A6F' +
+    '\\u0AE6-\\u0AEF\\u0B66-\\u0B6F\\u0BE6-\\u0BEF\\u0C66-\\u0C6F\\u0CE6-\\u0CEF\\u0D66-\\u0D6F\\u0DE6-\\u0DEF' +
+    '\\u0E50-\\u0E59\\u0ED0-\\u0ED9\\u0F20-\\u0F29\\u1040-\\u1049\\u1090-\\u1099\\u17E0-\\u17E9\\u1810-\\u1819' +
+    '\\u1946-\\u194F\\u19D0-\\u19D9\\u1A80-\\u1A99\\u1B50-\\u1B59\\u1BB0-\\u1BB9\\u1C40-\\u1C49\\u1C50-\\u1C59' +
+    '\\uA620-\\uA629\\uA8D0-\\uA8D9\\uA900-\\uA909\\uA9D0-\\uA9D9\\uA9F0-\\uA9F9\\uAA50-\\uAA59\\uABF0-\\uABF9' +
+    '\\uFF10-\\uFF19';
+  private static readonly NON_DIGIT_CONTENT: string =
+    '\\u0000-\\u002F\\u003A-\\u065F\\u066A-\\u06EF\\u06FA-\\u07BF\\u07CA-\\u0965\\u0970-\\u09E5\\u09F0-\\u0A65' +
+    '\\u0A70-\\u0AE5\\u0AF0-\\u0B65\\u0B70-\\u0BE5\\u0BF0-\\u0C65\\u0C70-\\u0CE5\\u0CF0-\\u0D65\\u0D70-\\u0DE5' +
+    '\\u0DF0-\\u0E4F\\u0E5A-\\u0ECF\\u0EDA-\\u0F1F\\u0F2A-\\u103F\\u104A-\\u108F\\u109A-\\u17DF\\u17EA-\\u180F' +
+    '\\u181A-\\u1945\\u1950-\\u19CF\\u19DA-\\u1A7F\\u1A9A-\\u1B4F\\u1B5A-\\u1BAF\\u1BBA-\\u1C3F\\u1C4A-\\u1C4F' +
+    '\\u1C5A-\\uA61F\\uA62A-\\uA8CF\\uA8DA-\\uA8FF\\uA90A-\\uA9CF\\uA9DA-\\uA9EF\\uA9FA-\\uAA4F\\uAA5A-\\uABEF' +
+    '\\uABFA-\\uFF0F\\uFF1A-\\uFFFF';
+  // </generated:word-class>
   private static readonly INLINE_FLAG_LETTERS = 'imsuxdU';
   private static readonly CONVERTIBLE_FLAGS = 'ims';
   private static readonly LITERAL_METACHARACTERS = '\\^$.*+?()[]{}|';
@@ -159,7 +227,7 @@ export class JavaRegexCompat {
       const ch = pattern.charAt(index);
 
       if (ch === '\\') {
-        const token = JavaRegexCompat.translateEscape(pattern, index, inClass, notes);
+        const token = JavaRegexCompat.translateEscape(pattern, index, inClass, notes, flags.includes('u'));
         result += token.text;
         index = token.next;
         continue;
@@ -290,7 +358,7 @@ export class JavaRegexCompat {
   }
 
   private static translateEscape(pattern: string, index: number, inClass: boolean,
-    notes: string[]): EscapeToken {
+    notes: string[], unicode: boolean): EscapeToken {
     const next = pattern.charAt(index + 1);
     if (!next) {
       return { text: '\\', next: index + 1 };
@@ -306,6 +374,39 @@ export class JavaRegexCompat {
     if (next === 'E') {
       notes.push('孤立的 \\E 已忽略');
       return { text: '', next: index + 2 };
+    }
+    // Android 的正则基于 ICU，`\w` 恒为 Unicode 语义（汉字是单词字符）；JavaScript 的 `\w` 只认
+    // ASCII，`\W*` 因此会吞掉整段中文正文，`\b` 也落在错误的位置。这里统一换成 Android 的字符集。
+    if (next === 'w') {
+      return { text: inClass ? JavaRegexCompat.WORD_CONTENT : `[${JavaRegexCompat.WORD_CONTENT}]`, next: index + 2 };
+    }
+    if (next === 'W') {
+      // 字符类内部无法取反，改用预先算好的补集；带 u 标志时补上 BMP 之外的码位。
+      const astral = unicode ? '\\u{10000}-\\u{10FFFF}' : '';
+      return {
+        text: inClass ? JavaRegexCompat.NON_WORD_CONTENT + astral : `[^${JavaRegexCompat.WORD_CONTENT}]`,
+        next: index + 2
+      };
+    }
+    // `\d` 同理：Android 上匹配所有十进制数字（含全角 ０-９），JavaScript 只认 ASCII 的 0-9。
+    if (next === 'd') {
+      return { text: inClass ? JavaRegexCompat.DIGIT_CONTENT : `[${JavaRegexCompat.DIGIT_CONTENT}]`, next: index + 2 };
+    }
+    if (next === 'D') {
+      const astral = unicode ? '\\u{10000}-\\u{10FFFF}' : '';
+      return {
+        text: inClass ? JavaRegexCompat.NON_DIGIT_CONTENT + astral : `[^${JavaRegexCompat.DIGIT_CONTENT}]`,
+        next: index + 2
+      };
+    }
+    if ((next === 'b' || next === 'B') && !inClass) {
+      // 字符类内的 `\b` 是退格符，保持原样。
+      const word = `[${JavaRegexCompat.WORD_CONTENT}]`;
+      return {
+        text: next === 'b' ? `(?:(?<=${word})(?!${word})|(?<!${word})(?=${word}))` :
+          `(?:(?<=${word})(?=${word})|(?<!${word})(?!${word}))`,
+        next: index + 2
+      };
     }
     if (next === 'h') {
       return {

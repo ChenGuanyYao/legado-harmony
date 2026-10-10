@@ -76,7 +76,9 @@ for (const pattern of rawFailurePatterns) {
 }
 
 // 未做改写时不应产生噪音提示，并且编译结果必须与原始 pattern 完全一致。
-const exactPatterns = ['第\\d+章.*', 'a{2,3}', '(?:x|y)', '[^a-z]'];
+const exactPatterns = ['第[0-9]+章.*', 'a{2,3}', '(?:x|y)', '[^a-z]'];
+// \d、\w 换成 Android 字符集是等价对齐而非近似，同样不应产生提示。
+assert(JavaRegexCompat.notes('第\\d+章\\w*\\b', 'g').length === 0, '\\d / \\w / \\b 的对齐不应产生提示');
 for (const pattern of exactPatterns) {
   const conversion = JavaRegexCompat.convert(pattern, 'g');
   assert(conversion.notes.length === 0, `无改写却出现提示: ${pattern} -> ${conversion.notes}`);
@@ -133,7 +135,7 @@ assert(atomic.source === '(?:a+)b', `原子组未降级: ${atomic.source}`);
 assert(applyRegexRule('aaab', '(?>a+)b', 'X') === 'X', '原子组降级后未匹配');
 
 // \Q…\E 字面量引用、\h/\z/\R、字符类内的 \h。
-assert(JavaRegexCompat.convert('\\Q第1章.\\E\\d+', 'g').source === '第1章\\.\\d+', '\\Q…\\E 未转义');
+assert(JavaRegexCompat.convert('\\Q第1章.\\E[0-9]+', 'g').source === '第1章\\.[0-9]+', '\\Q…\\E 未转义');
 assert(applyRegexRule('第1章.7', '\\Q第1章.\\E\\d+', 'X') === 'X', '\\Q…\\E 匹配不符');
 assert(applyRegexRule('换行\r\n结束', 'x\\R', 'x\t') === '换行\r\n结束', '\\R 不应误伤');
 assert(applyRegexRule('第一行\r\n第二行', '行\\R', '行\n') === '第一行\n第二行', '\\R 未替换行分隔');
@@ -159,8 +161,8 @@ assert(JavaRegexCompat.convert('\\G\\d+', 'g').notes.length === 1, '\\G 应给�
 assert(JavaRegexCompat.convert('\\A第', 'g').notes.length === 1, '\\A 应给出提示');
 
 // (?x) 自由空白模式按 Java 语义忽略空白与注释。
-const commentsMode = JavaRegexCompat.convert('(?x) \\d+  # 序号', 'g');
-assert(commentsMode.source === '\\d+', `(?x) 未忽略空白与注释: ${commentsMode.source}`);
+const commentsMode = JavaRegexCompat.convert('(?x) [0-9]+  # 序号', 'g');
+assert(commentsMode.source === '[0-9]+', `(?x) 未忽略空白与注释: ${commentsMode.source}`);
 
 // 替换串：Java 的 $0 是整个匹配，反斜杠是转义符。
 assert(applyRegexRule('abc', '(b)', '[$0|$1]') === 'a[b|b]c', '$0 未映射到整个匹配');
@@ -191,6 +193,52 @@ assert(read('entry/src/main/ets/core/rule/AnalyzeRule.ts').includes('JavaRegexCo
   'AnalyzeRule 未使用兼容层');
 assert(read('entry/src/main/ets/core/book/WebBookService.ts').includes('JavaRegexCompat.compile'),
   'WebBookService 正文净化未使用兼容层');
+// 阅读器正文净化在 TaskPool 里执行，曾直接 new RegExp(pattern)：规则检查页显示“已生效”，正文却被静默跳过。
+const contentPreprocessor = read('entry/src/main/ets/core/concurrency/ReaderContentPreprocessor.ets');
+assert(contentPreprocessor.includes('JavaRegexCompat.convert(pattern') &&
+  contentPreprocessor.includes('JavaRegexCompat.convertReplacement'),
+  'ReaderContentPreprocessor 正文净化未使用兼容层');
+assert(!/new RegExp\(\s*pattern/.test(contentPreprocessor),
+  'ReaderContentPreprocessor 仍直接编译规则，Android 方言规则会再次失效');
+// 占有量词转换后是普通贪婪量词，不能被“嵌套量词”防护误判而跳过。
+assert(!/(?:\([^)]*[+*][^)]*\)|\[[^\]]+\][+*])[+*{]/.test(JavaRegexCompat.convert('[\\s　]*+$', 'g').source),
+  '占有量词规则会被正文净化的回溯防护误杀');
+
+// Android 的正则基于 ICU：汉字、全角字母数字是单词字符，标点和空白不是。JS 原生的 \w 只认 ASCII，
+// 净化规则里的 \W* 曾把整章中文正文当成“非单词字符”删掉。
+const wordChar = JavaRegexCompat.compile('^\\w$');
+const nonWordChar = JavaRegexCompat.compile('^\\W$');
+for (const ch of ['中', '説', 'a', 'Z', '_', '7', '０', 'ｗ', 'é', 'я', 'の']) {
+  assert(wordChar.test(ch) && !nonWordChar.test(ch), `${ch} 在 Android 上是单词字符`);
+}
+for (const ch of ['，', '。', '“', '　', ' ', '\n', '-', '《', '！', '']) {
+  assert(!wordChar.test(ch) && nonWordChar.test(ch), `${JSON.stringify(ch)} 在 Android 上不是单词字符`);
+}
+assert(applyRegexRule('第一章 求推荐票！！\n他看着远处的山。', '求.{1,2}票\\W*', '') === '第一章 他看着远处的山。',
+  '\\W* 不应吞掉后面的中文正文');
+assert(applyRegexRule('他说hello世界', '\\bhello\\b', 'X') === '他说hello世界',
+  '汉字与字母之间不是单词边界（与 Android 一致）');
+assert(applyRegexRule('他说，hello，世界', '\\bhello\\b', 'X') === '他说，X，世界', '标点两侧是单词边界');
+assert(applyRegexRule('天才，天', '天\\B', 'X') === 'X才，天', '\\B 只在单词内部成立');
+assert(applyRegexRule('a，b c', '[\\w]+', 'X') === 'X，X X' && applyRegexRule('中a，。b', '[\\W]+', '-') === '中a-b',
+  '字符类内的 \\w / \\W 也要使用 Android 语义');
+assert(applyRegexRule('a\bb', '[\\b]', '') === 'ab', '字符类内的 \\b 仍是退格符');
+assert(applyRegexRule('中\u{1F600}a', '\\p{L}\\W', '_') === '_a', '带 u 标志时 \\W 仍可匹配 BMP 之外的字符');
+
+// \d 在 Android 上是所有十进制数字（含全角），不是只有 ASCII 的 0-9；汉字数字不算。
+const digitChar = JavaRegexCompat.compile('^\\d$');
+const nonDigitChar = JavaRegexCompat.compile('^\\D$');
+for (const ch of ['0', '9', '０', '９', '٣', '௫']) {
+  assert(digitChar.test(ch) && !nonDigitChar.test(ch), `${ch} 在 Android 上是数字`);
+}
+for (const ch of ['一', '〇', '①', 'a', '中', '，', ' ', '\n', '½']) {
+  assert(!digitChar.test(ch) && nonDigitChar.test(ch), `${JSON.stringify(ch)} 在 Android 上不是数字`);
+}
+assert(applyRegexRule('第１２章 第3章 第三章', '第\\d+章', 'X') === 'X X 第三章', '\\d 应匹配全角数字');
+assert(applyRegexRule('a１b2，c', '[\\d，]', '') === 'abc' && applyRegexRule('１a2', '[\\D]', '') === '１2',
+  '字符类内的 \\d / \\D 也要使用 Android 语义');
+assert(applyRegexRule('第12章', '第(\\d{1,3})章', '$1') === '12' && applyRegexRule('x\\d', '\\\\d', '') === 'x',
+  '量词与转义的反斜杠不受 \\d 改写影响');
 
 console.log(`Java regex compat check passed: ${androidDialectPatterns.length} dialect patterns, ` +
   `${assertions} assertions.`);
