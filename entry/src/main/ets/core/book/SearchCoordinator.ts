@@ -47,6 +47,9 @@ export interface SearchSourceResult {
 }
 
 const MAX_SEARCH_CONCURRENCY = 12;
+// A search does not queue longer than this behind one source's own rate limit; the source is reported as
+// rate-limited and the worker moves on.
+const SEARCH_RATE_LIMIT_MAX_WAIT_MS = 60000;
 const MAX_VALIDATION_CONCURRENCY = 1;
 // Batch source results so background searching does not continuously interrupt list gestures.
 const SEARCH_PROGRESS_EMIT_INTERVAL_MS = 500;
@@ -98,6 +101,9 @@ export class SearchCoordinator {
   private http: HttpClient;
   private concurrency: number;
   private cancelled: boolean = false;
+  // Distinguishes one search run from the next: `cancelled` is cleared when a new search starts, which must not
+  // revive requests of the previous run that are still queued behind a source's rate limit.
+  private searchSerial: number = 0;
   private stageRuntimeOwnerId: string = '';
   private lastFailureReason: string = '';
 
@@ -120,6 +126,7 @@ export class SearchCoordinator {
 
   async search(keyword: string, callback: SearchCallback, options: SearchOptions = {}): Promise<SearchBook[]> {
     this.cancelled = false;
+    this.searchSerial++;
     this.lastFailureReason = '';
     VerificationSupport.clearVerification();
     const safeCallback = (progress: SearchProgress): void => {
@@ -287,7 +294,10 @@ export class SearchCoordinator {
       js.setVar('searchKeyRaw', keyword);
       js.setVar('page', '1');
 
-      const au = new AnalyzeUrl(source, this.http);
+      const searchSerial = this.searchSerial;
+      const au = new AnalyzeUrl(source, this.http)
+        .setCancelCheck((): boolean => this.cancelled || searchSerial !== this.searchSerial,
+          SEARCH_RATE_LIMIT_MAX_WAIT_MS);
       let urlTemplate = await this.evalAndBuild(js, source, keyword, responseLimit,
         options.validationOnly === true, debugContext || null);
       if (!urlTemplate) {

@@ -2,7 +2,7 @@ import { BookSource } from '../../model/data/Book';
 import { HttpClient, HttpRequest, HttpResponse } from '../http/HttpClient';
 import { VerificationSupport } from '../http/VerificationSupport';
 import { RequestSessionConfig, RequestSessionSupport } from '../http/RequestSessionSupport';
-import { BookSourceRateLimiter } from '../http/BookSourceRateLimiter';
+import { BookSourceRateLimiter, RateLimitAcquireResult } from '../http/BookSourceRateLimiter';
 import { util } from '@kit.ArkTS';
 import { BookSourceDebugContext } from '../book/BookSourceDebugModels';
 import { BookSourceHeaderRuntime } from '../book/BookSourceHeaderRuntime';
@@ -29,6 +29,8 @@ export class AnalyzeUrl {
   private client: HttpClient;
   private runtimeSourceHeaders: Record<string, string>;
   private noTimeoutRetry: boolean = false;
+  private cancelCheck?: () => boolean;
+  private rateLimitMaxWaitMs: number = 0;
 
   constructor(source: BookSource | null, client: HttpClient,
     runtimeSourceHeaders: Record<string, string> = {}) {
@@ -36,6 +38,16 @@ export class AnalyzeUrl {
     this.client = client;
     this.runtimeSourceHeaders = runtimeSourceHeaders;
     this.config = this.emptyConfig('');
+  }
+
+  /**
+   * Lets a cancelled caller (a stopped search) leave the source's rate-limit queue instead of waiting out the
+   * window, and optionally bounds how long one request may queue there at all.
+   */
+  setCancelCheck(check: () => boolean, rateLimitMaxWaitMs: number = 0): AnalyzeUrl {
+    this.cancelCheck = check;
+    this.rateLimitMaxWaitMs = rateLimitMaxWaitMs;
+    return this;
   }
 
   /** Marks bridge-issued requests to skip the doubled-timeout idempotent retry. */
@@ -565,7 +577,8 @@ export class AnalyzeUrl {
 
   private async fetchFollowingRedirects(req: HttpRequest): Promise<HttpResponse> {
     let currentReq = req;
-    await BookSourceRateLimiter.acquire(this.source);
+    let slot = await BookSourceRateLimiter.acquire(this.source, this.cancelCheck, this.rateLimitMaxWaitMs);
+    if (slot !== RateLimitAcquireResult.Acquired) return this.notSentResponse(currentReq, slot);
     let lastResp = await this.client.execute(currentReq);
     for (let i = 0; i < 3; i++) {
       if (lastResp.statusCode < 300 || lastResp.statusCode >= 400) return lastResp;
@@ -579,10 +592,24 @@ export class AnalyzeUrl {
       currentReq = switchToGet ?
         { ...currentReq, url: nextUrl, method: 'GET', body: '', headers: redirectHeaders } :
         { ...currentReq, url: nextUrl, headers: redirectHeaders };
-      await BookSourceRateLimiter.acquire(this.source);
+      slot = await BookSourceRateLimiter.acquire(this.source, this.cancelCheck, this.rateLimitMaxWaitMs);
+      if (slot !== RateLimitAcquireResult.Acquired) return this.notSentResponse(currentReq, slot);
       lastResp = await this.client.execute(currentReq);
     }
     return lastResp;
+  }
+
+  /** The request never left the device: the caller was cancelled, or the source's own rate limit stayed full. */
+  private notSentResponse(req: HttpRequest, reason: RateLimitAcquireResult): HttpResponse {
+    return {
+      url: req.url,
+      statusCode: 0,
+      headers: {},
+      body: '',
+      success: false,
+      error: reason === RateLimitAcquireResult.Cancelled ? '请求已取消' :
+        `书源限流：等待超过 ${Math.round(this.rateLimitMaxWaitMs / 1000)} 秒仍未轮到（并发率 ${this.source?.concurrentRate || ''}）`
+    };
   }
 
   private findHeader(headers: Record<string, string>, name: string): string {
