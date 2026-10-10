@@ -7,6 +7,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { FormDraftStore } from '../utils/FormDraftStore';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { ExploreResultCache } from '../utils/ExploreResultCache';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 
 class BookSourceEditDraft {
@@ -157,6 +158,7 @@ struct BookSourceEditPage {
       } else {
         await db.insertBookSource(this.source);
       }
+      await ExploreResultCache.invalidateSources(getContext(this), [originalUrl, this.source.bookSourceUrl]);
       this.clearDraft();
       this.markSourceSaved();
       HdsFeedback.showToast('保存成功');

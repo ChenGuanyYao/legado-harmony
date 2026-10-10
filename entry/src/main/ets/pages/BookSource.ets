@@ -5123,6 +5123,7 @@ struct BookSourcePage {
     try {
       const db = AppDatabase.getInstance();
       await db.deleteBookSource(source.bookSourceUrl);
+      await ExploreResultCache.invalidateSources(getContext(this), [source.bookSourceUrl]);
       this.sources = this.sources.filter((item: BookSource) => item.bookSourceUrl !== source.bookSourceUrl);
       this.allSources = this.allSources.filter((item: BookSource) => item.bookSourceUrl !== source.bookSourceUrl);
       this.visibleSources = this.visibleSources.filter((item: BookSource) => item.bookSourceUrl !== source.bookSourceUrl);
@@ -5421,6 +5422,7 @@ struct BookSourcePage {
       for (const url of selectedUrls) {
         await db.deleteBookSource(url);
       }
+      await ExploreResultCache.invalidateSources(getContext(this), selectedUrls);
       this.selectedSourceUrls = [];
       await this.loadSources();
       this.selectionMode = false;
@@ -5917,6 +5919,7 @@ struct BookSourcePage {
           item.bookSourceUrl === source.bookSourceUrl ? source : item);
       } else if (this.checkInvalidAction === 'delete') {
         await db.deleteBookSource(source.bookSourceUrl);
+        await ExploreResultCache.invalidateSources(getContext(this), [source.bookSourceUrl]);
         this.sources = this.sources.filter((item: BookSource) => item.bookSourceUrl !== source.bookSourceUrl);
         this.allSources = this.allSources.filter((item: BookSource) => item.bookSourceUrl !== source.bookSourceUrl);
         this.visibleSources = this.visibleSources.filter(
@@ -6115,6 +6118,7 @@ struct BookSourcePage {
       for (const url of failedUrls) {
         await db.deleteBookSource(url);
       }
+      await ExploreResultCache.invalidateSources(getContext(this), failedUrls);
       this.checkBadUrls = [];
       this.showCheckDialog = false;
       await this.loadSources();
@@ -6728,11 +6732,13 @@ struct BookSourcePage {
     let failedCount = 0;
     let lockedCount = 0;
     let lastInsertError = '';
+    const storedUrls: string[] = [];
     for (const source of sources) {
       if (source.bookSourceUrl && source.bookSourceName) {
         try {
           const stored = await db.insertBookSource(source);
           if (stored) {
+            storedUrls.push(source.bookSourceUrl);
             if (!await this.verifyImportedBookSource(db, source)) {
               throw new Error('写入后校验失败，书源内容未完整保存');
             }
@@ -6748,6 +6754,8 @@ struct BookSourcePage {
       }
     }
 
+    // 同地址书源被覆盖或重新导入后，旧的发现结果不能继续命中。
+    await ExploreResultCache.invalidateSources(getContext(this), storedUrls);
     if (importCount === 0) {
       if (lockedCount > 0 && failedCount === 0) {
         HdsFeedback.showToast(`未导入：${lockedCount} 个同地址书源已锁定，请先解锁后重试`);

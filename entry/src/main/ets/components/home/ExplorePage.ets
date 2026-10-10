@@ -72,6 +72,8 @@ export struct ExplorePage {
   @StorageLink('exploreSourceUrl') selectedSourceUrl: string = '';
   @StorageLink('bookSourceExploreRefreshNonce') @Watch('onExploreRefreshRequested')
   bookSourceExploreRefreshNonce: number = 0;
+  @StorageProp('exploreSourceCacheRevision') @Watch('onExploreSourceCacheInvalidated')
+  exploreSourceCacheRevision: number = 0;
   @StorageLink('shelfUpdateTime') @Watch('onShelfChanged') shelfUpdateTime: number = 0;
   @StorageLink('bookSourceOrderRevision') @Watch('onBookSourceOrderChanged') bookSourceOrderRevision: number = 0;
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
@@ -142,6 +144,15 @@ export struct ExplorePage {
     this.coordinator.clearExploreMenuCache();
     if (this.isActive && !this.isLoading) {
       this.loadEntries('', true);
+    }
+  }
+
+  onExploreSourceCacheInvalidated(): void {
+    // 书源在书源管理中被删除、导入或编辑：已加载的分类和列表不再可信，下次进入发现页时重新加载。
+    this.exploreContentLoadedAt = 0;
+    this.coordinator.clearExploreMenuCache();
+    if (this.isActive && this.hasLoaded) {
+      this.loadEntries();
     }
   }
 

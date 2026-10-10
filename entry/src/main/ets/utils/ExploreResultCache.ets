@@ -32,6 +32,7 @@ export class ExploreResultCache {
   private static readonly TTL_MS: number = 24 * 60 * 60 * 1000;
   private static readonly MAX_ENTRIES: number = 80;
   private static readonly MAX_RESULTS_PER_ENTRY: number = 200;
+  static readonly INVALIDATION_REVISION_KEY: string = 'exploreSourceCacheRevision';
 
   static isFresh(updatedAt: number): boolean {
     return updatedAt > 0 && Date.now() - updatedAt < ExploreResultCache.TTL_MS;
@@ -88,6 +89,30 @@ export class ExploreResultCache {
     if (remaining.length === payload.entries.length) return;
     payload.entries = remaining;
     await ExploreResultCache.savePayload(context, payload);
+  }
+
+  /**
+   * Drops the cached results of sources that were deleted, imported or edited outside the explore tab and
+   * tells the tab to forget what it already loaded for them.
+   */
+  static async invalidateSources(context: Context, sourceUrls: string[]): Promise<void> {
+    const prefixes = sourceUrls.map((url: string): string => (url || '').trim())
+      .filter((url: string): boolean => url.length > 0)
+      .map((url: string): string => `${url}\n`);
+    if (prefixes.length === 0) return;
+    try {
+      const payload = await ExploreResultCache.loadPayload(context);
+      const remaining = payload.entries.filter((item: ExploreCacheEntry): boolean =>
+        !prefixes.some((prefix: string): boolean => item.key.startsWith(prefix)));
+      if (remaining.length !== payload.entries.length) {
+        payload.entries = remaining;
+        await ExploreResultCache.savePayload(context, payload);
+      }
+    } catch (e) {
+      console.warn('清理发现内容缓存失败:', e);
+    }
+    const revision = AppStorage.get<number>(ExploreResultCache.INVALIDATION_REVISION_KEY) || 0;
+    AppStorage.setOrCreate(ExploreResultCache.INVALIDATION_REVISION_KEY, revision + 1);
   }
 
   private static async loadPayload(context: Context): Promise<ExploreCachePayload> {
