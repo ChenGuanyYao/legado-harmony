@@ -88,7 +88,7 @@
 ### 局域网浏览器阅读
 
 - 可在 App 内启动局域网浏览器阅读服务，在同一局域网的浏览器中查看书架、搜索和发现书籍，打开小说或漫画章节并同步章节进度。
-- 可为浏览器访问设置密码；服务启动时会显示访问地址，端口冲突时会自动尝试备用端口。浏览器端暂不支持有声书播放，有声书仍需在 App 内使用听书功能。
+- 可为浏览器访问设置密码；连续输错会被暂时锁定。服务只接受以所显示的 IP 地址访问，启动时会显示访问地址，端口冲突时会自动尝试备用端口。未设置密码时同一局域网内的设备均可访问，公共网络下建议设置密码。浏览器端暂不支持有声书播放，有声书仍需在 App 内使用听书功能。
 
 ### OPDS 书库
 
@@ -138,10 +138,14 @@ legado-harmony/
 ├── entry/                            # 主应用模块
 │   └── src/main/ets/
 │       ├── components/               # 通用 ArkUI 组件
+│       │   ├── home/                 # 首页各页签：书架、发现、搜索、我的
+│       │   └── reader/               # 阅读页面板：目录、缓存、排版、配色、朗读控制、眼动校准
 │       ├── core/
 │       │   ├── book/                 # 搜索、发现、详情、目录和正文协调
 │       │   ├── concurrency/          # 协作式调度与耗时保护
 │       │   ├── http/                 # HTTP、Cookie、TLS 与验证支持
+│       │   ├── lan/                  # 局域网浏览器阅读服务
+│       │   ├── reader/               # 阅读器排版引擎与阅读页控制器
 │       │   ├── rule/                 # URL、选择器、正则和 JS 规则解析
 │       │   └── script/               # 通用脚本运行支持
 │       ├── entryability/             # 应用入口 Ability
@@ -166,6 +170,8 @@ legado-harmony/
 - `SystemTtsReader` / `HttpTtsReader` / `RemoteAudioPlayback`：系统朗读、HTTP TTS 与有声书播放。
 - `ReaderV2Document` / `ReaderV2Paginator` / `ReaderV2RenderNode` / `ReaderV2Interaction`：阅读器 V2 文档建模、增量分页、原生选区、动作命中和朗读高亮。
 - `ReaderEmulationFlipPainter`：仿真与 3D 仿真翻页的页角卷曲几何、明暗和双页绕书脊翻转绘制。
+- `ReaderFullTextCacheController` / `ReaderTtsMediaSession` / `ReaderEyeTurnCoordinator` / `ReaderPageTurnQueue`：从阅读页拆出的全文缓存任务、朗读后台与媒体会话、眼动翻页流程和翻页排队状态。
+- `LanReaderServer`：局域网浏览器阅读服务，含会话令牌、登录失败锁定、Host/Origin 校验和图片代理的内网地址过滤。
 - `EyeTurnController` / `ArEngineEyeTracker`：前置摄像头与本地人脸/眼部采样、正文内三步校准、底部提示与向上看确认的翻页判定，以及 AR Engine 眼部信号接入。
 - `FullTextCacheCancelCoordinator`：把通知栏取消动作关联到具体全文缓存任务，并中止活动请求与规则解析。
 - `ReaderOpenTrace`：记录从书架点击到阅读首屏发布的阶段耗时，用于定位打开书籍慢或恢复异常。
