@@ -94,8 +94,10 @@ import { EyeTurnCalibration, EyeTurnController, EyeTurnSample } from '../core/re
 import { ArEyeSignal, ArEyeTurnHost } from '../core/reader/ArEyeTypes';
 import { ReaderFullTextCacheController } from '../core/reader/ReaderFullTextCacheController';
 import { ReaderCacheDialogContent } from '../components/reader/ReaderCacheDialogContent';
+import { ReaderTxtCharsetDialogContent, ReaderTxtCharsets } from '../components/reader/ReaderTxtCharsetDialogContent';
+import { ReaderLayoutElementSettingsPanel } from '../components/reader/ReaderLayoutElementSettingsPanel';
 import { ReaderComicPageDataSource } from '../core/reader/ReaderDataSources';
-import { ReaderCustomFontItem, ReaderCustomFontData, ReaderTxtCharsetOption } from '../core/reader/ReaderSettingsModels';
+import { ReaderCustomFontItem, ReaderCustomFontData } from '../core/reader/ReaderSettingsModels';
 import {
   PageTurnPreview,
   ReaderParagraphMetrics,
@@ -201,8 +203,8 @@ struct ReadBookPage {
   private chapterCacheDialogSession: SystemDialogSession = new SystemDialogSession();
   private tapZoneDialogSession: SystemDialogSession = new SystemDialogSession();
   @State @Watch('onSystemDialogFlagChanged') showTxtCharsetDialog: boolean = false;
-  @State txtCharsetDraft: string = '';
-  @State txtCharsetApplying: boolean = false;
+  // Mirrors the charset dialog's "re-parsing" flag so the page does not dismiss it midway.
+  private txtCharsetApplying: boolean = false;
   @State showReaderCommentPanel: boolean = false;
   @State readerCommentPanelTitle: string = '段评';
   @State readerCommentPanelUrl: string = '';
@@ -3893,60 +3895,32 @@ struct ReadBookPage {
       currentBook.type === LocalBookService.TYPE_TXT;
   }
 
-  txtCharsetOptions(): ReaderTxtCharsetOption[] {
-    return [
-      new ReaderTxtCharsetOption('', '自动识别', '根据文件内容自动判断编码'),
-      new ReaderTxtCharsetOption('gb18030', 'GBK / GB18030', '简体中文'),
-      new ReaderTxtCharsetOption('utf-8', 'UTF-8', 'Unicode，支持带 BOM 文件'),
-      new ReaderTxtCharsetOption('utf-16le', 'UTF-16 LE', 'Unicode 小端序'),
-      new ReaderTxtCharsetOption('utf-16be', 'UTF-16 BE', 'Unicode 大端序'),
-      new ReaderTxtCharsetOption('big5', 'Big5', '繁体中文'),
-      new ReaderTxtCharsetOption('koi8-r', 'KOI8-R', '俄语'),
-      new ReaderTxtCharsetOption('euc-kr', 'EUC-KR', '韩语'),
-      new ReaderTxtCharsetOption('euc-jp', 'EUC-JP', '日语'),
-      new ReaderTxtCharsetOption('shift_jis', 'Shift-JIS', '日语'),
-      new ReaderTxtCharsetOption('windows-1250', 'Windows-1250', '中欧语言'),
-      new ReaderTxtCharsetOption('ibm866', 'IBM866', '西里尔字符')
-    ];
-  }
-
-  txtCharsetLabel(charset: string): string {
-    const normalized = (charset || '').toLowerCase().replace(/_/g, '-');
-    for (const option of this.txtCharsetOptions()) {
-      if (option.value.replace(/_/g, '-') === normalized) return option.label;
-    }
-    return charset ? charset.toUpperCase() : '自动识别';
-  }
-
   txtCharsetMenuLabel(): string {
     if (!this.book) return '自动';
     const charsetOverride = LocalBookService.getTxtCharsetOverride(this.book);
-    return charsetOverride ? this.txtCharsetLabel(charsetOverride) : '自动';
+    return charsetOverride ? ReaderTxtCharsets.label(charsetOverride) : '自动';
   }
 
   openTxtCharsetDialog(): void {
     if (!this.canSelectTxtCharset()) return;
     this.showReaderActionMenu = false;
-    this.txtCharsetDraft = LocalBookService.getTxtCharsetOverride(this.book);
     this.showTxtCharsetDialog = true;
     this.txtCharsetDialogSession.open(this.getUIContext(), (): void => {
       this.readerTxtCharsetDialogContent();
     }, {
       autoCancel: false,
-      maskColor: this.isReaderThemeDark() ? '#99000000' : '#33000000',
+      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
       warnTag: '显示字符编码弹窗失败:'
     });
   }
 
-  async applyTxtCharsetSelection(): Promise<void> {
-    if (!this.book || !this.canSelectTxtCharset() || this.txtCharsetApplying) return;
+  async applyTxtCharsetSelection(selectedCharset: string): Promise<void> {
+    if (!this.book || !this.canSelectTxtCharset()) return;
     const targetBook: Book = this.book;
-    const selectedCharset = this.txtCharsetDraft;
     if (selectedCharset === LocalBookService.getTxtCharsetOverride(targetBook)) {
       this.showTxtCharsetDialog = false;
       return;
     }
-    this.txtCharsetApplying = true;
     try {
       await this.saveReadingProgress();
       this.stopTtsReading();
@@ -3955,116 +3929,28 @@ struct ReadBookPage {
       this.showMenu = false;
       await this.loadBook();
       AppStorage.setOrCreate('shelfUpdateTime', Date.now());
-      const applied = selectedCharset ? this.txtCharsetLabel(selectedCharset) :
-        `自动识别（${this.txtCharsetLabel(this.book?.charset || '')}）`;
+      const applied = selectedCharset ? ReaderTxtCharsets.label(selectedCharset) :
+        `自动识别（${ReaderTxtCharsets.label(this.book?.charset || '')}）`;
       HdsFeedback.showToast(`已使用 ${applied} 重新解析`);
     } catch (e) {
       console.error('切换 TXT 字符编码失败:', e);
       HdsFeedback.showToast('切换字符编码失败，请尝试其他编码');
-    } finally {
-      this.txtCharsetApplying = false;
     }
   }
 
   @Builder
   readerTxtCharsetDialogContent() {
-    Column({ space: 10 }) {
-      Row() {
-        Column({ space: 3 }) {
-          Text('选择字符编码')
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.getTextColor())
-          Text(`当前解析：${this.txtCharsetLabel(this.book?.charset || '')}`)
-            .fontSize(12)
-            .fontColor(this.getSubTextColor())
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-        ImmersiveBackButton({
-          icon: $r('sys.symbol.xmark'),
-          iconOffsetX: 0,
-          iconColor: this.readerControlIconColor(),
-          darkMode: this.isReaderThemeDark(),
-          buttonSize: 38,
-          containerWidth: 38,
-          containerHeight: 38,
-          startInset: 0,
-          compactLayout: true,
-          accessibilityLabel: '关闭字符编码选择',
-          onBack: () => {
-            if (!this.txtCharsetApplying) this.showTxtCharsetDialog = false;
-          }
-        })
+    ReaderTxtCharsetDialogContent({
+      selectedCharset: LocalBookService.getTxtCharsetOverride(this.book),
+      parsedCharset: this.book?.charset || '',
+      listHeight: Math.min(440, Math.max(160, this.pageViewHeight - 190)),
+      onApply: (charset: string): Promise<void> => this.applyTxtCharsetSelection(charset),
+      onClose: (): void => {
+        this.showTxtCharsetDialog = false;
+      },
+      onApplyingChanged: (applying: boolean): void => {
+        this.txtCharsetApplying = applying;
       }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-
-      Scroll() {
-        Column({ space: 4 }) {
-          ForEach(this.txtCharsetOptions(), (option: ReaderTxtCharsetOption) => {
-            this.readerTxtCharsetOption(option)
-          }, (option: ReaderTxtCharsetOption) => option.value || 'auto')
-        }
-        .width('100%')
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height(Math.min(440, Math.max(160, this.pageViewHeight - 190)))
-      .scrollBar(BarState.Auto)
-
-      Row({ space: 12 }) {
-        Button('取消')
-          .layoutWeight(1)
-          .height(42)
-          .fontColor(this.getTextColor())
-          .backgroundColor(this.isReaderThemeDark() ? '#24FFFFFF' : '#10000000')
-          .enabled(!this.txtCharsetApplying)
-          .onClick(() => {
-            this.showTxtCharsetDialog = false;
-          })
-        Button(this.txtCharsetApplying ? '正在重新解析…' : '应用')
-          .layoutWeight(1)
-          .height(42)
-          .fontColor('#FFFFFF')
-          .backgroundColor(this.accentColor())
-          .enabled(!this.txtCharsetApplying)
-          .onClick(() => this.applyTxtCharsetSelection())
-      }
-      .width('100%')
-    }    .width('100%')
-    .constraintSize({ maxWidth: 440 })
-    .padding({ left: 18, right: 18, top: 16, bottom: 16 })
-  }
-
-  @Builder
-  readerTxtCharsetOption(option: ReaderTxtCharsetOption) {
-    Row({ space: 12 }) {
-      Column({ space: 3 }) {
-        Text(option.label)
-          .fontSize(16)
-          .fontColor(this.getTextColor())
-        Text(option.description)
-          .fontSize(12)
-          .fontColor(this.getSubTextColor())
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-      if (this.txtCharsetDraft === option.value) {
-        SymbolGlyph($r('sys.symbol.checkmark_circle'))
-          .fontSize(22)
-          .fontColor([this.accentColor()])
-      }
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
-    .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-    .borderRadius(14)
-    .backgroundColor(this.txtCharsetDraft === option.value ?
-      ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()) : Color.Transparent)
-    .enabled(!this.txtCharsetApplying)
-    .onClick(() => {
-      this.txtCharsetDraft = option.value;
     })
   }
 
@@ -4107,117 +3993,25 @@ struct ReadBookPage {
 
   @Builder
   readerLayoutElementSettingsDialog() {
-    Stack({ alignContent: Alignment.Center }) {
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor(this.isReaderThemeDark() ? '#52000000' : '#26000000')
-        .backdropBlur(ThemeRuntime.glassBlur('overlay', 18))
-        .onClick(() => {
-          this.showLayoutElementSettings = false;
-        })
-
-      Column({ space: 4 }) {
-        Row() {
-          Text('布局元素设置')
-            .fontSize(20)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.getTextColor())
-            .layoutWeight(1)
-          ImmersiveBackButton({
-            icon: $r('sys.symbol.xmark'),
-            iconOffsetX: 0,
-            iconColor: this.readerControlIconColor(),
-            darkMode: this.isReaderThemeDark(),
-            buttonSize: 38,
-            containerWidth: 38,
-            containerHeight: 38,
-            startInset: 0,
-            compactLayout: true,
-            accessibilityLabel: '关闭布局元素设置',
-            onBack: () => this.showLayoutElementSettings = false
-          })
-        }
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
-
-        Text('控制点击阅读页后出现的快捷组件')
-          .fontSize(13)
-          .fontColor(this.getSubTextColor())
-          .width('100%')
-          .margin({ bottom: 8 })
-
-        this.readerLayoutElementToggle(
-          '使用快速朗读组件',
-          '显示朗读快捷按钮与展开控制条',
-          this.readerUseTtsQuickAction,
-          (enabled: boolean) => {
-            this.readerUseTtsQuickAction = enabled;
-            if (!enabled) this.ttsMediaControlsExpanded = false;
-            this.saveReaderLayoutElementSettings();
-          }
-        )
-        this.readerLayoutElementToggle(
-          '使用章节快速跳转组件',
-          '显示章节滑杆与上一章、下一章按钮',
-          this.readerUseChapterQuickJump,
-          (enabled: boolean) => {
-            this.readerUseChapterQuickJump = enabled;
-            if (!enabled) this.resetMenuChapterPreview();
-            this.saveReaderLayoutElementSettings();
-          }
-        )
+    ReaderLayoutElementSettingsPanel({
+      dark: this.isReaderThemeDark(),
+      textColor: this.getTextColor(),
+      subTextColor: this.getSubTextColor(),
+      accentColor: this.accentColor(),
+      panelColor: this.readerGlassPanelColor(),
+      panelBorderColor: this.readerGlassBorderColor(),
+      panelShadowColor: this.readerGlassShadowColor(),
+      panelWidth: Math.max(1, Math.min(420, this.pageViewWidth - 36)),
+      onClose: (): void => {
+        this.showLayoutElementSettings = false;
+      },
+      onTtsQuickActionChanged: (enabled: boolean): void => {
+        if (!enabled) this.ttsMediaControlsExpanded = false;
+      },
+      onChapterQuickJumpChanged: (enabled: boolean): void => {
+        if (!enabled) this.resetMenuChapterPreview();
       }
-      .width(Math.max(1, Math.min(420, this.pageViewWidth - 36)))
-      .padding({ left: 20, right: 20, top: 18, bottom: 18 })
-      .borderRadius(ThemeRuntime.glassCornerRadius(24, 'overlay'))
-      .backgroundColor(this.readerGlassPanelColor())
-      .backdropBlur(ThemeRuntime.glassBlur('overlay', 24))
-      .border({ width: ThemeRuntime.glassBorderWidth('overlay'), color: this.readerGlassBorderColor() })
-      .shadow({ radius: ThemeRuntime.glassShadowRadius('overlay'), color: this.readerGlassShadowColor(),
-        offsetX: ThemeRuntime.glassShadowOffsetX('overlay'), offsetY: ThemeRuntime.glassShadowOffsetY('overlay') })
-      .onClick(() => {
-      })
-    }
-    .width('100%')
-    .height('100%')
-  }
-
-  @Builder
-  readerLayoutElementToggle(title: string, description: string, enabled: boolean,
-    onChange: (enabled: boolean) => void) {
-    Row({ space: 12 }) {
-      Column({ space: 4 }) {
-        Text(title)
-          .fontSize(16)
-          .fontColor(this.getTextColor())
-        Text(description)
-          .fontSize(12)
-          .fontColor(this.getSubTextColor())
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-      Toggle({ type: ToggleType.Switch, isOn: enabled })
-        .selectedColor(this.accentColor())
-        .onChange(onChange)
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 64 })
-    .padding({ left: 12, right: 8 })
-    .borderRadius(14)
-    .backgroundColor(this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000')
-    .alignItems(VerticalAlign.Center)
-  }
-
-  saveReaderLayoutElementSettings(): void {
-    ReaderSettingsStore.saveLayoutElementSettings(
-      getContext(this),
-      this.readerUseTtsQuickAction,
-      this.readerUseChapterQuickJump
-    ).catch((e: Error) => {
-      console.error('保存阅读布局元素设置失败:', e);
-      HdsFeedback.showToast('布局元素设置保存失败');
-    });
+    })
   }
 
   currentReaderSource(): BookSource | null {
