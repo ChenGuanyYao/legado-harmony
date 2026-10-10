@@ -2357,6 +2357,19 @@ export class AppDatabase {
     return rows;
   }
 
+  /** 删除某本书在 [startDayKey, endDayKey] 内的阅读时长记录。 */
+  async deleteReadStatsForBook(bookUrl: string, startDayKey: string, endDayKey: string): Promise<void> {
+    if (!this.store || !bookUrl || !startDayKey || !endDayKey || startDayKey > endDayKey) return;
+    // 等排队中的时长写入落库后再删，避免刚删掉又被旧的写入任务补回来。
+    await this.readStatsWriteTask.catch(() => {
+    });
+    const predicates = new relationalStore.RdbPredicates('read_stats');
+    predicates.equalTo('bookUrl', bookUrl);
+    predicates.and();
+    predicates.between('dayKey', startDayKey, endDayKey);
+    await this.store.delete(predicates);
+  }
+
   async getReadStatsBookMeta(bookUrls: string[]): Promise<Map<string, ReadStatsBookMeta>> {
     const metaMap = new Map<string, ReadStatsBookMeta>();
     if (!this.store || bookUrls.length === 0) return metaMap;

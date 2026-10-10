@@ -1,9 +1,12 @@
-import { router } from '@kit.ArkUI';
+import { router, promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
+import deviceInfo from '@ohos.deviceInfo';
+import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { appDb } from '../model/data/AppDatabase';
 import { ReadStatsTracker, readStatsTracker } from '../core/stats/ReadStatsTracker';
+import { HdsFeedback } from '../utils/HdsFeedback';
 
 const STATS_MODES: string[] = ['day', 'week', 'month'];
 const STATS_MODE_LABELS: string[] = ['日', '周', '月'];
@@ -37,6 +40,12 @@ struct ReadingStatsPage {
   @State totalMs: number = 0;
   @State activeDays: number = 0;
   @State items: StatBookItem[] = [];
+  @State showItemActionMenu: boolean = false;
+  @State actionBookUrl: string = '';
+  @State contextMenuX: number = 16;
+  @State contextMenuY: number = 96;
+  @State contextViewportWidth: number = 360;
+  @State contextViewportHeight: number = 720;
 
   aboutToAppear(): void {
     // 用户可能正听着书进本页，先结算一次未落库的时长再查询。
@@ -49,8 +58,16 @@ struct ReadingStatsPage {
     this.syncBars();
   }
 
-  async loadStats(): Promise<void> {
-    this.loading = true;
+  onBackPress(): boolean {
+    if (this.showItemActionMenu) {
+      this.closeItemActions();
+      return true;
+    }
+    return false;
+  }
+
+  async loadStats(silent: boolean = false): Promise<void> {
+    if (!silent) this.loading = true;
     try {
       await appDb.init(getContext(this));
       const range = this.currentRange();
@@ -126,15 +143,44 @@ struct ReadingStatsPage {
           } else if (this.items.length === 0) {
             this.emptyCard()
           } else {
-            Column({ space: 14 }) {
+            // 行需要侧滑，所以用 List；高度随内容撑开，滚动仍交给外层 Scroll。
+            List() {
               ForEach(this.items, (item: StatBookItem) => {
-                this.bookRow(item)
-              }, (item: StatBookItem) => item.bookUrl)
+                if (deviceInfo.sdkApiVersion >= 26) {
+                  HdsListItem({
+                    customItemBuilder: (): void => {
+                      this.bookRow(item)
+                    },
+                    swipeActionOptions: this.itemSwipeActions(item)
+                  })
+                }
+                if (deviceInfo.sdkApiVersion < 26) {
+                  ListItem() {
+                    this.bookRow(item)
+                  }
+                  .swipeAction({
+                    end: {
+                      builder: (): void => {
+                        this.itemDeleteSwipeButton(item)
+                      },
+                      actionAreaDistance: 64,
+                      onAction: (): void => {
+                        this.confirmDeleteItem(item);
+                      }
+                    },
+                    edgeEffect: SwipeEdgeEffect.Spring
+                  })
+                }
+              }, (item: StatBookItem) => `${item.bookUrl}_${item.durationMs}_${item.percent}`)
             }
+            .divider({ strokeWidth: 0.5, color: this.dividerColor(), startMargin: 68, endMargin: 16 })
+            .edgeEffect(EdgeEffect.None)
+            .scrollBar(BarState.Off)
+            .enableScrollInteraction(false)
             .width('calc(100% - 24vp)')
-            .padding(16)
             .margin({ left: 12, right: 12 })
             .borderRadius(16)
+            .clip(true)
             .backgroundColor(this.cardColor())
           }
 
@@ -150,10 +196,15 @@ struct ReadingStatsPage {
       .align(Alignment.TopStart)
 
       this.titleBar()
+
+      if (this.showItemActionMenu) {
+        this.itemActionMenu()
+      }
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageColor())
+    .onAreaChange((_oldValue: Area, newValue: Area) => this.updateContextViewport(newValue))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
@@ -314,7 +365,86 @@ struct ReadingStatsPage {
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
+    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Top)
+    .gesture(
+      LongPressGesture({ repeat: false })
+        .onAction((event: GestureEvent) => {
+          this.openItemActions(item, event);
+        })
+    )
+  }
+
+  private itemSwipeActions(item: StatBookItem): HdsSwipeActionOptions {
+    return { icons: [
+      { icon: new SymbolGlyphModifier($r('sys.symbol.trash')),
+        backgroundColor: ThemeRuntime.dangerColor(this.appDarkMode),
+        iconOptions: { accessibilityText: '删除记录' },
+        onAction: () => this.confirmDeleteItem(item) }
+    ] };
+  }
+
+  @Builder
+  itemDeleteSwipeButton(item: StatBookItem) {
+    Column({ space: 4 }) {
+      SymbolGlyph($r('sys.symbol.trash'))
+        .fontSize(22)
+        .fontColor(['#FFFFFF'])
+      Text('删除')
+        .fontSize(11)
+        .fontColor('#FFFFFF')
+    }
+    .width(64)
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(ThemeRuntime.dangerColor(this.appDarkMode))
+    .onClick(() => {
+      this.confirmDeleteItem(item);
+    })
+  }
+
+  @Builder
+  itemActionMenu() {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.appDarkMode ? '#38000000' : '#18FFFFFF')
+        .backdropBlur(ThemeRuntime.glassBlur('button', 12))
+        .onClick(() => this.closeItemActions())
+      Column() {
+        Row({ space: 10 }) {
+          SymbolGlyph($r('sys.symbol.trash'))
+            .fontSize(18)
+            .fontColor(['#E53935'])
+            .width(24)
+          Text('删除')
+            .fontSize(15)
+            .fontColor('#E53935')
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .height(44)
+        .padding({ left: 12, right: 12 })
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => this.confirmDeleteActionItem())
+      }
+      .width(148)
+      .padding({ top: 6, bottom: 6 })
+      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+      .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({ width: ThemeRuntime.glassBorderWidth('panel'),
+        color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'),
+        color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'),
+        offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
+      .position({ x: this.contextMenuLeft(148), y: this.contextMenuTop(56) })
+    }
+    .width('100%')
+    .height('100%')
   }
 
   @Builder
@@ -355,6 +485,63 @@ struct ReadingStatsPage {
     .borderRadius(16)
     .backgroundColor(this.cardColor())
     .justifyContent(FlexAlign.Center)
+  }
+
+  openItemActions(item: StatBookItem, event?: GestureEvent): void {
+    const finger = event && event.fingerList.length > 0 ? event.fingerList[0] : undefined;
+    if (finger) {
+      this.contextMenuX = finger.globalX;
+      this.contextMenuY = finger.globalY;
+    }
+    this.actionBookUrl = item.bookUrl;
+    this.showItemActionMenu = true;
+  }
+
+  closeItemActions(): void {
+    this.showItemActionMenu = false;
+    this.actionBookUrl = '';
+  }
+
+  confirmDeleteActionItem(): void {
+    const item = this.items.find((value: StatBookItem): boolean => value.bookUrl === this.actionBookUrl);
+    this.closeItemActions();
+    if (item) this.confirmDeleteItem(item);
+  }
+
+  async confirmDeleteItem(item: StatBookItem): Promise<void> {
+    const confirmation = await promptAction.showDialog({
+      title: '删除阅读记录',
+      message: `确定删除“${item.name}”在 ${this.periodTitle()} 的阅读时长记录吗？不会影响书籍本身。`,
+      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: '#D9485F' }]
+    });
+    if (confirmation.index !== 1) return;
+    try {
+      const range = this.currentRange();
+      await appDb.deleteReadStatsForBook(item.bookUrl,
+        ReadStatsTracker.dayKeyOf(range.startTs), ReadStatsTracker.dayKeyOf(range.endTs));
+      await this.loadStats(true);
+      HdsFeedback.showToast('记录已删除');
+    } catch (e) {
+      console.warn('删除阅读统计失败:', e);
+      HdsFeedback.showToast('删除失败');
+    }
+  }
+
+  updateContextViewport(area: Area): void {
+    const width = Number(area.width);
+    const height = Number(area.height);
+    if (Number.isFinite(width) && width > 0) this.contextViewportWidth = width;
+    if (Number.isFinite(height) && height > 0) this.contextViewportHeight = height;
+  }
+
+  contextMenuLeft(menuWidth: number): number {
+    return Math.max(12, Math.min(this.contextMenuX - 18, this.contextViewportWidth - menuWidth - 12));
+  }
+
+  contextMenuTop(menuHeight: number): number {
+    const below = this.contextMenuY + 12;
+    if (below + menuHeight <= this.contextViewportHeight - this.navBarHeight - 12) return below;
+    return Math.max(this.statusBarHeight + 8, this.contextMenuY - menuHeight - 12);
   }
 
   private shiftPeriod(direction: number): void {
@@ -476,6 +663,10 @@ struct ReadingStatsPage {
 
   accentColor(): string {
     return ThemeRuntime.accentColor(this.appDarkMode);
+  }
+
+  dividerColor(): string {
+    return this.appDarkMode ? '#24FFFFFF' : '#14000000';
   }
 
   syncBars(): void {
