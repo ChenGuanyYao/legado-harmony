@@ -434,7 +434,7 @@ export struct ReaderTtsPlayerPanel {
       // immersive menu material is unavailable.
       .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.darkMode, ''))
       .menuBackgroundBlurStyle(ThemeRuntime.glassEnabled() ? BlurStyle.COMPONENT_THICK : BlurStyle.NONE)
-      .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+      .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
       .onSelect((index: number) => ReaderTtsFloatingSession.selectTtsVoice(index))
   }
 

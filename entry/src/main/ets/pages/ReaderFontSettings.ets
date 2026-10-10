@@ -520,10 +520,6 @@ struct ReaderFontSettingsPage {
    * Select menus otherwise inherit a system shadow that can differ between
    * the top-level font rows and the nested regex rule rows.
    */
-  selectMenuMaterial() {
-    return ImmersiveMaterialRuntime.selectMenuMaterial();
-  }
-
   syncBars(): void {
     syncSystemBars(getContext(this), this.appDarkMode, this.pageColor());
   }
@@ -581,7 +577,7 @@ struct ReaderFontSettingsPage {
         .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
         .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
         .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .menuSystemMaterial(this.selectMenuMaterial())
+        .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
         .onSelect((index: number) => {
           const result = this.modeAndFamilyByIndex(index);
           onChange(result[0], result[1]);
@@ -1268,7 +1264,7 @@ struct ReaderFontSettingsPage {
           .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
           .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
           .menuBackgroundBlurStyle(BlurStyle.NONE)
-          .menuSystemMaterial(this.selectMenuMaterial())
+          .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
           .onSelect((selectedIndex: number) => {
             this.updateRegexRule(index, (target: ReaderRegexFontRule) => {
               target.emphasisMode = this.emphasisModeByIndex(selectedIndex);
@@ -1361,7 +1357,7 @@ struct ReaderFontSettingsPage {
               .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
               .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
               .menuBackgroundBlurStyle(BlurStyle.NONE)
-              .menuSystemMaterial(this.selectMenuMaterial())
+              .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
               .onSelect((selectedIndex: number) => {
                 const selectedStyleId = this.bubbleStyleByIndex(selectedIndex);
                 this.updateRegexRule(index, (target: ReaderRegexFontRule) => {
@@ -1434,7 +1430,7 @@ struct ReaderFontSettingsPage {
         .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
         .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
         .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .menuSystemMaterial(this.selectMenuMaterial())
+        .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
         .onSelect((index: number) => {
           const result = this.modeAndFamilyByIndex(index);
           onChange(result[0], result[1]);

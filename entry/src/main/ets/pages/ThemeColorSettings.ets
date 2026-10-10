@@ -620,7 +620,7 @@ struct ThemeColorSettingsPage {
         .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
         .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
         .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+        .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
         .onSelect((index: number) => {
           if (index >= 0 && index < this.availableThemes.length) {
             this.setComponentSource(category, this.availableThemes[index].id);

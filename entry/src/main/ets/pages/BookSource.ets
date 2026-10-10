@@ -1924,7 +1924,7 @@ struct BookSourcePage {
                     .divider(null)
                     .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
                     .menuBackgroundBlurStyle(BlurStyle.NONE)
-                    .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+                    .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
                     .enabled(!this.isExecutingLoginAction)
                     .onSelect((selectedIndex: number) => {
                       this.updateSourceLoginSelect(index, selectedIndex);

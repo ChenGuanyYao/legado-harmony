@@ -295,7 +295,7 @@ export struct ColorCodePicker {
             .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
             .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
             .menuBackgroundBlurStyle(BlurStyle.NONE)
-            .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+            .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
             .onSelect((index: number) => {
               if (index === 2) {
                 this.openPicker();

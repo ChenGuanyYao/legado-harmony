@@ -1689,10 +1689,6 @@ struct SettingsPage {
   }
 
   /** Use one deterministic menu material for settings Select controls on API 26+. */
-  selectMenuMaterial() {
-    return ImmersiveMaterialRuntime.selectMenuMaterial();
-  }
-
   accentColor(): string {
     return ThemeRuntime.accentColor(this.appDarkMode);
   }
@@ -1911,7 +1907,7 @@ struct SettingsPage {
         .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
         .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
         .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .menuSystemMaterial(this.selectMenuMaterial())
+        .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
         .onSelect((index: number) => {
           this.selectReaderFontByIndex(index);
         })
@@ -2142,7 +2138,7 @@ struct SettingsPage {
               .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
               .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
               .menuBackgroundBlurStyle(BlurStyle.NONE)
-              .menuSystemMaterial(this.selectMenuMaterial())
+              .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
               .onSelect((index: number) => {
                 this.selectCustomTheme(index);
               })
@@ -2202,7 +2198,7 @@ struct SettingsPage {
               .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
               .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
               .menuBackgroundBlurStyle(BlurStyle.NONE)
-              .menuSystemMaterial(this.selectMenuMaterial())
+              .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
               .onSelect((index: number) => {
                 this.setCurrentCustomThemeBackgroundType(index);
               })
@@ -2256,7 +2252,7 @@ struct SettingsPage {
                   .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
                   .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
                   .menuBackgroundBlurStyle(BlurStyle.NONE)
-                  .menuSystemMaterial(this.selectMenuMaterial())
+                  .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
                   .onSelect((index: number) => {
                     this.setCurrentCustomThemeImageFit(index);
                   })
@@ -2303,7 +2299,7 @@ struct SettingsPage {
         .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
         .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
         .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .menuSystemMaterial(this.selectMenuMaterial())
+        .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
         .onSelect((index: number) => {
           this.showTypographyValueInput = false;
           this.typographySettingIndex = Math.max(0, Math.min(index, this.typographySettingOptions().length - 1));
@@ -2531,7 +2527,7 @@ struct SettingsPage {
         .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
         .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
         .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .menuSystemMaterial(this.selectMenuMaterial())
+        .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
         .onSelect((index: number) => {
           onSelect(index);
         })
