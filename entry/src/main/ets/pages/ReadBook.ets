@@ -151,6 +151,8 @@ const READER_PAGE_CURL_SNAPSHOT_SCALE = 0.42;
 const READER_PROGRESS_OFFSET_KEY = 'readProgressCharOffsetV2';
 const READER_V2_NO_FRAGMENTS: ReaderV2PageFragment[] = [];
 const READER_V2_CONTINUOUS_ROLE = 'continuous';
+const READER_CONTINUOUS_LIST_ID = 'reader_continuous_list';
+const READER_CONTINUOUS_TTS_FOLLOW_GRACE_MS = 2500;
 const READER_PROGRESS_OFFSET_CHAPTER_KEY = 'readProgressCharOffsetChapterV2';
 
 @Entry
@@ -272,7 +274,6 @@ struct ReadBookPage {
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State isTtsSpeaking: boolean = false;
   @State isTtsPaused: boolean = false;
-  @State ttsPagedScrollOverride: boolean = false;
   @State ttsMediaControlsExpanded: boolean = false;
   @State showTtsQuickPlayer: boolean = false;
   @StorageLink('globalTtsCapsulePositionX') ttsMiniPlayerPositionX: number = 16;
@@ -392,6 +393,9 @@ struct ReadBookPage {
   private readerV2PageSetCache: Map<string, ReaderV2PageSet> = new Map<string, ReaderV2PageSet>();
   private readerV2DocumentCache: Map<string, ReaderV2Document> = new Map<string, ReaderV2Document>();
   private readerContinuousV2Layouts: Map<string, ReaderV2PageLayout> = new Map<string, ReaderV2PageLayout>();
+  // layout.identity -> [chunk start in the chapter source, parsed chunk document]
+  private readerContinuousV2Sources: Map<string, number> = new Map<string, number>();
+  private readerContinuousV2Documents: Map<string, ReaderV2Document> = new Map<string, ReaderV2Document>();
   private readerContinuousV2Controllers: Map<string, ReaderV2PageNodeController> =
     new Map<string, ReaderV2PageNodeController>();
   private readerV2SelectionExtraGaps: Map<string, number> = new Map<string, number>();
@@ -2363,6 +2367,7 @@ struct ReadBookPage {
           .width('100%')
         }, (page: string, index: number) => `${this.currentChapterIndex}_${index}_${this.hashText(page)}`)
       }
+      .id(READER_CONTINUOUS_LIST_ID)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .height('100%')
@@ -5742,7 +5747,7 @@ struct ReadBookPage {
   }
 
   isReaderNovelContinuousScrollModeActive(): boolean {
-    return !this.isReaderComicModeActive() && this.readerPageTurnMode === 3 && !this.ttsPagedScrollOverride;
+    return !this.isReaderComicModeActive() && this.readerPageTurnMode === 3;
   }
 
   isReaderContinuousScrollSurfaceActive(): boolean {
@@ -5750,7 +5755,7 @@ struct ReadBookPage {
   }
 
   readerEffectivePageTurnMode(): number {
-    return this.ttsPagedScrollOverride && this.readerPageTurnMode === 3 ? 0 : this.readerPageTurnMode;
+    return this.readerPageTurnMode;
   }
 
   comicBoundaryChapterSwipeDirection(offsetY: number): number {
@@ -5872,6 +5877,17 @@ struct ReadBookPage {
     if (direction === 0 || this.readerComicChapterSwitching) return;
     const startedAt = Date.now();
     const sourceChapterIndex = this.currentChapterIndex;
+    // A manual chapter switch replaces the text the speech engine is still holding. Stop that session now and
+    // read on from wherever the reader lands; a paused session simply ends. A session mirrored from the
+    // floating player is moved instead of restarted.
+    const mirroredTts = this.isMirroringActiveTtsForCurrentBook();
+    const ownTtsActive = !mirroredTts && (this.isTtsSpeaking || this.ttsReader.isSpeaking());
+    const resumeTtsAfterSwitch = ownTtsActive && !this.isTtsPaused;
+    if (resumeTtsAfterSwitch) {
+      this.stopTtsReaderForChapterSwitch();
+    } else if (ownTtsActive) {
+      this.stopTtsReading();
+    }
     this.readerComicChapterSwitching = true;
     this.readerComicBoundaryDirection = direction;
     this.readerComicBoundaryPullDistance = Math.max(48, this.readerComicBoundaryPullDistance);
@@ -5913,6 +5929,18 @@ struct ReadBookPage {
       this.readerComicBoundaryPullOriginY = 0;
       this.readerComicChapterTransitionY = 0;
       this.readerComicChapterTransitionOpacity = 1;
+    }
+    if (!this.readerPageVisible) return;
+    if (resumeTtsAfterSwitch) {
+      await this.startTtsReadingFromCurrentPosition(false);
+    } else if (mirroredTts && this.currentChapterIndex !== sourceChapterIndex) {
+      try {
+        await ReaderTtsFloatingSession.jumpToPosition(this.currentChapterIndex, this.currentPageIndex,
+          this.getPageStartOffset(this.currentPageIndex));
+        await this.syncMirroredTtsFocus();
+      } catch (error) {
+        console.warn('滚动切换章节后同步后台朗读位置失败:', error);
+      }
     }
   }
 
@@ -12866,32 +12894,6 @@ struct ReadBookPage {
     await this.startTtsReadingFromCurrentPosition(true);
   }
 
-  setTtsPagedScrollOverride(enabled: boolean): void {
-    const next = enabled && this.readerPageTurnMode === 3 && !this.isReaderComicModeActive();
-    if (this.ttsPagedScrollOverride === next) return;
-    const readingOffset = this.getReaderStableReflowOffset();
-    this.ttsPagedScrollOverride = next;
-    this.resetSlidePageEffect();
-    if (next) {
-      // 取消纵向连续列表尚未执行的定位任务，朗读期间使用分页表面与逐句高亮。
-      this.readerComicScrollRestoreSerial++;
-      this.readerComicScrollRestoring = false;
-    }
-    // The scrolling list pages by chunk and the paged surface by screen. Re-paginate for the surface now in
-    // use and land on the page holding the same character offset; reusing the other surface's page array
-    // would show a clipped chunk without any laid-out page behind it.
-    if (this.content && this.hasPagedReaderArea()) {
-      this.finishPageTurnAnimation(false);
-      this.readerPaginationWorkSerial++;
-      this.pendingRestorePageIndex = -1;
-      this.readerTypographyRestoreOffset = Math.max(0, readingOffset);
-      this.paginateContent(this.content);
-    }
-    if (!next && this.readerPageTurnMode === 3) {
-      this.scheduleReaderComicScrollRestore();
-    }
-  }
-
   async startTtsReadingFromCurrentPosition(showToast: boolean,
     manualPageTurnResume: boolean = false, manualPageTurnResumeSerial: number = -1,
     readingStartOffset: number = -1, preserveExistingFocus: boolean = false): Promise<void> {
@@ -12906,12 +12908,11 @@ struct ReadBookPage {
       return;
     }
     this.ttsMediaControlsExpanded = false;
-    // Leaving the scrolling list re-paginates, and the page index is only restored once the new pages reach
-    // the old position. Pin the reading start to the offset that was on screen instead of that pending index.
-    const scrollSurfaceOffset = readingStartOffset < 0 && this.isReaderNovelContinuousScrollModeActive() ?
-      this.getCurrentPageStartOffset() : -1;
-    this.setTtsPagedScrollOverride(true);
-    const text = this.getTtsReadingText(readingStartOffset >= 0 ? readingStartOffset : scrollSurfaceOffset);
+    // A scrolling chunk spans several screens, so its start can be far above what is on screen. Begin with
+    // the first visible line instead.
+    const visibleOffset = readingStartOffset < 0 && this.usesReaderContinuousV2() ?
+      this.readerContinuousV2FirstVisibleSourceOffset() : -1;
+    const text = this.getTtsReadingText(readingStartOffset >= 0 ? readingStartOffset : visibleOffset);
     if (!text) {
       this.finishTtsReading();
       if (showToast) {
@@ -13092,7 +13093,6 @@ struct ReadBookPage {
       this.isTtsSpeaking = false;
       this.updateVolumeKeySubscription();
       this.clearTtsHighlight();
-      this.setTtsPagedScrollOverride(false);
       return;
     }
     this.ttsReader.stop();
@@ -13102,7 +13102,6 @@ struct ReadBookPage {
     this.clearTtsHighlight();
     this.ttsLastFocusChunk = null;
     this.ttsLastFocusPageIndex = -1;
-    this.setTtsPagedScrollOverride(false);
   }
 
   stopTtsReaderForChapterSwitch(): void {
@@ -13123,7 +13122,6 @@ struct ReadBookPage {
     this.ttsReader.stop();
     this.isTtsSpeaking = false;
     this.clearTtsHighlight();
-    this.setTtsPagedScrollOverride(false);
   }
 
   clearManualPageTurnTtsResumeTimer(): void {
@@ -13375,7 +13373,6 @@ struct ReadBookPage {
     this.ttsLastFocusPageIndex = -1;
     this.ttsReadingExpectedSourceEnd = -1;
     this.ttsChapterCompletionRetryCount = 0;
-    this.setTtsPagedScrollOverride(false);
     if (!this.readerPageVisible) {
       this.ttsReader.shutdown();
     }
@@ -14156,7 +14153,7 @@ struct ReadBookPage {
   publishTtsHighlightRenderChange(): void {
     // V2 owns a root-level lightweight focus layer. Its key observes readerV2TtsPaintVersion directly, so the
     // retained正文 page stays mounted while only the yellow rectangles are replaced.
-    if (this.shouldUseReaderLayoutV2(this.pagedContentText)) {
+    if (this.shouldUseReaderLayoutV2(this.pagedContentText) || this.usesReaderContinuousV2()) {
       this.readerV2TtsPaintVersion++;
     } else {
       this.ttsHighlightRenderVersion++;
@@ -14316,6 +14313,10 @@ struct ReadBookPage {
     // the range by page, so it cannot leak onto the outgoing leaf; it does let the new sentence appear highlighted
     // during the turn instead of waiting until the animation has finished while audio continues playing.
     this.updateTtsChunkHighlight(chunk, pageIndex);
+    if (this.usesReaderContinuousV2()) {
+      this.followReaderContinuousTtsFocus(firstFocusInSession);
+      return;
+    }
     if (spreadPageIndex !== this.currentPageIndex) {
       this.animateTtsToPage(spreadPageIndex, chunk);
       return;
@@ -14413,6 +14414,11 @@ struct ReadBookPage {
     this.ttsPageTurnSerial++;
     this.finishPageTurnAnimation();
     const spreadPageIndex = this.normalizeReaderSpreadPageIndex(pageIndex);
+    if (this.usesReaderContinuousV2()) {
+      this.updateTtsChunkHighlight(this.ttsLastFocusChunk, pageIndex);
+      this.followReaderContinuousTtsFocus(true);
+      return;
+    }
     if (spreadPageIndex !== this.currentPageIndex) {
       this.currentPageIndex = spreadPageIndex;
       this.saveReadingProgress().catch((error: Error) => {
@@ -14526,6 +14532,11 @@ struct ReadBookPage {
     const pageIndex = this.findPageIndexByOffset(absoluteStart);
     if (pageIndex < 0 || pageIndex >= this.contentPages.length) return;
     const targetPageIndex = this.normalizeReaderSpreadPageIndex(pageIndex);
+    if (this.usesReaderContinuousV2()) {
+      this.ttsLastFocusPageIndex = pageIndex;
+      this.updateTtsChunkHighlight(chunk, pageIndex, false);
+      return;
+    }
     if (this.isPageTurning || this.ttsAutoTurningPage || this.ttsManualPageTurnResumePending) {
       this.scheduleCurrentTtsFocusRepublishAfterPageTurn();
       return;
@@ -14667,6 +14678,13 @@ struct ReadBookPage {
     const pageText = this.getPageText(pageIndex);
     this.mirroredTtsFocusActive = true;
     const targetPageIndex = this.normalizeReaderSpreadPageIndex(pageIndex);
+    if (this.usesReaderContinuousV2()) {
+      this.readerV2TtsSourceStart = absoluteStart;
+      this.readerV2TtsSourceEnd = absoluteEnd;
+      this.publishTtsHighlightRenderChange();
+      this.followReaderContinuousTtsFocus(false);
+      return;
+    }
     if (targetPageIndex !== this.currentPageIndex) {
       this.finishPageTurnAnimation();
       this.currentPageIndex = targetPageIndex;
@@ -17765,20 +17783,25 @@ struct ReadBookPage {
   // Chunk boundaries are trimmed for progress bookkeeping, which also strips the indent of the paragraph a
   // chunk starts with. Take that indent back from the source so every paragraph is laid out alike.
   readerContinuousV2ChunkText(index: number, text: string): string {
+    const start = this.readerContinuousV2ChunkStart(index, text);
+    return start < 0 ? text : this.pagedContentText.substring(start, this.contentPageEnds[index]);
+  }
+
+  // Start of the chunk text in the chapter source, indent included; -1 when the chunk is not a slice of it.
+  readerContinuousV2ChunkStart(index: number, text: string): number {
     const source = this.pagedContentText;
     if (!source || index < 0 || index >= this.contentPageStarts.length || index >= this.contentPageEnds.length) {
-      return text;
+      return -1;
     }
     const start = this.contentPageStarts[index];
-    const end = this.contentPageEnds[index];
-    if (source.substring(start, end) !== text) return text;
+    if (source.substring(start, this.contentPageEnds[index]) !== text) return -1;
     let indentStart = start;
     while (indentStart > 0 &&
-      (source.charAt(indentStart - 1) === '　' || source.charAt(indentStart - 1) === ' ')) {
+      (source.charAt(indentStart - 1) === '\u3000' || source.charAt(indentStart - 1) === ' ')) {
       indentStart--;
     }
-    if (indentStart === start || (indentStart > 0 && source.charAt(indentStart - 1) !== '\n')) return text;
-    return source.substring(indentStart, end);
+    return indentStart === start || (indentStart > 0 && source.charAt(indentStart - 1) !== '\n') ? start :
+      indentStart;
   }
 
   // One scrolling chunk laid out by the V2 paragraph engine. Called from list item builders, so the result
@@ -17797,6 +17820,10 @@ struct ReadBookPage {
       const document = ReaderV2DocumentParser.parse(chunk, chapterIndex,
         index === 0 ? this.getChapterTitle(chapterIndex) : '', this.readerV2HeadingHints(chapterIndex));
       layout = ReaderV2Paginator.layoutContinuous(document, snapshot, this.buildReaderV2RegexStyles(document));
+      if (layout) {
+        this.readerContinuousV2Documents.set(layout.identity, document);
+        this.readerContinuousV2Sources.set(layout.identity, this.readerContinuousV2ChunkStart(index, text));
+      }
     } catch (error) {
       console.error(`[ReaderContinuous] 正文块排版失败 chapter=${chapterIndex} chunk=${index}:`, error);
     }
@@ -17805,6 +17832,11 @@ struct ReadBookPage {
     while (this.readerContinuousV2Layouts.size > 24) {
       const oldest = this.readerContinuousV2Layouts.keys().next().value as string | undefined;
       if (oldest === undefined) break;
+      const evicted = this.readerContinuousV2Layouts.get(oldest);
+      if (evicted) {
+        this.readerContinuousV2Documents.delete(evicted.identity);
+        this.readerContinuousV2Sources.delete(evicted.identity);
+      }
       this.readerContinuousV2Layouts.delete(oldest);
     }
     CooperativeScheduler.reportSynchronousOperation('reader/v2-continuous-chunk', Date.now() - startedAt,
@@ -17869,6 +17901,99 @@ struct ReadBookPage {
       this.readerV2SelectionDisplayEnd, 'selection');
   }
 
+  // Rectangles of the spoken sentence inside this chunk, in chunk-local pixels.
+  readerContinuousV2TtsRects(index: number, text: string, _paintVersion: number): ReaderV2HighlightRect[] {
+    if (!this.shouldRenderTtsFocus() || this.readerV2TtsSourceStart < 0 ||
+      this.readerV2TtsSourceEnd <= this.readerV2TtsSourceStart || index >= this.contentPageEnds.length ||
+      this.readerV2TtsSourceStart >= this.contentPageEnds[index] ||
+      this.readerV2TtsSourceEnd <= this.contentPageStarts[index]) return [];
+    const layout = this.readerContinuousV2Layout(index, text);
+    if (!layout) return [];
+    const document = this.readerContinuousV2Documents.get(layout.identity);
+    const chunkStart = this.readerContinuousV2Sources.get(layout.identity);
+    if (!document || chunkStart === undefined || chunkStart < 0) return [];
+    return this.readerV2DisplayHighlightRects(layout,
+      document.displayOffsetForSource(Math.max(0, this.readerV2TtsSourceStart - chunkStart)),
+      document.displayOffsetForSource(Math.max(0, this.readerV2TtsSourceEnd - chunkStart)), 'tts');
+  }
+
+  // Window rectangle [top, bottom] in pixels of the list's text area, or an empty array before it is laid out.
+  readerContinuousV2ViewportPx(): number[] {
+    try {
+      const rect = this.getUIContext().getComponentUtils().getRectangleById(READER_CONTINUOUS_LIST_ID);
+      if (rect.size.height <= 0) return [];
+      return [rect.windowOffset.y + this.toMeasureNonNegativePx(this.getEffectiveReaderMarginTop()),
+        rect.windowOffset.y + rect.size.height - this.toMeasureNonNegativePx(this.getEffectiveReaderMarginBottom())];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // Chapter source offset of the first line that is fully on screen, or -1 when it cannot be resolved.
+  readerContinuousV2FirstVisibleSourceOffset(): number {
+    const viewport = this.readerContinuousV2ViewportPx();
+    if (viewport.length < 2 || this.contentPages.length === 0) return -1;
+    const first = Math.max(0, this.readerContinuousVisibleStart);
+    const last = Math.min(this.contentPages.length - 1, this.readerContinuousVisibleEnd);
+    for (let index = first; index <= last; index++) {
+      try {
+        const rect = this.getUIContext().getComponentUtils().getRectangleById(this.readerContinuousV2ItemId(index));
+        if (rect.size.height <= 0 || rect.windowOffset.y + rect.size.height <= viewport[0]) continue;
+        const layout = this.readerContinuousV2Layout(index, this.contentPages[index] || '');
+        if (!layout) continue;
+        const document = this.readerContinuousV2Documents.get(layout.identity);
+        const chunkStart = this.readerContinuousV2Sources.get(layout.identity);
+        if (!document || chunkStart === undefined || chunkStart < 0) continue;
+        const localTop = viewport[0] - rect.windowOffset.y;
+        for (const fragment of layout.fragments) {
+          if (!fragment.paragraph) continue;
+          for (const line of fragment.paragraph.getLineMetrics()) {
+            if (fragment.paragraphY + line.topHeight < localTop - 1) continue;
+            return chunkStart + document.sourceOffsetForDisplay(fragment.displayStart + line.startIndex);
+          }
+        }
+      } catch (_) {
+      }
+    }
+    return -1;
+  }
+
+  // Keeps the spoken sentence on screen in the scrolling list. A manual scroll is respected for a moment, so
+  // the reader can look ahead without the list snapping back at the next sentence; force skips that grace.
+  followReaderContinuousTtsFocus(force: boolean): void {
+    if (!this.usesReaderContinuousV2() || this.readerV2TtsSourceStart < 0 || this.contentPages.length === 0 ||
+      this.readerTextSelectionActive || this.readerComicScrollRestoring || this.pendingRestorePageIndex >= 0 ||
+      this.readerComicChapterSwitching) return;
+    if (!force && Date.now() - this.readerContinuousPointerAt < READER_CONTINUOUS_TTS_FOLLOW_GRACE_MS) return;
+    const index = this.findPageIndexByOffset(this.readerV2TtsSourceStart);
+    if (index < 0 || index >= this.contentPages.length) return;
+    const rects = this.readerContinuousV2TtsRects(index, this.contentPages[index] || '', 0);
+    const viewport = this.readerContinuousV2ViewportPx();
+    if (viewport.length < 2) return;
+    const viewportHeightPx = viewport[1] - viewport[0];
+    let focusTopPx = 0;
+    if (rects.length > 0) {
+      focusTopPx = rects[0].topPx;
+      const focusBottomPx = rects[rects.length - 1].topPx + rects[rects.length - 1].heightPx;
+      try {
+        const rect = this.getUIContext().getComponentUtils().getRectangleById(this.readerContinuousV2ItemId(index));
+        if (rect.size.height > 0) {
+          const top = rect.windowOffset.y + focusTopPx;
+          const bottom = rect.windowOffset.y + focusBottomPx;
+          // Leave the lowest part of the screen out: a sentence there is about to scroll off anyway.
+          if (top >= viewport[0] && bottom <= viewport[1] - viewportHeightPx * 0.18) return;
+        }
+      } catch (_) {
+      }
+    }
+    try {
+      this.readerComicScroller.scrollToIndex(index, true, ScrollAlign.START,
+        { extraOffset: LengthMetrics.vp(px2vp(focusTopPx - viewportHeightPx * 0.22)) });
+    } catch (error) {
+      console.warn('[ReaderContinuous] 跟随朗读焦点滚动失败:', error);
+    }
+  }
+
   // Whether the native selection host belongs to this chunk. hostVersion is the reactive trigger: the
   // owning fields are plain members.
   readerContinuousV2OwnsSelection(index: number, text: string, _hostVersion: number): boolean {
@@ -17921,6 +18046,10 @@ struct ReadBookPage {
           `${segment.rect.right}_${segment.rect.bottom}_${segment.leading ? 'l' : ''}${segment.trailing ? 'r' : ''}`)
       }, (fragment: ReaderV2PageFragment) => `reader_continuous_v2_bubble_${fragment.blockId}_` +
         `${fragment.displayStart}_${fragment.displayEnd}`)
+      ForEach(this.readerContinuousV2TtsRects(index, text, this.readerV2TtsPaintVersion),
+        (rect: ReaderV2HighlightRect) => {
+        this.readerV2TtsHighlightRect(rect)
+      }, (rect: ReaderV2HighlightRect) => rect.key)
       ForEach(this.readerContinuousV2SelectionRects(index, text, this.readerV2SelectionPaintVersion),
         (rect: ReaderV2HighlightRect) => {
         this.readerV2SelectionHighlightRect(rect)
