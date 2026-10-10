@@ -4,7 +4,6 @@ import { common, ConfigurationConstant, WantAgent, wantAgent } from '@kit.Abilit
 import { inputConsumer, KeyCode, Action, KeyEvent } from '@kit.InputKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { avSession } from '@kit.AVSessionKit';
-import { notificationManager } from '@kit.NotificationKit';
 import image from '@ohos.multimedia.image';
 import fs from '@ohos.file.fs';
 import fileUri from '@ohos.file.fileuri';
@@ -93,7 +92,7 @@ import { ReaderV2GestureRouter, ReaderV2TapResult } from '../core/reader/ReaderV
 import { ReaderOpenTrace } from '../utils/ReaderOpenTrace';
 import { EyeTurnCalibration, EyeTurnController, EyeTurnSample } from '../core/reader/EyeTurnController';
 import { ArEyeSignal, ArEyeTurnHost } from '../core/reader/ArEyeTypes';
-import { FullTextCacheCancelCoordinator, FullTextCacheCancelSignal } from '../utils/FullTextCacheCancelCoordinator';
+import { ReaderFullTextCacheController } from '../core/reader/ReaderFullTextCacheController';
 import { ReaderComicPageDataSource } from '../core/reader/ReaderDataSources';
 import { ReaderCustomFontItem, ReaderCustomFontData, ReaderTxtCharsetOption } from '../core/reader/ReaderSettingsModels';
 import {
@@ -134,7 +133,6 @@ const READER_EYE_TURN_AR_ENABLED: boolean = false;
 
 const TOC_WINDOW_PAGE_SIZE = 72;
 const TOC_SCROLLBAR_DRAG_UPDATE_INTERVAL_MS = 90;
-const FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS = 5000;
 const READER_CURRENT_PAGINATION_AHEAD_PAGE_COUNT = 4;
 const READER_ADJACENT_PAGINATION_PREVIEW_PAGE_COUNT = 2;
 const READER_PAGINATION_BATCH_DELAY_MS = 64;
@@ -675,14 +673,7 @@ struct ReadBookPage {
   @State readerCacheRangeDraft: string = '';
   @State readerCacheRangeCaching: boolean = false;
   private readerCacheLoadSerial: number = 0;
-  private fullTextCacheTaskId: number = 0;
-  private fullTextCacheCancelRequested: boolean = false;
-  private fullTextCacheCancelSeenNonce: number = 0;
-  private fullTextCacheNotificationLastAt: number = 0;
-  private fullTextCacheBackgroundRunning: boolean = false;
-  private fullTextCacheCancelAgent: WantAgent | null = null;
-  private fullTextCacheTaskKey: string = '';
-  private fullTextCacheStoppingNotificationTask: Promise<void> | null = null;
+  private fullTextCache: ReaderFullTextCacheController | null = null;
   private volumeUpCallback?: (event: KeyEvent) => void;
   private volumeDownCallback?: (event: KeyEvent) => void;
   private lastLoggedReaderFontFamily: string = '';
@@ -1623,17 +1614,31 @@ struct ReadBookPage {
   }
 
   onFullTextCacheCancelNonceChanged(): void {
-    const nonce = this.fullTextCacheCancelNonce || 0;
-    if (this.fullTextCaching && nonce > 0 && nonce !== this.fullTextCacheCancelSeenNonce) {
-      const signal = FullTextCacheCancelCoordinator.parse(
-        AppStorage.get<string>('fullTextCacheCancelSignal') || '');
-      if (signal && !FullTextCacheCancelCoordinator.matches(signal, this.fullTextCacheTaskKey,
-        this.book?.bookUrl || this.bookUrl)) {
-        this.fullTextCacheCancelSeenNonce = nonce;
-        return;
-      }
-      this.beginStoppingFullTextCache(signal ? signal.nonce : nonce, true);
+    this.fullTextCacheController().onCancelNonceChanged(this.fullTextCacheCancelNonce || 0);
+  }
+
+  // Background task behind "缓存全文". The page only mirrors its progress into @State for the dialog.
+  fullTextCacheController(): ReaderFullTextCacheController {
+    if (!this.fullTextCache) {
+      this.fullTextCache = new ReaderFullTextCacheController({
+        abilityContext: (): common.UIAbilityContext => getContext(this) as common.UIAbilityContext,
+        bookUrl: (): string => this.book?.bookUrl || this.bookUrl,
+        bookName: (): string => this.book?.name || '',
+        ttsBackgroundRunning: (): boolean => this.ttsBackgroundRunning,
+        ttsBackgroundBusy: (): boolean => this.ttsBackgroundRunning || this.ttsBackgroundRequesting,
+        onStateChanged: (): void => {
+          const controller = this.fullTextCacheController();
+          this.fullTextCaching = controller.caching;
+          this.fullTextCacheDone = controller.done;
+          this.fullTextCacheTotal = controller.total;
+          this.fullTextCacheStatus = controller.status;
+        },
+        onChaptersChanged: (chapters: BookChapter[]): void => {
+          this.chapters = chapters;
+        }
+      });
     }
+    return this.fullTextCache;
   }
 
   readerCachePanelStatus(): string {
@@ -1847,148 +1852,7 @@ struct ReadBookPage {
 
     this.hideReaderPanels();
     HdsFeedback.showToast('已转入后台缓存，可在通知栏取消');
-    this.runFullTextCache(++this.fullTextCacheTaskId).catch(async (error: Error): Promise<void> => {
-      if (this.fullTextCacheCancelRequested) {
-        if (this.fullTextCacheStoppingNotificationTask) await this.fullTextCacheStoppingNotificationTask;
-        this.fullTextCaching = false;
-        this.fullTextCacheStatus = '全文缓存已取消';
-        await this.publishFullTextCacheNotification('缓存已停止', this.fullTextCacheProgressText(), false);
-        await this.stopFullTextCacheBackgroundRunning();
-        this.releaseFullTextCacheCancelRegistration();
-        this.fullTextCacheCancelRequested = false;
-        return;
-      }
-      this.releaseFullTextCacheCancelRegistration();
-      console.error('全文缓存任务失败:', error);
-      this.fullTextCaching = false;
-      this.fullTextCacheStatus = '全文缓存失败';
-      HdsFeedback.showToast('全文缓存失败');
-      this.publishFullTextCacheNotification('全文缓存失败', this.fullTextCacheProgressText(), false).catch((e: Error) => {
-        console.warn('更新全文缓存失败通知失败:', e);
-      });
-      this.stopFullTextCacheBackgroundRunning().catch((e: Error) => {
-        console.warn('停止全文缓存后台任务失败:', e);
-      });
-    });
-  }
-
-  async runFullTextCache(taskId: number): Promise<void> {
-    const engine = ReadBookEngine.get();
-    if (!engine.book || engine.chapters.length === 0) {
-      return;
-    }
-
-    this.fullTextCaching = true;
-    this.fullTextCacheCancelRequested = false;
-    this.fullTextCacheCancelSeenNonce = AppStorage.get<number>('fullTextCacheCancelNonce') || 0;
-    this.fullTextCacheNotificationLastAt = 0;
-    this.fullTextCacheCancelAgent = null;
-    this.fullTextCacheStoppingNotificationTask = null;
-    this.fullTextCacheTaskKey = `reader_${taskId}_${Date.now()}`;
-    FullTextCacheCancelCoordinator.register(this.fullTextCacheTaskKey, engine.book.bookUrl,
-      (signal: FullTextCacheCancelSignal): void => {
-        if (FullTextCacheCancelCoordinator.matches(signal, this.fullTextCacheTaskKey, engine.book?.bookUrl || '')) {
-          this.beginStoppingFullTextCache(signal.nonce, true);
-        }
-      });
-    await engine.syncChapterCacheDates();
-    this.chapters = [...engine.chapters];
-    this.fullTextCacheTotal = engine.chapters.length;
-    this.fullTextCacheDone = this.countCachedChapters(engine.chapters);
-    this.fullTextCacheStatus = '全文缓存后台进行中';
-
-    await this.startFullTextCacheBackgroundRunning();
-    await this.requestFullTextCacheNotificationEnabled();
-    await this.publishFullTextCacheProgress(true);
-
-    for (let index = 0; index < engine.chapters.length; index++) {
-      if (taskId !== this.fullTextCacheTaskId || this.shouldCancelFullTextCache()) {
-        break;
-      }
-      const chapter = engine.chapters[index];
-      if (!chapter || chapter.cacheDate > 0) {
-        continue;
-      }
-
-      const ok = await this.cacheFullTextChapter(engine, index, taskId);
-      if (taskId !== this.fullTextCacheTaskId) {
-        break;
-      }
-      if (ok) {
-        this.fullTextCacheDone = this.countCachedChapters(engine.chapters);
-        this.chapters = [...engine.chapters];
-      }
-      if (this.shouldCancelFullTextCache()) break;
-      await this.publishFullTextCacheProgress(false);
-      await this.sleep(0);
-    }
-
-    if (taskId !== this.fullTextCacheTaskId) {
-      this.releaseFullTextCacheCancelRegistration();
-      return;
-    }
-
-    const canceled = this.shouldCancelFullTextCache();
-    await engine.syncChapterCacheDates();
-    this.chapters = [...engine.chapters];
-    this.fullTextCacheDone = this.countCachedChapters(engine.chapters);
-    this.fullTextCaching = false;
-    const failedCount = Math.max(0, this.fullTextCacheTotal - this.fullTextCacheDone);
-    this.fullTextCacheStatus = canceled ? '全文缓存已取消' :
-      (failedCount > 0 ? `缓存结束，${failedCount} 章未缓存` : '全文缓存完成');
-    if (canceled && this.fullTextCacheStoppingNotificationTask) {
-      await this.fullTextCacheStoppingNotificationTask;
-    }
-    await this.publishFullTextCacheNotification(
-      canceled ? '缓存已停止' : this.fullTextCacheStatus,
-      this.fullTextCacheProgressText(),
-      false
-    );
-    if (canceled) {
-      HdsFeedback.showToast('缓存已停止');
-    } else {
-      HdsFeedback.showToast('全文缓存完成');
-    }
-    await this.stopFullTextCacheBackgroundRunning();
-    this.releaseFullTextCacheCancelRegistration();
-    this.fullTextCacheCancelRequested = false;
-  }
-
-  beginStoppingFullTextCache(nonce: number, showHint: boolean): void {
-    if (!this.fullTextCaching || this.fullTextCacheCancelRequested) return;
-    this.fullTextCacheCancelRequested = true;
-    this.fullTextCacheCancelSeenNonce = nonce;
-    this.fullTextCacheStatus = '正在停止缓存…';
-    ReadBookEngine.get().cancelPendingRequests();
-    this.fullTextCacheStoppingNotificationTask = this.publishFullTextCacheNotification(
-      '正在停止缓存…', this.fullTextCacheProgressText(), true)
-      .catch((error: Error) => console.warn('更新正在停止缓存通知失败:', error));
-    if (showHint) HdsFeedback.showToast('正在停止缓存…');
-  }
-
-  releaseFullTextCacheCancelRegistration(): void {
-    FullTextCacheCancelCoordinator.unregister(this.fullTextCacheTaskKey);
-    this.fullTextCacheTaskKey = '';
-    this.fullTextCacheStoppingNotificationTask = null;
-  }
-
-  shouldCancelFullTextCache(): boolean {
-    if (this.fullTextCacheCancelRequested) {
-      return true;
-    }
-    const nonce = AppStorage.get<number>('fullTextCacheCancelNonce') || 0;
-    if (nonce > 0 && nonce !== this.fullTextCacheCancelSeenNonce) {
-      const signal = FullTextCacheCancelCoordinator.parse(
-        AppStorage.get<string>('fullTextCacheCancelSignal') || '');
-      if (signal && !FullTextCacheCancelCoordinator.matches(signal, this.fullTextCacheTaskKey,
-        this.book?.bookUrl || this.bookUrl)) {
-        this.fullTextCacheCancelSeenNonce = nonce;
-        return false;
-      }
-      this.beginStoppingFullTextCache(signal ? signal.nonce : nonce, false);
-      return this.fullTextCacheCancelRequested;
-    }
-    return false;
+    this.fullTextCacheController().start();
   }
 
   clearReaderScreenTimeoutTimer(): void {
@@ -2047,169 +1911,12 @@ struct ReadBookPage {
     });
   }
 
-  async cacheFullTextChapter(engine: ReadBookEngine, chapterIndex: number, taskId: number): Promise<boolean> {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      if (taskId !== this.fullTextCacheTaskId || this.shouldCancelFullTextCache()) {
-        return false;
-      }
-      try {
-        if (await engine.cacheChapter(chapterIndex,
-          (): boolean => taskId !== this.fullTextCacheTaskId || this.shouldCancelFullTextCache())) {
-          return true;
-        }
-      } catch (error) {
-        if (!this.shouldCancelFullTextCache()) {
-          console.warn(`缓存第 ${chapterIndex + 1} 章失败（第 ${attempt + 1} 次）:`, error);
-        }
-      }
-      if (attempt === 0) {
-        await this.sleep(300);
-      }
-    }
-    return false;
-  }
-
   countCachedChapters(chapters: BookChapter[]): number {
-    let count = 0;
-    for (const chapter of chapters) {
-      if (chapter.cacheDate > 0) {
-        count++;
-      }
-    }
-    return count;
+    return ReaderFullTextCacheController.countCached(chapters);
   }
 
   fullTextCacheProgressText(): string {
-    const total = Math.max(this.fullTextCacheTotal, 0);
-    if (total === 0) {
-      return '正在准备缓存章节';
-    }
-    const done = Math.max(0, Math.min(this.fullTextCacheDone, total));
-    const percent = Math.floor((done / total) * 100);
-    return `已缓存 ${done}/${total} 章（${percent}%）`;
-  }
-
-  async publishFullTextCacheProgress(force: boolean): Promise<void> {
-    const now = Date.now();
-    if (!force && now - this.fullTextCacheNotificationLastAt < FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS) {
-      return;
-    }
-    this.fullTextCacheNotificationLastAt = now;
-    await this.publishFullTextCacheNotification(this.fullTextCacheStatus || '全文缓存后台进行中',
-      this.fullTextCacheProgressText(), true);
-  }
-
-  async publishFullTextCacheNotification(text: string, additionalText: string, ongoing: boolean): Promise<void> {
-    try {
-      const request: notificationManager.NotificationRequest = {
-        id: 2601,
-        label: 'full_text_cache',
-        notificationSlotType: notificationManager.SlotType.SERVICE_INFORMATION,
-        isOngoing: ongoing,
-        tapDismissed: false,
-        isAlertOnce: true,
-        autoDeletedTime: ongoing ? undefined : Date.now() + 5000,
-        content: {
-          notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_BASIC_TEXT,
-          normal: {
-            title: this.book?.name ? `缓存全文：${this.book.name}` : '缓存全文',
-            text: text,
-            additionalText: additionalText
-          }
-        }
-      };
-      if (ongoing) {
-        request.actionButtons = [{
-          title: '×',
-          wantAgent: await this.getFullTextCacheCancelWantAgent()
-        }];
-      }
-      await notificationManager.publish(request);
-    } catch (error) {
-      console.warn('发布全文缓存通知失败:', error);
-    }
-  }
-
-  async requestFullTextCacheNotificationEnabled(): Promise<void> {
-    try {
-      if (await notificationManager.isNotificationEnabled()) {
-        return;
-      }
-      await notificationManager.requestEnableNotification(getContext(this) as common.UIAbilityContext);
-    } catch (error) {
-      console.warn('请求通知权限失败:', error);
-    }
-  }
-
-  async getFullTextCacheCancelWantAgent(): Promise<WantAgent> {
-    if (this.fullTextCacheCancelAgent) {
-      return this.fullTextCacheCancelAgent;
-    }
-    const context = getContext(this) as common.UIAbilityContext;
-    this.fullTextCacheCancelAgent = await wantAgent.getWantAgent({
-      wants: [{
-        bundleName: context.abilityInfo.bundleName,
-        abilityName: 'EntryAbility',
-        parameters: {
-          cacheAction: 'cancelFullTextCache',
-          cacheTaskId: this.fullTextCacheTaskId,
-          cacheTaskKey: this.fullTextCacheTaskKey,
-          bookUrl: this.book?.bookUrl || this.bookUrl
-        }
-      }],
-      actionType: wantAgent.OperationType.START_ABILITY,
-      requestCode: 2602,
-      actionFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
-    });
-    return this.fullTextCacheCancelAgent;
-  }
-
-  async startFullTextCacheBackgroundRunning(): Promise<void> {
-    if (this.fullTextCacheBackgroundRunning) {
-      return;
-    }
-    if (this.ttsBackgroundRunning) {
-      this.fullTextCacheBackgroundRunning = true;
-      return;
-    }
-    try {
-      const agent = await this.createFullTextCacheOpenWantAgent();
-      await backgroundTaskManager.startBackgroundRunning(getContext(this), ['dataTransfer'], agent);
-      this.fullTextCacheBackgroundRunning = true;
-    } catch (error) {
-      console.warn('启动全文缓存后台任务失败:', error);
-    }
-  }
-
-  async stopFullTextCacheBackgroundRunning(): Promise<void> {
-    if (!this.fullTextCacheBackgroundRunning) {
-      return;
-    }
-    this.fullTextCacheBackgroundRunning = false;
-    if (this.ttsBackgroundRunning || this.ttsBackgroundRequesting) {
-      return;
-    }
-    try {
-      await backgroundTaskManager.stopBackgroundRunning(getContext(this));
-    } catch (error) {
-      console.warn('停止全文缓存后台任务失败:', error);
-    }
-  }
-
-  async createFullTextCacheOpenWantAgent(): Promise<WantAgent> {
-    const context = getContext(this) as common.UIAbilityContext;
-    return await wantAgent.getWantAgent({
-      wants: [{
-        bundleName: context.abilityInfo.bundleName,
-        abilityName: 'EntryAbility',
-        parameters: {
-          bookUrl: this.bookUrl || ''
-        }
-      }],
-      actionType: wantAgent.OperationType.START_ABILITY,
-      requestCode: 2603,
-      actionFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
-    });
+    return this.fullTextCacheController().progressText();
   }
 
   sleep(ms: number): Promise<void> {
@@ -13450,11 +13157,12 @@ struct ReadBookPage {
       return;
     }
     this.ttsBackgroundRunning = false;
+    // The cache task shares this ability's background permit: hand it over instead of releasing it.
     if (this.fullTextCaching) {
-      this.fullTextCacheBackgroundRunning = true;
+      this.fullTextCacheController().backgroundRunning = true;
       return;
     }
-    if (this.fullTextCacheBackgroundRunning) {
+    if (this.fullTextCacheController().backgroundRunning) {
       return;
     }
     try {
