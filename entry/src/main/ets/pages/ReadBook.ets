@@ -93,6 +93,7 @@ import { ReaderOpenTrace } from '../utils/ReaderOpenTrace';
 import { EyeTurnCalibration, EyeTurnController, EyeTurnSample } from '../core/reader/EyeTurnController';
 import { ArEyeSignal, ArEyeTurnHost } from '../core/reader/ArEyeTypes';
 import { ReaderFullTextCacheController } from '../core/reader/ReaderFullTextCacheController';
+import { ReaderCacheDialogContent } from '../components/reader/ReaderCacheDialogContent';
 import { ReaderComicPageDataSource } from '../core/reader/ReaderDataSources';
 import { ReaderCustomFontItem, ReaderCustomFontData, ReaderTxtCharsetOption } from '../core/reader/ReaderSettingsModels';
 import {
@@ -668,11 +669,6 @@ struct ReadBookPage {
   @State fullTextCacheStatus: string = '';
   @State @Watch('onSystemDialogFlagChanged') showReaderCacheDialog: boolean = false;
   @State @Watch('onSystemDialogFlagChanged') showReaderChapterCacheDialog: boolean = false;
-  @State readerCacheChapters: BookChapter[] = [];
-  @State readerCacheStatus: string = '';
-  @State readerCacheRangeDraft: string = '';
-  @State readerCacheRangeCaching: boolean = false;
-  private readerCacheLoadSerial: number = 0;
   private fullTextCache: ReaderFullTextCacheController | null = null;
   private volumeUpCallback?: (event: KeyEvent) => void;
   private volumeDownCallback?: (event: KeyEvent) => void;
@@ -1641,13 +1637,6 @@ struct ReadBookPage {
     return this.fullTextCache;
   }
 
-  readerCachePanelStatus(): string {
-    if (this.fullTextCaching) {
-      return this.fullTextCacheStatus || this.fullTextCacheProgressText();
-    }
-    return this.readerCacheStatus;
-  }
-
   openReaderCacheDialog(): void {
     if (!this.book || LocalBookService.isLocalBook(this.book)) {
       HdsFeedback.showToast('当前书籍暂无可缓存章节');
@@ -1657,187 +1646,37 @@ struct ReadBookPage {
     this.showMenu = false;
     this.showReaderChapterCacheDialog = false;
     this.showReaderCacheDialog = true;
-    this.readerCacheRangeDraft = '';
-    this.readerCacheStatus = '';
-    this.refreshReaderCacheChapters();
     this.readerCacheDialogSession.open(this.getUIContext(), (): void => {
-      this.readerCacheDialogContent();
+      this.readerCacheDialogContent(false);
     }, {
       autoCancel: false,
-      maskColor: this.isReaderThemeDark() ? '#99000000' : '#33000000',
+      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
       warnTag: '显示全文缓存弹窗失败:'
     });
   }
 
   openReaderChapterCacheDialog(): void {
-    if (!this.book || LocalBookService.isLocalBook(this.book) || this.fullTextCaching ||
-      this.readerCacheRangeCaching) {
+    if (!this.book || LocalBookService.isLocalBook(this.book) || this.fullTextCaching) {
       return;
     }
     this.showReaderCacheDialog = false;
     this.showReaderChapterCacheDialog = true;
-    this.readerCacheRangeDraft = '';
-    this.readerCacheStatus = '正在加载目录...';
-    this.refreshReaderCacheChapters();
     this.chapterCacheDialogSession.open(this.getUIContext(), (): void => {
-      this.readerChapterCacheDialogContent();
+      this.readerCacheDialogContent(true);
     }, {
-      autoCancel: false,
-      maskColor: this.isReaderThemeDark() ? '#99000000' : '#33000000',
-      warnTag: '显示章节缓存弹窗失败:'
+      autoCancel: true,
+      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      warnTag: '显示章节缓存弹窗失败:',
+      onDismiss: (): void => {
+        this.showReaderChapterCacheDialog = false;
+      }
     });
   }
 
+  // Caching runs in the background, so the dialog can always be closed.
   closeReaderCacheDialog(): void {
-    if (this.fullTextCaching || this.readerCacheRangeCaching) return;
-    this.readerCacheLoadSerial++;
     this.showReaderCacheDialog = false;
     this.showReaderChapterCacheDialog = false;
-    this.readerCacheChapters = [];
-    this.readerCacheStatus = '';
-    this.readerCacheRangeDraft = '';
-  }
-
-  async refreshReaderCacheChapters(): Promise<void> {
-    const bookUrl = this.book?.bookUrl || this.bookUrl;
-    if (!bookUrl) return;
-    const serial = ++this.readerCacheLoadSerial;
-    try {
-      const engine = ReadBookEngine.get();
-      if (engine.book?.bookUrl !== bookUrl) return;
-      await engine.syncChapterCacheDates();
-      if (serial !== this.readerCacheLoadSerial || this.book?.bookUrl !== bookUrl) return;
-      this.chapters = [...engine.chapters];
-      this.readerCacheChapters = [...engine.chapters];
-      const cachedCount = this.countCachedChapters(engine.chapters);
-      this.readerCacheStatus = engine.chapters.length > 0 ?
-        `${cachedCount}章已缓存 ${engine.chapters.length - cachedCount}章待缓存` : '暂未获取到目录';
-    } catch (error) {
-      console.warn('读取阅读页缓存目录失败:', error);
-      if (serial === this.readerCacheLoadSerial) this.readerCacheStatus = '目录加载失败，请稍后重试';
-    }
-  }
-
-  readerCachedChapterTextColor(): string {
-    return this.isReaderThemeDark() ? '#DDEFE5' : '#244B35';
-  }
-
-  parseReaderChapterRange(raw: string, total: number): number[] {
-    const value = (raw || '').trim();
-    if (!value || total <= 0) return [];
-    const normalized = value.replace(/[，、；;]/g, ',').replace(/[～至]/g, '-');
-    const result = new Set<number>();
-    for (const part of normalized.split(/[\s,]+/)) {
-      if (!part) continue;
-      const range = part.match(/^(\d+)\s*-\s*(\d+)$/);
-      if (range) {
-        const start = Number.parseInt(range[1], 10);
-        const end = Number.parseInt(range[2], 10);
-        if (start < 1 || end < 1 || start > total || end > total) return [];
-        const low = Math.min(start, end);
-        const high = Math.max(start, end);
-        for (let chapterNumber = low; chapterNumber <= high; chapterNumber++) {
-          result.add(chapterNumber - 1);
-        }
-        continue;
-      }
-      if (!/^\d+$/.test(part)) return [];
-      const chapterNumber = Number.parseInt(part, 10);
-      if (chapterNumber < 1 || chapterNumber > total) return [];
-      result.add(chapterNumber - 1);
-    }
-    return Array.from(result).sort((left: number, right: number) => left - right);
-  }
-
-  async cacheReaderSingleChapter(index: number): Promise<void> {
-    await this.cacheReaderChapterIndexes([index]);
-  }
-
-  async cacheReaderChapterRange(): Promise<void> {
-    const total = this.readerCacheChapters.length > 0 ? this.readerCacheChapters.length : this.chapters.length;
-    const indexes = this.parseReaderChapterRange(this.readerCacheRangeDraft, total);
-    if (indexes.length === 0) {
-      HdsFeedback.showToast(`请输入有效章节范围（1-${total}）`);
-      return;
-    }
-    await this.cacheReaderChapterIndexes(indexes);
-  }
-
-  async cacheReaderChapterIndexes(indexes: number[]): Promise<void> {
-    if (!this.book || LocalBookService.isLocalBook(this.book) || this.fullTextCaching ||
-      this.readerCacheRangeCaching || indexes.length === 0) {
-      return;
-    }
-    const targetBook = this.book;
-    this.readerCacheRangeCaching = true;
-    let successCount = 0;
-    let failedCount = 0;
-    try {
-      const engine = ReadBookEngine.createBackgroundWorker();
-      await engine.openBook(targetBook);
-      await engine.syncChapterCacheDates();
-      for (const index of indexes) {
-        const chapter = engine.chapters[index];
-        if (!chapter || chapter.cacheDate > 0) continue;
-        this.readerCacheStatus = `正在缓存第 ${index + 1} 章...`;
-        let cached = false;
-        for (let attempt = 0; attempt < 2 && !cached; attempt++) {
-          try {
-            cached = await engine.cacheChapter(index);
-          } catch (error) {
-            if (attempt === 1) console.warn(`缓存第 ${index + 1} 章失败:`, error);
-          }
-          if (!cached && attempt === 0) await this.sleep(300);
-        }
-        if (cached) successCount++;
-        else failedCount++;
-        await this.sleep(0);
-      }
-      await engine.syncChapterCacheDates();
-      this.chapters = [...engine.chapters];
-      this.readerCacheChapters = [...engine.chapters];
-      this.readerCacheStatus = failedCount > 0 ?
-        `缓存完成：${successCount}章成功，${failedCount}章失败` :
-        (successCount > 0 ? `已缓存 ${successCount} 章` : '所选章节均已缓存');
-      HdsFeedback.showToast(failedCount > 0 ? `缓存完成，${failedCount} 章失败` : `已缓存 ${successCount} 章`);
-      AppStorage.setOrCreate('shelfUpdateTime', Date.now());
-    } catch (error) {
-      console.error('阅读页缓存指定章节失败:', error);
-      this.readerCacheStatus = '章节缓存失败';
-      HdsFeedback.showToast('章节缓存失败');
-    } finally {
-      this.readerCacheRangeCaching = false;
-    }
-  }
-
-  async clearReaderCachedChapters(): Promise<void> {
-    if (!this.book || this.fullTextCaching || this.readerCacheRangeCaching) return;
-    const bookUrl = this.book.bookUrl;
-    if (!bookUrl) return;
-    try {
-      const db = AppDatabase.getInstance();
-      await db.initWithContext(getContext(this));
-      await db.deleteBookCachedContent(bookUrl);
-      const engine = ReadBookEngine.get();
-      if (engine.book?.bookUrl === bookUrl) {
-        engine.clearCurrentBookMemoryCache();
-        await engine.syncChapterCacheDates();
-        this.chapters = [...engine.chapters];
-        this.readerCacheChapters = [...engine.chapters];
-      } else {
-        this.readerCacheChapters = this.readerCacheChapters.map((chapter: BookChapter) => {
-          chapter.cacheDate = 0;
-          return chapter;
-        });
-      }
-      this.readerCacheStatus = '已清除缓存章节';
-      HdsFeedback.showToast('已清除缓存章节');
-      AppStorage.setOrCreate('shelfUpdateTime', Date.now());
-    } catch (error) {
-      console.error('阅读页清除缓存章节失败:', error);
-      this.readerCacheStatus = '清除缓存失败';
-      HdsFeedback.showToast('清除缓存失败');
-    }
   }
 
   startFullTextCache(): void {
@@ -1908,20 +1747,6 @@ struct ReadBookPage {
       });
     }).catch((error: Error) => {
       console.warn('获取阅读页窗口失败:', error);
-    });
-  }
-
-  countCachedChapters(chapters: BookChapter[]): number {
-    return ReaderFullTextCacheController.countCached(chapters);
-  }
-
-  fullTextCacheProgressText(): string {
-    return this.fullTextCacheController().progressText();
-  }
-
-  sleep(ms: number): Promise<void> {
-    return new Promise<void>((resolve: () => void) => {
-      setTimeout(() => resolve(), ms);
     });
   }
 
@@ -4043,164 +3868,18 @@ struct ReadBookPage {
   }
 
   @Builder
-  readerCacheDialogContent() {
-    Column() {
-      Text(`缓存《${this.book?.name || '当前书籍'}》`)
-        .fontSize(18)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.getTextColor())
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
-        .textAlign(TextAlign.Center)
-        .margin({ bottom: 8 })
-
-      if (this.readerCachePanelStatus()) {
-        Text(this.readerCachePanelStatus())
-          .fontSize(13)
-          .fontColor(this.getSubTextColor())
-          .width('100%')
-          .textAlign(TextAlign.Center)
-          .margin({ bottom: 8 })
+  readerCacheDialogContent(chapterMode: boolean) {
+    ReaderCacheDialogContent({
+      chapterMode: chapterMode,
+      book: this.book,
+      controller: this.fullTextCacheController(),
+      onStartFullTextCache: (): void => this.startFullTextCache(),
+      onOpenChapterMode: (): void => this.openReaderChapterCacheDialog(),
+      onClose: (): void => this.closeReaderCacheDialog(),
+      onChaptersChanged: (chapters: BookChapter[]): void => {
+        this.chapters = chapters;
       }
-
-      this.readerCacheActionItem(this.fullTextCaching ? '正在缓存...' : '缓存全文', () => {
-        this.startFullTextCache();
-      }, this.fullTextCaching || this.readerCacheRangeCaching)
-      this.readerCacheActionItem('缓存指定章节', () => {
-        this.openReaderChapterCacheDialog();
-      }, this.fullTextCaching || this.readerCacheRangeCaching)
-      this.readerCacheActionItem('清除已缓存章节', () => {
-        this.clearReaderCachedChapters();
-      }, this.fullTextCaching || this.readerCacheRangeCaching, '#E53935')
-
-      Button('取消')
-        .width('100%')
-        .height(44)
-        .margin({ top: 10 })
-        .backgroundColor(this.isReaderThemeDark() ? '#24272D' : '#F5F5F5')
-        .fontColor(this.getTextColor())
-        .enabled(!this.fullTextCaching && !this.readerCacheRangeCaching)
-        .onClick(() => this.closeReaderCacheDialog())
-    }    .width('calc(100% - 32vp)')
-    .constraintSize({ maxWidth: 520 })
-    .padding({ left: 18, right: 18, top: 18, bottom: 18 })
-  }
-
-  @Builder
-  readerCacheActionItem(label: string, action: () => void, disabled: boolean = false,
-    color: string = '') {
-    Button(label)
-      .width('100%')
-      .height(44)
-      .margin({ top: 6 })
-      .backgroundColor(this.isReaderThemeDark() ? '#24272D' : '#F5F5F5')
-      .fontColor(color || this.getTextColor())
-      .enabled(!disabled)
-      .opacity(disabled ? 0.5 : 1)
-      .onClick(action)
-  }
-
-  @Builder
-  readerChapterCacheDialogContent() {
-    Column() {
-      Row() {
-        Text('选择章节缓存')
-          .fontSize(18)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.getTextColor())
-          .layoutWeight(1)
-        Button('关闭')
-          .height(34)
-          .fontSize(13)
-          .borderRadius(17)
-          .enabled(!this.fullTextCaching && !this.readerCacheRangeCaching)
-          .onClick(() => this.closeReaderCacheDialog())
-      }
-      .width('100%')
-      .height(46)
-
-      if (this.readerCachePanelStatus()) {
-        Text(this.readerCachePanelStatus())
-          .fontSize(13)
-          .fontColor(this.getSubTextColor())
-          .width('100%')
-          .margin({ bottom: 8 })
-      }
-
-      Row({ space: 8 }) {
-        TextInput({ placeholder: '章节范围，如 1-10', text: this.readerCacheRangeDraft })
-          .type(InputType.Normal)
-          .fontSize(14)
-          .fontColor(this.getTextColor())
-          .placeholderColor(this.getSubTextColor())
-          .layoutWeight(1)
-          .height(42)
-          .padding({ left: 10, right: 10 })
-          .backgroundColor(this.isReaderThemeDark() ? '#1FFFFFFF' : '#0D000000')
-          .borderRadius(10)
-          .enabled(!this.fullTextCaching && !this.readerCacheRangeCaching)
-          .onChange((value: string) => {
-            this.readerCacheRangeDraft = value;
-          })
-        Button(this.readerCacheRangeCaching ? '缓存中…' : '缓存范围')
-          .width(96)
-          .height(42)
-          .fontSize(13)
-          .fontColor('#FFFFFF')
-          .backgroundColor(this.accentColor())
-          .enabled(!this.fullTextCaching && !this.readerCacheRangeCaching)
-          .onClick(() => this.cacheReaderChapterRange())
-      }
-      .width('100%')
-      Text('支持 1-10、1,3,5-8 等格式')
-        .fontSize(11)
-        .fontColor(this.getSubTextColor())
-        .width('100%')
-        .margin({ top: 4, bottom: 6 })
-
-      if (this.readerCacheChapters.length === 0) {
-        Text('暂未获取到目录')
-          .fontSize(13)
-          .fontColor(this.getSubTextColor())
-          .width('100%')
-          .textAlign(TextAlign.Center)
-          .layoutWeight(1)
-      } else {
-        List({ space: 2 }) {
-          ForEach(this.readerCacheChapters, (chapter: BookChapter, index: number) => {
-            ListItem() {
-              Row({ space: 8 }) {
-                Text(chapter.title)
-                  .fontSize(15)
-                  .fontColor(chapter.cacheDate > 0 ? this.readerCachedChapterTextColor() : this.getTextColor())
-                  .maxLines(2)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .layoutWeight(1)
-                if (chapter.cacheDate > 0) {
-                  Text('已缓存')
-                    .fontSize(11)
-                    .fontColor(this.isReaderThemeDark() ? '#7CC7A0' : '#1F8F55')
-                    .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-                    .backgroundColor(this.isReaderThemeDark() ? '#24382F' : '#E6F4EC')
-                    .borderRadius(4)
-                }
-              }
-              .width('100%')
-              .padding({ left: 2, right: 2, top: 12, bottom: 12 })
-              .onClick(() => this.cacheReaderSingleChapter(index))
-            }
-          }, (chapter: BookChapter, index: number) => `${index}_${chapter.url || chapter.title}`)
-        }
-        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-        .width('100%')
-        .layoutWeight(1)
-        .scrollBar(BarState.Auto)
-      }
-    }    .width('calc(100% - 32vp)')
-    .constraintSize({ maxWidth: 560 })
-    .height(Math.min(560, Math.max(420, this.pageViewHeight - 72)))
-    .padding({ left: 18, right: 18, top: 18, bottom: 18 })
+    })
   }
 
   openLayoutElementSettings(): void {
@@ -16346,10 +16025,8 @@ struct ReadBookPage {
     this.menuChapterSliderActive = false;
     this.menuChapterTooltipVisible = false;
     this.showReaderActionMenu = false;
-    if (!this.fullTextCaching && !this.readerCacheRangeCaching) {
-      this.showReaderCacheDialog = false;
-      this.showReaderChapterCacheDialog = false;
-    }
+    this.showReaderCacheDialog = false;
+    this.showReaderChapterCacheDialog = false;
     this.showLayoutElementSettings = false;
     if (!this.txtCharsetApplying) this.showTxtCharsetDialog = false;
     this.showMenu = false;

@@ -2,6 +2,7 @@ import { common, WantAgent, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { notificationManager } from '@kit.NotificationKit';
 import { BookChapter } from '../../model/data/Book';
+import { AppDatabase } from '../../model/data/AppDatabase';
 import { ReadBookEngine } from '../book/ReadBookEngine';
 import { HdsFeedback } from '../../utils/HdsFeedback';
 import { FullTextCacheCancelCoordinator, FullTextCacheCancelSignal } from '../../utils/FullTextCacheCancelCoordinator';
@@ -26,7 +27,9 @@ export interface ReaderFullTextCacheHost {
 }
 
 /**
- * 阅读页"缓存全文"的后台任务：逐章缓存、通知栏进度与取消、后台长时任务的申请和释放。
+ * 阅读页的章节缓存后台任务：缓存全文或指定章节，逐章缓存、通知栏进度与取消、后台长时任务的申请和释放。
+ * 与书架的缓存任务同一套做法：任务用自己的后台引擎，不占用阅读页正在使用的引擎，
+ * 进度按本次要缓存的章节计算，对话框可以随时关闭而不影响任务。
  * 不持有任何界面状态；后台长时任务与朗读共用同一个 Ability 许可，谁后结束谁负责释放。
  */
 export class ReaderFullTextCacheController {
@@ -36,6 +39,8 @@ export class ReaderFullTextCacheController {
   status: string = '';
   /** 本任务是否在占用后台长时任务许可；朗读停止后台时会读写它来交接许可。 */
   backgroundRunning: boolean = false;
+  /** 任务引擎里的最新目录（含缓存标记），对话框用它刷新"已缓存"标识；没有跑过任务时为空。 */
+  chapters: BookChapter[] = [];
 
   private readonly host: ReaderFullTextCacheHost;
   private taskId: number = 0;
@@ -46,17 +51,49 @@ export class ReaderFullTextCacheController {
   private cancelAgent: WantAgent | null = null;
   private stoppingNotificationTask: Promise<void> | null = null;
   private startedAt: number = 0;
+  private scopeLabel: string = '全文';
+  private engine: ReadBookEngine | null = null;
+  private liveSyncAt: number = 0;
   private notificationSlotReady: boolean = false;
   private notificationFailureHintShown: boolean = false;
 
+  private listeners: Set<() => void> = new Set<() => void>();
+
   constructor(host: ReaderFullTextCacheHost) {
     this.host = host;
+  }
+
+  /** 订阅 caching / done / total / status 的变化，返回取消订阅的函数。对话框组件靠它刷新自己的状态。 */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return (): void => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  /** 进行中优先显示状态文字，其次是进度。 */
+  panelStatus(): string {
+    return this.caching ? (this.status || this.progressText()) : '';
+  }
+
+  private notifyStateChanged(): void {
+    this.host.onStateChanged();
+    for (const listener of Array.from(this.listeners)) listener();
   }
 
   static countCached(chapters: BookChapter[]): number {
     let count = 0;
     for (const chapter of chapters) {
       if (chapter.cacheDate > 0) count++;
+    }
+    return count;
+  }
+
+  static countCachedIn(chapters: BookChapter[], indexes: number[]): number {
+    let count = 0;
+    for (const index of indexes) {
+      const chapter = chapters[index];
+      if (chapter && chapter.cacheDate > 0) count++;
     }
     return count;
   }
@@ -69,14 +106,18 @@ export class ReaderFullTextCacheController {
     return `已缓存 ${done}/${total} 章（${percent}%）`;
   }
 
-  /** 启动一次全文缓存。调用方负责前置校验和提示。 */
-  start(): void {
-    this.run(++this.taskId).catch(async (error: Error): Promise<void> => {
+  /**
+   * 启动一次缓存。chapterIndexes 为空表示全书，否则只缓存这些章节；scopeLabel 用在通知标题和状态文字里
+   * （"全文" 或 "章节"）。调用方负责前置校验和提示。
+   */
+  start(chapterIndexes: number[] = [], scopeLabel: string = '全文'): void {
+    this.scopeLabel = scopeLabel || '全文';
+    this.run(++this.taskId, chapterIndexes).catch(async (error: Error): Promise<void> => {
       if (this.cancelRequested) {
         if (this.stoppingNotificationTask) await this.stoppingNotificationTask;
         this.caching = false;
-        this.status = '全文缓存已取消';
-        this.host.onStateChanged();
+        this.status = '缓存已取消';
+        this.notifyStateChanged();
         await this.publishNotification('缓存已停止', this.progressText(), false);
         await this.stopBackgroundRunning();
         this.releaseCancelRegistration();
@@ -84,12 +125,12 @@ export class ReaderFullTextCacheController {
         return;
       }
       this.releaseCancelRegistration();
-      console.error('全文缓存任务失败:', error);
+      console.error('章节缓存任务失败:', error);
       this.caching = false;
-      this.status = '全文缓存失败';
-      this.host.onStateChanged();
-      HdsFeedback.showToast('全文缓存失败');
-      this.publishNotification('全文缓存失败', this.progressText(), false).catch((e: Error) => {
+      this.status = '缓存失败';
+      this.notifyStateChanged();
+      HdsFeedback.showToast('缓存失败');
+      this.publishNotification('缓存失败', this.progressText(), false).catch((e: Error) => {
         console.warn('更新全文缓存失败通知失败:', e);
       });
       this.stopBackgroundRunning().catch((e: Error) => {
@@ -109,9 +150,9 @@ export class ReaderFullTextCacheController {
     this.beginStopping(signal ? signal.nonce : nonce, true);
   }
 
-  private async run(taskId: number): Promise<void> {
-    const engine = ReadBookEngine.get();
-    if (!engine.book || engine.chapters.length === 0) return;
+  private async run(taskId: number, chapterIndexes: number[]): Promise<void> {
+    const bookUrl = this.host.bookUrl();
+    if (!bookUrl) return;
 
     this.caching = true;
     this.cancelRequested = false;
@@ -121,36 +162,68 @@ export class ReaderFullTextCacheController {
     this.stoppingNotificationTask = null;
     this.startedAt = Date.now();
     this.notificationFailureHintShown = false;
+    this.liveSyncAt = 0;
     this.taskKey = `reader_${taskId}_${this.startedAt}`;
-    this.host.onStateChanged();
-    FullTextCacheCancelCoordinator.register(this.taskKey, engine.book.bookUrl,
+    this.total = 0;
+    this.done = 0;
+    this.status = `${this.scopeLabel}缓存后台进行中`;
+    this.notifyStateChanged();
+    FullTextCacheCancelCoordinator.register(this.taskKey, bookUrl,
       (signal: FullTextCacheCancelSignal): void => {
-        if (FullTextCacheCancelCoordinator.matches(signal, this.taskKey, engine.book?.bookUrl || '')) {
+        if (FullTextCacheCancelCoordinator.matches(signal, this.taskKey, bookUrl)) {
           this.beginStopping(signal.nonce, true);
         }
       });
-    await engine.syncChapterCacheDates();
-    this.host.onChaptersChanged([...engine.chapters]);
-    this.total = engine.chapters.length;
-    this.done = ReaderFullTextCacheController.countCached(engine.chapters);
-    this.status = '全文缓存后台进行中';
-    this.host.onStateChanged();
 
     await this.startBackgroundRunning();
     await this.requestNotificationEnabled();
-    await this.publishProgress(true);
+    await this.publishNotification('准备缓存章节', this.progressText(), true);
 
-    for (let index = 0; index < engine.chapters.length; index++) {
+    // The task owns its engine. The reader's engine follows whatever book and chapter the reader is on;
+    // sharing it would let a book switch or a cancelled request in the reader derail the task.
+    const db = AppDatabase.getInstance();
+    await db.initWithContext(this.host.abilityContext());
+    const book = await db.getBook(bookUrl);
+    if (!book) throw new Error('书籍不存在');
+    const engine = ReadBookEngine.createBackgroundWorker();
+    this.engine = engine;
+    await engine.openBook(book);
+    await engine.syncChapterCacheDates();
+    if (taskId !== this.taskId) {
+      this.releaseCancelRegistration();
+      return;
+    }
+
+    // A scoped task reports progress against the chapters it was asked for, so the percentage in the
+    // notification matches the request. Indexes that no longer exist after a catalogue refresh are dropped.
+    const targets: number[] = [];
+    if (chapterIndexes.length === 0) {
+      for (let index = 0; index < engine.chapters.length; index++) targets.push(index);
+    } else {
+      for (const index of chapterIndexes) {
+        if (index >= 0 && index < engine.chapters.length) targets.push(index);
+      }
+    }
+    this.chapters = [...engine.chapters];
+    this.total = targets.length;
+    this.done = ReaderFullTextCacheController.countCachedIn(engine.chapters, targets);
+    this.notifyStateChanged();
+
+    if (!this.shouldCancel()) await this.publishProgress(true);
+
+    for (let position = 0; position < targets.length; position++) {
       if (taskId !== this.taskId || this.shouldCancel()) break;
+      const index = targets[position];
       const chapter = engine.chapters[index];
       if (!chapter || chapter.cacheDate > 0) continue;
 
       const ok = await this.cacheChapter(engine, index, taskId);
       if (taskId !== this.taskId) break;
       if (ok) {
-        this.done = ReaderFullTextCacheController.countCached(engine.chapters);
-        this.host.onStateChanged();
-        this.host.onChaptersChanged([...engine.chapters]);
+        this.done = ReaderFullTextCacheController.countCachedIn(engine.chapters, targets);
+        this.chapters = [...engine.chapters];
+        this.notifyStateChanged();
+        await this.syncLiveEngine(bookUrl, false);
       }
       if (this.shouldCancel()) break;
       await this.publishProgress(false);
@@ -164,19 +237,37 @@ export class ReaderFullTextCacheController {
 
     const canceled = this.shouldCancel();
     await engine.syncChapterCacheDates();
-    this.host.onChaptersChanged([...engine.chapters]);
-    this.done = ReaderFullTextCacheController.countCached(engine.chapters);
+    this.chapters = [...engine.chapters];
+    this.done = ReaderFullTextCacheController.countCachedIn(engine.chapters, targets);
+    await this.syncLiveEngine(bookUrl, true);
     this.caching = false;
     const failedCount = Math.max(0, this.total - this.done);
-    this.status = canceled ? '全文缓存已取消' :
-      (failedCount > 0 ? `缓存结束，${failedCount} 章未缓存` : '全文缓存完成');
-    this.host.onStateChanged();
+    this.status = canceled ? '缓存已取消' :
+      (failedCount > 0 ? `缓存结束，${failedCount} 章未缓存` : `${this.scopeLabel}缓存完成`);
+    this.notifyStateChanged();
     if (canceled && this.stoppingNotificationTask) await this.stoppingNotificationTask;
     await this.publishNotification(canceled ? '缓存已停止' : this.status, this.progressText(), false);
-    HdsFeedback.showToast(canceled ? '缓存已停止' : '全文缓存完成');
+    HdsFeedback.showToast(canceled ? '缓存已停止' : `缓存完成 ${this.done}/${this.total}`);
+    AppStorage.setOrCreate('shelfUpdateTime', Date.now());
     await this.stopBackgroundRunning();
     this.releaseCancelRegistration();
     this.cancelRequested = false;
+  }
+
+  // The reader's own engine holds separate chapter objects. Refresh their cache marks from the database,
+  // at most every couple of seconds while the task runs, so the reader's catalogue shows "已缓存" too.
+  private async syncLiveEngine(bookUrl: string, force: boolean): Promise<void> {
+    const now = Date.now();
+    if (!force && now - this.liveSyncAt < 2000) return;
+    this.liveSyncAt = now;
+    try {
+      const live = ReadBookEngine.get();
+      if (live.book?.bookUrl !== bookUrl) return;
+      await live.syncChapterCacheDates();
+      if (live.book?.bookUrl === bookUrl) this.host.onChaptersChanged([...live.chapters]);
+    } catch (error) {
+      console.warn('同步阅读页目录缓存标记失败:', error);
+    }
   }
 
   private beginStopping(nonce: number, showHint: boolean): void {
@@ -184,14 +275,15 @@ export class ReaderFullTextCacheController {
     this.cancelRequested = true;
     this.cancelSeenNonce = nonce;
     this.status = '正在停止缓存…';
-    this.host.onStateChanged();
-    ReadBookEngine.get().cancelPendingRequests();
+    this.notifyStateChanged();
+    if (this.engine) this.engine.cancelPendingRequests();
     this.stoppingNotificationTask = this.publishNotification('正在停止缓存…', this.progressText(), true)
       .catch((error: Error) => console.warn('更新正在停止缓存通知失败:', error));
     if (showHint) HdsFeedback.showToast('正在停止缓存…');
   }
 
   private releaseCancelRegistration(): void {
+    this.engine = null;
     FullTextCacheCancelCoordinator.unregister(this.taskKey);
     this.taskKey = '';
     this.stoppingNotificationTask = null;
@@ -234,7 +326,7 @@ export class ReaderFullTextCacheController {
     const now = Date.now();
     if (!force && now - this.notificationLastAt < NOTIFICATION_INTERVAL_MS) return;
     this.notificationLastAt = now;
-    await this.publishNotification(this.status || '全文缓存后台进行中', this.progressText(), true);
+    await this.publishNotification(this.status || `${this.scopeLabel}缓存后台进行中`, this.progressText(), true);
   }
 
   // Same request shape as the bookshelf's cache notification, which is known to publish: an explicit slot,
@@ -271,7 +363,7 @@ export class ReaderFullTextCacheController {
       content: {
         notificationContentType: notificationManager.ContentType.NOTIFICATION_CONTENT_BASIC_TEXT,
         normal: {
-          title: bookName ? `缓存全文：${bookName}` : '缓存全文',
+          title: bookName ? `缓存${this.scopeLabel}：${bookName}` : `缓存${this.scopeLabel}`,
           // The system panel does not show additionalText, so the progress has to ride in the main line.
           text: ongoing && additionalText && !text.includes(additionalText) ? `${text} · ${additionalText}` : text,
           additionalText: additionalText

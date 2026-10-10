@@ -4920,7 +4920,7 @@ struct BookshelfPage {
       }
 
       Row({ space: 8 }) {
-        TextInput({ placeholder: '章节范围，如 1-10', text: this.cacheRangeDraft })
+        TextInput({ placeholder: '章节范围，如 1-10、1,3,5-8', text: this.cacheRangeDraft })
           .type(InputType.Normal)
           .fontSize(14)
           .fontColor(this.primaryTextColor())
@@ -4934,7 +4934,7 @@ struct BookshelfPage {
           .onChange((value: string) => {
             this.cacheRangeDraft = value;
           })
-        Button('缓存范围')
+        Button('缓存')
           .width(96)
           .height(42)
           .fontSize(13)
@@ -4944,11 +4944,7 @@ struct BookshelfPage {
           .onClick(() => this.cacheChapterRange())
       }
       .width('100%')
-      Text('支持 1-10、1,3,5-8 等格式')
-        .fontSize(11)
-        .fontColor(this.subTextColor())
-        .width('100%')
-        .margin({ top: 4, bottom: 6 })
+      .margin({ bottom: 8 })
 
       List({ space: 2 }) {
         ForEach(this.cacheChapters, (chapter: BookChapter, index: number) => {

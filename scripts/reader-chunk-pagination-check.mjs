@@ -5,7 +5,8 @@
 
 import { loadReaderModules } from './lib/load-reader-modules.mjs';
 
-const { ReaderChunkPagination: C, ReaderActionMarker, ReaderImageMarker, cleanup } = await loadReaderModules();
+const { ReaderChunkPagination: C, ReaderChapterRange, ReaderActionMarker, ReaderImageMarker, cleanup } =
+  await loadReaderModules();
 
 let failures = 0;
 function check(condition, label, detail = '') {
@@ -122,6 +123,19 @@ try {
   check(errorText.pages.length === 1, '漫画：纯文字提示一块');
   const broken = C.splitComic(`${ReaderImageMarker.PREFIX}没有结束`, false);
   check(broken.pages.length === 1, '漫画：残缺标记按文字处理而不是死循环');
+
+  // ---- 章节范围输入 ----
+  const range = (raw, total = 100) => JSON.stringify(ReaderChapterRange.parse(raw, total));
+  check(range('1-3') === '[0,1,2]', '范围：1-3');
+  check(range('3-1') === '[0,1,2]', '范围：倒写的区间');
+  check(range('1,3,5-6') === '[0,2,4,5]', '范围：逗号与区间混写');
+  check(range('5，3、3；1') === '[0,2,4]', '范围：中文分隔符、去重并排序');
+  check(range('2 至 4') === '[]' && range('2至4') === '[1,2,3]', '范围：“至”紧贴数字才算区间');
+  check(range('2～4') === '[1,2,3]', '范围：波浪号');
+  check(range(' 7 ') === '[6]', '范围：单章');
+  check(range('0-3') === '[]' && range('99-101') === '[]' && range('101') === '[]', '范围：越界整体无效');
+  check(range('1-3,abc') === '[]' && range('一到三') === '[]', '范围：无法识别整体无效');
+  check(range('') === '[]' && range('1-3', 0) === '[]', '范围：空输入或没有目录');
 } finally {
   cleanup();
 }
