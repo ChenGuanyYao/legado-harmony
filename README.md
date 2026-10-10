@@ -299,9 +299,6 @@ node --experimental-strip-types scripts/reader-info-bar-check.mjs
 
 - [书源开发文档](docs/book-source-development.md)
 - [主题开发指南](docs/theme-development.md)
-- [阅读器回归清单](docs/reader-regression-checklist.md)
-- [主题图片提示词](docs/theme-cat-pipi-image-prompts.md)
-- [华为账号与 IAP 发布检查清单](docs/huawei-account-iap-release-checklist.md)
 
 ## 合规与免责声明
 
