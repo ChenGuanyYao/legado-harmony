@@ -12,9 +12,12 @@ const etsDir = path.join(root, 'entry', 'src', 'main', 'ets');
 
 const MODULES = [
   'core/book/ReaderImageMarker.ts',
+  'core/book/ReaderActionMarker.ts',
   'core/book/EpubHtmlConverter.ts',
   'core/book/EpubChapterPlanner.ts',
   'core/reader/ReaderMixedPageLayout.ts',
+  'core/reader/ReaderTextNormalizer.ts',
+  'core/reader/ReaderPageOffsets.ts',
 ];
 
 export async function loadReaderModules() {

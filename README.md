@@ -236,6 +236,7 @@ node scripts/thread-blocking-check.mjs
 node scripts/theme-framework-check.mjs
 node --experimental-strip-types scripts/java-regex-compat-check.mjs
 node --experimental-strip-types scripts/replace-rule-import-check.mjs
+node --experimental-strip-types scripts/reader-text-normalizer-check.mjs
 ```
 
 - `neutral-source-engine-check`：检查是否引入固定内容接口、默认凭据或站点专用后端。
@@ -243,6 +244,7 @@ node --experimental-strip-types scripts/replace-rule-import-check.mjs
 - `theme-framework-check`：检查主题注册、令牌和资源安全约束。
 - `java-regex-compat-check`：检查 Android/Java 正则方言到 JavaScript 的转换，避免书源正则与替换净化规则因 `(?i)`、占有量词一类语法整条失效。
 - `replace-rule-import-check`：检查替换净化规则导入的字段别名映射，确保阅读/Legado/YueDu 导出的规则文件能直接导入。
+- `reader-text-normalizer-check`：检查正文归一化（软换行合并、段首缩进、重复标题）与字符偏移到页码的映射，避免已保存的阅读进度落到错误的页。
 
 这些脚本用于代码回归，不能替代授权审查、安全审计或法律意见。
 
@@ -284,6 +286,7 @@ node --experimental-strip-types scripts/replace-rule-import-check.mjs
 
 - [书源开发文档](docs/book-source-development.md)
 - [主题开发指南](docs/theme-development.md)
+- [阅读器回归清单](docs/reader-regression-checklist.md)
 - [主题图片提示词](docs/theme-cat-pipi-image-prompts.md)
 - [华为账号与 IAP 发布检查清单](docs/huawei-account-iap-release-checklist.md)
 

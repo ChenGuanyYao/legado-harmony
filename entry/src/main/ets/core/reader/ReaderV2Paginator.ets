@@ -36,6 +36,24 @@ export class ReaderV2PaginationSession {
   lineIndex: number = 0;
   pageIndex: number = 0;
   measuredBlock: ReaderV2MeasuredBlock | null = null;
+  private blockStyles: ReaderV2SpanStyleRange[] = [];
+  private blockStylesIndex: number = -1;
+
+  /**
+   * Regex styles overlapping the current block, in their original order. Every style lookup below is
+   * block-local, so scanning the whole chapter's styles per boundary made pagination O(blocks × styles).
+   */
+  currentBlockStyles(): ReaderV2SpanStyleRange[] {
+    if (this.regexStyles.length === 0) return this.regexStyles;
+    if (this.blockStylesIndex !== this.blockIndex) {
+      const block = this.document.blocks[this.blockIndex];
+      const blockEnd = block.displayStart + block.text.length;
+      this.blockStyles = this.regexStyles.filter((style: ReaderV2SpanStyleRange): boolean =>
+        style.end > block.displayStart && style.start < blockEnd);
+      this.blockStylesIndex = this.blockIndex;
+    }
+    return this.blockStyles;
+  }
 
   constructor(document: ReaderV2Document, snapshot: ReaderV2LayoutSnapshot,
     regexStyles: ReaderV2SpanStyleRange[]) {
@@ -153,7 +171,7 @@ export class ReaderV2Paginator {
         let current = session.measuredBlock;
         if (!current || current.block !== session.document.blocks[session.blockIndex]) {
           current = ReaderV2Paginator.measureBlock(session.document, session.document.blocks[session.blockIndex],
-            session.snapshot, session.regexStyles, session.width);
+            session.snapshot, session.currentBlockStyles(), session.width);
           session.measuredBlock = current;
         }
         if (current.lines.length === 0) {
@@ -209,7 +227,7 @@ export class ReaderV2Paginator {
 
         const fragment = ReaderV2Paginator.createFragment(session.document, current, session.blockIndex,
           fragmentFirstLine, fragmentLastLine, column.left, y, paragraphLineTop, fragmentBottom,
-          session.snapshot, session.regexStyles, session.width);
+          session.snapshot, session.currentBlockStyles(), session.width);
         page.fragments.push(fragment);
         ReaderV2Paginator.appendActionAreas(page, fragment, session.document.actions);
         if (!hasContent) page.displayStart = fragment.displayStart;
@@ -446,14 +464,19 @@ export class ReaderV2Paginator {
     // Render only the lines owned by this page. Painting the full block and clipping at a line metric boundary
     // cuts italic/anti-aliased ink at the top and may expose one or two pixels of the next line at the bottom.
     // A page-local paragraph contains no neighbouring lines, so a small ink bleed is safe and layout-neutral.
-    fragment.paragraph = ReaderV2Paginator.buildParagraph(document, current.block, snapshot, regexStyles, width,
-      first.startIndex, last.endIndex);
+    // A block that fits on the page whole is the common case: its measured paragraph already is that
+    // page-local paragraph, so laying the same text out a second time is skipped.
+    const wholeBlock = firstLine === 0 && lastLine === current.lines.length - 1 &&
+      first.startIndex === 0 && last.endIndex === current.block.text.length;
+    fragment.paragraph = wholeBlock ? current.paragraph :
+      ReaderV2Paginator.buildParagraph(document, current.block, snapshot, regexStyles, width,
+        first.startIndex, last.endIndex);
     fragment.selectionRuns = ReaderV2Paginator.buildSelectionRuns(document, current.block, snapshot, regexStyles,
       first.startIndex, last.endIndex);
     fragment.paragraphX = x;
     fragment.paragraphY = y;
     fragment.paragraphHeight = paragraphLineBottom - paragraphLineTop;
-    const localLines = fragment.paragraph.getLineMetrics();
+    const localLines = wholeBlock ? current.lines : fragment.paragraph.getLineMetrics();
     const topInkBleedPx = localLines.length > 0 ? ReaderV2Paginator.lineTopInkGuard(localLines[0]) : 1;
     const bottomInkBleedPx = localLines.length > 0 ?
       ReaderV2Paginator.lineBottomInkGuard(localLines[localLines.length - 1]) : 1;
