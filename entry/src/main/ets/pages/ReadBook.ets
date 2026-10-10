@@ -561,6 +561,9 @@ struct ReadBookPage {
   private readerInfoBarConfigCacheRaw: string = '';
   private readerInfoBarLayoutIdentity: string = '';
   private readerInfoBarClock: ReaderInfoBarClock | null = null;
+  // 分页区域下缘到窗口下缘的实测距离（vp）。窗口为全屏布局时分页区域本身就铺到窗口底部，该值为 0；
+  // 只有系统仍为导航条保留了布局安全区时才大于 0。-1 表示尚未测量。
+  private readerPageAreaBottomGap: number = -1;
   @StorageLink('readerReplaceRulesUpdateTime') @Watch('onReaderReplaceRulesChanged') readerReplaceRulesUpdateTime: number = 0;
   @StorageLink('readerFontFamily') @Watch('onReaderFontChanged') readerFontFamily: string = '';
   @StorageLink('readerFontFilePath') @Watch('onReaderFontChanged') readerFontFilePath: string = '';
@@ -4884,10 +4887,47 @@ struct ReadBookPage {
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
+  /**
+   * 量出分页区域下缘离窗口下缘还有多远。分页区域从正文容器的顶部内边距之后开始、占满剩余高度，
+   * 所以它的下缘就是"顶部内边距 + 区域高度"。结果限制在导航条高度以内，量不到时保持原值。
+   */
+  measureReaderPageAreaBottomGap(areaHeight: number): number {
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      const windowRect = context.windowStage.getMainWindowSync().getWindowProperties().windowRect;
+      const windowHeight = px2vp(windowRect.height);
+      if (windowHeight <= 0 || areaHeight <= 0) return this.readerPageAreaBottomGap;
+      const gap = windowHeight - (this.getReaderTopSafePadding() + areaHeight);
+      // 亚像素误差按贴底处理，避免来回触发重新分页。
+      if (gap < 1) return 0;
+      return Math.min(Math.max(0, this.navBarHeight), Math.round(gap * 2) / 2);
+    } catch (_) {
+      return this.readerPageAreaBottomGap;
+    }
+  }
+
+  /** 分页区域之下、仍属于本窗口的那段系统导航条区域的高度；阅读表面的纸张会延伸进这段区域。 */
+  getReaderBottomSystemExtension(): number {
+    return Math.max(0, this.readerPageAreaBottomGap);
+  }
+
+  /**
+   * 正文为避让底部导航条需要在分页区域内留出的高度，与"正文扩展至状态栏"无关。
+   * 分页区域贴到窗口底部时是整个导航条高度；系统已经把导航条排除在分页区域之外时为 0。
+   */
+  getReaderNavigationBottomReserve(): number {
+    if (this.isReaderComicModeActive()) return 0;
+    return Math.max(0, Math.max(0, this.navBarHeight) - this.getReaderBottomSystemExtension());
+  }
+
   updatePagedReaderArea(area: Area): void {
     const width = this.parseAreaDimension(area.width);
     const contentTopPadding = this.getReaderPageContentTopPadding();
     const height = this.parseAreaDimension(area.height) - contentTopPadding;
+    const previousNavigationReserve = this.getReaderNavigationBottomReserve();
+    this.readerPageAreaBottomGap = this.measureReaderPageAreaBottomGap(this.parseAreaDimension(area.height));
+    const navigationReserveChanged =
+      Math.abs(this.getReaderNavigationBottomReserve() - previousNavigationReserve) >= 0.5;
     this.readerPageContentTopPaddingSnapshot = contentTopPadding;
     if (width <= 0 || height <= 0) {
       return;
@@ -4897,7 +4937,8 @@ struct ReadBookPage {
     const globalY: Length = area.globalPosition?.y ?? 0;
     this.readerCommentPageAreaTop = this.parseAreaDimension(globalY);
     this.readerCommentPageAreaHeight = height;
-    if (Math.abs(this.pageViewWidth - width) < 0.5 && Math.abs(this.pageViewHeight - height) < 0.5) {
+    if (Math.abs(this.pageViewWidth - width) < 0.5 && Math.abs(this.pageViewHeight - height) < 0.5 &&
+      !navigationReserveChanged) {
       return;
     }
     const preservingStoredOffset = !this.readerProgressRestoreConfirmed &&
@@ -6205,9 +6246,13 @@ struct ReadBookPage {
   getReaderContentBottomReserve(): number {
     // The reader surface extends through the system navigation area. Reserve the footer line plus its visual
     // lift so the last正文 row cannot be painted underneath metadata moved above the gesture indicator.
-    if (!this.readerFooterEnabled || this.isReaderComicModeActive()) return 0;
-    return Math.max(8, this.getReaderBottomInfoBarHeight() + this.getReaderBottomInfoBarBottomInset() +
-      this.getReaderBottomInfoBarContentGap());
+    // The footer itself is painted inside the navigation area, just above the gesture indicator, so the two
+    // reserves overlap: take the larger one instead of stacking them.
+    if (this.isReaderComicModeActive()) return 0;
+    const navigationReserve = this.getReaderNavigationBottomReserve();
+    if (!this.readerFooterEnabled) return navigationReserve;
+    return Math.max(8, navigationReserve, this.getReaderBottomInfoBarHeight() +
+      this.getReaderBottomInfoBarBottomInset() + this.getReaderBottomInfoBarContentGap());
   }
 
   getReaderBottomInfoBarHeight(): number {
@@ -6238,7 +6283,9 @@ struct ReadBookPage {
   getReaderV2BottomGuard(): number {
     // Native Paragraph pagination is created before the footer's first area callback. Use the deterministic
     // fallback line height here so measuring the real Text never invalidates a retained pagination session.
-    if (!this.readerFooterEnabled || this.isReaderComicModeActive()) return 0;
+    if (this.isReaderComicModeActive()) return 0;
+    const navigationReserve = this.getReaderNavigationBottomReserve();
+    if (!this.readerFooterEnabled) return navigationReserve;
     const infoBarConfig = this.getReaderInfoBarConfig();
     let footerHeight = infoBarConfig.fontSize;
     try {
@@ -6247,7 +6294,7 @@ struct ReadBookPage {
       footerHeight = infoBarConfig.fontSize;
     }
     footerHeight += infoBarConfig.footerExtraHeight();
-    return Math.max(8, footerHeight + this.getReaderBottomInfoBarBottomInset() +
+    return Math.max(8, navigationReserve, footerHeight + this.getReaderBottomInfoBarBottomInset() +
       this.getReaderBottomInfoBarContentGap());
   }
 
@@ -6381,12 +6428,9 @@ struct ReadBookPage {
   }
 
   getReaderPaginationViewportHeight(): number {
-    // pageViewHeight is reported before the declarative bottom-safe-area expansion. Extended reading
-    // intentionally lets正文 use that system area, so pagination must include the same navigation inset that
-    // the rendered page-turn surface receives. Do not add the top inset: the hidden status bar already starts
-    // the reader at y=0, and adding it caused the previous whole-page upward shift.
-    const bottomExtension = this.readerExtendToStatusBar ? Math.max(0, this.navBarHeight) : 0;
-    return Math.max(1, this.pageViewHeight + bottomExtension);
+    // 正文始终避让底部导航条，"正文扩展至状态栏"只影响顶部，所以分页视口就是实测的分页区域。
+    // 导航条那一段由 getReaderNavigationBottomReserve() 在视口内部预留；纸张背景仍会铺到屏幕底部。
+    return Math.max(1, this.pageViewHeight);
   }
 
   getReaderBackgroundViewportHeight(): number {
@@ -8126,7 +8170,7 @@ struct ReadBookPage {
       this.readerHeaderFooterSettingsPanel()
       this.readerFontEntryItem()
 
-      this.readerSwitchSettingItem('正文扩展至状态栏', '开启后正文同时延伸到顶部状态栏和底部系统安全区', this.readerExtendToStatusBar,
+      this.readerSwitchSettingItem('正文扩展至状态栏', '开启后隐藏状态栏，正文延伸到屏幕顶部', this.readerExtendToStatusBar,
         (checked: boolean) => {
           this.setReaderExtendToStatusBar(checked);
         })
@@ -14097,9 +14141,10 @@ struct ReadBookPage {
     const layoutMode = this.isReaderComicModeActive() ? 'comic' :
       (this.isReaderNovelContinuousScrollModeActive() ? 'continuous' : 'paged');
     const headerReserve = Math.round(this.getReaderHeaderContentReserve() * 100) / 100;
-    return `reader_page_v83_${layoutMode}_${chapterIndex}_${this.pageViewWidth}_` +
+    return `reader_page_v84_${layoutMode}_${chapterIndex}_${this.pageViewWidth}_` +
       `${this.getReaderPaginationViewportHeight()}_` +
-      `${headerReserve}_${footerHeight}_${this.readerHeaderEnabled}_${this.readerFooterEnabled}_` +
+      `${headerReserve}_${footerHeight}_${Math.round(this.getReaderNavigationBottomReserve() * 100) / 100}_` +
+      `${this.readerHeaderEnabled}_${this.readerFooterEnabled}_` +
       `${this.readerExtendToStatusBar}_${this.isLandscapeDoublePageActive()}_${this.readerTypographyCacheIdentity()}_` +
       `${this.readerParagraphCommentPaginationIdentity()}_` +
       `${source.length}_${this.hashText(source)}`;
@@ -15719,10 +15764,12 @@ struct ReadBookPage {
 
   getPageTurnHeight(): number {
     const contentHeight = this.pageViewHeight > 0 ? this.pageViewHeight : 640;
-    // The declarative page-turn surface expands through the bottom system safe area. pageViewHeight is measured
-    // before that expansion, so omitting the navigation inset scales a full-height snapshot into a shorter canvas
-    // and makes the entire page visibly squeeze upward while it is turning.
-    return Math.max(1, contentHeight + this.getReaderPageContentTopPadding() + Math.max(0, this.navBarHeight));
+    // The declarative page-turn surface expands through the bottom system safe area. When pageViewHeight is
+    // measured before that expansion, omitting the inset scales a full-height snapshot into a shorter canvas
+    // and makes the entire page visibly squeeze upward while it is turning. The inset is the measured gap below
+    // the paged area, which is zero when the area already reaches the window bottom.
+    return Math.max(1, contentHeight + this.getReaderPageContentTopPadding() +
+      this.getReaderBottomSystemExtension());
   }
 
   isVerticalPageTurnAnimation(): boolean {

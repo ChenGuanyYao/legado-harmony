@@ -167,7 +167,7 @@ struct SettingsPage {
             this.readerHeaderFooterSettingsPanel()
             this.readerFontEntryItem()
             this.readerReplaceRulesEntryItem()
-            this.switchItem('正文扩展至状态栏', '开启后正文阅读区域会延伸到顶部状态栏安全区', this.readerExtendToStatusBar, (value: boolean) => {
+            this.switchItem('正文扩展至状态栏', '开启后隐藏状态栏，正文延伸到屏幕顶部', this.readerExtendToStatusBar, (value: boolean) => {
               this.setReaderExtendToStatusBar(value);
             })
             this.switchItem('保留段首缩进', '章节开头与页首保留原文的全角空格缩进', this.keepParagraphIndent, (value: boolean) => {
