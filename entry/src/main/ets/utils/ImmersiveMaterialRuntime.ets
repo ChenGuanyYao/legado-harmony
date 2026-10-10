@@ -2,6 +2,18 @@ import deviceInfo from '@ohos.deviceInfo';
 import { uiMaterial } from '@kit.ArkUI';
 import { hdsMaterial } from '@kit.UIDesignKit';
 
+/**
+ * Applies the shared dropdown material to a Select. `menuSystemMaterial` only exists from API 26; calling the
+ * attribute directly on an older system fails while the page is being built, so it is set through this modifier,
+ * which leaves older systems on their platform default.
+ */
+export class SelectMenuMaterialModifier implements AttributeModifier<SelectAttribute> {
+  applyNormalAttribute(instance: SelectAttribute): void {
+    if (deviceInfo.sdkApiVersion < 26) return;
+    instance.menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial());
+  }
+}
+
 /** Centralizes HDS material probing and compatibility fallback. */
 export class ImmersiveMaterialRuntime {
   static readonly KEY_LIGHT_LEVEL: string = 'immersiveLightLevel';
@@ -114,6 +126,11 @@ export class ImmersiveMaterialRuntime {
    * shadows on API 26+, which makes identical controls look different across
    * pages. Older devices keep the platform fallback by returning undefined.
    */
+  /** A fresh instance per build pass, so a changed light-sense setting is applied again. */
+  static selectMenuModifier(): SelectMenuMaterialModifier {
+    return new SelectMenuMaterialModifier();
+  }
+
   static selectMenuMaterial(): uiMaterial.ImmersiveMaterial | undefined {
     if (!ImmersiveMaterialRuntime.supportsHds()) return undefined;
     return new uiMaterial.ImmersiveMaterial({

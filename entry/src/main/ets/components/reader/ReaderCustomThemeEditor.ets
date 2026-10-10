@@ -201,7 +201,8 @@ export struct ReaderCustomThemeEditor {
           .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.dark))
           .menuBackgroundColor(this.menuColor)
           .menuBackgroundBlurStyle(BlurStyle.NONE)
-          .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
+          // Trial of the version-guarded form; the two dropdowns below still call the attribute directly.
+          .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
           .onSelect((index: number) => this.select(index))
         Button('新增')
           .height(36)

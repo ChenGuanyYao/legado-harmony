@@ -2194,7 +2194,9 @@ struct ReadBookPage {
           !this.isTtsSpeaking && !this.ttsReader.isSpeaking() && !this.globalTtsActive) {
           this.readerTtsQuickActionButton()
         }
-        if (this.readerUseTtsQuickAction && this.shouldShowTtsMediaControls()) {
+        // The bar is an HDS floating tab bar, which needs API 23.
+        if (this.readerUseTtsQuickAction && ImmersiveMaterialRuntime.supportsHdsTabs() &&
+          this.shouldShowTtsMediaControls()) {
           this.ttsExpandedMediaControlsBar()
         }
       }
