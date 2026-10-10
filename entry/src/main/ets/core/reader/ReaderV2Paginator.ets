@@ -136,7 +136,7 @@ export class ReaderV2Paginator {
       while (session.blockIndex < session.document.blocks.length && !mustEndPage) {
         const imageBlock = session.document.blocks[session.blockIndex];
         if (imageBlock.image) {
-          // Same rules as the legacy mixed paginator (ReaderMixedPageLayout): small images flow with the text at
+          // Image sizing rules live in ReaderMixedPageLayout: small images flow with the text at
           // their natural size; illustrations and images of unknown size fill the rest of the page and end it.
           const gap = hasContent ? ReaderV2Paginator.imageGap(session.snapshot) : 0;
           const remaining = columnBottom - y - gap;

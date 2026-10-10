@@ -18,6 +18,7 @@ const MODULES = [
   'core/reader/ReaderMixedPageLayout.ts',
   'core/reader/ReaderTextNormalizer.ts',
   'core/reader/ReaderPageOffsets.ts',
+  'core/reader/ReaderChunkPagination.ts',
 ];
 
 export async function loadReaderModules() {

@@ -22,6 +22,7 @@ const explore = read('entry/src/main/ets/core/book/ExploreCoordinator.ts');
 const webBook = read('entry/src/main/ets/core/book/WebBookService.ts');
 const index = read('entry/src/main/ets/pages/Index.ets');
 const reader = read('entry/src/main/ets/pages/ReadBook.ets');
+const paginator = read('entry/src/main/ets/core/reader/ReaderV2Paginator.ets');
 
 assert(scheduler.includes('DEFAULT_UI_SLICE_MS: number = 6'),
   'Cooperative scheduler must keep the UI work slice below one frame');
@@ -63,7 +64,7 @@ assert(reader.includes('ReaderContentPreprocessor.apply'),
   'Reader content must pass through the asynchronous preprocessor');
 assert(reader.includes('this.appendReaderPaginationBatch(result, chapterIndex, imageOnlyPagination ? 8 : 1)'),
   'Background pagination must be bounded to one text page or a small pure-image batch');
-assert(reader.includes('breakStrategy: graphicsText.BreakStrategy.GREEDY'),
+assert(paginator.includes('breakStrategy: graphicsText.BreakStrategy.GREEDY'),
   'Native paragraph measurement must use the bounded greedy line-break strategy');
 assert(reader.includes('batchElapsedMs') && reader.includes('adaptiveDelay'),
   'Background pagination must monitor cost and adapt its scheduling delay');

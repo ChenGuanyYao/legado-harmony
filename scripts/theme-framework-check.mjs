@@ -50,6 +50,7 @@ const readerThemes = read('entry/src/main/ets/utils/ReaderThemeHelper.ets');
 const regexModel = read('entry/src/main/ets/model/reader/ReaderRegexFontRule.ets');
 const regexSettings = read('entry/src/main/ets/pages/ReaderFontSettings.ets');
 const reader = read('entry/src/main/ets/pages/ReadBook.ets');
+const readerPaginator = read('entry/src/main/ets/core/reader/ReaderV2Paginator.ets');
 const readerBackgroundComponent = read('entry/src/main/ets/components/ReaderThemeBackground.ets');
 const indexPage = read('entry/src/main/ets/pages/Index.ets');
 const bookModel = read('entry/src/main/ets/model/data/Book.ts');
@@ -244,7 +245,9 @@ for (const styleId of bubbleStyles) {
 assert(regexModel.includes('schemaVersion: number = 3'), 'Regex rule schema must be version 3');
 assert(regexSettings.includes('ReaderRegexFontCodec.decode'), 'Settings page must use the shared regex codec');
 assert(reader.includes('ReaderRegexFontCodec.decode'), 'Reader page must use the shared regex codec');
-assert(reader.includes('if (slice.ttsHighlighted)'), 'TTS highlight precedence is missing');
+// The TTS focus is painted from paragraph geometry as its own layer above the text and regex bubbles.
+assert(reader.includes('readerV2TtsHighlightRects(') && reader.includes('this.readerCurrentV2TtsOverlay('),
+  'TTS highlight overlay is missing');
 assert(reader.includes('start >= displayText.length || regex.lastIndex >= displayText.length'),
   'Reader zero-length regex guard is missing');
 assert(regexSettings.includes('start >= text.length || regex.lastIndex >= text.length'),
@@ -350,9 +353,10 @@ assert(readerSettingsPage.includes('this.typographyStepper()') &&
   readerSettingsPage.includes("{ value: '下边距' }") &&
   readerSettingsPage.includes('adjustCurrentTypographySetting'),
   'Reader typography dropdown/stepper does not expose all four margins');
-assert(reader.includes('this.getEffectiveReaderMarginLeft() + this.getEffectiveReaderMarginRight()') &&
-  reader.includes('this.getEffectiveReaderMarginTop() + this.getReaderContentBottomPadding()') &&
-  reader.includes('this.getEffectiveReaderMarginBottom() + this.getReaderContentBottomReserve()'),
+assert(reader.includes('input.marginLeftPx = this.toMeasurePx(this.getEffectiveReaderMarginLeft())') &&
+  reader.includes('input.marginRightPx = this.toMeasurePx(this.getEffectiveReaderMarginRight())') &&
+  reader.includes('this.toMeasurePx(this.getEffectiveReaderMarginTop())') &&
+  reader.includes('this.toMeasurePx(this.getEffectiveReaderMarginBottom())'),
   'Reader pagination does not account for configured margins');
 // Body rendering and pagination must resolve alignment from the same reader
 // setting.  The reader intentionally supports start/end/justify now, so do
@@ -361,17 +365,14 @@ assert(reader.includes('readerTextAlignValue(): TextAlign') &&
   reader.includes("if (this.readerTextAlign === 'start') return TextAlign.Start") &&
   reader.includes("if (this.readerTextAlign === 'end') return TextAlign.End") &&
   reader.includes('.textAlign(this.readerTextAlignValue())') &&
-  reader.includes('readerGraphicsTextAlignValue(): graphicsText.TextAlign') &&
-  reader.includes("if (this.readerTextAlign === 'start') return graphicsText.TextAlign.LEFT") &&
-  reader.includes("if (this.readerTextAlign === 'end') return graphicsText.TextAlign.RIGHT") &&
-  reader.includes('align: this.readerGraphicsTextAlignValue()') &&
-  reader.includes('input.textAlign = this.readerTextAlign'),
+  reader.includes('input.textAlign = this.readerTextAlign') &&
+  readerPaginator.includes('align: ReaderV2Paginator.textAlign(snapshot.textAlign)') &&
+  readerPaginator.includes("if (value === 'start') return graphicsText.TextAlign.LEFT") &&
+  readerPaginator.includes("if (value === 'end') return graphicsText.TextAlign.RIGHT"),
   'Reader body rendering and pagination measurement must use the shared text alignment setting');
-assert(reader.includes('const safeBest = Math.max(start + 1, Math.min(best, source.length))') &&
-  !reader.includes('Math.floor((best - start) * 0.96)'),
-  'Reader pagination must not roll back a full line merely to prefer sentence boundaries');
-assert(reader.includes('buildReaderMeasureTextStyle(this.readerFontSize, this.getBodyReaderFontFamily())') &&
-  reader.includes('fontFamily: this.getBodyReaderFontFamily()'),
+// Pages break on native line metrics, so no measured page end is ever rolled back to a sentence boundary.
+assert(reader.includes('input.bodyFontFamily = this.getBodyReaderFontFamily()') &&
+  readerPaginator.includes('fontFamilies: [heading ? snapshot.titleFontFamily : snapshot.bodyFontFamily]'),
   'Reader pagination measurement must use the same body font as rendering');
 assert(reader.includes('this.readerTypographySettingsPanel()') &&
   reader.includes('readerTypographyCombinedSettings()') &&

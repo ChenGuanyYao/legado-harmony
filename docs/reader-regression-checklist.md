@@ -15,6 +15,7 @@ node --experimental-strip-types scripts/opds-parser-check.mjs
 node --experimental-strip-types scripts/epub-converter-check.mjs
 node --experimental-strip-types scripts/epub-mixed-layout-check.mjs
 node --experimental-strip-types scripts/reader-text-normalizer-check.mjs
+node --experimental-strip-types scripts/reader-chunk-pagination-check.mjs
 ```
 
 再构建一次调试 HAP，确认没有 ArkTS 编译错误。
