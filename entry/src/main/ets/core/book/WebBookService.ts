@@ -497,9 +497,8 @@ export class WebBookService {
     const rule = new AnalyzeRule(body, baseUrl, ctx);
     const matchedValues = rule.execute(tocRule.chapterList || '', RuleExecutionTarget.ELEMENTS);
     const itemValues = maxItems > 0 ? matchedValues.slice(0, maxItems) : matchedValues;
-    const matchedItems = matchedValues.map((item: RuleValue): string => item.asString());
     const items = itemValues.map((item: RuleValue): string => item.asString());
-    console.log('[WS] getChapterList page items:', matchedItems.length, 'processing:', items.length,
+    console.log('[WS] getChapterList page items:', matchedValues.length, 'processing:', items.length,
       'from resp:', body.length);
     const chapters: BookChapter[] = [];
     if (items.length === 0) return chapters;
@@ -519,7 +518,8 @@ export class WebBookService {
       new RuleFieldRequest('isPay', tocRule.isPay || ''),
       new RuleFieldRequest('updateTime', tocRule.updateTime || '')
     ];
-    fieldRequest.timeoutMs = 30000;
+    // A fixed 30 s budget failed the whole catalog of very long novels; scale it with the page size.
+    fieldRequest.timeoutMs = Math.max(30000, items.length * 15);
     fieldRequest.debugContext = debugContext;
     let fieldValues: Record<string, string>[] = [];
     let contextValues: string[] = [];
@@ -527,6 +527,7 @@ export class WebBookService {
       const batch = await RuleExecutionService.get().executeBatch(fieldRequest);
       fieldValues = batch.values;
       contextValues = batch.contextValues;
+      console.info(`[WS] toc fields items=${items.length} elapsed=${batch.elapsedMs}ms yields=${batch.yieldedCount}`);
       if (batch.errors.length > 0) {
         console.warn('[WS] toc field errors:', source.bookSourceName, batch.errors.join('; '));
         // A failed chapterUrl rule silently empties every chapter; surface the cause on the

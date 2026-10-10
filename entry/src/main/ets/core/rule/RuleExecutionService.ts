@@ -23,6 +23,9 @@ export class RuleExecutionService {
   private static instance: RuleExecutionService | null = null;
   private cancelledOwners: Set<string> = new Set<string>();
   private activeTokens: Record<string, CooperativeCancellationToken[]> = {};
+  private static readonly FRAME_YIELD_INTERVAL_MS: number = 50;
+  private loginRuntimeStateRaw: string | null = null;
+  private loginRuntimeState: Record<string, string> = {};
 
   static get(): RuleExecutionService {
     if (!RuleExecutionService.instance) RuleExecutionService.instance = new RuleExecutionService();
@@ -117,9 +120,15 @@ export class RuleExecutionService {
         this.throwIfDeadlineExceeded(deadlineAt, request.stage);
       }
 
+      let lastFrameYieldAt = Date.now();
       for (let itemIndex = 0; itemIndex < itemCount; itemIndex++) {
-        if (itemIndex > 0 && itemIndex % itemChunkSize === 0) {
+        // Crossing a frame boundary after every chunk regardless of the work done made a cheap
+        // 8,000-chapter catalog spend most of its time budget asleep (500+ frames). The time slice
+        // below already yields every few milliseconds; only add a frame gap once real time passed.
+        if (itemIndex > 0 && itemIndex % itemChunkSize === 0 &&
+          Date.now() - lastFrameYieldAt >= RuleExecutionService.FRAME_YIELD_INTERVAL_MS) {
           await CooperativeScheduler.yieldToNextUiFrame();
+          lastFrameYieldAt = Date.now();
           result.yieldedCount++;
           token.throwIfCancelled();
         }
@@ -492,9 +501,18 @@ this.seedSourceVariables(analyzer.getContext(), request.source, request.contextV
     analyzer.setJsVar('source.bookSourceGroup', source.bookSourceGroup || '');
     analyzer.setJsVar('source.bookSourceComment', source.bookSourceComment || '');
     analyzer.setJsVar('source.variable', source.variable || '');
-    const runtime = this.parseLoginRuntimeSourceState(source.loginInfo || '');
+    const runtime = this.loginRuntimeSourceState(source.loginInfo || '');
     for (const key of Object.keys(runtime)) analyzer.setJsVar(`source.${key}`, runtime[key]);
     for (const key of Object.keys(contextValues)) analyzer.setJsVar(key, contextValues[key] || '');
+  }
+
+  // Called once per item; a catalog batch would otherwise re-parse the same loginInfo thousands of times.
+  private loginRuntimeSourceState(raw: string): Record<string, string> {
+    if (this.loginRuntimeStateRaw !== raw) {
+      this.loginRuntimeState = this.parseLoginRuntimeSourceState(raw);
+      this.loginRuntimeStateRaw = raw;
+    }
+    return this.loginRuntimeState;
   }
 
   private parseLoginRuntimeSourceState(raw: string): Record<string, string> {
