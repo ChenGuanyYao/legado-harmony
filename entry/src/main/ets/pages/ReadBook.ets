@@ -38,8 +38,6 @@ import { ReaderSettings, ReaderSettingsStore } from '../utils/ReaderSettingsStor
 import { ReaderReplaceRule, ReaderReplaceRuleStore } from '../utils/ReaderReplaceRuleStore';
 import { ReaderThemeHelper, ReaderThemeItem } from '../utils/ReaderThemeHelper';
 import { ReaderCustomThemeData, ReaderCustomThemeHelper, ReaderCustomThemeScheme } from '../utils/ReaderCustomThemeHelper';
-import { ReaderBackgroundImageStore } from '../utils/ReaderBackgroundImageStore';
-import { AdaptiveColorPicker } from '../components/AdaptiveColorPicker';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ReaderThemeBackground } from '../components/ReaderThemeBackground';
 import { ReaderPageCurlPainter } from '../components/ReaderPageCurlPainter';
@@ -93,6 +91,7 @@ import { ReaderFullTextCacheController } from '../core/reader/ReaderFullTextCach
 import { ReaderTtsMediaInfo, ReaderTtsMediaSession } from '../core/reader/ReaderTtsMediaSession';
 import { TtsVoiceCatalog } from '../utils/TtsVoiceCatalog';
 import { ReaderTtsQuickSettingsPanel, ReaderTtsVoicePickerPanel } from '../components/reader/ReaderTtsSettingsPanels';
+import { ReaderCustomThemeEditor } from '../components/reader/ReaderCustomThemeEditor';
 import { ReaderHeaderFooterSettings, ReaderTypographyField, ReaderTypographyStepper } from '../components/reader/ReaderLayoutSettings';
 import { ReaderCacheDialogContent } from '../components/reader/ReaderCacheDialogContent';
 import { ReaderTxtCharsetDialogContent, ReaderTxtCharsets } from '../components/reader/ReaderTxtCharsetDialogContent';
@@ -540,7 +539,6 @@ struct ReadBookPage {
   @StorageLink('readerDarkCustomThemeBackgroundColor') @Watch('onReaderThemeChanged') readerDarkCustomThemeBackgroundColor: string = ReaderThemeHelper.DARK_CUSTOM_BACKGROUND_COLOR;
   @StorageLink('readerDarkCustomThemeTextColor') @Watch('onReaderThemeChanged') readerDarkCustomThemeTextColor: string = ReaderThemeHelper.DARK_CUSTOM_TEXT_COLOR;
   @StorageLink('readerCustomThemesRaw') @Watch('onReaderThemeChanged') readerCustomThemesRaw: string = '';
-  @State customThemeNameDraft: string = '';
   @StorageLink('readerPageTurnMode') readerPageTurnMode: number = 1;
   @StorageLink('readerPageTurnAnimationType') @Watch('onReaderPageTurnAnimationChanged') readerPageTurnAnimationType: number = ReaderSettingsStore.PAGE_TURN_ANIMATION_SLIDE;
   @StorageLink('readerLandscapeDoublePage') @Watch('onReaderLandscapeDoublePageChanged') readerLandscapeDoublePage: boolean = false;
@@ -5230,10 +5228,6 @@ struct ReadBookPage {
     return current.backgroundType === 'image' ? current.backgroundImageUri : '';
   }
 
-  currentCustomThemeBackgroundTypeIndex(): number {
-    return this.currentCustomThemeScheme().backgroundType === 'image' ? 1 : 0;
-  }
-
   customThemeData(): ReaderCustomThemeData {
     return ReaderCustomThemeHelper.parse(
       this.readerCustomThemesRaw,
@@ -5246,42 +5240,6 @@ struct ReadBookPage {
 
   currentCustomThemeScheme(): ReaderCustomThemeScheme {
     return ReaderCustomThemeHelper.selected(this.customThemeData(), this.appDarkMode);
-  }
-
-  currentCustomThemeSchemes(): ReaderCustomThemeScheme[] {
-    return ReaderCustomThemeHelper.schemesForMode(this.customThemeData(), this.appDarkMode);
-  }
-
-  currentCustomThemeSelectedIndex(): number {
-    const schemes = this.currentCustomThemeSchemes();
-    const selectedId = this.currentCustomThemeScheme().id;
-    const index = schemes.findIndex((item: ReaderCustomThemeScheme) => item.id === selectedId);
-    return Math.max(0, index);
-  }
-
-  customThemeOptions(): SelectOption[] {
-    const options: SelectOption[] = [];
-    for (const item of this.currentCustomThemeSchemes()) {
-      const option: SelectOption = { value: item.name };
-      options.push(option);
-    }
-    return options;
-  }
-
-  customThemeFitSelectedIndex(): number {
-    const fit = this.currentCustomThemeScheme().backgroundImageFit;
-    return fit === 'contain' ? 1 : (fit === 'fill' ? 2 : 0);
-  }
-
-  normalizeColor(color: string, fallback: string): string {
-    const trimmed = (color || '').trim();
-    const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
-    if (/^#[0-9a-fA-F]{6}$/.test(normalized)) {
-      return normalized.toUpperCase();
-    }
-    const fallbackTrimmed = (fallback || '').trim();
-    const normalizedFallback = fallbackTrimmed.startsWith('#') ? fallbackTrimmed : `#${fallbackTrimmed}`;
-    return /^#[0-9a-fA-F]{6}$/.test(normalizedFallback) ? normalizedFallback.toUpperCase() : '#333333';
   }
 
   isReaderThemeDark(): boolean {
@@ -5548,7 +5506,6 @@ struct ReadBookPage {
     this.readerDarkCustomThemeBackgroundColor = settings.darkCustomThemeBackgroundColor;
     this.readerDarkCustomThemeTextColor = settings.darkCustomThemeTextColor;
     this.readerCustomThemesRaw = settings.customThemesRaw || '';
-    this.customThemeNameDraft = this.currentCustomThemeScheme().name;
     this.readerPageTurnMode = settings.pageTurnMode;
     this.readerPageTurnAnimationType = settings.pageTurnAnimationType;
     this.readerLandscapeDoublePage = settings.landscapeDoublePage;
@@ -8598,154 +8555,15 @@ struct ReadBookPage {
       .width('100%')
 
       if (this.currentReaderThemeIndex() === ReaderThemeHelper.CUSTOM_THEME_INDEX) {
-        Column({ space: 10 }) {
-          Row({ space: 8 }) {
-            Select(this.customThemeOptions())
-              .selected(this.currentCustomThemeSelectedIndex())
-              .value(this.currentCustomThemeScheme().name)
-              .font({ size: 14 })
-              .fontColor(this.getTextColor())
-              .backgroundColor(this.appDarkMode ? '#24FFFFFF' : '#12000000')
-              .borderRadius(16)
-              .border({ width: 0 })
-              .layoutWeight(1)
-              .divider(null)
-              .optionBgColor(Color.Transparent)
-              .optionFontColor(this.getTextColor())
-              .selectedOptionFontColor(this.accentColor())
-              .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
-              .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
-              .menuBackgroundBlurStyle(BlurStyle.NONE)
-              .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
-              .onSelect((index: number) => {
-                this.selectCustomTheme(index);
-              })
-            Button('新增')
-              .height(36)
-              .fontSize(13)
-              .backgroundColor(this.accentColor())
-              .fontColor('#FFFFFF')
-              .onClick(() => {
-                this.addCustomTheme();
-              })
-            Button('删除')
-              .height(36)
-              .fontSize(13)
-              .backgroundColor(this.appDarkMode ? '#24FFFFFF' : '#12000000')
-              .fontColor(this.getTextColor())
-              .onClick(() => {
-                this.deleteCurrentCustomTheme();
-              })
+        ReaderCustomThemeEditor({
+          dark: this.isReaderThemeDark(),
+          textColor: this.getTextColor(),
+          accentColor: this.accentColor(),
+          menuColor: ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()),
+          onChanged: (): void => {
+            this.saveReadConfig();
           }
-          .width('100%')
-          TextInput({ text: this.customThemeNameDraft, placeholder: '输入方案名称' })
-            .fontSize(14)
-            .fontColor(this.getTextColor())
-            .height(36)
-            .padding({ left: 10, right: 10 })
-            .backgroundColor(this.appDarkMode ? '#24FFFFFF' : '#12000000')
-            .borderRadius(8)
-            .onChange((value: string) => {
-              this.customThemeNameDraft = value.substring(0, 20);
-            })
-            .onSubmit(() => {
-              this.renameCurrentCustomTheme(this.customThemeNameDraft);
-            })
-            .onBlur(() => {
-              this.renameCurrentCustomTheme(this.customThemeNameDraft);
-            })
-          Row() {
-            Text('背景设置')
-              .fontSize(14)
-              .fontColor(this.getTextColor())
-            Blank()
-            Select([{ value: '背景色' }, { value: '背景图片' }])
-              .selected(this.currentCustomThemeBackgroundTypeIndex())
-              .value(this.currentCustomThemeBackgroundTypeIndex() === 1 ? '背景图片' : '背景色')
-              .font({ size: 14 })
-              .fontColor(this.getTextColor())
-              .backgroundColor(this.appDarkMode ? '#24FFFFFF' : '#12000000')
-              .borderRadius(16)
-              .border({ width: 0 })
-              .optionBgColor(Color.Transparent)
-              .divider(null)
-              .optionFontColor(this.getTextColor())
-              .selectedOptionFontColor(this.accentColor())
-              .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
-              .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
-              .menuBackgroundBlurStyle(BlurStyle.NONE)
-              .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
-              .onSelect((index: number) => {
-                this.setCurrentCustomThemeBackgroundType(index);
-              })
-          }
-          .width('100%')
-          if (this.currentCustomThemeBackgroundTypeIndex() === 0) {
-            AdaptiveColorPicker({
-              value: this.currentCustomThemeBackgroundColor(),
-              placeholder: this.currentCustomThemeBackgroundColor(),
-              appDarkMode: this.appDarkMode,
-              accentColor: this.accentColor(),
-              optionTitle: '背景颜色',
-              onColorChange: (value: string) => {
-                this.setCurrentThemeBackgroundColor(value);
-              }
-            })
-          } else {
-            Row({ space: 8 }) {
-              Button(this.currentCustomThemeScheme().backgroundImageUri ? '更换背景图片' : '选择背景图片')
-                .height(36)
-                .fontSize(13)
-                .backgroundColor(this.accentColor())
-                .fontColor('#FFFFFF')
-                .onClick(() => {
-                  this.chooseCurrentCustomThemeImage();
-                })
-              if (this.currentCustomThemeScheme().backgroundImageUri) {
-                Button('移除图片')
-                  .height(36)
-                  .fontSize(13)
-                  .backgroundColor(this.appDarkMode ? '#24FFFFFF' : '#12000000')
-                  .fontColor(this.getTextColor())
-                  .onClick(() => {
-                    this.clearCurrentCustomThemeImage();
-                  })
-                Select([{ value: '裁剪填充' }, { value: '完整显示' }, { value: '拉伸铺满' }])
-                  .selected(this.customThemeFitSelectedIndex())
-                  .value(['裁剪填充', '完整显示', '拉伸铺满'][this.customThemeFitSelectedIndex()])
-                  .font({ size: 13 })
-                  .fontColor(this.getTextColor())
-                  .backgroundColor(this.appDarkMode ? '#24FFFFFF' : '#12000000')
-                  .borderRadius(16)
-                  .border({ width: 0 })
-                  .layoutWeight(1)
-                  .divider(null)
-                  .optionBgColor(Color.Transparent)
-                  .optionFontColor(this.getTextColor())
-                  .selectedOptionFontColor(this.accentColor())
-                  .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
-                  .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
-                  .menuBackgroundBlurStyle(BlurStyle.NONE)
-                  .menuSystemMaterial(ImmersiveMaterialRuntime.selectMenuMaterial())
-                  .onSelect((index: number) => {
-                    this.setCurrentCustomThemeImageFit(index);
-                  })
-              }
-            }
-            .width('100%')
-          }
-          AdaptiveColorPicker({
-            value: this.currentCustomThemeTextColor(),
-            placeholder: this.currentCustomThemeTextColor(),
-            appDarkMode: this.appDarkMode,
-            accentColor: this.accentColor(),
-            optionTitle: '文字颜色',
-            onColorChange: (value: string) => {
-              this.setCurrentThemeTextColor(value);
-            }
-          })
-        }
-        .width('100%')
+        })
       }
 
       this.readerPreloadSettingItem()
@@ -9516,114 +9334,6 @@ struct ReadBookPage {
     ).catch((e: Error) => {
       console.warn('保存阅读配色设置失败:', e);
     });
-  }
-
-  setCurrentThemeBackgroundColor(color: string): void {
-    const value = this.normalizeColor(color, this.currentCustomThemeBackgroundColor());
-    const data = this.customThemeData();
-    ReaderCustomThemeHelper.selected(data, this.appDarkMode).backgroundColor = value;
-    this.persistCustomThemeData(data);
-  }
-
-  setCurrentThemeTextColor(color: string): void {
-    const value = this.normalizeColor(color, this.currentCustomThemeTextColor());
-    const data = this.customThemeData();
-    ReaderCustomThemeHelper.selected(data, this.appDarkMode).textColor = value;
-    this.persistCustomThemeData(data);
-  }
-
-  persistCustomThemeData(data: ReaderCustomThemeData): void {
-    const selected = ReaderCustomThemeHelper.selected(data, this.appDarkMode);
-    if (this.appDarkMode) {
-      this.readerDarkCustomThemeBackgroundColor = selected.backgroundColor;
-      this.readerDarkCustomThemeTextColor = selected.textColor;
-    } else {
-      this.readerLightCustomThemeBackgroundColor = selected.backgroundColor;
-      this.readerLightCustomThemeTextColor = selected.textColor;
-    }
-    this.readerCustomThemesRaw = ReaderCustomThemeHelper.stringify(data);
-    this.saveReaderThemeSettings();
-    this.saveReadConfig();
-  }
-
-  addCustomTheme(): void {
-    const data = this.customThemeData();
-    const item = ReaderCustomThemeHelper.add(data, this.appDarkMode);
-    this.customThemeNameDraft = item.name;
-    this.persistCustomThemeData(data);
-  }
-
-  deleteCurrentCustomTheme(): void {
-    const data = this.customThemeData();
-    if (ReaderCustomThemeHelper.schemesForMode(data, this.appDarkMode).length <= 1) {
-      HdsFeedback.showToast('至少保留一套自定义背景');
-      return;
-    }
-    ReaderCustomThemeHelper.removeSelected(data, this.appDarkMode);
-    this.customThemeNameDraft = ReaderCustomThemeHelper.selected(data, this.appDarkMode).name;
-    this.persistCustomThemeData(data);
-  }
-
-  selectCustomTheme(index: number): void {
-    const data = this.customThemeData();
-    const schemes = ReaderCustomThemeHelper.schemesForMode(data, this.appDarkMode);
-    if (index < 0 || index >= schemes.length) {
-      return;
-    }
-    ReaderCustomThemeHelper.select(data, this.appDarkMode, schemes[index].id);
-    this.customThemeNameDraft = schemes[index].name;
-    this.persistCustomThemeData(data);
-  }
-
-  renameCurrentCustomTheme(name: string): void {
-    const data = this.customThemeData();
-    const current = ReaderCustomThemeHelper.selected(data, this.appDarkMode);
-    const value = (name || '').trim().substring(0, 20);
-    if (!value) {
-      this.customThemeNameDraft = current.name;
-      return;
-    }
-    current.name = value;
-    this.customThemeNameDraft = value;
-    this.persistCustomThemeData(data);
-  }
-
-  async chooseCurrentCustomThemeImage(): Promise<void> {
-    const data = this.customThemeData();
-    const current = ReaderCustomThemeHelper.selected(data, this.appDarkMode);
-    try {
-      const imageUri = await ReaderBackgroundImageStore.pickAndSave(getContext(this), current.id);
-      if (!imageUri) {
-        return;
-      }
-      current.backgroundImageUri = imageUri;
-      current.backgroundType = 'image';
-      this.persistCustomThemeData(data);
-    } catch (e) {
-      console.error('选择阅读背景图片失败:', e);
-      HdsFeedback.showToast('选择背景图片失败');
-    }
-  }
-
-  clearCurrentCustomThemeImage(): void {
-    const data = this.customThemeData();
-    const current = ReaderCustomThemeHelper.selected(data, this.appDarkMode);
-    current.backgroundImageUri = '';
-    current.backgroundType = 'color';
-    this.persistCustomThemeData(data);
-  }
-
-  setCurrentCustomThemeBackgroundType(index: number): void {
-    const data = this.customThemeData();
-    ReaderCustomThemeHelper.selected(data, this.appDarkMode).backgroundType = index === 1 ? 'image' : 'color';
-    this.persistCustomThemeData(data);
-  }
-
-  setCurrentCustomThemeImageFit(index: number): void {
-    const fits = ['cover', 'contain', 'fill'];
-    const data = this.customThemeData();
-    ReaderCustomThemeHelper.selected(data, this.appDarkMode).backgroundImageFit = fits[index] || 'cover';
-    this.persistCustomThemeData(data);
   }
 
   saveReaderInteractionSettings(): void {
