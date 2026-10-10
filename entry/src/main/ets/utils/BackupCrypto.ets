@@ -72,8 +72,14 @@ export class BackupCrypto {
         await BackupCrypto.transformFile(sourcePath, targetPath, cipher, onProgress);
         await cipher.doFinal(null);
       }
-    } catch (_) {
+    } catch (error) {
       await BackupCrypto.removeFile(targetPath);
+      // File-system failures (139xxxxx: no space, unreadable, in use) are not a wrong password; reporting them as
+      // one sends the user retrying passwords that were correct.
+      const code = Number((error as Record<string, Object>)?.['code'] || 0);
+      if (code >= 13900000 && code < 14000000) {
+        throw new Error(`读写备份文件失败：${(error as Error).message || `错误码 ${code}`}`);
+      }
       throw new Error('密码错误或备份文件已损坏');
     } finally {
       key.clearMem();
