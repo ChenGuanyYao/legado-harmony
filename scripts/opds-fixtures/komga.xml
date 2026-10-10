@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:opds="http://opds-spec.org/2010/catalog"
+      xmlns:thr="http://purl.org/syndication/thread/1.0"
+      xmlns:pse="http://vaemendis.net/opds-pse/ns">
+  <id>komga:series:all</id>
+  <title>Komga 书库</title>
+  <updated>2026-10-03T09:00:00Z</updated>
+  <link rel="self" type="application/atom+xml;profile=opds-catalog;kind=acquisition" href="http://komga.example.com/opds/v1.2/series"/>
+  <link rel="search" type="application/opensearchdescription+xml" href="http://komga.example.com/opds/v1.2/search"/>
+  <link rel="http://opds-spec.org/facet" type="application/atom+xml;profile=opds-catalog;kind=acquisition" href="http://komga.example.com/opds/v1.2/series" opds:facetGroup="状态" opds:activeFacet="true" thr:count="245" title="全部"/>
+  <link rel="http://opds-spec.org/facet" type="application/atom+xml;profile=opds-catalog;kind=acquisition" href="http://komga.example.com/opds/v1.2/series?status=ONGOING" opds:facetGroup="状态" thr:count="38" title="进行中"/>
+  <link rel="http://opds-spec.org/facet" type="application/atom+xml;profile=opds-catalog;kind=acquisition" href="http://komga.example.com/opds/v1.2/series?status=ENDED" opds:facetGroup="状态" thr:count="60" title="完结"/>
+  <link rel="http://opds-spec.org/facet" type="application/atom+xml;profile=opds-catalog;kind=acquisition" href="http://komga.example.com/opds/v1.2/series?type=COMIC" opds:facetGroup="类型" thr:count="120" title="漫画"/>
+  <link rel="http://opds-spec.org/facet" type="application/atom+xml;profile=opds-catalog;kind=acquisition" href="http://komga.example.com/opds/v1.2/series?type=NOVEL" opds:facetGroup="类型" thr:count="75" title="小说"/>
+  <entry>
+    <id>komga:series:ABC123</id>
+    <title>某漫画系列</title>
+    <updated>2026-10-03T09:00:00Z</updated>
+    <author><name>某某作者</name></author>
+    <summary><![CDATA[卷一 <b>加粗</b> 原始文本]]></summary>
+    <link rel="http://opds-spec.org/image/thumbnail" type="image/jpeg" href="http://komga.example.com/opds/v1.2/series/ABC123/thumbnail"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="http://komga.example.com/opds/v1.2/books/BOOK1/file/EPUB" pse:count="12" pse:lastRead="4"/>
+  </entry>
+</feed>

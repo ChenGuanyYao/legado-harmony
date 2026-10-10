@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:opds="http://opds-spec.org/2010/catalog"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+      xmlns:dcterms="http://purl.org/dc/terms/"
+      xmlns:calibre="http://calibre.kovidgoyal.net/2009/metadata"
+      xml:base="http://opds.example.com/opds/">
+  <id>urn:calibre:allbooks</id>
+  <title>全部图书</title>
+  <updated>2026-10-02T08:30:00Z</updated>
+  <link rel="self" type="application/atom+xml;profile=opds-catalog;kind=acquisition" href="allbooks"/>
+  <link rel="next" type="application/atom+xml;profile=opds-catalog;kind=acquisition" href="allbooks?page=2" title="下一页"/>
+  <link rel="search" type="application/opensearchdescription+xml" href="../opensearch.xml"/>
+  <opensearch:totalResults>128</opensearch:totalResults>
+  <opensearch:itemsPerPage>20</opensearch:itemsPerPage>
+  <!-- 第一个图书条目：常规字段 + 相对路径封面与下载链接 -->
+  <entry>
+    <id>urn:calibre:book:1</id>
+    <title>三体 &amp; 黑暗森林</title>
+    <updated>2026-09-20T10:00:00Z</updated>
+    <author><name>刘慈欣</name></author>
+    <dcterms:language>zh</dcterms:language>
+    <dcterms:publisher>重庆出版社</dcterms:publisher>
+    <calibre:series>三体全集</calibre:series>
+    <summary>文化大革命期间，军方探寻外星文明的绝秘计划红岸工程取得了突破性进展。</summary>
+    <category term="科幻" label="科幻"/>
+    <link rel="http://opds-spec.org/image/thumbnail" type="image/jpeg" href="covers/1.jpg"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="books/1.epub" length="1048576"/>
+  </entry>
+  <!-- 第二个图书条目：entry 级 xml:base 覆盖，两位作者 -->
+  <entry xml:base="sub/">
+    <id>urn:calibre:book:2</id>
+    <title>双作者之书</title>
+    <updated>2026-09-21T10:00:00Z</updated>
+    <author><name>作者甲</name></author>
+    <author><name>作者乙</name></author>
+    <summary>用于验证 entry 级 xml:base 覆盖。</summary>
+    <link rel="http://opds-spec.org/image/thumbnail" type="image/jpeg" href="covers/2.jpg"/>
+    <link rel="http://opds-spec.org/image" type="image/png" xml:base="/static/" href="2.png"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="get/2.epub"/>
+  </entry>
+  <!-- 第三个图书条目：HTML content 与 label-only category -->
+  <entry>
+    <id>urn:calibre:book:3</id>
+    <title>HTML 简介之书</title>
+    <updated>2026-09-22T10:00:00Z</updated>
+    <author><name>作者丙</name></author>
+    <content type="html">&lt;p&gt;第三册&lt;br/&gt;简介正文&lt;/p&gt;</content>
+    <category label="奇幻"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/pdf" href="books/3.pdf"/>
+  </entry>
+</feed>

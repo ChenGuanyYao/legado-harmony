@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom"
+      xmlns:opds="http://opds-spec.org/2010/catalog"
+      xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/"
+      xml:base="http://opds.example.com/opds/">
+  <id>urn:calibre:main</id>
+  <title>Calibre 图书馆</title>
+  <subtitle>基于 Calibre 的个人书库</subtitle>
+  <updated>2026-10-01T08:00:00Z</updated>
+  <logo>http://opds.example.com/static/calibre-logo.png</logo>
+  <link rel="search" type="application/opensearchdescription+xml" href="opensearch.xml" title="搜索书目"/>
+  <link rel="self" type="application/atom+xml;profile=opds-catalog;kind=navigation" href=""/>
+  <link rel="start" type="application/atom+xml;profile=opds-catalog;kind=navigation" href=""/>
+  <entry>
+    <id>urn:calibre:nav:authors</id>
+    <title>按作者</title>
+    <updated>2026-10-01T08:00:00Z</updated>
+    <content type="text">按作者浏览全部书目</content>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog;kind=navigation" href="authors" title="按作者浏览"/>
+  </entry>
+  <entry>
+    <id>urn:calibre:nav:new</id>
+    <title>最新加入</title>
+    <updated>2026-10-01T08:00:00Z</updated>
+    <content type="text">按加入时间倒序排列</content>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog;kind=acquisition" href="newest" title="最新加入的图书"/>
+  </entry>
+  <entry>
+    <id>urn:calibre:nav:all</id>
+    <title>全部图书</title>
+    <updated>2026-10-01T08:00:00Z</updated>
+    <content type="text">书库中的全部图书</content>
+    <link rel="subsection" type="application/atom+xml;profile=opds-catalog;kind=acquisition" href="allbooks"/>
+  </entry>
+</feed>

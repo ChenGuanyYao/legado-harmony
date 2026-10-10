@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE OpenSearchDescription [<!ENTITY copy "&#169;">]>
+<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/">
+  <ShortName>Calibre 图书馆</ShortName>
+  <Description>在 Calibre 书库中搜索</Description>
+  <InputEncoding>UTF-8</InputEncoding>
+  <Url type="application/atom+xml;profile=opds-catalog" template="http://opds.example.com/opds/search?q={searchTerms}" pageOffset="3"/>
+  <Url type="text/html" template="http://opds.example.com/search?q={searchTerms}" indexOffset="5" pageOffset="1"/>
+</OpenSearchDescription>

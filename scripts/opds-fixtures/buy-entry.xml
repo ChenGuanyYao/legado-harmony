@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<entry xmlns="http://www.w3.org/2005/Atom"
+       xmlns:opds="http://opds-spec.org/2010/catalog">
+  <id>urn:uuid:9a3f6c2e</id>
+  <title>付费示例书</title>
+  <updated>2026-09-15T12:00:00Z</updated>
+  <author><name>买手作者</name></author>
+  <summary>一本需要购买的书</summary>
+  <link rel="http://opds-spec.org/acquisition/buy" type="application/epub+zip" href="http://shop.example.com/buy/9a3f6c2e">
+    <opds:price currencyCode="USD">12.99</opds:price>
+    <opds:indirectAcquisition type="application/epub+zip"/>
+  </link>
+  <link rel="http://opds-spec.org/acquisition/buy" type="application/pdf" href="http://shop.example.com/buy/9a3f6c2e/pdf">
+    <opds:price currencyCode="CNY">45.00</opds:price>
+    <opds:indirectAcquisition type="application/pdf"/>
+    <opds:indirectAcquisition type="application/x-mobipocket-ebook"/>
+  </link>
+</entry>

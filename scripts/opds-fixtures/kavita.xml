@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <id>kavita:libraries</id>
+  <title>Kavita</title>
+  <updated>2026-10-04T10:00:00Z</updated>
+  <link rel="self" type="application/atom+xml;profile=opds-catalog;kind=acquisition" href="http://kavita.example.com/api/opds/libraries"/>
+  <entry>
+    <id>kavita:series:42</id>
+    <title>多重格式之书</title>
+    <updated>2026-10-04T10:00:00Z</updated>
+    <author><name>作者甲</name></author>
+    <summary>同时提供 epub、pdf 与 cbz 三种格式</summary>
+    <link rel="http://opds-spec.org/image/thumbnail" type="image/webp" href="http://kavita.example.com/api/image/series/42"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/epub+zip" href="http://kavita.example.com/api/opds/series/42/epub" length="2097152"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/pdf" href="http://kavita.example.com/api/opds/series/42/pdf"/>
+    <link rel="http://opds-spec.org/acquisition" type="application/vnd.comicbook+zip" href="http://kavita.example.com/api/opds/series/42/cbz"/>
+  </entry>
+</feed>
