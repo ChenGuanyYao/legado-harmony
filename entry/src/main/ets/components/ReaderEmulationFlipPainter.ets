@@ -47,6 +47,8 @@ interface FoldGeometry {
  *    这样镜像后不会出现错位的斜向阴影。
  * 3. 左右双页时翻动的是半页纸：先按官方几何把纸角卷起，进度后段让纸张绕书脊做几何位移
  *    （正面横向按 cos 压缩到书脊，背面再从书脊向另一列按 |cos| 展开），不使用淡入淡出。
+ * 4. 纸背罩色、阴影和纸边描线由当前主题的纸张底色推导，不再使用官方固定的米黄与深灰，
+ *    夜间主题下折页同样能看出层次。
  */
 export class ReaderEmulationFlipPainter {
   // 对应 Constants.SIXTY_PERCENT。
@@ -55,9 +57,10 @@ export class ReaderEmulationFlipPainter {
   private readonly horizontalShadowMaxWidth: number = 30;
   private readonly horizontalShadowRightExtend: number = 70;
   private readonly finishedProgress: number = 0.995;
-  // 页面完全翻出窗口需要页角点越过左边缘约 0.25 个页宽，故进度 1 对应 1.25 倍行程，
-  // 使纸张恰好在本次翻页结束前完全离屏，避免提交目标页时出现回跳。
-  private readonly travelOvershoot: number = 1.25;
+  // 页角点的总行程（页宽的倍数）。纸背一直画到折线为止，折线移出左边缘需要页角点越过左边缘
+  // 约一个页宽；取 2.1 时折线在进度约 0.94 处从页面顶角扫出窗口，提交目标页时不会有残留的
+  // 纸条突然消失。
+  private readonly travelOvershoot: number = 2.1;
   // 双页：绕书脊的翻转从该进度开始，到进度 1 恰好转满 180°。
   private readonly doublePageSpineStart: number = 0.15;
   // 双页：卷角只轻轻卷起一点，主体运动交给绕书脊的翻转，避免纸面被折角切掉太多、
@@ -65,23 +68,81 @@ export class ReaderEmulationFlipPainter {
   private readonly doublePageFoldCap: number = 0.25;
   // 官方样例的绘制坐标是 px，本绘制器使用 vp；阴影的绝对像素常量需要按该比例换算。
   private vpPerPx: number = 1;
-  // 对应 initBrushAndPath 中的 pathABrush / pathCBrush 颜色；paperColor 为官方米黄兜底色。
+  // paperColor 为官方米黄兜底色；其余颜色由 applyPalette 按主题纸色推导。
   private readonly paperColor: string = 'rgb(255,235,195)';
   private activePaperColor: string = 'rgb(255,235,195)';
-  private readonly backTintColor: string = 'rgba(186,172,145,0.47)';
-  // 官方为 0xff111111；这里降低不透明度，避免在整页/半页折角时出现生硬的黑带。
-  private readonly shadowDeepColor: string = 'rgba(17,17,17,0.5)';
-  private readonly shadowLightColor: string = 'rgba(17,17,17,0)';
-  private readonly shadowBackDeepColor: string = 'rgba(17,17,17,0.53)';
-  private readonly creaseShadowColor: string = 'rgba(17,17,17,0.42)';
+  private paletteKey: string = '';
+  private darkPaper: boolean = false;
+  private backTintColor: string = 'rgba(186,172,145,0.78)';
+  private shadowDeepColor: string = 'rgba(17,17,17,0.5)';
+  private shadowLightColor: string = 'rgba(17,17,17,0)';
+  private shadowBackDeepColor: string = 'rgba(17,17,17,0.53)';
+  private creaseShadowColor: string = 'rgba(17,17,17,0.42)';
+  private edgeShadowColor: string = 'rgba(17,17,17,0.3)';
+  private paperEdgeColor: string = 'rgba(0,0,0,0.1)';
+  private highlightColor: string = 'rgba(255,255,255,0.1)';
+  private highlightClearColor: string = 'rgba(255,255,255,0)';
+
+  /**
+   * 按主题纸色推导折页用色。纸背是纸色稍微压暗（夜间主题为提亮）后的不透明罩色，
+   * 只隐约透出背面的镜像文字；夜间主题的阴影更重，并靠高光和纸边描线区分层次。
+   */
+  private applyPalette(paperColor: string, dark: boolean): void {
+    const key = `${paperColor}_${dark ? 1 : 0}`;
+    if (key === this.paletteKey) {
+      return;
+    }
+    this.paletteKey = key;
+    this.darkPaper = dark;
+    const rgb = this.parseColor(paperColor);
+    const shift = dark ? 22 : -16;
+    const tintR = Math.max(0, Math.min(255, rgb[0] + shift));
+    const tintG = Math.max(0, Math.min(255, rgb[1] + shift));
+    const tintB = Math.max(0, Math.min(255, rgb[2] + shift));
+    this.backTintColor = `rgba(${tintR},${tintG},${tintB},0.8)`;
+    this.shadowDeepColor = dark ? 'rgba(0,0,0,0.72)' : 'rgba(17,17,17,0.5)';
+    this.shadowLightColor = dark ? 'rgba(0,0,0,0)' : 'rgba(17,17,17,0)';
+    this.shadowBackDeepColor = dark ? 'rgba(0,0,0,0.6)' : 'rgba(17,17,17,0.45)';
+    this.creaseShadowColor = dark ? 'rgba(0,0,0,0.66)' : 'rgba(17,17,17,0.42)';
+    this.edgeShadowColor = dark ? 'rgba(0,0,0,0.55)' : 'rgba(17,17,17,0.3)';
+    this.paperEdgeColor = dark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.12)';
+    this.highlightColor = dark ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.22)';
+  }
+
+  // 支持 #RGB、#RRGGBB、#AARRGGBB 与 rgb()/rgba()；无法识别时退回官方米黄。
+  private parseColor(color: string): number[] {
+    const fallback: number[] = [255, 235, 195];
+    const value = (color || '').trim();
+    if (value.startsWith('#')) {
+      let hex = value.substring(1);
+      if (hex.length === 3) {
+        hex = `${hex.charAt(0)}${hex.charAt(0)}${hex.charAt(1)}${hex.charAt(1)}${hex.charAt(2)}${hex.charAt(2)}`;
+      }
+      if (hex.length === 8) {
+        hex = hex.substring(2);
+      }
+      if (hex.length !== 6 || !/^[0-9a-fA-F]{6}$/.test(hex)) {
+        return fallback;
+      }
+      return [parseInt(hex.substring(0, 2), 16), parseInt(hex.substring(2, 4), 16),
+        parseInt(hex.substring(4, 6), 16)];
+    }
+    const matched = value.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+    if (matched) {
+      return [Math.min(255, Number(matched[1])), Math.min(255, Number(matched[2])),
+        Math.min(255, Number(matched[3]))];
+    }
+    return fallback;
+  }
 
   draw(context: CanvasRenderingContext2D, page: image.PixelMap, backPage: image.PixelMap | null,
     canvasWidth: number, canvasHeight: number, progress: number, direction: number, region: number,
     doublePage: boolean, columnWidth: number, rightOrigin: number, vpPerPx: number,
-    paperColor: string): void {
+    paperColor: string, dark: boolean): void {
     this.vpPerPx = vpPerPx > 0 ? vpPerPx : 1;
     // 折页背面必须用当前主题的纸张底色，否则会和页面底色不一致，看起来像另一块纸贴在上面。
     this.activePaperColor = paperColor && paperColor.length > 0 ? paperColor : this.paperColor;
+    this.applyPalette(this.activePaperColor, dark);
     const width = Math.max(1, canvasWidth);
     const height = Math.max(1, canvasHeight);
     const curl = Math.max(0, Math.min(1, progress));
@@ -153,6 +214,11 @@ export class ReaderEmulationFlipPainter {
       context.beginPath();
       context.rect(spineX, 0, width - spineX, height);
       context.clip();
+      // 纸张抬起后在下层页面上的投影：贴着纸的外侧边，抬得越高越宽。
+      const lift = Math.sin(Math.PI * fraction);
+      const freeEdgeX = spineX + cos * (rightOrigin + leafWidth - spineX);
+      this.fillHorizontalGradient(context, freeEdgeX, freeEdgeX + leafWidth * 0.14 * lift, 0, height,
+        this.edgeShadowColor, this.shadowLightColor);
       // 绕书脊转动：横向按 cos 压缩，书脊是变换不动点。
       context.translate(spineX, 0);
       context.scale(cos, 1);
@@ -181,6 +247,9 @@ export class ReaderEmulationFlipPainter {
           this.drawPathAContent(context, page, geometry, leafWidth, height, mirrored);
         }
       }
+      // 纸面随转角背光变暗，转到 90° 时最暗；矩形关于列中线对称，不受上面抵消镜像的影响。
+      context.fillStyle = `rgba(0,0,0,${(this.turnShadeStrength() * (1 - cos)).toFixed(3)})`;
+      context.fillRect(0, 0, leafWidth, height);
       context.restore();
     } else if (backPage) {
       // 背面页从书脊向另一列展开：宽度为 |cos| 个列宽。
@@ -188,15 +257,46 @@ export class ReaderEmulationFlipPainter {
       const revealed = Math.min(leafWidth, -cos * leafWidth);
       if (revealed > 0.5) {
         const backFraction = Math.max(0, (fraction - 0.5) / 0.5);
+        const lift = Math.sin(Math.PI * fraction);
+        const shadowWidth = leafWidth * 0.14 * lift;
+        const shade = `rgba(0,0,0,${(this.turnShadeStrength() * (1 + cos)).toFixed(3)})`;
         if (direction > 0) {
           const pinRight = spineX + (leafWidth - spineX) * backFraction;
-          context.drawImage(backPage, pinRight - revealed, 0, revealed, height);
+          const left = pinRight - revealed;
+          this.fillHorizontalGradient(context, left - shadowWidth, left, 0, height,
+            this.shadowLightColor, this.edgeShadowColor);
+          context.drawImage(backPage, left, 0, revealed, height);
+          context.fillStyle = shade;
+          context.fillRect(left, 0, revealed, height);
         } else {
           const pinLeft = spineX + (rightOrigin - spineX) * backFraction;
+          const right = pinLeft + revealed;
+          this.fillHorizontalGradient(context, right, right + shadowWidth, 0, height,
+            this.edgeShadowColor, this.shadowLightColor);
           context.drawImage(backPage, pinLeft, 0, revealed, height);
+          context.fillStyle = shade;
+          context.fillRect(pinLeft, 0, revealed, height);
         }
       }
     }
+  }
+
+  // 双页纸张转到侧立时的最大压暗程度。
+  private turnShadeStrength(): number {
+    return this.darkPaper ? 0.42 : 0.26;
+  }
+
+  // 在 [left, right] 的竖条内从左到右填充一段水平线性渐变。
+  private fillHorizontalGradient(context: CanvasRenderingContext2D, left: number, right: number, top: number,
+    height: number, leftColor: string, rightColor: string): void {
+    if (right - left <= 0.5) {
+      return;
+    }
+    const gradient = context.createLinearGradient(left, 0, right, 0);
+    gradient.addColorStop(0, leftColor);
+    gradient.addColorStop(1, rightColor);
+    context.fillStyle = gradient;
+    context.fillRect(left, top, right - left, height);
   }
 
   private doublePageSpineFraction(progress: number): number {
@@ -207,15 +307,25 @@ export class ReaderEmulationFlipPainter {
 
   private buildGeometry(width: number, height: number, progress: number, region: number): FoldGeometry | null {
     const radius = this.cornerRadiusRatio * width;
-    let ax = (1 - this.travelOvershoot * progress) * (width - 1);
-    ax = Math.min(width - 1, ax);
+    // 起步时页角与进度 1:1 同行，后段逐渐加速，到进度 1 时走完 travelOvershoot 个页宽。
+    const travel = progress * (1 + (this.travelOvershoot - 1) * progress * progress);
+    const endX = (1 - this.travelOvershoot) * (width - 1);
+    let ax = (1 - travel) * (width - 1);
+    ax = Math.max(endX, Math.min(width - 1, ax));
     const topCorner = region === ReaderEmulationFlipRegion.TOP;
     const f: FoldPoint = { x: width, y: topCorner ? 0 : height };
     // 官方对"中部起手"把页角点固定在页面下边缘，折线会退化成一条垂直线，翻过去只剩一条竖窄条，
     // 不是正常翻折。这里始终按上/下角做带圆弧约束的斜向折角（对应 calcPointAByTouchPoint）。
+    // 页角先沿圆弧抬到最高点，之后按余弦平滑回落到页边：折线逐渐立直并从侧边扫出窗口，
+    // 不会像整段半圆那样在收尾处突然立直。
     const centerX = width - radius;
-    const inside = Math.max(0, radius * radius - (ax - centerX) * (ax - centerX));
-    const offset = Math.sqrt(inside);
+    let offset = 0;
+    if (ax >= centerX) {
+      offset = Math.sqrt(Math.max(0, radius * radius - (ax - centerX) * (ax - centerX)));
+    } else {
+      const fall = Math.min(1, (centerX - ax) / Math.max(1, centerX - endX));
+      offset = radius * Math.cos(fall * Math.PI / 2);
+    }
     const ay = Math.max(1, Math.min(height - 1, topCorner ? offset : height - offset));
     const middleCorner = false;
     const a: FoldPoint = { x: ax, y: ay };
@@ -233,11 +343,8 @@ export class ReaderEmulationFlipPainter {
     const k = this.intersectionPoint(a, h, c, j);
     const d: FoldPoint = { x: (c.x + 2 * e.x + b.x) / 4, y: (2 * e.y + c.y + b.y) / 4 };
     const i: FoldPoint = { x: (j.x + 2 * h.x + k.x) / 4, y: (2 * h.y + j.y + k.y) / 4 };
-    // H/J 等控制点在纸张快翻出时会远离窗口，钳制到窗口外的有限范围，避免生成超大路径。
-    this.clampPoint(b, width, height);
-    this.clampPoint(h, width, height);
-    this.clampPoint(j, width, height);
-    this.clampPoint(k, width, height);
+    // 几何点保持原值，阴影角度和纸背镜像都依赖它们；纸张快翻出时 H/J/K 会远离窗口，
+    // 只在生成路径时再收回到窗口外的有限范围（见 pathPoint）。
     return {
       a: a,
       b: b,
@@ -301,9 +408,27 @@ export class ReaderEmulationFlipPainter {
     return !geometry.topCorner && intercept < 0;
   }
 
-  private clampPoint(point: FoldPoint, width: number, height: number): void {
-    point.x = Math.max(-2 * width, Math.min(3 * width, point.x));
-    point.y = Math.max(-2 * height, Math.min(3 * height, point.y));
+  /**
+   * 路径用的顶点：远离窗口的点沿它与 anchor 的连线收回到窗口外的有限范围。
+   * 只钳制单个坐标会改变连线的斜率，纸张快翻出时会在窗口里留下一块错位的楔形。
+   */
+  private pathPoint(point: FoldPoint, anchor: FoldPoint, width: number, height: number): FoldPoint {
+    const minX = -2 * width;
+    const maxX = 3 * width;
+    const minY = -2 * height;
+    const maxY = 3 * height;
+    if (point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY) {
+      return point;
+    }
+    const dx = point.x - anchor.x;
+    const dy = point.y - anchor.y;
+    let scale = 1;
+    if (dx > 0.0001) scale = Math.min(scale, (maxX - anchor.x) / dx);
+    if (dx < -0.0001) scale = Math.min(scale, (minX - anchor.x) / dx);
+    if (dy > 0.0001) scale = Math.min(scale, (maxY - anchor.y) / dy);
+    if (dy < -0.0001) scale = Math.min(scale, (minY - anchor.y) / dy);
+    scale = Math.max(0, scale);
+    return { x: anchor.x + dx * scale, y: anchor.y + dy * scale };
   }
 
   private pathA(geometry: FoldGeometry, width: number, height: number): Path2D {
@@ -312,9 +437,9 @@ export class ReaderEmulationFlipPainter {
     const b = geometry.b;
     const c = geometry.c;
     const e = geometry.e;
-    const h = geometry.h;
-    const j = geometry.j;
-    const k = geometry.k;
+    const k = this.pathPoint(geometry.k, a, width, height);
+    const h = this.pathPoint(geometry.h, k, width, height);
+    const j = this.pathPoint(geometry.j, k, width, height);
     if (geometry.topCorner) {
       // drawing.Path 在 reset() 后首个 lineTo 隐含从 (0,0) 起画，因此 pathA 是整页减去折角。
       path.moveTo(0, 0);
@@ -339,13 +464,13 @@ export class ReaderEmulationFlipPainter {
     return path;
   }
 
-  private pathC(geometry: FoldGeometry): Path2D {
+  private pathC(geometry: FoldGeometry, width: number, height: number): Path2D {
     const path = new Path2D();
     const a = geometry.a;
     const b = geometry.b;
     const d = geometry.d;
-    const i = geometry.i;
-    const k = geometry.k;
+    const k = this.pathPoint(geometry.k, a, width, height);
+    const i = this.pathPoint(geometry.i, d, width, height);
     path.moveTo(i.x, i.y);
     path.lineTo(d.x, d.y);
     path.lineTo(b.x, b.y);
@@ -355,10 +480,26 @@ export class ReaderEmulationFlipPainter {
     return path;
   }
 
+  // 纸张翻起部分的两条实体纸边（原下边与原侧边），描一条细线把纸背和下层页面分开。
+  private strokePaperEdge(context: CanvasRenderingContext2D, geometry: FoldGeometry, width: number,
+    height: number): void {
+    const a = geometry.a;
+    const k = this.pathPoint(geometry.k, a, width, height);
+    context.save();
+    context.beginPath();
+    context.moveTo(geometry.b.x, geometry.b.y);
+    context.lineTo(a.x, a.y);
+    context.lineTo(k.x, k.y);
+    context.lineWidth = Math.max(0.5, this.vpPerPx);
+    context.strokeStyle = this.paperEdgeColor;
+    context.stroke();
+    context.restore();
+  }
+
   // 对应 drawPathC：纸张背面区域 + 反射内容 + 背页阴影。
   private drawPathC(context: CanvasRenderingContext2D, page: image.PixelMap, geometry: FoldGeometry,
     width: number, height: number): void {
-    const path = this.pathC(geometry);
+    const path = this.pathC(geometry, width, height);
     context.save();
     context.fillStyle = this.activePaperColor;
     context.fill(path);
@@ -387,6 +528,7 @@ export class ReaderEmulationFlipPainter {
     context.clip(path);
     this.drawPathCShadow(context, geometry, width, height);
     context.restore();
+    this.strokePaperEdge(context, geometry, width, height);
   }
 
   // 对应 drawPathCShadow。
@@ -585,23 +727,50 @@ export class ReaderEmulationFlipPainter {
       context.fillRect(flapLeft, 0, flapWidth, height);
       context.restore();
     }
-    // 3) 折线处落在目标页上的投影。
-    const shadowWidth = Math.min(width * 0.10, 120);
-    const left = direction > 0 ? creaseX : creaseX - shadowWidth;
-    const right = direction > 0 ? creaseX + shadowWidth : creaseX;
-    if (right - left > 0.5) {
+    // 纸张抬起的高度：两端贴着页面，翻到一半时最高，投影随之变宽。
+    const lift = Math.sin(Math.PI * curl);
+    if (flapWidth > 0.5) {
+      // 3) 纸背的柱面明暗：靠近折线处背光最暗，中段迎光有一道高光，外侧纸边略微压暗。
       context.save();
       context.beginPath();
-      context.rect(left, 0, right - left, height);
+      context.rect(flapLeft, 0, flapWidth, height);
       context.clip();
-      const gradient = direction > 0 ?
-        context.createLinearGradient(creaseX, 0, creaseX + shadowWidth, 0) :
-        context.createLinearGradient(creaseX - shadowWidth, 0, creaseX, 0);
-      gradient.addColorStop(direction > 0 ? 0 : 1, this.creaseShadowColor);
-      gradient.addColorStop(direction > 0 ? 1 : 0, this.shadowLightColor);
-      context.fillStyle = gradient;
-      context.fillRect(left, 0, right - left, height);
+      // 渐变按整张纸背的宽度铺开，纸边滑出窗口后只是被裁掉，明暗不会被挤压。
+      const creaseSide = creaseX;
+      const edgeSide = direction > 0 ? 2 * creaseX - width : 2 * creaseX;
+      const shade = context.createLinearGradient(creaseSide, 0, edgeSide, 0);
+      shade.addColorStop(0, this.shadowBackDeepColor);
+      shade.addColorStop(0.22, this.shadowLightColor);
+      shade.addColorStop(0.45, this.highlightClearColor);
+      shade.addColorStop(0.62, this.highlightColor);
+      shade.addColorStop(0.8, this.highlightClearColor);
+      shade.addColorStop(0.82, this.shadowLightColor);
+      shade.addColorStop(1, this.paperEdgeColor);
+      context.fillStyle = shade;
+      context.fillRect(flapLeft, 0, flapWidth, height);
       context.restore();
+
+      // 4) 纸的外侧边落在当前页上的投影。纸边滑出窗口后不再需要。
+      const edgeShadowWidth = Math.min(width * 0.07, 84) * lift;
+      const edgeVisible = direction > 0 ? 2 * creaseX - width > 0 : 2 * creaseX < width;
+      if (edgeVisible) {
+        if (direction > 0) {
+          this.fillHorizontalGradient(context, flapLeft - edgeShadowWidth, flapLeft, 0, height,
+            this.shadowLightColor, this.edgeShadowColor);
+        } else {
+          this.fillHorizontalGradient(context, flapRight, flapRight + edgeShadowWidth, 0, height,
+            this.edgeShadowColor, this.shadowLightColor);
+        }
+      }
+    }
+    // 5) 折线处落在目标页上的投影。
+    const shadowWidth = Math.min(width * 0.10, 120) * (0.45 + 0.55 * lift);
+    if (direction > 0) {
+      this.fillHorizontalGradient(context, creaseX, creaseX + shadowWidth, 0, height,
+        this.creaseShadowColor, this.shadowLightColor);
+    } else {
+      this.fillHorizontalGradient(context, creaseX - shadowWidth, creaseX, 0, height,
+        this.shadowLightColor, this.creaseShadowColor);
     }
   }
 

@@ -138,6 +138,9 @@ const READER_REPLACE_MENU_ITEM_ID: string = 'reader_replace_rule';
 // A 0.42 raster remains sharp while moving on high-density screens and reduces texture fill by another 29%
 // compared with the previous half-resolution capture. This matters most on dialogue-heavy pages.
 const READER_PAGE_CURL_SNAPSHOT_SCALE = 0.42;
+// 3D 仿真每帧只画两三次整页贴图，不像网格卷曲那样反复采样，可以用更高的快照分辨率换取清晰的文字。
+const READER_PAGE_3D_SNAPSHOT_SCALE = 0.75;
+const READER_CURL_REGION_UNSET = -1;
 const READER_PROGRESS_OFFSET_KEY = 'readProgressCharOffsetV2';
 const READER_V2_NO_FRAGMENTS: ReaderV2PageFragment[] = [];
 const READER_V2_CONTINUOUS_ROLE = 'continuous';
@@ -377,7 +380,8 @@ struct ReadBookPage {
   private pageTurnPreviewLoadingKey: string = '';
   private readerPageCurlPainter: ReaderPageCurlPainter = new ReaderPageCurlPainter();
   private readerEmulationFlipPainter: ReaderEmulationFlipPainter = new ReaderEmulationFlipPainter();
-  private readerCurlStartRegion: number = ReaderEmulationFlipRegion.MIDDLE;
+  // 拖动翻页时记录手指落点所在的区域；READER_CURL_REGION_UNSET 表示本次翻页不是由拖动发起的。
+  private readerCurlStartRegion: number = READER_CURL_REGION_UNSET;
   private readerPageCurlContext: CanvasRenderingContext2D =
     new CanvasRenderingContext2D(new RenderingContextSettings(true));
   private readerPageCurlFront: image.PixelMap | null = null;
@@ -15396,7 +15400,7 @@ struct ReadBookPage {
   }
 
   finishPageTurnAnimation(releaseTurnLock: boolean = true): void {
-    this.readerCurlStartRegion = ReaderEmulationFlipRegion.MIDDLE;
+    this.readerCurlStartRegion = READER_CURL_REGION_UNSET;
     this.resetReaderPageCurl();
     this.pageTransitionX = 0;
     this.pageTransitionOpacity = 1;
@@ -15772,6 +15776,15 @@ struct ReadBookPage {
       Curve.EaseInOut : Curve.EaseOut;
   }
 
+  readerPageCurlSnapshotScale(): number {
+    return this.is3DPageTurnAnimation() ? READER_PAGE_3D_SNAPSHOT_SCALE : READER_PAGE_CURL_SNAPSHOT_SCALE;
+  }
+
+  // 3D 仿真单页不绘制背页位图，省掉这次截图可以让卷曲更快起步。
+  readerPageCurlNeedsBackSnapshot(): boolean {
+    return !this.is3DPageTurnAnimation() || this.isLandscapeDoublePageActive();
+  }
+
   getReaderPageCurlCanvasHeight(): number {
     // Prefer the actual captured component height. It stays correct for gesture-navigation variants, split-screen
     // windows and devices whose bottom avoid area differs from the globally cached navigation height.
@@ -15792,13 +15805,16 @@ struct ReadBookPage {
       return;
     }
     if (this.is3DPageTurnAnimation()) {
-      // 3D 仿真只卷曲当前页，目标页由底层声明式页面呈现，因此不需要背页位图。
+      // 3D 仿真单页时只卷曲当前页，目标页由底层声明式页面呈现；只有双页才需要背页位图。
+      // 点击翻页没有手指落点，统一从下角卷起。
+      const region = this.readerCurlStartRegion === READER_CURL_REGION_UNSET ?
+        ReaderEmulationFlipRegion.BOTTOM : this.readerCurlStartRegion;
       this.readerEmulationFlipPainter.draw(this.readerPageCurlContext, this.readerPageCurlFront,
         this.readerPageCurlBack, this.getPageTurnWidth(), this.getReaderPageCurlCanvasHeight(),
-        this.getPageTurnProgress(), this.pageSlideDirection, this.readerCurlStartRegion,
+        this.getPageTurnProgress(), this.pageSlideDirection, region,
         this.isLandscapeDoublePageActive(), this.getReaderPageColumnWidth(),
         this.getReaderDoublePageRightOrigin(), 1 / this.getUIContext().vp2px(1),
-        this.readerFlapPaperColor());
+        this.readerFlapPaperColor(), this.isReaderThemeDark());
       return;
     }
     if (!this.readerPageCurlBack) {
@@ -15852,6 +15868,8 @@ struct ReadBookPage {
       this.pageSlideDirection === 0) return;
     const snapshot = this.getUIContext().getComponentSnapshot();
     const suffix = this.isLandscapeDoublePageActive() ? 'double' : 'single';
+    const snapshotScale = this.readerPageCurlSnapshotScale();
+    const needsBack = this.readerPageCurlNeedsBackSnapshot();
     let front: image.PixelMap | null = null;
     let back: image.PixelMap | null = null;
     // A tap can request the snapshot in the same task that publishes the simulation subtree.
@@ -15863,13 +15881,15 @@ struct ReadBookPage {
         // native Paragraph solely for capture can resolve to a neighbouring physical-pixel origin and produces
         // a small but repeatable vertical jump at the start of every rapid turn.
         front = await snapshot.get(this.currentReaderSnapshotComponentId(), {
-          scale: READER_PAGE_CURL_SNAPSHOT_SCALE,
+          scale: snapshotScale,
           waitUntilRenderFinished: false
         });
-        back = await snapshot.get(`reader_page_curl_back_${suffix}`, {
-          scale: READER_PAGE_CURL_SNAPSHOT_SCALE,
-          waitUntilRenderFinished: false
-        });
+        if (needsBack) {
+          back = await snapshot.get(`reader_page_curl_back_${suffix}`, {
+            scale: snapshotScale,
+            waitUntilRenderFinished: false
+          });
+        }
         if (this.isLandscapeDoublePageActive()) {
           await this.cropReaderPageCurlFrontToTurningLeaf(front);
         }
@@ -15885,19 +15905,19 @@ struct ReadBookPage {
         await sleepMs(16);
       }
     }
-    if (!front || !back) return;
+    if (!front || (needsBack && !back)) return;
     let snapshotHeight = this.getPageTurnHeight();
     try {
       const frontInfo = await front.getImageInfo();
       snapshotHeight = px2vp(Math.max(1,
-        frontInfo.size.height / READER_PAGE_CURL_SNAPSHOT_SCALE));
+        frontInfo.size.height / snapshotScale));
     } catch (error) {
       console.warn('读取仿真翻页快照尺寸失败，使用页面布局高度:', error);
     }
     if (serial !== this.readerPageCurlCaptureSerial || key !== this.readerPageCurlCaptureKey ||
       this.pageSlideDirection === 0) {
       front.release().catch(() => {});
-      back.release().catch(() => {});
+      if (back) back.release().catch(() => {});
       return;
     }
     const oldFront = this.readerPageCurlFront;
@@ -15987,7 +16007,10 @@ struct ReadBookPage {
     const remaining = Math.abs(targetOffset - this.getPageSlideAxisOffset());
     // A long symmetric EaseInOut made the last part of the sheet appear to stop before the
     // incoming page was committed. Finish with a shorter, momentum-preserving edge motion.
-    const duration = Math.max(110, Math.min(340, Math.round(340 * remaining / distance)));
+    // 3D 仿真的纸角行程比位移长，同样的时长会显得一闪而过，给它更宽裕的补完时间。
+    const fullDuration = this.is3DPageTurnAnimation() ? 460 : 340;
+    const duration = Math.max(this.is3DPageTurnAnimation() ? 150 : 110,
+      Math.min(fullDuration, Math.round(fullDuration * remaining / distance)));
     await this.animateReaderPageCurlOffset(targetOffset, duration, true);
   }
 
