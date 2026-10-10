@@ -9295,18 +9295,13 @@ struct ReadBookPage {
     }
   }
 
-  /** Return the last source position that can belong to an audible TTS chunk. */
+  /**
+   * Return the last source position that can belong to an audible TTS chunk. The reader engine owns the
+   * answer: it blanks decorative lines (a lone ">", "***", "---" ...) before splitting, so a chapter ending
+   * in one would otherwise leave a tail the completion guard waits for but nothing ever speaks.
+   */
   ttsSpeechTextEnd(text: string): number {
-    const source = text || '';
-    let end = source.length;
-    while (end > 0) {
-      const value = source.charAt(end - 1);
-      if (value !== ' ' && value !== '\t' && value !== '\n' && value !== '\r' && value !== '\u3000') {
-        break;
-      }
-      end--;
-    }
-    return end;
+    return this.ttsReader.speechTextEnd(text);
   }
 
   stopTtsReading(userCancelled: boolean = true): void {
