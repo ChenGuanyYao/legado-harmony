@@ -38,6 +38,8 @@ export class ReaderV2PaginationSession {
   measuredBlock: ReaderV2MeasuredBlock | null = null;
   /** 整章只有图片（封面页、插图页）：整页插图铺满页面，不留正文边距。 */
   imageOnly: boolean = false;
+  /** 滚动阅读：整份文档排成一页，不受页高限制。 */
+  continuous: boolean = false;
   private blockStyles: ReaderV2SpanStyleRange[] = [];
   private blockStylesIndex: number = -1;
 
@@ -95,6 +97,18 @@ export class ReaderV2Paginator {
     return session.pageSet;
   }
 
+  /**
+   * Lays the whole document out as one unbounded column for continuous scrolling. The caller sizes its
+   * list item from contentBottomPx; every other field has the same meaning as on a paged layout.
+   */
+  static layoutContinuous(document: ReaderV2Document, snapshot: ReaderV2LayoutSnapshot,
+    regexStyles: ReaderV2SpanStyleRange[] = []): ReaderV2PageLayout | null {
+    const session = new ReaderV2PaginationSession(document, snapshot, regexStyles);
+    session.continuous = true;
+    ReaderV2Paginator.appendPages(session, 1);
+    return session.pageSet.pages.length > 0 ? session.pageSet.pages[0] : null;
+  }
+
   static start(document: ReaderV2Document, snapshot: ReaderV2LayoutSnapshot,
     regexStyles: ReaderV2SpanStyleRange[] = []): ReaderV2PaginationSession {
     return new ReaderV2PaginationSession(document, snapshot, regexStyles);
@@ -112,6 +126,7 @@ export class ReaderV2Paginator {
       page.pageIndex = session.pageIndex;
       page.columnIndex = columnIndex;
       page.contentRect = new ReaderV2Rect(column.left, column.top, column.right, column.bottom);
+      const columnBottom = session.continuous ? Number.MAX_SAFE_INTEGER : column.bottom;
       let y = column.top;
       let hasContent = false;
       let topInkGuardApplied = false;
@@ -124,7 +139,7 @@ export class ReaderV2Paginator {
           // Same rules as the legacy mixed paginator (ReaderMixedPageLayout): small images flow with the text at
           // their natural size; illustrations and images of unknown size fill the rest of the page and end it.
           const gap = hasContent ? ReaderV2Paginator.imageGap(session.snapshot) : 0;
-          const remaining = column.bottom - y - gap;
+          const remaining = columnBottom - y - gap;
           const natural = ReaderMixedPageLayout.naturalBoxForSize(imageBlock.image.width, imageBlock.image.height,
             session.width, column.height(), session.snapshot.imagePxPerVp);
           let imageRect: ReaderV2Rect;
@@ -139,15 +154,22 @@ export class ReaderV2Paginator {
           } else {
             const wanted = natural ?
               Math.min(natural.heightPx, column.height()) * ReaderMixedPageLayout.FILL_MIN_RATIO : 0;
-            if (hasContent && remaining < Math.max(session.snapshot.imageMinHeightPx, wanted)) {
+            if (!session.continuous && hasContent &&
+              remaining < Math.max(session.snapshot.imageMinHeightPx, wanted)) {
               mustEndPage = true;
               continue;
             }
             const viewport = session.snapshot.viewport;
-            imageRect = session.imageOnly && !hasContent ?
-              new ReaderV2Rect(viewport.left, viewport.top, viewport.right, column.bottom) :
-              new ReaderV2Rect(column.left, y + gap, column.right, column.bottom);
-            endsPage = true;
+            if (session.continuous) {
+              const height = natural ? Math.min(natural.heightPx, column.height()) :
+                session.width * ReaderV2Paginator.CONTINUOUS_UNKNOWN_IMAGE_ASPECT;
+              imageRect = new ReaderV2Rect(column.left, y + gap, column.right, y + gap + height);
+            } else {
+              imageRect = session.imageOnly && !hasContent ?
+                new ReaderV2Rect(viewport.left, viewport.top, viewport.right, columnBottom) :
+                new ReaderV2Rect(column.left, y + gap, column.right, columnBottom);
+              endsPage = true;
+            }
           }
           const imageFragment = new ReaderV2PageFragment();
           imageFragment.blockId = imageBlock.id;
@@ -202,7 +224,7 @@ export class ReaderV2Paginator {
           topInkGuardApplied = true;
         }
         const firstLineHeight = ReaderV2Paginator.lineBottom(firstLine) - firstLine.topHeight;
-        if (hasContent && y + spacing + firstLineHeight > column.bottom + 0.01) {
+        if (hasContent && y + spacing + firstLineHeight > columnBottom + 0.01) {
           // Paragraph spacing belongs to the next block. It is never consumed as invisible page-tail space.
           break;
         }
@@ -215,13 +237,13 @@ export class ReaderV2Paginator {
         while (session.lineIndex < current.lines.length) {
           const line = current.lines[session.lineIndex];
           const relativeBottom = ReaderV2Paginator.lineBottom(line) - paragraphLineTop;
-          if (y + relativeBottom > column.bottom + 0.01 && fragmentLastLine >= fragmentFirstLine) break;
+          if (y + relativeBottom > columnBottom + 0.01 && fragmentLastLine >= fragmentFirstLine) break;
           // A single oversized line still owns an otherwise empty page, preventing a pagination dead loop.
-          if (y + relativeBottom > column.bottom + 0.01 && hasContent) break;
+          if (y + relativeBottom > columnBottom + 0.01 && hasContent) break;
           fragmentLastLine = session.lineIndex;
           fragmentBottom = ReaderV2Paginator.lineBottom(line);
           session.lineIndex++;
-          if (y + relativeBottom >= column.bottom - 0.01) break;
+          if (y + relativeBottom >= columnBottom - 0.01) break;
         }
 
         if (fragmentLastLine < fragmentFirstLine) {
@@ -254,6 +276,9 @@ export class ReaderV2Paginator {
 
       if (!hasContent) break;
       ReaderV2Paginator.finalizePageSelection(page);
+      for (const fragment of page.fragments) {
+        page.contentBottomPx = Math.max(page.contentBottomPx, fragment.clipRect.bottom);
+      }
       page.sourceStart = session.document.sourceOffsetForDisplay(page.displayStart);
       page.sourceEnd = session.document.sourceOffsetForDisplay(page.displayEnd);
       page.identity = `${session.document.identity}_${session.snapshot.identity}_${session.pageIndex}_` +
@@ -265,6 +290,9 @@ export class ReaderV2Paginator {
     result.complete = session.blockIndex >= session.document.blocks.length;
     return appended;
   }
+
+  /** 滚动阅读里尺寸未知的图片按 高/宽 = 这个比例占位。 */
+  private static readonly CONTINUOUS_UNKNOWN_IMAGE_ASPECT: number = 0.62;
 
   /** Vertical gap between an image block and neighbouring text, even when paragraph spacing is zero. */
   private static imageGap(snapshot: ReaderV2LayoutSnapshot): number {

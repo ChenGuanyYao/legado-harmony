@@ -88,6 +88,8 @@ export class ReaderV2PageLayout {
   selectionY: number = 0;
   selectionWidth: number = 0;
   selectionHeight: number = 0;
+  /** 本页最后一个片段的下边缘（含字形出血），滚动阅读用它确定列表项高度。 */
+  contentBottomPx: number = 0;
 
   actionAt(x: number, y: number, slopX: number, slopY: number): ReaderV2ActionHitArea | null {
     // Later actions win where expanded hit slop overlaps, which matches visual painting order.

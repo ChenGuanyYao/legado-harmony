@@ -155,6 +155,9 @@ const READER_REPLACE_MENU_ITEM_ID: string = 'reader_replace_rule';
 const READER_PAGE_CURL_SNAPSHOT_SCALE = 0.42;
 const READER_PROGRESS_OFFSET_KEY = 'readProgressCharOffsetV2';
 const READER_V2_NO_FRAGMENTS: ReaderV2PageFragment[] = [];
+// 滚动阅读的正文块由 V2 原生段落引擎排版和绘制。关闭后退回旧的 ArkUI Text 分块渲染。
+const READER_V2_CONTINUOUS_ENABLED = true;
+const READER_V2_CONTINUOUS_ROLE = 'continuous';
 const READER_PROGRESS_OFFSET_CHAPTER_KEY = 'readProgressCharOffsetChapterV2';
 const READER_PAGINATION_HEIGHT_SCALE_CACHE: Map<string, number> = new Map<string, number>();
 const READER_PAGINATION_HEIGHT_SCALE_CACHE_LIMIT: number = 64;
@@ -409,6 +412,11 @@ struct ReadBookPage {
   private readerPaginationCache: Map<string, ReaderPaginationResult> = new Map();
   private readerV2PageSetCache: Map<string, ReaderV2PageSet> = new Map<string, ReaderV2PageSet>();
   private readerV2DocumentCache: Map<string, ReaderV2Document> = new Map<string, ReaderV2Document>();
+  private readerContinuousV2Layouts: Map<string, ReaderV2PageLayout> = new Map<string, ReaderV2PageLayout>();
+  private readerContinuousV2Controllers: Map<string, ReaderV2PageNodeController> =
+    new Map<string, ReaderV2PageNodeController>();
+  private readerContinuousV2SelectionExtraGaps: Map<string, number> = new Map<string, number>();
+  private readerContinuousV2SelectionShownHostVersion: number = -1;
   private readerV2Controllers: Map<string, ReaderV2PageNodeController> =
     new Map<string, ReaderV2PageNodeController>();
   private readerV2SelectionStyledTextCache: Map<string, MutableStyledString> =
@@ -2373,6 +2381,8 @@ struct ReadBookPage {
                 }
               }
               .width('100%')
+            } else if (this.usesReaderContinuousV2()) {
+              this.readerContinuousV2Item(index, page, this.pageRenderVersion)
             } else if (this.isReaderNovelContinuousScrollModeActive()) {
               Column() {
                 this.styledReaderText(
@@ -6197,6 +6207,7 @@ struct ReadBookPage {
   pruneContinuousReaderSelectionAreas(): void {
     const keepStart = Math.max(0, this.readerContinuousVisibleStart - 1);
     const keepEnd = this.readerContinuousVisibleEnd + 1;
+    this.pruneReaderContinuousV2Controllers(keepStart - 3, keepEnd + 3);
     for (const key of Array.from(this.readerSelectableTextAreas.keys())) {
       // 原生选中键与可见段键都要按窗口清理：懒挂载后原生键只在挂载瞬间登记一次，
       // 残留的旧几何会把下一次选择窗口锚到过期位置。
@@ -18195,6 +18206,7 @@ struct ReadBookPage {
   }
 
   readerSourceActionAtPoint(globalX: number, globalY: number): string {
+    if (this.usesReaderContinuousV2()) return this.readerContinuousV2ActionAtPoint(globalX, globalY);
     const visibleText = this.isReaderNovelContinuousScrollModeActive() ?
       (this.pagedContentText || this.content) : this.visibleCurrentPageText();
     for (const entry of this.readerSourceActionAreas.entries()) {
@@ -18693,6 +18705,10 @@ struct ReadBookPage {
     // selection menu; address the Text controller that actually owns the visible list item instead.
     if (!this.isReaderNovelContinuousScrollModeActive() && this.shouldUseReaderLayoutV2(this.pagedContentText)) {
       this.selectReaderV2TextAtGlobalPoint(globalX, globalY, serial, 0);
+      return;
+    }
+    if (this.usesReaderContinuousV2()) {
+      this.selectReaderContinuousV2TextAtPoint(globalX, globalY, serial, 0);
       return;
     }
     // 滚动模式与翻页模式同策略：直接命中最小的可见段落 Text，在其控制器上做原生选择，
@@ -19785,7 +19801,9 @@ struct ReadBookPage {
       .map((heading: EpubHeading): ReaderV2HeadingHint => new ReaderV2HeadingHint(heading.level, heading.text));
   }
 
-  buildReaderV2Snapshot(): ReaderV2LayoutSnapshot {
+  // continuous: one unbounded column for scrolling. The list supplies the vertical margins as padding, and
+  // no footer guard applies, so the column starts at y=0.
+  buildReaderV2Snapshot(continuous: boolean = false): ReaderV2LayoutSnapshot {
     const input = new ReaderV2LayoutInput();
     input.viewportWidthPx = this.toMeasurePx(this.getReaderPageColumnWidth());
     input.viewportHeightPx = this.toMeasurePx(this.getReaderPaginationViewportHeight());
@@ -19796,11 +19814,11 @@ struct ReadBookPage {
     input.extendToStatusBar = this.readerExtendToStatusBar;
     input.marginLeftPx = this.toMeasurePx(this.getEffectiveReaderMarginLeft());
     input.marginRightPx = this.toMeasurePx(this.getEffectiveReaderMarginRight());
-    input.marginTopPx = this.toMeasurePx(this.getEffectiveReaderMarginTop());
-    input.marginBottomPx = this.toMeasurePx(this.getEffectiveReaderMarginBottom());
+    input.marginTopPx = continuous ? 0 : this.toMeasurePx(this.getEffectiveReaderMarginTop());
+    input.marginBottomPx = continuous ? 0 : this.toMeasurePx(this.getEffectiveReaderMarginBottom());
     // Footer metadata is an overlay, but it is lifted above the gesture indicator. Reserve the same deterministic
     // footprint in native Paragraph pagination so the final正文 line stays clear of the raised footer.
-    input.bottomGuardPx = this.toMeasurePx(this.getReaderV2BottomGuard());
+    input.bottomGuardPx = continuous ? 0 : this.toMeasurePx(this.getReaderV2BottomGuard());
     input.columnCount = 1;
     input.columnGapPx = 0;
     input.fontSizePx = this.toMeasureFontPx(this.readerFontSize);
@@ -19829,7 +19847,7 @@ struct ReadBookPage {
     input.imagePxPerVp = this.toMeasurePx(1);
     input.imageMinHeightPx = this.getReaderMixedImageMinHeightPx();
     input.styleIdentity = `${this.readerTypographyCacheIdentity()}_${this.readerParagraphCommentPaginationIdentity()}_` +
-      `${this.getBackgroundColor()}_${this.getTextColor()}`;
+      `${this.getBackgroundColor()}_${this.getTextColor()}${continuous ? '_continuous' : ''}`;
     return ReaderV2LayoutSnapshot.create(input);
   }
 
@@ -20530,8 +20548,12 @@ struct ReadBookPage {
       `${this.readerV2NativeSelectionHostVersion}`;
   }
 
-  readerV2SelectionStyledText(page: ReaderV2PageLayout): MutableStyledString {
-    const cacheKey = `${page.identity}_selection_page`;
+  // exactGaps: give every paragraph the gap the V2 layout actually left after it (plus extraGapPx) instead of
+  // the nominal paragraph spacing. A native Text pads only its own first and last line, while every V2 block
+  // is padded separately, so the nominal spacing lets the handles drift a little further with each paragraph.
+  readerV2SelectionStyledText(page: ReaderV2PageLayout, exactGaps: boolean = false,
+    extraGapPx: number = 0): MutableStyledString {
+    const cacheKey = `${page.identity}_selection_page${exactGaps ? `_gaps_${Math.round(extraGapPx * 100)}` : ''}`;
     const cached = this.readerV2SelectionStyledTextCache.get(cacheKey);
     if (cached) return cached;
     const styles: StyleOptions[] = [];
@@ -20571,7 +20593,8 @@ struct ReadBookPage {
           styledValue: new ParagraphStyle({
             textAlign: this.readerTextAlignValue(),
             wordBreak: WordBreak.BREAK_WORD,
-            paragraphSpacing: LengthMetrics.px(snapshot.paragraphSpacingPx)
+            paragraphSpacing: LengthMetrics.px(exactGaps ?
+              this.readerV2SelectionGapAfterPx(page, fragmentIndex, extraGapPx) : snapshot.paragraphSpacingPx)
           })
         });
       }
@@ -20817,11 +20840,25 @@ struct ReadBookPage {
           globalX, globalY, serial, nextAttempt));
       return;
     }
+    const selectionResult = this.beginReaderV2NativeSelection(page, pageIndex, role, located[1], located[2],
+      serial);
+    if (selectionResult === 1) return;
+    if (selectionResult === 0 && attempt >= 3) return;
+    this.retryReaderTextSelection(serial, attempt,
+      (nextAttempt: number): void => this.selectReaderV2TextAtGlobalPoint(
+        globalX, globalY, serial, nextAttempt));
+  }
+
+  // Starts a native selection on the fragment under (xPx, yPx) of a laid-out V2 page; the paged reader and
+  // continuous scrolling share it. Returns 1 when the selection host was requested, 0 when no fragment is
+  // under the point, and 2 when a fragment was hit but could not take a selection yet.
+  beginReaderV2NativeSelection(page: ReaderV2PageLayout, pageIndex: number, role: string, xPx: number,
+    yPx: number, serial: number): number {
     let matchedFragment = false;
     const selectionSlop = this.toMeasurePx(8);
     for (let fragmentIndex = 0; fragmentIndex < page.fragments.length; fragmentIndex++) {
       const fragment = page.fragments[fragmentIndex];
-      if (!fragment.clipRect.contains(located[1], located[2], selectionSlop, selectionSlop)) continue;
+      if (!fragment.clipRect.contains(xPx, yPx, selectionSlop, selectionSlop)) continue;
       matchedFragment = true;
       try {
         if (!fragment.paragraph) break;
@@ -20830,7 +20867,7 @@ struct ReadBookPage {
         // truth and always has the exact glyph coordinates, so derive the transparent selection
         // offset from it instead of depending on that optional manager.
         const fragmentPosition = fragment.paragraph.getGlyphPositionAtCoordinate(
-          located[1] - fragment.paragraphX, located[2] - fragment.paragraphY).position;
+          xPx - fragment.paragraphX, yPx - fragment.paragraphY).position;
         const text = page.selectionText;
         let position = fragment.selectionPageStart + Math.max(0,
           Math.min(fragment.selectionPageEnd - fragment.selectionPageStart - 1, fragmentPosition));
@@ -20869,15 +20906,368 @@ struct ReadBookPage {
         this.readerV2SelectionDisplayEnd = this.readerV2DisplayOffsetForPageSelection(page, end);
         this.readerV2SelectionPaintVersion++;
         this.readerV2NativeSelectionHostVersion++;
-        return;
+        return 1;
       } catch (error) {
         console.info('V2 正文选区布局尚未就绪，准备重试:', error);
       }
       break;
     }
-    if (!matchedFragment && attempt >= 3) return;
+    return matchedFragment ? 2 : 0;
+  }
+
+  // Vertical gap the layout left between this text fragment and the next one, images in between included.
+  readerV2SelectionGapAfterPx(page: ReaderV2PageLayout, fragmentIndex: number, extraGapPx: number): number {
+    const fragment = page.fragments[fragmentIndex];
+    for (let index = fragmentIndex + 1; index < page.fragments.length; index++) {
+      const next = page.fragments[index];
+      if (!next.paragraph) continue;
+      return Math.max(0, next.paragraphY - (fragment.paragraphY + fragment.paragraphHeight) + extraGapPx);
+    }
+    return 0;
+  }
+
+  // [first text fragment top, text height, text fragment count] of a chunk layout.
+  readerContinuousV2SelectionExtent(page: ReaderV2PageLayout): number[] {
+    let top = 0;
+    let bottom = 0;
+    let count = 0;
+    for (const fragment of page.fragments) {
+      if (!fragment.paragraph) continue;
+      if (count === 0) top = fragment.paragraphY;
+      bottom = fragment.paragraphY + fragment.paragraphHeight;
+      count++;
+    }
+    return [top, Math.max(1, bottom - top), count];
+  }
+
+  readerContinuousV2SelectionController(key: string, page: ReaderV2PageLayout): TextController {
+    const controller = this.readerSelectableTextController(key);
+    try {
+      controller.setStyledString(this.readerV2SelectionStyledText(page, true,
+        this.readerContinuousV2SelectionExtraGaps.get(page.identity) || 0));
+    } catch (_) {
+    }
+    return controller;
+  }
+
+  // The transparent selection Text wraps its content, so its measured height is the native layout's height.
+  // The first measurement of a chunk spreads the difference to the V2 layout over the paragraph gaps; the
+  // selection is shown once the corrected text has been laid out.
+  calibrateReaderContinuousV2Selection(page: ReaderV2PageLayout, fragmentIndex: number, key: string,
+    nativeHeightPx: number, hostVersion: number): void {
+    if (hostVersion !== this.readerV2NativeSelectionHostVersion ||
+      this.readerContinuousV2SelectionShownHostVersion === hostVersion || nativeHeightPx <= 0) return;
+    const controller = this.readerSelectableTextController(key);
+    const extent = this.readerContinuousV2SelectionExtent(page);
+    if (!this.readerContinuousV2SelectionExtraGaps.has(page.identity)) {
+      const extraGapPx = extent[2] > 1 ? (extent[1] - nativeHeightPx) / (extent[2] - 1) : 0;
+      const usable = Number.isFinite(extraGapPx) && Math.abs(extraGapPx) <= this.toMeasureFontPx(this.readerFontSize) * 2;
+      this.readerContinuousV2SelectionExtraGaps.set(page.identity, usable ? extraGapPx : 0);
+      while (this.readerContinuousV2SelectionExtraGaps.size > 48) {
+        const oldest = this.readerContinuousV2SelectionExtraGaps.keys().next().value as string | undefined;
+        if (oldest === undefined) break;
+        this.readerContinuousV2SelectionExtraGaps.delete(oldest);
+      }
+      console.info(`[ReaderContinuous] selection calibration v2=${Math.round(extent[1])} ` +
+        `native=${Math.round(nativeHeightPx)} paragraphs=${extent[2]} extraGap=${Math.round(extraGapPx * 100) / 100}`);
+      if (usable && Math.abs(extraGapPx) > 0.5) {
+        try {
+          controller.setStyledString(this.readerV2SelectionStyledText(page, true, extraGapPx));
+        } catch (_) {
+        }
+        // The corrected text reports a new size and re-enters above. The timer only covers a build that
+        // swallows that callback.
+        setTimeout(() => {
+          this.showReaderContinuousV2Selection(page, fragmentIndex, controller, hostVersion);
+        }, 120);
+        return;
+      }
+    }
+    this.showReaderContinuousV2Selection(page, fragmentIndex, controller, hostVersion);
+  }
+
+  showReaderContinuousV2Selection(page: ReaderV2PageLayout, fragmentIndex: number, controller: TextController,
+    hostVersion: number): void {
+    if (hostVersion !== this.readerV2NativeSelectionHostVersion ||
+      this.readerContinuousV2SelectionShownHostVersion === hostVersion) return;
+    this.readerContinuousV2SelectionShownHostVersion = hostVersion;
+    this.showReaderV2NativeSelectionAfterLayout(page, fragmentIndex, controller, hostVersion);
+  }
+
+  @Builder
+  readerContinuousV2SelectionText(index: number, page: ReaderV2PageLayout, fragmentIndex: number,
+    offsetX: number, offsetY: number) {
+    Stack({ alignContent: Alignment.TopStart }) {
+      Text('', { controller: this.readerContinuousV2SelectionController(
+        this.readerV2NativeSelectionKey(READER_V2_CONTINUOUS_ROLE, this.currentChapterIndex, index, page), page) })
+        .lineSpacing(LengthMetrics.vp(px2vp(this.toMeasureNonNegativePx(this.readerLineHeight))),
+          { onlyBetweenLines: true })
+        .halfLeading(false)
+        .includeFontPadding(true)
+        .textAlign(this.readerTextAlignValue())
+        .wordBreak(WordBreak.BREAK_WORD)
+        .lineBreakStrategy(LineBreakStrategy.GREEDY)
+        .copyOption(CopyOptions.LocalDevice)
+        .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
+        .editMenuOptions(this.readerTextEditMenuOptions(() => page.selectionText))
+        .onCopy(() => this.scheduleReaderTextSelectionClear())
+        .selectedBackgroundColor(Color.Transparent)
+        .width('100%')
+        .hitTestBehavior(HitTestMode.None)
+        .onTextSelectionChange((selectionStart: number, selectionEnd: number) => {
+          const textLength = page.selectionText.length;
+          this.readerTextSelectionUntil = Date.now() + 900;
+          this.suppressReaderTapClick = true;
+          const safeStart = Math.max(0, Math.min(selectionStart, textLength));
+          const safeEnd = Math.max(safeStart, Math.min(selectionEnd, textLength));
+          if (safeEnd > safeStart) {
+            this.readerV2SelectionChapterIndex = this.currentChapterIndex;
+            this.readerV2SelectionPageIndex = index;
+            this.readerV2SelectionDisplayStart = this.readerV2DisplayOffsetForPageSelection(page, safeStart);
+            this.readerV2SelectionDisplayEnd = this.readerV2DisplayOffsetForPageSelection(page, safeEnd);
+            this.readerV2SelectionPaintVersion++;
+          }
+        })
+        .onSizeChange((_oldValue: SizeOptions, newValue: SizeOptions) => {
+          this.calibrateReaderContinuousV2Selection(page, fragmentIndex,
+            this.readerV2NativeSelectionKey(READER_V2_CONTINUOUS_ROLE, this.currentChapterIndex, index, page),
+            vp2px(Number(newValue.height)), this.readerV2NativeSelectionHostVersion);
+        })
+    }
+    .width(px2vp(page.selectionWidth))
+    .height(px2vp(this.readerContinuousV2SelectionExtent(page)[1]))
+    .position({
+      x: px2vp(page.selectionX + offsetX),
+      y: px2vp(this.readerContinuousV2SelectionExtent(page)[0] + offsetY)
+    })
+    .hitTestBehavior(HitTestMode.None)
+  }
+
+  usesReaderContinuousV2(): boolean {
+    return READER_V2_CONTINUOUS_ENABLED && this.isReaderNovelContinuousScrollModeActive();
+  }
+
+  // Chunk boundaries are trimmed for progress bookkeeping, which also strips the indent of the paragraph a
+  // chunk starts with. Take that indent back from the source so every paragraph is laid out alike.
+  readerContinuousV2ChunkText(index: number, text: string): string {
+    const source = this.pagedContentText;
+    if (!source || index < 0 || index >= this.contentPageStarts.length || index >= this.contentPageEnds.length) {
+      return text;
+    }
+    const start = this.contentPageStarts[index];
+    const end = this.contentPageEnds[index];
+    if (source.substring(start, end) !== text) return text;
+    let indentStart = start;
+    while (indentStart > 0 &&
+      (source.charAt(indentStart - 1) === '　' || source.charAt(indentStart - 1) === ' ')) {
+      indentStart--;
+    }
+    if (indentStart === start || (indentStart > 0 && source.charAt(indentStart - 1) !== '\n')) return text;
+    return source.substring(indentStart, end);
+  }
+
+  // One scrolling chunk laid out by the V2 paragraph engine. Called from list item builders, so the result
+  // is cached by content and layout identity; a typography or theme change simply misses the cache.
+  readerContinuousV2Layout(index: number, text: string): ReaderV2PageLayout | null {
+    if (!text || this.pageViewWidth <= 0) return null;
+    const snapshot = this.buildReaderV2Snapshot(true);
+    const chunk = this.readerContinuousV2ChunkText(index, text);
+    const chapterIndex = this.currentChapterIndex;
+    const key = `${chapterIndex}_${index}_${chunk.length}_${this.hashText(chunk)}_${snapshot.identity}`;
+    const cached = this.readerContinuousV2Layouts.get(key);
+    if (cached) return cached;
+    const startedAt = Date.now();
+    let layout: ReaderV2PageLayout | null = null;
+    try {
+      const document = ReaderV2DocumentParser.parse(chunk, chapterIndex,
+        index === 0 ? this.getChapterTitle(chapterIndex) : '', this.readerV2HeadingHints(chapterIndex));
+      layout = ReaderV2Paginator.layoutContinuous(document, snapshot, this.buildReaderV2RegexStyles(document));
+    } catch (error) {
+      console.error(`[ReaderContinuous] 正文块排版失败 chapter=${chapterIndex} chunk=${index}:`, error);
+    }
+    if (!layout) return null;
+    this.readerContinuousV2Layouts.set(key, layout);
+    while (this.readerContinuousV2Layouts.size > 24) {
+      const oldest = this.readerContinuousV2Layouts.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.readerContinuousV2Layouts.delete(oldest);
+    }
+    CooperativeScheduler.reportSynchronousOperation('reader/v2-continuous-chunk', Date.now() - startedAt,
+      `chapter=${chapterIndex},chunk=${index},chars=${chunk.length}`);
+    return layout;
+  }
+
+  readerContinuousV2ItemHeight(index: number, text: string): number {
+    const layout = this.readerContinuousV2Layout(index, text);
+    if (!layout) return 1;
+    // Blocks inside a chunk are separated by the paragraph spacing; the same gap separates two chunks.
+    const gapPx = index < this.contentPages.length - 1 ? this.toMeasureNonNegativePx(this.readerParagraphSpacing) : 0;
+    return Math.max(1, px2vp(Math.ceil(layout.contentBottomPx + gapPx)));
+  }
+
+  readerContinuousV2Controller(index: number, text: string): ReaderV2PageNodeController {
+    const key = `${this.currentChapterIndex}_${index}`;
+    let controller = this.readerContinuousV2Controllers.get(key);
+    if (!controller) {
+      controller = new ReaderV2PageNodeController();
+      this.readerContinuousV2Controllers.set(key, controller);
+    }
+    controller.updatePage(this.readerContinuousV2Layout(index, text));
+    return controller;
+  }
+
+  pruneReaderContinuousV2Controllers(keepStart: number, keepEnd: number): void {
+    if (this.readerContinuousV2Controllers.size === 0) return;
+    const prefix = `${this.currentChapterIndex}_`;
+    for (const key of Array.from(this.readerContinuousV2Controllers.keys())) {
+      const index = key.startsWith(prefix) ? Number(key.substring(prefix.length)) : -1;
+      if (index >= keepStart && index <= keepEnd) continue;
+      this.readerContinuousV2Controllers.delete(key);
+    }
+  }
+
+  readerContinuousV2ItemId(index: number): string {
+    return `reader_continuous_v2_${this.currentChapterIndex}_${index}`;
+  }
+
+  readerContinuousV2Fragments(index: number, text: string, imagesOnly: boolean,
+    _renderVersion: number): ReaderV2PageFragment[] {
+    const layout = this.readerContinuousV2Layout(index, text);
+    if (!layout) return READER_V2_NO_FRAGMENTS;
+    let result: ReaderV2PageFragment[] = READER_V2_NO_FRAGMENTS;
+    for (const fragment of layout.fragments) {
+      if (imagesOnly ? !fragment.imageSource : fragment.regexBubbleSegments.length === 0) continue;
+      if (result === READER_V2_NO_FRAGMENTS) result = [];
+      result.push(fragment);
+    }
+    return result;
+  }
+
+  readerContinuousV2SelectionRects(index: number, text: string,
+    _paintVersion: number): ReaderV2HighlightRect[] {
+    if (this.readerV2SelectionChapterIndex !== this.currentChapterIndex ||
+      this.readerV2SelectionPageIndex !== index || this.readerV2SelectionDisplayStart < 0 ||
+      this.readerV2SelectionDisplayEnd <= this.readerV2SelectionDisplayStart) return [];
+    const layout = this.readerContinuousV2Layout(index, text);
+    if (!layout) return [];
+    return this.readerV2DisplayHighlightRects(layout, this.readerV2SelectionDisplayStart,
+      this.readerV2SelectionDisplayEnd, 'selection');
+  }
+
+  // Whether the native selection host belongs to this chunk. hostVersion is the reactive trigger: the
+  // owning fields are plain members.
+  readerContinuousV2OwnsSelection(index: number, text: string, _hostVersion: number): boolean {
+    if (this.readerV2NativeSelectionRole !== READER_V2_CONTINUOUS_ROLE ||
+      this.readerV2NativeSelectionChapterIndex !== this.currentChapterIndex ||
+      this.readerV2NativeSelectionPageIndex !== index || this.readerV2NativeSelectionFragmentIndex < 0) return false;
+    const layout = this.readerContinuousV2Layout(index, text);
+    return !!layout && !!layout.selectionText &&
+      this.readerV2NativeSelectionFragmentIndex < layout.fragments.length;
+  }
+
+  @Builder
+  readerContinuousV2Item(index: number, text: string, renderVersion: number) {
+    Stack({ alignContent: Alignment.TopStart }) {
+      NodeContainer(this.readerContinuousV2Controller(index, text))
+        .width('100%')
+        .height('100%')
+        .hitTestBehavior(HitTestMode.None)
+      ForEach(this.readerContinuousV2Fragments(index, text, true, renderVersion),
+        (fragment: ReaderV2PageFragment) => {
+        Image(this.readerImageUriForSource(fragment.imageSource))
+          .width(px2vp(fragment.imageRect.width()))
+          .height(px2vp(fragment.imageRect.height()))
+          .position({ x: px2vp(fragment.imageRect.left), y: px2vp(fragment.imageRect.top) })
+          .objectFit(ImageFit.Contain)
+          .draggable(false)
+          .hitTestBehavior(HitTestMode.None)
+          .onError((error: ImageError) => {
+            console.error(`[Reader] 图片加载失败 path=${fragment.imageSource} message=${error?.message || ''}`);
+            this.markReaderV2ImageBroken(fragment.imageSource);
+          })
+        if (this.readerV2BrokenImageSources.includes(fragment.imageSource)) {
+          Text('图片加载失败')
+            .fontSize(13)
+            .fontColor(this.getSubTextColor())
+            .textAlign(TextAlign.Center)
+            .width(px2vp(fragment.imageRect.width()))
+            .height(px2vp(fragment.imageRect.height()))
+            .position({ x: px2vp(fragment.imageRect.left), y: px2vp(fragment.imageRect.top) })
+            .hitTestBehavior(HitTestMode.None)
+        }
+      }, (fragment: ReaderV2PageFragment) => `reader_continuous_v2_image_${fragment.blockId}_` +
+        `${Math.round(fragment.imageRect.top)}_${Math.round(fragment.imageRect.bottom)}`)
+      ForEach(this.readerContinuousV2Fragments(index, text, false, renderVersion),
+        (fragment: ReaderV2PageFragment) => {
+        ForEach(fragment.regexBubbleSegments, (segment: ReaderV2RegexBubbleSegment) => {
+          this.readerV2RegexBubbleCaps(segment)
+        }, (segment: ReaderV2RegexBubbleSegment) =>
+          `reader_continuous_v2_caps_${segment.styleId}_${segment.rect.left}_${segment.rect.top}_` +
+          `${segment.rect.right}_${segment.rect.bottom}_${segment.leading ? 'l' : ''}${segment.trailing ? 'r' : ''}`)
+      }, (fragment: ReaderV2PageFragment) => `reader_continuous_v2_bubble_${fragment.blockId}_` +
+        `${fragment.displayStart}_${fragment.displayEnd}`)
+      ForEach(this.readerContinuousV2SelectionRects(index, text, this.readerV2SelectionPaintVersion),
+        (rect: ReaderV2HighlightRect) => {
+        this.readerV2SelectionHighlightRect(rect)
+      }, (rect: ReaderV2HighlightRect) => rect.key)
+      if (this.readerContinuousV2OwnsSelection(index, text, this.readerV2NativeSelectionHostVersion)) {
+        this.readerContinuousV2SelectionText(index, this.readerContinuousV2Layout(index, text) as ReaderV2PageLayout,
+          this.readerV2NativeSelectionFragmentIndex, this.readerV2NativeSelectionOffsetX,
+          this.readerV2NativeSelectionOffsetY)
+      }
+    }
+    .id(this.readerContinuousV2ItemId(index))
+    .width('100%')
+    .height(this.readerContinuousV2ItemHeight(index, text))
+  }
+
+  // [chunk index, xPx, yPx] of a window point inside a mounted chunk, or an empty array. The item rectangle
+  // is read on demand, so no per-frame area callback runs while the list scrolls.
+  readerContinuousV2Locate(globalX: number, globalY: number): number[] {
+    if (this.contentPages.length === 0) return [];
+    const pointX = vp2px(globalX);
+    const pointY = vp2px(globalY);
+    const first = Math.max(0, this.readerContinuousVisibleStart - 1);
+    const last = Math.min(this.contentPages.length - 1, this.readerContinuousVisibleEnd + 1);
+    for (let index = first; index <= last; index++) {
+      try {
+        const rect = this.getUIContext().getComponentUtils().getRectangleById(this.readerContinuousV2ItemId(index));
+        if (rect.size.width <= 0 || rect.size.height <= 0) continue;
+        const x = pointX - rect.windowOffset.x;
+        const y = pointY - rect.windowOffset.y;
+        if (x >= 0 && x <= rect.size.width && y >= 0 && y <= rect.size.height) return [index, x, y];
+      } catch (_) {
+      }
+    }
+    return [];
+  }
+
+  readerContinuousV2ActionAtPoint(globalX: number, globalY: number): string {
+    const located = this.readerContinuousV2Locate(globalX, globalY);
+    if (located.length < 3) return '';
+    const layout = this.readerContinuousV2Layout(located[0], this.contentPages[located[0]] || '');
+    if (!layout) return '';
+    const action = layout.actionAt(located[1], located[2], this.toMeasurePx(this.readerSourceActionHitSlopX),
+      this.toMeasurePx(this.readerSourceActionHitSlopY));
+    return action ? action.marker : '';
+  }
+
+  selectReaderContinuousV2TextAtPoint(globalX: number, globalY: number, serial: number, attempt: number): void {
+    if (serial !== this.readerTextSelectionSerial) return;
+    const located = this.readerContinuousV2Locate(globalX, globalY);
+    const layout = located.length >= 3 ?
+      this.readerContinuousV2Layout(located[0], this.contentPages[located[0]] || '') : null;
+    if (layout && layout.selectionText) {
+      const result = this.beginReaderV2NativeSelection(layout, located[0], READER_V2_CONTINUOUS_ROLE,
+        located[1], located[2], serial);
+      if (result === 1) return;
+      if (result === 0 && attempt >= 3) {
+        this.setReaderTextSelectionActive(false);
+        return;
+      }
+    }
     this.retryReaderTextSelection(serial, attempt,
-      (nextAttempt: number): void => this.selectReaderV2TextAtGlobalPoint(
+      (nextAttempt: number): void => this.selectReaderContinuousV2TextAtPoint(
         globalX, globalY, serial, nextAttempt));
   }
 
