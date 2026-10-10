@@ -4762,12 +4762,19 @@ struct ReadBookPage {
   getReaderHeaderOverlayTopInset(): number {
     // 普通阅读容器已经通过 getReaderTopSafePadding() 避让状态栏；叠页/仿真为了让纸张
     // 覆盖全屏而不消费顶部安全区，需要在页眉自身补回这段高度。
-    return this.getReaderTopSafePadding() <= 0 ? this.getReaderPageContentTopPadding() : 0;
+    return (this.getReaderTopSafePadding() <= 0 ? this.getReaderPageContentTopPadding() : 0) +
+      this.getReaderHeaderExtendedTopGap();
+  }
+
+  getReaderHeaderExtendedTopGap(): number {
+    // 扩展模式下状态栏已隐藏，页眉从屏幕顶端开始；留一小段间距，避免文字紧贴屏幕边缘和圆角。
+    return this.readerExtendToStatusBar ? 8 : 0;
   }
 
   getReaderHeaderContentReserve(): number {
     return this.isReaderHeaderVisible() ?
-      this.getReaderHeaderInfoBarHeight() + this.getReaderInfoBarConfig().headerExtraHeight() + 4 : 0;
+      this.getReaderHeaderInfoBarHeight() + this.getReaderInfoBarConfig().headerExtraHeight() + 4 +
+        this.getReaderHeaderExtendedTopGap() : 0;
   }
 
   getEffectiveReaderMarginBottom(): number {
