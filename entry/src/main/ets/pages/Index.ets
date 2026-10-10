@@ -1,6 +1,7 @@
 import { window } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { webview } from '@kit.ArkWeb';
+import { WebRuntimeAvailability } from '../utils/WebRuntimeAvailability';
 import { HdsTabs } from '@kit.UIDesignKit';
 import { Book, BookChapter } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
@@ -423,7 +424,7 @@ struct Index {
       if (this.globalTtsActive && this.showGlobalTtsPanel && this.showGlobalTtsCatalog) {
         this.globalTtsCatalogOverlay()
       }
-      if (this.stageRuntimeMounted) {
+      if (this.stageRuntimeMounted && WebRuntimeAvailability.isAvailable()) {
         Web({ src: 'about:blank', controller: this.stageRuntimeController })
           .width(1)
           .height(1)

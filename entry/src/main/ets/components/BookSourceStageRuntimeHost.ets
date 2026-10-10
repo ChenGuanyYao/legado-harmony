@@ -1,4 +1,5 @@
 import { webview } from '@kit.ArkWeb';
+import { WebRuntimeAvailability } from '../utils/WebRuntimeAvailability';
 import { BookSourceStageWebRuntime } from '../core/book/BookSourceStageWebRuntime';
 
 /** Keeps the shared full-JavaScript source runtime available on routed book pages. */
@@ -68,7 +69,7 @@ export struct BookSourceStageRuntimeHost {
   }
 
   build() {
-    if (this.mounted) {
+    if (this.mounted && WebRuntimeAvailability.isAvailable()) {
       Web({ src: 'about:blank', controller: this.controller })
         .width(1)
         .height(1)

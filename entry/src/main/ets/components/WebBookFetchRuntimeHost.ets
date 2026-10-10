@@ -1,4 +1,5 @@
 import { webview } from '@kit.ArkWeb';
+import { WebRuntimeAvailability } from '../utils/WebRuntimeAvailability';
 import { WebBookFetchRuntime } from '../core/book/WebBookFetchRuntime';
 
 /** Invisible ArkWeb transport for source rules that explicitly opt into `webView: true`. */
@@ -43,16 +44,18 @@ export struct WebBookFetchRuntimeHost {
   }
 
   build() {
-    Web({ src: 'about:blank', controller: this.controller })
-      .width(1)
-      .height(1)
-      .opacity(0.01)
-      .javaScriptAccess(true)
-      .domStorageAccess(true)
-      .mixedMode(MixedMode.All)
-      .onlineImageAccess(true)
-      .onControllerAttached((): void => { this.attachRuntime(); })
-      .onPageBegin((): void => { WebBookFetchRuntime.get().onPageBegin(this.controller); })
-      .onPageEnd((): void => { WebBookFetchRuntime.get().onPageEnd(this.controller); })
+    if (WebRuntimeAvailability.isAvailable()) {
+      Web({ src: 'about:blank', controller: this.controller })
+        .width(1)
+        .height(1)
+        .opacity(0.01)
+        .javaScriptAccess(true)
+        .domStorageAccess(true)
+        .mixedMode(MixedMode.All)
+        .onlineImageAccess(true)
+        .onControllerAttached((): void => { this.attachRuntime(); })
+        .onPageBegin((): void => { WebBookFetchRuntime.get().onPageBegin(this.controller); })
+        .onPageEnd((): void => { WebBookFetchRuntime.get().onPageEnd(this.controller); })
+    }
   }
 }
