@@ -14738,9 +14738,12 @@ struct ReadBookPage {
   }
 
   preloadReaderContent(): void {
-    if (!this.readerPageVisible || this.chapters.length === 0 || !this.readerPreloadEnabled) {
+    if (this.chapters.length === 0) return;
+    if (!this.readerPageVisible) {
+      this.preloadReaderContentForHiddenTts();
       return;
     }
+    if (!this.readerPreloadEnabled) return;
     // Current-page recovery is user-visible work. Do not let speculative adjacent Paragraph sessions compete
     // with it; retry once the authoritative current page has been published.
     if (!this.readerInitialPageReady) {
@@ -14752,6 +14755,18 @@ struct ReadBookPage {
     engine.preloadAround(this.currentChapterIndex, this.normalizePreloadChapterCount(this.readerPreloadChapterCount), 0);
     this.preloadNextChapterPaginationLater();
     this.preloadPreviousChapterPaginationLater();
+  }
+
+  // Lock-screen reading has no visible page, but the next chapter body must still be fetched while the current
+  // chapter is audible. Fetching it only at the chapter boundary leaves a silent gap in which the system can
+  // suspend the process mid-request, so reading stalls until the app returns to the foreground. Only the
+  // network/database body is prefetched here; adjacent pagination stays a visible-page job. At least one
+  // chapter is fetched even with preloading switched off, because the handoff needs it moments later anyway.
+  preloadReaderContentForHiddenTts(): void {
+    if (!this.isTtsSpeaking || !this.ttsAutoContinue || !this.isCurrentReaderEngineBook()) return;
+    const forwardCount = this.readerPreloadEnabled ?
+      this.normalizePreloadChapterCount(this.readerPreloadChapterCount) : 1;
+    ReadBookEngine.get().preloadAround(this.currentChapterIndex, forwardCount, 0);
   }
 
   normalizePreloadChapterCount(count: number): number {
