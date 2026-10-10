@@ -1,14 +1,12 @@
-# Legado Harmony 书源开发指南
+# 开源轻页书源开发文档
 
-> 适用版本：`3.10.910`（2026-10-08）。本文以当前工作区代码为准；规则能力、字段消费方式和限制可能随版本继续调整。
-
-本文面向为开源轻页编写、迁移和调试书源的开发者，描述项目当前代码中**已经实现并实际调用**的规则能力。
+本文面向为开源轻页（legado-harmony）编写、迁移和调试书源的开发者，描述项目当前代码中**已经实现并实际调用**的规则能力。规则能力、字段消费方式和限制可能随版本继续调整。
 
 | 项目 | 信息 |
 | --- | --- |
 | 适用项目 | `legado-harmony` |
 | 适用版本 | `3.10.910`（以 `AppScope/app.json5` 为准） |
-| 最后核对 | 2026-10-08 |
+| 最后核对 | 2026-10-11 |
 | 文档性质 | 当前实现参考，不是 Android「阅读」全部规则的等价清单 |
 
 > [!IMPORTANT]
@@ -177,7 +175,7 @@
 3. ArkWeb 下载回调；
 4. HarmonyOS 系统下载服务。
 
-每一层都会先校验响应确实是 JSON 对象或数组，错误信息会尽量保留 HTTP、网络或下载服务原因，而不是显示 `[object Object]`。导入对话框提交后会主动收起键盘。
+每一层都会先校验响应确实是 JSON 对象或数组，错误信息会尽量保留 HTTP、网络或下载服务原因，而不是显示 `[object Object]`。
 
 只有同时具有 `bookSourceUrl` 和 `bookSourceName` 的项目才会被写入数据库。`bookSourceUrl` 也是书源的唯一身份标识；修改它通常会被视为另一个书源。导入后会重新读取数据库并核对原始 JSON、脚本库、登录配置、各规则组和运行字段，避免“提示成功但复杂字段被截断或漏存”。
 
@@ -189,11 +187,9 @@
 
 选择状态以 `bookSourceUrl`（书源唯一身份）为键；同一地址的重复项目会视为同一书源。导入结果中的成功、失败、锁定和需登录数量只统计最终选中的项目。
 
-#### 管理列表的快捷操作
+#### 规则组键名与紧凑格式
 
-在 API 26 及以上设备，书源管理页使用 HDS 滑动列表提供启用/禁用和删除快捷操作；搜索结果列表也提供加入/移出书架和进入阅读的滑动操作。API 25 及以下设备显示等价的按钮操作。进入选择模式、批量处理期间或书源已锁定时会关闭对应快捷操作，快捷操作不会绕过锁定和批量操作限制。
-
-规则组导出时也会先保留原始规则对象中的未知键，再覆盖当前结构化字段，减少编辑后扩展规则丢失。
+规则组导出时会先保留原始规则对象中的未知键，再覆盖当前结构化字段，减少编辑后扩展规则丢失。
 
 规则组推荐使用 Android 阅读常见的导出键名：
 
@@ -330,8 +326,6 @@
 
 动态发现脚本返回的 `select` 控件也可映射为原生筛选。控件只需具有非空标题，候选值来自 `chars`。支持两种动作写法：动作形如 `show(值, '变量名')` 时，选择后写入书源变量并重新执行该源的发现规则；动作是自带脚本时，应用会先把所选值写入 `infoMap[控件名]`，再原样执行该脚本（通常配合 `source.setVariable()` 持久化），脚本中的 toast 会作为提示显示。复杂脚本仍需逐源验证，不应只依赖标题推断。
 
-发现页会一次查询已启用书源的轻量元数据，以便排序、搜索和恢复选择；下拉菜单使用 `LazyForEach`，只为可见项创建 ArkUI 组件。这里的“按需加载”是界面虚拟化，不是把书源数据库拆成网络分页。
-
 #### URL 选项对象
 
 在 URL 后追加逗号和对象可配置请求：
@@ -356,15 +350,15 @@
 
 选项对象支持单引号、无引号键和尾逗号等宽松写法，但推荐使用标准 JSON，减少转义差异。
 
-##### 动态 `@js:` 请求头
-
-书源 `header` 以 `@js:`/`js:` 开头时视为动态请求头规则：脚本在受控分阶段运行时中执行（按 URL 阶段预算限制），返回 JSON 对象或 JSON 编码的对象字符串，例如 `"@js:'{\"Referer\": baseUrl + \'/\', \"Cookie\": source.getVariable()}'"`。脚本可以读取书源变量、登录状态并调用 `jsLib` 函数；结果按“书源地址 + 书源变量”缓存约 5 分钟，变量变化后自动重算。动态结果与登录密钥一样只在书源自己的主机（`bookSourceUrl`、`loginUrl` 及同主机地址）上发送，不会附加到第三方图片或内容主机；URL 选项中的显式 `headers` 仍覆盖同名项。运行时不可用时回退为静态字面量解析。
+##### `webView` 请求的执行方式
 
 `webView` 请求在同一个隐藏 ArkWeb 中串行执行，默认约 20 秒超时（实现会把单次超时限制在 3～60 秒），最多排队 32 个任务。页面需达到 `document.readyState === 'complete'` 且 DOM 连续稳定后才返回。隐藏 ArkWeb 必须已随当前应用页面挂载；若提示“抓取环境未挂载”，重新进入搜索、发现或相关页面后重试。
 
 页面宿主切换时，尚未完成的请求会迁移到新宿主继续执行，并忽略新宿主首次 `about:blank` 回调；请求超时后仍需按普通失败流程重试。
 
 该选项只负责执行书源明确给出的页面请求，不会自动点击验证码、替用户选择不受信任证书、伪造浏览器指纹或保证通过所有反自动化挑战。需要用户交互的登录/验证仍应使用验证页或 `startBrowserAwait`，并遵守目标服务的授权与访问规则。
+
+##### POST 简写
 
 POST 还有一种简写：地址以 `@` 开头，`?` 后内容作为 body。
 
@@ -399,7 +393,16 @@ URL 内还支持：
 /path@Header:{"Referer":"https://example.com/"}@End
 ```
 
-普通请求头的合并顺序是“书源全局请求头 → 本次请求头”，因此本次请求头优先。若未显式设置 Cookie，应用会按请求地址从登录/验证 Cookie 存储中补充。配置 `session` 后，Cookie 的最终优先级见下一节；已有 Referer 始终优先于 `session.referer`。
+普通请求头的合并顺序是“书源全局请求头 → 本次请求头”，因此本次请求头优先。若未显式设置 Cookie，应用会按请求地址从登录/验证 Cookie 存储中补充。配置 `session` 后，Cookie 的最终优先级见[通用会话选项 `session`](#通用会话选项-session)；已有 Referer 始终优先于 `session.referer`。
+
+##### 动态 `@js:` 请求头
+
+书源 `header` 以 `@js:`/`js:` 开头时视为动态请求头规则：脚本在受控分阶段运行时中执行（按 URL 阶段预算限制），返回 JSON 对象或 JSON 编码的对象字符串，例如 `"@js:'{\"Referer\": baseUrl + \'/\', \"Cookie\": source.getVariable()}'"`。
+
+- 脚本可以读取书源变量、登录状态并调用 `jsLib` 函数。
+- 结果按“书源地址 + 书源变量”缓存约 5 分钟，变量变化后自动重算。
+- 动态结果与登录密钥一样只在书源自己的主机（`bookSourceUrl`、`loginUrl` 及同主机地址）上发送，不会附加到第三方图片或内容主机。
+- URL 选项中的显式 `headers` 仍覆盖同名项；运行时不可用时回退为静态字面量解析。
 
 #### 通用会话选项 `session`
 
@@ -663,8 +666,20 @@ $.status##^1$##连载
 | `\Q…\E` | 转义为字面量 |
 | `\h`、`\H`、`\v`、`\V`、`\R`、`\z`、`\Z` | 展开为等价的字符类或断言 |
 | `\p{…}` | 保留并自动附加 `u` 标志 |
+| `\w`、`\W`、`\d`、`\D`、`\b`、`\B` | 换成 Android（ICU）的 Unicode 字符集，见下文 |
+
+`\w`、`\d` 和 `\b` 在 Android 上恒为 Unicode 语义，JavaScript 默认只认 ASCII。应用按 Android 的口径转换，字段规则的 `##`、`ruleContent.replaceRegex` 和阅读器“替换净化”都适用：
+
+- `\w` 匹配字母、数字、下划线以及汉字、假名等各文种的单词字符，`\W` 是它的补集。因此 `\W*` 只会吃掉标点和空白，不会把整段中文正文当成“非单词字符”吞掉。
+- `\d` 匹配所有十进制数字，包括全角 `０-９`；`\D` 是它的补集。只想匹配 ASCII 数字时请显式写 `[0-9]`。
+- `\b`、`\B` 按同一套单词字符判定边界，汉字与标点之间才算边界，汉字与汉字之间不算。字符类内的 `[\b]` 仍是退格符。
+- 字符表只覆盖基本多文种平面；emoji 等平面外字符按非单词、非数字处理。
+
+如果一条规则原本是照 JavaScript 的 ASCII 语义写的（例如用 `\w+` 只匹配英文单词、用 `\W` 匹配中文），迁移后需要改成显式字符类。
 
 仍无法完全等价的写法会按最接近的语义处理，并在替换净化配置页给出“已按 Android 正则转换”提示：内联标志的位置语义、占有量词与原子组的回溯行为、字符类交集 `[a&&b]`、Java 专有属性名（`InCJKUnifiedIdeographs` 等），以及 `(?x)`/`(?u)`/`(?d)`/`(?U)` 这类 JavaScript 没有的开关。稳定书源更适合用 CSS/JSONPath 提取后再用 `##` 净化。
+
+#### 阅读器替换净化规则导入
 
 阅读器里的“替换净化”规则（阅读设置 → 替换净化配置）使用同一套转换：导入 Android 阅读导出的规则文件后即可生效，无需把 `(?m)`、`(?is)` 之类改成 JavaScript 写法。
 
@@ -679,6 +694,18 @@ $.status##^1$##连载
 文件可以是顶层数组，也可以包在 `rules`/`replaceRules`/`list`/`data` 等字段里，允许带 UTF-8 BOM。导入时缺少匹配规则的条目会被跳过并计入提示；`scope`/`excludeScope` 里的正则会自动包成 `/…/` 形式（含逗号、分号或换行时保持原样，这类值无法安全转换）。
 
 只有识别为非本应用来源（阅读/Legado、阅读/YueDu）时才先弹确认框：标题标明来源，正文说明将做哪些转换、有多少条目会被跳过或因不支持正文范围条件而被忽略，确认后才写入规则列表；本应用自己导出的文件直接导入，不打断用户。
+
+正文净化在后台任务中执行，并带时间预算，避免一条回溯严重的规则拖住整个应用：
+
+- 每条规则按自己的超时设置计时（默认 3000 ms，正文净化中最多 3 秒），整章净化任务上限 8 秒。
+- 超时的规则整条跳过，正文保持上一条规则处理后的结果；任务预算耗尽后，剩余规则不再执行。
+- 不显式跨行的规则逐行（逐段）执行。`\W`、`\D`、`[^x]` 这类只是“顺带”能匹配换行的写法不再跨段落吞字。
+- 规则显式依赖换行时仍对整段文本执行：字面的 `\n`、`\s`、`[\s\S]` 一类全字符类、`(?s)` 标志，或不带 `(?m)` 的 `^`/`$`。
+- 形如 `(a+)+`、`[abc]+{2,}` 的嵌套量词规则会被直接跳过。
+
+这套预算只作用于阅读器的替换净化规则；书源自身的 `replaceRegex` 和字段 `##` 仍是普通全局替换，写规则时应自行避免灾难性回溯。
+
+#### 直接正则规则
 
 规则可直接以 `##正则##替换` 开头，此时处理输入是完整当前元素。尾部再加 `###` 时只处理首个命中的子串，并返回替换后的该子串，而不是返回周围的原文本。
 
@@ -731,6 +758,8 @@ $.data<js>result.items</js>$.books[*]
 
 `wordCount` 是最终展示字符串，应用不会统一把裸数字自动换算为“万字”，因为不同接口可能已经携带单位或使用其他口径。仅当字段必须依赖完整页面 JavaScript、异步渲染或全局状态时，才在对应请求 URL 中显式使用 `webView: true` / `webJs`；不要为了简单的数值换算启用网页抓取。
 
+#### 引擎分层与路由
+
 这类组合规则会先做能力判断。普通表达式继续在每个列表元素自己的 `AnalyzeRule` 上下文中执行，以保留既有的当前元素、变量读写和尾部处理顺序；只有使用箭头函数、模板字符串插值、`try`、数组高阶函数、`Set/Map`、解构或超大脚本等完整 JavaScript 语义时，才会批量路由到分阶段 ArkWeb。不要因为规则中出现 `<js>` 就假定它一定由 ArkWeb 执行。
 
 复杂组合规则在 ArkWeb 执行失败时，如果能力分析确认脚本没有网络请求、Cookie 修改或持久化写入等可观察副作用，会回退到逐元素兼容解析，不会把该字段直接当成空值。包含副作用的脚本不会再交给第二个引擎重试，以免重复请求或重复修改状态。此外，`<js>处理</js>` 内嵌后处理脚本如果调用了 `source.put/get`、`cookie.*` 或 `cache.*` 这类对象状态方法，也会直接路由到 ArkWeb，避免在轻量解释器上静默失效；`<js>` 块可以单独作为开头（没有前置基础规则），此时脚本中的 `result` 是原始元素本身，与 Android 阅读的按类型分发写法一致。
@@ -743,6 +772,8 @@ $.data<js>result.items</js>$.books[*]
 
 搜索、发现、详情、目录和正文分别路由，启用某一阶段的 ArkWeb 不会把所有书源或所有阶段一起改道。无副作用的失败可以回退轻量引擎；含网络、Cookie 或持久化写入的动作会避免双重执行。`jsLib` 中声明的顶层函数会暴露给当前阶段规则，并在下一书源执行前清理，防止跨源污染。
 
+#### QuickJS 迁移与回归测试
+
 QuickJS 候选当前限制为最多 4096 字符、最多 64 个绑定和 128 KiB 绑定数据，并使用 16 MiB 内存、512 KiB 栈及 10～250 ms 的受限执行。JSON 安全的对象和数组会保持结构化绑定，因此纯表达式可读取 `$.field` 或数组下标；绑定转换另有 32 层、20000 节点保护。包含赋值、语句块、循环、函数/类声明、`new`、`Date`、随机数，或 `java/source/book/chapter/cookie/fetch/webView` 等主机对象的表达式不会进入 QuickJS。迁移诊断只持久化不可逆表达式指纹、计数和耗时，不保存书源代码、变量或解析结果。
 
 可在“其他设置 → 脚本引擎迁移 → 书源脚本回归测试”中多选书源与搜索、发现、详情、目录、正文阶段。该工具只抽取符合上述安全边界的 `{{…}}`、独立 `<js>…</js>`、`@js:`/`js:` 纯表达式，以三组固定输入在原有表达式运行时和 TaskPool QuickJS 中分别执行并报告一致、差异或失败；它不会请求书源网站，也不会读取或修改 Cookie、登录信息、书源变量或迁移统计。异步纯脚本由统一异步路由提交，仍保留原执行结果作为失败回退。单次最多加载 50 个书源并测试 300 个候选表达式。
@@ -753,12 +784,13 @@ QuickJS 候选当前限制为最多 4096 字符、最多 64 个绑定和 128 KiB
 
 QuickJS 不能直接替代 JSONPath/CSS/XPath：选择器需要解析 HTML/JSON 节点和维护“当前元素”上下文，而 QuickJS 影子运行时故意不开放 DOM、网络、Cookie、文件或平台对象。需要这些能力时，应继续使用原生选择器、受控主机函数或分阶段 ArkWeb，而不是把规则整体转写为 JavaScript。
 
+#### 已覆盖的主机函数
+
 轻量层和桥接层合计覆盖的常用能力包括：
 
 - `java.timeFormat(value, pattern)` 按设备本地时区格式化时间；
 - `java.timeFormatUTC(value, pattern, zone)` 先按给定小时偏移调整时间，再使用 UTC 字段输出 `yyyy`、`MM`、`dd`、`HH`、`mm`、`ss`；
-- `java.put(key, java.timeFormatUTC(java.getString(path), pattern, zone))` 等嵌套调用会先计算内层取值和格式化结果，再写入共享规则上下文。
-
+- `java.put(key, java.timeFormatUTC(java.getString(path), pattern, zone))` 等嵌套调用会先计算内层取值和格式化结果，再写入共享规则上下文；
 - 字符串拼接和简单变量赋值；
 - `result.replace(/正则/g, "文本")` 等常见替换链；
 - 简单数值 `+ - * / %` 和 `Math.round/floor/ceil`；
@@ -769,7 +801,6 @@ QuickJS 不能直接替代 JSONPath/CSS/XPath：选择器需要解析 HTML/JSON 
 - SHA-512、Base64 URL、HTML 实体编解码；
 - AES、DES/3DES 的常见 Base64 加解密；
 - `java.getString`、`java.getStringList` 读取当前内容：`$.` 开头的 JSON 路径直接取值，其他规则由原生规则引擎按完整规则语法求值；
-- `java.timeFormat`；
 - `java.getCookie`、`cookie.getCookie/setCookie/removeCookie`；
 - `java.randomUUID()`、`java.androidId()`；
 - `java.put/get`、`source.get/put/getVariable/setVariable`、`source.key`（与 Android 端 `source.key` 属性一致，取书源地址）、`book.getVariable/putVariable`；轻量引擎处理完 `java.*` 调用后，剩余的字符串链、三元和正则字面量表达式会交给 QuickJS 兜底求值，修复字面 `\n` 被展开、时间戳显示为 1970 之类的问题；
@@ -829,8 +860,6 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 
 每个源常规搜索最多保留 50 条有效结果，总搜索最多保留 1000 条，并按“来源 + URL”去重。搜索并发数最大为 12；后台结果每约 500 ms 合并一次，避免每条回调都打断列表手势，因此搜索未结束时仍可滑动已出现的结果。搜索会清理超长或异常字段；书名约 120 字符、作者约 120、简介约 1200、URL 约 2048 字符。
 
-主页面中的搜索组件在书架、发现、搜索和“我的”之间切换时不会主动清空结果；发起下一次搜索或清除单书源模式时才重置。本行为是页面会话缓存，不是长期数据库搜索快照，应用进程结束后不保证恢复。
-
 ### 发现规则 `ruleExplore`
 
 至少需要：`exploreUrl`、`bookList`、`name`、`bookUrl`。字段语义与搜索相同。发现链会读取 `wordCount`、`status` 和 `updateTime`，并按“来源 + 详情 URL”去重。
@@ -839,7 +868,7 @@ ArkWeb 提供真实 ECMAScript 语义，但**不等于完整 Android、Rhino、N
 
 当 `ruleExplore` 为 `null`、空数组、空对象或缺少必要字段时，会自动回退到 `ruleSearch`。`exploreUrl` 以 `@js:` / `js:` 开头时会按能力路由执行，结果应为分类对象数组的 JSON 字符串；简单表达式可由轻量引擎处理，完整脚本或带 `jsLib` 函数的模板可进入分阶段 ArkWeb。阶段脚本返回 `/api/...` 等相对地址时会以 `bookSourceUrl` 补全后再请求。两条路径都有代码、输出、操作或响应大小限制。
 
-发现菜单脚本的结果会按“书源 + 平台/分类 + 变量”缓存约 5 分钟，切换分类或书源时不再重复执行菜单脚本，筛选动作（写变量/执行脚本）会立即清除该源缓存。发现脚本可以通过 `source.put('type', …)` 为分类声明媒体类型，取值为 `audio`（或 `听书`/`有声`）、`comic`（或 `漫画`）、`novel`/`text`（或 `小说`），书籍会按声明进入对应阅读模式，无需依赖标签推断。
+发现菜单脚本的结果会按“书源 + 平台/分类 + 变量”缓存约 5 分钟，切换分类或书源时不再重复执行菜单脚本，筛选动作（写变量/执行脚本）会立即清除该源缓存。在书源管理中删除、导入或保存编辑书源后，对应书源的发现列表缓存和菜单缓存也会立即失效，发现页下次显示时重新加载，调试 `exploreUrl` 时不需要等缓存过期。发现脚本可以通过 `source.put('type', …)` 为分类声明媒体类型，取值为 `audio`（或 `听书`/`有声`）、`comic`（或 `漫画`）、`novel`/`text`（或 `小说`），书籍会按声明进入对应阅读模式，无需依赖标签推断。
 
 ### 详情规则 `ruleBookInfo`
 
@@ -1218,7 +1247,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 - [ ] `startBrowserAwait` 完成或取消后按钮不会一直显示“执行中”；
 - [ ] 站点 301/302、HTTP/HTTPS 或镜像变化时行为可接受。
 
-运行应用时，搜索、发现和 WebBook 服务会输出包含 `[SC]`、`[ExploreCoordinator]`、`[WS]` 的日志，可重点查看：最终 URL、状态码、响应长度、列表命中数量和第一条结果。
+运行应用时，搜索、发现和 WebBook 服务会输出包含 `[SC]`、`[ExploreCoordinator]`、`[WS]` 的日志，可重点查看：请求地址、状态码、响应长度、列表命中数量和第一条结果。日志中的请求地址只保留到路径，查询串和 URL 选项对象会被替换为长度占位（如 `?<len=128>`），避免把 Token、Cookie 参数写进日志；需要核对完整地址和参数时，使用下文的单书源调试。
 
 ### 单书源调试
 
@@ -1233,7 +1262,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 执行明细会记录网络请求的最终地址、状态码、响应大小和摘要，以及每个字段的规则类型、输入数、匹配数、耗时、输出预览和错误。调试信息只用于当前诊断会话，不改变书源规则；调试阶段仍使用应用的正常请求、Cookie、登录和 ArkWeb 路由，因此不能替代真实账号状态下的最终验收。正文阶段的输入是章节 URL，详情和目录阶段的输入应是书源能够处理的书籍/目录 URL。
 
-调试完成后可点击“导出报告”，通过系统文件选择器保存 JSON 诊断文件。报告包含执行阶段、网络轨迹、规则匹配和错误信息；导出时会对来源地址等字段执行脱敏处理，但规则内容和响应摘要仍可能包含站点或个人敏感信息，提交前应人工检查并删除 Cookie、Token、账号及其他私密数据。调试页和书源编辑页会监听系统键盘避让区域，输入规则时自动为底部内容预留空间。
+调试完成后可点击“导出报告”，通过系统文件选择器保存 JSON 诊断文件。报告包含执行阶段、网络轨迹、规则匹配和错误信息；导出时会对来源地址等字段执行脱敏处理，但规则内容和响应摘要仍可能包含站点或个人敏感信息，提交前应人工检查并删除 Cookie、Token、账号及其他私密数据。
 
 当出现“请求成功但字段为空”时，先查看对应字段的匹配数和输出预览；当出现地址未解析、目录为空或正文为空时，按网络请求 → URL 规则 → 字段规则的顺序检查。调试日志中若出现 401/403、验证码或登录页，应先完成书源登录/网页验证，再重新运行对应阶段。
 
@@ -1274,6 +1303,9 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 | 登录按钮脚本超时 | 检查动作是否等待未完成的网页、反复请求同一 URL、调用未映射的主机方法，或超过网络/脚本限制；错误提示中的“缺少兼容能力”优先处理。 |
 | 登录面板开关没有状态 | 新源使用 `type: "toggle"`/`"select"`、`chars` 和默认值；旧按钮式开关需确保动作把状态写入 `source`、`java` 或 `loginInfo`。 |
 | 有声书有目录但不能播放 | 确认 `chapterUrl` 已返回可播放地址；若使用页面抓取，确认其请求选项显式包含 `webView: true` 且 `sourceRegex` 能匹配页面媒体请求；同时检查登录、Token、音色代码和响应是否为 401/JSON 错误。 |
+| 改了 `exploreUrl` 或发现规则，发现页仍是旧内容 | 在书源管理中保存编辑、重新导入或删除书源都会让该源的发现缓存失效；若仍是旧内容，确认保存成功，且编辑的是当前 `bookSourceUrl` 对应的书源。 |
+| `\w`、`\d`、`\b` 的匹配结果与在浏览器里测试的不一样 | 应用按 Android 语义转换：`\w` 包含汉字，`\d` 包含全角数字，`\b` 不会落在两个汉字之间。只需要 ASCII 时改写为 `[A-Za-z0-9_]`、`[0-9]`。 |
+| 替换净化规则在规则页测试通过，阅读时却没生效 | 规则可能超时被跳过（单条最多 3 秒，整章 8 秒），或依赖 `\W`、`[^x]` 跨段落匹配；需要跨行时显式写 `\n`、`\s` 或 `(?s)`，并收紧 `.*` 一类宽泛匹配。 |
 | CSS 在小页面可用、大页面失效 | HTML 超过 4 MiB 保护阈值；寻找 JSON API 或减少响应。 |
 | Android 阅读中可用、此处不可用 | 查看该阶段是否路由 ArkWeb、是否调用未映射 `java/source/cache/cookie` 方法、浏览器直连网络、复杂 XPath/CSS 或未消费字段。 |
 
@@ -1303,7 +1335,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 “无结果”“需要验证”和“暂时异常”不会自动进入失败项，避免因为测试关键字、登录状态或临时网络问题误删书源。校验进度只展示已校验数量、状态和自动处理结果，不以“命中 X 本”作为用户可见结论。
 
-在 API 18 及以上设备上，若普通 HTTP 客户端明确报告证书校验错误，结果页可由用户选择仅信任报错的精确主机并重试。该例外只保存在本机，不扩展到子域、同级域名或重定向主机，并可从书源操作菜单撤销。跳过证书校验会增加连接被冒充或监听的风险，不能作为书源的默认配置，也不适用于隐藏 ArkWeb 的浏览器证书页面。
+若普通 HTTP 客户端明确报告证书校验错误，结果页可由用户选择仅信任报错的精确主机并重试。该例外只保存在本机，不扩展到子域、同级域名或重定向主机，并可从书源操作菜单撤销。跳过证书校验会增加连接被冒充或监听的风险，不能作为书源的默认配置，也不适用于隐藏 ArkWeb 的浏览器证书页面。
 
 ### 编写质量建议
 
@@ -1458,6 +1490,8 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 - 通用规则解析：`entry/src/main/ets/core/rule/AnalyzeRule.ts`
 - 规则中间值与执行目标：`entry/src/main/ets/core/rule/RuleValue.ts`
 - JSONPath：`entry/src/main/ets/core/rule/JsonPathEvaluator.ts`
+- Java 正则方言转换：`entry/src/main/ets/core/rule/JavaRegexCompat.ts`（字符表由 `scripts/generate-java-regex-word-class.mjs` 生成）
+- 带时间预算的净化替换：`entry/src/main/ets/core/rule/BudgetedRegexReplace.ts`、`entry/src/main/ets/core/concurrency/ReaderContentPreprocessor.ets`
 - JS 兼容层：`entry/src/main/ets/core/rule/JsRuntime.ts`
 - QuickJS 迁移运行时：`entry/src/main/ets/core/script/QuickJsScriptRuntime.ts`、`QuickJsAsyncRouter.ts`、`QuickJsMigrationStore.ts`、`QuickJsRuntimeStatus.ts`、`QuickJsShadowExecutor.ets`
 - 分阶段运行路由：`entry/src/main/ets/core/book/BookSourceRuntimeRouter.ts`
@@ -1468,6 +1502,8 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 - 登录面板 ArkWeb：`entry/src/main/ets/core/book/BookSourceLoginWebRuntime.ts`
 - 搜索流程：`entry/src/main/ets/core/book/SearchCoordinator.ts`
 - 发现流程：`entry/src/main/ets/core/book/ExploreCoordinator.ts`
+- 发现结果缓存与失效：`entry/src/main/ets/utils/ExploreResultCache.ets`
+- 日志地址脱敏：`entry/src/main/ets/utils/LogText.ts`
 - 详情、目录、正文：`entry/src/main/ets/core/book/WebBookService.ts`
 - 编码地址与快捷协议：`entry/src/main/ets/core/book/BookSourceDataUrlSupport.ts`、`entry/src/main/ets/core/book/EncodedSourceUrl.ts`
 - 正文交互后处理：`entry/src/main/ets/core/book/BookSourceInteractionPostProcessor.ts`、`entry/src/main/ets/core/book/ReaderActionMarker.ts`

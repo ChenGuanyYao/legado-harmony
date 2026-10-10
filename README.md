@@ -1,134 +1,123 @@
 # 开源轻页
 
-开源轻页是一款使用 ArkTS / ArkUI 开发的 HarmonyOS NEXT 本地阅读应用，面向手机、平板和 PC/2in1，提供书架、搜索、发现、书源管理、正文阅读、漫画、有声书、朗读与个性化设置等能力。
+[![License](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+![HarmonyOS](https://img.shields.io/badge/HarmonyOS-6.0.0%20(API%2020)%2B-black.svg)
+![ArkTS](https://img.shields.io/badge/ArkTS-ArkUI-orange.svg)
+![Devices](https://img.shields.io/badge/devices-phone%20%7C%20tablet%20%7C%202in1-lightgrey.svg)
+
+开源轻页（legado-harmony）是一款使用 ArkTS / ArkUI 开发的 HarmonyOS NEXT 原生阅读应用，兼容 Legado（阅读）书源规则，面向手机、平板和 PC/2in1，提供书架、搜索、发现、书源管理、正文阅读、漫画、有声书、朗读与个性化设置。
+
+> [!IMPORTANT]
+> 本项目不内置、不托管、不分发小说正文、章节、封面、付费资源或书源订阅。应用仅处理用户自行导入且具备合法使用权限的书源规则与本地文件。使用前请确认内容授权、目标站点协议及所在地法律法规要求。
+
+<p align="center">
+  <img src="output/app_intro_v2/app-intro-v2-01.png" width="19%" alt="应用介绍 1" />
+  <img src="output/app_intro_v2/app-intro-v2-02.png" width="19%" alt="应用介绍 2" />
+  <img src="output/app_intro_v2/app-intro-v2-03.png" width="19%" alt="应用介绍 3" />
+  <img src="output/app_intro_v2/app-intro-v2-04.png" width="19%" alt="应用介绍 4" />
+  <img src="output/app_intro_v2/app-intro-v2-05.png" width="19%" alt="应用介绍 5" />
+</p>
 
 | 项目 | 信息 |
 | --- | --- |
 | 应用包名 | `io.legado.read` |
 | 当前版本 | `3.10.910`（以 `AppScope/app.json5` 为准） |
 | 支持设备 | `phone`、`tablet`、`2in1` |
-| 最低 API | HarmonyOS 6.0.0（API 20） |
-| 目标 API | HarmonyOS API 26 |
+| 最低 / 目标 API | HarmonyOS 6.0.0（API 20）/ API 26 |
 | 开源协议 | GPL-3.0 |
 
-> [!IMPORTANT]
-> 本项目不内置、不托管、不分发小说正文、章节、封面、付费资源或书源订阅。应用仅处理用户自行导入且具备合法使用权限的书源规则与本地文件。使用前请确认内容授权、目标站点协议及所在地法律法规要求。
+## 目录
+
+- [功能概览](#功能概览)
+- [快速开始](#快速开始)
+- [书源规则兼容](#书源规则兼容)
+- [项目结构](#项目结构)
+- [开发与构建](#开发与构建)
+- [调试](#调试)
+- [已知限制](#已知限制)
+- [文档](#文档)
+- [合规与免责声明](#合规与免责声明)
+- [许可证](#许可证)
+
+## 功能概览
+
+### 书架与本地书籍
+
+- 统一管理普通书、漫画和有声书：继续阅读、分组、排序、置顶、换源和批量操作。
+- 隐私书架：可设密码，隐私书籍不出现在桌面卡片、最近阅读快捷方式和局域网阅读中。
+- 平铺、紧凑、宽松三种布局，可显示封面、简介、标签、阅读进度、最新章节和更新时间。
+- 「我的 → 书籍导入」统一提供本地导入、OPDS 书库和 WebDAV 服务三个入口；本地导入可一次多选 TXT/EPUB，使用应用自身的文件访问能力，不扫描公共目录。
+- 指定章节范围缓存或全文后台缓存，以可取消的后台通知任务执行。
+- 后台静默检查连载更新并在封面显示“新”角标；支持最近阅读、阅读统计、桌面快捷项和服务卡片。
+
+### 搜索与发现
+
+- 对已启用书源并发搜索、增量出结果，支持停止、精准搜索、作者匹配、分组筛选和单书源搜索。
+- 发现页读取书源的站点、分类和榜单入口，按“源站/平台 → 站内分类”分层筛选，结果带缓存。
+- 详情页可直接查看完整目录、点击作者搜索、换源；未入库的书也能临时试读，退出时再决定是否加入书架。
+
+### 书源管理
+
+- 从 URL、剪贴板、本地 JSON/文本文件或系统“打开方式”导入；多书源文件先选择再写入。
+- 导入保留标准字段、原始 JSON 和未知字段，导出时合并，尽量保持与 Android 阅读的往返完整性。
+- 编辑、分组、锁定、导出、删除，以及批量启用/禁用搜索与发现。
+- 两种校验模式（搜索能力、发现/阅读链路），结果区分“通过、失败、无结果、需要验证、暂时异常”，只有明确失败项可批量禁用或删除。
+- 单书源调试页可按搜索、发现、详情、目录、正文或全链路运行，查看请求、规则匹配、输出和错误，并导出脱敏报告。
+- 支持动态 `loginUi`、登录检测 JS、网页验证、同站点 Cookie 同步和登录状态持久化；证书错误可由用户按精确主机选择信任。
+
+### 阅读
+
+- 自研 V2 排版引擎：原生段落测量、增量分页、文本选区、正则样式和朗读高亮；进度按字符偏移保存和恢复。
+- 上下滑动、横向滑动、滚动阅读和横屏双页；横向翻页可选无动画、平移、淡入、叠页、仿真和 3D 仿真，翻页模式下末行对齐版心底边。
+- 页眉页脚按槽位自定义：书名、作者、章节、页码、剩余页数、进度百分比、时间和电量，可加本章或全书进度条。
+- 字号、行距、段距、边距、对齐方式、自定义字体、背景、深色模式、沉浸式布局和段首缩进。
+- 书签、章节评论/段评、替换净化（可直接导入 Android 阅读与 YueDu 导出的规则，Java 正则自动转换；每条规则带超时保护，超时跳过并保留原文）。
+- EPUB 图文混排：随文图片与整页插图分别排版。
+- 漫画连续全宽阅读，支持携带书源请求头、Cookie 或解码规则的远程图片。
+- 可选的本地眼动翻页：注视底部后向上看即可翻页，相机画面仅在设备内处理，不上传、不保存。
+
+### 朗读与有声书
+
+- 系统 TTS 与自定义 HTTP TTS，支持语速、定时停止、章节切换、后台朗读和系统媒体控制；翻页和滚动阅读都显示当前句高亮，滚动模式自动跟随朗读位置。
+- 可导入原版 `HttpTTS` JSON，也可在应用内新建、编辑和排序自定义音色。
+- 有声书使用独立远程播放器，支持进度、倍速、目录跳转、定时停止和音色代码。
+- 朗读与听书可在返回书架或进入后台后继续，通过全局播放胶囊与 AVSession 控制。
+
+### 局域网阅读、OPDS 与 WebDAV
+
+- 在 App 内启动局域网浏览器阅读服务，同一局域网的浏览器可查看书架、搜索、发现并阅读小说或漫画，章节进度同步；可设置访问密码（加密存储，连续输错会暂时锁定）。
+- 添加 Calibre、Komga、Kavita 等 OPDS 书库（不预置任何服务器地址），支持目录浏览、站内搜索、Basic Auth 与网页登录，下载的 EPUB/TXT 作为本地书导入。
+- 添加 WebDAV 服务并指定书籍目录，浏览后下载 TXT/EPUB 到书架。
+
+### 数据、同步与个性化
+
+- 应用数据本地备份/恢复（可选加密）和账号云同步；本地书籍通过内容指纹跨设备匹配，只同步进度，不上传正文。
+- 浅色/深色模式、主题包与主题商店、按钮色、强调色、自定义字体、阅读背景、封面图库和应用图标。
 
 ## 快速开始
 
 1. 使用 DevEco Studio 打开项目，配置 HarmonyOS SDK 与本地签名。
 2. 构建并安装 `entry` 模块。
-3. 进入「我的 → 书源管理」，导入自有或已获授权的书源 JSON。
-4. 根据需要启用搜索、发现或书源登录，并先执行书源校验。
-5. 在「搜索」或「发现」中查找书籍，加入书架后开始阅读。
-6. 阅读本地文件时，在「书架设置 → 添加书籍」中选择一个或多个 TXT/EPUB 文件。
-7. 在阅读页呼出菜单，调整排版、翻页、主题、预缓存与朗读设置。
-
-## 核心能力
-
-### 书架与本地书籍
-
-- 管理普通书、漫画和有声书，支持继续阅读、分组、排序、置顶、换源、缓存、批量操作和删除；置顶书籍优先排列，并保留原分组归属。
-- 支持平铺、紧凑和宽松布局，以及封面、简介、标签、阅读进度、最近阅读大卡片、类型标识和书源提供的最后更新时间。
-- 本地书籍可一次多选导入 TXT/EPUB，使用应用自身的文件访问能力，不依赖公共目录扫描。
-- 支持指定章节范围缓存和全文后台缓存，统一以可取消的后台通知任务执行；取消会继续传递到当前章节请求、正文分页和规则批处理，不再只停止后续章节。
-- 进程首次显示书架后会在后台静默检查连载书籍目录；检测到新章节时在封面显示“新”角标，进入书籍后清除，手动下拉刷新仍提供结果提示；从阅读页返回或重新显示书架时会重新读取已提交的阅读进度，避免卡片停留在旧百分比。
-- 支持最近阅读记录、桌面快捷项和桌面服务卡片。
-- 书架行在作者下方显示“相对时间 · 最新章节”更新行；重复点击当前排序会立即重排入库，“新加入”按加入书架的时间排序，不再混入阅读时间。
-
-### 搜索与发现
-
-- 对已启用书源执行并发搜索，增量展示结果，并支持停止搜索、精准搜索、作者匹配、分组筛选和单书源搜索。
-- 搜索链路包含异常地址过滤、模板残留清理、结果隔离与网页验证识别。
-- 发现页读取书源的站点、分类和榜单入口，支持“源站/平台 → 站内分类”的原生分层筛选、书源切换、刷新、缓存与排序。
-- 发现书源下拉列表按书源分组筛选，并通过 `LazyForEach` 按需创建可见列表项，避免大量书源同时创建组件。
-- 搜索和发现设置集中管理，并发数、展示项和书源启用状态可独立配置。
-- 发现菜单脚本结果按“书源 + 分类 + 变量”缓存约 5 分钟，切换分类不再重复执行菜单脚本；发现脚本可用 `source.put('type', …)` 声明分类媒体类型（`audio`/`comic`/`novel`），书籍按声明进入对应阅读模式。
-- 搜索详情页支持点击作者名直接发起作者搜索，并从“来源”行换源；换源面板与书架、阅读页共用同一实现，换源后详情缓存自动失效。
-- 搜索详情页可直接进入完整章节目录：优先读取本地缓存目录，支持章节名搜索、正序/倒序、当前进度定位和“已缓存”标识；书籍未入库时点击章节也会以临时书籍进入阅读，退出后可确认加入书架。
-
-### 书源管理
-
-- 支持从 URL、剪贴板、本地 JSON 或文本文件导入书源，也可在系统“打开方式”中选择本应用处理 JSON 书源文件。
-- 单次导入包含多个书源时会先显示选择列表，支持逐项取消或全选后再导入，避免未经确认将整个数组写入数据库。
-- URL 导入可依次尝试应用 HTTP、明文 HTTP TCP、ArkWeb 下载和系统下载服务，并输出可读错误。
-- 导入时保留标准字段、原始 JSON、未知字段、登录配置与运行参数；导出时会将原始规则对象中的未知键与当前结构化字段合并，尽量保持往返完整性。
-- 支持编辑、分组、锁定、导出、删除，以及批量启用/禁用搜索与发现。
-- 支持校验单个或所选书源，并区分“通过、失败、无结果、需要验证、暂时异常”。明确失败项可批量禁用或删除。
-- 校验提供“搜索能力”和“发现/阅读链路”两种模式；后者使用与界面相同的发现、详情、目录和首个非付费章节链路，并分别验证文本、漫画图片或音频结果。
-- 支持进入书源调试页，按搜索、发现、详情、目录、正文或全链路单独运行，并查看请求、规则匹配、输出和错误详情。
-- 校验进度聚焦已完成数量和状态，不使用“命中 X 本”作为规则有效性的判断。
-- 证书校验明确失败后，可由用户按精确主机选择是否信任并重试；信任仅保存在本机、可撤销，默认仍执行严格证书校验。
-- 支持动态 `loginUi`、登录检测 JS、网页验证、同站点 Cookie 同步和登录状态持久化。
-- 登录脚本重放会去重已执行的 Cookie 写入/删除操作，并兼容常见登录信息键名差异；脚本在 `java.ajax` 前写入的 source/login 状态会立即用于当前请求。
-- 网页登录/验证页按页面加载重新注入预载脚本，并向同源会话开放 `getVariable`/`putVariable`/`reLoginView` 桥接；完成登录时书源变量改动会写回书源并热更新运行时，书源登录脚本定义了 `login()` 且面板有输入项时提供“确认登录”按钮。
-
-### 阅读
-
-- 支持书籍详情、分页章节目录、正文解析与本地章节缓存；`nextTocUrl` 具备重复页去重和 1000 页保护上限，可覆盖常见超长篇目录。
-- 支持字号、行距、段落间距、四周边距、自定义字体、背景、深色模式和沉浸式布局；可选保留段首全角空格缩进，避免章节开头与页首被自动裁剪。
-- 正文排版支持两端、左侧和右侧对齐，并与其他阅读布局设置一起持久化。
-- 支持上下滑动、横向滑动、滚动阅读和横屏双页，以及章节间预览和预缓存；横向滑动可选无动画、平移、淡入、叠页、仿真和 3D 仿真，仿真与 3D 仿真共用独立的页面卷曲画布渲染层，3D 仿真在单页下卷曲当前页、在左右双页下让半页纸张绕书脊翻转并由底层正文直接呈现目标页；跨章节预览从加载占位切换为真实正文时会跟随新的快照任务，避免把有效章节切换误判为截图失败；双页以阅读区域实际宽度大于高度为启用条件，不只依赖设备类型，因此平板竖屏不会误启用。
-- 支持正文扩展至状态栏、书签、正文替换净化、章节评论和书源显式提供的网页交互标记；替换净化支持导入 Android 阅读（Legado）与 YueDu 导出的规则文件，Java 正则方言自动转换，且不会破坏段评等正文交互标记；阅读时长按选中的文本可直接带入“替换净化”新建规则。
-- 支持漫画连续全宽阅读，以及携带书源请求头、Cookie 或解码规则的远程图片。
-- 网页动作、图片和媒体标记不会混入朗读文本。
-- 阅读页已接入 V2 分页布局：使用原生段落测量、增量分页、正文动作区域、正则样式、文本选区和 TTS 高亮叠加；阅读进度按字符偏移恢复并串行持久化，避免临时分页或旧页面覆盖当前位置；进入后台前会落定已接受的本地翻页，从 Home 或锁屏返回时重新发布当前正文表面，主题或背景变化时重挂原生正文表面，避免正文与页码不同步或保留旧样式；普通章节目录支持正序/倒序查看，切换时保持当前章节定位，搜索目录时也同步保持顺序；分页长按选词按当前页面和段落重新挂载原生选区，并用实际字形位置校准手柄和高亮，修复翻页模式下选区跨行、错位或菜单不显示；翻页与滚动阅读的正文（含图文混排）统一由 V2 排版，漫画保持独立的图片列表。
-- 滑动和淡入翻页复用全屏阅读背景，避免正文区域重复裁剪封面背景产生接缝；仿真和覆盖翻页仍让动画纸张携带完整背景。
-- 支持可选的本地眼动翻页：以“注视正文底部 → 提示向上看 → 向上看翻到下一页”的两步手势实现向后翻页，优先使用设备可用的 AR Engine 眼部信号，不支持时回退到系统人脸检测读取眼部位置；在正文内完成三步圆点校准，横竖屏分别保存校准结果，并带有防误触冷却。相机画面仅在设备内处理，不上传或保存，滚动模式及菜单、选区、加载等交互期间不会触发翻页。
-- 连续阅读使用轻量正文分块并支持原生长按选词，选区高亮按正文布局绘制，修复分块或滚动后高亮与文字偏移；段评面板可拖动调整高度，异常或超量的网页动作标记会被限制并从正文、复制和朗读文本中清理。
-
-### 朗读与有声书
-
-- 支持系统 TTS、自定义 HTTP TTS、语速、定时停止、章节切换、后台朗读和系统媒体控制；朗读状态可通过全局浮动控制会话在阅读页与书架之间继续操作。播放提示到达时会立即同步句子焦点，V2 高亮绘制在正文与正则气泡之上，减少朗读内容已经前进但高亮仍停留在上一句的问题；超长星号、井号、横线等装饰分隔行会被静音过滤，不再逐个朗读符号。
-- 可导入原版 `HttpTTS` JSON，也可在应用内手动新建、编辑和排序自定义音色，并配置请求 URL、请求头、Content-Type、并发数、登录地址、脚本库和 Cookie jar；URL 模板已含语速变量时不再本地二次变速，JSON 请求体会对引号、反斜杠和换行转义。
-- 系统 TTS 与 HTTP TTS 优先通过 PCM 和 `AudioRenderer` 输出，并结合音频预取与播放状态保护提升连续性；逐句复用音频播放器，降低句间停顿；音频合成或写入失败时停在当前段落，不再用静音占位后跳过未朗读内容。朗读分句减少弱标点处的频繁断句，翻页边界会吸附到最近的句子边界，无标点硬切会避开英文单词、数字加单位和 emoji，减少半句停顿。
-- 有声书使用独立远程播放器，支持进度、倍速、目录跳转、定时停止和音色代码；听书目录与阅读页、书架共用同一目录面板，显示封面与“共 N 章”，支持正序/倒序、当前章节定位、拖拽滚动条和“已缓存”角标，简介支持系统文本选择和复制。
-- 有声书可在返回书架或进入后台后继续播放，并复用全局播放胶囊与 AVSession；书架全局朗读目录同样支持正序/倒序和当前章节定位。锁屏媒体卡片由系统策略决定，应用无法强制使用音乐播放器样式。
-
-### 局域网浏览器阅读
-
-- 可在 App 内启动局域网浏览器阅读服务，在同一局域网的浏览器中查看书架、搜索和发现书籍，打开小说或漫画章节并同步章节进度。
-- 可为浏览器访问设置密码；连续输错会被暂时锁定。服务只接受以所显示的 IP 地址访问，启动时会显示访问地址，端口冲突时会自动尝试备用端口。未设置密码时同一局域网内的设备均可访问，公共网络下建议设置密码。浏览器端暂不支持有声书播放，有声书仍需在 App 内使用听书功能。
-
-### OPDS 书库
-
-- 支持添加 Calibre、Komga、Kavita 等 OPDS 书库服务器（不预置任何服务器地址），浏览远程目录、按分类筛选并下载图书。
-- 支持服务端站内搜索（OpenSearch）、Basic Auth 账号密码与 Cookie 会话；表单登录的书库可通过网页登录完成验证，自签名 HTTPS 证书可按主机信任。
-- 下载的 EPUB / TXT 会作为本地书导入书架，直接使用排版、字体、朗读与进度同步能力；重复下载同一本书自动去重。
-
-### 数据、同步与个性化
-
-- 支持应用数据本地备份/恢复和账号云同步；备份可选择加密或不加密，加密备份恢复时按需输入密码。
-- 书源、书架、章节进度、阅读设置、主题、书架展示配置和 TTS 配置按各自策略保存；书籍置顶状态纳入本地备份和账号云同步；相同本地书籍通过内容指纹跨设备匹配并仅同步阅读进度，不上传本地正文；眼动开关和横竖屏校准纳入阅读设置与账号云同步，旧云端设置会保留本机新增字段并安排兼容回填。
-- 支持浅色/深色模式、主题包、按钮色、强调色、自定义字体、阅读背景、封面图库和应用图标；应用主题包前会先询问是否一并套用主题排版和主题封面，未勾选的项保留当前设置；主题设置提供“主题商店”入口，可滑动浏览主题、试用 5 分钟并用点数获取，已购主题单独列出；导入字体会保留或恢复可读的来源名称。
-- 正则字体支持文字强调、高亮色块、胶囊、纸笺、霓虹及主题专属样式。
+3. 进入「我的 → 书源管理」，导入自有或已获授权的书源 JSON，并先执行书源校验。
+4. 在「搜索」或「发现」中查找书籍，加入书架后开始阅读。
+5. 阅读本地文件时，进入「我的 → 书籍导入 → 本地导入」，选择一个或多个 TXT/EPUB 文件；也可在同一页面从 OPDS 书库或 WebDAV 服务下载。
+6. 在阅读页呼出菜单，调整排版、翻页、主题、预缓存与朗读设置。
 
 ## 书源规则兼容
 
-当前重点支持以下规则能力：
+兼容层覆盖 Android 阅读书源的常用写法，但不是完整的 Android Java/WebView 环境。当前重点支持：
 
-- HTTP GET/POST、请求头、请求体、URL 模板、Cookie 注入和 `Set-Cookie` 保存。
-- URL 请求选项中的 `webView: true` 会显式改走隐藏 ArkWeb，等待页面稳定后返回 DOM；`webJs` 可在该页面上下文中生成最终响应。
-- 分阶段脚本运行时具备自愈能力：隐藏 ArkWeb 宿主失联时自动探测并重建，等待期不再直接失败；`statusCode === 0` 的网络失败不再中断阶段执行，人性化错误交给脚本 `try/catch` 处理；同一请求的重复次数与不同请求总数分开限额，多分类、多分页源不易触发“网络请求次数过多”保护；登录面板保存的书源变量和登录信息立即对下一次执行生效。
-- 书源 `header` 支持 `@js:` 脚本动态计算请求头（如基于书源变量的 Cookie、Referer），结果按“书源 + 变量”缓存，只在书源自己的主机上发送，不会附加到第三方图片或内容主机。
-- JSONPath、CSS、基础 XPath、旧式链式规则、属性提取、规则分段和正则后处理；缺少 `$.` 前缀的 JSONPath 按根相对路径求值；搜索、发现和目录列表在字段消费前会保留 HTML 元素、JSON 对象、正则捕获组或 JS 对象，不再提前压平成显示文本。
-- `<js>` / `@js:` 混合规则；轻量兼容引擎负责常用表达式与主机函数，复杂 JavaScript 可按搜索、发现、详情、目录和正文阶段路由到受控 ArkWeb 环境。
-- 支持 `基础规则<js>处理脚本</js>后续规则` 的组合链，以及嵌套 `java.put/java.getString/java.timeFormatUTC` 等常用调用；普通组合规则沿用逐元素轻量解析，只有确实需要完整 JavaScript 语义时才路由 ArkWeb。`<js>` 块可单独作为开头（`result` 为原始元素）；调用 `source.put/get`、`cookie.*`、`cache.*` 的内嵌后处理脚本会直接路由 ArkWeb，避免在轻量解释器上静默失效。无副作用的 ArkWeb 执行失败会回退兼容解析，网络、Cookie 或持久化写入脚本不会跨引擎重复执行。
-- 原生 QuickJS 已接入启动自检、结构化对象/数组绑定、持久化影子诊断、合格指纹灰度接管、失败回退和熔断；默认仍为 `SHADOW`，可在“其他设置 → 脚本引擎迁移”查看或切换。“书源脚本回归测试”已形成离线回归 → 真实上下文影子验证 → 灰度接管闭环，并按书源、阶段和字段分别展示晋级状态。
-- 常见 `java.xxx`、`source.xxx`、`book.xxx`、`cache.xxx` 和 `cookie.xxx` 主机函数。
-- `java.getString`/`java.getStringList` 在分阶段脚本中支持完整规则语法（CSS/`class.`/`id.`/`tag.` 选择器、`@text`/`@html`/`@@`、`##` 替换链），由原生规则引擎取值后重放脚本；`$.` 开头的 JSON 路径仍直接取值。脚本最终没有返回内容时，应用不再静默地把规则输入当作结果，而是记录警告并在正文阶段上报服务端返回的错误信息；脚本里的正则字面量也会被正确识别，避免复杂规则被误判为轻量表达式。
-- Base64、Hex、摘要、URL/HTML 编解码、对称加密和标准 `data:` 数据；`data:` 章节地址尾部选项声明 `type` 时，正文脚本按 Android 阅读的字节串约定收到十六进制输入。
-- 分阶段脚本提供 `java.getElement`（按完整规则取元素，支持 `attr`/`text`/`ownText`/`html` 访问）与 `java.setContent`（替换上下文内容）；`java.ajax` 的 `responseObject.headers()` 返回真实响应头，登录动作中的 `java.refreshExplore()` 会真正刷新发现页。
-- `searchUrl` 为完整 `@js:` 脚本时，返回值中的 `{{key}}`、`{{page-1}}` 模板会按统一变量再做一次替换；发现动态脚本返回的 `select` 控件支持 `show(值, '变量名')` 与自带动作脚本（选择值写入 `infoMap[控件名]`）两种筛选写法。
-- 动态登录面板、`startBrowserAwait`、登录页脚本、验证码跳转和跨地址 Cookie 同步。
-- 普通文本、漫画和有声书类型识别，以及正文中的显式网页操作、图片和媒体标记。
-- URL 请求选项支持显式 `session` 会话规则，可按书源声明将查询参数同步到当前目标域 Cookie、生成缺失的匿名 Cookie，并补充同源 Referer；请求层不包含站点名单或平台专用参数。
-- 搜索和发现规则的 URL 字段只采用第一个非空匹配值，避免多匹配结果拼接成无效地址。
-- 支持查询相对地址和片段相对地址保留当前文档路径；CSS 选择器支持多个索引选择/排除，并兼容原有两索引范围写法。
-- 旧式 `text.关键字` 选择器按元素自身文本的包含关系匹配；直接正则链兼容开头的 `(?i)`、`(?m)`、`(?s)` Java/Kotlin 内联标志。
-- 正式目录规则无结果时，首次打开可临时使用通用 HTML 目录兜底；兜底结果不会覆盖已持久化目录，换源与书源校验仍要求正式目录规则有效。
+| 类别 | 能力 |
+| --- | --- |
+| 请求 | HTTP GET/POST、请求头、请求体、URL 模板、字符集、重试、Cookie 注入与 `Set-Cookie` 保存；`header` 可用 `@js:` 动态计算；URL 选项支持显式 `session` 会话规则。 |
+| 网页抓取 | URL 选项 `webView: true` 改走隐藏 ArkWeb 并返回渲染后的 DOM，`webJs` 可在页面上下文生成最终响应。 |
+| 解析 | JSONPath、CSS、基础 XPath、旧式链式规则、属性提取、`&&` / `\|\|` / `%%` 组合、模板拼接、`##` 正则后处理（兼容 Java 正则方言）、`@put` / `@get`。 |
+| JavaScript | `<js>` / `@js:` 混合规则与 `jsLib`；轻量兼容引擎处理常用表达式，复杂脚本按搜索、发现、详情、目录、正文阶段路由到受控 ArkWeb；原生 QuickJS 以影子比对和灰度方式逐步接管纯表达式。 |
+| 主机函数 | 常见 `java.*`、`source.*`、`book.*`、`cache.*`、`cookie.*`，以及 Base64、Hex、摘要、URL/HTML 编解码和 AES/DES/3DES。 |
+| 登录 | 动态登录面板、`startBrowserAwait`、登录页脚本、验证码跳转和跨地址 Cookie 同步。 |
+| 内容类型 | 普通文本、漫画、有声书识别；正文中的显式网页操作、图片和媒体标记；`data:` / Base64 地址。 |
 
-完整字段、请求格式、解析语法和调试方法见 [书源开发文档](docs/book-source-development.md)。
+完整字段、请求格式、解析语法、调试方法和迁移建议见 [书源开发文档](docs/book-source-development.md)。
 
 ## 项目结构
 
@@ -137,6 +126,7 @@ legado-harmony/
 ├── AppScope/                         # 应用级配置与资源
 ├── entry/                            # 主应用模块
 │   └── src/main/ets/
+│       ├── account/                  # 华为账号、云同步与云端朗读
 │       ├── components/               # 通用 ArkUI 组件
 │       │   ├── home/                 # 首页各页签：书架、发现、搜索、我的
 │       │   └── reader/               # 阅读页面板：目录、缓存、排版、配色、朗读控制、眼动校准
@@ -147,12 +137,17 @@ legado-harmony/
 │       │   ├── lan/                  # 局域网浏览器阅读服务
 │       │   ├── reader/               # 阅读器排版引擎与阅读页控制器
 │       │   ├── rule/                 # URL、选择器、正则和 JS 规则解析
-│       │   └── script/               # 通用脚本运行支持
+│       │   ├── script/               # 通用脚本运行支持
+│       │   └── stats/                # 阅读统计
 │       ├── entryability/             # 应用入口 Ability
+│       ├── entryformability/         # 桌面服务卡片 Ability
 │       ├── model/                    # 数据模型与本地数据库
+│       ├── opds/                     # OPDS 目录解析与下载
 │       ├── pages/                    # 页面与设置界面
 │       ├── theme/                    # 主题模型、注册表和运行时令牌
-│       └── utils/                    # 设置、缓存、字体、TTS 与音频工具
+│       ├── utils/                    # 设置、缓存、字体、TTS 与音频工具
+│       ├── webdav/                   # WebDAV 书籍浏览与下载
+│       └── widgets/                  # 桌面服务卡片界面
 ├── quickjs/                          # QuickJS 原生模块
 ├── docs/                             # 开发文档
 └── scripts/                          # 构建前与架构回归检查
@@ -160,42 +155,40 @@ legado-harmony/
 
 主要模块：
 
-- `SearchCoordinator` / `ExploreCoordinator`：搜索与发现的并发、进度、解析和结果汇总。
-- `WebBookService` / `ReadBookEngine`：详情、目录、正文、缓存和阅读状态。
-- `AnalyzeUrl` / `AnalyzeRule`：请求描述、选择器、正则与脚本规则解析。
-- `BookSourceRuntimeRouter` / `BookSourceStageWebRuntime` / `BookSourceHeaderRuntime`：复杂 JavaScript 的分阶段运行、受控桥接与 `@js:` 动态请求头解析。
-- `QuickJsScriptRuntime` / `QuickJsRuntimeStatus`：QuickJS 自检、资源限制和纯表达式影子比对。
-- `WebBookFetchRuntime`：处理书源显式声明的 `webView: true` / `webJs` 页面抓取。
-- `BookSourceLoginWebRuntime`：登录面板、WebView、Cookie、加密和状态持久化。
-- `SystemTtsReader` / `HttpTtsReader` / `RemoteAudioPlayback`：系统朗读、HTTP TTS 与有声书播放。
-- `ReaderV2Document` / `ReaderV2Paginator` / `ReaderV2RenderNode` / `ReaderV2Interaction`：阅读器 V2 文档建模、增量分页、原生选区、动作命中和朗读高亮。
-- `ReaderEmulationFlipPainter`：仿真与 3D 仿真翻页的页角卷曲几何、明暗和双页绕书脊翻转绘制。
-- `ReaderFullTextCacheController` / `ReaderTtsMediaSession` / `ReaderEyeTurnCoordinator` / `ReaderPageTurnQueue`：从阅读页拆出的全文缓存任务、朗读后台与媒体会话、眼动翻页流程和翻页排队状态。
-- `LanReaderServer`：局域网浏览器阅读服务，含会话令牌、登录失败锁定、Host/Origin 校验和图片代理的内网地址过滤。
-- `EyeTurnController` / `ArEngineEyeTracker`：前置摄像头与本地人脸/眼部采样、正文内三步校准、底部提示与向上看确认的翻页判定，以及 AR Engine 眼部信号接入。
-- `FullTextCacheCancelCoordinator`：把通知栏取消动作关联到具体全文缓存任务，并中止活动请求与规则解析。
-- `ReaderOpenTrace`：记录从书架点击到阅读首屏发布的阶段耗时，用于定位打开书籍慢或恢复异常。
-- `AppDatabase`：书源、书籍、章节、搜索历史、分页缓存和本地配置。
+| 模块 | 职责 |
+| --- | --- |
+| `SearchCoordinator` / `ExploreCoordinator` | 搜索与发现的并发、进度、解析和结果汇总。 |
+| `WebBookService` / `ReadBookEngine` | 详情、目录、正文、缓存和阅读状态。 |
+| `AnalyzeUrl` / `AnalyzeRule` | 请求描述、选择器、正则与脚本规则解析。 |
+| `JavaRegexCompat` / `BudgetedRegexReplace` | Android 正则方言转换（含 `w`、`d`、`` 的 Unicode 语义），以及带时间预算的净化替换。 |
+| `BookSourceRuntimeRouter` / `BookSourceStageWebRuntime` / `BookSourceHeaderRuntime` | 复杂 JavaScript 的分阶段运行、受控桥接与 `@js:` 动态请求头。 |
+| `QuickJsScriptRuntime` / `QuickJsRuntimeStatus` | QuickJS 自检、资源限制和纯表达式影子比对。 |
+| `WebBookFetchRuntime` | 书源显式声明的 `webView: true` / `webJs` 页面抓取。 |
+| `BookSourceLoginWebRuntime` | 登录面板、WebView、Cookie、加密和状态持久化。 |
+| `ReaderV2Document` / `ReaderV2Paginator` / `ReaderV2RenderNode` / `ReaderV2Interaction` | 阅读器 V2 文档建模、增量分页、原生选区、动作命中和朗读高亮。 |
+| `ReaderEmulationFlipPainter` | 仿真与 3D 仿真翻页绘制。 |
+| `ReaderFullTextCacheController` / `ReaderTtsMediaSession` / `ReaderEyeTurnCoordinator` / `ReaderPageTurnQueue` | 全文缓存任务、朗读后台与媒体会话、眼动翻页流程和翻页排队。 |
+| `FullTextCacheCancelCoordinator` | 把通知栏取消动作关联到具体全文缓存任务，并中止活动请求与规则解析。 |
+| `SystemTtsReader` / `HttpTtsReader` / `RemoteAudioPlayback` | 系统朗读、HTTP TTS 与有声书播放。 |
+| `EyeTurnController` / `ArEngineEyeTracker` | 本地人脸/眼部采样、校准和翻页判定。 |
+| `LanReaderServer` | 局域网浏览器阅读服务：会话令牌、登录失败锁定、Host/Origin 校验和图片代理的内网地址过滤。 |
+| `ReaderOpenTrace` | 从书架点击到阅读首屏的阶段耗时记录。 |
+| `AppDatabase` | 书源、书籍、章节、搜索历史、分页缓存和本地配置。 |
 
 ## 开发与构建
 
 ### 环境要求
 
-- DevEco Studio
-- HarmonyOS SDK `26.0.0`（API 26）
-- ArkTS / ArkUI
-- hvigor
-
-当前应用配置：
+- DevEco Studio，HarmonyOS SDK `26.0.0`（API 26）
+- ArkTS / ArkUI，hvigor
+- Node.js（运行回归脚本）
 
 | 配置 | 值 |
 | --- | --- |
-| 主模块 | `entry` |
-| 入口 Ability | `EntryAbility` |
+| 主模块 / 入口 Ability | `entry` / `EntryAbility` |
 | `versionName` | `3.10.910` |
 | `versionCode` / `buildVersion` | `3100910` |
-| `minAPIVersion` | `20` |
-| `targetAPIVersion` | `26` |
+| `minAPIVersion` / `targetAPIVersion` | `20` / `26` |
 | 权限 | `INTERNET`、`GET_NETWORK_INFO`、`KEEP_BACKGROUND_RUNNING`、`CAMERA`（仅在用户启用眼动翻页时请求） |
 
 ### 命令行构建
@@ -227,12 +220,12 @@ $env:DEVECO_SDK_HOME = "C:\Program Files\Huawei\DevEco Studio\sdk"
   --mode project -p product=release assembleApp --no-daemon
 ```
 
-常用输出位置：
+输出位置：
 
 - 调试 HAP：`entry/build/default/outputs/default/entry-default-signed.hap`
 - release APP：`build/outputs/release/legado-harmony-release-signed.app`
 
-release 构建依赖本机有效的签名证书、Profile 和 keystore。请使用本地签名配置，不要向仓库提交私钥、证书密码或个人绝对路径。构建产生的 `build`、`oh_modules` 等中间目录也不应提交。
+release 构建依赖本机有效的签名证书、Profile 和 keystore。请使用本地签名配置，不要向仓库提交私钥、证书密码或个人绝对路径；`build`、`oh_modules` 等中间目录也不应提交。
 
 ### 回归检查
 
@@ -240,25 +233,39 @@ release 构建依赖本机有效的签名证书、Profile 和 keystore。请使�
 node scripts/neutral-source-engine-check.mjs
 node scripts/thread-blocking-check.mjs
 node scripts/theme-framework-check.mjs
+node scripts/log-policy-check.mjs
+node scripts/opds-parser-check.mjs
 node --experimental-strip-types scripts/java-regex-compat-check.mjs
+node --experimental-strip-types scripts/budgeted-regex-replace-check.mjs
 node --experimental-strip-types scripts/replace-rule-import-check.mjs
 node --experimental-strip-types scripts/reader-text-normalizer-check.mjs
 node --experimental-strip-types scripts/reader-chunk-pagination-check.mjs
+node --experimental-strip-types scripts/epub-converter-check.mjs
+node --experimental-strip-types scripts/epub-mixed-layout-check.mjs
+node --experimental-strip-types scripts/reader-info-bar-check.mjs
 ```
 
-- `neutral-source-engine-check`：检查是否引入固定内容接口、默认凭据或站点专用后端。
-- `thread-blocking-check`：检查协作式调度、分页和运行时隔离约束。
-- `theme-framework-check`：检查主题注册、令牌和资源安全约束。
-- `java-regex-compat-check`：检查 Android/Java 正则方言到 JavaScript 的转换，避免书源正则与替换净化规则因 `(?i)`、占有量词一类语法整条失效。
-- `replace-rule-import-check`：检查替换净化规则导入的字段别名映射，确保阅读/Legado/YueDu 导出的规则文件能直接导入。
-- `reader-text-normalizer-check`：检查正文归一化（软换行合并、段首缩进、重复标题）与字符偏移到页码的映射，避免已保存的阅读进度落到错误的页。
-- `reader-chunk-pagination-check`：检查滚动阅读与漫画的分块规则，确保块边界稳定且不会切开段评、图片标记。
+| 脚本 | 检查内容 |
+| --- | --- |
+| `neutral-source-engine-check` | 是否引入固定内容接口、默认凭据或站点专用后端。 |
+| `thread-blocking-check` | 协作式调度、分页和运行时隔离约束。 |
+| `theme-framework-check` | 主题注册、令牌和资源安全约束。 |
+| `log-policy-check` | 日志策略：不把凭据类变量和完整请求地址写进日志。 |
+| `opds-parser-check` | OPDS 目录、条目和 OpenSearch 描述的解析（基于 `scripts/opds-fixtures`）。 |
+| `java-regex-compat-check` | Android/Java 正则方言到 JavaScript 的转换，含 `w`、`d`、`` 的 Unicode 语义。 |
+| `budgeted-regex-replace-check` | 净化替换的逐行执行、跨行判定和超时放弃。 |
+| `replace-rule-import-check` | 阅读/Legado/YueDu 替换净化规则的字段别名映射。 |
+| `reader-text-normalizer-check` | 正文归一化与字符偏移到页码的映射。 |
+| `reader-chunk-pagination-check` | 滚动阅读与漫画的分块规则，块边界不切开段评和图片标记。 |
+| `epub-converter-check` | EPUB XHTML 到阅读器正文的转换、目录切章与图片标记。 |
+| `epub-mixed-layout-check` | 图文混排的图片尺寸判定：随文排版还是整页插图。 |
+| `reader-info-bar-check` | 页眉页脚槽位配置：旧设置迁移、损坏配置回退、槽位文字与进度计算。 |
 
 这些脚本用于代码回归，不能替代授权审查、安全审计或法律意见。
 
 ## 调试
 
-书源管理中的“调试”可针对单个书源运行指定阶段，也可运行全链路。搜索、发现、详情、目录和正文阶段支持分别输入关键词或 URL；执行明细会显示网络请求、响应摘要、规则类型、匹配数量、耗时和错误，便于定位“请求成功但字段为空”或“详情/目录地址未解析”等问题。调试完成后可通过系统文件选择器导出脱敏 JSON 报告，便于提交问题时复现分析；调试页和编辑页会根据键盘避让区域自动调整滚动内容。
+书源管理中的“调试”可针对单个书源运行指定阶段或全链路，执行明细会显示网络请求、响应摘要、规则类型、匹配数量、耗时和错误，并可导出脱敏 JSON 报告。详见书源开发文档的[单书源调试](docs/book-source-development.md#单书源调试)。
 
 关键日志标签：
 
@@ -278,15 +285,14 @@ node --experimental-strip-types scripts/reader-chunk-pagination-check.mjs
 
 ## 已知限制
 
-- 书源兼容层不是完整的 Android Java/WebView 环境。
-- 分阶段 ArkWeb 只开放受控桥接；`fetch`、`XMLHttpRequest`、`WebSocket`、任意 Java 导入、文件、进程、反射和系统组件不会自动可用。
-- QuickJS 当前只接受无主机副作用的短纯表达式；默认影子校验，灰度模式只接管累计至少 4 次一致且零差异、零失败的指纹，异常会回退并在连续失败时自动熔断。选择器、网络、Cookie、书源变量和复杂阶段脚本仍由现有解析器或 ArkWeb 执行。
-- `webView: true` 仅支持书源明确给出的 HTTP(S) GET/POST 地址，并在已挂载隐藏 ArkWeb 的页面中串行执行；它不承诺自动通过交互式验证码、证书错误、浏览器指纹或所有反自动化挑战。
-- 依赖浏览器指纹、长期动态渲染、强反爬、付费权限或私有登录流程的站点不保证支持。
-- 私有评论、音频或聚合协议仍受服务授权、会话 Token 和接口变更影响。
+- 书源兼容层不是完整的 Android Java/WebView 环境；分阶段 ArkWeb 只开放受控桥接，`fetch`、`XMLHttpRequest`、`WebSocket`、任意 Java 导入、文件、进程、反射和系统组件不会自动可用。
+- QuickJS 只接受无主机副作用的短纯表达式，默认影子校验；选择器、网络、Cookie、书源变量和复杂阶段脚本仍由现有解析器或 ArkWeb 执行。
+- 替换净化规则单条最多执行 3 秒、整章 8 秒，超时的规则会被跳过；`w`、`d`、`` 按 Android 的 Unicode 语义匹配，与浏览器中的 ASCII 语义不同。
+- `webView: true` 仅支持书源明确给出的 HTTP(S) GET/POST 地址，不承诺自动通过交互式验证码、证书错误、浏览器指纹或反自动化挑战。
+- 依赖浏览器指纹、长期动态渲染、强反爬、付费权限或私有登录流程的站点不保证支持；私有评论、音频或聚合协议受服务授权、会话 Token 和接口变更影响。
 - 请求层不按站点名称补充平台参数，也不提供内置站点接口、镜像或内容后端；额外会话行为必须由书源显式声明。
 - 自定义 HTTP TTS 依赖第三方音源的授权方式、Cookie 和返回格式，无法保证全部兼容。
-- 当前正文体验以自研 ArkUI 阅读页为主，Reader Kit 深度能力仍在验证中。
+- 局域网浏览器端暂不支持有声书播放；锁屏媒体卡片样式由系统策略决定。
 - UI、主题和设置项仍在持续迭代。
 
 ## 文档
