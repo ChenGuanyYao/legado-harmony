@@ -71,8 +71,6 @@ export class WebDavSettingsStore {
     result.baseUrl = WebDavSettingsStore.normalizeBaseUrl(String(source.baseUrl || ''));
     result.username = String(source.username || '').trim();
     result.libraryRoot = WebDavSettingsStore.normalizeRelativePath(String(source.libraryRoot || ''));
-    result.backupRoot = WebDavSettingsStore.normalizeRelativePath(
-      String(source.backupRoot || 'LegadoHarmony/Backups')) || 'LegadoHarmony/Backups';
     const secretStorageVersion = Math.max(0, Math.floor(Number(source.secretStorageVersion) || 0));
     result.rememberPassword = secretStorageVersion < 1 ? true : source.rememberPassword !== false;
     result.secretStorageVersion = 1;

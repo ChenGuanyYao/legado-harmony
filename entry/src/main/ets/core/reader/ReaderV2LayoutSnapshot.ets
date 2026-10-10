@@ -55,6 +55,10 @@ export class ReaderV2LayoutInput {
   commentHitSlopYPx: number = 12;
   commentsEnabled: boolean = true;
   regexEnabled: boolean = false;
+  /** 图片原始像素按 vp 解释，这里是 1vp 对应的物理像素。 */
+  imagePxPerVp: number = 1;
+  /** 整页插图与正文同页时允许的最小高度。 */
+  imageMinHeightPx: number = 0;
   styleIdentity: string = '';
 }
 
@@ -80,6 +84,8 @@ export class ReaderV2LayoutSnapshot {
   commentHitSlopYPx: number = 12;
   commentsEnabled: boolean = true;
   regexEnabled: boolean = false;
+  imagePxPerVp: number = 1;
+  imageMinHeightPx: number = 0;
   identity: string = '';
 
   static create(input: ReaderV2LayoutInput): ReaderV2LayoutSnapshot {
@@ -124,6 +130,8 @@ export class ReaderV2LayoutSnapshot {
     snapshot.commentHitSlopYPx = Math.max(0, input.commentHitSlopYPx);
     snapshot.commentsEnabled = input.commentsEnabled;
     snapshot.regexEnabled = input.regexEnabled;
+    snapshot.imagePxPerVp = Math.max(0.01, input.imagePxPerVp);
+    snapshot.imageMinHeightPx = Math.max(0, input.imageMinHeightPx);
     snapshot.identity = ReaderV2LayoutSnapshot.buildIdentity(input, snapshot);
     return snapshot;
   }

@@ -10885,6 +10885,9 @@ struct SettingsPage {
             this.menuItem($r('sys.symbol.externaldrive'), '书源管理', true, () => {
               router.pushUrl({ url: 'pages/BookSource' });
             })
+            this.menuItem($r('sys.symbol.download'), '书籍导入', true, () => {
+              router.pushUrl({ url: 'pages/BookImport' });
+            })
             this.menuItem($r('sys.symbol.book'), '阅读设置', true, () => {
               router.pushUrl({ url: 'pages/Settings' });
             })

@@ -1,133 +1,146 @@
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
+import { image } from '@kit.ImageKit';
 import { Book, BookChapter } from '../../model/data/Book';
+import { EpubChapterPlanner, EpubChapterSegment } from './EpubChapterPlanner';
+import { EpubConvertResult, EpubHtmlConverter, EpubImageRef } from './EpubHtmlConverter';
 import { ReaderImageMarker } from './ReaderImageMarker';
 
 export class LocalChapterContentLoader {
+  // 纯图片段（漫画、图集）的图片按整页显示，不需要逐张读取尺寸；超过这个数量就不再读。
+  private static readonly MAX_SIZED_IMAGES_WITHOUT_TEXT: number = 24;
+  private static readonly IMAGE_SIZE_CACHE_LIMIT: number = 512;
+  private static imageSizeCache: Map<string, number[]> = new Map<string, number[]>();
+
   static async load(book: Book, chapter: BookChapter): Promise<string> {
     if (book.origin !== 'local' || book.type !== 2) return '';
-    const path = (chapter.resourceUrl || '').trim();
-    const extractRoot = this.normalizePath(book.getVariable('localExtractRoot'));
-    const normalizedPath = this.normalizePath(path);
-    if (!normalizedPath || !extractRoot || !normalizedPath.startsWith(`${extractRoot}/`) || !this.exists(normalizedPath)) {
-      return '';
+    const extractRoot = EpubHtmlConverter.normalizePath(book.getVariable('localExtractRoot'));
+    if (!extractRoot) return '';
+    let segments = EpubChapterPlanner.decodeSegments(chapter.variable);
+    if (segments.length === 0) {
+      const path = EpubHtmlConverter.normalizePath(EpubHtmlConverter.withoutFragment((chapter.resourceUrl || '').trim()));
+      if (!path) return '';
+      const whole = new EpubChapterSegment();
+      whole.path = path;
+      segments = [whole];
     }
-    if (/\.(?:avif|bmp|gif|jpe?g|png|svg|webp)$/i.test(this.withoutFragment(normalizedPath))) {
-      return ReaderImageMarker.create(normalizedPath);
+    let content = '';
+    let cachedPath = '';
+    let cachedBody = '';
+    for (const segment of segments) {
+      const path = EpubHtmlConverter.normalizePath(segment.path);
+      if (!path.startsWith(`${extractRoot}/`) || !this.exists(path)) continue;
+      let piece = '';
+      if (EpubHtmlConverter.isImagePath(path)) {
+        piece = ReaderImageMarker.create(path);
+      } else {
+        if (cachedPath !== path) {
+          cachedBody = EpubHtmlConverter.bodyOf(await this.readHtmlFile(path));
+          cachedPath = path;
+        }
+        piece = (await this.convertBody(cachedBody, EpubHtmlConverter.parentPath(path), extractRoot,
+          segment.startId, segment.endId)).content;
+      }
+      if (!piece) continue;
+      // 与 EpubChapterPlanner.addPiece 的拼接方式保持一致，缓存被清理后重建的正文偏移才不会变化。
+      content = content ? `${content}\n\n${piece}` : piece;
     }
-    const html = await this.readUtf8File(normalizedPath);
-    return this.htmlToReaderContent(html, this.parentPath(normalizedPath));
+    return content;
   }
 
-  private static async readUtf8File(path: string): Promise<string> {
+  /** 按文档声明的编码读取 XHTML；未声明且不是合法 UTF-8 时按 GB18030 处理。 */
+  static async readHtmlFile(path: string): Promise<string> {
     const stat = await fs.stat(path);
     if (stat.size <= 0) return '';
     const file = await fs.open(path, fs.OpenMode.READ_ONLY);
     try {
       const buffer = new ArrayBuffer(stat.size);
       await fs.read(file.fd, buffer, { offset: 0, length: stat.size });
-      return util.TextDecoder.create('utf-8').decodeWithStream(new Uint8Array(buffer), { stream: false });
+      const bytes = new Uint8Array(buffer);
+      const declared = EpubHtmlConverter.sniffCharset(bytes);
+      let text = '';
+      try {
+        text = util.TextDecoder.create(declared || 'utf-8').decodeWithStream(bytes, { stream: false });
+      } catch (_) {
+        text = util.TextDecoder.create('utf-8').decodeWithStream(bytes, { stream: false });
+      }
+      if (!declared && text.indexOf('�') >= 0) {
+        try {
+          text = util.TextDecoder.create('gb18030').decodeWithStream(bytes, { stream: false });
+        } catch (_) {
+        }
+      }
+      return text;
     } finally {
       await fs.close(file);
     }
   }
 
-  private static htmlToReaderContent(html: string, baseDir: string): string {
-    const body = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
-    const source = (body ? body[1] : html)
-      .replace(/<(?:img|image)\b[^>]*>/gi, (tag: string): string => {
-        return this.imageTagToMarker(tag, baseDir, ['src', 'xlink:href', 'href']);
-      })
-      .replace(/<object\b[^>]*>/gi, (tag: string): string => {
-        return this.imageTagToMarker(tag, baseDir, ['data']);
-      });
-    return this.decodeEntities(source
-      .replace(/<script\b[\s\S]*?<\/script>/gi, '')
-      .replace(/<style\b[\s\S]*?<\/style>/gi, '')
-      .replace(/<(?:br|hr)\b[^>]*\/?>/gi, '\n')
-      .replace(/<\/(?:p|div|section|article|h[1-6]|li|blockquote)>/gi, '\n')
-      .replace(/<li\b[^>]*>/gi, '　• ')
-      .replace(/<[^>]+>/g, ''))
-      .replace(/\r\n?/g, '\n')
-      .replace(/[ \t\u00A0]+\n/g, '\n')
-      .replace(/\n[ \t\u00A0]+/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+  /**
+   * 转换一个文件片段。图文混排的片段会先读取图片原始尺寸再转换一次：
+   * 尺寸写入图片标记供分页使用，同时用来识别行内小图。
+   */
+  static async convertBody(body: string, baseDir: string, extractRoot: string, startId: string,
+    endId: string): Promise<EpubConvertResult> {
+    const root = EpubHtmlConverter.normalizePath(extractRoot);
+    const sizes = new Map<string, number[]>();
+    const resolve = (source: string): EpubImageRef | null => {
+      const path = EpubHtmlConverter.resolvePath(baseDir, source, root);
+      if (!path || !path.startsWith(`${root}/`) || !this.exists(path)) return null;
+      const ref = new EpubImageRef();
+      ref.path = path;
+      const size = sizes.get(path);
+      if (size && size.length === 2) {
+        ref.width = size[0];
+        ref.height = size[1];
+      }
+      return ref;
+    };
+    const first = EpubHtmlConverter.convertBody(body, resolve, startId, endId);
+    if (first.imagePaths.length === 0 ||
+      (!first.hasText && first.imagePaths.length > LocalChapterContentLoader.MAX_SIZED_IMAGES_WITHOUT_TEXT)) {
+      return first;
+    }
+    for (const path of first.imagePaths) {
+      sizes.set(path, await this.imageSize(path));
+    }
+    return EpubHtmlConverter.convertBody(body, resolve, startId, endId);
   }
 
-  private static imageTagToMarker(tag: string, baseDir: string, attributes: string[]): string {
-    const source = this.findHtmlAttribute(tag, attributes);
-    if (!source || /^(?:data:|https?:)/i.test(source)) return ' ';
-    if (/^<object\b/i.test(tag)) {
-      const mediaType = this.findHtmlAttribute(tag, ['type']).toLowerCase();
-      const cleanSource = this.withoutFragment(source).toLowerCase();
-      if (!mediaType.startsWith('image/') && !/\.(?:avif|bmp|gif|jpe?g|png|svg|webp)$/.test(cleanSource)) {
-        return ' ';
+  /** 只解码图片头部，返回 [宽, 高]；无法识别（如 SVG）时返回 [0, 0]。 */
+  static async imageSize(path: string): Promise<number[]> {
+    const cached = this.imageSizeCache.get(path);
+    if (cached) return cached;
+    let size: number[] = [0, 0];
+    let file: fs.File | null = null;
+    let source: image.ImageSource | null = null;
+    try {
+      file = fs.openSync(path, fs.OpenMode.READ_ONLY);
+      source = image.createImageSource(file.fd);
+      const info = await source.getImageInfo();
+      if (info.size.width > 0 && info.size.height > 0) size = [info.size.width, info.size.height];
+    } catch (_) {
+    } finally {
+      if (source) {
+        try {
+          await source.release();
+        } catch (_) {
+        }
+      }
+      if (file) {
+        try {
+          fs.closeSync(file);
+        } catch (_) {
+        }
       }
     }
-    const path = this.resolveBookPath(baseDir, this.decodeEntities(source));
-    return path && this.exists(path) ? `\n\n${ReaderImageMarker.create(path)}\n\n` : ' ';
-  }
-
-  private static findHtmlAttribute(tag: string, names: string[]): string {
-    for (const name of names) {
-      const escaped = name.replace(':', '\\:');
-      const quoted = new RegExp(`(?:^|\\s)${escaped}\\s*=\\s*["']([^"']+)["']`, 'i').exec(tag);
-      if (quoted && quoted[1]) return quoted[1];
-      const unquoted = new RegExp(`(?:^|\\s)${escaped}\\s*=\\s*([^\\s>]+)`, 'i').exec(tag);
-      if (unquoted && unquoted[1]) return unquoted[1];
+    this.imageSizeCache.set(path, size);
+    while (this.imageSizeCache.size > LocalChapterContentLoader.IMAGE_SIZE_CACHE_LIMIT) {
+      const oldest = this.imageSizeCache.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      this.imageSizeCache.delete(oldest);
     }
-    return '';
-  }
-
-  private static decodeEntities(value: string): string {
-    const named: Record<string, string> = {};
-    named['amp'] = '&';
-    named['lt'] = '<';
-    named['gt'] = '>';
-    named['quot'] = '"';
-    named['apos'] = "'";
-    named['nbsp'] = ' ';
-    return (value || '').replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi,
-      (raw: string, entity: string): string => {
-        const lower = entity.toLowerCase();
-        if (lower.startsWith('#x')) return String.fromCharCode(parseInt(lower.substring(2), 16));
-        if (lower.startsWith('#')) return String.fromCharCode(parseInt(lower.substring(1), 10));
-        return named[lower] ?? raw;
-      });
-  }
-
-  private static resolveBookPath(baseDir: string, value: string): string {
-    const clean = this.withoutFragment((value || '').replace(/\\/g, '/'));
-    if (!clean) return '';
-    if (clean.startsWith('/')) return this.normalizePath(clean);
-    return this.normalizePath(`${baseDir}/${clean}`);
-  }
-
-  private static normalizePath(value: string): string {
-    const source = (value || '').replace(/\\/g, '/');
-    const prefix = source.startsWith('/') ? '/' : '';
-    const parts: string[] = [];
-    for (const part of source.split('/')) {
-      if (!part || part === '.') continue;
-      if (part === '..') {
-        if (parts.length > 0) parts.pop();
-      } else {
-        parts.push(part);
-      }
-    }
-    return prefix + parts.join('/');
-  }
-
-  private static parentPath(path: string): string {
-    const normalized = this.normalizePath(path);
-    const index = normalized.lastIndexOf('/');
-    return index > 0 ? normalized.substring(0, index) : normalized;
-  }
-
-  private static withoutFragment(value: string): string {
-    const index = (value || '').indexOf('#');
-    return index >= 0 ? value.substring(0, index) : value;
+    return size;
   }
 
   private static exists(path: string): boolean {

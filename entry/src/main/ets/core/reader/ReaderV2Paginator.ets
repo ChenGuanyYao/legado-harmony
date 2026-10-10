@@ -11,6 +11,7 @@ import {
   ReaderV2SelectionRun
 } from './ReaderV2PageLayout';
 import { ReaderV2SpanStyleRange } from './ReaderV2Style';
+import { ReaderMixedPageLayout } from './ReaderMixedPageLayout';
 
 class ReaderV2MeasuredBlock {
   block: ReaderV2Block;
@@ -93,8 +94,62 @@ export class ReaderV2Paginator {
       let hasContent = false;
       let topInkGuardApplied = false;
       let mustEndPage = false;
+      let previousWasImage = false;
 
       while (session.blockIndex < session.document.blocks.length && !mustEndPage) {
+        const imageBlock = session.document.blocks[session.blockIndex];
+        if (imageBlock.image) {
+          // Same rules as the legacy mixed paginator (ReaderMixedPageLayout): small images flow with the text at
+          // their natural size; illustrations and images of unknown size fill the rest of the page and end it.
+          const gap = hasContent ? ReaderV2Paginator.imageGap(session.snapshot) : 0;
+          const remaining = column.bottom - y - gap;
+          const natural = ReaderMixedPageLayout.naturalBoxForSize(imageBlock.image.width, imageBlock.image.height,
+            session.width, column.height(), session.snapshot.imagePxPerVp);
+          let imageRect: ReaderV2Rect;
+          let endsPage = false;
+          if (natural && !natural.fill) {
+            if (hasContent && natural.heightPx > remaining + 0.01) {
+              mustEndPage = true;
+              continue;
+            }
+            const left = column.left + Math.max(0, (session.width - natural.widthPx) / 2);
+            imageRect = new ReaderV2Rect(left, y + gap, left + natural.widthPx, y + gap + natural.heightPx);
+          } else {
+            const wanted = natural ?
+              Math.min(natural.heightPx, column.height()) * ReaderMixedPageLayout.FILL_MIN_RATIO : 0;
+            if (hasContent && remaining < Math.max(session.snapshot.imageMinHeightPx, wanted)) {
+              mustEndPage = true;
+              continue;
+            }
+            imageRect = new ReaderV2Rect(column.left, y + gap, column.right, column.bottom);
+            endsPage = true;
+          }
+          const imageFragment = new ReaderV2PageFragment();
+          imageFragment.blockId = imageBlock.id;
+          imageFragment.blockIndex = session.blockIndex;
+          imageFragment.imageSource = imageBlock.image.source;
+          imageFragment.imageRect = imageRect;
+          imageFragment.paragraphX = imageRect.left;
+          imageFragment.paragraphY = imageRect.top;
+          imageFragment.paragraphHeight = imageRect.height();
+          imageFragment.clipRect = imageRect;
+          imageFragment.localStart = 0;
+          imageFragment.localEnd = imageBlock.text.length;
+          imageFragment.displayStart = imageBlock.displayStart;
+          imageFragment.displayEnd = imageBlock.displayEnd;
+          page.fragments.push(imageFragment);
+          if (!hasContent) page.displayStart = imageFragment.displayStart;
+          page.displayEnd = imageFragment.displayEnd;
+          hasContent = true;
+          previousWasImage = true;
+          y = imageRect.bottom;
+          session.blockIndex++;
+          session.lineIndex = 0;
+          session.measuredBlock = null;
+          mustEndPage = endsPage;
+          continue;
+        }
+
         let current = session.measuredBlock;
         if (!current || current.block !== session.document.blocks[session.blockIndex]) {
           current = ReaderV2Paginator.measureBlock(session.document, session.document.blocks[session.blockIndex],
@@ -109,7 +164,8 @@ export class ReaderV2Paginator {
         }
 
         const startsNewBlock = session.lineIndex === 0;
-        const spacing = startsNewBlock && hasContent ? session.snapshot.paragraphSpacingPx : 0;
+        const spacing = startsNewBlock && hasContent ? Math.max(session.snapshot.paragraphSpacingPx,
+          previousWasImage ? ReaderV2Paginator.imageGap(session.snapshot) : 0) : 0;
         const firstLine = current.lines[session.lineIndex];
         if (!hasContent && !topInkGuardApplied) {
           // A zero user margin places the first logical line box on the page boundary. Some fonts (notably the
@@ -159,6 +215,7 @@ export class ReaderV2Paginator {
         if (!hasContent) page.displayStart = fragment.displayStart;
         page.displayEnd = fragment.displayEnd;
         hasContent = true;
+        previousWasImage = false;
         y += fragmentBottom - paragraphLineTop;
 
         if (session.lineIndex >= current.lines.length) {
@@ -182,6 +239,11 @@ export class ReaderV2Paginator {
     }
     result.complete = session.blockIndex >= session.document.blocks.length;
     return appended;
+  }
+
+  /** Vertical gap between an image block and neighbouring text, even when paragraph spacing is zero. */
+  private static imageGap(snapshot: ReaderV2LayoutSnapshot): number {
+    return Math.max(snapshot.paragraphSpacingPx, snapshot.lineSpacingPx, snapshot.fontSizePx * 0.5);
   }
 
   private static measureBlock(document: ReaderV2Document, block: ReaderV2Block,
@@ -236,11 +298,16 @@ export class ReaderV2Paginator {
   }
 
   private static baseTextStyle(block: ReaderV2Block, snapshot: ReaderV2LayoutSnapshot): graphicsText.TextStyle {
+    const heading = block.title || block.headingLevel > 0;
+    // Chapter titles keep the user's title size. In-chapter headings sit between body and title size so a
+    // deep heading never outweighs the chapter title; level 3+ only gains the title face and weight.
+    const headingFontSizePx = block.headingLevel > 2 ? snapshot.fontSizePx :
+      Math.max(snapshot.fontSizePx, (snapshot.fontSizePx + snapshot.titleFontSizePx) / 2);
     return {
-      fontSize: block.title ? snapshot.titleFontSizePx : snapshot.fontSizePx,
+      fontSize: block.title ? snapshot.titleFontSizePx : (heading ? headingFontSizePx : snapshot.fontSizePx),
       letterSpacing: snapshot.letterSpacingPx,
-      fontFamilies: [block.title ? snapshot.titleFontFamily : snapshot.bodyFontFamily],
-      fontWeight: block.title ? graphicsText.FontWeight.W600 : graphicsText.FontWeight.W400,
+      fontFamilies: [heading ? snapshot.titleFontFamily : snapshot.bodyFontFamily],
+      fontWeight: heading ? graphicsText.FontWeight.W600 : graphicsText.FontWeight.W400,
       color: ReaderV2Paginator.graphicsColor(snapshot.textColor),
       halfLeading: false,
       heightOnly: true,
@@ -488,15 +555,26 @@ export class ReaderV2Paginator {
   private static finalizePageSelection(page: ReaderV2PageLayout): void {
     if (page.fragments.length === 0) return;
     let text = '';
-    for (let index = 0; index < page.fragments.length; index++) {
-      const fragment = page.fragments[index];
-      if (index > 0) text += '\n';
+    let first: ReaderV2PageFragment | null = null;
+    let last: ReaderV2PageFragment | null = null;
+    for (const fragment of page.fragments) {
+      if (!fragment.paragraph) {
+        // Image fragments own no selectable text: the transparent selection Text only contains prose.
+        fragment.selectionPageStart = text.length;
+        fragment.selectionPageEnd = text.length;
+        continue;
+      }
+      if (last) {
+        text += '\n';
+        last.selectionBreakAfter = true;
+      }
       fragment.selectionPageStart = text.length;
       for (const run of fragment.selectionRuns) text += run.text;
       fragment.selectionPageEnd = text.length;
+      if (!first) first = fragment;
+      last = fragment;
     }
-    const first = page.fragments[0];
-    const last = page.fragments[page.fragments.length - 1];
+    if (!first || !last) return;
     page.selectionText = text;
     page.selectionX = page.contentRect.left;
     page.selectionY = first.paragraphY;
@@ -518,7 +596,8 @@ export class ReaderV2Paginator {
       const style = ReaderV2Paginator.styleAt(document, block, block.displayStart + start, snapshot, regexStyles);
       const families = style.fontFamilies;
       result.push(new ReaderV2SelectionRun(block.text.substring(start, end), Number(style.fontSize),
-        families && families.length > 0 ? families[0] : '', block.title, Number(style.letterSpacing || 0)));
+        families && families.length > 0 ? families[0] : '', block.title || block.headingLevel > 0,
+        Number(style.letterSpacing || 0)));
     }
     return result;
   }

@@ -125,12 +125,6 @@ export class WebDavClient {
       this.urlForPath(this.joinPath(this.connection.libraryRoot, relativePath)), targetPath, onProgress);
   }
 
-  async downloadBackup(relativePath: string, targetPath: string,
-    onProgress?: (received: number, total: number) => void): Promise<WebDavDownloadResult> {
-    return await this.downloadUrl(
-      this.urlForPath(this.joinPath(this.connection.backupRoot, relativePath)), targetPath, onProgress);
-  }
-
   async downloadUrl(url: string, targetPath: string,
     onProgress?: (received: number, total: number) => void): Promise<WebDavDownloadResult> {
     let lastMessage = '下载失败';
@@ -205,22 +199,6 @@ export class WebDavClient {
     }
   }
 
-  async ensureBackupRoot(): Promise<void> {
-    await this.ensureCollection(this.connection.backupRoot);
-  }
-
-  async ensureCollection(relativePath: string): Promise<void> {
-    const parts = WebDavSettingsStore.normalizeRelativePath(relativePath).split('/').filter((value: string): boolean => !!value);
-    let current = '';
-    for (const part of parts) {
-      current = this.joinPath(current, part);
-      const response = await this.request('MKCOL', this.urlForPath(current), {}, undefined, 1024);
-      if (response.statusCode === 201 || response.statusCode === 200 || response.statusCode === 204 ||
-        response.statusCode === 405) continue;
-      throw new Error(`创建远端目录失败：${this.statusMessage(response.statusCode)}`);
-    }
-  }
-
   async createLibraryFolder(parentPath: string, name: string): Promise<void> {
     const relativePath = this.joinPath(parentPath, name);
     const response = await this.request('MKCOL', this.urlForPath(
@@ -271,43 +249,6 @@ export class WebDavClient {
   async deleteLibraryEntry(relativePath: string, directory: boolean): Promise<void> {
     const target = this.joinPath(this.connection.libraryRoot, relativePath);
     await this.deleteUrl(directory ? this.urlForCollection(target) : this.urlForPath(target));
-  }
-
-  async listBackups(): Promise<WebDavEntry[]> {
-    const root = this.connection.backupRoot;
-    const response = await this.request('PROPFIND', this.urlForCollection(root), {
-      'Depth': '1',
-      'Content-Type': 'application/xml; charset=utf-8'
-    }, WebDavClient.propfindBody(), 4 * 1024 * 1024);
-    if (response.statusCode === 404) return [];
-    if (response.statusCode !== 207) throw new Error(this.statusMessage(response.statusCode));
-    return this.parseMultiStatus(response.body, '')
-      .filter((item: WebDavEntry): boolean => !item.directory && item.name.toLowerCase().endsWith('.qingyebak'))
-      .sort((left: WebDavEntry, right: WebDavEntry): number => right.lastModified - left.lastModified);
-  }
-
-  async uploadBackup(context: Context, sourcePath: string, remoteName: string,
-    onProgress?: (sent: number, total: number) => void): Promise<void> {
-    await this.ensureBackupRoot();
-    const finalUrl = this.urlForPath(this.joinPath(this.connection.backupRoot, remoteName));
-    const existing = await this.headUrl(finalUrl);
-    if (existing.exists) throw new Error('同名备份已存在');
-    let uploadedSize = 0;
-    try {
-      uploadedSize = await this.streamUploadFile(context, sourcePath, finalUrl, remoteName, onProgress);
-    } catch (error) {
-      await this.deleteUrl(finalUrl).catch((): void => {});
-      throw new Error(this.errorMessage(error as Object));
-    }
-    const uploaded = await this.headUrl(finalUrl);
-    if (!uploaded.exists || uploaded.size !== uploadedSize) {
-      await this.deleteUrl(finalUrl).catch((): void => {});
-      throw new Error('远端备份长度校验失败');
-    }
-  }
-
-  async deleteBackup(relativePath: string): Promise<void> {
-    await this.deleteUrl(this.urlForPath(this.joinPath(this.connection.backupRoot, relativePath)));
   }
 
   private async deleteUrl(url: string): Promise<void> {

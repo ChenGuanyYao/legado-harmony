@@ -57,7 +57,12 @@ export class ReaderV2PageFragment {
   paragraphHeight: number = 0;
   selectionPageStart: number = 0;
   selectionPageEnd: number = 0;
+  /** 整页选中文本里，这个片段之后是否跟着一个换行（后面还有文字片段）。 */
+  selectionBreakAfter: boolean = false;
   selectionRuns: ReaderV2SelectionRun[] = [];
+  /** 图片片段：paragraph 为 null，图片以 Contain 方式绘制在 imageRect 内。 */
+  imageSource: string = '';
+  imageRect: ReaderV2Rect = new ReaderV2Rect();
   regexBubbleSegments: ReaderV2RegexBubbleSegment[] = [];
 }
 

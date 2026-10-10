@@ -5,6 +5,8 @@ export interface SystemDialogOptions {
   autoCancel: boolean;
   maskColor: string;
   warnTag: string;
+  /** 弹窗以任何方式关闭（含蒙层/返回键自动关闭）后的回调，用于复位页面侧标志位。 */
+  onDismiss?: () => void;
 }
 
 /**
@@ -27,7 +29,10 @@ export class SystemDialogSession {
       builder: builder,
       autoCancel: options.autoCancel,
       alignment: DialogAlignment.Center,
-      maskColor: options.maskColor
+      maskColor: options.maskColor,
+      onWillDismiss: (): void => {
+        if (options.onDismiss) options.onDismiss();
+      }
     }).then((dialogId: number) => {
       this.dialogId = dialogId;
     }).catch((error: Error) => {

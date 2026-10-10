@@ -22,6 +22,7 @@ export interface ReadTextSlice { text: string; start: number; end: number; highl
 export interface ReaderPaginationResult {
   source: string; pages: string[]; starts: number[]; ends: number[]; cursor?: number; complete?: boolean; v2Session?: ReaderV2PaginationSession;
 }
+export interface ReaderMixedPaginationMetrics { availableWidth: number; availableHeightPx: number; }
 export interface ReaderViewportSize { width: number; height: number; }
 export interface ReaderTextParagraphGroup { paragraphs: ReaderTextParagraph[]; mergeable: boolean; key: string; }
 export interface ReaderParagraphMeasureFallback { fontSize: number; fontFamily: string; }

@@ -10,6 +10,8 @@ import { appDb } from '../../model/data/AppDatabase';
 import { Book, BookChapter } from '../../model/data/Book';
 import { ReaderImageMarker } from './ReaderImageMarker';
 import { LocalChapterContentLoader } from './LocalChapterContentLoader';
+import { EpubChapterPlanner, EpubPlannedChapter, EpubTocEntry } from './EpubChapterPlanner';
+import { EpubConvertResult, EpubHtmlConverter } from './EpubHtmlConverter';
 
 export class LocalBookFile {
   uri: string = '';
@@ -27,6 +29,7 @@ class LocalChapterData {
   title: string = '';
   content: string = '';
   sourcePath: string = '';
+  variable: string = '';
   imageOnly: boolean = false;
 }
 
@@ -50,6 +53,7 @@ class EpubPackageData {
   coverPath: string = '';
   extractRoot: string = '';
   chapters: LocalChapterData[] = [];
+  planned: EpubPlannedChapter[] = [];
   isComic: boolean = false;
 }
 
@@ -78,7 +82,7 @@ export class LocalBookService {
   static readonly EPUB_IMAGE_MARKER_SUFFIX: string = ReaderImageMarker.SUFFIX;
 
   private static readonly TXT_PARSER_VERSION: string = '10';
-  private static readonly EPUB_PARSER_VERSION: string = '8';
+  private static readonly EPUB_PARSER_VERSION: string = '9';
   private static readonly TXT_READ_CHUNK_BYTES: number = 256 * 1024;
   private static readonly TXT_MAX_CHAPTER_CHARS: number = 32 * 1024;
   private static readonly TXT_DB_BATCH_SIZE: number = 16;
@@ -111,6 +115,19 @@ export class LocalBookService {
 
   static isPhysicalLocalBook(book: Book): boolean {
     return LocalBookService.isLocalBook(book) && !LocalBookService.isWebDavBook(book);
+  }
+
+  // 移出书架：删除数据库记录（章节与正文缓存随 deleteBook 级联清理），
+  // 并清理本地源文件与 EPUB 解压目录；远端书库（WebDAV/OPDS）文件不受影响。
+  static async deleteBookWithFiles(context: Context, bookUrl: string): Promise<void> {
+    const book = await appDb.getBook(bookUrl);
+    if (book) {
+      const extractRoot = book.getVariable('localExtractRoot');
+      if (extractRoot) LocalBookService.deleteLocalPath(context, extractRoot);
+      const localPath = book.getVariable('localFilePath');
+      if (localPath) LocalBookService.deleteLocalPath(context, localPath);
+    }
+    await appDb.deleteBook(bookUrl, 'remove_from_shelf');
   }
 
   static getTxtCharsetOverride(book: Book | null): string {
@@ -165,15 +182,7 @@ export class LocalBookService {
   }
 
   static epubImagePathFromMarker(value: string): string {
-    const text = (value || '').trim();
-    if (!LocalBookService.isEpubImageMarker(text)) return '';
-    const encoded = text.substring(LocalBookService.EPUB_IMAGE_MARKER_PREFIX.length,
-      text.length - LocalBookService.EPUB_IMAGE_MARKER_SUFFIX.length);
-    try {
-      return decodeURIComponent(encoded);
-    } catch (_) {
-      return encoded;
-    }
+    return ReaderImageMarker.parse(value).source;
   }
 
   static createReaderImageMarker(source: string): string {
@@ -269,6 +278,24 @@ export class LocalBookService {
     return `webdav://${connectionId}/${LocalBookService.hashText(remotePath)}`;
   }
 
+  static opdsBookUrl(serverId: string, acquisitionUrl: string): string {
+    return `opds://${serverId}/${LocalBookService.hashText(acquisitionUrl)}`;
+  }
+
+  static async importOpdsBook(context: Context, sourcePath: string, serverId: string,
+    name: string, format: string, acquisitionUrl: string, remoteSize: number): Promise<Book> {
+    if (format !== 'txt' && format !== 'epub') throw new Error('仅支持 TXT 和 EPUB 文件');
+    const identity = LocalBookService.opdsBookUrl(serverId, acquisitionUrl);
+    const storageVariables: Record<string, string> = {
+      'storageKind': 'opds',
+      'opdsServerId': serverId,
+      'opdsAcquisitionUrl': acquisitionUrl,
+      'opdsDownloadedAt': `${Date.now()}`
+    };
+    return await LocalBookService.importBook(context, sourcePath, format, name, identity,
+      '', '', '', 0, 0, storageVariables, 'OPDS');
+  }
+
   static sanitizeFileName(value: string): string {
     const cleaned = value.replace(/[\\/:*?"<>|\r\n\t]/g, ' ').replace(/\s+/g, ' ').trim();
     return cleaned || '未命名';
@@ -294,7 +321,9 @@ export class LocalBookService {
   private static async importBook(context: Context, sourceUri: string,
     formatHint: string = '', sourceName: string = '', bookUrlOverride: string = '',
     webDavConnectionId: string = '', webDavRemotePath: string = '', webDavETag: string = '',
-    webDavLastModified: number = 0, webDavRemoteSize: number = 0): Promise<Book> {
+    webDavLastModified: number = 0, webDavRemoteSize: number = 0,
+    storageVariables: Record<string, string> | null = null,
+    storageOriginName: string = ''): Promise<Book> {
     const extension = formatHint || LocalBookService.extensionOf(sourceUri);
     const sourceId = LocalBookService.hashText(sourceUri);
     const bookUrl = bookUrlOverride || `local://${sourceId}`;
@@ -369,6 +398,14 @@ export class LocalBookService {
       book.putVariable('webdavRemoteSize', `${Math.max(0, webDavRemoteSize)}`);
       book.putVariable('webdavCachedAt', `${Date.now()}`);
     }
+    if (storageVariables) {
+      const storageKeys: string[] = Object.keys(storageVariables);
+      for (let i = 0; i < storageKeys.length; i++) {
+        const key = storageKeys[i];
+        book.putVariable(key, storageVariables[key]);
+      }
+      if (storageOriginName) book.originName = storageOriginName;
+    }
     const metadataSource = sourceName || sourceUri;
     const fileMetadata = LocalBookService.parseFileNameMetadata(metadataSource);
     const hasCustomMetadata = book.getVariable('localMetadataCustomized') === '1';
@@ -391,6 +428,7 @@ export class LocalBookService {
 
     let chapters: LocalChapterData[] = [];
     const epub = await LocalBookService.parseEpub(context, localPath, id);
+    const oldChapterPath = oldBook ? await LocalBookService.currentEpubChapterPath(book) : '';
     book.name = hasCustomMetadata ? book.getVariable('localCustomName') :
       (epub.title || fileMetadata.title || LocalBookService.fileStem(metadataSource));
     book.author = hasCustomMetadata ? book.getVariable('localCustomAuthor') : (epub.author || fileMetadata.author);
@@ -416,36 +454,14 @@ export class LocalBookService {
     book.latestChapterTime = Date.now();
     book.intro = '';
     book.putVariable('localContentIntroVersion', '6');
-    if (book.durChapterIndex >= chapters.length) {
-      book.durChapterIndex = 0;
-      book.durChapterPos = 0;
-      book.durChapterTitle = '';
-    }
+    LocalBookService.migrateEpubProgress(book, oldChapterPath, epub);
 
     if (oldBook) {
       await appDb.updateBook(book);
     } else {
       await appDb.insertBook(book);
     }
-    await appDb.deleteBookChapters(bookUrl);
-    await appDb.deleteBookCachedContent(bookUrl);
-    const dbChapters: BookChapter[] = [];
-    for (let i = 0; i < chapters.length; i++) {
-      const data = chapters[i];
-      const chapter = new BookChapter();
-      chapter.bookUrl = bookUrl;
-      chapter.index = i;
-      chapter.title = data.title || `第${i + 1}章`;
-      chapter.url = `${bookUrl}#chapter=${i}`;
-      chapter.resourceUrl = data.sourcePath;
-      dbChapters.push(chapter);
-    }
-    await appDb.insertBookChapters(dbChapters);
-    for (let i = 0; i < chapters.length; i++) {
-      if (!chapters[i].sourcePath && chapters[i].content) {
-        await appDb.saveCachedChapterContent(bookUrl, dbChapters[i], chapters[i].content);
-      }
-    }
+    await LocalBookService.persistEpubChapters(bookUrl, chapters);
     return book;
   }
 
@@ -504,6 +520,7 @@ export class LocalBookService {
     const id = book.bookUrl.startsWith('local://') ? book.bookUrl.substring('local://'.length) :
       LocalBookService.hashText(localPath);
     const epub = await LocalBookService.parseEpub(context, localPath, id);
+    const oldChapterPath = await LocalBookService.currentEpubChapterPath(book);
     if (book.getVariable('localMetadataCustomized') === '1') {
       book.name = book.getVariable('localCustomName');
       book.author = book.getVariable('localCustomAuthor');
@@ -531,30 +548,72 @@ export class LocalBookService {
     book.totalChapterNum = chapters.length;
     book.latestChapterTitle = chapters[chapters.length - 1].title;
     book.latestChapterTime = Date.now();
-    if (book.durChapterIndex >= chapters.length) {
-      book.durChapterIndex = 0;
-      book.durChapterPos = 0;
-      book.durChapterTitle = '';
-    }
+    LocalBookService.migrateEpubProgress(book, oldChapterPath, epub);
     await appDb.updateBook(book);
-    await appDb.deleteBookChapters(book.bookUrl);
-    await appDb.deleteBookCachedContent(book.bookUrl);
+    await LocalBookService.persistEpubChapters(book.bookUrl, chapters);
+  }
+
+  // 章节与正文在一个事务里写入：导入时已经转换过的正文直接进缓存，打开章节时不必再转换一遍。
+  private static async persistEpubChapters(bookUrl: string, chapters: LocalChapterData[]): Promise<void> {
+    await appDb.deleteBookChapters(bookUrl);
+    await appDb.deleteBookCachedContent(bookUrl);
     const dbChapters: BookChapter[] = [];
+    const contents: string[] = [];
     for (let i = 0; i < chapters.length; i++) {
       const data = chapters[i];
       const chapter = new BookChapter();
-      chapter.bookUrl = book.bookUrl;
+      chapter.bookUrl = bookUrl;
       chapter.index = i;
       chapter.title = data.title || `第${i + 1}章`;
-      chapter.url = `${book.bookUrl}#chapter=${i}`;
+      chapter.url = `${bookUrl}#chapter=${i}`;
       chapter.resourceUrl = data.sourcePath;
+      chapter.variable = data.variable;
       dbChapters.push(chapter);
+      contents.push(data.content || chapter.title);
     }
-    await appDb.insertBookChapters(dbChapters);
-    for (let i = 0; i < chapters.length; i++) {
-      if (!chapters[i].sourcePath && chapters[i].content) {
-        await appDb.saveCachedChapterContent(book.bookUrl, dbChapters[i], chapters[i].content);
+    await appDb.insertBookChaptersWithContents(bookUrl, dbChapters, contents);
+  }
+
+  /** 重新解析前，当前阅读章节对应的 spine 文件路径。 */
+  private static async currentEpubChapterPath(book: Book): Promise<string> {
+    try {
+      const oldChapters = await appDb.getBookChapters(book.bookUrl);
+      const index = book.durChapterIndex;
+      if (index < 0 || index >= oldChapters.length) return '';
+      return EpubHtmlConverter.withoutFragment(oldChapters[index].resourceUrl || '');
+    } catch (e) {
+      console.warn('[LocalBook] 读取旧章节失败:', e);
+      return '';
+    }
+  }
+
+  // 章节划分方式变化后旧的章节序号不再对应原来的内容，按所在文件重新定位阅读进度。
+  private static migrateEpubProgress(book: Book, oldChapterPath: string, epub: EpubPackageData): void {
+    const count = epub.chapters.length;
+    const index = !epub.isComic && oldChapterPath ?
+      EpubChapterPlanner.chapterIndexForPath(epub.planned, oldChapterPath) : -1;
+    if (index >= 0 && index < count) {
+      // 旧章节的文件仍然是新章节的开头时，章内字符偏移继续有效；否则只能回到新章节的开头。
+      const first = epub.planned[index].segments[0];
+      const offsetStillValid = first.path === oldChapterPath && !first.startId;
+      if (!offsetStillValid) {
+        book.durChapterPos = 0;
+        book.putVariable('readProgressCharOffsetV2', '');
       }
+      if (index !== book.durChapterIndex) {
+        book.durChapterTitle = epub.chapters[index].title;
+        if (book.getVariable('readProgressChapterIndex')) book.putVariable('readProgressChapterIndex', `${index}`);
+        if (book.getVariable('readProgressCharOffsetChapterV2')) {
+          book.putVariable('readProgressCharOffsetChapterV2', `${index}`);
+        }
+      }
+      book.durChapterIndex = index;
+      return;
+    }
+    if (book.durChapterIndex >= count) {
+      book.durChapterIndex = 0;
+      book.durChapterPos = 0;
+      book.durChapterTitle = '';
     }
   }
 
@@ -879,70 +938,77 @@ export class LocalBookService {
       result.coverPath = LocalBookService.resolveBookPath(opfDir, coverItem.href);
     }
 
-    const tocTitles: Record<string, string> = {};
+    let tocEntries: EpubTocEntry[] = [];
     if (navItem?.href) {
       const navPath = LocalBookService.resolveBookPath(opfDir, navItem.href);
       const navText = (await LocalBookService.readTextFile(navPath, 'utf-8')).text;
-      LocalBookService.extractNavTitles(navText, LocalBookService.parentPath(navPath), tocTitles);
-    } else if (ncxItem?.href) {
+      tocEntries = EpubChapterPlanner.parseNavToc(navText, LocalBookService.parentPath(navPath), extractRoot);
+    }
+    if (tocEntries.length === 0 && ncxItem?.href) {
       const ncxPath = LocalBookService.resolveBookPath(opfDir, ncxItem.href);
       const ncxText = (await LocalBookService.readTextFile(ncxPath, 'utf-8')).text;
-      LocalBookService.extractNcxTitles(ncxText, LocalBookService.parentPath(ncxPath), tocTitles);
+      tocEntries = EpubChapterPlanner.parseNcxToc(ncxText, LocalBookService.parentPath(ncxPath), extractRoot);
     }
+    const tocByPath = EpubChapterPlanner.groupTocByPath(tocEntries);
 
     const spineNodes = LocalBookService.findNodes(opf, 'itemref');
-    const spineChapters: LocalChapterData[] = [];
-    let imageOnlyChapterCount = 0;
+    const planner = new EpubChapterPlanner(tocByPath.size > 0);
     for (const spine of spineNodes) {
       const idref = spine.attributes['idref'] || '';
       const item = manifest[idref];
       if (!item || !item.href) continue;
-      const chapterPath = LocalBookService.resolveBookPath(opfDir, item.href);
-      if (!LocalBookService.exists(chapterPath)) continue;
-      const chapterKey = LocalBookService.withoutFragment(LocalBookService.normalizePath(chapterPath));
-      const chapter = new LocalChapterData();
-      chapter.title = tocTitles[chapterKey] || `第${spineChapters.length + 1}页`;
-      chapter.sourcePath = chapterPath;
+      const chapterPath = EpubHtmlConverter.resolvePath(opfDir, item.href, extractRoot);
+      if (!chapterPath || !LocalBookService.exists(chapterPath)) continue;
+      const entries = tocByPath.get(chapterPath) || [];
+      // linear="no" 的辅助内容（弹注、答案页）不在正文阅读顺序里，除非目录明确列出。
+      if ((spine.attributes['linear'] || '').toLowerCase() === 'no' && entries.length === 0) continue;
+      planner.beginFile();
       if (item.mediaType.toLowerCase().startsWith('image/')) {
-        chapter.content = LocalBookService.createReaderImageMarker(chapterPath);
-        chapter.imageOnly = true;
+        const imagePiece = new EpubConvertResult();
+        imagePiece.content = LocalBookService.createReaderImageMarker(chapterPath);
+        imagePiece.imagePaths = [chapterPath];
+        planner.addPiece(chapterPath, '', '', entries.length > 0 ? entries[0].title : '', imagePiece);
       } else {
         try {
-          const chapterHtml = (await LocalBookService.readTextFile(chapterPath, 'utf-8')).text;
-          chapter.content = LocalBookService.htmlToReaderContent(chapterHtml,
-            LocalBookService.parentPath(chapterPath));
-          chapter.imageOnly = LocalBookService.hasEpubImageMarkers(chapter.content) &&
-            LocalBookService.stripEpubImageMarkers(chapter.content).trim().length === 0;
+          const chapterHtml = await LocalChapterContentLoader.readHtmlFile(chapterPath);
+          const body = EpubHtmlConverter.bodyOf(chapterHtml);
+          const documentTitle = EpubHtmlConverter.titleOf(chapterHtml);
+          const fallbackTitle = documentTitle && documentTitle !== result.title ? documentTitle : '';
+          for (const cut of EpubChapterPlanner.planFileCuts(body, entries)) {
+            const converted = await LocalChapterContentLoader.convertBody(body,
+              LocalBookService.parentPath(chapterPath), extractRoot, cut.startId, cut.endId);
+            planner.addPiece(chapterPath, cut.startId, cut.endId, cut.title, converted, fallbackTitle);
+          }
         } catch (error) {
           console.warn('预解析 EPUB spine 内容失败:', chapterPath, error);
         }
       }
-      if (chapter.imageOnly) imageOnlyChapterCount++;
-      spineChapters.push(chapter);
+      planner.endFile();
     }
 
-    // 单个封面、插图页或少量图集不应把整本 EPUB 识别为漫画。
-    // 长篇要求至少 3 个纯图片章节且占比达到 80%；只有 2 个章节的短篇则必须全部为纯图片。
-    const comicDominant = (spineChapters.length === 2 && imageOnlyChapterCount === 2) ||
-      (imageOnlyChapterCount >= 3 && imageOnlyChapterCount * 100 >= spineChapters.length * 80);
-    if (comicDominant) {
+    if (planner.isComicDominant()) {
       const waterfall = new LocalChapterData();
-      waterfall.title = result.title || spineChapters[0]?.title || '漫画正文';
-      waterfall.content = spineChapters
-        .map((chapter: LocalChapterData): string => chapter.content)
+      waterfall.title = result.title || (planner.chapters.length > 0 ? planner.chapters[0].title : '') || '漫画正文';
+      waterfall.content = planner.chapters
+        .map((chapter: EpubPlannedChapter): string => chapter.content)
         .filter((content: string): boolean => !!content.trim())
         .join('\n\n');
       waterfall.imageOnly = LocalBookService.hasEpubImageMarkers(waterfall.content);
       result.chapters.push(waterfall);
       result.isComic = true;
     } else {
-      result.chapters = spineChapters;
+      result.planned = planner.chapters;
+      for (const planned of planner.chapters) {
+        const chapter = new LocalChapterData();
+        chapter.title = planned.title;
+        chapter.content = planned.content;
+        chapter.sourcePath = planned.segments.length > 0 ? planned.segments[0].path : '';
+        chapter.variable = EpubChapterPlanner.encodeVariable(planned.segments, planned.headings);
+        chapter.imageOnly = planned.imageOnly;
+        result.chapters.push(chapter);
+      }
     }
     return result;
-  }
-
-  private static createEpubImageMarker(path: string): string {
-    return LocalBookService.createReaderImageMarker(path);
   }
 
   private static extractEpubMetadata(opf: XmlNodeData): LocalBookMetadata {
@@ -1101,102 +1167,8 @@ export class LocalBookService {
     return LocalBookService.decodeEntities(text).replace(/\s+/g, ' ').trim();
   }
 
-  private static extractNavTitles(html: string, baseDir: string, target: Record<string, string>): void {
-    const navMatch = html.match(/<nav\b[^>]*(?:epub:type\s*=\s*["']toc["']|role\s*=\s*["']doc-toc["'])[^>]*>([\s\S]*?)<\/nav>/i);
-    const source = navMatch ? navMatch[1] : html;
-    const anchor = /<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-    let match: RegExpExecArray | null;
-    while ((match = anchor.exec(source)) !== null) {
-      const path = LocalBookService.withoutFragment(LocalBookService.resolveBookPath(baseDir, match[1]));
-      const title = LocalBookService.htmlToInlineText(match[2]);
-      if (path && title && !target[path]) target[path] = title;
-    }
-  }
-
-  private static extractNcxTitles(ncx: string, baseDir: string, target: Record<string, string>): void {
-    const point = /<navPoint\b[^>]*>([\s\S]*?)<\/navPoint>/gi;
-    let match: RegExpExecArray | null;
-    while ((match = point.exec(ncx)) !== null) {
-      const src = match[1].match(/<content\b[^>]*src\s*=\s*["']([^"']+)["']/i);
-      const label = match[1].match(/<navLabel\b[^>]*>[\s\S]*?<text\b[^>]*>([\s\S]*?)<\/text>/i);
-      if (!src || !label) continue;
-      const path = LocalBookService.withoutFragment(LocalBookService.resolveBookPath(baseDir, src[1]));
-      const title = LocalBookService.htmlToInlineText(label[1]);
-      if (path && title && !target[path]) target[path] = title;
-    }
-  }
-
-  private static htmlToReaderContent(html: string, baseDir: string): string {
-    const body = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i);
-    const source = (body ? body[1] : html)
-      .replace(/<(?:img|image)\b[^>]*>/gi, (tag: string): string => {
-        return LocalBookService.epubImageTagToMarker(tag, baseDir, ['src', 'xlink:href', 'href']);
-      })
-      .replace(/<object\b[^>]*>/gi, (tag: string): string => {
-        return LocalBookService.epubImageTagToMarker(tag, baseDir, ['data']);
-      });
-    return LocalBookService.decodeEntities(source
-      .replace(/<script\b[\s\S]*?<\/script>/gi, '')
-      .replace(/<style\b[\s\S]*?<\/style>/gi, '')
-      .replace(/<(?:br|hr)\b[^>]*\/?>/gi, '\n')
-      .replace(/<\/(?:p|div|section|article|h[1-6]|li|blockquote)>/gi, '\n')
-      .replace(/<[^>]+>/g, ' '))
-      .replace(/\u00A0/g, ' ')
-      .replace(/[ \t]+\n/g, '\n')
-      .replace(/\n[ \t]+/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .replace(/[ \t]{2,}/g, ' ')
-      .trim();
-  }
-
-  private static epubImageTagToMarker(tag: string, baseDir: string, attributeNames: string[]): string {
-    const source = LocalBookService.findHtmlAttribute(tag, attributeNames);
-    if (!source || source.startsWith('data:') || source.startsWith('http://') || source.startsWith('https://')) {
-      return ' ';
-    }
-    if (/^<object\b/i.test(tag)) {
-      const mediaType = LocalBookService.findHtmlAttribute(tag, ['type']).toLowerCase();
-      const cleanSource = LocalBookService.withoutFragment(source).toLowerCase();
-      if (!mediaType.startsWith('image/') && !/\.(?:avif|bmp|gif|jpe?g|png|svg|webp)$/.test(cleanSource)) {
-        return ' ';
-      }
-    }
-    const path = LocalBookService.resolveBookPath(baseDir, LocalBookService.decodeEntities(source));
-    if (!path || !LocalBookService.exists(path)) {
-      return ' ';
-    }
-    return `\n\n${LocalBookService.createEpubImageMarker(path)}\n\n`;
-  }
-
-  private static findHtmlAttribute(tag: string, names: string[]): string {
-    for (const name of names) {
-      const escapedName = name.replace(':', '\\:');
-      const quoted = new RegExp(`(?:^|\\s)${escapedName}\\s*=\\s*["']([^"']+)["']`, 'i').exec(tag);
-      if (quoted) return quoted[1];
-      const unquoted = new RegExp(`(?:^|\\s)${escapedName}\\s*=\\s*([^\\s>]+)`, 'i').exec(tag);
-      if (unquoted) return unquoted[1];
-    }
-    return '';
-  }
-
-  private static htmlToInlineText(html: string): string {
-    return LocalBookService.decodeEntities(html.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
-  }
-
   private static decodeEntities(value: string): string {
-    const named: Record<string, string> = {};
-    named['amp'] = '&';
-    named['lt'] = '<';
-    named['gt'] = '>';
-    named['quot'] = '"';
-    named['apos'] = "'";
-    named['nbsp'] = ' ';
-    return value.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (raw: string, entity: string): string => {
-      const lower = entity.toLowerCase();
-      if (lower.startsWith('#x')) return String.fromCharCode(parseInt(lower.substring(2), 16));
-      if (lower.startsWith('#')) return String.fromCharCode(parseInt(lower.substring(1), 10));
-      return named[lower] ?? raw;
-    });
+    return EpubHtmlConverter.decodeEntities(value);
   }
 
   private static async readTextFile(path: string, preferredCharset: string): Promise<DecodedLocalText> {

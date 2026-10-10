@@ -4,7 +4,6 @@ export class WebDavConnection {
   baseUrl: string = '';
   username: string = '';
   libraryRoot: string = '';
-  backupRoot: string = 'LegadoHarmony/Backups';
   rememberPassword: boolean = true;
   secretStorageVersion: number = 1;
   enabled: boolean = true;
