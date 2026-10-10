@@ -8,6 +8,7 @@ import { ReaderBackgroundImageStore } from '../utils/ReaderBackgroundImageStore'
 import { AppThemeModeStore } from '../utils/AppThemeModeStore';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
+import { ReaderHeaderFooterSettings } from '../components/reader/ReaderLayoutSettings';
 import { ReaderFontHelper, ReaderFontItem } from '../utils/ReaderFontHelper';
 import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
 import { AdaptiveColorPicker } from '../components/AdaptiveColorPicker';
@@ -78,11 +79,8 @@ struct SettingsPage {
   @StorageLink('readerExtendToStatusBar') readerExtendToStatusBar: boolean = false;
   @StorageLink('readerKeepParagraphIndent') keepParagraphIndent: boolean = false;
   @StorageLink('readerHeaderEnabled') readerHeaderEnabled: boolean = false;
-  @StorageLink('readerHeaderContentMode') readerHeaderContentMode: string = 'chapter';
   @StorageLink('readerFooterEnabled') readerFooterEnabled: boolean = true;
-  @StorageLink('readerFooterLeftMode') readerFooterLeftMode: string = 'chapter';
-  @StorageLink('readerFooterProgressMode') readerFooterProgressMode: string = 'page';
-  @StorageLink('readerFooterShowProgressBar') readerFooterShowProgressBar: boolean = false;
+  @StorageLink('readerInfoBarConfig') readerInfoBarConfig: string = '';
   @StorageLink('readerEyeTurnEnabled') readerEyeTurnEnabled: boolean = false;
   @StorageLink('readerEyeTurnPortraitCalibration') readerEyeTurnPortraitCalibration: string = '';
   @StorageLink('readerEyeTurnLandscapeCalibration') readerEyeTurnLandscapeCalibration: string = '';
@@ -584,11 +582,8 @@ struct SettingsPage {
     this.readerExtendToStatusBar = settings.extendToStatusBar;
     this.keepParagraphIndent = settings.keepParagraphIndent;
     this.readerHeaderEnabled = settings.readerHeaderEnabled;
-    this.readerHeaderContentMode = settings.readerHeaderContentMode;
     this.readerFooterEnabled = settings.readerFooterEnabled;
-    this.readerFooterLeftMode = settings.readerFooterLeftMode;
-    this.readerFooterProgressMode = settings.readerFooterProgressMode;
-    this.readerFooterShowProgressBar = settings.readerFooterShowProgressBar;
+    this.readerInfoBarConfig = settings.readerInfoBarConfig;
     this.readerEyeTurnEnabled = settings.eyeTurnEnabled;
     this.readerEyeTurnPortraitCalibration = settings.eyeTurnPortraitCalibration;
     this.readerEyeTurnLandscapeCalibration = settings.eyeTurnLandscapeCalibration;
@@ -1014,54 +1009,12 @@ struct SettingsPage {
     return 0;
   }
 
-  readerHeaderContentOptions(): SelectOption[] {
-    return [{ value: '当前章节标题' }, { value: '书名' }, { value: '书名 + 章节标题' }, { value: '不显示' }];
-  }
-
-  readerHeaderContentValues(): string[] {
-    return ['chapter', 'book', 'book_chapter', 'none'];
-  }
-
-  readerHeaderContentSelectedIndex(): number {
-    const index = this.readerHeaderContentValues().indexOf(this.readerHeaderContentMode);
-    return index >= 0 ? index : 0;
-  }
-
-  readerFooterLeftOptions(): SelectOption[] {
-    return [{ value: '章节序号 + 标题' }, { value: '章节标题' }, { value: '不显示' }];
-  }
-
-  readerFooterLeftValues(): string[] {
-    return ['chapter', 'title', 'none'];
-  }
-
-  readerFooterLeftSelectedIndex(): number {
-    const index = this.readerFooterLeftValues().indexOf(this.readerFooterLeftMode);
-    return index >= 0 ? index : 0;
-  }
-
-  readerFooterProgressOptions(): SelectOption[] {
-    return [{ value: '页码' }, { value: '本章百分比' }, { value: '章节进度' }, { value: '全书百分比' }, { value: '不显示' }];
-  }
-
-  readerFooterProgressValues(): string[] {
-    return ['page', 'percentage', 'chapter', 'book', 'none'];
-  }
-
-  readerFooterProgressSelectedIndex(): number {
-    const index = this.readerFooterProgressValues().indexOf(this.readerFooterProgressMode);
-    return index >= 0 ? index : 0;
-  }
-
   saveReaderChromeSettings(): void {
     ReaderSettingsStore.saveReaderChromeSettings(
       getContext(this),
       this.readerHeaderEnabled,
-      this.readerHeaderContentMode,
       this.readerFooterEnabled,
-      this.readerFooterLeftMode,
-      this.readerFooterProgressMode,
-      this.readerFooterShowProgressBar
+      this.readerInfoBarConfig
     ).catch((e: Error) => {
       console.warn('保存页眉页脚设置失败:', e);
     });
@@ -2357,43 +2310,17 @@ struct SettingsPage {
 
   @Builder
   readerHeaderFooterSettingsPanel() {
-    Column({ space: 4 }) {
-      this.switchItem('显示页眉', '在正文顶部显示书名或当前章节标题', this.readerHeaderEnabled, (value: boolean) => {
-        this.readerHeaderEnabled = value;
-        this.saveReaderChromeSettings();
-      })
-      if (this.readerHeaderEnabled) {
-        this.selectItem('页眉内容', '选择页眉中显示的信息', this.readerHeaderContentOptions(),
-          this.readerHeaderContentSelectedIndex(), (index: number) => {
-            const values = this.readerHeaderContentValues();
-            this.readerHeaderContentMode = index >= 0 && index < values.length ? values[index] : 'chapter';
-            this.saveReaderChromeSettings();
-          }, 'settings_reader_header_content_select')
-      }
-      this.switchItem('显示页脚', '显示章节信息和阅读进度', this.readerFooterEnabled, (value: boolean) => {
-        this.readerFooterEnabled = value;
-        this.saveReaderChromeSettings();
-      })
-      if (this.readerFooterEnabled) {
-        this.selectItem('页脚左侧', '选择页脚左侧显示的信息', this.readerFooterLeftOptions(),
-          this.readerFooterLeftSelectedIndex(), (index: number) => {
-            const values = this.readerFooterLeftValues();
-            this.readerFooterLeftMode = index >= 0 && index < values.length ? values[index] : 'chapter';
-            this.saveReaderChromeSettings();
-          }, 'settings_reader_footer_left_select')
-        this.selectItem('阅读进度', '选择页脚右侧显示的进度类型', this.readerFooterProgressOptions(),
-          this.readerFooterProgressSelectedIndex(), (index: number) => {
-            const values = this.readerFooterProgressValues();
-            this.readerFooterProgressMode = index >= 0 && index < values.length ? values[index] : 'page';
-            this.saveReaderChromeSettings();
-          }, 'settings_reader_footer_progress_select')
-        this.switchItem('显示进度条', '在页脚上方显示本章阅读进度', this.readerFooterShowProgressBar, (value: boolean) => {
-          this.readerFooterShowProgressBar = value;
-          this.saveReaderChromeSettings();
-        })
-      }
-    }
-    .width('100%')
+    ReaderHeaderFooterSettings({
+      dark: this.appDarkMode,
+      textColor: this.primaryTextColor(),
+      subTextColor: this.subTextColor(),
+      accentColor: this.accentColor(),
+      switchColor: this.buttonColor(),
+      menuColor: ThemeRuntime.dropdownPanelColor(this.appDarkMode),
+      cardStyle: true,
+      dividerColor: this.settingsDividerColor(),
+      onChanged: (): void => this.saveReaderChromeSettings()
+    })
   }
 
   @Builder

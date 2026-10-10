@@ -21,6 +21,7 @@ const MODULES = [
   'core/reader/ReaderChunkPagination.ts',
   'core/reader/ReaderChapterRange.ts',
   'core/reader/ReaderPageTurnQueue.ts',
+  'core/reader/ReaderInfoBarModel.ts',
 ];
 
 export async function loadReaderModules() {

@@ -116,6 +116,11 @@ import { ReaderImageSizeResolver } from '../core/reader/ReaderImageSizeResolver'
 import { ReaderChunkPagination, ReaderChunkResult } from '../core/reader/ReaderChunkPagination';
 import { ReaderPageOffsets } from '../core/reader/ReaderPageOffsets';
 import { ReaderPageTurnQueue } from '../core/reader/ReaderPageTurnQueue';
+import {
+  ReaderInfoBarConfig, ReaderInfoBarContext, ReaderInfoBarText, ReaderInfoProgressBar
+} from '../core/reader/ReaderInfoBarModel';
+import { ReaderInfoBarClock } from '../core/reader/ReaderInfoBarClock';
+import { ReaderInfoBarRow } from '../components/reader/ReaderInfoBar';
 import { EpubChapterPlanner } from '../core/book/EpubChapterPlanner';
 import { EpubHeading } from '../core/book/EpubHtmlConverter';
 import { sleepMs } from '../utils/Sleep';
@@ -543,11 +548,15 @@ struct ReadBookPage {
   @StorageLink('readerUseChapterQuickJump') readerUseChapterQuickJump: boolean = true;
   @StorageLink('readerQuickBookmarkEnabled') readerQuickBookmarkEnabled: boolean = true;
   @StorageLink('readerHeaderEnabled') @Watch('onReaderChromeChanged') readerHeaderEnabled: boolean = false;
-  @StorageLink('readerHeaderContentMode') @Watch('onReaderChromeChanged') readerHeaderContentMode: string = 'chapter';
   @StorageLink('readerFooterEnabled') @Watch('onReaderChromeChanged') readerFooterEnabled: boolean = true;
-  @StorageLink('readerFooterLeftMode') @Watch('onReaderChromeChanged') readerFooterLeftMode: string = 'chapter';
-  @StorageLink('readerFooterProgressMode') @Watch('onReaderChromeChanged') readerFooterProgressMode: string = 'page';
-  @StorageLink('readerFooterShowProgressBar') @Watch('onReaderChromeChanged') readerFooterShowProgressBar: boolean = false;
+  // 页眉页脚的槽位与外观，ReaderInfoBarConfig 的 JSON；解析结果缓存在 readerInfoBarConfigCache。
+  @StorageLink('readerInfoBarConfig') @Watch('onReaderChromeChanged') readerInfoBarConfigRaw: string = '';
+  @State readerInfoTimeText: string = '';
+  @State readerInfoBatteryPercent: number = -1;
+  private readerInfoBarConfigCache: ReaderInfoBarConfig = new ReaderInfoBarConfig();
+  private readerInfoBarConfigCacheRaw: string = '';
+  private readerInfoBarLayoutIdentity: string = '';
+  private readerInfoBarClock: ReaderInfoBarClock | null = null;
   @StorageLink('readerReplaceRulesUpdateTime') @Watch('onReaderReplaceRulesChanged') readerReplaceRulesUpdateTime: number = 0;
   @StorageLink('readerFontFamily') @Watch('onReaderFontChanged') readerFontFamily: string = '';
   @StorageLink('readerFontFilePath') @Watch('onReaderFontChanged') readerFontFilePath: string = '';
@@ -716,6 +725,7 @@ struct ReadBookPage {
 
   onPageShow(): void {
     this.readerPageVisible = true;
+    this.syncReaderInfoBarClock();
     readStatsTracker.setReadingActive(this.bookUrl);
     const backgroundRevision = AppStorage.get<number>('appLifecycleBackgroundRevision') || 0;
     const returningFromBackground = backgroundRevision > this.readerObservedBackgroundRevision;
@@ -894,6 +904,7 @@ struct ReadBookPage {
     AppStorage.setOrCreate<boolean>('shelfReaderDirectTransition', false);
     this.resetReaderScreenOrientation();
     this.readerPageVisible = false;
+    this.syncReaderInfoBarClock();
     readStatsTracker.setReadingActive('');
     this.eyeTurn().release('reader disappear release');
     this.setReaderTextSelectionActive(false);
@@ -960,6 +971,7 @@ struct ReadBookPage {
   onPageHide(): void {
     this.shortcutRoutingActive = false;
     this.readerPageVisible = false;
+    this.syncReaderInfoBarClock();
     readStatsTracker.setReadingActive('');
     this.eyeTurn().release('reader background release');
     this.setReaderTextSelectionActive(false);
@@ -1822,7 +1834,7 @@ struct ReadBookPage {
       })
 
       Column() {
-        if (this.readerHeaderEnabled && !!this.getReaderHeaderInfoText() && !this.isReaderComicModeActive()) {
+        if (this.isReaderHeaderVisible()) {
           this.readerHeaderInfoBar()
         }
         Blank()
@@ -2106,7 +2118,7 @@ struct ReadBookPage {
               this.readerSimulationCurlCanvas()
             }
             Column() {
-              if (this.readerHeaderEnabled && !!this.getReaderHeaderInfoText()) {
+              if (this.isReaderHeaderVisible()) {
                 this.readerHeaderInfoBar()
               }
               Blank()
@@ -4015,70 +4027,73 @@ struct ReadBookPage {
     return `${this.currentChapterIndex + 1}/${this.chapters.length} · ${pageText}/${this.contentPages.length}`;
   }
 
-  getChapterInfoText(): string {
-    if (this.chapters.length === 0) {
-      return this.book?.name || '暂无目录';
+  getReaderInfoBarConfig(): ReaderInfoBarConfig {
+    if (this.readerInfoBarConfigCacheRaw !== this.readerInfoBarConfigRaw) {
+      this.readerInfoBarConfigCacheRaw = this.readerInfoBarConfigRaw;
+      this.readerInfoBarConfigCache = ReaderInfoBarConfig.parse(this.readerInfoBarConfigRaw) ??
+        new ReaderInfoBarConfig();
     }
-    const index = this.clampChapterIndex(this.currentChapterIndex);
-    const chapter = this.chapters[index];
-    return `${index + 1}/${this.chapters.length} ${chapter ? this.getChapterTitle(index) : this.getChapterTitle()}`;
+    return this.readerInfoBarConfigCache;
   }
 
-  getReaderHeaderInfoText(): string {
-    const mode = this.readerHeaderContentMode;
-    if (mode === 'book') return this.book?.name || '未命名书籍';
-    if (mode === 'book_chapter') {
-      const title = this.getChapterTitle(this.clampChapterIndex(this.currentChapterIndex));
-      return `${this.book?.name || '未命名书籍'} · ${title}`;
-    }
-    if (mode === 'none') return '';
-    return this.getChapterTitle(this.clampChapterIndex(this.currentChapterIndex));
+  isReaderHeaderVisible(): boolean {
+    return this.readerHeaderEnabled && this.getReaderInfoBarConfig().headerVisible() &&
+      !this.isReaderComicModeActive();
   }
 
-  getReaderFooterLeftText(): string {
-    if (this.readerFooterLeftMode === 'none') return '';
-    if (this.readerFooterLeftMode === 'title') {
-      return this.getChapterTitle(this.clampChapterIndex(this.currentChapterIndex));
-    }
-    return this.getChapterInfoText();
+  getReaderInfoBarContext(): ReaderInfoBarContext {
+    const context = new ReaderInfoBarContext();
+    context.bookName = this.book?.name || '';
+    context.author = this.book?.author || '';
+    context.chapterCount = this.chapters.length;
+    context.chapterIndex = this.clampChapterIndex(this.currentChapterIndex);
+    context.chapterTitle = this.getChapterTitle(context.chapterIndex);
+    context.pageIndex = this.currentPageIndex;
+    context.pageCount = this.contentPages.length;
+    context.doublePage = this.isLandscapeDoublePageActive();
+    context.timeText = this.readerInfoTimeText;
+    context.batteryPercent = this.readerInfoBatteryPercent;
+    return context;
   }
 
-  getReaderFooterProgressText(): string {
-    const mode = this.readerFooterProgressMode;
-    if (mode === 'none') return '';
-    if (mode === 'percentage') {
-      const total = Math.max(1, this.contentPages.length);
-      const page = Math.max(0, Math.min(this.currentPageIndex, total - 1));
-      return `${Math.round(((page + 1) / total) * 100)}%`;
-    }
-    if (mode === 'chapter') {
-      return `${this.currentChapterIndex + 1}/${Math.max(1, this.chapters.length)} 章`;
-    }
-    if (mode === 'book') {
-      const chapterCount = Math.max(1, this.chapters.length);
-      return `${Math.round(((this.currentChapterIndex + 1) / chapterCount) * 100)}%`;
-    }
-    return this.getPageInfoText();
+  getReaderInfoSlotText(item: string): string {
+    return ReaderInfoBarText.leading(item, this.getReaderInfoBarContext());
   }
 
-  getReaderFooterProgressValue(): number {
-    if (this.readerFooterProgressMode === 'book') {
-      return Math.max(0, Math.min(100, ((this.currentChapterIndex + 1) / Math.max(1, this.chapters.length)) * 100));
-    }
-    return Math.max(0, Math.min(100,
-      ((Math.max(0, this.currentPageIndex) + 1) / Math.max(1, this.contentPages.length)) * 100));
+  getReaderInfoSlotBattery(item: string): number {
+    return ReaderInfoBarText.battery(item, this.getReaderInfoBarContext());
   }
 
-  getPageInfoText(): string {
-    if (this.contentPages.length === 0) {
-      return '1/1';
+  getReaderInfoProgressValue(): number {
+    const context = this.getReaderInfoBarContext();
+    return this.getReaderInfoBarConfig().progressScope === ReaderInfoProgressBar.SCOPE_BOOK ?
+      ReaderInfoBarText.bookPercent(context) : ReaderInfoBarText.chapterPercent(context);
+  }
+
+  getReaderInfoBarSidePadding(left: boolean): number {
+    if (!this.getReaderInfoBarConfig().followMargin) return ReaderInfoBarConfig.FIXED_SIDE_PADDING;
+    return left ? this.getEffectiveReaderMarginLeft() : this.getEffectiveReaderMarginRight();
+  }
+
+  /** 时间和电量只在阅读页可见、且有槽位用到时才每分钟刷新。 */
+  syncReaderInfoBarClock(): void {
+    const needed = this.readerPageVisible &&
+      this.getReaderInfoBarConfig().usesClock(this.readerHeaderEnabled, this.readerFooterEnabled);
+    if (!needed) {
+      this.readerInfoBarClock?.stop();
+      return;
     }
-    const index = Math.max(0, Math.min(this.currentPageIndex, this.contentPages.length - 1));
-    if (this.isLandscapeDoublePageActive()) {
-      const end = Math.min(index + 2, this.contentPages.length);
-      return `${index + 1}-${end}/${this.contentPages.length}`;
+    if (!this.readerInfoBarClock) {
+      this.readerInfoBarClock = new ReaderInfoBarClock((): void => {
+        this.readerInfoTimeText = ReaderInfoBarClock.timeText();
+        this.readerInfoBatteryPercent = ReaderInfoBarClock.batteryPercent();
+      });
     }
-    return `${index + 1}/${this.contentPages.length}`;
+    this.readerInfoBarClock.start();
+  }
+
+  currentReaderInfoBarLayoutIdentity(): string {
+    return `${this.readerHeaderEnabled}_${this.readerFooterEnabled}_${this.getReaderInfoBarConfig().layoutIdentity()}`;
   }
 
   getPageText(pageIndex: number): string {
@@ -4736,8 +4751,8 @@ struct ReadBookPage {
   }
 
   getReaderHeaderInfoBarHeight(): number {
-    // 页眉采用固定单行高度，避免首次测量后再次触发整章分页。
-    return 18;
+    // 页眉高度只由字号推算，避免首次测量后再次触发整章分页。
+    return this.getReaderInfoBarConfig().headerLineHeight();
   }
 
   getReaderHeaderOverlayTopInset(): number {
@@ -4747,8 +4762,8 @@ struct ReadBookPage {
   }
 
   getReaderHeaderContentReserve(): number {
-    return this.readerHeaderEnabled && !!this.getReaderHeaderInfoText() && !this.isReaderComicModeActive() ?
-      this.getReaderHeaderInfoBarHeight() + 4 : 0;
+    return this.isReaderHeaderVisible() ?
+      this.getReaderHeaderInfoBarHeight() + this.getReaderInfoBarConfig().headerExtraHeight() + 4 : 0;
   }
 
   getEffectiveReaderMarginBottom(): number {
@@ -5401,11 +5416,10 @@ struct ReadBookPage {
     this.readerUseChapterQuickJump = settings.useChapterQuickJump;
     this.readerQuickBookmarkEnabled = settings.quickBookmarkEnabled;
     this.readerHeaderEnabled = settings.readerHeaderEnabled;
-    this.readerHeaderContentMode = settings.readerHeaderContentMode;
     this.readerFooterEnabled = settings.readerFooterEnabled;
-    this.readerFooterLeftMode = settings.readerFooterLeftMode;
-    this.readerFooterProgressMode = settings.readerFooterProgressMode;
-    this.readerFooterShowProgressBar = settings.readerFooterShowProgressBar;
+    this.readerInfoBarConfigRaw = settings.readerInfoBarConfig;
+    this.readerInfoBarLayoutIdentity = this.currentReaderInfoBarLayoutIdentity();
+    this.syncReaderInfoBarClock();
     this.readerFontFamily = settings.fontFamily || '';
     this.readerFontFilePath = settings.fontFilePath || '';
     AppStorage.setOrCreate<string>('readerFontSourceName', settings.fontSourceName || '系统默认');
@@ -6186,7 +6200,8 @@ struct ReadBookPage {
   }
 
   getReaderBottomInfoBarHeight(): number {
-    const fallbackHeight = 12 + (this.readerFooterShowProgressBar ? 5 : 0);
+    const infoBarConfig = this.getReaderInfoBarConfig();
+    const fallbackHeight = infoBarConfig.fontSize + infoBarConfig.footerExtraHeight();
     if (this.readerBottomInfoBarMeasuredHeight > 0) {
       return Math.max(this.readerBottomInfoBarMeasuredHeight, fallbackHeight);
     }
@@ -6213,12 +6228,14 @@ struct ReadBookPage {
     // Native Paragraph pagination is created before the footer's first area callback. Use the deterministic
     // fallback line height here so measuring the real Text never invalidates a retained pagination session.
     if (!this.readerFooterEnabled || this.isReaderComicModeActive()) return 0;
-    let footerHeight = 12 + (this.readerFooterShowProgressBar ? 5 : 0);
+    const infoBarConfig = this.getReaderInfoBarConfig();
+    let footerHeight = infoBarConfig.fontSize;
     try {
-      footerHeight = px2vp(Math.max(1, fp2px(12)));
+      footerHeight = px2vp(Math.max(1, fp2px(infoBarConfig.fontSize)));
     } catch (_) {
-      footerHeight = 12 + (this.readerFooterShowProgressBar ? 5 : 0);
+      footerHeight = infoBarConfig.fontSize;
     }
+    footerHeight += infoBarConfig.footerExtraHeight();
     return Math.max(8, footerHeight + this.getReaderBottomInfoBarBottomInset() +
       this.getReaderBottomInfoBarContentGap());
   }
@@ -6413,7 +6430,16 @@ struct ReadBookPage {
   }
 
   onReaderChromeChanged(): void {
+    const layoutIdentity = this.currentReaderInfoBarLayoutIdentity();
+    const layoutChanged = layoutIdentity !== this.readerInfoBarLayoutIdentity;
+    this.readerInfoBarLayoutIdentity = layoutIdentity;
+    this.syncReaderInfoBarClock();
     if (this.readerEntryInitializing) return;
+    if (!layoutChanged) {
+      // 只换了显示内容或颜色、边距等不占正文高度的外观，不需要重新分页。
+      this.saveReaderChromeSettings();
+      return;
+    }
     const readingOffset = this.getReaderStableReflowOffset();
     this.readerTypographyRestoreOffset = readingOffset;
     this.invalidateReaderTypographyLayout();
@@ -7104,42 +7130,49 @@ struct ReadBookPage {
   }
 
   @Builder
+  readerInfoBarAccentLine(progress: boolean) {
+    if (progress) {
+      Progress({ value: this.getReaderInfoProgressValue(), total: 100, type: ProgressType.Linear })
+        .width('100%')
+        .height(2)
+        .color(this.accentColor())
+        .backgroundColor(this.readerChapterTrackColor())
+    } else {
+      Row()
+        .width('100%')
+        .height(0.5)
+        .backgroundColor(this.getSubTextColor())
+        .opacity(0.35)
+    }
+  }
+
+  @Builder
   readerBottomInfoBar() {
     Column({ space: 3 }) {
-      if (this.readerFooterShowProgressBar) {
-        Progress({ value: this.getReaderFooterProgressValue(), total: 100, type: ProgressType.Linear })
-          .width('100%')
-          .height(2)
-          .color(this.accentColor())
-          .backgroundColor(this.readerChapterTrackColor())
+      if (this.getReaderInfoBarConfig().progressBar === ReaderInfoProgressBar.FOOTER) {
+        this.readerInfoBarAccentLine(true)
+      } else if (this.getReaderInfoBarConfig().footerDivider) {
+        this.readerInfoBarAccentLine(false)
       }
-      Row() {
-        if (this.getReaderFooterLeftText()) {
-          Text(this.getReaderFooterLeftText())
-            .fontSize(12)
-            .fontColor(this.getSubTextColor())
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-        } else {
-          Blank().layoutWeight(1)
-        }
-
-        if (this.getReaderFooterProgressText()) {
-          Text(this.getReaderFooterProgressText())
-            .fontSize(12)
-            .fontColor(this.getSubTextColor())
-            .textAlign(TextAlign.End)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .margin({ left: 12 })
-        }
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
+      ReaderInfoBarRow({
+        leftText: this.getReaderInfoSlotText(this.getReaderInfoBarConfig().footerLeft),
+        centerText: this.getReaderInfoSlotText(this.getReaderInfoBarConfig().footerCenter),
+        rightText: this.getReaderInfoSlotText(this.getReaderInfoBarConfig().footerRight),
+        leftBattery: this.getReaderInfoSlotBattery(this.getReaderInfoBarConfig().footerLeft),
+        centerBattery: this.getReaderInfoSlotBattery(this.getReaderInfoBarConfig().footerCenter),
+        rightBattery: this.getReaderInfoSlotBattery(this.getReaderInfoBarConfig().footerRight),
+        textSize: this.getReaderInfoBarConfig().fontSize,
+        textColor: this.getSubTextColor(),
+        textOpacity: this.getReaderInfoBarConfig().opacity / 100
+      })
     }
     .width('100%')
-    .padding({ left: 28, right: 28, top: 0, bottom: 0 })
+    .padding({
+      left: this.getReaderInfoBarSidePadding(true),
+      right: this.getReaderInfoBarSidePadding(false),
+      top: 0,
+      bottom: 0
+    })
     .alignItems(HorizontalAlign.Center)
     .backgroundColor(Color.Transparent)
     .translate({ y: this.getReaderBottomInfoBarVisualOffsetY() })
@@ -7151,18 +7184,36 @@ struct ReadBookPage {
 
   @Builder
   readerHeaderInfoBar() {
-    Row() {
-      Text(this.getReaderHeaderInfoText())
-        .fontSize(12)
-        .fontColor(this.getSubTextColor())
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .width('100%')
+    Column({ space: 3 }) {
+      Row() {
+        ReaderInfoBarRow({
+          leftText: this.getReaderInfoSlotText(this.getReaderInfoBarConfig().headerLeft),
+          centerText: this.getReaderInfoSlotText(this.getReaderInfoBarConfig().headerCenter),
+          rightText: this.getReaderInfoSlotText(this.getReaderInfoBarConfig().headerRight),
+          leftBattery: this.getReaderInfoSlotBattery(this.getReaderInfoBarConfig().headerLeft),
+          centerBattery: this.getReaderInfoSlotBattery(this.getReaderInfoBarConfig().headerCenter),
+          rightBattery: this.getReaderInfoSlotBattery(this.getReaderInfoBarConfig().headerRight),
+          textSize: this.getReaderInfoBarConfig().fontSize,
+          textColor: this.getSubTextColor(),
+          textOpacity: this.getReaderInfoBarConfig().opacity / 100
+        })
+      }
+      .width('100%')
+      .height(this.getReaderHeaderInfoBarHeight())
+      .alignItems(VerticalAlign.Center)
+
+      if (this.getReaderInfoBarConfig().progressBar === ReaderInfoProgressBar.HEADER) {
+        this.readerInfoBarAccentLine(true)
+      } else if (this.getReaderInfoBarConfig().headerDivider) {
+        this.readerInfoBarAccentLine(false)
+      }
     }
     .width('100%')
-    .height(this.getReaderHeaderInfoBarHeight() + this.getReaderHeaderOverlayTopInset())
-    .padding({ top: this.getReaderHeaderOverlayTopInset(), left: 28, right: 28 })
-    .alignItems(VerticalAlign.Center)
+    .padding({
+      top: this.getReaderHeaderOverlayTopInset(),
+      left: this.getReaderInfoBarSidePadding(true),
+      right: this.getReaderInfoBarSidePadding(false)
+    })
     .backgroundColor(Color.Transparent)
     .hitTestBehavior(HitTestMode.None)
   }
@@ -10199,11 +10250,8 @@ struct ReadBookPage {
     ReaderSettingsStore.saveReaderChromeSettings(
       getContext(this),
       this.readerHeaderEnabled,
-      this.readerHeaderContentMode,
       this.readerFooterEnabled,
-      this.readerFooterLeftMode,
-      this.readerFooterProgressMode,
-      this.readerFooterShowProgressBar
+      this.readerInfoBarConfigRaw
     ).catch((e: Error) => {
       console.warn('保存阅读页眉页脚设置失败:', e);
     });
@@ -14038,11 +14086,9 @@ struct ReadBookPage {
     const layoutMode = this.isReaderComicModeActive() ? 'comic' :
       (this.isReaderNovelContinuousScrollModeActive() ? 'continuous' : 'paged');
     const headerReserve = Math.round(this.getReaderHeaderContentReserve() * 100) / 100;
-    return `reader_page_v82_${layoutMode}_${chapterIndex}_${this.pageViewWidth}_` +
+    return `reader_page_v83_${layoutMode}_${chapterIndex}_${this.pageViewWidth}_` +
       `${this.getReaderPaginationViewportHeight()}_` +
-      `${headerReserve}_${footerHeight}_${this.readerHeaderEnabled}_${this.readerHeaderContentMode}_` +
-      `${this.readerFooterEnabled}_${this.readerFooterLeftMode}_${this.readerFooterProgressMode}_` +
-      `${this.readerFooterShowProgressBar}_` +
+      `${headerReserve}_${footerHeight}_${this.readerHeaderEnabled}_${this.readerFooterEnabled}_` +
       `${this.readerExtendToStatusBar}_${this.isLandscapeDoublePageActive()}_${this.readerTypographyCacheIdentity()}_` +
       `${this.readerParagraphCommentPaginationIdentity()}_` +
       `${source.length}_${this.hashText(source)}`;

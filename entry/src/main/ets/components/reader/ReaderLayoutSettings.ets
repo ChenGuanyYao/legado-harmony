@@ -1,6 +1,8 @@
 import { ImmersiveMaterialRuntime } from '../../utils/ImmersiveMaterialRuntime';
 import { ImmersiveBackButton } from '../ImmersiveBackButton';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
+import { AdaptiveSwitch } from '../AdaptiveSwitch';
+import { ReaderInfoBarConfig, ReaderInfoItem, ReaderInfoProgressBar } from '../../core/reader/ReaderInfoBarModel';
 
 /** 排版参数在草稿数组里的下标。 */
 export class ReaderTypographyField {
@@ -171,8 +173,9 @@ export struct ReaderTypographyStepper {
 }
 
 /**
- * 页眉页脚设置组。几个开关和选项直接绑定全局设置；
- * 阅读页监听同一组设置，负责保存并按需重排正文，这里不需要任何回调。
+ * 页眉页脚设置组：两个总开关、六个内容槽位和外观项，直接绑定全局设置。
+ * 阅读页监听同一组设置，负责保存并按需重排正文；设置页没有这层监听，通过 onChanged 自行保存。
+ * cardStyle 为 true 时使用设置页的卡片行样式。
  */
 @Component
 export struct ReaderHeaderFooterSettings {
@@ -182,80 +185,166 @@ export struct ReaderHeaderFooterSettings {
   @Prop accentColor: string = '#0A59F7';
   @Prop switchColor: string = '#0A59F7';
   @Prop menuColor: string = '#FFFFFF';
+  @Prop cardStyle: boolean = false;
+  @Prop dividerColor: string = '#00000000';
+  onChanged: () => void = (): void => {
+  };
   @StorageLink('readerHeaderEnabled') readerHeaderEnabled: boolean = false;
-  @StorageLink('readerHeaderContentMode') readerHeaderContentMode: string = 'chapter';
   @StorageLink('readerFooterEnabled') readerFooterEnabled: boolean = true;
-  @StorageLink('readerFooterLeftMode') readerFooterLeftMode: string = 'chapter';
-  @StorageLink('readerFooterProgressMode') readerFooterProgressMode: string = 'page';
-  @StorageLink('readerFooterShowProgressBar') readerFooterShowProgressBar: boolean = false;
+  @StorageLink('readerInfoBarConfig') readerInfoBarConfig: string = '';
 
-  private static readonly HEADER_VALUES: string[] = ['chapter', 'book', 'book_chapter', 'none'];
-  private static readonly HEADER_LABELS: string[] = ['当前章节标题', '书名', '书名 + 章节标题', '不显示'];
-  private static readonly FOOTER_LEFT_VALUES: string[] = ['chapter', 'title', 'none'];
-  private static readonly FOOTER_LEFT_LABELS: string[] = ['章节序号 + 标题', '章节标题', '不显示'];
-  private static readonly PROGRESS_VALUES: string[] = ['page', 'percentage', 'chapter', 'book', 'none'];
-  private static readonly PROGRESS_LABELS: string[] = ['当前页 / 总页数', '阅读百分比', '章节进度', '全书进度', '不显示'];
+  private static readonly SLOT_HEADER_LEFT: number = 0;
+  private static readonly SLOT_HEADER_CENTER: number = 1;
+  private static readonly SLOT_HEADER_RIGHT: number = 2;
+  private static readonly SLOT_FOOTER_LEFT: number = 3;
+  private static readonly SLOT_FOOTER_CENTER: number = 4;
+  private static readonly SLOT_FOOTER_RIGHT: number = 5;
+  private static readonly STEPPER_FONT_SIZE: number = 0;
+  private static readonly STEPPER_OPACITY: number = 1;
 
-  private indexOf(values: string[], value: string): number {
-    const index = values.indexOf(value);
-    return index >= 0 ? index : 0;
+  private config(): ReaderInfoBarConfig {
+    return ReaderInfoBarConfig.parse(this.readerInfoBarConfig) ?? new ReaderInfoBarConfig();
+  }
+
+  private commit(config: ReaderInfoBarConfig): void {
+    this.readerInfoBarConfig = config.serialize();
+    this.onChanged();
+  }
+
+  private slotIndex(slot: number): number {
+    const config = this.config();
+    let item = config.headerLeft;
+    if (slot === ReaderHeaderFooterSettings.SLOT_HEADER_CENTER) item = config.headerCenter;
+    if (slot === ReaderHeaderFooterSettings.SLOT_HEADER_RIGHT) item = config.headerRight;
+    if (slot === ReaderHeaderFooterSettings.SLOT_FOOTER_LEFT) item = config.footerLeft;
+    if (slot === ReaderHeaderFooterSettings.SLOT_FOOTER_CENTER) item = config.footerCenter;
+    if (slot === ReaderHeaderFooterSettings.SLOT_FOOTER_RIGHT) item = config.footerRight;
+    return Math.max(0, ReaderInfoItem.VALUES.indexOf(item));
+  }
+
+  private setSlot(slot: number, index: number): void {
+    const item = index >= 0 && index < ReaderInfoItem.VALUES.length ? ReaderInfoItem.VALUES[index] : ReaderInfoItem.NONE;
+    const config = this.config();
+    if (slot === ReaderHeaderFooterSettings.SLOT_HEADER_LEFT) config.headerLeft = item;
+    if (slot === ReaderHeaderFooterSettings.SLOT_HEADER_CENTER) config.headerCenter = item;
+    if (slot === ReaderHeaderFooterSettings.SLOT_HEADER_RIGHT) config.headerRight = item;
+    if (slot === ReaderHeaderFooterSettings.SLOT_FOOTER_LEFT) config.footerLeft = item;
+    if (slot === ReaderHeaderFooterSettings.SLOT_FOOTER_CENTER) config.footerCenter = item;
+    if (slot === ReaderHeaderFooterSettings.SLOT_FOOTER_RIGHT) config.footerRight = item;
+    this.commit(config);
+  }
+
+  private stepperValue(field: number): number {
+    const config = this.config();
+    return field === ReaderHeaderFooterSettings.STEPPER_OPACITY ? config.opacity : config.fontSize;
+  }
+
+  private stepperMin(field: number): number {
+    return field === ReaderHeaderFooterSettings.STEPPER_OPACITY ?
+      ReaderInfoBarConfig.OPACITY_MIN : ReaderInfoBarConfig.FONT_SIZE_MIN;
+  }
+
+  private stepperMax(field: number): number {
+    return field === ReaderHeaderFooterSettings.STEPPER_OPACITY ?
+      ReaderInfoBarConfig.OPACITY_MAX : ReaderInfoBarConfig.FONT_SIZE_MAX;
+  }
+
+  private stepperText(field: number): string {
+    const value = this.stepperValue(field);
+    return field === ReaderHeaderFooterSettings.STEPPER_OPACITY ? `${value}%` : `${value}`;
+  }
+
+  private stepBy(field: number, direction: number): void {
+    const config = this.config();
+    if (field === ReaderHeaderFooterSettings.STEPPER_OPACITY) {
+      config.opacity = ReaderInfoBarConfig.clampOpacity(config.opacity + direction * ReaderInfoBarConfig.OPACITY_STEP);
+    } else {
+      config.fontSize = ReaderInfoBarConfig.clampFontSize(config.fontSize + direction);
+    }
+    this.commit(config);
   }
 
   build() {
     Column({ space: 4 }) {
-      this.switchItem('显示页眉', '在正文顶部显示书名或当前章节标题', this.readerHeaderEnabled,
+      this.switchItem('显示页眉', '在正文顶部显示书名、章节、时间等信息', this.readerHeaderEnabled,
         (checked: boolean) => {
           this.readerHeaderEnabled = checked;
+          this.onChanged();
         })
 
       if (this.readerHeaderEnabled) {
-        this.selectItem('页眉内容', '选择页眉中显示的信息', ReaderHeaderFooterSettings.HEADER_LABELS,
-          this.indexOf(ReaderHeaderFooterSettings.HEADER_VALUES, this.readerHeaderContentMode),
-          (index: number) => {
-            const values = ReaderHeaderFooterSettings.HEADER_VALUES;
-            this.readerHeaderContentMode = index >= 0 && index < values.length ? values[index] : 'chapter';
-          }, 'reader_header_content_select')
+        this.slotItem('页眉左侧', ReaderHeaderFooterSettings.SLOT_HEADER_LEFT, 'reader_header_left_select')
+        this.slotItem('页眉中间', ReaderHeaderFooterSettings.SLOT_HEADER_CENTER, 'reader_header_center_select')
+        this.slotItem('页眉右侧', ReaderHeaderFooterSettings.SLOT_HEADER_RIGHT, 'reader_header_right_select')
+        this.switchItem('页眉分隔线', '在页眉下方画一条细线', this.config().headerDivider, (checked: boolean) => {
+          const config = this.config();
+          config.headerDivider = checked;
+          this.commit(config);
+        })
       }
 
-      this.switchItem('显示页脚', '显示章节信息和阅读进度', this.readerFooterEnabled, (checked: boolean) => {
-        this.readerFooterEnabled = checked;
-      })
+      this.switchItem('显示页脚', '在正文底部显示章节信息和阅读进度', this.readerFooterEnabled,
+        (checked: boolean) => {
+          this.readerFooterEnabled = checked;
+          this.onChanged();
+        })
 
       if (this.readerFooterEnabled) {
-        this.selectItem('页脚左侧', '选择页脚左侧显示的信息', ReaderHeaderFooterSettings.FOOTER_LEFT_LABELS,
-          this.indexOf(ReaderHeaderFooterSettings.FOOTER_LEFT_VALUES, this.readerFooterLeftMode),
-          (index: number) => {
-            const values = ReaderHeaderFooterSettings.FOOTER_LEFT_VALUES;
-            this.readerFooterLeftMode = index >= 0 && index < values.length ? values[index] : 'chapter';
-          }, 'reader_footer_left_select')
+        this.slotItem('页脚左侧', ReaderHeaderFooterSettings.SLOT_FOOTER_LEFT, 'reader_footer_left_select')
+        this.slotItem('页脚中间', ReaderHeaderFooterSettings.SLOT_FOOTER_CENTER, 'reader_footer_center_select')
+        this.slotItem('页脚右侧', ReaderHeaderFooterSettings.SLOT_FOOTER_RIGHT, 'reader_footer_right_select')
+        this.switchItem('页脚分隔线', '在页脚上方画一条细线', this.config().footerDivider, (checked: boolean) => {
+          const config = this.config();
+          config.footerDivider = checked;
+          this.commit(config);
+        })
+      }
 
-        this.selectItem('阅读进度', '选择页脚右侧显示的进度类型', ReaderHeaderFooterSettings.PROGRESS_LABELS,
-          this.indexOf(ReaderHeaderFooterSettings.PROGRESS_VALUES, this.readerFooterProgressMode),
-          (index: number) => {
-            const values = ReaderHeaderFooterSettings.PROGRESS_VALUES;
-            this.readerFooterProgressMode = index >= 0 && index < values.length ? values[index] : 'page';
-          }, 'reader_footer_progress_select')
-
-        this.switchItem('显示进度条', '在页脚上方显示本章阅读进度', this.readerFooterShowProgressBar,
+      if (this.readerHeaderEnabled || this.readerFooterEnabled) {
+        this.stepperItem('页眉页脚字号', ReaderHeaderFooterSettings.STEPPER_FONT_SIZE)
+        this.stepperItem('页眉页脚不透明度', ReaderHeaderFooterSettings.STEPPER_OPACITY)
+        this.switchItem('边距跟随正文', '页眉页脚的左右边距与正文保持一致', this.config().followMargin,
           (checked: boolean) => {
-            this.readerFooterShowProgressBar = checked;
+            const config = this.config();
+            config.followMargin = checked;
+            this.commit(config);
           })
+        this.selectItem('进度条', '在页眉下方或页脚上方显示阅读进度', ReaderInfoProgressBar.LABELS,
+          Math.max(0, ReaderInfoProgressBar.VALUES.indexOf(this.config().progressBar)),
+          (index: number) => {
+            const config = this.config();
+            config.progressBar = index >= 0 && index < ReaderInfoProgressBar.VALUES.length ?
+              ReaderInfoProgressBar.VALUES[index] : ReaderInfoProgressBar.NONE;
+            this.commit(config);
+          }, 'reader_progress_bar_select')
+        if (this.config().progressBar !== ReaderInfoProgressBar.NONE) {
+          this.selectItem('进度条范围', '进度条表示本章还是全书的阅读进度', ReaderInfoProgressBar.SCOPE_LABELS,
+            Math.max(0, ReaderInfoProgressBar.SCOPE_VALUES.indexOf(this.config().progressScope)),
+            (index: number) => {
+              const config = this.config();
+              config.progressScope = index === 1 ?
+                ReaderInfoProgressBar.SCOPE_BOOK : ReaderInfoProgressBar.SCOPE_CHAPTER;
+              this.commit(config);
+            }, 'reader_progress_scope_select')
+        }
       }
     }
     .width('100%')
-    .padding({ bottom: 8 })
+    .padding({ bottom: this.cardStyle ? 0 : 8 })
   }
 
   @Builder
   itemLabel(title: string, description: string) {
     Column() {
       Text(title)
-        .fontSize(15)
+        .fontSize(this.cardStyle ? 16 : 15)
         .fontColor(this.textColor)
-      Text(description)
-        .fontSize(12)
-        .fontColor(this.subTextColor)
-        .margin({ top: 4 })
+      if (description) {
+        Text(description)
+          .fontSize(12)
+          .fontColor(this.subTextColor)
+          .margin({ top: 4 })
+      }
     }
     .layoutWeight(1)
     .alignItems(HorizontalAlign.Start)
@@ -265,13 +354,31 @@ export struct ReaderHeaderFooterSettings {
   switchItem(title: string, description: string, checked: boolean, onChange: (checked: boolean) => void) {
     Row() {
       this.itemLabel(title, description)
-      Toggle({ type: ToggleType.Switch, isOn: checked })
-        .selectedColor(this.switchColor)
-        .onChange((value: boolean) => onChange(value))
+      if (this.cardStyle) {
+        AdaptiveSwitch({
+          isOn: checked,
+          selectedColor: this.switchColor,
+          onChange: (value: boolean) => onChange(value)
+        })
+      } else {
+        Toggle({ type: ToggleType.Switch, isOn: checked })
+          .selectedColor(this.switchColor)
+          .onChange((value: boolean) => onChange(value))
+      }
     }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
+    .width(this.cardStyle ? 'calc(100% - 32vp)' : '100%')
+    .constraintSize({ minHeight: this.cardStyle ? 64 : 56 })
+    .padding({ top: this.cardStyle ? 10 : 0, bottom: this.cardStyle ? 10 : 0 })
+    .margin({ left: this.cardStyle ? 16 : 0, right: this.cardStyle ? 16 : 0 })
+    .border({ width: { bottom: this.cardStyle ? 0.5 : 0 }, color: this.dividerColor })
     .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  slotItem(title: string, slot: number, controlId: string) {
+    this.selectItem(title, '', ReaderInfoItem.LABELS, this.slotIndex(slot), (index: number) => {
+      this.setSlot(slot, index);
+    }, controlId)
   }
 
   @Builder
@@ -301,8 +408,51 @@ export struct ReaderHeaderFooterSettings {
         .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
         .onSelect((index: number) => onSelect(index))
     }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
+    .width(this.cardStyle ? 'calc(100% - 32vp)' : '100%')
+    .constraintSize({ minHeight: description ? (this.cardStyle ? 64 : 56) : (this.cardStyle ? 52 : 44) })
+    .padding({ top: this.cardStyle && !!description ? 10 : 0, bottom: this.cardStyle && !!description ? 10 : 0 })
+    .margin({ left: this.cardStyle ? 16 : 0, right: this.cardStyle ? 16 : 0 })
+    .border({ width: { bottom: this.cardStyle ? 0.5 : 0 }, color: this.dividerColor })
     .alignItems(VerticalAlign.Center)
+  }
+
+  // 数值直接从配置读取而不是经参数传入，保证点击加减后文字立即刷新。
+  @Builder
+  stepperItem(title: string, field: number) {
+    Row({ space: 8 }) {
+      this.itemLabel(title, '')
+      this.stepButton($r('sys.symbol.minus'), `减小${title}`, this.stepperValue(field) > this.stepperMin(field),
+        () => this.stepBy(field, -1))
+      Text(this.stepperText(field))
+        .fontSize(15)
+        .fontColor(this.textColor)
+        .width(52)
+        .textAlign(TextAlign.Center)
+      this.stepButton($r('sys.symbol.plus'), `增大${title}`, this.stepperValue(field) < this.stepperMax(field),
+        () => this.stepBy(field, 1))
+    }
+    .width(this.cardStyle ? 'calc(100% - 32vp)' : '100%')
+    .constraintSize({ minHeight: this.cardStyle ? 52 : 44 })
+    .margin({ left: this.cardStyle ? 16 : 0, right: this.cardStyle ? 16 : 0 })
+    .border({ width: { bottom: this.cardStyle ? 0.5 : 0 }, color: this.dividerColor })
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  stepButton(icon: Resource, accessibilityText: string, enabled: boolean, action: () => void) {
+    ImmersiveBackButton({
+      icon: icon,
+      accessibilityLabel: accessibilityText,
+      iconColor: this.dark ? '#FFFFFFFF' : '#FF202124',
+      disabledIconColor: this.subTextColor,
+      darkMode: this.dark,
+      buttonEnabled: enabled,
+      buttonSize: 34,
+      containerWidth: 34,
+      containerHeight: 34,
+      startInset: 0,
+      compactLayout: true,
+      onBack: action
+    })
   }
 }
