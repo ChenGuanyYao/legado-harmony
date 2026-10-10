@@ -30,6 +30,7 @@ import { SystemDialogSession } from '../../utils/SystemDialogSession';
 import { ReaderOpenTrace } from '../../utils/ReaderOpenTrace';
 import { FullTextCacheCancelCoordinator, FullTextCacheCancelSignal } from '../../utils/FullTextCacheCancelCoordinator';
 import { ShelfTileSortEntry, ShelfBookDataSource, ShelfTileEntryDataSource } from '../../core/book/ShelfDataSources';
+import { sleepMs } from '../../utils/Sleep';
 
 const SHELF_FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS: number = 5000;
 const SHELF_COVER_INITIAL_PREFETCH_COUNT: number = 16;
@@ -4575,7 +4576,7 @@ export struct BookshelfPage {
         this.syncCacheDialogChapterState(task, engine.chapters);
         if (this.shouldCancelShelfFullTextCache(task)) break;
         await this.publishShelfFullTextCacheProgress(task, false);
-        await this.sleep(0);
+        await sleepMs(0);
       }
 
       if (!this.isShelfFullTextCacheTaskActive(task)) {
@@ -5184,12 +5185,6 @@ export struct BookshelfPage {
       hash |= 0;
     }
     return Math.abs(hash);
-  }
-
-  sleep(ms: number): Promise<void> {
-    return new Promise<void>((resolve: () => void) => {
-      setTimeout(() => resolve(), ms);
-    });
   }
 
   parseChapterRange(raw: string, total: number): number[] {

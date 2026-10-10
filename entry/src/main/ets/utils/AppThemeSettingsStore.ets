@@ -6,6 +6,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ReaderSettings, ReaderSettingsStore } from './ReaderSettingsStore';
 import { ReaderThemeHelper, ReaderThemeItem } from './ReaderThemeHelper';
 import { CloudSyncChangeTracker } from '../account/CloudSyncChangeTracker';
+import { HexColor } from './HexColor';
 
 export class AppThemeSettings {
   themeId: string = '';
@@ -466,14 +467,7 @@ export class AppThemeSettingsStore {
   }
 
   static normalizeColor(value: string, fallback: string): string {
-    const text = (value || '').trim();
-    if (/^#[0-9a-fA-F]{6}$/.test(text)) {
-      return text.toUpperCase();
-    }
-    if (/^[0-9a-fA-F]{6}$/.test(text)) {
-      return `#${text.toUpperCase()}`;
-    }
-    return fallback;
+    return HexColor.normalize(value, fallback);
   }
 
   static sourcesForTheme(themeId: string): ThemeComponentSourceIds {

@@ -1,4 +1,5 @@
 import { ThemeAccessPolicy } from '../../account/ThemeAccessPolicy';
+import { HexColor } from '../../utils/HexColor';
 
 export class ReaderRegexFontRule {
   id: string = '';
@@ -564,18 +565,7 @@ export class ReaderRegexBubbleStyleResolver {
   }
 
   static normalizeColor(value: string, fallback: string): string {
-    const text = (value || '').trim();
-    if (/^#[0-9a-fA-F]{6}$/.test(text)) {
-      return text.toUpperCase();
-    }
-    if (/^[0-9a-fA-F]{6}$/.test(text)) {
-      return `#${text.toUpperCase()}`;
-    }
-    const fallbackText = (fallback || '').trim();
-    if (/^#[0-9a-fA-F]{6}$/.test(fallbackText)) {
-      return fallbackText.toUpperCase();
-    }
-    return '#007DFF';
+    return HexColor.normalize(value, fallback, '#007DFF');
   }
 
   static withAlpha(color: string, alpha: number): string {

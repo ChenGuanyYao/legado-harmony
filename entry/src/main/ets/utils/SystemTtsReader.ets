@@ -1898,12 +1898,6 @@ export class SystemTtsReader {
     return result;
   }
 
-  private sleep(ms: number): Promise<void> {
-    return new Promise<void>((resolve) => {
-      setTimeout(resolve, ms);
-    });
-  }
-
   private normalizeText(text: string): string {
     return this.sanitizeStructuralSpeechArtifacts(
       this.replaceUnsafeSpeechCharacters((text || '').replace(/\r\n/g, '\n')));

@@ -11,6 +11,7 @@ import {
   ThemeRegexEmphasisModes,
   ThemeVariant
 } from './ThemeModels';
+import { HexColor } from '../utils/HexColor';
 
 export class ThemeRuntime {
   static readonly KEY_GLASS_ENABLED: string = 'glassEnabled';
@@ -666,15 +667,7 @@ export class ThemeRuntime {
   }
 
   private static normalizeColor(value: string, fallback: string): string {
-    const text = (value || '').trim();
-    if (/^#[0-9a-fA-F]{6}$/.test(text)) {
-      return text.toUpperCase();
-    }
-    if (/^[0-9a-fA-F]{6}$/.test(text)) {
-      return `#${text.toUpperCase()}`;
-    }
-    const fallbackText = (fallback || '').trim();
-    return /^#[0-9a-fA-F]{6}$/.test(fallbackText) ? fallbackText.toUpperCase() : '#000000';
+    return HexColor.normalize(value, fallback, '#000000');
   }
 
   private static normalizeEmphasisMode(value: string, fallback: string): string {

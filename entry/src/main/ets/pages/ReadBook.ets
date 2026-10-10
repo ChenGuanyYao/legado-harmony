@@ -118,6 +118,7 @@ import { ReaderPageOffsets } from '../core/reader/ReaderPageOffsets';
 import { ReaderPageTurnQueue } from '../core/reader/ReaderPageTurnQueue';
 import { EpubChapterPlanner } from '../core/book/EpubChapterPlanner';
 import { EpubHeading } from '../core/book/EpubHtmlConverter';
+import { sleepMs } from '../utils/Sleep';
 
 const READER_CURRENT_PAGINATION_AHEAD_PAGE_COUNT = 4;
 const READER_ADJACENT_PAGINATION_PREVIEW_PAGE_COUNT = 2;
@@ -4333,7 +4334,7 @@ struct ReadBookPage {
     // every boundary switch even when the previous chapter tail was already prepared.
     const chapterLoad = direction > 0 ? this.loadNextChapter(false, false) :
       this.loadPrevChapter(true, false, false);
-    await this.delay(72);
+    await sleepMs(72);
     try {
       await chapterLoad;
       // loadContent publishes the first incremental V2 page before a deep/last-page restore has necessarily
@@ -4345,7 +4346,7 @@ struct ReadBookPage {
       this.readerComicChapterTransitionY = switched ? (direction > 0 ? 28 : -28) :
         (direction > 0 ? -20 : 20);
       this.readerComicChapterTransitionOpacity = switched ? 0 : 0.35;
-      await this.delay(8);
+      await sleepMs(8);
       await this.runReaderAnimation(150, Curve.Friction, () => {
         this.readerComicChapterTransitionY = 0;
         this.readerComicChapterTransitionOpacity = 1;
@@ -10824,12 +10825,6 @@ struct ReadBookPage {
     }
   }
 
-  delay(ms: number): Promise<void> {
-    return new Promise<void>((resolve) => {
-      setTimeout(() => resolve(), ms);
-    });
-  }
-
   // Resolves when the property animation has actually finished. A fixed timer drifts from the real end on a
   // busy frame: firing early commits the page under a still-moving leaf, firing late leaves the finished leaf
   // idle. The bounded fallback only covers a lost finish callback, e.g. the app is backgrounded mid-animation.
@@ -10892,7 +10887,7 @@ struct ReadBookPage {
     while (Date.now() < deadline &&
       (this.pendingRestorePageIndex >= 0 || this.readerTypographyRestoreOffset >= 0 ||
         this.isPagedReaderAwaitingPagination() || !this.readerInitialPageReady)) {
-      await this.delay(16);
+      await sleepMs(16);
     }
   }
 
@@ -14304,11 +14299,11 @@ struct ReadBookPage {
     const deadline = Date.now() + Math.max(1000, timeoutMs);
     // A restore paused while the page is hidden must not be clobbered; wait for visibility first.
     while (Date.now() < deadline && !this.readerPageVisible) {
-      await this.delay(200);
+      await sleepMs(200);
     }
     while (Date.now() < deadline && this.readerPageVisible &&
       (this.pendingRestorePageIndex >= 0 || this.readerTypographyRestoreOffset >= 0)) {
-      await this.delay(100);
+      await sleepMs(100);
     }
     if (this.pendingRestorePageIndex < 0 && this.readerTypographyRestoreOffset < 0) {
       return;
@@ -14888,7 +14883,7 @@ struct ReadBookPage {
       if (this.currentChapterIndex !== startedAtChapterIndex) return;
       // 加载失败/需要网页验证的提示正文只有一页，不会再排版出尾页，立即落地展示。
       if (this.content.includes('章节正文加载失败') || this.content.includes('完成网页验证')) break;
-      await this.delay(16);
+      await sleepMs(16);
     }
     if (this.pendingRestorePageIndex < 0 && this.readerTypographyRestoreOffset < 0) return;
     console.warn(`[ReaderTurn] previous-chapter tail not ready (timedOut=${Date.now() >= deadline}), ` +
@@ -15377,7 +15372,7 @@ struct ReadBookPage {
     if (keepIncomingVisible) {
       // Cross-chapter pages may contain many bubble ImageSpans. Keep the already-complete preview on top
       // for a few frames while the new current render group is rasterized behind it.
-      await this.delay(this.pageTurnCrossChapterHandoff ? 48 : 16);
+      await sleepMs(this.pageTurnCrossChapterHandoff ? 48 : 16);
       if (chapterIndex !== this.currentChapterIndex || pageIndex !== this.currentPageIndex) return;
     }
     this.finishPageTurnAnimation(false);
@@ -15845,15 +15840,15 @@ struct ReadBookPage {
   async captureReaderPageCurlSnapshots(serial: number, key: string): Promise<void> {
     for (let attempt = 0; attempt < 30 && this.pageTurnPreviewLoadingKey; attempt++) {
       if (serial !== this.readerPageCurlCaptureSerial || key !== this.readerPageCurlCaptureKey) return;
-      await this.delay(20);
+      await sleepMs(20);
     }
     // Let the incoming cross-chapter preview and its ImageSpans finish one layout pass before rasterizing.
-    await this.delay(this.pageTurnCrossChapterHandoff ? 32 : 0);
+    await sleepMs(this.pageTurnCrossChapterHandoff ? 32 : 0);
     // The retained V2 current component keeps a stable id across pages. Unlike the old temporary capture node,
     // that id already exists in the same task that commits a queued turn, so snapshot.get() could succeed before
     // its controller has painted the newly-settled page. Wait one render frame and capture the page the user
     // actually sees, not the previous texture still owned by RenderService.
-    await this.delay(16);
+    await sleepMs(16);
     if (serial !== this.readerPageCurlCaptureSerial || key !== this.readerPageCurlCaptureKey ||
       this.pageSlideDirection === 0) return;
     const snapshot = this.getUIContext().getComponentSnapshot();
@@ -15888,7 +15883,7 @@ struct ReadBookPage {
         if (serial !== this.readerPageCurlCaptureSerial || key !== this.readerPageCurlCaptureKey ||
           this.pageSlideDirection === 0) return;
         if (attempt >= 23) throw new Error(`获取仿真翻页快照失败: ${error}`);
-        await this.delay(16);
+        await sleepMs(16);
       }
     }
     if (!front || !back) return;
@@ -15970,7 +15965,7 @@ struct ReadBookPage {
       // While an adjacent preview is still loading, a completed placeholder capture is not a terminal result:
       // applyPageTurnPreview will publish the real leaf and start the authoritative replacement capture.
       if (!this.readerPageCurlCapturePending && !crossChapterPreviewLoading) return false;
-      await this.delay(16);
+      await sleepMs(16);
     }
     return false;
   }
@@ -16306,7 +16301,7 @@ struct ReadBookPage {
     this.finishPageTurnAnimation();
     this.isLoading = true;
     this.loadStatus = '正在切换章节...';
-    await this.delay(0);
+    await sleepMs(0);
     try {
       this.currentPageIndex = 0;
       this.pendingRestorePageIndex = 0;
@@ -16321,7 +16316,7 @@ struct ReadBookPage {
       this.setCurrentPageText(targetPageText);
       this.finishPageTurnAnimation();
       this.refreshReaderTextRender();
-      await this.delay(16);
+      await sleepMs(16);
     } finally {
       this.isLoading = false;
       this.loadStatus = '';

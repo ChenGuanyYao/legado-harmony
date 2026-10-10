@@ -8,6 +8,7 @@ import { JsRuntime } from '../core/rule/JsRuntime';
 import { TtsAvAudioPlayer } from './TtsAvAudioPlayer';
 import { PcmPlaybackCue, TtsPcmAudioPlayer } from './TtsPcmAudioPlayer';
 import { HdsFeedback } from './HdsFeedback';
+import { sleepMs } from './Sleep';
 
 class TtsRequestRule {
   url: string = '';
@@ -1076,11 +1077,7 @@ export class HttpTtsReader {
   }
 
   private async delayCancelable(ms: number, generation: number): Promise<void> {
-    await this.delay(ms);
+    await sleepMs(ms);
     this.assertGeneration(generation);
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

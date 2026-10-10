@@ -18,6 +18,7 @@ import fs from '@ohos.file.fs';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { TapZoneSettingsDialogContent } from '../components/TapZoneSettingsDialog';
+import { HexColor } from '../utils/HexColor';
 class ReaderCustomFontItem {
   familyName: string = '';
   filePath: string = '';
@@ -1822,14 +1823,7 @@ struct SettingsPage {
   }
 
   normalizeColor(color: string, fallback: string): string {
-    const trimmed = (color || '').trim();
-    const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
-    if (/^#[0-9a-fA-F]{6}$/.test(normalized)) {
-      return normalized.toUpperCase();
-    }
-    const fallbackTrimmed = (fallback || '').trim();
-    const normalizedFallback = fallbackTrimmed.startsWith('#') ? fallbackTrimmed : `#${fallbackTrimmed}`;
-    return /^#[0-9a-fA-F]{6}$/.test(normalizedFallback) ? normalizedFallback.toUpperCase() : '#333333';
+    return HexColor.normalize(color, fallback, '#333333');
   }
 
   syncBars(): void {

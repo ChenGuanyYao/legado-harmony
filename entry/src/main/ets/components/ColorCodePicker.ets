@@ -1,5 +1,6 @@
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
+import { HexColor } from '../utils/HexColor';
 
 class HsvColor {
   hue: number = 0;
@@ -36,14 +37,7 @@ export struct ColorCodePicker {
   ];
 
   private normalizeColor(color: string, fallback: string): string {
-    const trimmed = color.trim();
-    const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
-    if (/^#[0-9a-fA-F]{6}$/.test(normalized)) {
-      return normalized.toUpperCase();
-    }
-    const fallbackTrimmed = fallback.trim();
-    const normalizedFallback = fallbackTrimmed.startsWith('#') ? fallbackTrimmed : `#${fallbackTrimmed}`;
-    return /^#[0-9a-fA-F]{6}$/.test(normalizedFallback) ? normalizedFallback.toUpperCase() : '#007DFF';
+    return HexColor.normalize(color, fallback, '#007DFF');
   }
 
   private clamp(value: number, min: number, max: number): number {

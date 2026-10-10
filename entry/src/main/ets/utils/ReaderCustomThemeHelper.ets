@@ -1,4 +1,5 @@
 import { ReaderThemeHelper } from './ReaderThemeHelper';
+import { HexColor } from './HexColor';
 
 export class ReaderCustomThemeScheme {
   id: string = '';
@@ -168,8 +169,6 @@ export class ReaderCustomThemeHelper {
   }
 
   private static normalizeColor(color: string, fallback: string): string {
-    const trimmed = (color || '').trim();
-    const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
-    return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized.toUpperCase() : fallback;
+    return HexColor.normalize(color, fallback);
   }
 }

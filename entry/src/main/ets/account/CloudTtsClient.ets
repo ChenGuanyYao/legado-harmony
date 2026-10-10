@@ -5,6 +5,7 @@ import { AccountCommerceConfig } from './AccountCommerceConfig';
 import { AccountApiError } from './AccountCommerceModels';
 import { AccountSessionStore } from './AccountSessionStore';
 import { HttpTtsAudio } from '../utils/HttpTtsReader';
+import { sleepMs } from '../utils/Sleep';
 
 class CloudTtsErrorBody {
   code: string = '';
@@ -95,7 +96,7 @@ export class CloudTtsClient {
         if (!retryable || attempt >= 2 || generation !== this.generation) {
           break;
         }
-        await this.delay(600 + attempt * 600);
+        await sleepMs(600 + attempt * 600);
       }
     }
     throw lastError;
@@ -471,9 +472,5 @@ export class CloudTtsClient {
     }
     return (first >>> 0).toString(16).padStart(8, '0') +
       (second >>> 0).toString(16).padStart(8, '0');
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }

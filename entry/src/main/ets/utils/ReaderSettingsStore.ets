@@ -2,6 +2,7 @@ import { Context } from '@kit.AbilityKit';
 import preferences from '@ohos.data.preferences';
 import { ReaderThemeHelper } from './ReaderThemeHelper';
 import { CloudSyncChangeTracker } from '../account/CloudSyncChangeTracker';
+import { HexColor } from './HexColor';
 
 export class ReaderSettings {
   fontSize: number = 20;
@@ -1247,14 +1248,7 @@ export class ReaderSettingsStore {
   }
 
   private static normalizeColor(color: string, fallback: string): string {
-    const trimmed = (color || '').trim();
-    const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
-    if (/^#[0-9a-fA-F]{6}$/.test(normalized)) {
-      return normalized.toUpperCase();
-    }
-    const fallbackTrimmed = (fallback || '').trim();
-    const normalizedFallback = fallbackTrimmed.startsWith('#') ? fallbackTrimmed : `#${fallbackTrimmed}`;
-    return /^#[0-9a-fA-F]{6}$/.test(normalizedFallback) ? normalizedFallback.toUpperCase() : '#333333';
+    return HexColor.normalize(color, fallback, '#333333');
   }
 
   private static normalizePageTurnMode(mode: number): number {

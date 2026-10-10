@@ -7,6 +7,7 @@ import { ImmersiveMaterialRuntime } from '../../utils/ImmersiveMaterialRuntime';
 import { HdsFeedback } from '../../utils/HdsFeedback';
 import { AdaptiveColorPicker } from '../AdaptiveColorPicker';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
+import { HexColor } from '../../utils/HexColor';
 
 /**
  * 阅读页"自定义"配色的编辑器：多套方案的新增、删除、改名，背景色或背景图片，文字颜色。
@@ -70,9 +71,7 @@ export struct ReaderCustomThemeEditor {
   }
 
   private normalizeColor(color: string, fallback: string): string {
-    const trimmed = (color || '').trim();
-    const normalized = trimmed.startsWith('#') ? trimmed : `#${trimmed}`;
-    return /^#[0-9a-fA-F]{6}$/.test(normalized) ? normalized.toUpperCase() : fallback;
+    return HexColor.normalize(color, fallback);
   }
 
   private persist(data: ReaderCustomThemeData): void {

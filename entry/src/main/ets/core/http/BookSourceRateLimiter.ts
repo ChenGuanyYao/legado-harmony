@@ -1,4 +1,5 @@
 import { BookSource } from '../../model/data/Book';
+import { sleepMs } from '../../utils/Sleep';
 
 class BookSourceRateState {
   timestamps: number[] = [];
@@ -26,7 +27,7 @@ export class BookSourceRateLimiter {
         return;
       }
       const waitMs = Math.max(1, state.timestamps[0] + config.windowMs - now);
-      await this.delay(waitMs);
+      await sleepMs(waitMs);
     }
   }
 
@@ -36,11 +37,5 @@ export class BookSourceRateLimiter {
     const limit = Math.min(1000, Math.max(1, parseInt(match[1])));
     const windowMs = Math.min(60 * 60 * 1000, Math.max(100, parseInt(match[2])));
     return { limit: limit, windowMs: windowMs };
-  }
-
-  private static delay(ms: number): Promise<void> {
-    return new Promise<void>((resolve) => {
-      setTimeout(resolve, ms);
-    });
   }
 }

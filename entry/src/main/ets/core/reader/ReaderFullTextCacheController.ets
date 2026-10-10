@@ -6,6 +6,7 @@ import { AppDatabase } from '../../model/data/AppDatabase';
 import { ReadBookEngine } from '../book/ReadBookEngine';
 import { HdsFeedback } from '../../utils/HdsFeedback';
 import { FullTextCacheCancelCoordinator, FullTextCacheCancelSignal } from '../../utils/FullTextCacheCancelCoordinator';
+import { sleepMs } from '../../utils/Sleep';
 
 const NOTIFICATION_INTERVAL_MS = 5000;
 const NOTIFICATION_ID = 2601;
@@ -227,7 +228,7 @@ export class ReaderFullTextCacheController {
       }
       if (this.shouldCancel()) break;
       await this.publishProgress(false);
-      await ReaderFullTextCacheController.sleep(0);
+      await sleepMs(0);
     }
 
     if (taskId !== this.taskId) {
@@ -317,7 +318,7 @@ export class ReaderFullTextCacheController {
           console.warn(`缓存第 ${chapterIndex + 1} 章失败（第 ${attempt + 1} 次）:`, error);
         }
       }
-      if (attempt === 0) await ReaderFullTextCacheController.sleep(300);
+      if (attempt === 0) await sleepMs(300);
     }
     return false;
   }
@@ -468,12 +469,6 @@ export class ReaderFullTextCacheController {
       actionType: wantAgent.OperationType.START_ABILITY,
       requestCode: OPEN_REQUEST_CODE,
       actionFlags: [wantAgent.WantAgentFlags.UPDATE_PRESENT_FLAG]
-    });
-  }
-
-  private static sleep(ms: number): Promise<void> {
-    return new Promise<void>((resolve: () => void) => {
-      setTimeout(() => resolve(), ms);
     });
   }
 }
