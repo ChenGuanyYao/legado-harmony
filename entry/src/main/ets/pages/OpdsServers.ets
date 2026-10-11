@@ -438,7 +438,7 @@ struct OpdsServersPage {
               Text('需要登录')
                 .fontSize(AppFontSize.BODY)
                 .fontColor(this.primaryTextColor())
-              Text('HTTP Basic 认证，如 Calibre、Komga')
+              Text('HTTP Basic / Digest 认证，如 Calibre、Komga')
                 .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.subTextColor())
             }
@@ -580,9 +580,9 @@ struct OpdsServersPage {
     this.busyProgress = 40;
     try {
       const password = await OpdsSecretStore.password(getContext(this), server.id);
-      const feed = await new OpdsClient(server, password).fetchFeed(server.baseUrl);
+      const catalog = await new OpdsClient(server, password).fetchCatalog(server.baseUrl);
       this.busyProgress = 100;
-      HdsFeedback.showToast(`连接成功，共 ${feed.entries.length} 个条目`);
+      HdsFeedback.showToast(`连接成功，共 ${catalog.feed.entries.length} 个条目`);
     } catch (error) {
       const failure = error instanceof OpdsError ? error : null;
       const detail = failure ? failure.userMessage : this.message(error);

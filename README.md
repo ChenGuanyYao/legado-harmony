@@ -86,7 +86,7 @@
 ### 局域网阅读、OPDS 与 WebDAV
 
 - 在 App 内启动局域网浏览器阅读服务，同一局域网的浏览器可查看书架、搜索、发现并阅读小说或漫画，章节进度同步；可设置访问密码（加密存储，连续输错会暂时锁定）。
-- 添加 Calibre、Komga、Kavita 等 OPDS 书库（不预置任何服务器地址），支持目录浏览、站内搜索、Basic Auth 与网页登录，下载的 EPUB/TXT 作为本地书导入。
+- 添加 Calibre、Komga、Kavita 等 OPDS 书库（不预置任何服务器地址），支持目录浏览、站内搜索、Basic / Digest 认证与网页登录，下载的 EPUB/TXT 作为本地书导入。
 - 添加 WebDAV 服务并指定书籍目录，浏览后下载 TXT/EPUB 到书架。
 
 ### 数据、同步与个性化
@@ -235,6 +235,7 @@ node scripts/thread-blocking-check.mjs
 node scripts/theme-framework-check.mjs
 node scripts/log-policy-check.mjs
 node scripts/opds-parser-check.mjs
+node --experimental-strip-types scripts/http-auth-check.mjs
 node --experimental-strip-types scripts/java-regex-compat-check.mjs
 node --experimental-strip-types scripts/budgeted-regex-replace-check.mjs
 node --experimental-strip-types scripts/replace-rule-import-check.mjs
@@ -252,6 +253,7 @@ node --experimental-strip-types scripts/reader-info-bar-check.mjs
 | `theme-framework-check` | 主题注册、令牌和资源安全约束。 |
 | `log-policy-check` | 日志策略：不把凭据类变量和完整请求地址写进日志。 |
 | `opds-parser-check` | OPDS 目录、条目和 OpenSearch 描述的解析（基于 `scripts/opds-fixtures`）。 |
+| `http-auth-check` | OPDS / WebDAV 共用的 HTTP 认证：`WWW-Authenticate` 质询解析与 Digest 应答（RFC 2617 / 7616 标准向量）。 |
 | `java-regex-compat-check` | Android/Java 正则方言到 JavaScript 的转换，含 `w`、`d`、`` 的 Unicode 语义。 |
 | `budgeted-regex-replace-check` | 净化替换的逐行执行、跨行判定和超时放弃。 |
 | `replace-rule-import-check` | 阅读/Legado/YueDu 替换净化规则的字段别名映射。 |

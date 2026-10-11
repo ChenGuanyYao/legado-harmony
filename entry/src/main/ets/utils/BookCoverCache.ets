@@ -113,6 +113,22 @@ export class BookCoverCache {
     BookCoverCache.deletePath(localPath);
   }
 
+  // 调用方自行取回的封面（如需要登录凭据的书库）落到同一份缓存里。
+  static async storeCover(context: Context, raw: string, data: Uint8Array): Promise<string> {
+    if (!raw || data.byteLength === 0) return '';
+    await BookCoverCache.ensureDirAsync(`${context.cacheDir}/book_covers`);
+    const path = BookCoverCache.cachedCoverPath(context, raw);
+    const file = await fs.open(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+    try {
+      await fs.write(file.fd, data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+    } finally {
+      await fs.close(file);
+    }
+    const resolved = fileUri.getUriFromPath(path);
+    BookCoverCache.resolvedCoverUris.set(raw, resolved);
+    return resolved;
+  }
+
   private static async downloadCover(context: Context, url: string): Promise<string> {
     const dir = `${context.cacheDir}/book_covers`;
     await BookCoverCache.ensureDirAsync(dir);

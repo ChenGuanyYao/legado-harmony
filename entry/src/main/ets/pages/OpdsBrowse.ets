@@ -75,6 +75,7 @@ class OpdsEntryDataSource implements IDataSource {
 struct OpdsBrowsePage {
   private static readonly FEED_TTL_MS: number = 5 * 60 * 1000;
   private static readonly MAX_PAGES: number = 50;
+  private static readonly MAX_COVER_BYTES: number = 5 * 1024 * 1024;
 
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
@@ -113,6 +114,7 @@ struct OpdsBrowsePage {
   private client: OpdsClient | null = null;
   private searchTemplate: OpdsSearchTemplate | null = null;
   private feedCache: Map<string, OpdsFeedCacheEntry> = new Map();
+  private pendingCovers: Set<string> = new Set();
   private readonly entrySource: OpdsEntryDataSource = new OpdsEntryDataSource();
   private requestSeq: number = 0;
   private nextUrl: string = '';
@@ -890,16 +892,28 @@ struct OpdsBrowsePage {
     this.errorMessage = '';
     this.emptyHint = '这个书库还是空的';
     const run = async (): Promise<void> => {
+      let catalogUrl = url;
       try {
         let feed: OpdsFeed | null = useCache ? this.cachedFeed(url) : null;
         if (!feed) {
-          feed = await client.fetchFeed(url);
+          if (this.stack.length === 1 && url === this.server.baseUrl) {
+            const catalog = await client.fetchCatalog(url);
+            feed = catalog.feed;
+            catalogUrl = catalog.url;
+          } else {
+            feed = await client.fetchFeed(url);
+          }
           this.rememberFeed(url, feed);
         }
         if (seq !== this.requestSeq) return;
+        if (catalogUrl !== url && this.stack.length === 1) {
+          // 入口被自动改到了 /opds：后续相对链接、搜索描述都以实际地址为准
+          this.rememberFeed(catalogUrl, feed);
+          this.stack[0].url = catalogUrl;
+        }
         this.applyFeed(feed);
         if (this.stack.length === 1 && !this.searchTemplate) {
-          this.resolveSearchTemplate(url, feed, seq);
+          this.resolveSearchTemplate(catalogUrl, feed, seq);
         }
       } catch (error) {
         if (seq !== this.requestSeq) return;
@@ -1267,18 +1281,36 @@ struct OpdsBrowsePage {
 
   ensureCover(raw: string): void {
     if (!raw) return;
-    if (this.coverMap.has(raw)) return;
+    if (this.coverMap.has(raw) || this.pendingCovers.has(raw)) return;
+    this.pendingCovers.add(raw);
     const run = async (): Promise<void> => {
       try {
-        const local = await BookCoverCache.resolveCachedCoverAsync(getContext(this), raw) ||
-          await BookCoverCache.resolveCover(getContext(this), raw);
+        const context = getContext(this);
+        const local = await BookCoverCache.resolveCachedCoverAsync(context, raw) ||
+          await this.fetchProtectedCover(raw) ||
+          await BookCoverCache.resolveCover(context, raw);
         if (!local) return;
         const next = new Map(this.coverMap);
         next.set(raw, local);
         this.coverMap = next;
-      } catch (_) {}
+      } catch (_) {
+      } finally {
+        this.pendingCovers.delete(raw);
+      }
     };
     run();
+  }
+
+  // 开启登录的书库（如 Calibre）封面也要带凭据，通用封面缓存不带认证头取不到
+  async fetchProtectedCover(raw: string): Promise<string> {
+    const client = this.client;
+    if (!client || !client.usesCredentialsFor(raw)) return '';
+    try {
+      const data = await client.fetchBinary(raw, OpdsBrowsePage.MAX_COVER_BYTES);
+      return await BookCoverCache.storeCover(getContext(this), raw, data);
+    } catch (_) {
+      return '';
+    }
   }
 
   coverOf(raw: string): string {

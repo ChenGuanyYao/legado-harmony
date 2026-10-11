@@ -3,6 +3,10 @@
 export const OPDS_ACQUISITION_REL_PREFIX: string = 'http://opds-spec.org/acquisition';
 export const OPDS_IMAGE_REL: string = 'http://opds-spec.org/image';
 export const OPDS_IMAGE_THUMBNAIL_REL: string = 'http://opds-spec.org/image/thumbnail';
+// OPDS 1.0 及 Stanza 时代的旧式封面 rel，旧版 Calibre-Web、COPS 等仍在使用。
+const OPDS_IMAGE_RELS: string[] = [OPDS_IMAGE_REL, 'http://opds-spec.org/cover', 'x-stanza-cover-image'];
+const OPDS_IMAGE_THUMBNAIL_RELS: string[] = [OPDS_IMAGE_THUMBNAIL_REL, 'http://opds-spec.org/thumbnail',
+  'x-stanza-cover-image-thumbnail'];
 export const OPDS_CATALOG_FEED_TYPE: string = 'application/atom+xml;profile=opds-catalog';
 export const OPDS_CATALOG_ENTRY_TYPE: string =
   'application/atom+xml;type=entry;profile=opds-catalog';
@@ -103,15 +107,18 @@ export class OpdsEntry {
   }
 
   artworkThumbnail(): string {
-    for (const link of this.links) {
-      if ((link.rel || '').trim().toLowerCase() === OPDS_IMAGE_THUMBNAIL_REL) return link.href;
-    }
-    return this.artworkImage();
+    return this.firstLinkOfRels(OPDS_IMAGE_THUMBNAIL_RELS) || this.artworkImage();
   }
 
   artworkImage(): string {
-    for (const link of this.links) {
-      if ((link.rel || '').trim().toLowerCase() === OPDS_IMAGE_REL) return link.href;
+    return this.firstLinkOfRels(OPDS_IMAGE_RELS);
+  }
+
+  private firstLinkOfRels(rels: string[]): string {
+    for (const rel of rels) {
+      for (const link of this.links) {
+        if (link.href && (link.rel || '').trim().toLowerCase() === rel) return link.href;
+      }
     }
     return '';
   }
@@ -162,7 +169,6 @@ export class OpdsFeed {
 
   facetGroups(): OpdsFacetGroup[] {
     const groups: OpdsFacetGroup[] = [];
-    const order: string[] = [];
     for (const link of this.links) {
       if (!link.facetGroup) continue;
       let group = groups.find((item: OpdsFacetGroup): boolean => item.group === link.facetGroup);
@@ -170,7 +176,6 @@ export class OpdsFeed {
         group = new OpdsFacetGroup();
         group.group = link.facetGroup;
         groups.push(group);
-        order.push(link.facetGroup);
       }
       group.links.push(link);
     }
