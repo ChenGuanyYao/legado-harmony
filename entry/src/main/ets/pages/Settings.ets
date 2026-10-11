@@ -7,7 +7,6 @@ import { ReaderCustomThemeData, ReaderCustomThemeHelper, ReaderCustomThemeScheme
 import { ReaderBackgroundImageStore } from '../utils/ReaderBackgroundImageStore';
 import { AppThemeModeStore } from '../utils/AppThemeModeStore';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
-import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { ReaderHeaderFooterSettings } from '../components/reader/ReaderLayoutSettings';
 import { ReaderFontHelper, ReaderFontItem } from '../utils/ReaderFontHelper';
 import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
@@ -23,7 +22,7 @@ import { HexColor } from '../utils/HexColor';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
 import { PageScaffold } from '../components/common/PageScaffold';
-import { SettingSwitchRow } from '../components/common/SettingRow';
+import { SettingNavRow, SettingRow, SettingSwitchRow } from '../components/common/SettingRow';
 class ReaderCustomFontItem {
   familyName: string = '';
   filePath: string = '';
@@ -192,6 +191,7 @@ struct SettingsPage {
         title: '保留段首缩进',
         description: '章节开头与页首保留原文的全角空格缩进',
         isOn: this.keepParagraphIndent,
+        showDivider: false,
         onChange: (value: boolean) => {
           this.setKeepParagraphIndent(value);
         }
@@ -265,6 +265,7 @@ struct SettingsPage {
         title: '眼动翻页（beta）',
         description: '视线到达正文底部后提示向上看，向上看即翻到下一页；摄像头图像仅在本机处理',
         isOn: this.readerEyeTurnEnabled,
+        showDivider: this.readerEyeTurnEnabled,
         onChange: (value: boolean) => {
           this.setReaderEyeTurnEnabled(value);
         }
@@ -1902,60 +1903,23 @@ struct SettingsPage {
 
   @Builder
   readerFontEntryItem() {
-    Row() {
-      Column({ space: AppSpacing.XS }) {
-        Text('阅读字体')
-          .fontColor(this.primaryTextColor())
-          .fontSize(AppFontSize.BODY_LARGE)
-        Text('正文 / 标题 / 正则样式设置')
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.subTextColor())
+    SettingNavRow({
+      title: '阅读字体',
+      description: '正文 / 标题 / 正则样式设置',
+      onTap: () => {
+        router.pushUrl({ url: 'pages/ReaderFontSettings' });
       }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-      SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(18)
-        .fontColor([this.subTextColor()])
-    }
-    .width('calc(100% - 32vp)')
-    .constraintSize({ minHeight: 62 })
-    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
-    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .border({ width: { top: 0.5, bottom: 0.5 }, color: this.settingsDividerColor() })
-    .backgroundColor(this.cardColor())
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => {
-      router.pushUrl({ url: 'pages/ReaderFontSettings' });
     })
   }
 
   @Builder
   readerReplaceRulesEntryItem() {
-    Row() {
-      Column({ space: AppSpacing.XS }) {
-        Text('替换净化')
-          .fontColor(this.primaryTextColor())
-          .fontSize(AppFontSize.BODY_LARGE)
-        Text('管理正文与章节标题的替换规则')
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.subTextColor())
+    SettingNavRow({
+      title: '替换净化',
+      description: '管理正文与章节标题的替换规则',
+      onTap: () => {
+        router.pushUrl({ url: 'pages/ReaderReplaceRules' });
       }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(18)
-        .fontColor([this.subTextColor()])
-    }
-    .width('calc(100% - 32vp)')
-    .constraintSize({ minHeight: 62 })
-    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
-    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
-    .backgroundColor(this.cardColor())
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => {
-      router.pushUrl({ url: 'pages/ReaderReplaceRules' });
     })
   }
 
@@ -2006,19 +1970,7 @@ struct SettingsPage {
 
   @Builder
   tapZoneSettingItem() {
-    Row() {
-      Column() {
-        Text('点击区域动作')
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.primaryTextColor())
-        Text(this.tapZoneSummaryText())
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.subTextColor())
-          .margin({ top: AppSpacing.XS })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
+    SettingRow({ title: '点击区域动作', description: this.tapZoneSummaryText() }) {
       Button('配置')
         .height(36)
         .fontSize(AppFontSize.BODY)
@@ -2029,12 +1981,6 @@ struct SettingsPage {
           this.presentTapZoneSettings();
         })
     }
-    .width('100%')
-    .constraintSize({ minHeight: 64 })
-    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.MD })
-    .backgroundColor(this.cardColor())
-    .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
-    .alignItems(VerticalAlign.Center)
   }
 
 
@@ -2328,42 +2274,21 @@ struct SettingsPage {
 
   @Builder
   preloadSettingPanel() {
-    Column() {
-      Row() {
-        Column() {
-          Text('预缓存设置')
-            .fontSize(AppFontSize.BODY_LARGE)
-            .fontColor(this.primaryTextColor())
-          Text(this.readerPreloadEnabled ? '阅读过程中提前缓存后续章节' : '已关闭阅读过程中的自动预缓存')
-            .fontSize(AppFontSize.CAPTION)
-            .fontColor(this.subTextColor())
-            .margin({ top: AppSpacing.XS })
-        }
-        .layoutWeight(1)
-        .alignItems(HorizontalAlign.Start)
-
-        AdaptiveSwitch({ isOn: this.readerPreloadEnabled,
-          onChange: (checked: boolean) => {
-            this.setReaderPreloadEnabled(checked);
-          },
-        })
+    SettingSwitchRow({
+      title: '预缓存设置',
+      description: this.readerPreloadEnabled ? '阅读过程中提前缓存后续章节' : '已关闭阅读过程中的自动预缓存',
+      isOn: this.readerPreloadEnabled,
+      showDivider: this.readerPreloadEnabled,
+      onChange: (checked: boolean) => {
+        this.setReaderPreloadEnabled(checked);
       }
-      .width('calc(100% - 32vp)')
-      .constraintSize({ minHeight: 64 })
-      .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
-      .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
-      .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
-      .alignItems(VerticalAlign.Center)
-
-      if (this.readerPreloadEnabled) {
-        this.selectItem('下一章节数', '选择自动预缓存的后续章节数量',
-          this.readerPreloadChapterOptions(), this.readerPreloadChapterCount - 1,
-          (index: number) => this.setReaderPreloadChapterCount(index + 1),
-          'settings_reader_preload_chapter_count_select')
-      }
+    })
+    if (this.readerPreloadEnabled) {
+      this.selectItem('下一章节数', '选择自动预缓存的后续章节数量',
+        this.readerPreloadChapterOptions(), this.readerPreloadChapterCount - 1,
+        (index: number) => this.setReaderPreloadChapterCount(index + 1),
+        'settings_reader_preload_chapter_count_select', false)
     }
-    .width('100%')
-    .backgroundColor(this.cardColor())
   }
 
   @Builder
@@ -2394,51 +2319,25 @@ struct SettingsPage {
 
   @Builder
   eyeTurnCalibrationStatusItem() {
-    Row() {
-      Column() {
-        Text('眼动校准')
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.primaryTextColor())
-        Text(this.readerEyeCalibrationSummary())
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.subTextColor())
-          .margin({ top: AppSpacing.XS })
+    SettingRow({
+      title: '眼动校准',
+      description: this.readerEyeCalibrationSummary(),
+      showDivider: false,
+      onTap: (): void => {
+        HdsFeedback.showToast('请打开任意书籍，在正文阅读设置中点击“眼动校准”');
       }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
+    }) {
       Text('在正文内校准')
         .fontSize(AppFontSize.BODY)
         .fontColor(this.accentColor())
+        .margin({ left: AppSpacing.LG })
     }
-    .width('calc(100% - 32vp)')
-    .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
-    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .backgroundColor(Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
-    .alignItems(VerticalAlign.Center)
-    .onClick((): void => {
-      HdsFeedback.showToast('请打开任意书籍，在正文阅读设置中点击“眼动校准”');
-    })
   }
 
   @Builder
   selectItem(title: string, desc: string, options: SelectOption[], selected: number,
-    onSelect: (index: number) => void, controlId: string) {
-    Row() {
-      Column() {
-        Text(title)
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.primaryTextColor())
-        Text(desc)
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.subTextColor())
-          .margin({ top: AppSpacing.XS })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
+    onSelect: (index: number) => void, controlId: string, showDivider: boolean = true) {
+    SettingRow({ title: title, description: desc, showDivider: showDivider }) {
       Select(options)
         .id(controlId)
         .selected(selected)
@@ -2462,13 +2361,6 @@ struct SettingsPage {
           onSelect(index);
         })
     }
-    .width('calc(100% - 32vp)')
-    .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
-    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .backgroundColor(Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
-    .alignItems(VerticalAlign.Center)
   }
 
   optionValue(options: SelectOption[], index: number): ResourceStr {
