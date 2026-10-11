@@ -34,6 +34,7 @@ import { HdsFeedback } from '../utils/HdsFeedback';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 const STORE_COVER_MIN_HEIGHT = 170;
 const STORE_COVER_MAX_HEIGHT = 340;
@@ -146,84 +147,12 @@ struct ThemeSettingsPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      List({ space: AppSpacing.LG, scroller: this.themeListScroller }) {
-        // List padding is fixed to the viewport in ArkUI. Use real list items
-        // for the safe-area gaps so they scroll away with the content.
-        ListItem() {
-          Row() {
-          }
-            .width('100%')
-            .height(this.statusBarHeight + 58)
-        }
-        ListItem() {
-          this.sectionTitle('默认主题')
-        }
-        ListItem() {
-          this.themeCard(BuiltinThemeRegistry.findById(ThemeIds.PLAIN_DEFAULT))
-        }
-        ListItem() {
-          this.customThemeSectionTitle()
-        }
-        ForEach(this.customSchemes, (scheme: CustomThemeScheme) => {
-          if (deviceInfo.sdkApiVersion >= 26) {
-            HdsListItem({
-              customItemBuilder: () => {
-                this.themeCard(this.customTheme(scheme), scheme.id)
-              },
-              swipeActionOptions: this.themeSwipeActions(scheme)
-            })
-          } else {
-            ListItem() {
-              this.themeCard(this.customTheme(scheme), scheme.id)
-            }
-            .swipeAction({
-              end: {
-                builder: () => {
-                  this.customThemeDeleteSwipeAction(scheme)
-                },
-                actionAreaDistance: 64,
-                onAction: () => this.deleteCustomThemeFromSwipe(scheme)
-              },
-              edgeEffect: SwipeEdgeEffect.Spring
-            })
-          }
-        }, (scheme: CustomThemeScheme) => `${scheme.id}_${scheme.revision}`)
-        ListItem() {
-          this.sectionTitle('已购主题')
-        }
-        if (this.purchasedThemes().length === 0) {
-          ListItem() {
-            this.purchasedThemesEmptyHint()
-          }
-        }
-        ForEach(this.purchasedThemes(), (theme: ThemePack) => {
-          ListItem() {
-            this.themeCard(theme)
-          }
-        }, (theme: ThemePack) => `${theme.id}_${this.accountEntitlementsRevision}`)
-        ListItem() {
-          Row() {
-          }
-            .width('100%')
-            .height(Math.max(20, this.navBarHeight + 8))
-        }
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      // The list itself must own the system-safe-area expansion. Expanding
-      // only its parent leaves the List viewport clipped to the safe area.
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-      .padding({
-        left: AppSpacing.LG,
-        right: AppSpacing.LG
-      })
-      .scrollBar(BarState.Off)
-      .backgroundColor(this.pageColor())
-
-      // Pinned over the edge-to-edge list so scrolled content remains visible
-      // beneath the status/title area instead of being clipped by it.
-      this.titleBar()
+      // 列表铺满整页并从顶栏下方滚过去，上下留白由列表里的占位项提供。
+      PageScaffold({ title: '主题', scrollable: false, edgeToEdge: true, content: () => {
+        this.themeList()
+      }, actions: () => {
+        this.themeStoreEntryButton()
+      } })
 
       if (this.showThemeStore) {
         this.themeStoreOverlay()
@@ -252,6 +181,84 @@ struct ThemeSettingsPage {
     .onAreaChange((_oldValue: Area, newValue: Area) => {
       this.updateContextViewport(newValue);
     })
+  }
+
+  @Builder
+  themeList() {
+    List({ space: AppSpacing.LG, scroller: this.themeListScroller }) {
+      // List padding is fixed to the viewport in ArkUI. Use real list items
+      // for the safe-area gaps so they scroll away with the content.
+      ListItem() {
+        Row() {
+        }
+          .width('100%')
+          .height(this.statusBarHeight + 58)
+      }
+      ListItem() {
+        this.sectionTitle('默认主题')
+      }
+      ListItem() {
+        this.themeCard(BuiltinThemeRegistry.findById(ThemeIds.PLAIN_DEFAULT))
+      }
+      ListItem() {
+        this.customThemeSectionTitle()
+      }
+      ForEach(this.customSchemes, (scheme: CustomThemeScheme) => {
+        if (deviceInfo.sdkApiVersion >= 26) {
+          HdsListItem({
+            customItemBuilder: () => {
+              this.themeCard(this.customTheme(scheme), scheme.id)
+            },
+            swipeActionOptions: this.themeSwipeActions(scheme)
+          })
+        } else {
+          ListItem() {
+            this.themeCard(this.customTheme(scheme), scheme.id)
+          }
+          .swipeAction({
+            end: {
+              builder: () => {
+                this.customThemeDeleteSwipeAction(scheme)
+              },
+              actionAreaDistance: 64,
+              onAction: () => this.deleteCustomThemeFromSwipe(scheme)
+            },
+            edgeEffect: SwipeEdgeEffect.Spring
+          })
+        }
+      }, (scheme: CustomThemeScheme) => `${scheme.id}_${scheme.revision}`)
+      ListItem() {
+        this.sectionTitle('已购主题')
+      }
+      if (this.purchasedThemes().length === 0) {
+        ListItem() {
+          this.purchasedThemesEmptyHint()
+        }
+      }
+      ForEach(this.purchasedThemes(), (theme: ThemePack) => {
+        ListItem() {
+          this.themeCard(theme)
+        }
+      }, (theme: ThemePack) => `${theme.id}_${this.accountEntitlementsRevision}`)
+      ListItem() {
+        Row() {
+        }
+          .width('100%')
+          .height(Math.max(20, this.navBarHeight + 8))
+      }
+    }
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .width('100%')
+    .height('100%')
+    // The list itself must own the system-safe-area expansion. Expanding
+    // only its parent leaves the List viewport clipped to the safe area.
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .padding({
+      left: AppSpacing.LG,
+      right: AppSpacing.LG
+    })
+    .scrollBar(BarState.Off)
+    .backgroundColor(this.pageColor())
   }
 
   private themeSwipeActions(scheme: CustomThemeScheme): HdsSwipeActionOptions {
@@ -611,30 +618,6 @@ struct ThemeSettingsPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('主题')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-      this.themeStoreEntryButton()
-    }
-    .width('100%')
-    // The status-bar inset belongs to the pinned title itself, avoiding an
-    // additional opaque strip above it while keeping controls out of the
-    // system status area.
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight, right: AppSpacing.LG })
-    .backgroundColor(this.titleBarSurfaceColor())
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
   sectionTitle(title: string) {
     Text(title)
       .fontSize(AppFontSize.BODY)
@@ -658,6 +641,7 @@ struct ThemeSettingsPage {
     .borderRadius(15)
     .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
     .alignItems(VerticalAlign.Center)
+    .margin({ right: AppSpacing.LG })
     .accessibilityText('打开主题商店')
     .onClick(() => this.openThemeStore())
   }

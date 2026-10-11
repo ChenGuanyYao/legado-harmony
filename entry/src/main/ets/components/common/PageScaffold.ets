@@ -11,6 +11,7 @@ import { ImmersiveBackButton } from '../ImmersiveBackButton';
  *
  * scrollable 为 true 时内容放进带回弹的滚动容器；页面自己用 List 等滚动时传 false，
  * 此时骨架只负责顶部留白，底部留白由页面处理。
+ * 列表要从顶栏下方滚过去时再加 edgeToEdge: true，内容铺满整页，上下留白都由页面自己放进列表里。
  */
 @Component
 export struct PageScaffold {
@@ -19,6 +20,8 @@ export struct PageScaffold {
 
   @Prop title: string = '';
   @Prop scrollable: boolean = true;
+  /** 仅在 scrollable 为 false 时有效：内容铺满整页，不留顶栏的位置。 */
+  @Prop edgeToEdge: boolean = false;
   /** 滚动内容底部在导航条之上额外留出的高度。 */
   @Prop bottomInset: number = 32;
   @StorageProp('appDarkMode') appDarkMode: boolean = false;
@@ -58,7 +61,8 @@ export struct PageScaffold {
         }
         .width('100%')
         .height('100%')
-        .padding({ top: PageScaffold.BAR_HEIGHT + this.statusBarHeight })
+        .padding({ top: this.edgeToEdge ? 0 : PageScaffold.BAR_HEIGHT + this.statusBarHeight })
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       }
 
       this.titleBar()
