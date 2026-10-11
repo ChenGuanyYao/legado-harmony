@@ -14,6 +14,7 @@ import {
 } from './OpdsModels';
 import { OpdsXmlParser } from './OpdsXmlParser';
 import { OpdsError } from './OpdsError';
+import { OpdsKavita } from './OpdsKavita';
 import { HttpDigestChallenge, HttpAuth } from '../core/http/HttpAuth';
 
 export interface OpdsDownloadHandle {
@@ -86,7 +87,63 @@ export class OpdsClient {
         }
       }
     }
+    const viaKavita = await this.fetchKavitaCatalog(url, first as Error);
+    if (viaKavita) return viaKavita;
     throw first as Error;
+  }
+
+  // Kavita 的 OPDS 只认地址里的密钥。填的是网页地址，或已存的密钥失效（被轮换）时，
+  // 用账号密码登录取回密钥、拼出 OPDS 地址。不适用时返回 null，由调用方抛出原错误。
+  private async fetchKavitaCatalog(url: string, failure: Error): Promise<OpdsCatalogRoot | null> {
+    if (!(failure instanceof OpdsError)) return null;
+    let sites: string[] = [];
+    if (failure.serverKind === 'kavita') {
+      sites = OpdsKavita.siteCandidates(url);
+    } else if (failure.code === 'auth' && OpdsKavita.isOpdsUrl(url)) {
+      sites = [OpdsKavita.siteOfOpdsUrl(url)];
+    }
+    if (sites.length === 0 || !this.server.username || !this.password) return null;
+    let loginFailure: OpdsError | null = null;
+    for (const site of sites) {
+      let key = '';
+      try {
+        key = await this.kavitaLogin(site);
+      } catch (error) {
+        // 路径不对时 Kavita 会回网页而不是报错，所以以最后一个候选（站点根）的结果为准
+        loginFailure = error as OpdsError;
+        if (loginFailure.code === 'auth') break;
+        continue;
+      }
+      const catalogUrl = OpdsKavita.opdsUrl(site, key);
+      const feed = await this.fetchFeed(catalogUrl);
+      return { url: catalogUrl, feed: feed };
+    }
+    throw (loginFailure || failure) as Error;
+  }
+
+  private async kavitaLogin(site: string): Promise<string> {
+    const response = await this.httpClient.execute({
+      url: OpdsKavita.loginUrl(site),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: OpdsKavita.loginBody(this.server.username, this.password),
+      useCookieJar: false,
+      maxResponseBytes: 1024 * 1024
+    });
+    if (response.statusCode === 401 || response.statusCode === 403) {
+      throw new OpdsError('auth', 'Kavita 登录失败：用户名或密码错误，或该账号被禁止登录', response.statusCode);
+    }
+    if (!response.success) {
+      throw new OpdsError('network', response.statusCode > 0 ?
+        `Kavita 登录失败（HTTP ${response.statusCode}）` : (response.error || 'Kavita 登录失败：网络连接失败'),
+        response.statusCode);
+    }
+    const key = OpdsKavita.keyFromLoginResponse(response.body || '');
+    if (!key) {
+      throw new OpdsError('not-opds', 'Kavita 登录成功，但没有取到 OPDS 密钥。请确认服务器已开启 OPDS，' +
+        '或在 Kavita 网页端的用户设置里复制 OPDS 地址');
+    }
+    return key;
   }
 
   // 首个地址失败后还值得再试几个地址。服务器有响应但地址不对：全部试完；
@@ -94,6 +151,8 @@ export class OpdsClient {
   // 认证、证书、超时：换地址也没用。
   private static extraAddressBudget(error: Object, remaining: number): number {
     if (!(error instanceof OpdsError)) return 0;
+    // Kavita 对任何未知路径都回同一个网页，换地址没有意义。
+    if (error.serverKind === 'kavita') return 0;
     if (error.code === 'not-opds' || error.code === 'not-found') return remaining;
     if (error.code !== 'network') return 0;
     if (error.httpStatus > 0) return remaining;
@@ -180,6 +239,8 @@ export class OpdsClient {
 
   // 需要带凭据才能取到的资源（如开启登录的 Calibre 封面）；无凭据或跨主机时返回 false。
   usesCredentialsFor(url: string): boolean {
+    // Kavita 的密钥就在地址里，账号密码只用于登录换密钥，不随请求发送。
+    if (OpdsKavita.isOpdsUrl(url) || OpdsKavita.isOpdsUrl(this.server.baseUrl)) return false;
     return !!this.server.username && this.sameHost(url);
   }
 
@@ -305,8 +366,10 @@ export class OpdsClient {
     const head = body.substring(0, 4096);
     if (!/<(?:[A-Za-z_][\w.-]*:)?(?:feed|entry)[\s>]/.test(head)) {
       if (/<title>\s*Kavita/i.test(head)) {
-        throw new OpdsError('not-opds', '这是 Kavita 的网页地址，不是 OPDS 地址。请在 Kavita 网页端的用户设置里' +
-          '复制 OPDS 地址（形如 http://主机:端口/api/opds/一串密钥）；Kavita 的 OPDS 靠地址里的密钥认证，无需填写账号密码');
+        const kavita = new OpdsError('not-opds', '这是 Kavita 的网页地址，不是 OPDS 地址。请在书库设置里打开「需要登录」' +
+          '并填写 Kavita 的账号密码，应用会自动获取 OPDS 地址；也可以在 Kavita 网页端的用户设置里复制 OPDS 地址直接填入');
+        kavita.serverKind = 'kavita';
+        throw kavita;
       }
       throw new OpdsError('not-opds', '该地址不是有效的 OPDS 目录。Calibre、talebook 的地址一般以 /opds 结尾');
     }

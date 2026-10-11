@@ -8,6 +8,8 @@ export class OpdsError extends Error {
   userMessage: string = '';
   // 服务器给出了 HTTP 响应时的状态码；连接本身失败（超时、拒绝连接等）为 0。
   httpStatus: number = 0;
+  // 识别出的服务器类型（目前只有 'kavita'），供调用方决定是否走专用的连接方式。
+  serverKind: string = '';
 
   constructor(code: string, userMessage: string, httpStatus: number = 0) {
     super(userMessage);

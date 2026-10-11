@@ -9,6 +9,7 @@ import { OpdsSettingsStore } from '../opds/OpdsSettingsStore';
 import { OpdsSecretStore } from '../opds/OpdsSecretStore';
 import { OpdsClient } from '../opds/OpdsClient';
 import { OpdsError } from '../opds/OpdsError';
+import { OpdsKavita } from '../opds/OpdsKavita';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
@@ -227,7 +228,7 @@ struct OpdsServersPage {
           .fontColor(this.primaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(server.baseUrl)
+        Text(OpdsKavita.maskedUrl(server.baseUrl))
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .maxLines(1)
@@ -438,7 +439,7 @@ struct OpdsServersPage {
               Text('需要登录')
                 .fontSize(AppFontSize.BODY)
                 .fontColor(this.primaryTextColor())
-              Text('HTTP Basic / Digest 认证，如 Calibre、Komga')
+              Text('Calibre、Komga 等的账号；Kavita 填账号可自动获取 OPDS 地址')
                 .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.subTextColor())
             }
@@ -581,6 +582,12 @@ struct OpdsServersPage {
     try {
       const password = await OpdsSecretStore.password(getContext(this), server.id);
       const catalog = await new OpdsClient(server, password).fetchCatalog(server.baseUrl);
+      if (catalog.url !== server.baseUrl) {
+        // 地址被自动纠正（尾斜杠、/opds、Kavita 登录换取的地址）：存回配置，下次直接用
+        server.baseUrl = catalog.url;
+        await OpdsSettingsStore.saveServer(getContext(this), server);
+        await this.loadServers();
+      }
       this.busyProgress = 100;
       HdsFeedback.showToast(`连接成功，共 ${catalog.feed.entries.length} 个条目`);
     } catch (error) {
