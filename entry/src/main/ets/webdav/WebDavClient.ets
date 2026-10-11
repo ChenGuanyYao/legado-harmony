@@ -13,11 +13,29 @@ import {
 } from './WebDavModels';
 import { WebDavSettingsStore } from './WebDavSettingsStore';
 import { WebDavError } from './WebDavError';
+import { digestHashHex } from '../core/http/DigestHash';
+import { HttpDigestChallenge, HttpAuth } from '../core/http/HttpAuth';
 
 class WebDavHttpResponse {
   statusCode: number = 0;
   headers: Record<string, string> = {};
   body: string = '';
+}
+
+class WebDavStreamResult {
+  statusCode: number = 0;
+  headers: Record<string, string> = {};
+  received: number = 0;
+  total: number = 0;
+  writeError: string = '';
+}
+
+// 同一连接在会话内协商出的认证方式；各处各自 new 的 WebDavClient 共用，避免每个请求都先被拒一次。
+class WebDavAuthState {
+  scheme: string = '';
+  digest: HttpDigestChallenge | null = null;
+  nonceCount: number = 0;
+  verified: boolean = false;
 }
 
 class WebDavXmlNode {
@@ -29,6 +47,7 @@ class WebDavXmlNode {
 export class WebDavClient {
   private static readonly MAX_REDIRECTS: number = 5;
   private static readonly DOWNLOAD_ATTEMPTS: number = 2;
+  private static readonly authStates: Map<string, WebDavAuthState> = new Map();
   private readonly connection: WebDavConnection;
   private readonly password: string;
   private readonly timeout: number;
@@ -56,29 +75,28 @@ export class WebDavClient {
   }
 
   async list(relativePath: string): Promise<WebDavEntry[]> {
+    return await this.listUnder(this.connection.libraryRoot, relativePath);
+  }
+
+  // 以指定根目录列目录（选择书库根目录时用），不改动连接配置本身。
+  async listAtRoot(rootPath: string): Promise<WebDavEntry[]> {
+    return await this.listUnder(WebDavSettingsStore.normalizeRelativePath(rootPath), '');
+  }
+
+  private async listUnder(rootPath: string, relativePath: string): Promise<WebDavEntry[]> {
     const normalized = WebDavSettingsStore.normalizeRelativePath(relativePath);
-    const target = this.urlForCollection(this.joinPath(this.connection.libraryRoot, normalized));
+    const target = this.urlForCollection(this.joinPath(rootPath, normalized));
     const response = await this.request('PROPFIND', target, {
       'Depth': '1',
       'Content-Type': 'application/xml; charset=utf-8'
     }, WebDavClient.propfindBody(), 8 * 1024 * 1024);
     if (response.statusCode !== 207) throw new Error(this.statusMessage(response.statusCode));
-    const entries = this.parseMultiStatus(response.body, normalized);
+    const entries = this.parseMultiStatus(response.body, normalized, target);
     entries.sort((left: WebDavEntry, right: WebDavEntry): number => {
       if (left.directory !== right.directory) return left.directory ? -1 : 1;
       return left.name.localeCompare(right.name);
     });
     return entries;
-  }
-
-  async listAtRoot(rootPath: string): Promise<WebDavEntry[]> {
-    const previous = this.connection.libraryRoot;
-    this.connection.libraryRoot = WebDavSettingsStore.normalizeRelativePath(rootPath);
-    try {
-      return await this.list('');
-    } finally {
-      this.connection.libraryRoot = previous;
-    }
   }
 
   async headLibraryFile(relativePath: string): Promise<WebDavFileInfo> {
@@ -146,57 +164,70 @@ export class WebDavClient {
     if (fs.accessSync(targetPath)) fs.unlinkSync(targetPath);
     this.ensureParent(targetPath);
     const target = fs.openSync(targetPath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
+    try {
+      const stream = await this.sendAuthorized('GET', url, async (authorization: string) =>
+        await this.streamToFile(url, authorization, target.fd, onProgress));
+      if (stream.writeError) throw new Error(stream.writeError);
+      if (stream.statusCode < 200 || stream.statusCode >= 300) throw new Error(this.statusMessage(stream.statusCode));
+      // 压缩传输时 Content-Length 是压缩后的长度，与落盘字节数不可比。
+      const encoded = !!this.header(stream.headers, 'content-encoding');
+      if (!encoded && stream.total > 0 && stream.received !== stream.total) throw new Error('下载文件长度不完整');
+      const result = new WebDavDownloadResult();
+      result.path = targetPath;
+      result.size = stream.received;
+      result.etag = this.header(stream.headers, 'etag');
+      result.lastModified = this.parseDate(this.header(stream.headers, 'last-modified'));
+      return result;
+    } catch (error) {
+      try { fs.unlinkSync(targetPath); } catch (_) {}
+      throw new Error(this.errorMessage(error as Object));
+    } finally {
+      fs.closeSync(target);
+    }
+  }
+
+  // 单次流式下载；认证重试时会被再次调用，所以每次都从文件头重写。
+  private async streamToFile(url: string, authorization: string, fd: number,
+    onProgress?: (received: number, total: number) => void): Promise<WebDavStreamResult> {
+    const result = new WebDavStreamResult();
+    fs.truncateSync(fd, 0);
     const client = http.createHttp();
-    let received = 0;
-    let total = 0;
-    let headers: Record<string, string> = {};
-    let writeError = '';
     const onHeaders = (value: Object): void => {
-      headers = (value || {}) as Record<string, string>;
-      total = Math.max(0, Number(this.header(headers, 'content-length')) || 0);
-      if (onProgress) onProgress(0, total);
+      result.headers = (value || {}) as Record<string, string>;
+      result.total = Math.max(0, Number(this.header(result.headers, 'content-length')) || 0);
+      if (onProgress) onProgress(0, result.total);
     };
     const onData = (chunk: ArrayBuffer): void => {
-      if (writeError) return;
+      if (result.writeError) return;
       try {
-        const count = fs.writeSync(target.fd, chunk);
+        const count = fs.writeSync(fd, chunk, { offset: result.received });
         if (count !== chunk.byteLength) throw new Error('写入下载缓存不完整');
-        received += count;
-        if (onProgress) onProgress(received, total);
+        result.received += count;
+        if (onProgress) onProgress(result.received, result.total);
       } catch (error) {
-        writeError = this.errorMessage(error as Object);
+        result.writeError = this.errorMessage(error as Object);
         client.destroy();
       }
     };
     client.on('headersReceive', onHeaders);
     client.on('dataReceive', onData);
     try {
-      const status = await client.requestInStream(url, {
+      result.statusCode = await client.requestInStream(url, {
         method: http.RequestMethod.GET,
-        header: this.headers({}),
+        header: this.headers({}, authorization),
         connectTimeout: this.timeout,
         readTimeout: Math.max(this.timeout, 120000),
         usingProtocol: http.HttpProtocol.HTTP1_1,
         maxRedirects: WebDavClient.MAX_REDIRECTS
       });
-      if (writeError) throw new Error(writeError);
-      if (status < 200 || status >= 300) throw new Error(this.statusMessage(status));
-      if (total > 0 && received !== total) throw new Error('下载文件长度不完整');
-      const result = new WebDavDownloadResult();
-      result.path = targetPath;
-      result.size = received;
-      result.etag = this.header(headers, 'etag');
-      result.lastModified = this.parseDate(this.header(headers, 'last-modified'));
-      return result;
     } catch (error) {
-      try { fs.unlinkSync(targetPath); } catch (_) {}
-      throw new Error(this.errorMessage(error as Object));
+      if (!result.writeError) throw new Error(this.errorMessage(error as Object));
     } finally {
       client.off('headersReceive', onHeaders);
       client.off('dataReceive', onData);
       client.destroy();
-      fs.closeSync(target);
     }
+    return result;
   }
 
   async createLibraryFolder(parentPath: string, name: string): Promise<void> {
@@ -259,11 +290,17 @@ export class WebDavClient {
 
   private async request(method: string, url: string, extraHeaders: Record<string, string>,
     body?: string | ArrayBuffer, maxBytes: number = 4 * 1024 * 1024, timeout: number = 0): Promise<WebDavHttpResponse> {
+    return await this.sendAuthorized(method, url, async (authorization: string) =>
+      await this.requestOnce(method, url, this.headers(extraHeaders, authorization), body, maxBytes, timeout));
+  }
+
+  private async requestOnce(method: string, url: string, headers: Record<string, string>,
+    body: string | ArrayBuffer | undefined, maxBytes: number, timeout: number): Promise<WebDavHttpResponse> {
     const client = http.createHttp();
     try {
       const response = await client.request(url, {
         method: method as http.RequestMethod,
-        header: this.headers(extraHeaders),
+        header: headers,
         extraData: body,
         connectTimeout: timeout || this.timeout,
         readTimeout: timeout || this.timeout,
@@ -289,32 +326,84 @@ export class WebDavClient {
     }
   }
 
-  private headers(extra: Record<string, string>): Record<string, string> {
-    const authorization = new util.Base64Helper().encodeToStringSync(
-      new util.TextEncoder().encodeInto(`${this.connection.username}:${this.password}`));
+  private headers(extra: Record<string, string>, authorization: string): Record<string, string> {
     const result: Record<string, string> = {};
-    result['Authorization'] = `Basic ${authorization}`;
+    if (authorization) result['Authorization'] = authorization;
     result['Accept'] = '*/*';
     result['User-Agent'] = 'LegadoHarmony-WebDAV/1.0';
     for (const key of Object.keys(extra)) result[key] = extra[key];
     return result;
   }
 
-  private parseMultiStatus(raw: string, currentRelativePath: string): WebDavEntry[] {
+  // 认证协商：先按 Basic 发；服务器以 Digest 质询回 401 时改用 Digest 重发。
+  // 被 401 拒绝的请求并未执行，所以 PUT / MOVE / DELETE 重发也是安全的。
+  private async sendAuthorized<T extends WebDavHttpResponse | WebDavStreamResult>(method: string, url: string,
+    send: (authorization: string) => Promise<T>): Promise<T> {
+    // 匿名 WebDAV 不带认证头：空凭据的 Basic 头会被部分服务器直接判为认证失败。
+    if (!this.connection.username && !this.password) return await send('');
+    const state = this.authState();
+    const wasDigest = state.scheme === 'digest';
+    let response = await send(this.authorization(state, method, url));
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      if (!state.scheme) state.scheme = 'basic';
+      state.verified = true;
+      return response;
+    }
+    if (response.statusCode !== 401) return response;
+    const challenge = HttpAuth.digestChallenge(this.header(response.headers, 'www-authenticate'));
+    if (!challenge) return response;
+    // 已经用 Digest 发过且被拒：只有 nonce 过期或此前验证通过过才重试，否则就是密码不对。
+    const retry = !wasDigest || challenge.stale || state.verified;
+    state.scheme = 'digest';
+    state.digest = challenge;
+    state.nonceCount = 0;
+    state.verified = false;
+    if (!retry) return response;
+    response = await send(this.authorization(state, method, url));
+    if (response.statusCode >= 200 && response.statusCode < 300) state.verified = true;
+    return response;
+  }
+
+  private authState(): WebDavAuthState {
+    const key = `${this.connection.id}|${this.connection.baseUrl}|${this.connection.username}`;
+    let state = WebDavClient.authStates.get(key);
+    if (!state) {
+      state = new WebDavAuthState();
+      WebDavClient.authStates.set(key, state);
+    }
+    return state;
+  }
+
+  private authorization(state: WebDavAuthState, method: string, url: string): string {
+    if (state.scheme === 'digest' && state.digest) {
+      state.nonceCount++;
+      const cnonce = util.generateRandomUUID(true).replace(/-/g, '').substring(0, 16);
+      return HttpAuth.digestAuthorization(state.digest, this.connection.username, this.password, method, url,
+        state.nonceCount, cnonce, digestHashHex);
+    }
+    const authorization = new util.Base64Helper().encodeToStringSync(
+      new util.TextEncoder().encodeInto(`${this.connection.username}:${this.password}`));
+    return `Basic ${authorization}`;
+  }
+
+  private parseMultiStatus(raw: string, currentRelativePath: string, requestUrl: string): WebDavEntry[] {
     const document = WebDavClient.parseXml(raw);
     const responses = WebDavClient.findNodes(document, 'response');
+    const hrefs = responses.map((response: WebDavXmlNode): string =>
+      WebDavClient.nodeText(WebDavClient.findFirstNode(response, 'href')).trim());
+    // 被列目录自身按 href 识别；服务器不保证把它排在第一条。href 都对不上时才退回「首条即自身」。
+    const selfPath = this.pathOfHref(requestUrl);
+    const selfByHref = hrefs.some((href: string): boolean => this.pathOfHref(href) === selfPath);
     const result: WebDavEntry[] = [];
-    let skippedSelf = false;
-    for (const response of responses) {
-      const href = WebDavClient.nodeText(WebDavClient.findFirstNode(response, 'href')).trim();
+    for (let index = 0; index < responses.length; index++) {
+      const response = responses[index];
+      const href = hrefs[index];
+      if (selfByHref ? this.pathOfHref(href) === selfPath : index === 0) continue;
       const resourceType = WebDavClient.findFirstNode(response, 'resourcetype');
       const directory = !!resourceType && !!WebDavClient.findFirstNode(resourceType, 'collection');
-      const displayName = WebDavClient.nodeText(WebDavClient.findFirstNode(response, 'displayname')).trim();
-      const name = displayName || this.nameFromHref(href, directory);
-      if (!skippedSelf) {
-        skippedSelf = true;
-        continue;
-      }
+      // 名称以 href 末段为准：后续下载、重命名都按它拼路径，displayname 可能与真实文件名不一致。
+      const name = this.nameFromHref(href, false) ||
+        WebDavClient.nodeText(WebDavClient.findFirstNode(response, 'displayname')).trim();
       if (!name || name === '.' || name === '..') continue;
       const item = new WebDavEntry();
       item.name = name;
@@ -355,6 +444,14 @@ export class WebDavClient {
 
   private joinPath(left: string, right: string): string {
     return WebDavSettingsStore.normalizeRelativePath(`${left || ''}/${right || ''}`);
+  }
+
+  // href 可能是绝对地址或绝对路径，编码方式也因服务器而异：统一成解码后、去尾斜杠的路径再比较。
+  private pathOfHref(href: string): string {
+    let value = (href || '').trim().replace(/^https?:\/\/[^/]*/i, '').split('?')[0].split('#')[0];
+    value = value.replace(/\/+$/, '');
+    try { value = decodeURIComponent(value); } catch (_) {}
+    return value;
   }
 
   private nameFromHref(href: string, directory: boolean): string {
@@ -459,19 +556,28 @@ export class WebDavClient {
           }
         }
       };
-      const uploadRequest = new rcp.Request(
-        targetUrl,
-        'PUT',
-        this.headers({
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': `${total}`
-        }),
-        new rcp.UploadFromFile(uploadPath),
-        undefined,
-        undefined,
-        requestConfig
-      );
-      const response = await session.fetch(uploadRequest);
+      const response = await this.sendAuthorized('PUT', targetUrl, async (authorization: string) => {
+        const uploadRequest = new rcp.Request(
+          targetUrl,
+          'PUT',
+          this.headers({
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': `${total}`
+          }, authorization),
+          new rcp.UploadFromFile(uploadPath),
+          undefined,
+          undefined,
+          requestConfig
+        );
+        const fetched = await session.fetch(uploadRequest);
+        const result = new WebDavHttpResponse();
+        result.statusCode = fetched.statusCode;
+        const challenge = fetched.headers['www-authenticate'];
+        if (challenge) {
+          result.headers['www-authenticate'] = Array.isArray(challenge) ? challenge.join(', ') : challenge;
+        }
+        return result;
+      });
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw new Error(`上传文件失败：${this.statusMessage(response.statusCode)}`);
       }
