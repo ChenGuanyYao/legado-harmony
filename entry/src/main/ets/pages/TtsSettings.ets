@@ -124,7 +124,7 @@ struct TtsSettingsPage {
           .width('calc(100% - 24vp)')
           .padding({ left: 16, right: 16, top: 14, bottom: 14 })
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
           .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
@@ -177,7 +177,7 @@ struct TtsSettingsPage {
           .width('calc(100% - 24vp)')
           .padding({ left: 16, right: 16, top: 14, bottom: 14 })
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
@@ -201,7 +201,7 @@ struct TtsSettingsPage {
           .width('calc(100% - 24vp)')
           .padding(16)
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
@@ -312,7 +312,7 @@ struct TtsSettingsPage {
     .height(54)
     .padding({ left: 16, right: 16 })
     .margin({ left: 12, right: 12 })
-    .borderRadius(14)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .onClick(() => {
       this.showVoiceDropdown = !this.showVoiceDropdown;
@@ -1134,7 +1134,7 @@ struct TtsSettingsPage {
         }
         .width('100%')
         .padding({ left: 12, right: 10, top: 10, bottom: 10 })
-        .borderRadius(12)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .backgroundColor(this.inputColor())
       }, (item: TtsPackageInfo) => item.sku)
 
@@ -1147,7 +1147,7 @@ struct TtsSettingsPage {
     .width('calc(100% - 24vp)')
     .padding(16)
     .margin({ left: 12, right: 12, bottom: 24 })
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 
@@ -1175,7 +1175,7 @@ struct TtsSettingsPage {
     .alignItems(HorizontalAlign.Start)
     .layoutWeight(1)
     .padding(12)
-    .borderRadius(12)
+    .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(this.inputColor())
   }
 

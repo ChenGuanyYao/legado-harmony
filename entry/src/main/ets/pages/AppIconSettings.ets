@@ -220,7 +220,7 @@ struct AppIconSettingsPage {
           .fontColor('#B46A00')
           .padding({ left: 8, right: 8, top: 2, bottom: 2 })
           .backgroundColor('#FFF2D6')
-          .borderRadius(8)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .margin({ top: 8 })
       } else if (this.applyingIconId === option.id) {
         Text('切换中')
@@ -234,7 +234,7 @@ struct AppIconSettingsPage {
     .padding({ top: 14, left: 10, right: 10, bottom: 12 })
     .margin({ bottom: 12 })
     .backgroundColor(this.cardColor())
-    .borderRadius(8)
+    .borderRadius(ThemeRuntime.cardRadius())
     .border({ width: 1, color: this.optionBorderColor(this.appIconId === option.id) })
     .alignItems(HorizontalAlign.Center)
     .justifyContent(FlexAlign.Center)

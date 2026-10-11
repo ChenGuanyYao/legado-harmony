@@ -128,7 +128,7 @@ struct ThemeColorSettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12, top: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
           this.previewPanel()
@@ -546,7 +546,7 @@ struct ThemeColorSettingsPage {
     .width('calc(100% - 24vp)')
     .padding({ left: 16, right: 16, top: 12, bottom: 12 })
     .margin({ left: 12, right: 12 })
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .clip(true)
     .backgroundColor(this.cardColor())
   }
@@ -583,7 +583,7 @@ struct ThemeColorSettingsPage {
     }
     .width('calc(100% - 24vp)')
     .margin({ left: 12, right: 12 })
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .clip(true)
     .backgroundColor(this.cardColor())
   }
@@ -723,7 +723,7 @@ struct ThemeColorSettingsPage {
           .fontColor(this.primaryTextColor())
           .placeholderColor(this.subTextColor())
           .backgroundColor(this.inputColor())
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .onChange((value: string) => this.setCurrentStartupTitle(value))
       }
       .width('100%')
@@ -741,7 +741,7 @@ struct ThemeColorSettingsPage {
           .fontColor(this.primaryTextColor())
           .placeholderColor(this.subTextColor())
           .backgroundColor(this.inputColor())
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .onChange((value: string) => this.setCurrentStartupSubtitle(value))
       }
       .width('100%')
@@ -750,7 +750,7 @@ struct ThemeColorSettingsPage {
     .width('calc(100% - 24vp)')
     .padding(14)
     .margin({ left: 12, right: 12 })
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 

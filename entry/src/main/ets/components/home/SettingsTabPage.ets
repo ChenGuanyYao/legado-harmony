@@ -66,7 +66,7 @@ export struct SettingsPage {
             })
           }
           .width('100%')
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.largeRadius())
           .clip(true)
           .backgroundColor(this.glassCardColor())
 
@@ -140,7 +140,7 @@ export struct SettingsPage {
     }
     .width('100%')
     .padding(16)
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.largeRadius())
     .backgroundColor(this.glassCardColor())
     .onClick(() => {
       router.pushUrl({ url: 'pages/AccountCenter' });

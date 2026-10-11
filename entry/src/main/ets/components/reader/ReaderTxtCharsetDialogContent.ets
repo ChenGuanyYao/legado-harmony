@@ -170,7 +170,7 @@ export struct ReaderTxtCharsetDialogContent {
     .width('100%')
     .constraintSize({ minHeight: 56 })
     .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-    .borderRadius(14)
+    .borderRadius(ThemeRuntime.largeRadius())
     .backgroundColor(this.draft === option.value ?
       ThemeRuntime.accentSurfaceColor(this.appDarkMode) : Color.Transparent)
     .enabled(!this.applying)

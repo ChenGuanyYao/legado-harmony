@@ -60,7 +60,7 @@ struct SearchExploreSettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
@@ -74,7 +74,7 @@ struct SearchExploreSettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
@@ -108,7 +108,7 @@ struct SearchExploreSettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 

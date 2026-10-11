@@ -155,7 +155,7 @@ export struct ReaderEyeCalibrationPanel {
             .fontSize(11)
             .fontColor('#FFFFFF')
             .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-            .borderRadius(12)
+            .borderRadius(ThemeRuntime.mediumRadius())
             .backgroundColor('#88000000')
             .margin({ bottom: 8 })
         }

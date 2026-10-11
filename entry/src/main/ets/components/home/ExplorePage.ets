@@ -503,7 +503,7 @@ export struct ExplorePage {
                 .fontColor(this.selectedPlatform === name ? '#FFFFFF' : this.primaryTextColor())
                 .padding({ left: 12, right: 12, top: 8, bottom: 8 })
                 .backgroundColor(this.selectedPlatform === name ? this.accentColor() : this.glassCardColor())
-                .borderRadius(18)
+                .borderRadius(ThemeRuntime.buttonRadius())
                 .border({ width: this.selectedPlatform === name ? 0 : 1, color: this.glassBorderColor() })
                 .onClick(() => {
                   this.switchExplorePlatform(name);
@@ -530,7 +530,7 @@ export struct ExplorePage {
                 .fontColor(this.selectedIndex === index ? '#FFFFFF' : this.secondaryTextColor())
                 .padding({ left: 12, right: 12, top: 7, bottom: 7 })
                 .backgroundColor(this.selectedIndex === index ? this.accentColor() : this.glassCardColor())
-                .borderRadius(17)
+                .borderRadius(ThemeRuntime.buttonRadius())
                 .border({ width: this.selectedIndex === index ? 0 : 1, color: this.glassBorderColor() })
                 .onClick(() => {
                   this.selectedIndex = index;
@@ -788,7 +788,7 @@ export struct ExplorePage {
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .constraintSize({ maxWidth: 68 })
                     .padding({ left: 6, right: 6, top: 2, bottom: 2 })
-                    .borderRadius(8)
+                    .borderRadius(ThemeRuntime.mediumRadius())
                     .backgroundColor(this.inputColor())
                     .margin({ left: 8 })
                 }
@@ -803,7 +803,7 @@ export struct ExplorePage {
               .width('100%')
               .height(44)
               .padding({ left: 14, right: 14 })
-              .borderRadius(12)
+              .borderRadius(ThemeRuntime.mediumRadius())
               .backgroundColor(option.sourceUrl === this.selectedSourceUrl ? this.exploreSelectedBackgroundColor() : '#00000000')
               .alignItems(VerticalAlign.Center)
               .onClick(() => {
@@ -960,7 +960,7 @@ export struct ExplorePage {
           .fontColor(this.secondaryTextColor())
           .width('100%')
           .padding(10)
-          .borderRadius(8)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .backgroundColor(this.inputColor())
       }
 
@@ -974,7 +974,7 @@ export struct ExplorePage {
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.secondaryTextColor())
         .backgroundColor(this.inputColor())
-        .borderRadius(10)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .padding(12)
         .enabled(!this.savingExploreSourceVariable)
         .onChange((value: string) => {

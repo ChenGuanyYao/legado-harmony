@@ -224,7 +224,7 @@ export struct SearchBookResultList {
     .width('100%')
     .padding(12)
     .backgroundColor(this.cardColor)
-    .borderRadius(8)
+    .borderRadius(ThemeRuntime.cardRadius())
     .border({ width: this.itemBorderWidth, color: this.itemBorderColor })
     .shadow({ radius: 10, color: this.shadowColor, offsetX: 0, offsetY: 4 })
     .onClick(() => {
@@ -352,7 +352,7 @@ export struct SearchBookResultList {
       .fontColor(BookDisplayHelper.getTagTextColor(index, this.isDarkMode()))
       .padding({ left: 7, right: 7, top: 3, bottom: 3 })
       .backgroundColor(BookDisplayHelper.getTagBackgroundColor(index, this.isDarkMode()))
-      .borderRadius(10)
+      .borderRadius(ThemeRuntime.mediumRadius())
       .margin({ right: 6, bottom: 4 })
   }
 

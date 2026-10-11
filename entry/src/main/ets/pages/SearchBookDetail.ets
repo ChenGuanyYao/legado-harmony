@@ -204,7 +204,7 @@ struct SearchBookDetailPage {
             .width('100%')
             .padding({ left: 16, right: 16, top: 14, bottom: 14 })
             .backgroundColor(this.cardColor())
-            .borderRadius(8)
+            .borderRadius(ThemeRuntime.cardRadius())
             .alignItems(VerticalAlign.Center)
 
             Flex({ wrap: FlexWrap.Wrap }) {
@@ -218,7 +218,7 @@ struct SearchBookDetailPage {
                   .fontColor(this.secondaryTextColor())
                   .padding({ left: 10, right: 10, top: 5, bottom: 5 })
                   .backgroundColor(this.inputColor())
-                  .borderRadius(14)
+                  .borderRadius(ThemeRuntime.buttonRadius())
                   .margin({ right: 8, bottom: 8 })
               }
 
@@ -228,7 +228,7 @@ struct SearchBookDetailPage {
                   .fontColor(this.secondaryTextColor())
                   .padding({ left: 10, right: 10, top: 5, bottom: 5 })
                   .backgroundColor(this.inputColor())
-                  .borderRadius(14)
+                  .borderRadius(ThemeRuntime.buttonRadius())
                   .margin({ right: 8, bottom: 8 })
               }
 
@@ -238,7 +238,7 @@ struct SearchBookDetailPage {
                   .fontColor(this.appDarkMode ? '#7DD89B' : '#0A7D36')
                   .padding({ left: 10, right: 10, top: 5, bottom: 5 })
                   .backgroundColor(this.appDarkMode ? '#173B24' : '#E8F5E9')
-                  .borderRadius(14)
+                  .borderRadius(ThemeRuntime.buttonRadius())
                   .margin({ right: 8, bottom: 8 })
               }
             }
@@ -279,7 +279,7 @@ struct SearchBookDetailPage {
             .width('100%')
             .padding(16)
             .backgroundColor(this.cardColor())
-            .borderRadius(8)
+            .borderRadius(ThemeRuntime.cardRadius())
             .margin({ top: 12 })
             .onClick(() => {
               this.openChapterList();
@@ -305,7 +305,7 @@ struct SearchBookDetailPage {
             .width('100%')
             .padding({ left: 20, right: 20, top: 18, bottom: 22 })
             .backgroundColor(this.cardColor())
-            .borderRadius(8)
+            .borderRadius(ThemeRuntime.cardRadius())
             .margin({ top: 12 })
           }
           .width('100%')
@@ -1261,7 +1261,7 @@ struct SearchBookDetailPage {
       .fontColor(BookDisplayHelper.getTagTextColor(index, this.appDarkMode))
       .padding({ left: 10, right: 10, top: 5, bottom: 5 })
       .backgroundColor(BookDisplayHelper.getTagBackgroundColor(index, this.appDarkMode))
-      .borderRadius(14)
+      .borderRadius(ThemeRuntime.buttonRadius())
       .margin({ right: 8, bottom: 8 })
   }
 

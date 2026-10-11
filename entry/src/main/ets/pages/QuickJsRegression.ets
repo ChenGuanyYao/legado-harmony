@@ -107,7 +107,7 @@ struct QuickJsRegressionPage {
       Text('从所选书源提取安全纯表达式，以数值、文本和 JSON 三组固定输入对比 Legacy 与 TaskPool QuickJS。不会发起网络请求，也不会读取或修改 Cookie、登录信息和书源变量。')
         .fontSize(12).fontColor(this.subTextColor()).lineHeight(19)
     }
-    .width('calc(100% - 24vp)').padding(16).borderRadius(16)
+    .width('calc(100% - 24vp)').padding(16).borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor()).alignItems(HorizontalAlign.Start)
   }
 
@@ -129,7 +129,7 @@ struct QuickJsRegressionPage {
         }, (stage: string): string => stage)
       }.width('100%')
     }
-    .width('calc(100% - 24vp)').padding(16).borderRadius(16)
+    .width('calc(100% - 24vp)').padding(16).borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor()).alignItems(HorizontalAlign.Start)
   }
 
@@ -151,7 +151,7 @@ struct QuickJsRegressionPage {
       TextInput({ text: this.searchText, placeholder: '搜索书源名称或地址' })
         .height(42).fontSize(14).fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor()).backgroundColor(this.softColor())
-        .borderRadius(12).padding({ left: 12, right: 12 })
+        .borderRadius(ThemeRuntime.mediumRadius()).padding({ left: 12, right: 12 })
         .onChange((value: string): void => { this.searchText = value; })
 
       Scroll() {
@@ -180,7 +180,7 @@ struct QuickJsRegressionPage {
         }
       }
     }
-    .width('calc(100% - 24vp)').padding(16).borderRadius(16)
+    .width('calc(100% - 24vp)').padding(16).borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor()).alignItems(HorizontalAlign.Start)
   }
 
@@ -229,7 +229,7 @@ struct QuickJsRegressionPage {
       Text('单次最多测试 50 个书源、300 个候选表达式；超出部分会在报告中标记。')
         .fontSize(11).fontColor(this.subTextColor()).width('100%')
     }
-    .width('calc(100% - 24vp)').padding(16).borderRadius(16)
+    .width('calc(100% - 24vp)').padding(16).borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor()).alignItems(HorizontalAlign.Start)
   }
 
@@ -279,7 +279,7 @@ struct QuickJsRegressionPage {
         .width('100%').scrollBar(BarState.Auto)
       }
     }
-    .width('calc(100% - 24vp)').padding(16).borderRadius(16)
+    .width('calc(100% - 24vp)').padding(16).borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor()).alignItems(HorizontalAlign.Start)
   }
 
@@ -299,7 +299,7 @@ struct QuickJsRegressionPage {
         .fontColor(this.validationCandidateColor(item))
     }
     .width('100%').height(60).padding({ left: 10, right: 10 })
-    .borderRadius(10).backgroundColor(this.softColor())
+    .borderRadius(ThemeRuntime.mediumRadius()).backgroundColor(this.softColor())
   }
 
   @Builder
@@ -317,7 +317,7 @@ struct QuickJsRegressionPage {
             Text(`${QuickJsRegressionIssueCategory.label(item.category)} ${item.count}`)
               .fontSize(11).fontColor(this.issueCategoryColor(item.category))
               .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-              .borderRadius(12).backgroundColor(this.softColor())
+              .borderRadius(ThemeRuntime.mediumRadius()).backgroundColor(this.softColor())
           }, (item: QuickJsCategoryStat): string => item.category)
         }.width('100%')
       } else {
@@ -339,7 +339,7 @@ struct QuickJsRegressionPage {
                   .fontSize(10).fontColor(this.issueCategoryColor(item.errorCategory))
               }
               .width('100%').height(52).padding({ left: 10, right: 10 })
-              .borderRadius(10).backgroundColor(this.softColor())
+              .borderRadius(ThemeRuntime.mediumRadius()).backgroundColor(this.softColor())
             }
           }, (item: QuickJsRegressionFixtureRecord): string =>
             `${item.sourceUrl}-${item.stage}-${item.field}-${item.fingerprint}`)
@@ -362,7 +362,7 @@ struct QuickJsRegressionPage {
       Text('精确脚本仅保存在应用私有目录，用于后续版本复测；导出文件会移除 Cookie、URL 参数、原始结果和脚本文本字面量。')
         .fontSize(11).fontColor(this.subTextColor()).lineHeight(17).width('100%')
     }
-    .width('calc(100% - 24vp)').padding(16).borderRadius(16)
+    .width('calc(100% - 24vp)').padding(16).borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor()).alignItems(HorizontalAlign.Start)
   }
 
@@ -395,7 +395,7 @@ struct QuickJsRegressionPage {
               Text(`${QuickJsRegressionIssueCategory.label(item.category)} ${item.count}`)
                 .fontSize(11).fontColor(this.issueCategoryColor(item.category))
                 .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-                .borderRadius(12).backgroundColor(this.softColor())
+                .borderRadius(ThemeRuntime.mediumRadius()).backgroundColor(this.softColor())
             }, (item: QuickJsCategoryStat): string => item.category)
           }.width('100%')
         }
@@ -416,7 +416,7 @@ struct QuickJsRegressionPage {
         }
       }
     }
-    .width('calc(100% - 24vp)').padding(16).borderRadius(16)
+    .width('calc(100% - 24vp)').padding(16).borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor()).alignItems(HorizontalAlign.Start)
   }
 
@@ -459,7 +459,7 @@ struct QuickJsRegressionPage {
         Text(`分类：${QuickJsRegressionIssueCategory.label(item.errorCategory)}`)
           .fontSize(10).fontColor(this.issueCategoryColor(item.errorCategory))
       }
-    }.width('100%').padding(10).borderRadius(10).backgroundColor(this.softColor())
+    }.width('100%').padding(10).borderRadius(ThemeRuntime.mediumRadius()).backgroundColor(this.softColor())
       .alignItems(HorizontalAlign.Start)
   }
 

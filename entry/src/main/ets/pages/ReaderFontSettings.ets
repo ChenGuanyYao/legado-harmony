@@ -171,7 +171,7 @@ struct ReaderFontSettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
@@ -187,7 +187,7 @@ struct ReaderFontSettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
@@ -206,7 +206,7 @@ struct ReaderFontSettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
         }
@@ -762,7 +762,7 @@ struct ReaderFontSettingsPage {
           .fontColor(this.primaryTextColor())
           .placeholderColor(this.subTextColor())
           .backgroundColor(this.inputColor())
-          .borderRadius(8)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .onEditChange((isEditing: boolean) => {
             this.setRegexInputEditing(rule.id, 'name', isEditing);
           })
@@ -780,7 +780,7 @@ struct ReaderFontSettingsPage {
           .fontColor(this.primaryTextColor())
           .placeholderColor(this.subTextColor())
           .backgroundColor(this.inputColor())
-          .borderRadius(8)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .onEditChange((isEditing: boolean) => {
             this.setRegexInputEditing(rule.id, 'pattern', isEditing);
           })

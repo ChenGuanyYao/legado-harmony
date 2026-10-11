@@ -358,7 +358,7 @@ export struct ColorCodePicker {
           .fontColor(this.primaryTextColor())
           .placeholderColor(this.subTextColor())
           .backgroundColor(this.inputColor())
-          .borderRadius(8)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .onClick(() => {
             this.openPicker();
           })
@@ -523,7 +523,7 @@ export struct ColorCodePicker {
           .fontSize(17)
           .fontColor(this.primaryTextColor())
           .backgroundColor(Color.Transparent)
-          .borderRadius(8)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .layoutWeight(1)
           .onChange((text: string) => {
             if (/^#?[0-9a-fA-F]{6}$/.test(text.trim())) {

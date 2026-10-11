@@ -127,7 +127,7 @@ export struct ReaderLayoutElementSettingsPanel {
     .width('100%')
     .constraintSize({ minHeight: 64 })
     .padding({ left: 12, right: 8 })
-    .borderRadius(14)
+    .borderRadius(ThemeRuntime.largeRadius())
     .backgroundColor(this.dark ? '#1FFFFFFF' : '#0D000000')
     .alignItems(VerticalAlign.Center)
   }

@@ -153,7 +153,7 @@ struct SettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
@@ -176,7 +176,7 @@ struct SettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
@@ -186,7 +186,7 @@ struct SettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
@@ -234,7 +234,7 @@ struct SettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
@@ -248,7 +248,7 @@ struct SettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
@@ -284,7 +284,7 @@ struct SettingsPage {
           .backgroundColor(this.previewBackgroundColor())
           .backgroundImage(this.previewBackgroundImage(), ImageRepeat.NoRepeat)
           .backgroundImageSize(this.previewBackgroundImageSize())
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .clip(true)
           .margin({ left: 12, right: 12, bottom: 32 })
         }
@@ -2119,7 +2119,7 @@ struct SettingsPage {
             .height(36)
             .padding({ left: 10, right: 10 })
             .backgroundColor(this.inputColor())
-            .borderRadius(8)
+            .borderRadius(ThemeRuntime.mediumRadius())
             .onChange((value: string) => {
               this.customThemeNameDraft = value.substring(0, 20);
             })
@@ -2275,7 +2275,7 @@ struct SettingsPage {
           .padding(0)
           .textAlign(TextAlign.Center)
           .backgroundColor(this.inputColor())
-          .borderRadius(6)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .onChange((value: string) => {
             this.typographyValueDraft = value.replace(/[^0-9]/g, '').substring(0, 3);
           })

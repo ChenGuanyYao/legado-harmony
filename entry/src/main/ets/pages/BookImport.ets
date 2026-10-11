@@ -51,7 +51,7 @@ struct BookImportPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
         }
@@ -77,7 +77,7 @@ struct BookImportPage {
         }
         .width('78%')
         .padding(20)
-        .borderRadius(16)
+        .borderRadius(ThemeRuntime.cardRadius())
         .backgroundColor(this.cardColor())
         .shadow({ radius: 18, color: this.appDarkMode ? '#66000000' : '#28000000' })
         .position({ x: '11%', y: '42%' })

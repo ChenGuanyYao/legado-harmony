@@ -1147,7 +1147,7 @@ export struct BookshelfPage {
                     .layoutWeight(1)
                     .alignItems(HorizontalAlign.Start)
                     .backgroundColor(this.glassCardColor())
-                    .borderRadius(8)
+                    .borderRadius(ThemeRuntime.mediumRadius())
                     .clip(true)
                     .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
                     .shadow({ radius: ThemeRuntime.glassShadowRadius(), color: this.glassShadowColor(), offsetX: ThemeRuntime.glassShadowOffsetX(), offsetY: ThemeRuntime.glassShadowOffsetY() })
@@ -1504,7 +1504,7 @@ export struct BookshelfPage {
                     }
                     .width('100%')
                     .padding(5)
-                    .borderRadius(9)
+                    .borderRadius(ThemeRuntime.mediumRadius())
                     .backgroundColor(this.glassCardColor())
                     .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
                     .onClick(() => this.applyNetworkCover(candidate))
@@ -1578,7 +1578,7 @@ export struct BookshelfPage {
             .fontSize(13)
             .fontColor(this.activeShelfGroupId === group.groupId ? '#FFFFFF' : this.primaryTextColor())
             .padding({ left: 13, right: 13, top: 7, bottom: 7 })
-            .borderRadius(16)
+            .borderRadius(ThemeRuntime.buttonRadius())
             .backgroundColor(this.activeShelfGroupId === group.groupId ? this.accentColor() : this.glassCardColor())
             .border({ width: this.activeShelfGroupId === group.groupId ? 0 : 1, color: this.glassBorderColor() })
             .onClick(() => {
@@ -1632,7 +1632,7 @@ export struct BookshelfPage {
       .fontSize(13)
       .fontColor(this.activeShelfGroupId === groupId ? '#FFFFFF' : this.primaryTextColor())
       .padding({ left: 13, right: 13, top: 7, bottom: 7 })
-      .borderRadius(16)
+      .borderRadius(ThemeRuntime.buttonRadius())
       .backgroundColor(this.activeShelfGroupId === groupId ? this.accentColor() : this.glassCardColor())
       .border({ width: this.activeShelfGroupId === groupId ? 0 : 1, color: this.glassBorderColor() })
       .onClick(() => {
@@ -1675,7 +1675,7 @@ export struct BookshelfPage {
         .layoutWeight(1)
         .height(42)
         .fontSize(14)
-        .borderRadius(10)
+        .borderRadius(ThemeRuntime.buttonRadius())
         .backgroundColor('#E53935')
         .fontColor('#FFFFFF')
         .enabled(this.selectedBookUrls.length > 0)
@@ -1686,7 +1686,7 @@ export struct BookshelfPage {
         .layoutWeight(1)
         .height(42)
         .fontSize(14)
-        .borderRadius(10)
+        .borderRadius(ThemeRuntime.buttonRadius())
         .backgroundColor(this.buttonColor())
         .fontColor('#FFFFFF')
         .enabled(this.selectedBookUrls.length > 0)
@@ -1700,7 +1700,7 @@ export struct BookshelfPage {
         .layoutWeight(1)
         .height(42)
         .fontSize(14)
-        .borderRadius(10)
+        .borderRadius(ThemeRuntime.buttonRadius())
         .backgroundColor(this.inputColor())
         .fontColor(this.primaryTextColor())
         .enabled(this.selectedBookUrls.length > 0)
@@ -1763,10 +1763,10 @@ export struct BookshelfPage {
       Text(`只能保存本地书籍的源文件，缓存书籍无法保存。将导出选中的 ${this.selectedLocalBooks().length} 本本地书籍。`)
         .fontSize(14).fontColor(this.secondaryTextColor()).textAlign(TextAlign.Center)
       Row({ space: 12 }) {
-        Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(10)
+        Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeBatchExportDialog())
-        Button('确认', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(10)
+        Button('确认', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.buttonColor()).fontColor('#FFFFFF')
           .onClick(() => {
             this.closeBatchExportDialog();
@@ -1843,7 +1843,7 @@ export struct BookshelfPage {
       .width('100%')
       .height(38)
       .padding({ left: 12, right: 12 })
-      .borderRadius(8)
+      .borderRadius(ThemeRuntime.mediumRadius())
       .backgroundColor(this.glassCardColor())
       .maxLines(1)
       .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -1856,12 +1856,12 @@ export struct BookshelfPage {
       Text('新增书籍分组').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
       TextInput({ placeholder: '输入分组名称', text: this.newBookGroupName })
         .width('100%').height(42).backgroundColor(this.inputColor()).fontColor(this.primaryTextColor())
-        .borderRadius(10).onChange((value: string) => this.newBookGroupName = value)
+        .borderRadius(ThemeRuntime.mediumRadius()).onChange((value: string) => this.newBookGroupName = value)
       Row({ space: 12 }) {
-        Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(10)
+        Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeAddBookGroupDialog())
-        Button('新增', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(10)
+        Button('新增', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.buttonColor()).fontColor('#FFFFFF').enabled(!!this.newBookGroupName.trim())
           .onClick(() => this.addShelfBookGroup())
       }.width('100%')
@@ -1922,12 +1922,12 @@ export struct BookshelfPage {
       Text('重命名分组').fontSize(18).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
       TextInput({ placeholder: '输入分组名称', text: this.renameBookGroupName })
         .width('100%').height(42).backgroundColor(this.inputColor()).fontColor(this.primaryTextColor())
-        .borderRadius(10).onChange((value: string) => this.renameBookGroupName = value)
+        .borderRadius(ThemeRuntime.mediumRadius()).onChange((value: string) => this.renameBookGroupName = value)
       Row({ space: 12 }) {
-        Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(10)
+        Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeRenameBookGroupDialog())
-        Button('保存', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(10)
+        Button('保存', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.buttonColor()).fontColor('#FFFFFF').enabled(!!this.renameBookGroupName.trim())
           .onClick(() => this.renameShelfBookGroup())
       }.width('100%')
@@ -1953,10 +1953,10 @@ export struct BookshelfPage {
       Text(`删除“${this.pendingDeleteBookGroup?.groupName || ''}”后，分组内书籍将移到未分组。`)
         .fontSize(14).fontColor(this.secondaryTextColor()).textAlign(TextAlign.Center)
       Row({ space: 12 }) {
-        Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(10)
+        Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeDeleteBookGroupDialog())
-        Button('删除', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(10)
+        Button('删除', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor('#E53935').fontColor('#FFFFFF').onClick(() => this.deleteShelfBookGroup())
       }.width('100%')
     }    .padding(22)
@@ -1981,10 +1981,10 @@ export struct BookshelfPage {
       Text(`确定从书架移除选中的 ${this.selectedBookUrls.length} 本书吗？`)
         .fontSize(14).fontColor(this.secondaryTextColor()).textAlign(TextAlign.Center)
       Row({ space: 12 }) {
-        Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(10)
+        Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeBatchDeleteDialog())
-        Button('删除', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(10)
+        Button('删除', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor('#E53935').fontColor('#FFFFFF').onClick(() => this.deleteSelectedBooks())
       }.width('100%')
     }    .padding(22)
@@ -2089,7 +2089,7 @@ export struct BookshelfPage {
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
         .backgroundColor(this.inputColor())
-        .borderRadius(12)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .onChange((value: string) => {
           this.editingBookName = value;
         })
@@ -2106,7 +2106,7 @@ export struct BookshelfPage {
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
         .backgroundColor(this.inputColor())
-        .borderRadius(12)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .onChange((value: string) => {
           this.editingBookAuthor = value;
         })
@@ -2193,7 +2193,7 @@ export struct BookshelfPage {
           .backgroundColor(this.inputColor())
           .fontColor(this.primaryTextColor())
           .placeholderColor(this.subTextColor())
-          .borderRadius(12)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .onChange((value: string) => {
             this.tagInput = value;
           })
@@ -2270,7 +2270,7 @@ export struct BookshelfPage {
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
         .backgroundColor(this.inputColor())
-        .borderRadius(12)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .onChange((value: string) => {
           this.customNetworkCoverUrl = value;
         })
@@ -2282,7 +2282,7 @@ export struct BookshelfPage {
         Button('取消', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.inputColor())
           .fontColor(this.primaryTextColor())
           .onClick(() => {
@@ -2292,7 +2292,7 @@ export struct BookshelfPage {
         Button('设为封面', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.buttonColor())
           .fontColor('#FFFFFF')
           .enabled(/^https?:\/\/[^\s]+$/i.test(this.customNetworkCoverUrl.trim()))
@@ -3213,7 +3213,7 @@ export struct BookshelfPage {
             .fontColor(this.sourceTagTextColor())
             .padding({ left: 6, right: 6, top: 3, bottom: 3 })
             .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode))
-            .borderRadius(8)
+            .borderRadius(ThemeRuntime.mediumRadius())
             .position({ x: '100%', y: 0 })
             .translate({ x: -58, y: 7 })
             .constraintSize({ maxWidth: 52 })
@@ -3554,7 +3554,7 @@ export struct BookshelfPage {
           .width(this.openingBookWidth())
           .height(this.openingBookHeight())
           .backgroundColor(this.inputColor())
-          .borderRadius(8)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
           .shadow({ radius: 24, color: this.appDarkMode ? '#90000000' : '#38000000', offsetX: 8, offsetY: 10 })
 
@@ -3626,7 +3626,7 @@ export struct BookshelfPage {
                 .fontColor(this.sourceTagTextColor())
                 .padding({ left: 6, right: 6, top: 2, bottom: 2 })
                 .backgroundColor(this.sourceTagBackgroundColor())
-                .borderRadius(4)
+                .borderRadius(ThemeRuntime.smallRadius())
                 .margin({ left: 8 })
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -3736,7 +3736,7 @@ export struct BookshelfPage {
                 .fontColor(this.sourceTagTextColor())
                 .padding({ left: 8, right: 8, top: 2, bottom: 2 })
                 .backgroundColor(this.sourceTagBackgroundColor())
-                .borderRadius(4)
+                .borderRadius(ThemeRuntime.smallRadius())
                 .margin({ right: 8 })
             }
 
@@ -3938,7 +3938,7 @@ export struct BookshelfPage {
       .textAlign(TextAlign.Center)
       .width(18)
       .height(16)
-      .borderRadius(5)
+      .borderRadius(ThemeRuntime.smallRadius())
       .backgroundColor(this.bookTypeBadgeColor(book))
       .opacity(0.92)
       .border({ width: 1, color: '#66FFFFFF' })
@@ -4053,7 +4053,7 @@ export struct BookshelfPage {
       .fontColor(BookDisplayHelper.getTagTextColor(index, this.appDarkMode))
       .padding({ left: 8, right: 8, top: 3, bottom: 3 })
       .backgroundColor(BookDisplayHelper.getTagBackgroundColor(index, this.appDarkMode))
-      .borderRadius(12)
+      .borderRadius(ThemeRuntime.mediumRadius())
       .margin({ left: 4, bottom: 6 })
       .maxLines(1)
       .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -4178,7 +4178,7 @@ export struct BookshelfPage {
           .height(42)
           .padding({ left: 10, right: 10 })
           .backgroundColor(this.appDarkMode ? '#1FFFFFFF' : '#0D000000')
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .enabled(!this.isCacheTocLoading)
           .onChange((value: string) => {
             this.cacheRangeDraft = value;
@@ -4211,7 +4211,7 @@ export struct BookshelfPage {
                   .fontColor(this.appDarkMode ? '#7CC7A0' : '#1F8F55')
                   .padding({ left: 6, right: 6, top: 2, bottom: 2 })
                   .backgroundColor(this.appDarkMode ? '#24382F' : '#E6F4EC')
-                  .borderRadius(4)
+                  .borderRadius(ThemeRuntime.smallRadius())
               }
             }
             .width('100%')
@@ -4480,7 +4480,7 @@ export struct BookshelfPage {
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
         .backgroundColor(this.inputColor())
-        .borderRadius(12)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .onChange((value: string) => {
           this.privateShelfPasswordInput = value;
           this.privateShelfPasswordError = '';
@@ -5894,7 +5894,7 @@ export struct BookshelfPage {
     .width('100%')
     .height(34)
     .padding({ left: 10, right: 10 })
-    .borderRadius(10)
+    .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(this.shelfScope === scope ? this.selectedSoftBackgroundColor() : '#00000000')
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
@@ -5986,7 +5986,7 @@ export struct BookshelfPage {
     .width('100%')
     .height(38)
     .padding({ left: 10, right: 10 })
-    .borderRadius(10)
+    .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(this.bookshelfLayoutMode === mode ? this.selectedSoftBackgroundColor() : '#00000000')
     .alignItems(VerticalAlign.Center)
     .onClick(() => this.applyBookshelfLayoutMode(mode))
@@ -6096,7 +6096,7 @@ export struct BookshelfPage {
     .width('100%')
     .height(34)
     .padding({ left: 10, right: 10 })
-    .borderRadius(10)
+    .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(this.sortMode === mode ? this.selectedSoftBackgroundColor() : '#00000000')
     .alignItems(VerticalAlign.Center)
     .onClick(() => {

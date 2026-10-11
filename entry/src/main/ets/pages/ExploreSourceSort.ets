@@ -172,7 +172,7 @@ struct ExploreSourceSortPage {
               .width('100%')
               .padding(12)
               .backgroundColor(this.cardColor())
-              .borderRadius(8)
+              .borderRadius(ThemeRuntime.cardRadius())
             }
           }, (source: BookSource) => source.bookSourceUrl)
 
@@ -314,7 +314,7 @@ struct ExploreSourceSortPage {
     .width(280)
     .padding(12)
     .backgroundColor(this.cardColor())
-    .borderRadius(8)
+    .borderRadius(ThemeRuntime.cardRadius())
     .shadow({ radius: 12, color: this.appDarkMode ? '#66000000' : '#22000000', offsetX: 0, offsetY: 4 })
   }
 

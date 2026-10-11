@@ -120,7 +120,7 @@ struct DataBackupPage {
             .width('calc(100% - 24vp)')
             .padding(14)
             .margin({ left: 12, right: 12 })
-            .borderRadius(16)
+            .borderRadius(ThemeRuntime.cardRadius())
             .backgroundColor(this.cardColor())
 
             if (this.importReady) {
@@ -183,7 +183,7 @@ struct DataBackupPage {
           }
           .width(240)
           .padding(22)
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.largeRadius())
           .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
           .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
         }
@@ -238,7 +238,7 @@ struct DataBackupPage {
     }
     .width('calc(100% - 24vp)')
     .margin({ left: 12, right: 12 })
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .clip(true)
     .backgroundColor(this.cardColor())
   }

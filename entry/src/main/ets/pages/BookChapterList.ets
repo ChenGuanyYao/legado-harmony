@@ -195,7 +195,7 @@ struct BookChapterListPage {
       TextInput({ placeholder: '搜索章节名', text: this.keyword })
         .layoutWeight(1)
         .height(38)
-        .borderRadius(8)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .backgroundColor(this.inputColor())
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
@@ -211,7 +211,7 @@ struct BookChapterListPage {
         .fontColor(this.accentColor())
         .padding({ left: 13, right: 13, top: 10, bottom: 10 })
         .backgroundColor(this.inputColor())
-        .borderRadius(8)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .onClick((): void => {
           this.reverseOrder = !this.reverseOrder;
           this.rebuildDisplayList();
@@ -294,7 +294,7 @@ struct BookChapterListPage {
                   .fontColor(this.appDarkMode ? '#7CC7A0' : '#1F8F55')
                   .padding({ left: 7, right: 7, top: 3, bottom: 3 })
                   .backgroundColor(this.appDarkMode ? '#24382F' : '#E6F4EC')
-                  .borderRadius(10)
+                  .borderRadius(ThemeRuntime.mediumRadius())
               }
             }
             .width('100%')

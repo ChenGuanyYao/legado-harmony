@@ -95,7 +95,7 @@ struct OpdsServersPage {
         }
         .width('78%')
         .padding(20)
-        .borderRadius(16)
+        .borderRadius(ThemeRuntime.cardRadius())
         .backgroundColor(this.cardColor())
         .shadow({ radius: 18, color: this.appDarkMode ? '#66000000' : '#28000000' })
         .position({ x: '11%', y: '42%' })
@@ -176,7 +176,7 @@ struct OpdsServersPage {
               ListItem() {
                 this.serverRow(server)
               }
-              .borderRadius(8)
+              .borderRadius(ThemeRuntime.mediumRadius())
               .clip(true)
               .swipeAction(this.busy ? {} : {
                 end: {
@@ -253,7 +253,7 @@ struct OpdsServersPage {
     .width('100%')
     .padding({ left: 16, right: 16, top: 10, bottom: 10 })
     .backgroundColor(this.cardColor())
-    .borderRadius(8)
+    .borderRadius(ThemeRuntime.cardRadius())
     .gesture(
       LongPressGesture({ repeat: false })
         .onAction((event: GestureEvent) => {

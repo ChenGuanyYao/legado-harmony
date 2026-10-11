@@ -126,7 +126,7 @@ struct AboutPage {
     .width('100%')
     .padding(16)
     .backgroundColor(this.cardColor())
-    .borderRadius(10)
+    .borderRadius(ThemeRuntime.cardRadius())
     .margin({ left: 16, right: 16, bottom: 12 })
     .alignItems(HorizontalAlign.Start)
   }
@@ -152,7 +152,7 @@ struct AboutPage {
     .width('100%')
     .padding(16)
     .backgroundColor(this.cardColor())
-    .borderRadius(10)
+    .borderRadius(ThemeRuntime.cardRadius())
     .margin({ left: 16, right: 16, bottom: 12 })
     .alignItems(HorizontalAlign.Start)
   }
@@ -205,7 +205,7 @@ struct AboutPage {
     .width('100%')
     .padding(16)
     .backgroundColor(this.cardColor())
-    .borderRadius(10)
+    .borderRadius(ThemeRuntime.cardRadius())
     .margin({ left: 16, right: 16, bottom: 12 })
     .alignItems(VerticalAlign.Center)
     .onClick(() => {

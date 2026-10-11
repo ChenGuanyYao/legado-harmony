@@ -411,7 +411,7 @@ export struct BookChangeSourceDialog {
                 .width('100%')
                 .padding(12)
                 .backgroundColor(this.inputColor())
-                .borderRadius(10)
+                .borderRadius(ThemeRuntime.mediumRadius())
               }
             }, (book: SearchBook) => `${book.origin}|${book.bookUrl}`)
 

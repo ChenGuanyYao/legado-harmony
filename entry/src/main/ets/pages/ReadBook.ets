@@ -8762,7 +8762,7 @@ struct ReadBookPage {
           .fontWeight(FontWeight.Medium)
           .fontColor('#F8FFFFFF')
           .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-          .borderRadius(18)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor('#B35C7569')
           .shadow({ radius: 12, color: '#45000000', offsetX: 0, offsetY: 4 })
       }

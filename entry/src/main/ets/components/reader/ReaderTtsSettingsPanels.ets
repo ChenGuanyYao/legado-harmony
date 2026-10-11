@@ -106,7 +106,7 @@ export struct ReaderTtsQuickSettingsPanel {
       .height(44)
       .padding({ left: 14, right: 14 })
       .backgroundColor(this.chipColor())
-      .borderRadius(8)
+      .borderRadius(ThemeRuntime.mediumRadius())
       .onClick(() => this.onOpenVoicePicker())
 
       Row() {
@@ -327,7 +327,7 @@ export struct ReaderTtsVoicePickerPanel {
     .width('100%')
     .constraintSize({ minHeight: 48 })
     .padding({ left: 12, right: 12, top: 9, bottom: 9 })
-    .borderRadius(8)
+    .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(selected ? this.selectedColor : Color.Transparent)
     .onClick(action)
   }

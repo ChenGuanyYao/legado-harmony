@@ -160,7 +160,7 @@ export struct ReaderTtsPlayerPanel {
               .fontColor(this.primaryTextColor)
               .width('100%')
               .padding({ left: 8, right: 8, top: 6, bottom: 6 })
-              .borderRadius(8)
+              .borderRadius(ThemeRuntime.mediumRadius())
               .backgroundColor(this.darkMode ? '#24FFFFFF' : '#12000000')
           }
           ListItem() {
@@ -203,7 +203,7 @@ export struct ReaderTtsPlayerPanel {
     .layoutWeight(1)
     .width('100%')
     .padding(14)
-    .borderRadius(14)
+    .borderRadius(ThemeRuntime.largeRadius())
     .backgroundColor(ThemeRuntime.accentSurfaceColor(this.darkMode))
   }
 
@@ -230,7 +230,7 @@ export struct ReaderTtsPlayerPanel {
         .width('58%')
         .height('88%')
         .constraintSize({ maxWidth: 260, maxHeight: 360 })
-        .borderRadius(10)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .backgroundColor(this.accentColor)
         .justifyContent(FlexAlign.Center)
       }
@@ -397,7 +397,7 @@ export struct ReaderTtsPlayerPanel {
       .width('100%')
       .height(44)
       .padding({ left: 12, right: 10 })
-      .borderRadius(12)
+      .borderRadius(ThemeRuntime.mediumRadius())
       .backgroundColor(this.darkMode ? '#20FFFFFF' : '#0D000000')
     }
   }
@@ -507,7 +507,7 @@ export struct ReaderTtsPlayerPanel {
     }
     .height(44)
     .padding({ left: 10, right: 10 })
-    .borderRadius(12)
+    .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(danger ? '#D94841' : (this.darkMode ? '#20FFFFFF' : '#0D000000'))
     .alignItems(VerticalAlign.Center)
     .accessibilityText(accessibility)
@@ -534,7 +534,7 @@ export struct ReaderTtsPlayerPanel {
     .layoutWeight(1)
     .height(44)
     .padding({ left: 12, right: 10 })
-    .borderRadius(12)
+    .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(this.darkMode ? '#20FFFFFF' : '#0D000000')
     .alignItems(VerticalAlign.Center)
     .accessibilityText('选择音色')

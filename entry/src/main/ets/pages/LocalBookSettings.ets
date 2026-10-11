@@ -127,7 +127,7 @@ struct LocalBookSettingsPage {
     .width('100%')
     .padding({ left: 14, right: 14, top: 12, bottom: 12 })
     .backgroundColor(this.cardColor())
-    .borderRadius(8)
+    .borderRadius(ThemeRuntime.cardRadius())
   }
 
   async loadBooks(): Promise<void> {

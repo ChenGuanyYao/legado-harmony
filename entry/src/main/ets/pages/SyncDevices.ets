@@ -87,7 +87,7 @@ struct SyncDevicesPage {
             .width('calc(100% - 24vp)')
             .padding(20)
             .margin({ left: 12, right: 12, top: 20 })
-            .borderRadius(16)
+            .borderRadius(ThemeRuntime.cardRadius())
             .backgroundColor(this.cardColor())
           } else {
             this.sectionTitle('已登录设备')
@@ -106,7 +106,7 @@ struct SyncDevicesPage {
             }
             .width('calc(100% - 24vp)')
             .margin({ left: 12, right: 12 })
-            .borderRadius(16)
+            .borderRadius(ThemeRuntime.cardRadius())
             .clip(true)
             .backgroundColor(this.cardColor())
 
@@ -151,7 +151,7 @@ struct SyncDevicesPage {
               .fontSize(11)
               .fontColor(this.accentColor())
               .padding({ left: 7, right: 7, top: 2, bottom: 2 })
-              .borderRadius(9)
+              .borderRadius(ThemeRuntime.mediumRadius())
               .backgroundColor(this.softColor())
           } else if (device.revokedAt) {
             Text('已移除')
@@ -280,7 +280,7 @@ struct SyncDevicesPage {
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
         .backgroundColor(this.softColor())
-        .borderRadius(10)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .maxLength(80)
         .onChange((value: string) => {
           this.renameDeviceName = value;
@@ -289,7 +289,7 @@ struct SyncDevicesPage {
         Button('取消', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.cardColor())
           .fontColor(this.primaryTextColor())
           .onClick(() => {
@@ -298,7 +298,7 @@ struct SyncDevicesPage {
         Button(this.renaming ? '保存中' : '保存', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.accentColor())
           .fontColor('#FFFFFF')
           .enabled(!!this.renameDeviceName.trim() && !this.renaming)

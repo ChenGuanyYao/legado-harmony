@@ -485,7 +485,7 @@ struct ReaderReplaceRulesPage {
       TextInput({ placeholder: '规则 URL（兼容阅读/YueDu 导出）', text: this.importUrl })
         .width('100%')
         .height(48)
-        .borderRadius(8)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .backgroundColor(this.inputColor())
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
@@ -720,7 +720,7 @@ struct ReaderReplaceRulesPage {
     .width('100%')
     .padding(14)
     .backgroundColor(this.cardColor())
-    .borderRadius(14)
+    .borderRadius(ThemeRuntime.cardRadius())
     .border({ width: ThemeRuntime.glassBorderWidth(), color: ThemeRuntime.glassBorderColor(this.appDarkMode) })
     .opacity(rule.enabled ? 1 : 0.5)
     .gesture(
@@ -782,7 +782,7 @@ struct ReaderReplaceRulesPage {
         }
         .width('100%')
         .padding(10)
-        .borderRadius(10)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .backgroundColor(this.inputColor())
       } else {
         Text(this.rules.length === 0 ? '尚未配置规则，可点击右下角新增。' :
@@ -795,7 +795,7 @@ struct ReaderReplaceRulesPage {
     .width('calc(100% - 32vp)')
     .padding(14)
     .margin({ left: 16, right: 16, top: 12 })
-    .borderRadius(14)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .border({ width: ThemeRuntime.glassBorderWidth(), color: ThemeRuntime.glassBorderColor(this.appDarkMode) })
   }
@@ -1074,7 +1074,7 @@ struct ReaderReplaceRulesPage {
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
         .backgroundColor(this.inputColor())
-        .borderRadius(12)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .onChange((nextValue: string) => {
           onChange(nextValue);
           this.saveRuleFormDraft();
@@ -1094,7 +1094,7 @@ struct ReaderReplaceRulesPage {
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
         .backgroundColor(this.inputColor())
-        .borderRadius(12)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .padding(12)
         .onChange((nextValue: string) => {
           onChange(nextValue);

@@ -126,7 +126,7 @@ export struct ReaderTypographyStepper {
           .padding(0)
           .textAlign(TextAlign.Center)
           .backgroundColor(this.inputColor)
-          .borderRadius(6)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .onChange((value: string) => {
             this.inputDraft = value.replace(/[^0-9]/g, '').substring(0, 3);
           })

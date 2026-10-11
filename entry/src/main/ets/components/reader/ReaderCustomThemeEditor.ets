@@ -224,7 +224,7 @@ export struct ReaderCustomThemeEditor {
         .height(36)
         .padding({ left: 10, right: 10 })
         .backgroundColor(this.fieldColor())
-        .borderRadius(8)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .onChange((value: string) => {
           this.nameDraft = value.substring(0, 20);
         })

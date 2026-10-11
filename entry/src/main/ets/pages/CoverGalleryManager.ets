@@ -604,7 +604,7 @@ struct CoverGalleryManagerPage {
         .fontSize(13)
         .fontColor('#FFFFFF')
         .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-        .borderRadius(6)
+        .borderRadius(ThemeRuntime.smallRadius())
         .backgroundColor(this.accentColor())
         .margin({ left: 10 })
 
@@ -649,7 +649,7 @@ struct CoverGalleryManagerPage {
         }
         .layoutWeight(1)
         .padding({ top: 12, bottom: 12 })
-        .borderRadius(8)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .backgroundColor(this.inputColor())
 
         Column() {
@@ -664,7 +664,7 @@ struct CoverGalleryManagerPage {
         }
         .layoutWeight(1)
         .padding({ top: 12, bottom: 12 })
-        .borderRadius(8)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .backgroundColor(this.inputColor())
       }
       .width('100%')
@@ -752,7 +752,7 @@ struct CoverGalleryManagerPage {
           .fontSize(12)
           .fontColor(this.accentColor())
           .padding({ left: 8, right: 8, top: 4, bottom: 4 })
-          .borderRadius(5)
+          .borderRadius(ThemeRuntime.smallRadius())
           .backgroundColor(this.selectedColor())
       } else {
         Text('选择')
@@ -763,7 +763,7 @@ struct CoverGalleryManagerPage {
     .width('100%')
     .height(78)
     .padding({ left: 12, right: 12 })
-    .borderRadius(8)
+    .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(this.selectedAlbumId === album.id ? this.selectedColor() : this.inputColor())
     .onClick(() => {
       this.selectAlbum(album);
@@ -804,7 +804,7 @@ struct CoverGalleryManagerPage {
           .fontColor(this.primaryTextColor())
           .placeholderColor(this.subTextColor())
           .backgroundColor(this.inputColor())
-          .borderRadius(8)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .onChange((value: string) => {
             this.renameAlbumName = value;
           })
@@ -837,7 +837,7 @@ struct CoverGalleryManagerPage {
       .fontColor('#FFFFFF')
       .height(38)
       .layoutWeight(1)
-      .borderRadius(8)
+      .borderRadius(ThemeRuntime.buttonRadius())
       .backgroundColor(color)
       .onClick(action)
   }
@@ -920,7 +920,7 @@ struct CoverGalleryManagerPage {
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
         .backgroundColor(this.inputColor())
-        .borderRadius(8)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .onChange((value: string) => {
           this.newAlbumName = value;
         })
@@ -1063,7 +1063,7 @@ struct CoverGalleryManagerPage {
       .layoutWeight(1)
       .fontColor('#FFFFFF')
       .backgroundColor(color)
-      .borderRadius(8)
+      .borderRadius(ThemeRuntime.buttonRadius())
       .onClick(action)
   }
 

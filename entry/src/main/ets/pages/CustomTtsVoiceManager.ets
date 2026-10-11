@@ -1085,7 +1085,7 @@ struct CustomTtsVoiceManagerPage {
     .width('100%')
     .padding(12)
     .backgroundColor(this.cardColor())
-    .borderRadius(8)
+    .borderRadius(ThemeRuntime.cardRadius())
     .opacity(voice.enabled ? 1 : 0.45)
     .gesture(
       LongPressGesture({ repeat: false })

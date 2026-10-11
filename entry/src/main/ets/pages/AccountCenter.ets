@@ -642,7 +642,7 @@ struct AccountCenterPage {
     }
     .width('100%')
     .padding(16)
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 
@@ -673,7 +673,7 @@ struct AccountCenterPage {
     }
     .width('100%')
     .padding(16)
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .onClick(() => {
       router.pushUrl({ url: 'pages/DataSync' });
@@ -777,7 +777,7 @@ struct AccountCenterPage {
     }
     .width('100%')
     .padding(16)
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 
@@ -839,7 +839,7 @@ struct AccountCenterPage {
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
         .backgroundColor(this.inputColor())
-        .borderRadius(10)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .maxLength(30)
         .enabled(!this.savingProfile)
         .onChange((value: string) => {
@@ -874,7 +874,7 @@ struct AccountCenterPage {
     }
     .width('100%')
     .padding(16)
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 
@@ -920,7 +920,7 @@ struct AccountCenterPage {
     }
     .width('100%')
     .padding(18)
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 
@@ -946,7 +946,7 @@ struct AccountCenterPage {
         .fontSize(15)
         .fontColor(this.accentColor())
         .backgroundColor(this.inputColor())
-        .borderRadius(12)
+        .borderRadius(ThemeRuntime.buttonRadius())
         .onClick(() => {
           this.closePointsUsageDialog();
         })
@@ -1008,7 +1008,7 @@ struct AccountCenterPage {
             .width('100%')
             .height(98)
             .justifyContent(FlexAlign.Center)
-            .borderRadius(14)
+            .borderRadius(ThemeRuntime.largeRadius())
             .backgroundColor(this.inputColor())
             .border({ width: 1, color: this.dividerColor() })
             .onClick(() => {
@@ -1026,7 +1026,7 @@ struct AccountCenterPage {
     }
     .width('100%')
     .padding(16)
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 
@@ -1061,7 +1061,7 @@ struct AccountCenterPage {
     }
     .width('100%')
     .padding(16)
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 
@@ -1074,7 +1074,7 @@ struct AccountCenterPage {
         .lineHeight(18)
         .width('100%')
         .padding(14)
-        .borderRadius(12)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .backgroundColor(this.appDarkMode ? '#332216' : '#FFF3E8')
     } else {
       Text('登录和购买表示你同意应用的用户协议、隐私政策与点数服务规则。你主动设置的昵称和头像将保存到账号服务端并随华为账号同步；点数仅用于本应用数字内容，不支持转让或提现。')

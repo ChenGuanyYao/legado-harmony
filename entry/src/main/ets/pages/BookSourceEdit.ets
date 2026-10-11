@@ -1098,7 +1098,7 @@ struct BookSourceEditPage {
       TextInput({ text: value, placeholder: `请输入${label}` })
         .width('100%')
         .height(44)
-        .borderRadius(8)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .backgroundColor(this.cardColor())
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.placeholderTextColor())

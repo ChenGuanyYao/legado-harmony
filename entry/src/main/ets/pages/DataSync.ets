@@ -101,7 +101,7 @@ struct DataSyncPage {
             }
             .width('calc(100% - 24vp)')
             .margin({ left: 12, right: 12 })
-            .borderRadius(16)
+            .borderRadius(ThemeRuntime.cardRadius())
             .clip(true)
             .backgroundColor(this.cardColor())
 
@@ -126,7 +126,7 @@ struct DataSyncPage {
             }
             .width('calc(100% - 24vp)')
             .margin({ left: 12, right: 12 })
-            .borderRadius(16)
+            .borderRadius(ThemeRuntime.cardRadius())
             .clip(true)
             .backgroundColor(this.cardColor())
           }
@@ -153,7 +153,7 @@ struct DataSyncPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
@@ -205,7 +205,7 @@ struct DataSyncPage {
             .fontSize(12)
             .fontColor(this.cloudSyncEnabled && this.accountLoggedIn ? this.accentColor() : this.subTextColor())
             .padding({ left: 10, right: 10, top: 5, bottom: 5 })
-            .borderRadius(12)
+            .borderRadius(ThemeRuntime.mediumRadius())
             .backgroundColor(this.softColor())
         }
       }
@@ -243,7 +243,7 @@ struct DataSyncPage {
     .width('calc(100% - 24vp)')
     .padding(16)
     .margin({ left: 12, right: 12, top: 12 })
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 
@@ -262,7 +262,7 @@ struct DataSyncPage {
     .height(72)
     .padding({ left: 16, right: 16 })
     .margin({ left: 12, right: 12 })
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Center)
   }

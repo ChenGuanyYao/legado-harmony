@@ -275,7 +275,7 @@ struct GlassSettingsPage {
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
           .padding({ left: 8, right: 8, top: 3, bottom: 3 })
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .backgroundColor(this.previewGlassColor())
         Blank().layoutWeight(1)
         Row({ space: 5 }) {

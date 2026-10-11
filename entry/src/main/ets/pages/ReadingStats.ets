@@ -179,7 +179,7 @@ struct ReadingStatsPage {
             .enableScrollInteraction(false)
             .width('calc(100% - 24vp)')
             .margin({ left: 12, right: 12 })
-            .borderRadius(16)
+            .borderRadius(ThemeRuntime.cardRadius())
             .clip(true)
             .backgroundColor(this.cardColor())
           }
@@ -219,7 +219,7 @@ struct ReadingStatsPage {
               .fontWeight(this.mode === value ? FontWeight.Medium : FontWeight.Normal)
               .fontColor(this.mode === value ? Color.White : this.subTextColor())
               .padding({ left: 14, right: 14, top: 6, bottom: 6 })
-              .borderRadius(14)
+              .borderRadius(ThemeRuntime.buttonRadius())
               .backgroundColor(this.mode === value ? this.accentColor() : Color.Transparent)
               .onClick(() => {
                 if (this.mode === value) return;
@@ -285,7 +285,7 @@ struct ReadingStatsPage {
     .width('calc(100% - 24vp)')
     .padding(16)
     .margin({ left: 12, right: 12, top: 12 })
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 
@@ -462,7 +462,7 @@ struct ReadingStatsPage {
     .height(88)
     .padding({ left: 16, right: 16 })
     .margin({ left: 12, right: 12 })
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Center)
     .justifyContent(FlexAlign.Center)
@@ -482,7 +482,7 @@ struct ReadingStatsPage {
     .constraintSize({ minHeight: 120 })
     .padding({ top: 20, bottom: 20 })
     .margin({ left: 12, right: 12 })
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .justifyContent(FlexAlign.Center)
   }

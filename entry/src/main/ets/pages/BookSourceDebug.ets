@@ -145,7 +145,7 @@ struct BookSourceDebugPage {
       Text(`状态：${this.status}`).fontSize(13).fontColor(this.running ? '#E89725' : this.accentColor())
         .width('100%')
     }
-    .width('calc(100% - 24vp)').padding(16).borderRadius(16).backgroundColor(this.cardColor())
+    .width('calc(100% - 24vp)').padding(16).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -168,7 +168,7 @@ struct BookSourceDebugPage {
           .onClick(() => this.clearDebugResult())
       }.width('100%')
     }
-    .width('calc(100% - 24vp)').padding(16).borderRadius(16).backgroundColor(this.cardColor())
+    .width('calc(100% - 24vp)').padding(16).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -219,7 +219,7 @@ struct BookSourceDebugPage {
           .copyOption(CopyOptions.LocalDevice)
       }, (log: BookSourceDebugLog) => `${log.timestamp}_${log.message}`)
     }
-    .width('calc(100% - 24vp)').padding(16).borderRadius(16).backgroundColor(this.cardColor())
+    .width('calc(100% - 24vp)').padding(16).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -263,7 +263,7 @@ struct BookSourceDebugPage {
           .copyOption(CopyOptions.LocalDevice)
       }, (key: string) => key)
     }
-    .width('100%').padding(12).borderRadius(10).backgroundColor(this.inputColor())
+    .width('100%').padding(12).borderRadius(ThemeRuntime.mediumRadius()).backgroundColor(this.inputColor())
     .alignItems(HorizontalAlign.Start)
   }
 

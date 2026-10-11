@@ -68,7 +68,7 @@ export struct FastBookshelfShell {
     }
     .width('100%')
     .padding(12)
-    .borderRadius(8)
+    .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(this.appDarkMode ? '#191B1F' : '#FFFFFF')
   }
 

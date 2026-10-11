@@ -270,7 +270,7 @@ export struct ReaderCacheDialogContent {
           .height(42)
           .padding({ left: 10, right: 10 })
           .backgroundColor(this.appDarkMode ? '#1FFFFFFF' : '#0D000000')
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .onChange((value: string) => {
             this.rangeDraft = value;
           })
@@ -302,7 +302,7 @@ export struct ReaderCacheDialogContent {
                   .fontColor(this.appDarkMode ? '#7CC7A0' : '#1F8F55')
                   .padding({ left: 6, right: 6, top: 2, bottom: 2 })
                   .backgroundColor(this.appDarkMode ? '#24382F' : '#E6F4EC')
-                  .borderRadius(4)
+                  .borderRadius(ThemeRuntime.smallRadius())
               }
             }
             .width('100%')

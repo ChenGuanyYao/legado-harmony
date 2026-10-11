@@ -504,7 +504,7 @@ struct BookSourcePage {
                           .constraintSize({ maxWidth: 72 })
                           .padding({ left: 7, right: 7, top: 3, bottom: 3 })
                           .backgroundColor(this.inputColor())
-                          .borderRadius(4)
+                          .borderRadius(ThemeRuntime.smallRadius())
                           .margin({ left: 6 })
                       }
 
@@ -561,7 +561,7 @@ struct BookSourcePage {
                 .width('100%')
                 .padding(12)
                 .backgroundColor(this.glassCardColor())
-                .borderRadius(8)
+                .borderRadius(ThemeRuntime.mediumRadius())
                 .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
                 .shadow({ radius: ThemeRuntime.glassShadowRadius(), color: this.glassShadowColor(), offsetX: ThemeRuntime.glassShadowOffsetX(), offsetY: ThemeRuntime.glassShadowOffsetY() })
                 .opacity(source.enabled ? 1 : 0.45)
@@ -576,7 +576,7 @@ struct BookSourcePage {
                 })
               }
               .width('100%')
-              .borderRadius(8)
+              .borderRadius(ThemeRuntime.mediumRadius())
               .clip(true)
               .onAreaChange((_oldValue: Area, area: Area) => {
                 if (this.selectionMode) this.rememberSourceSelectionArea(source.bookSourceUrl, area);
@@ -726,7 +726,7 @@ struct BookSourcePage {
             TextInput({ placeholder: '请输入书源URL', text: this.importUrl })
               .width('100%')
               .height(48)
-              .borderRadius(8)
+              .borderRadius(ThemeRuntime.mediumRadius())
               .backgroundColor(this.inputColor())
               .fontColor(this.primaryTextColor())
               .placeholderColor(this.placeholderTextColor())
@@ -856,7 +856,7 @@ struct BookSourcePage {
             TextInput({ placeholder: '输入新分组名称，留空为未分组', text: this.groupNameInput })
               .width('100%')
               .height(44)
-              .borderRadius(8)
+              .borderRadius(ThemeRuntime.mediumRadius())
               .backgroundColor(this.inputColor())
               .fontColor(this.primaryTextColor())
               .placeholderColor(this.placeholderTextColor())
@@ -874,7 +874,7 @@ struct BookSourcePage {
                       .fontColor(this.secondaryTextColor())
                       .padding({ left: 10, right: 10, top: 5, bottom: 5 })
                       .backgroundColor(this.inputColor())
-                      .borderRadius(14)
+                      .borderRadius(ThemeRuntime.buttonRadius())
                       .margin({ right: 8, top: 10 })
                       .onClick(() => {
                         this.groupNameInput = group;
@@ -1004,7 +1004,7 @@ struct BookSourcePage {
                 Button('取消', { type: ButtonType.Normal })
                   .layoutWeight(1)
                   .height(42)
-                  .borderRadius(10)
+                  .borderRadius(ThemeRuntime.buttonRadius())
                   .fontSize(13)
                   .backgroundColor(this.inputColor())
                   .fontColor(this.primaryTextColor())
@@ -1015,7 +1015,7 @@ struct BookSourcePage {
                 Button('后台', { type: ButtonType.Normal })
                   .layoutWeight(1)
                   .height(42)
-                  .borderRadius(10)
+                  .borderRadius(ThemeRuntime.buttonRadius())
                   .fontSize(13)
                   .backgroundColor(this.buttonColor())
                   .fontColor('#FFFFFF')
@@ -1049,7 +1049,7 @@ struct BookSourcePage {
                 .height(Math.min(this.checkResultDetails.length * 40 + 20, 160))
                 .padding(10)
                 .backgroundColor(this.inputColor())
-                .borderRadius(8)
+                .borderRadius(ThemeRuntime.mediumRadius())
                 .margin({ bottom: 16 })
                 .scrollBar(BarState.Auto)
               }
@@ -1058,7 +1058,7 @@ struct BookSourcePage {
                 Button(`信任证书并重试（${this.checkTlsTrustHosts.length} 个主机）`, { type: ButtonType.Normal })
                   .width('100%')
                   .height(42)
-                  .borderRadius(10)
+                  .borderRadius(ThemeRuntime.buttonRadius())
                   .fontSize(13)
                   .backgroundColor('#B26A00')
                   .fontColor('#FFFFFF')
@@ -1073,7 +1073,7 @@ struct BookSourcePage {
                   Button('禁用失败项', { type: ButtonType.Normal })
                     .layoutWeight(1)
                     .height(42)
-                    .borderRadius(10)
+                    .borderRadius(ThemeRuntime.buttonRadius())
                     .fontSize(11)
                     .enabled(this.checkBadUrls.length > 0 && !this.isBatchOperating)
                     .backgroundColor(this.checkBadUrls.length > 0 && !this.isBatchOperating ? '#F57C00' : this.inputColor())
@@ -1085,7 +1085,7 @@ struct BookSourcePage {
                   Button('删除失败项', { type: ButtonType.Normal })
                     .layoutWeight(1)
                     .height(42)
-                    .borderRadius(10)
+                    .borderRadius(ThemeRuntime.buttonRadius())
                     .fontSize(11)
                     .enabled(this.checkBadUrls.length > 0 && !this.isBatchOperating)
                     .backgroundColor(this.checkBadUrls.length > 0 && !this.isBatchOperating ? '#E53935' : this.inputColor())
@@ -1098,7 +1098,7 @@ struct BookSourcePage {
                 Button('关闭', { type: ButtonType.Normal })
                   .layoutWeight(1)
                   .height(42)
-                  .borderRadius(10)
+                  .borderRadius(ThemeRuntime.buttonRadius())
                   .fontSize(11)
                   .backgroundColor(this.inputColor())
                   .fontColor(this.primaryTextColor())
@@ -1512,7 +1512,7 @@ struct BookSourcePage {
         Button('重置', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .enabled(this.hasActiveSourceFilters())
           .backgroundColor(this.inputColor())
           .fontColor(this.primaryTextColor())
@@ -1520,7 +1520,7 @@ struct BookSourcePage {
         Button('完成', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.buttonColor())
           .fontColor('#FFFFFF')
           .onClick(() => this.showSourceFilterDialog = false)
@@ -1561,7 +1561,7 @@ struct BookSourcePage {
       .textAlign(TextAlign.Center)
       .maxLines(1)
       .backgroundColor(this.sourceSortMode === value ? this.accentColor() : this.inputColor())
-      .borderRadius(9)
+      .borderRadius(ThemeRuntime.mediumRadius())
       .onClick(() => {
         this.sourceSortMode = value;
         this.applySourceFilters();
@@ -1619,7 +1619,7 @@ struct BookSourcePage {
       .textAlign(TextAlign.Center)
       .maxLines(1)
       .backgroundColor(this.sourceValidationFilter === value ? this.accentColor() : this.inputColor())
-      .borderRadius(9)
+      .borderRadius(ThemeRuntime.mediumRadius())
       .onClick(() => this.setSourceFilterValue('validation', value))
   }
 
@@ -1633,7 +1633,7 @@ struct BookSourcePage {
       .textAlign(TextAlign.Center)
       .maxLines(1)
       .backgroundColor(this.sourceFilterValue(filterKey) === value ? this.accentColor() : this.inputColor())
-      .borderRadius(9)
+      .borderRadius(ThemeRuntime.mediumRadius())
       .onClick(() => this.setSourceFilterValue(filterKey, value))
   }
 
@@ -1723,7 +1723,7 @@ struct BookSourcePage {
       .layoutWeight(1)
       .height(38)
       .textAlign(TextAlign.Center)
-      .borderRadius(10)
+      .borderRadius(ThemeRuntime.mediumRadius())
       .backgroundColor(this.checkValidationMode === value ? this.buttonColor() : this.inputColor())
       .onClick(() => {
         this.checkValidationMode = value;
@@ -1755,7 +1755,7 @@ struct BookSourcePage {
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-    .borderRadius(9)
+    .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(this.checkInvalidAction === action ? this.inputColor() : this.cardColor())
     .border({
       width: this.checkInvalidAction === action ? 1 : 0.5,
@@ -1857,7 +1857,7 @@ struct BookSourcePage {
                       .type(item.type.toLowerCase() === 'password' ? InputType.Password : InputType.Normal)
                       .layoutWeight(1)
                       .height(42)
-                      .borderRadius(8)
+                      .borderRadius(ThemeRuntime.mediumRadius())
                       .backgroundColor(this.inputColor())
                       .fontColor(this.primaryTextColor())
                       .placeholderColor(this.placeholderTextColor())
@@ -1908,7 +1908,7 @@ struct BookSourcePage {
                 .width('100%')
                 .height(48)
                 .padding({ left: 12, right: 12 })
-                .borderRadius(8)
+                .borderRadius(ThemeRuntime.mediumRadius())
                 .backgroundColor(this.inputColor())
               } else if (this.isSourceLoginSelect(item)) {
                 Row({ space: 12 }) {
@@ -1935,7 +1935,7 @@ struct BookSourcePage {
                 .width('100%')
                 .height(48)
                 .padding({ left: 12, right: 8 })
-                .borderRadius(8)
+                .borderRadius(ThemeRuntime.mediumRadius())
                 .backgroundColor(this.inputColor())
               } else {
                 Button(this.isExecutingLoginAction && item.action ? `执行中 · ${item.name}` :
@@ -2074,7 +2074,7 @@ struct BookSourcePage {
       .fontColor(this.sourceValidationStatusColor(validationStatus))
       .padding({ left: 6, right: 6, top: 2, bottom: 2 })
       .backgroundColor(this.inputColor())
-      .borderRadius(4)
+      .borderRadius(ThemeRuntime.smallRadius())
       .maxLines(1)
       .accessibilityText(this.sourceValidationStatusLabel(validationStatus))
   }
@@ -2147,7 +2147,7 @@ struct BookSourcePage {
           if (source.bookSourceGroup) {
             Text(source.bookSourceGroup).fontSize(11).fontColor(this.accentColor())
               .constraintSize({ maxWidth: 72 }).padding({ left: 7, right: 7, top: 3, bottom: 3 })
-              .backgroundColor(this.inputColor()).borderRadius(4).margin({ left: 6 })
+              .backgroundColor(this.inputColor()).borderRadius(ThemeRuntime.smallRadius()).margin({ left: 6 })
           }
           if (this.sourceNeedsLogin(source)) {
             this.sourceLoginStatusBadge(this.sourceLoggedIn(source) ? '#1E8E3E' : '#C62828', this.sourceLoggedIn(source) ? '已登录' : '未登录')
@@ -2176,7 +2176,7 @@ struct BookSourcePage {
     .width('100%')
     .padding(12)
     .backgroundColor(this.glassCardColor())
-    .borderRadius(8)
+    .borderRadius(ThemeRuntime.mediumRadius())
     .opacity(source.enabled ? 1 : 0.45)
     .onClick(() => {
       if (this.isBatchOperating) return;
@@ -2295,7 +2295,7 @@ struct BookSourcePage {
     }
     .width(280)
     .padding(12)
-    .borderRadius(8)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .shadow({ radius: 12, color: this.appDarkMode ? '#66000000' : '#22000000', offsetX: 0, offsetY: 4 })
   }
@@ -2520,7 +2520,7 @@ struct BookSourcePage {
             }
             .width('100%')
             .padding({ left: 6, right: 6, top: 8, bottom: 8 })
-            .borderRadius(10)
+            .borderRadius(ThemeRuntime.mediumRadius())
             .backgroundColor(this.inputColor())
           }, (source: BookSource) => source.bookSourceUrl)
         }
@@ -2534,14 +2534,14 @@ struct BookSourcePage {
         Button('取消', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor())
           .fontColor(this.primaryTextColor())
           .onClick(() => this.cancelImportSourceSelection())
         Button('导入所选', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .enabled(this.selectedImportSourceUrls.length > 0 && !this.isImporting)
           .backgroundColor(this.buttonColor())
           .fontColor('#FFFFFF')
@@ -2732,7 +2732,7 @@ struct BookSourcePage {
               .width('100%')
               .height(56)
               .padding({ left: 8, right: 8 })
-              .borderRadius(9)
+              .borderRadius(ThemeRuntime.mediumRadius())
               .backgroundColor(this.inputColor())
             }, (group: string) => group)
           }
@@ -2748,7 +2748,7 @@ struct BookSourcePage {
         Button('关闭', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor())
           .fontColor(this.primaryTextColor())
           .onClick(() => {
@@ -2758,7 +2758,7 @@ struct BookSourcePage {
         Button('删除所选', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .enabled(this.selectedManagedSourceGroups.length > 0 && !this.isBatchOperating)
           .backgroundColor('#E53935')
           .fontColor('#FFFFFF')
@@ -2778,7 +2778,7 @@ struct BookSourcePage {
       .fontColor(this.activeSourceGroup === groupKey ? '#FFFFFF' : this.primaryTextColor())
       .maxLines(1)
       .padding({ left: 13, right: 13, top: 7, bottom: 7 })
-      .borderRadius(16)
+      .borderRadius(ThemeRuntime.buttonRadius())
       .backgroundColor(this.activeSourceGroup === groupKey ? this.accentColor() : this.glassCardColor())
       .border({ width: this.activeSourceGroup === groupKey ? 0 : 1, color: this.glassBorderColor() })
       .onClick(() => {
@@ -2841,21 +2841,21 @@ struct BookSourcePage {
         .height(42)
         .backgroundColor(this.inputColor())
         .fontColor(this.primaryTextColor())
-        .borderRadius(10)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .onChange((value: string) => this.newSourceGroupInput = value)
 
       Row({ space: 12 }) {
         Button('取消', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor())
           .fontColor(this.primaryTextColor())
           .onClick(() => this.closeAddSourceGroupDialog())
         Button('新增', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.buttonColor())
           .fontColor('#FFFFFF')
           .enabled(!!this.newSourceGroupInput.trim() && !this.isBatchOperating)
@@ -2879,21 +2879,21 @@ struct BookSourcePage {
         .height(42)
         .backgroundColor(this.inputColor())
         .fontColor(this.primaryTextColor())
-        .borderRadius(10)
+        .borderRadius(ThemeRuntime.mediumRadius())
         .onChange((value: string) => this.renameSourceGroupInput = value)
 
       Row({ space: 12 }) {
         Button('取消', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor())
           .fontColor(this.primaryTextColor())
           .onClick(() => this.closeRenameSourceGroupDialog())
         Button('保存', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.buttonColor())
           .fontColor('#FFFFFF')
           .enabled(!!this.renameSourceGroupInput.trim() && !this.isBatchOperating)
@@ -2919,14 +2919,14 @@ struct BookSourcePage {
         Button('取消', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor())
           .fontColor(this.primaryTextColor())
           .onClick(() => this.closeDeleteSourceGroupDialog())
         Button('删除', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor('#E53935')
           .fontColor('#FFFFFF')
           .enabled(!this.isBatchOperating)
@@ -2952,14 +2952,14 @@ struct BookSourcePage {
         Button('取消', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor())
           .fontColor(this.primaryTextColor())
           .onClick(() => this.showDeleteSelectedSourceGroupsDialog = false)
         Button('删除', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor('#E53935')
           .fontColor('#FFFFFF')
           .enabled(this.selectedManagedSourceGroups.length > 0 && !this.isBatchOperating)

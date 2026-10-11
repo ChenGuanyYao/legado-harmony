@@ -147,7 +147,7 @@ export struct TtsCatalogSheet {
           .textAlign(TextAlign.Center)
           .width(CATALOG_COVER_WIDTH)
           .height(CATALOG_COVER_HEIGHT)
-          .borderRadius(8)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .backgroundColor(this.accentColor)
       }
 
@@ -267,7 +267,7 @@ export struct TtsCatalogSheet {
                   .fontColor(this.darkMode ? '#7CC7A0' : '#1F8F55')
                   .padding({ left: 7, right: 7, top: 3, bottom: 3 })
                   .backgroundColor(this.darkMode ? '#24382F' : '#E6F4EC')
-                  .borderRadius(10)
+                  .borderRadius(ThemeRuntime.mediumRadius())
               }
             }
             .width('100%')

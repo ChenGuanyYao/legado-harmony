@@ -192,7 +192,7 @@ struct OpdsBrowsePage {
         }
         .width('78%')
         .padding(20)
-        .borderRadius(16)
+        .borderRadius(ThemeRuntime.cardRadius())
         .backgroundColor(this.cardColor())
         .shadow({ radius: 18, color: this.appDarkMode ? '#66000000' : '#28000000' })
         .position({ x: '11%', y: '42%' })
@@ -341,7 +341,7 @@ struct OpdsBrowsePage {
                 .fontColor(link.activeFacet ? '#FFFFFF' : this.primaryTextColor())
                 .padding({ left: 10, right: 10, top: 5, bottom: 5 })
                 .backgroundColor(link.activeFacet ? this.accentColor() : this.softColor())
-                .borderRadius(14)
+                .borderRadius(ThemeRuntime.buttonRadius())
                 .onClick(() => this.openFacet(link))
             }, (link: OpdsLink) => `${group.group}:${link.href}`)
           }
@@ -448,7 +448,7 @@ struct OpdsBrowsePage {
     .height(60)
     .padding({ left: 16, right: 16, top: 8, bottom: 8 })
     .backgroundColor(this.cardColor())
-    .borderRadius(12)
+    .borderRadius(ThemeRuntime.cardRadius())
     .onClick(() => this.openEntryLink(entry))
   }
 
@@ -478,14 +478,14 @@ struct OpdsBrowsePage {
           .fontColor(this.accentColor())
           .padding({ left: 8, right: 8, top: 4, bottom: 4 })
           .backgroundColor(this.softColor())
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.mediumRadius())
       }
     }
     .width('100%')
     .height(84)
     .padding({ left: 12, right: 12, top: 10, bottom: 10 })
     .backgroundColor(this.cardColor())
-    .borderRadius(12)
+    .borderRadius(ThemeRuntime.cardRadius())
     .onClick(() => this.openDetail(entry))
   }
 
@@ -620,7 +620,7 @@ struct OpdsBrowsePage {
           }
           .width('100%')
           .padding(12)
-          .borderRadius(12)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .backgroundColor(this.softColor())
         }
 
@@ -831,7 +831,7 @@ struct OpdsBrowsePage {
         .fontColor(this.accentColor())
         .padding({ left: 8, right: 8, top: 3, bottom: 3 })
         .backgroundColor(this.softColor())
-        .borderRadius(9)
+        .borderRadius(ThemeRuntime.mediumRadius())
       if (row.sizeText) {
         Text(row.sizeText)
           .fontSize(11)

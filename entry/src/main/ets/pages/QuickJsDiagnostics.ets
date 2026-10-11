@@ -94,7 +94,7 @@ struct QuickJsDiagnosticsPage {
     }
     .width('calc(100% - 24vp)')
     .padding(16)
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .alignItems(HorizontalAlign.Start)
   }
@@ -113,7 +113,7 @@ struct QuickJsDiagnosticsPage {
       this.modeItem(QuickJsRuntimeMode.PREFER_QUICKJS, '优先 QuickJS', '纯表达式优先新引擎，失败自动回退')
     }
     .width('calc(100% - 24vp)')
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .clip(true)
     .backgroundColor(this.cardColor())
   }
@@ -161,7 +161,7 @@ struct QuickJsDiagnosticsPage {
     }
     .width('calc(100% - 24vp)')
     .padding(16)
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .alignItems(HorizontalAlign.Start)
   }
@@ -185,7 +185,7 @@ struct QuickJsDiagnosticsPage {
     }
     .width('calc(100% - 24vp)')
     .padding(16)
-    .borderRadius(16)
+    .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .alignItems(HorizontalAlign.Start)
   }

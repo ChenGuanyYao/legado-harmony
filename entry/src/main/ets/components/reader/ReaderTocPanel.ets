@@ -712,7 +712,7 @@ export struct ReaderTocPanel {
             .textAlign(TextAlign.Center)
             .width(52)
             .height(68)
-            .borderRadius(8)
+            .borderRadius(ThemeRuntime.mediumRadius())
             .backgroundColor(this.accentColor)
         }
 
@@ -877,7 +877,7 @@ export struct ReaderTocPanel {
             .height(34)
             .padding({ left: 12, right: 12 })
             .textAlign(TextAlign.Center)
-            .borderRadius(16)
+            .borderRadius(ThemeRuntime.buttonRadius())
             .backgroundColor(this.dark ? '#1FFFFFFF' : '#0D000000')
         }
         ImmersiveBackButton({
@@ -1009,7 +1009,7 @@ export struct ReaderTocPanel {
                   .fontColor(this.dark ? '#7CC7A0' : '#1F8F55')
                   .padding({ left: 7, right: 7, top: 3, bottom: 3 })
                   .backgroundColor(this.dark ? '#24382F' : '#E6F4EC')
-                  .borderRadius(10)
+                  .borderRadius(ThemeRuntime.mediumRadius())
               }
             }
             .width('100%')

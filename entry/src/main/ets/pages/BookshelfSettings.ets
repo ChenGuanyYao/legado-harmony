@@ -159,7 +159,7 @@ struct BookshelfSettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
@@ -181,7 +181,7 @@ struct BookshelfSettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
@@ -214,7 +214,7 @@ struct BookshelfSettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
@@ -224,7 +224,7 @@ struct BookshelfSettingsPage {
           }
           .width('calc(100% - 24vp)')
           .margin({ left: 12, right: 12 })
-          .borderRadius(16)
+          .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
         }
@@ -961,7 +961,7 @@ struct BookshelfSettingsPage {
       .fontColor(this.primaryTextColor())
       .placeholderColor(this.subTextColor())
       .backgroundColor(this.inputColor())
-      .borderRadius(12)
+      .borderRadius(ThemeRuntime.mediumRadius())
       .margin({ bottom: 10 })
       .onChange((text: string) => {
         onChange(text);

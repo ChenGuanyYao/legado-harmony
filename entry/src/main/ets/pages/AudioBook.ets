@@ -253,7 +253,7 @@ struct AudioBookPage {
           .width('58%')
           .height('88%')
           .constraintSize({ maxWidth: 260, maxHeight: 360 })
-          .borderRadius(10)
+          .borderRadius(ThemeRuntime.mediumRadius())
           .backgroundColor(this.accentColor())
           .justifyContent(FlexAlign.Center)
         }
@@ -282,7 +282,7 @@ struct AudioBookPage {
     .layoutWeight(1)
     .width('100%')
     .padding(14)
-    .borderRadius(14)
+    .borderRadius(ThemeRuntime.largeRadius())
     .backgroundColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
   }
 
