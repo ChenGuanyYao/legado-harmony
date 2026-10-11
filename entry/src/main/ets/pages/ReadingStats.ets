@@ -1,7 +1,6 @@
 import { router, promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import deviceInfo from '@ohos.deviceInfo';
 import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { appDb } from '../model/data/AppDatabase';
@@ -9,6 +8,7 @@ import { ReadStatsTracker, readStatsTracker } from '../core/stats/ReadStatsTrack
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 const STATS_MODES: string[] = ['day', 'week', 'month'];
 const STATS_MODE_LABELS: string[] = ['日', '周', '月'];
@@ -132,72 +132,9 @@ struct ReadingStatsPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
-        Column() {
-          Row()
-            .height(56 + this.statusBarHeight)
-
-          this.summaryCard()
-
-          this.sectionTitle('书籍排行')
-          if (this.loading) {
-            this.loadingCard()
-          } else if (this.items.length === 0) {
-            this.emptyCard()
-          } else {
-            // 行需要侧滑，所以用 List；高度随内容撑开，滚动仍交给外层 Scroll。
-            List() {
-              ForEach(this.items, (item: StatBookItem) => {
-                if (deviceInfo.sdkApiVersion >= 26) {
-                  HdsListItem({
-                    customItemBuilder: (): void => {
-                      this.bookRow(item)
-                    },
-                    swipeActionOptions: this.itemSwipeActions(item)
-                  })
-                }
-                if (deviceInfo.sdkApiVersion < 26) {
-                  ListItem() {
-                    this.bookRow(item)
-                  }
-                  .swipeAction({
-                    end: {
-                      builder: (): void => {
-                        this.itemDeleteSwipeButton(item)
-                      },
-                      actionAreaDistance: 64,
-                      onAction: (): void => {
-                        this.confirmDeleteItem(item);
-                      }
-                    },
-                    edgeEffect: SwipeEdgeEffect.Spring
-                  })
-                }
-              }, (item: StatBookItem) => `${item.bookUrl}_${item.durationMs}_${item.percent}`)
-            }
-            .divider({ strokeWidth: 0.5, color: this.dividerColor(), startMargin: 68, endMargin: 16 })
-            .edgeEffect(EdgeEffect.None)
-            .scrollBar(BarState.Off)
-            .enableScrollInteraction(false)
-            .width('calc(100% - 24vp)')
-            .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-            .borderRadius(ThemeRuntime.cardRadius())
-            .clip(true)
-            .backgroundColor(this.cardColor())
-          }
-
-          Row()
-            .width('100%')
-            .height(32 + this.navBarHeight)
-        }
-        .width('100%')
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      .align(Alignment.TopStart)
-
-      this.titleBar()
+      PageScaffold({ title: '阅读统计', content: () => {
+        this.pageContent()
+      } })
 
       if (this.showItemActionMenu) {
         this.itemActionMenu()
@@ -208,6 +145,61 @@ struct ReadingStatsPage {
     .backgroundColor(this.pageColor())
     .onAreaChange((_oldValue: Area, newValue: Area) => this.updateContextViewport(newValue))
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  pageContent() {
+    Column() {
+      this.summaryCard()
+
+      this.sectionTitle('书籍排行')
+      if (this.loading) {
+        this.loadingCard()
+      } else if (this.items.length === 0) {
+        this.emptyCard()
+      } else {
+        // 行需要侧滑，所以用 List；高度随内容撑开，滚动仍交给外层 Scroll。
+        List() {
+          ForEach(this.items, (item: StatBookItem) => {
+            if (deviceInfo.sdkApiVersion >= 26) {
+              HdsListItem({
+                customItemBuilder: (): void => {
+                  this.bookRow(item)
+                },
+                swipeActionOptions: this.itemSwipeActions(item)
+              })
+            }
+            if (deviceInfo.sdkApiVersion < 26) {
+              ListItem() {
+                this.bookRow(item)
+              }
+              .swipeAction({
+                end: {
+                  builder: (): void => {
+                    this.itemDeleteSwipeButton(item)
+                  },
+                  actionAreaDistance: 64,
+                  onAction: (): void => {
+                    this.confirmDeleteItem(item);
+                  }
+                },
+                edgeEffect: SwipeEdgeEffect.Spring
+              })
+            }
+          }, (item: StatBookItem) => `${item.bookUrl}_${item.durationMs}_${item.percent}`)
+        }
+        .divider({ strokeWidth: 0.5, color: this.dividerColor(), startMargin: 68, endMargin: 16 })
+        .edgeEffect(EdgeEffect.None)
+        .scrollBar(BarState.Off)
+        .enableScrollInteraction(false)
+        .width('calc(100% - 24vp)')
+        .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+        .borderRadius(ThemeRuntime.cardRadius())
+        .clip(true)
+        .backgroundColor(this.cardColor())
+      }
+    }
+    .width('100%')
   }
 
   @Builder
@@ -684,23 +676,4 @@ struct ReadingStatsPage {
       .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('阅读统计')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
-  }
 }

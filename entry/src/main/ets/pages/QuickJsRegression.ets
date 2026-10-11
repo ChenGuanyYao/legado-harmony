@@ -1,4 +1,3 @@
-import { router } from '@kit.ArkUI';
 import { Context } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import { LengthMetrics } from '@ohos.arkui.node';
@@ -6,7 +5,6 @@ import picker from '@ohos.file.picker';
 import fs from '@ohos.file.fs';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { BookSource } from '../model/data/Book';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { QuickJsRegressionIssueCategory, QuickJsRegressionItemResult, QuickJsRegressionProgress,
   QuickJsRegressionReport, QuickJsRegressionRunner, QuickJsRegressionStage, QuickJsRegressionStatus }
   from '../core/script/QuickJsRegressionRunner';
@@ -22,6 +20,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 class QuickJsCategoryStat {
   category: string = '';
@@ -38,8 +37,6 @@ class QuickJsCategoryStat {
 struct QuickJsRegressionPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
-  @StorageProp('navBarHeight') navBarHeight: number = 0;
   @StorageLink('quickJsValidationRevision') @Watch('onValidationRevisionChanged')
   quickJsValidationRevision: number = 0;
   @StorageLink('quickJsMigrationRevision') @Watch('onValidationRevisionChanged')
@@ -77,28 +74,29 @@ struct QuickJsRegressionPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
-        Column({ space: AppSpacing.LG }) {
-          this.explanationCard()
-          this.stageCard()
-          this.sourceCard()
-          this.actionCard()
-          if (this.validationSnapshot.candidates.length > 0) this.validationCard()
-          if (this.artifactSnapshot.fixtures.length > 0) this.artifactCard()
-          if (this.report.completedCandidates > 0 || this.report.error) this.reportCard()
-        }
-        .width('100%')
-        .padding({ top: 68 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      this.titleBar()
+      PageScaffold({ title: '书源脚本回归测试', content: () => {
+        this.pageContent()
+      } })
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  pageContent() {
+    Column({ space: AppSpacing.LG }) {
+      this.explanationCard()
+      this.stageCard()
+      this.sourceCard()
+      this.actionCard()
+      if (this.validationSnapshot.candidates.length > 0) this.validationCard()
+      if (this.artifactSnapshot.fixtures.length > 0) this.artifactCard()
+      if (this.report.completedCandidates > 0 || this.report.error) this.reportCard()
+    }
+    .width('100%')
+    .padding({ top: AppSpacing.LG })
   }
 
   @Builder
@@ -463,20 +461,6 @@ struct QuickJsRegressionPage {
       }
     }.width('100%').padding(AppSpacing.MD).borderRadius(ThemeRuntime.mediumRadius()).backgroundColor(this.softColor())
       .alignItems(HorizontalAlign.Start)
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('书源脚本回归测试').fontSize(AppFontSize.TITLE).fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor()).layoutWeight(1)
-    }
-    .width('100%').height(56 + this.statusBarHeight).padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode)).backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
   }
 
   private async loadSources(): Promise<void> {

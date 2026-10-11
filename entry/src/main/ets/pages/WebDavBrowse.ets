@@ -1,6 +1,5 @@
 import { router, promptAction } from '@kit.ArkUI';
 import picker from '@ohos.file.picker';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { Book } from '../model/data/Book';
@@ -16,6 +15,7 @@ import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 @Entry
 @Component
@@ -85,18 +85,9 @@ struct WebDavBrowsePage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Column() {
-        if (this.connectionMissing || this.errorMessage) {
-          this.errorView();
-        } else {
-          this.filesPanel();
-        }
-      }
-      .width('100%')
-      .height('100%')
-      .padding({ top: 56 + this.statusBarHeight })
-
-      this.titleBar()
+      PageScaffold({ title: this.currentTitle(), scrollable: false, content: () => {
+        this.pageContent()
+      } })
 
       if (this.showEntryActionMenu) {
         this.entryActionMenu()
@@ -127,27 +118,12 @@ struct WebDavBrowsePage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text(this.currentTitle())
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .layoutWeight(1)
+  pageContent() {
+    if (this.connectionMissing || this.errorMessage) {
+      this.errorView();
+    } else {
+      this.filesPanel();
     }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
-    .position({ x: 0, y: 0 })
-    .zIndex(3)
   }
 
   @Builder

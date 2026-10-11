@@ -1,7 +1,6 @@
 import { picker } from '@kit.CoreFileKit';
 import fs from '@ohos.file.fs';
 import { promptAction, router } from '@kit.ArkUI';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import {
@@ -13,6 +12,7 @@ import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 @Entry
 @Component
@@ -21,8 +21,6 @@ struct DataBackupPage {
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
-  @StorageProp('navBarHeight') navBarHeight: number = 0;
 
   @State exportSources: boolean = true;
   @State exportBookshelf: boolean = true;
@@ -81,82 +79,9 @@ struct DataBackupPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
-        Column() {
-          Row()
-            .height(56 + this.statusBarHeight)
-
-          if (this.mode === 'export') {
-            this.sectionTitle('选择导出内容')
-            this.selectionCard(true)
-            Text('备份将使用密码和 AES-256-GCM 加密；Cookie、密码、Token、授权信息及登录 Header 不会写入备份。')
-              .fontSize(AppFontSize.CAPTION)
-              .fontColor(this.subTextColor())
-              .width('calc(100% - 32vp)')
-              .margin({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD })
-            Button('选择保存位置并导出')
-              .width('calc(100% - 24vp)')
-              .height(46)
-              .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG })
-              .enabled(!this.busy && this.hasExportSelection())
-              .opacity(this.hasExportSelection() ? 1 : 0.45)
-              .backgroundColor(this.accentColor())
-              .onClick(() => this.requestExport())
-          } else {
-            this.sectionTitle('选择备份文件')
-            Column() {
-              Button(this.importReady ? '重新选择备份文件' : '选择备份文件')
-                .width('100%')
-                .height(44)
-                .backgroundColor(this.softColor())
-                .fontColor(this.primaryTextColor())
-                .enabled(!this.busy)
-                .onClick(() => this.chooseImportFile())
-
-              Text(this.importDescription)
-                .fontSize(AppFontSize.CAPTION)
-                .fontColor(this.subTextColor())
-                .width('100%')
-                .margin({ top: AppSpacing.MD })
-            }
-            .width('calc(100% - 24vp)')
-            .padding(AppSpacing.LG)
-            .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-            .borderRadius(ThemeRuntime.cardRadius())
-            .backgroundColor(this.cardColor())
-
-            if (this.importReady) {
-              this.sectionTitle('选择导入内容')
-              this.selectionCard(false)
-              Button('导入所选数据')
-                .width('calc(100% - 24vp)')
-                .height(46)
-                .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG })
-                .enabled(!this.busy && this.hasImportSelection())
-                .opacity(this.hasImportSelection() ? 1 : 0.45)
-                .backgroundColor(this.accentColor())
-                .onClick(() => this.importData())
-            }
-
-            Text('导入采用同类数据合并与覆盖方式，不会先清空整套应用数据。设置和自定义资源导入后建议重新启动应用。')
-              .fontSize(AppFontSize.CAPTION)
-              .fontColor(this.subTextColor())
-              .width('calc(100% - 32vp)')
-              .margin({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XL })
-          }
-
-          Row()
-            .height(32 + this.navBarHeight)
-        }
-        .width('100%')
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      .align(Alignment.TopStart)
-      .backgroundColor(this.pageColor())
-
-      this.titleBar()
+      PageScaffold({ title: this.mode === 'import' ? '数据导入' : '数据导出', content: () => {
+        this.pageContent()
+      } })
 
 
 
@@ -201,23 +126,68 @@ struct DataBackupPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text(this.mode === 'import' ? '数据导入' : '数据导出')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
+  pageContent() {
+    Column() {
+      if (this.mode === 'export') {
+        this.sectionTitle('选择导出内容')
+        this.selectionCard(true)
+        Text('备份将使用密码和 AES-256-GCM 加密；Cookie、密码、Token、授权信息及登录 Header 不会写入备份。')
+          .fontSize(AppFontSize.CAPTION)
+          .fontColor(this.subTextColor())
+          .width('calc(100% - 32vp)')
+          .margin({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD })
+        Button('选择保存位置并导出')
+          .width('calc(100% - 24vp)')
+          .height(46)
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG })
+          .enabled(!this.busy && this.hasExportSelection())
+          .opacity(this.hasExportSelection() ? 1 : 0.45)
+          .backgroundColor(this.accentColor())
+          .onClick(() => this.requestExport())
+      } else {
+        this.sectionTitle('选择备份文件')
+        Column() {
+          Button(this.importReady ? '重新选择备份文件' : '选择备份文件')
+            .width('100%')
+            .height(44)
+            .backgroundColor(this.softColor())
+            .fontColor(this.primaryTextColor())
+            .enabled(!this.busy)
+            .onClick(() => this.chooseImportFile())
+
+          Text(this.importDescription)
+            .fontSize(AppFontSize.CAPTION)
+            .fontColor(this.subTextColor())
+            .width('100%')
+            .margin({ top: AppSpacing.MD })
+        }
+        .width('calc(100% - 24vp)')
+        .padding(AppSpacing.LG)
+        .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+        .borderRadius(ThemeRuntime.cardRadius())
+        .backgroundColor(this.cardColor())
+
+        if (this.importReady) {
+          this.sectionTitle('选择导入内容')
+          this.selectionCard(false)
+          Button('导入所选数据')
+            .width('calc(100% - 24vp)')
+            .height(46)
+            .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG })
+            .enabled(!this.busy && this.hasImportSelection())
+            .opacity(this.hasImportSelection() ? 1 : 0.45)
+            .backgroundColor(this.accentColor())
+            .onClick(() => this.importData())
+        }
+
+        Text('导入采用同类数据合并与覆盖方式，不会先清空整套应用数据。设置和自定义资源导入后建议重新启动应用。')
+          .fontSize(AppFontSize.CAPTION)
+          .fontColor(this.subTextColor())
+          .width('calc(100% - 32vp)')
+          .margin({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XL })
+      }
     }
     .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
   }
 
   @Builder

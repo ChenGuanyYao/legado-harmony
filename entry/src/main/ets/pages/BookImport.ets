@@ -2,10 +2,10 @@ import { router } from '@kit.ArkUI';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { LocalBookScanResult, LocalBookService } from '../core/book/LocalBookService';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 @Entry
 @Component
@@ -14,8 +14,6 @@ struct BookImportPage {
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
-  @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State isScanning: boolean = false;
   @State statusText: string = '';
 
@@ -29,43 +27,9 @@ struct BookImportPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
-        Column() {
-          this.sectionTitle('导入方式')
-          Column() {
-            this.menuRow($r('sys.symbol.bookshelf'), 'OPDS 书库',
-              '连接 Calibre / Komga / Kavita 等书库，浏览并下载图书', true, () => {
-                router.pushUrl({ url: 'pages/OpdsServers' });
-              })
-            this.menuRow($r('sys.symbol.externaldrive'), 'WebDAV 服务',
-              '浏览远程 TXT / EPUB 书库', true, () => {
-                router.pushUrl({ url: 'pages/WebDav' });
-              })
-            this.menuRow($r('sys.symbol.book'), '本地导入',
-              '选择并导入 TXT / EPUB 文件', false, () => {
-                this.addBooks();
-              })
-            Text('仅支持 TXT / EPUB 格式')
-              .fontSize(AppFontSize.CAPTION)
-              .fontColor(this.subTextColor())
-              .width('100%')
-              .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.LG })
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-        }
-        .width('100%')
-        .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      .align(Alignment.TopStart)
-
-      this.titleBar()
+      PageScaffold({ title: '书籍导入', content: () => {
+        this.pageContent()
+      } })
 
       if (this.isScanning) {
         Column({ space: AppSpacing.LG }) {
@@ -89,6 +53,35 @@ struct BookImportPage {
     .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  pageContent() {
+    this.sectionTitle('导入方式')
+    Column() {
+      this.menuRow($r('sys.symbol.bookshelf'), 'OPDS 书库',
+        '连接 Calibre / Komga / Kavita 等书库，浏览并下载图书', true, () => {
+          router.pushUrl({ url: 'pages/OpdsServers' });
+        })
+      this.menuRow($r('sys.symbol.externaldrive'), 'WebDAV 服务',
+        '浏览远程 TXT / EPUB 书库', true, () => {
+          router.pushUrl({ url: 'pages/WebDav' });
+        })
+      this.menuRow($r('sys.symbol.book'), '本地导入',
+        '选择并导入 TXT / EPUB 文件', false, () => {
+          this.addBooks();
+        })
+      Text('仅支持 TXT / EPUB 格式')
+        .fontSize(AppFontSize.CAPTION)
+        .fontColor(this.subTextColor())
+        .width('100%')
+        .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.LG })
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
   }
 
   async addBooks(): Promise<void> {
@@ -138,26 +131,6 @@ struct BookImportPage {
 
   syncBars(): void {
     syncSystemBars(getContext(this), this.appDarkMode, this.pageColor());
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('书籍导入')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
   }
 
   @Builder

@@ -1,9 +1,7 @@
-import { router } from '@kit.ArkUI';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ReaderSettingsStore } from '../utils/ReaderSettingsStore';
 import { ReaderFontHelper, ReaderFontItem } from '../utils/ReaderFontHelper';
 import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import picker from '@ohos.file.picker';
 import fs from '@ohos.file.fs';
 import fileUri from '@ohos.file.fileuri';
@@ -11,6 +9,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 class ReaderCustomFontItem {
   familyName: string = '';
@@ -37,8 +36,6 @@ struct CustomFontManagerPage {
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
   @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
-  @StorageProp('navBarHeight') navBarHeight: number = 0;
 
   @State customFonts: ReaderCustomFontItem[] = [];
 
@@ -62,36 +59,32 @@ struct CustomFontManagerPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
-        Column() {
-          this.uploadPanel()
-
-          this.sectionTitle('已上传字体')
-          if (this.customFonts.length > 0) {
-            Column({ space: 1 }) {
-              ForEach(this.customFonts, (item: ReaderCustomFontItem) => {
-                this.fontItem(item)
-              })
-            }
-            .width('100%')
-            .backgroundColor(this.cardColor())
-          } else {
-            this.emptyPanel()
-          }
-        }
-        .width('100%')
-        .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-
-      this.titleBar()
+      PageScaffold({ title: '自定义字体', content: () => {
+        this.pageContent()
+      } })
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  pageContent() {
+    this.uploadPanel()
+
+    this.sectionTitle('已上传字体')
+    if (this.customFonts.length > 0) {
+      Column({ space: 1 }) {
+        ForEach(this.customFonts, (item: ReaderCustomFontItem) => {
+          this.fontItem(item)
+        })
+      }
+      .width('100%')
+      .backgroundColor(this.cardColor())
+    } else {
+      this.emptyPanel()
+    }
   }
 
   async reloadCustomFonts(): Promise<void> {
@@ -548,27 +541,6 @@ struct CustomFontManagerPage {
 
   syncBars(): void {
     syncSystemBars(getContext(this), this.appDarkMode, this.pageColor());
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-
-      Text('自定义字体')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
   }
 
   @Builder

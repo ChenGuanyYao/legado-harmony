@@ -1,7 +1,6 @@
 import { router, promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import deviceInfo from '@ohos.deviceInfo';
 import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { WebDavClient } from '../webdav/WebDavClient';
@@ -14,6 +13,7 @@ import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 @Entry
 @Component
@@ -65,14 +65,9 @@ struct WebDavPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Column() {
-        this.connectionList()
-      }
-      .width('100%')
-      .height('100%')
-      .padding({ top: 56 + this.statusBarHeight })
-
-      this.titleBar()
+      PageScaffold({ title: 'WebDAV', scrollable: false, content: () => {
+        this.pageContent()
+      } })
 
       if (this.showConnectionActionMenu) {
         this.connectionActionMenu()
@@ -112,25 +107,8 @@ struct WebDavPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('WebDAV')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
-    .position({ x: 0, y: 0 })
-    .zIndex(3)
+  pageContent() {
+    this.connectionList()
   }
 
   @Builder

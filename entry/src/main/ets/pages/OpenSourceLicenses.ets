@@ -1,19 +1,16 @@
 import { common } from '@kit.AbilityKit';
-import { router } from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 @Entry
 @Component
 struct OpenSourceLicensesPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
-  @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State licenseText: string = '正在加载开源许可…';
 
   aboutToAppear(): void {
@@ -27,67 +24,50 @@ struct OpenSourceLicensesPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
-        Column() {
-          Column() {
-            Text('开源轻页采用 GPL-3.0 许可证，并包含 ohos_quickjs、QuickJS 和部分 OpenHarmony/Huawei N-API 封装代码。以下源码信息、版权声明与完整许可文本随 HAP 一同分发。')
-              .fontSize(AppFontSize.BODY)
-              .fontColor(this.secondaryTextColor())
-              .lineHeight(22)
-              .width('100%')
-          }
-          .width('100%')
-          .padding(AppSpacing.XL)
-          .backgroundColor(this.cardColor())
-          .borderRadius(ThemeRuntime.cardRadius())
-          .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.LG })
-          .alignItems(HorizontalAlign.Start)
-
-          Column() {
-            Text(this.licenseText)
-              .fontSize(AppFontSize.CAPTION)
-              .fontColor(this.primaryTextColor())
-              .lineHeight(19)
-              .width('100%')
-              .copyOption(CopyOptions.LocalDevice)
-          }
-          .width('100%')
-          .padding(AppSpacing.XL)
-          .backgroundColor(this.cardColor())
-          .borderRadius(ThemeRuntime.cardRadius())
-          .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: 24 + this.navBarHeight })
-          .alignItems(HorizontalAlign.Start)
-        }
-        .width('100%')
-        .padding({ top: 56 + this.statusBarHeight })
-        .alignItems(HorizontalAlign.Center)
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-
-      Row() {
-        ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-          buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-          onBack: () => router.back() })
-
-        Text('开源软件许可')
-          .fontSize(AppFontSize.TITLE)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor())
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .height(56 + this.statusBarHeight)
-      .padding({ top: this.statusBarHeight })
-      .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-      .backdropBlur(ThemeRuntime.topBarBlur())
-      .alignItems(VerticalAlign.Center)
+      PageScaffold({ title: '开源软件许可', bottomInset: 0, content: () => {
+        this.pageContent()
+      } })
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  pageContent() {
+    Column() {
+      Column() {
+        Text('开源轻页采用 GPL-3.0 许可证，并包含 ohos_quickjs、QuickJS 和部分 OpenHarmony/Huawei N-API 封装代码。以下源码信息、版权声明与完整许可文本随 HAP 一同分发。')
+          .fontSize(AppFontSize.BODY)
+          .fontColor(this.secondaryTextColor())
+          .lineHeight(22)
+          .width('100%')
+      }
+      .width('100%')
+      .padding(AppSpacing.XL)
+      .backgroundColor(this.cardColor())
+      .borderRadius(ThemeRuntime.cardRadius())
+      .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.LG })
+      .alignItems(HorizontalAlign.Start)
+
+      Column() {
+        Text(this.licenseText)
+          .fontSize(AppFontSize.CAPTION)
+          .fontColor(this.primaryTextColor())
+          .lineHeight(19)
+          .width('100%')
+          .copyOption(CopyOptions.LocalDevice)
+      }
+      .width('100%')
+      .padding(AppSpacing.XL)
+      .backgroundColor(this.cardColor())
+      .borderRadius(ThemeRuntime.cardRadius())
+      .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.XXXL })
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Center)
   }
 
   async loadLicenseText(): Promise<void> {

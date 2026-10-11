@@ -15,12 +15,12 @@ import {
 import { AccountSessionStore } from '../account/AccountSessionStore';
 import { CloudSyncSettingsStore } from '../account/CloudSyncSettingsStore';
 import { HuaweiAccountService } from '../account/HuaweiAccountService';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 @Entry
 @Component
@@ -38,8 +38,6 @@ struct AccountCenterPage {
   @StorageLink('cloudSyncLastSuccessAt') cloudSyncLastSuccessAt: number = 0;
   @StorageLink('cloudSyncPendingCount') cloudSyncPendingCount: number = 0;
   @StorageLink('cloudSyncStatus') cloudSyncStatus: string = CloudSyncSettingsStore.STATUS_DISABLED;
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
-  @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State loading: boolean = false;
   @State purchasingProductId: string = '';
   @State products: RechargeProduct[] = AccountCommerceConfig.rechargeProducts();
@@ -78,42 +76,11 @@ struct AccountCenterPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
-        Column({ space: AppSpacing.LG }) {
-          if (!this.editingProfile) {
-            this.accountCard()
-            this.cloudSyncCard()
-          }
-          if (this.accountLoggedIn) {
-            if (this.editingProfile) {
-              if (this.croppingAvatar) {
-                this.avatarCropper()
-              } else {
-                this.profileEditor()
-              }
-            }
-            this.pointsCard()
-            this.rechargeSection()
-            this.accountActions()
-          } else {
-            this.loginGuide()
-          }
-          this.serviceHint()
-        }
-        .width('100%')
-        .padding({
-          left: AppSpacing.LG,
-          right: AppSpacing.LG,
-          top: 70 + this.statusBarHeight,
-          bottom: 32 + this.navBarHeight
-        })
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      .align(Alignment.TopStart)
-
-      this.titleBar()
+      PageScaffold({ title: '账号与点数', content: () => {
+        this.pageContent()
+      }, actions: () => {
+        this.titleActions()
+      } })
     }
     .width('100%')
     .height('100%')
@@ -129,6 +96,51 @@ struct AccountCenterPage {
         this.viewportHeight = height;
       }
     })
+  }
+
+  @Builder
+  pageContent() {
+    Column({ space: AppSpacing.LG }) {
+      if (!this.editingProfile) {
+        this.accountCard()
+        this.cloudSyncCard()
+      }
+      if (this.accountLoggedIn) {
+        if (this.editingProfile) {
+          if (this.croppingAvatar) {
+            this.avatarCropper()
+          } else {
+            this.profileEditor()
+          }
+        }
+        this.pointsCard()
+        this.rechargeSection()
+        this.accountActions()
+      } else {
+        this.loginGuide()
+      }
+      this.serviceHint()
+    }
+    .width('100%')
+    .padding({
+      left: AppSpacing.LG,
+      right: AppSpacing.LG,
+      top: 14
+    })
+  }
+
+  @Builder
+  titleActions() {
+    if (this.accountLoggedIn) {
+      SymbolGlyph($r('sys.symbol.arrow_clockwise'))
+        .fontSize(21)
+        .fontColor([this.accentColor()])
+        .width(48)
+        .height(48)
+        .onClick(() => {
+          this.refreshAccount();
+        })
+    }
   }
 
   async initialize(): Promise<void> {
@@ -553,38 +565,6 @@ struct AccountCenterPage {
 
   syncBars(): void {
     syncSystemBars(getContext(this), this.appDarkMode, this.pageColor());
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('账号与点数')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-      if (this.accountLoggedIn) {
-        SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-          .fontSize(21)
-          .fontColor([this.accentColor()])
-          .width(48)
-          .height(48)
-          .onClick(() => {
-            this.refreshAccount();
-          })
-      } else {
-        Blank().width(48)
-      }
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .alignItems(VerticalAlign.Center)
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
   }
 
   @Builder

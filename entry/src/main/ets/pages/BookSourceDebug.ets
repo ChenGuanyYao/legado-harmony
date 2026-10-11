@@ -13,12 +13,12 @@ import { SourceRuntimeStage } from '../core/book/BookSourceRuntimeRouter';
 import { BookSourceDebugContext, BookSourceDebugSession, BookSourceDebugStep,
   BookSourceDebugNetworkTrace, BookSourceDebugRuleTrace, BookSourceDebugLog,
   BookSourceDebugRedactor } from '../core/book/BookSourceDebugModels';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 class BookSourceDebugExportReport {
   reportVersion: number = 1;
@@ -42,8 +42,6 @@ class BookSourceDebugClipboardReport {
 @Component
 struct BookSourceDebugPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
-  @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State source: BookSource = new BookSource();
   @State sourceUrl: string = '';
   @State keyword: string = '';
@@ -96,19 +94,11 @@ struct BookSourceDebugPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
-        Column({ space: AppSpacing.LG }) {
-          this.sourceCard()
-          this.inputCard()
-          this.resultCard()
-        }
-        .width('100%')
-        .padding({ top: 68 + this.statusBarHeight, bottom: 32 + this.navBarHeight + this.keyboardInset })
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      this.titleBar()
+      PageScaffold({ title: '书源调试', content: () => {
+        this.pageContent()
+      }, actions: () => {
+        this.titleActions()
+      } })
     }
     .width('100%')
     .height('100%')
@@ -117,24 +107,25 @@ struct BookSourceDebugPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('书源调试').fontSize(AppFontSize.TITLE).fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor()).layoutWeight(1)
-      Text('导出报告').fontSize(AppFontSize.BODY).fontColor(this.accentColor())
-        .width(88)
-        .height(56)
-        .textAlign(TextAlign.Center)
-        .margin({ right: AppSpacing.LG })
-        .opacity(this.hasDebugReport() ? 1 : 0.45)
-        .onClick(() => this.exportDebugReport())
+  pageContent() {
+    Column({ space: AppSpacing.LG }) {
+      this.sourceCard()
+      this.inputCard()
+      this.resultCard()
     }
-    .width('100%').height(56 + this.statusBarHeight).padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .alignItems(VerticalAlign.Center)
+    .width('100%')
+    .padding({ top: AppSpacing.LG, bottom: this.keyboardInset })
+  }
+
+  @Builder
+  titleActions() {
+    Text('导出报告').fontSize(AppFontSize.BODY).fontColor(this.accentColor())
+      .width(88)
+      .height(56)
+      .textAlign(TextAlign.Center)
+      .margin({ right: AppSpacing.LG })
+      .opacity(this.hasDebugReport() ? 1 : 0.45)
+      .onClick(() => this.exportDebugReport())
   }
 
   @Builder

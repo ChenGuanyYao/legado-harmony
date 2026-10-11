@@ -1,6 +1,5 @@
 import { router } from '@kit.ArkUI';
 import { Context } from '@kit.AbilityKit';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { QuickJsFingerprintStats, QuickJsMigrationSnapshot,
   QuickJsMigrationStore } from '../core/script/QuickJsMigrationStore';
 import { QuickJsRuntimeMode } from '../core/script/QuickJsRuntimeStatus';
@@ -9,6 +8,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 @Entry
 @Component
@@ -16,8 +16,6 @@ struct QuickJsDiagnosticsPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('quickJsMigrationRevision') quickJsMigrationRevision: number = 0;
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
-  @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State snapshot: QuickJsMigrationSnapshot = new QuickJsMigrationSnapshot();
 
   aboutToAppear(): void {
@@ -34,49 +32,50 @@ struct QuickJsDiagnosticsPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
-        Column({ space: AppSpacing.LG }) {
-          this.infoCard()
-          this.modeCard()
-          this.statsCard()
-          this.privacyCard()
-          Button('书源脚本回归测试')
-            .type(ButtonType.Capsule)
-            .fontSize(AppFontSize.BODY_LARGE)
-            .fontColor(ThemeRuntime.onAccentColor())
-            .backgroundColor(ThemeRuntime.accentColor(this.appDarkMode))
-            .width('calc(100% - 24vp)')
-            .height(46)
-            .onClick((): void => {
-              router.pushUrl({ url: 'pages/QuickJsRegression' });
-            })
-          Button('清除迁移统计')
-            .type(ButtonType.Capsule)
-            .fontSize(AppFontSize.BODY)
-            .fontColor(ThemeRuntime.dangerColor(this.appDarkMode))
-            .backgroundColor(this.cardColor())
-            .width('calc(100% - 24vp)')
-            .height(46)
-            .onClick((): void => {
-              const context = getContext(this) as Context;
-              Promise.all([QuickJsMigrationStore.clearDiagnostics(context),
-                QuickJsValidationStore.clearRealProgress(context)])
-                .then((): void => this.refresh())
-                .catch((): void => {});
-            })
-        }
-        .width('100%')
-        .padding({ top: 68 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      this.titleBar()
+      PageScaffold({ title: '脚本引擎迁移', content: () => {
+        this.pageContent()
+      } })
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  pageContent() {
+    Column({ space: AppSpacing.LG }) {
+      this.infoCard()
+      this.modeCard()
+      this.statsCard()
+      this.privacyCard()
+      Button('书源脚本回归测试')
+        .type(ButtonType.Capsule)
+        .fontSize(AppFontSize.BODY_LARGE)
+        .fontColor(ThemeRuntime.onAccentColor())
+        .backgroundColor(ThemeRuntime.accentColor(this.appDarkMode))
+        .width('calc(100% - 24vp)')
+        .height(46)
+        .onClick((): void => {
+          router.pushUrl({ url: 'pages/QuickJsRegression' });
+        })
+      Button('清除迁移统计')
+        .type(ButtonType.Capsule)
+        .fontSize(AppFontSize.BODY)
+        .fontColor(ThemeRuntime.dangerColor(this.appDarkMode))
+        .backgroundColor(this.cardColor())
+        .width('calc(100% - 24vp)')
+        .height(46)
+        .onClick((): void => {
+          const context = getContext(this) as Context;
+          Promise.all([QuickJsMigrationStore.clearDiagnostics(context),
+            QuickJsValidationStore.clearRealProgress(context)])
+            .then((): void => this.refresh())
+            .catch((): void => {});
+        })
+    }
+    .width('100%')
+    .padding({ top: AppSpacing.LG })
   }
 
   @Builder
@@ -190,26 +189,6 @@ struct QuickJsDiagnosticsPage {
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .alignItems(HorizontalAlign.Start)
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('脚本引擎迁移')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
   }
 
   private setMode(mode: QuickJsRuntimeMode): void {

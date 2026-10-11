@@ -3,21 +3,19 @@ import { AccountCommerceApi } from '../account/AccountCommerceApi';
 import { AccountSessionStore } from '../account/AccountSessionStore';
 import { CloudSyncDevice } from '../account/CloudSyncModels';
 import { CloudSyncStateStore } from '../account/CloudSyncStateStore';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 @Entry
 @Component
 struct SyncDevicesPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
-  @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State devices: CloudSyncDevice[] = [];
   @State currentDeviceId: string = '';
   @State loading: boolean = true;
@@ -58,84 +56,90 @@ struct SyncDevicesPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
-        Column() {
-          Row()
-            .height(56 + this.statusBarHeight)
-
-          if (this.loading) {
-            Column({ space: AppSpacing.LG }) {
-              LoadingProgress()
-                .width(36)
-                .height(36)
-                .color(this.accentColor())
-              Text('正在读取同步设备…')
-                .fontSize(AppFontSize.BODY)
-                .fontColor(this.subTextColor())
-            }
-            .width('100%')
-            .padding({ top: 48 })
-          } else if (this.errorMessage) {
-            Column({ space: AppSpacing.LG }) {
-              Text(this.errorMessage)
-                .fontSize(AppFontSize.BODY)
-                .fontColor(this.subTextColor())
-                .textAlign(TextAlign.Center)
-              Button('重试')
-                .height(40)
-                .backgroundColor(this.accentColor())
-                .onClick(() => this.loadDevices())
-            }
-            .width('calc(100% - 24vp)')
-            .padding(AppSpacing.XXL)
-            .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.XXL })
-            .borderRadius(ThemeRuntime.cardRadius())
-            .backgroundColor(this.cardColor())
-          } else {
-            this.sectionTitle('已登录设备')
-            Column() {
-              if (this.devices.length === 0) {
-                Text('完成首次同步后，当前设备会显示在这里。')
-                  .fontSize(AppFontSize.BODY)
-                  .fontColor(this.subTextColor())
-                  .width('100%')
-                  .padding(AppSpacing.XL)
-              } else {
-                ForEach(this.devices, (device: CloudSyncDevice, index: number) => {
-                  this.deviceItem(device, index < this.devices.length - 1)
-                }, (device: CloudSyncDevice) => device.deviceId)
-              }
-            }
-            .width('calc(100% - 24vp)')
-            .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-            .borderRadius(ThemeRuntime.cardRadius())
-            .clip(true)
-            .backgroundColor(this.cardColor())
-
-            Text('可以移除不再使用的其他设备。本机同步权限需要通过关闭云同步或退出账号进行管理。')
-              .fontSize(AppFontSize.CAPTION)
-              .fontColor(this.subTextColor())
-              .lineHeight(18)
-              .width('calc(100% - 32vp)')
-              .margin({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG })
-          }
-
-          Row()
-            .height(32 + this.navBarHeight)
-        }
-        .width('100%')
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-
-      this.titleBar()
+      PageScaffold({ title: '同步设备', content: () => {
+        this.pageContent()
+      }, actions: () => {
+        this.titleActions()
+      } })
 
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  pageContent() {
+    Column() {
+      if (this.loading) {
+        Column({ space: AppSpacing.LG }) {
+          LoadingProgress()
+            .width(36)
+            .height(36)
+            .color(this.accentColor())
+          Text('正在读取同步设备…')
+            .fontSize(AppFontSize.BODY)
+            .fontColor(this.subTextColor())
+        }
+        .width('100%')
+        .padding({ top: 48 })
+      } else if (this.errorMessage) {
+        Column({ space: AppSpacing.LG }) {
+          Text(this.errorMessage)
+            .fontSize(AppFontSize.BODY)
+            .fontColor(this.subTextColor())
+            .textAlign(TextAlign.Center)
+          Button('重试')
+            .height(40)
+            .backgroundColor(this.accentColor())
+            .onClick(() => this.loadDevices())
+        }
+        .width('calc(100% - 24vp)')
+        .padding(AppSpacing.XXL)
+        .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.XXL })
+        .borderRadius(ThemeRuntime.cardRadius())
+        .backgroundColor(this.cardColor())
+      } else {
+        this.sectionTitle('已登录设备')
+        Column() {
+          if (this.devices.length === 0) {
+            Text('完成首次同步后，当前设备会显示在这里。')
+              .fontSize(AppFontSize.BODY)
+              .fontColor(this.subTextColor())
+              .width('100%')
+              .padding(AppSpacing.XL)
+          } else {
+            ForEach(this.devices, (device: CloudSyncDevice, index: number) => {
+              this.deviceItem(device, index < this.devices.length - 1)
+            }, (device: CloudSyncDevice) => device.deviceId)
+          }
+        }
+        .width('calc(100% - 24vp)')
+        .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+        .borderRadius(ThemeRuntime.cardRadius())
+        .clip(true)
+        .backgroundColor(this.cardColor())
+
+        Text('可以移除不再使用的其他设备。本机同步权限需要通过关闭云同步或退出账号进行管理。')
+          .fontSize(AppFontSize.CAPTION)
+          .fontColor(this.subTextColor())
+          .lineHeight(18)
+          .width('calc(100% - 32vp)')
+          .margin({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG })
+      }
+    }
+    .width('100%')
+  }
+
+  @Builder
+  titleActions() {
+    SymbolGlyph($r('sys.symbol.arrow_clockwise'))
+      .fontSize(20)
+      .fontColor([this.accentColor()])
+      .width(48)
+      .height(48)
+      .onClick(() => this.loadDevices())
   }
 
   @Builder
@@ -374,29 +378,4 @@ struct SyncDevicesPage {
       .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('同步设备')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-      SymbolGlyph($r('sys.symbol.arrow_clockwise'))
-        .fontSize(20)
-        .fontColor([this.accentColor()])
-        .width(48)
-        .height(48)
-        .onClick(() => this.loadDevices())
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
-  }
 }

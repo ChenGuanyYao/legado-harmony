@@ -1,7 +1,6 @@
 import { router, promptAction, SymbolGlyphModifier } from '@kit.ArkUI';
 import deviceInfo from '@ohos.deviceInfo';
 import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { OpdsServerConfig } from '../opds/OpdsModels';
@@ -15,6 +14,7 @@ import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 @Entry
 @Component
@@ -65,14 +65,9 @@ struct OpdsServersPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Column() {
-        this.serverList()
-      }
-      .width('100%')
-      .height('100%')
-      .padding({ top: 56 + this.statusBarHeight })
-
-      this.titleBar()
+      PageScaffold({ title: 'OPDS 书库', scrollable: false, content: () => {
+        this.pageContent()
+      } })
 
       if (this.showServerActionMenu) {
         this.serverActionMenu()
@@ -112,25 +107,8 @@ struct OpdsServersPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('OPDS 书库')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
-    .position({ x: 0, y: 0 })
-    .zIndex(3)
+  pageContent() {
+    this.serverList()
   }
 
   @Builder
