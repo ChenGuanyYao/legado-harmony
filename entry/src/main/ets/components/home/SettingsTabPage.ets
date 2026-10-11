@@ -58,6 +58,9 @@ export struct SettingsPage {
             this.menuItem($r('sys.symbol.gearshape'), '其他设置', true, () => {
               router.pushUrl({ url: 'pages/OtherSettings' });
             })
+            this.menuItem($r('sys.symbol.questionmark_circle'), '帮助', true, () => {
+              router.pushUrl({ url: 'pages/Help' });
+            })
             this.menuItem($r('sys.symbol.info_circle'), '关于', false, () => {
               router.pushUrl({ url: 'pages/About' });
             })

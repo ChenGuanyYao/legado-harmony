@@ -39,6 +39,7 @@
     "pages/WebDavBrowse",
     "pages/ReaderReplaceRules",
     "pages/CoverGalleryManager",
+    "pages/Help",
     "pages/About",
     "pages/OpenSourceLicenses",
     "pages/VerifyWeb"
