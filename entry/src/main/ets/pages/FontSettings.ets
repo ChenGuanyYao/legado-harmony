@@ -5,11 +5,11 @@ import { ReaderFontHelper, ReaderFontItem } from '../utils/ReaderFontHelper';
 import { ReaderSystemFontHelper } from '../utils/ReaderSystemFontHelper';
 import fs from '@ohos.file.fs';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 class ReaderCustomFontItem {
   familyName: string = '';
@@ -36,8 +36,6 @@ struct FontSettingsPage {
   @StorageLink('readerFontRegistered') readerFontRegistered: boolean = false;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
-  @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State customFonts: ReaderCustomFontItem[] = [];
 
   aboutToAppear(): void {
@@ -60,33 +58,28 @@ struct FontSettingsPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
-        Column() {
-          this.sectionTitle('全局字体设置')
-          Column() {
-            this.fontSettingPanel()
-            this.customFontEntryItem()
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-        }
-        .width('100%')
-        .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      .align(Alignment.TopStart)
-
-      this.titleBar()
+      PageScaffold({ title: '字体设置', content: () => {
+        this.pageContent()
+      } })
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  pageContent() {
+    this.sectionTitle('全局字体设置')
+    Column() {
+      this.fontSettingPanel()
+      this.customFontEntryItem()
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
   }
 
   async reloadCustomFonts(): Promise<void> {
@@ -460,28 +453,6 @@ struct FontSettingsPage {
 
   syncBars(): void {
     syncSystemBars(getContext(this), this.appDarkMode, this.pageColor());
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-
-      Text('字体设置')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
-    .alignItems(VerticalAlign.Center)
   }
 
   @Builder

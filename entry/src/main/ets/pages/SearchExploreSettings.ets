@@ -72,6 +72,7 @@ struct SearchExploreSettingsPage {
         title: '显示结果标签',
         description: '开启后搜索和发现结果展示书籍标签',
         isOn: this.searchExploreShowResultTags,
+        showDivider: false,
         onChange: (value: boolean) => {
           this.searchExploreShowResultTags = value;
           this.onSettingChanged();
@@ -90,6 +91,7 @@ struct SearchExploreSettingsPage {
         title: '返回提示加入书架',
         description: '从搜索或发现详情点击阅读后，返回时询问是否加入书架',
         isOn: this.searchExplorePromptAddToShelfOnBack,
+        showDivider: false,
         onChange: (value: boolean) => {
           this.searchExplorePromptAddToShelfOnBack = value;
           this.onSettingChanged();
@@ -140,7 +142,8 @@ struct SearchExploreSettingsPage {
           this.onSettingChanged();
         }
       })
-      SettingRow({ title: '搜索并发数', description: '控制书籍检索、书源校验和换源同时并发请求的数量' }) {
+      SettingRow({ title: '搜索并发数', description: '控制书籍检索、书源校验和换源同时并发请求的数量',
+        showDivider: false }) {
         this.concurrencyStepper()
       }
     }

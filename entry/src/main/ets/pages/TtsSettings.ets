@@ -16,7 +16,6 @@ import { HttpClient } from '../core/http/HttpClient';
 import { syncSystemBars } from '../utils/SystemBars';
 import { SystemTtsReader, TtsVoiceOption } from '../utils/SystemTtsReader';
 import { TtsVoiceCatalog } from '../utils/TtsVoiceCatalog';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { AdaptiveIconButton } from '../components/AdaptiveIconButton';
 import { TtsSettings, TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
@@ -24,6 +23,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 const TTS_CUSTOM_VOICE_IMPORT_LIMIT_BYTES: number = 2 * 1024 * 1024;
 
@@ -49,7 +49,6 @@ struct TtsSettingsPage {
   @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
   @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
-  @StorageProp('navBarHeight') navBarHeight: number = 0;
 
   @State voices: TtsVoiceOption[] = [TtsVoiceCatalog.defaultVoice()];
   @State cloudVoices: TtsVoiceInfo[] = [];
@@ -96,129 +95,9 @@ struct TtsSettingsPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-        Scroll() {
-          Column() {
-            this.sectionTitle('朗读音色')
-            this.voiceDropdownSelector()
-
-          this.sectionTitle('自定义音色')
-          Row() {
-            Column() {
-              Text(this.customVoiceSummary())
-                .fontSize(AppFontSize.BODY_LARGE)
-                .fontColor(this.primaryTextColor())
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-              Text('导入、启用、禁用、删除自定义音色')
-                .fontSize(AppFontSize.CAPTION)
-                .fontColor(this.subTextColor())
-                .margin({ top: AppSpacing.XS })
-            }
-            .layoutWeight(1)
-            .alignItems(HorizontalAlign.Start)
-
-            Text('管理')
-              .fontSize(AppFontSize.BODY)
-              .fontColor(this.accentColor())
-              .width(52)
-              .textAlign(TextAlign.Center)
-          }
-          .width('calc(100% - 24vp)')
-          .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-          .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
-          .onClick(() => {
-            router.pushUrl({ url: 'pages/CustomTtsVoiceManager' });
-          })
-
-          this.sectionTitle('朗读倍速')
-          Column() {
-            Row() {
-              Text('倍速')
-                .fontSize(AppFontSize.BODY_LARGE)
-                .fontColor(this.primaryTextColor())
-                .layoutWeight(1)
-              Text(`${this.ttsSpeed.toFixed(1)}x`)
-                .fontSize(AppFontSize.BODY)
-                .fontColor(this.subTextColor())
-            }
-            .width('100%')
-
-            Row({ space: AppSpacing.MD }) {
-              this.speedStepButton($r('sys.symbol.minus'), '降低朗读倍速', this.ttsSpeed > 0.5, () => {
-                this.applySpeed(this.ttsSpeed - 0.1);
-              })
-              Slider({ value: this.ttsSpeed, min: 0.5, max: 2, step: 0.1 })
-                .layoutWeight(1)
-                .showTips(true)
-                .selectedColor(this.accentColor())
-                .sliderInteractionMode(ImmersiveMaterialRuntime.supportsHds() ? SliderInteraction.SLIDE_AND_CLICK_UP : SliderInteraction.SLIDE_ONLY)
-                .onChange((value: number) => {
-                  this.applySpeed(value);
-                })
-              this.speedStepButton($r('sys.symbol.plus'), '提高朗读倍速', this.ttsSpeed !== 2, () => {
-                this.applySpeed(this.ttsSpeed + 0.1);
-              })
-            }
-            .width('100%')
-            .margin({ top: AppSpacing.MD })
-
-            Row({ space: AppSpacing.MD }) {
-              this.speedChip(0.8)
-              this.speedChip(1.0)
-              this.speedChip(1.2)
-              this.speedChip(1.5)
-              this.speedChip(2.0)
-            }
-            .width('100%')
-            .margin({ top: AppSpacing.MD })
-          }
-          .width('calc(100% - 24vp)')
-          .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-
-          this.sectionTitle('预览')
-          Column({ space: AppSpacing.LG }) {
-            Text(this.previewText)
-              .fontSize(AppFontSize.BODY)
-              .lineHeight(22)
-              .fontColor(this.subTextColor())
-              .width('100%')
-
-            Button(this.isPreviewing ? '停止试听' : '试听')
-              .width('100%')
-              .height(42)
-              .backgroundColor(this.isPreviewing ? ThemeRuntime.dangerColor(this.appDarkMode) : this.buttonColor())
-              .fontColor(ThemeRuntime.onAccentColor())
-              .onClick(() => {
-                this.togglePreview();
-              })
-          }
-          .width('calc(100% - 24vp)')
-          .padding(AppSpacing.XL)
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-
-          this.sectionTitle('在线朗读字数')
-          this.ttsCommerceSection()
-          }
-          .width('100%')
-          .padding({ top: 56 + this.statusBarHeight, bottom: this.navBarHeight + 32 })
-        }
-        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-        .width('100%')
-        .height('100%')
-        .align(Alignment.TopStart)
-
-      this.titleBar()
+      PageScaffold({ title: '朗读设置', content: () => {
+        this.pageContent()
+      } })
 
       if (this.showVoiceDropdown) {
         this.voiceDropdownMenu()
@@ -228,6 +107,121 @@ struct TtsSettingsPage {
     .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  pageContent() {
+      this.sectionTitle('朗读音色')
+      this.voiceDropdownSelector()
+
+    this.sectionTitle('自定义音色')
+    Row() {
+      Column() {
+        Text(this.customVoiceSummary())
+          .fontSize(AppFontSize.BODY_LARGE)
+          .fontColor(this.primaryTextColor())
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text('导入、启用、禁用、删除自定义音色')
+          .fontSize(AppFontSize.CAPTION)
+          .fontColor(this.subTextColor())
+          .margin({ top: AppSpacing.XS })
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+
+      Text('管理')
+        .fontSize(AppFontSize.BODY)
+        .fontColor(this.accentColor())
+        .width(52)
+        .textAlign(TextAlign.Center)
+    }
+    .width('calc(100% - 24vp)')
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
+    .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
+    .onClick(() => {
+      router.pushUrl({ url: 'pages/CustomTtsVoiceManager' });
+    })
+
+    this.sectionTitle('朗读倍速')
+    Column() {
+      Row() {
+        Text('倍速')
+          .fontSize(AppFontSize.BODY_LARGE)
+          .fontColor(this.primaryTextColor())
+          .layoutWeight(1)
+        Text(`${this.ttsSpeed.toFixed(1)}x`)
+          .fontSize(AppFontSize.BODY)
+          .fontColor(this.subTextColor())
+      }
+      .width('100%')
+
+      Row({ space: AppSpacing.MD }) {
+        this.speedStepButton($r('sys.symbol.minus'), '降低朗读倍速', this.ttsSpeed > 0.5, () => {
+          this.applySpeed(this.ttsSpeed - 0.1);
+        })
+        Slider({ value: this.ttsSpeed, min: 0.5, max: 2, step: 0.1 })
+          .layoutWeight(1)
+          .showTips(true)
+          .selectedColor(this.accentColor())
+          .sliderInteractionMode(ImmersiveMaterialRuntime.supportsHds() ? SliderInteraction.SLIDE_AND_CLICK_UP : SliderInteraction.SLIDE_ONLY)
+          .onChange((value: number) => {
+            this.applySpeed(value);
+          })
+        this.speedStepButton($r('sys.symbol.plus'), '提高朗读倍速', this.ttsSpeed !== 2, () => {
+          this.applySpeed(this.ttsSpeed + 0.1);
+        })
+      }
+      .width('100%')
+      .margin({ top: AppSpacing.MD })
+
+      Row({ space: AppSpacing.MD }) {
+        this.speedChip(0.8)
+        this.speedChip(1.0)
+        this.speedChip(1.2)
+        this.speedChip(1.5)
+        this.speedChip(2.0)
+      }
+      .width('100%')
+      .margin({ top: AppSpacing.MD })
+    }
+    .width('calc(100% - 24vp)')
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
+
+    this.sectionTitle('预览')
+    Column({ space: AppSpacing.LG }) {
+      Text(this.previewText)
+        .fontSize(AppFontSize.BODY)
+        .lineHeight(22)
+        .fontColor(this.subTextColor())
+        .width('100%')
+
+      Button(this.isPreviewing ? '停止试听' : '试听')
+        .width('100%')
+        .height(42)
+        .backgroundColor(this.isPreviewing ? ThemeRuntime.dangerColor(this.appDarkMode) : this.buttonColor())
+        .fontColor(ThemeRuntime.onAccentColor())
+        .onClick(() => {
+          this.togglePreview();
+        })
+    }
+    .width('calc(100% - 24vp)')
+    .padding(AppSpacing.XL)
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
+
+    this.sectionTitle('在线朗读字数')
+    this.ttsCommerceSection()
   }
 
   pageColor(): string {
@@ -1026,27 +1020,6 @@ struct TtsSettingsPage {
       return String(message);
     }
     return String(error);
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-
-      Text('朗读设置')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
   }
 
   @Builder

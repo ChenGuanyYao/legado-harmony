@@ -8,7 +8,6 @@ import { ThemeComponentSourceIds, ThemeIds, ThemePack, ThemeVariant } from '../t
 import { BuiltinThemeRegistry } from '../theme/BuiltinThemeRegistry';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { AccountSessionStore } from '../account/AccountSessionStore';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeStartupCover } from '../components/ThemeStartupCover';
 import { ReaderThemeBackground } from '../components/ReaderThemeBackground';
 import { StartupCoverImageStore } from '../utils/StartupCoverImageStore';
@@ -16,6 +15,7 @@ import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 @Component
 struct ThemeColorOption {
@@ -74,8 +74,6 @@ struct ThemeColorSettingsPage {
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appThemeId') appThemeId: string = AppThemeSettingsStore.DEFAULT_THEME_ID;
   @StorageLink('accountEntitlementsRevision') accountEntitlementsRevision: number = 0;
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
-  @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State selectedMode: string = 'light';
   @State lightAccentColor: string = '#007DFF';
   @State darkAccentColor: string = '#4E9BFF';
@@ -116,40 +114,34 @@ struct ThemeColorSettingsPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
-        Column() {
-          this.sectionTitle('从免费或已购买主题中组合部件，修改只更新方案预览，需返回主题页手动启用')
-          this.modeOptions()
-          this.sectionTitle(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式 · 主题部件`)
-          this.sourceOptions()
-          this.sectionTitle(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式 · 启动封面`)
-          this.startupCoverOptions()
-          this.sectionTitle(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式 · 自定义颜色`)
-          Column() {
-            this.colorOptions()
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-          this.previewPanel()
-        }
-        .width('100%')
-        .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      .align(Alignment.TopStart)
-      .backgroundColor(this.pageColor())
-
-      this.titleBar()
+      PageScaffold({ title: '自定义主题', onBack: () => this.closeEditor(), content: () => {
+        this.pageContent()
+      } })
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  pageContent() {
+    this.sectionTitle('从免费或已购买主题中组合部件，修改只更新方案预览，需返回主题页手动启用')
+    this.modeOptions()
+    this.sectionTitle(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式 · 主题部件`)
+    this.sourceOptions()
+    this.sectionTitle(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式 · 启动封面`)
+    this.startupCoverOptions()
+    this.sectionTitle(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式 · 自定义颜色`)
+    Column() {
+      this.colorOptions()
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
+    this.previewPanel()
   }
 
   async reloadSettings(): Promise<void> {
@@ -508,26 +500,6 @@ struct ThemeColorSettingsPage {
 
   syncBars(): void {
     syncSystemBars(getContext(this), this.appDarkMode, this.pageColor());
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => this.closeEditor() })
-      Text('自定义主题')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
   }
 
   @Builder

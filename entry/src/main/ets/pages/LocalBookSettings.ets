@@ -1,13 +1,12 @@
-import { router } from '@kit.ArkUI';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { LocalBookScanResult, LocalBookService } from '../core/book/LocalBookService';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { Book } from '../model/data/Book';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 @Entry
 @Component
@@ -16,7 +15,6 @@ struct LocalBookSettingsPage {
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
   @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State isScanning: boolean = false;
   @State statusText: string = '';
@@ -33,75 +31,81 @@ struct LocalBookSettingsPage {
   }
 
   build() {
-    Column() {
-      this.titleBar()
-      Column({ space: AppSpacing.LG }) {
-        Row() {
-          Text(`已添加书籍（${this.books.length}）`)
-            .fontSize(AppFontSize.BODY_LARGE)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.primaryTextColor())
-            .layoutWeight(1)
-        }
-        .width('100%')
-
-        if (this.books.length === 0) {
-          Column({ space: AppSpacing.SM }) {
-            Text('暂无已添加书籍')
-              .fontSize(AppFontSize.BODY_LARGE)
-              .fontColor(this.primaryTextColor())
-            Text('点击下方按钮选择 TXT 或 EPUB 文件')
-              .fontSize(AppFontSize.BODY)
-              .fontColor(this.subTextColor())
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .justifyContent(FlexAlign.Center)
-        } else {
-          List({ space: AppSpacing.MD }) {
-            ForEach(this.books, (book: Book) => {
-              ListItem() {
-                this.bookItem(book)
-              }
-            }, (book: Book) => book.bookUrl)
-          }
-          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-          .width('100%')
-          .layoutWeight(1)
-          .clip(true)
-        }
-
-        Text('选择 TXT 或 EPUB 文件导入书架')
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.primaryTextColor())
-        Text('支持一次选择多个文件，导入后文件会复制到应用内部存储，不依赖原文件位置。')
-          .fontSize(AppFontSize.BODY)
-          .fontColor(this.subTextColor())
-        Button(this.isScanning ? '正在导入' : '选择书籍文件')
-          .width('100%')
-          .height(44)
-          .backgroundColor(this.buttonColor())
-          .fontColor(ThemeRuntime.onAccentColor())
-          .enabled(!this.isScanning)
-          .onClick(() => {
-            this.addBooks();
-          })
-        if (this.statusText) {
-          Text(this.statusText)
-            .fontSize(AppFontSize.BODY)
-            .fontColor(this.subTextColor())
-            .width('100%')
-            .margin({ top: AppSpacing.MD })
-        }
-      }
-      .width('100%')
-      .layoutWeight(1)
-      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXXL, bottom: 32 + this.navBarHeight })
+    Stack() {
+      PageScaffold({ title: '添加书籍', scrollable: false, content: () => {
+        this.pageContent()
+      } })
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  pageContent() {
+    Column({ space: AppSpacing.LG }) {
+      Row() {
+        Text(`已添加书籍（${this.books.length}）`)
+          .fontSize(AppFontSize.BODY_LARGE)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.primaryTextColor())
+          .layoutWeight(1)
+      }
+      .width('100%')
+
+      if (this.books.length === 0) {
+        Column({ space: AppSpacing.SM }) {
+          Text('暂无已添加书籍')
+            .fontSize(AppFontSize.BODY_LARGE)
+            .fontColor(this.primaryTextColor())
+          Text('点击下方按钮选择 TXT 或 EPUB 文件')
+            .fontSize(AppFontSize.BODY)
+            .fontColor(this.subTextColor())
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .justifyContent(FlexAlign.Center)
+      } else {
+        List({ space: AppSpacing.MD }) {
+          ForEach(this.books, (book: Book) => {
+            ListItem() {
+              this.bookItem(book)
+            }
+          }, (book: Book) => book.bookUrl)
+        }
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .width('100%')
+        .layoutWeight(1)
+        .clip(true)
+      }
+
+      Text('选择 TXT 或 EPUB 文件导入书架')
+        .fontSize(AppFontSize.BODY_LARGE)
+        .fontColor(this.primaryTextColor())
+      Text('支持一次选择多个文件，导入后文件会复制到应用内部存储，不依赖原文件位置。')
+        .fontSize(AppFontSize.BODY)
+        .fontColor(this.subTextColor())
+      Button(this.isScanning ? '正在导入' : '选择书籍文件')
+        .width('100%')
+        .height(44)
+        .backgroundColor(this.buttonColor())
+        .fontColor(ThemeRuntime.onAccentColor())
+        .enabled(!this.isScanning)
+        .onClick(() => {
+          this.addBooks();
+        })
+      if (this.statusText) {
+        Text(this.statusText)
+          .fontSize(AppFontSize.BODY)
+          .fontColor(this.subTextColor())
+          .width('100%')
+          .margin({ top: AppSpacing.MD })
+      }
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXXL, bottom: 32 + this.navBarHeight })
   }
 
   @Builder
@@ -141,26 +145,6 @@ struct LocalBookSettingsPage {
       console.error('加载已添加本地书籍失败:', e);
       this.books = [];
     }
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('添加书籍')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
   }
 
   async addBooks(): Promise<void> {

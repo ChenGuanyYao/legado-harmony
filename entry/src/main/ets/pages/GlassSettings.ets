@@ -1,5 +1,3 @@
-import { router } from '@kit.ArkUI';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { AdaptiveIconButton } from '../components/AdaptiveIconButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { GlassPresetIds, GlassSettings, GlassSettingsStore } from '../utils/GlassSettingsStore';
@@ -8,13 +6,13 @@ import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
 
 @Entry
 @Component
 struct GlassSettingsPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State settings: GlassSettings = new GlassSettings();
   @State selectedPresetId: string = GlassPresetIds.STANDARD;
@@ -37,48 +35,54 @@ struct GlassSettingsPage {
   }
 
   build() {
-    Column() {
-      this.titleBar()
-      this.floatingPreview()
-      Scroll() {
-        Column({ space: AppSpacing.LG }) {
-          this.glassEnabledSwitch()
-          Column({ space: AppSpacing.LG }) {
-            this.sectionTitle('效果预设')
-            this.presets()
-            this.sectionTitle('模糊强度')
-            this.sliderCard('全局模糊强度', 'blur', 0, 40, 1)
-            this.sectionTitle('颜色与边框')
-            this.sliderCard('透明度', 'tintOpacity', 0, 100, 1)
-            this.sliderCard('边框透明度', 'borderOpacity', 0, 100, 1)
-            this.sliderCard('边框宽度', 'borderWidth', 0, 2, 0.5)
-            this.sliderCard('组件圆角', 'cornerRadius', 0, 32, 1)
-            this.sectionTitle('阴影')
-            this.shadowSwitch()
-            if (this.settings.shadowEnabled) {
-              this.sliderCard('阴影模糊', 'shadowRadius', 0, 30, 1)
-              this.sliderCard(this.appDarkMode ? '深色阴影' : '浅色阴影',
-                this.appDarkMode ? 'darkShadowOpacity' : 'lightShadowOpacity', 0, 100, 1)
-              this.sliderCard('水平偏移', 'shadowOffsetX', -12, 12, 1)
-              this.sliderCard('垂直偏移', 'shadowOffsetY', -12, 12, 1)
-            }
-            this.performanceCard()
-          }
-          .width('100%')
-          .enabled(this.settings.enabled)
-          .opacity(this.settings.enabled ? 1 : 0.42)
-        }
-        .width('100%')
-        .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.SM, bottom: 32 + this.navBarHeight })
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .layoutWeight(1)
-      .align(Alignment.TopStart)
+    Stack() {
+      PageScaffold({ title: '磨砂玻璃', scrollable: false, content: () => {
+        this.pageContent()
+      } })
     }
     .width('100%')
-    .height('100%').justifyContent(FlexAlign.Start)
+    .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  pageContent() {
+    this.floatingPreview()
+    Scroll() {
+      Column({ space: AppSpacing.LG }) {
+        this.glassEnabledSwitch()
+        Column({ space: AppSpacing.LG }) {
+          this.sectionTitle('效果预设')
+          this.presets()
+          this.sectionTitle('模糊强度')
+          this.sliderCard('全局模糊强度', 'blur', 0, 40, 1)
+          this.sectionTitle('颜色与边框')
+          this.sliderCard('透明度', 'tintOpacity', 0, 100, 1)
+          this.sliderCard('边框透明度', 'borderOpacity', 0, 100, 1)
+          this.sliderCard('边框宽度', 'borderWidth', 0, 2, 0.5)
+          this.sliderCard('组件圆角', 'cornerRadius', 0, 32, 1)
+          this.sectionTitle('阴影')
+          this.shadowSwitch()
+          if (this.settings.shadowEnabled) {
+            this.sliderCard('阴影模糊', 'shadowRadius', 0, 30, 1)
+            this.sliderCard(this.appDarkMode ? '深色阴影' : '浅色阴影',
+              this.appDarkMode ? 'darkShadowOpacity' : 'lightShadowOpacity', 0, 100, 1)
+            this.sliderCard('水平偏移', 'shadowOffsetX', -12, 12, 1)
+            this.sliderCard('垂直偏移', 'shadowOffsetY', -12, 12, 1)
+          }
+          this.performanceCard()
+        }
+        .width('100%')
+        .enabled(this.settings.enabled)
+        .opacity(this.settings.enabled ? 1 : 0.42)
+      }
+      .width('100%')
+      .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.SM, bottom: 32 + this.navBarHeight })
+    }
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .layoutWeight(1)
+    .align(Alignment.TopStart)
   }
 
   async loadSettings(): Promise<void> {
@@ -220,25 +224,6 @@ struct GlassSettingsPage {
   previewOpacityHex(opacity: number): string {
     const value = Math.max(0, Math.min(255, Math.round(opacity * 2.55)));
     return value.toString(16).padStart(2, '0').toUpperCase();
-  }
-
-  @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('磨砂玻璃')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ right: AppSpacing.LG, top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
   }
 
   @Builder

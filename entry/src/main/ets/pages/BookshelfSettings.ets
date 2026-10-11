@@ -6,7 +6,6 @@ import { Book } from '../model/data/Book';
 import { CoverAlbum, CoverGallerySettings } from '../utils/CoverGallerySettings';
 import { CoverGalleryStore, CoverGallerySnapshot } from '../utils/CoverGalleryStore';
 import { RecentReadCardUpdater } from '../utils/RecentReadCardUpdater';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { BookshelfDisplaySettings, BookshelfDisplaySettingsStore } from '../utils/BookshelfDisplaySettingsStore';
 import { SearchExplorePendingBook } from '../utils/SearchExplorePendingBook';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
@@ -20,6 +19,8 @@ import { BookCoverCache } from '../utils/BookCoverCache';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
+import { SettingNavRow, SettingRow, SettingSwitchRow } from '../components/common/SettingRow';
 
 @Entry
 @Component
@@ -47,8 +48,6 @@ struct BookshelfSettingsPage {
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
   @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
-  @StorageProp('navBarHeight') navBarHeight: number = 0;
 
   @State albums: CoverAlbum[] = [];
   @State albumSelectOptions: SelectOption[] = [{ value: '不使用图集' }];
@@ -90,160 +89,215 @@ struct BookshelfSettingsPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
-        Column() {
-          this.sectionTitle('书籍信息')
-          Column() {
-          this.switchItem('书籍打开动画', '开启后点击书籍时显示封面展开动画', this.bookshelfBookOpenAnimation, (value: boolean) => {
-            this.bookshelfBookOpenAnimation = value;
-            this.onDisplaySettingChanged();
-          })
-          this.itemDivider()
-          this.switchItem('类型标识', '在书名前显示“书／漫／声”，区分普通书、漫画和有声书', this.bookshelfShowTypeBadge, (value: boolean) => {
-            this.bookshelfShowTypeBadge = value;
-            this.onDisplaySettingChanged();
-          })
-          this.itemDivider()
-          this.switchItem('书籍标签', '控制书架卡片是否显示书籍标签', this.bookshelfShowTags, (value: boolean) => {
-            this.bookshelfShowTags = value;
-            this.onDisplaySettingChanged();
-          })
-          this.itemDivider()
-          this.switchItem('书籍来源', '控制书架卡片是否显示书籍来源', this.bookshelfShowSource, (value: boolean) => {
-            this.bookshelfShowSource = value;
-            this.onDisplaySettingChanged();
-          })
-          this.itemDivider()
-          this.switchItem('书籍简介', '开启后显示书源抓取的简介内容', this.bookshelfShowIntro, (value: boolean) => {
-            this.bookshelfShowIntro = value;
-            this.onDisplaySettingChanged();
-          })
-          if (this.bookshelfShowIntro) {
-            this.itemDivider()
-            this.switchItem('显示全部简介', '开启后书架卡片显示完整简介内容', this.bookshelfShowFullIntro, (value: boolean) => {
-              this.bookshelfShowFullIntro = value;
-              this.onDisplaySettingChanged();
-            })
-          }
-          this.itemDivider()
-          this.switchItem('使用阅读进度条', '开启后在书架卡片底部显示阅读百分比和阅读信息', this.bookshelfShowProgressBar, (value: boolean) => {
-            this.bookshelfShowProgressBar = value;
-            this.onDisplaySettingChanged();
-          })
-          if (this.bookshelfShowProgressBar) {
-            this.itemDivider()
-            this.switchItem('显示最后阅读时间', '开启后阅读进度条旁显示最近一次阅读时间', this.bookshelfShowLastReadTime, (value: boolean) => {
-              this.bookshelfShowLastReadTime = value;
-              this.onDisplaySettingChanged();
-            })
-            this.itemDivider()
-            this.switchItem('显示最后阅读章节', '开启后阅读进度条旁显示最近一次阅读章节', this.bookshelfShowLastReadChapter, (value: boolean) => {
-              this.bookshelfShowLastReadChapter = value;
-              this.onDisplaySettingChanged();
-            })
-          }
-          this.itemDivider()
-          this.selectItem('书架布局', '切换列表信息密度或封面平铺展示',
-            this.bookshelfLayoutOptions(), this.bookshelfLayoutSelectedIndex(), (index: number) => {
-              this.bookshelfLayoutMode = index === 2 ? 'tile' : (index === 1 ? 'loose' : 'compact');
-              this.onDisplaySettingChanged();
-            })
-          if (this.bookshelfLayoutMode === 'tile') {
-            this.itemDivider()
-            this.selectItem('上次阅读扉页设置', '设置最近阅读书籍封面右侧的展示内容',
-              this.lastReadLeafOptions(), this.lastReadLeafSelectedIndex(), (index: number) => {
-                this.bookshelfLastReadLeafMode = index === 0 ? 'bookInfo' :
-                  (index === 1 ? 'contentPreview' : 'adaptive');
-                this.onDisplaySettingChanged();
-              })
-          }
-
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-
-          this.sectionTitle('隐私书架')
-          Column() {
-            this.privateShelfSwitchItem()
-            if (this.privateShelfEnabled) {
-              this.itemDivider()
-              this.actionItem('隐私书架密码',
-                this.privateShelfHasPassword ? '已设置，进入隐私书架时需要输入' : '未设置，设置后进入隐私书架需要输入密码',
-                this.primaryTextColor(), () => {
-                  this.openPrivatePasswordDialog('password');
-                })
-              this.itemDivider()
-              this.actionItem('重置隐私书架', '删除所有隐私书籍并关闭隐私书架，忘记密码时使用', ThemeRuntime.dangerColor(this.appDarkMode), () => {
-                this.confirmResetPrivateShelf();
-              })
-            }
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-
-          this.sectionTitle('封面设置')
-          Column() {
-          this.switchItem('忽略原始封面', '开启后书架封面只使用当前应用的封面图集', this.bookshelfIgnoreSourceCover, (value: boolean) => {
-            this.bookshelfIgnoreSourceCover = value;
-            this.onCoverSettingChanged();
-          })
-          this.itemDivider()
-          this.selectItem('封面模式', '控制多张封面的展示顺序',
-            this.modeOptions(), this.modeSelectedIndex(), (index: number) => {
-              this.bookshelfCoverMode = index === 1 ? 'random' : 'sequence';
-              this.onCoverSettingChanged();
-            })
-          this.itemDivider()
-          this.albumSelectItem('浅色配色图集', '浅色模式下使用的封面图集', false)
-          this.itemDivider()
-          this.albumSelectItem('深色配色图集', '深色模式下使用的封面图集', true)
-          this.itemDivider()
-          this.selectItem('图集应用范围', '选择图集作用于全部书籍或指定书籍',
-            this.scopeOptions(), this.scopeSelectedIndex(), (index: number) => {
-              this.setCoverApplyScope(index === 1 ? 'books' : 'all');
-            })
-
-          if (this.showTargetBookList) {
-            this.itemDivider()
-            this.targetBooksPanel()
-          }
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-
-          this.sectionTitle('封面图集')
-          Column() {
-            this.navItem('图集管理', '新建图集、导入图片、重命名和预览封面', 'pages/CoverGalleryManager')
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-        }
-        .width('100%')
-        .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      .align(Alignment.TopStart)
-
-      this.titleBar()
+      PageScaffold({ title: '书架设置', content: () => {
+        this.pageContent()
+      } })
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  pageContent() {
+    this.sectionTitle('书籍信息')
+    Column() {
+    SettingSwitchRow({
+      title: '书籍打开动画',
+      description: '开启后点击书籍时显示封面展开动画',
+      isOn: this.bookshelfBookOpenAnimation,
+      showDivider: false,
+      onChange: (value: boolean) => {
+        this.bookshelfBookOpenAnimation = value;
+        this.onDisplaySettingChanged();
+      }
+    })
+    this.itemDivider()
+    SettingSwitchRow({
+      title: '类型标识',
+      description: '在书名前显示“书／漫／声”，区分普通书、漫画和有声书',
+      isOn: this.bookshelfShowTypeBadge,
+      showDivider: false,
+      onChange: (value: boolean) => {
+        this.bookshelfShowTypeBadge = value;
+        this.onDisplaySettingChanged();
+      }
+    })
+    this.itemDivider()
+    SettingSwitchRow({
+      title: '书籍标签',
+      description: '控制书架卡片是否显示书籍标签',
+      isOn: this.bookshelfShowTags,
+      showDivider: false,
+      onChange: (value: boolean) => {
+        this.bookshelfShowTags = value;
+        this.onDisplaySettingChanged();
+      }
+    })
+    this.itemDivider()
+    SettingSwitchRow({
+      title: '书籍来源',
+      description: '控制书架卡片是否显示书籍来源',
+      isOn: this.bookshelfShowSource,
+      showDivider: false,
+      onChange: (value: boolean) => {
+        this.bookshelfShowSource = value;
+        this.onDisplaySettingChanged();
+      }
+    })
+    this.itemDivider()
+    SettingSwitchRow({
+      title: '书籍简介',
+      description: '开启后显示书源抓取的简介内容',
+      isOn: this.bookshelfShowIntro,
+      showDivider: false,
+      onChange: (value: boolean) => {
+        this.bookshelfShowIntro = value;
+        this.onDisplaySettingChanged();
+      }
+    })
+    if (this.bookshelfShowIntro) {
+      this.itemDivider()
+      SettingSwitchRow({
+        title: '显示全部简介',
+        description: '开启后书架卡片显示完整简介内容',
+        isOn: this.bookshelfShowFullIntro,
+        showDivider: false,
+        onChange: (value: boolean) => {
+          this.bookshelfShowFullIntro = value;
+          this.onDisplaySettingChanged();
+        }
+      })
+    }
+    this.itemDivider()
+    SettingSwitchRow({
+      title: '使用阅读进度条',
+      description: '开启后在书架卡片底部显示阅读百分比和阅读信息',
+      isOn: this.bookshelfShowProgressBar,
+      showDivider: false,
+      onChange: (value: boolean) => {
+        this.bookshelfShowProgressBar = value;
+        this.onDisplaySettingChanged();
+      }
+    })
+    if (this.bookshelfShowProgressBar) {
+      this.itemDivider()
+      SettingSwitchRow({
+        title: '显示最后阅读时间',
+        description: '开启后阅读进度条旁显示最近一次阅读时间',
+        isOn: this.bookshelfShowLastReadTime,
+        showDivider: false,
+        onChange: (value: boolean) => {
+          this.bookshelfShowLastReadTime = value;
+          this.onDisplaySettingChanged();
+        }
+      })
+      this.itemDivider()
+      SettingSwitchRow({
+        title: '显示最后阅读章节',
+        description: '开启后阅读进度条旁显示最近一次阅读章节',
+        isOn: this.bookshelfShowLastReadChapter,
+        showDivider: false,
+        onChange: (value: boolean) => {
+          this.bookshelfShowLastReadChapter = value;
+          this.onDisplaySettingChanged();
+        }
+      })
+    }
+    this.itemDivider()
+    this.selectItem('书架布局', '切换列表信息密度或封面平铺展示',
+      this.bookshelfLayoutOptions(), this.bookshelfLayoutSelectedIndex(), (index: number) => {
+        this.bookshelfLayoutMode = index === 2 ? 'tile' : (index === 1 ? 'loose' : 'compact');
+        this.onDisplaySettingChanged();
+      })
+    if (this.bookshelfLayoutMode === 'tile') {
+      this.itemDivider()
+      this.selectItem('上次阅读扉页设置', '设置最近阅读书籍封面右侧的展示内容',
+        this.lastReadLeafOptions(), this.lastReadLeafSelectedIndex(), (index: number) => {
+          this.bookshelfLastReadLeafMode = index === 0 ? 'bookInfo' :
+            (index === 1 ? 'contentPreview' : 'adaptive');
+          this.onDisplaySettingChanged();
+        })
+    }
+
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
+
+    this.sectionTitle('隐私书架')
+    Column() {
+      this.privateShelfSwitchItem()
+      if (this.privateShelfEnabled) {
+        this.itemDivider()
+        this.actionItem('隐私书架密码',
+          this.privateShelfHasPassword ? '已设置，进入隐私书架时需要输入' : '未设置，设置后进入隐私书架需要输入密码',
+          this.primaryTextColor(), () => {
+            this.openPrivatePasswordDialog('password');
+          })
+        this.itemDivider()
+        this.actionItem('重置隐私书架', '删除所有隐私书籍并关闭隐私书架，忘记密码时使用', ThemeRuntime.dangerColor(this.appDarkMode), () => {
+          this.confirmResetPrivateShelf();
+        })
+      }
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
+
+    this.sectionTitle('封面设置')
+    Column() {
+    SettingSwitchRow({
+      title: '忽略原始封面',
+      description: '开启后书架封面只使用当前应用的封面图集',
+      isOn: this.bookshelfIgnoreSourceCover,
+      showDivider: false,
+      onChange: (value: boolean) => {
+        this.bookshelfIgnoreSourceCover = value;
+        this.onCoverSettingChanged();
+      }
+    })
+    this.itemDivider()
+    this.selectItem('封面模式', '控制多张封面的展示顺序',
+      this.modeOptions(), this.modeSelectedIndex(), (index: number) => {
+        this.bookshelfCoverMode = index === 1 ? 'random' : 'sequence';
+        this.onCoverSettingChanged();
+      })
+    this.itemDivider()
+    this.albumSelectItem('浅色配色图集', '浅色模式下使用的封面图集', false)
+    this.itemDivider()
+    this.albumSelectItem('深色配色图集', '深色模式下使用的封面图集', true)
+    this.itemDivider()
+    this.selectItem('图集应用范围', '选择图集作用于全部书籍或指定书籍',
+      this.scopeOptions(), this.scopeSelectedIndex(), (index: number) => {
+        this.setCoverApplyScope(index === 1 ? 'books' : 'all');
+      })
+
+    if (this.showTargetBookList) {
+      this.itemDivider()
+      this.targetBooksPanel()
+    }
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
+
+    this.sectionTitle('封面图集')
+    Column() {
+      this.navItem('图集管理', '新建图集、导入图片、重命名和预览封面', 'pages/CoverGalleryManager')
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
   }
 
   loadAlbums(): void {
@@ -684,26 +738,6 @@ struct BookshelfSettingsPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('书架设置')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
   sectionTitle(title: string) {
     Text(title)
       .fontSize(AppFontSize.BODY)
@@ -722,49 +756,8 @@ struct BookshelfSettingsPage {
   }
 
   @Builder
-  switchItem(title: string, desc: string, value: boolean, onChange: (value: boolean) => void) {
-    Row() {
-      Column() {
-        Text(title)
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.primaryTextColor())
-        Text(desc)
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.subTextColor())
-          .margin({ top: AppSpacing.XS })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      AdaptiveSwitch({
-        isOn: value,
-        onChange: (checked: boolean) => {
-          onChange(checked);
-        }
-      })
-    }
-    .width('calc(100% - 32vp)')
-    .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
-    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .backgroundColor(Color.Transparent)
-  }
-
-  @Builder
   selectItem(title: string, desc: string, options: SelectOption[], selected: number, onSelect: (index: number) => void) {
-    Row() {
-      Column() {
-        Text(title)
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.primaryTextColor())
-        Text(desc)
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.subTextColor())
-          .margin({ top: AppSpacing.XS })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
+    SettingRow({ title: title, description: desc, showDivider: false }) {
       Select(options)
         .selected(selected)
         .value(this.optionValue(options, selected))
@@ -787,12 +780,6 @@ struct BookshelfSettingsPage {
           onSelect(index);
         })
     }
-    .width('calc(100% - 32vp)')
-    .constraintSize({ minHeight: 66 })
-    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
-    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .backgroundColor(Color.Transparent)
-    .alignItems(VerticalAlign.Center)
   }
 
   @Builder
@@ -895,63 +882,23 @@ struct BookshelfSettingsPage {
     })
   }
 
-  // 不走 switchItem：取消关闭时开关要能弹回去，按值传参的 Builder 不会跟随状态刷新。
+  // 取消关闭时开关要能弹回去，所以 isOn 绑定单独的 privateShelfSwitchOn 状态。
   @Builder
   privateShelfSwitchItem() {
-    Row() {
-      Column() {
-        Text('隐私书架')
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.primaryTextColor())
-        Text('开启后书架左上角增加“隐私”入口；关闭后隐私书籍继续隐藏')
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.subTextColor())
-          .margin({ top: AppSpacing.XS })
+    SettingSwitchRow({
+      title: '隐私书架',
+      description: '开启后书架左上角增加“隐私”入口；关闭后隐私书籍继续隐藏',
+      isOn: this.privateShelfSwitchOn,
+      showDivider: false,
+      onChange: (checked: boolean) => {
+        this.onPrivateShelfSwitchChanged(checked);
       }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      AdaptiveSwitch({
-        isOn: this.privateShelfSwitchOn,
-        onChange: (checked: boolean) => {
-          this.onPrivateShelfSwitchChanged(checked);
-        }
-      })
-    }
-    .width('calc(100% - 32vp)')
-    .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
-    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .backgroundColor(Color.Transparent)
+    })
   }
 
   @Builder
   actionItem(title: string, desc: string, titleColor: string, onClick: () => void) {
-    Row() {
-      Column() {
-        Text(title)
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(titleColor)
-        Text(desc)
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.subTextColor())
-          .margin({ top: AppSpacing.XS })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(18)
-        .fontColor([this.subTextColor()])
-        .width(24)
-    }
-    .width('calc(100% - 32vp)')
-    .constraintSize({ minHeight: 66 })
-    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
-    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .backgroundColor(Color.Transparent)
-    .alignItems(VerticalAlign.Center)
-    .onClick(onClick)
+    SettingNavRow({ title: title, description: desc, titleColor: titleColor, showDivider: false, onTap: onClick })
   }
 
   @Builder
@@ -1032,32 +979,13 @@ struct BookshelfSettingsPage {
 
   @Builder
   navItem(title: string, desc: string, url: string) {
-    Row() {
-      Column() {
-        Text(title)
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.primaryTextColor())
-        Text(desc)
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.subTextColor())
-          .margin({ top: AppSpacing.XS })
+    SettingNavRow({
+      title: title,
+      description: desc,
+      showDivider: false,
+      onTap: () => {
+        router.pushUrl({ url });
       }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(18)
-        .fontColor([this.subTextColor()])
-        .width(24)
-    }
-    .width('calc(100% - 32vp)')
-    .constraintSize({ minHeight: 66 })
-    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
-    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .backgroundColor(Color.Transparent)
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => {
-      router.pushUrl({ url });
     })
   }
 }

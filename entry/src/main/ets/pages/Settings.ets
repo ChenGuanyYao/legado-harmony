@@ -22,6 +22,8 @@ import { TapZoneSettingsDialogContent } from '../components/TapZoneSettingsDialo
 import { HexColor } from '../utils/HexColor';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { PageScaffold } from '../components/common/PageScaffold';
+import { SettingSwitchRow } from '../components/common/SettingRow';
 class ReaderCustomFontItem {
   familyName: string = '';
   filePath: string = '';
@@ -38,8 +40,6 @@ struct SettingsPage {
   @StorageLink('appThemeMode') appThemeMode: string = 'system';
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
-  @StorageProp('navBarHeight') navBarHeight: number = 0;
   @StorageLink('readerFontSize') readerFontSize: number = 20;
   @StorageLink('readerLetterSpacing') readerLetterSpacing: number = 0;
   @StorageLink('readerTextAlign') readerTextAlign: string = 'justify';
@@ -147,165 +147,187 @@ struct SettingsPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
-        Column() {
-          this.sectionTitle('App 配色')
-          Column() {
-            this.appThemeOptions()
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-
-          this.sectionTitle('排版')
-          Column() {
-            this.typographyStepper()
-            this.selectItem('正文对齐方式', '设置正文段落的水平对齐方式',
-              this.readerTextAlignOptions(), this.readerTextAlignSelectedIndex(), (index: number) => {
-                this.setReaderTextAlignByIndex(index);
-              }, 'settings_reader_text_align_select')
-            this.readerHeaderFooterSettingsPanel()
-            this.readerFontEntryItem()
-            this.readerReplaceRulesEntryItem()
-            this.switchItem('正文扩展至状态栏', '开启后隐藏状态栏，正文延伸到屏幕顶部', this.readerExtendToStatusBar, (value: boolean) => {
-              this.setReaderExtendToStatusBar(value);
-            })
-            this.switchItem('保留段首缩进', '章节开头与页首保留原文的全角空格缩进', this.keepParagraphIndent, (value: boolean) => {
-              this.setKeepParagraphIndent(value);
-            })
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-
-          this.sectionTitle('阅读背景')
-          Column() {
-            this.readerThemePanel()
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-
-          this.sectionTitle('操作')
-          Column() {
-            this.selectItem('翻页方式', '选择上下滑动、横向滑动或滚动阅读',
-              this.pageTurnModeOptions(), this.pageTurnModeSelectedIndex(), (index: number) => {
-                this.setReaderPageTurnMode(this.pageTurnModeByIndex(index));
-              }, 'settings_page_turn_mode_select')
-            if (this.readerPageTurnMode === 2) {
-              this.tapZoneSettingItem()
-            }
-            if (this.readerPageTurnMode === 2) {
-              this.selectItem('翻页动画', '选择翻页时使用的页面切换效果',
-                this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
-                  this.setReaderPageTurnAnimationType(index);
-                }, 'settings_page_turn_animation_select_horizontal')
-            } else if (this.readerPageTurnMode === 0) {
-              this.selectItem('翻页动画', '选择翻页时使用的页面切换效果',
-                this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
-                  this.setReaderPageTurnAnimationType(index);
-                }, 'settings_page_turn_animation_select_vertical')
-            }
-            this.switchItem('使用双翻页', '横屏或折叠屏展开等宽屏状态下同时显示左右两页',
-              this.readerLandscapeDoublePage, (value: boolean) => {
-                this.setReaderLandscapeDoublePage(value);
-              })
-            this.selectItem('屏幕方向', '设置正文阅读时使用的屏幕方向',
-              this.screenOrientationOptions(), this.screenOrientationSelectedIndex(), (index: number) => {
-                this.setReaderScreenOrientationByIndex(index);
-              }, 'settings_screen_orientation_select')
-            this.switchItem('音量键翻页', '阅读页获得焦点时使用音量上/下键切换上一页/下一页', this.readerVolumeTurnPage, (value: boolean) => {
-              this.setReaderVolumeTurnPage(value);
-            })
-            this.switchItem('快速添加书签', '正文下拉时快速添加或删除当前页书签', this.readerQuickBookmarkEnabled, (value: boolean) => {
-              this.setReaderQuickBookmarkEnabled(value);
-            })
-            this.switchItem('眼动翻页（beta）', '视线到达正文底部后提示向上看，向上看即翻到下一页；摄像头图像仅在本机处理',
-              this.readerEyeTurnEnabled, (value: boolean) => {
-                this.setReaderEyeTurnEnabled(value);
-              })
-            if (this.readerEyeTurnEnabled) {
-              this.eyeTurnCalibrationStatusItem()
-            }
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-
-          this.sectionTitle('其他')
-          Column() {
-            this.selectItem('亮屏时间设置', '无操作达到所选时长后恢复系统息屏',
-              this.screenTimeoutOptions(), this.screenTimeoutSelectedIndex(), (index: number) => {
-                this.setReaderScreenTimeoutByIndex(index);
-              }, 'settings_screen_timeout_select')
-            this.preloadSettingPanel()
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-
-          this.sectionTitle('预览')
-          Column() {
-            Text('第一章 风起')
-              .fontSize(AppFontSize.BODY_LARGE)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(this.previewTitleColor())
-              .width('100%')
-              .margin({ bottom: AppSpacing.LG })
-
-            if (this.previewFontRenderVersion % 2 === 0) {
-              this.previewReaderText()
-            } else {
-              this.previewReaderText()
-            }
-
-            Text(`当前字体：${this.previewBodyFontName()} · 当前翻页：${this.pageTurnModeText()}`)
-              .fontSize(AppFontSize.CAPTION)
-              .fontFamily(this.getPreviewBodyFontFamily())
-              .fontColor(this.previewSubTextColor())
-              .width('100%')
-              .margin({ top: AppSpacing.MD })
-          }
-          .width('calc(100% - 24vp)')
-          .padding({
-            left: this.readerMarginLeft,
-            right: this.readerMarginRight,
-            top: this.readerMarginTop,
-            bottom: this.readerMarginBottom
-          })
-          .backgroundColor(this.previewBackgroundColor())
-          .backgroundImage(this.previewBackgroundImage(), ImageRepeat.NoRepeat)
-          .backgroundImageSize(this.previewBackgroundImageSize())
-          .borderRadius(ThemeRuntime.buttonRadius())
-          .clip(true)
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG, bottom: 32 })
-        }
-        .width('100%')
-        .padding({ top: 56 + this.statusBarHeight, bottom: this.navBarHeight })
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      .align(Alignment.TopStart)
-      .backgroundColor(this.pageColor())
-
-      this.titleBar()
+      PageScaffold({ title: '阅读设置', bottomInset: 0, content: () => {
+        this.pageContent()
+      } })
 
     }
     .width('100%')
     .height('100%')
     .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  pageContent() {
+    this.sectionTitle('App 配色')
+    Column() {
+      this.appThemeOptions()
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
+
+    this.sectionTitle('排版')
+    Column() {
+      this.typographyStepper()
+      this.selectItem('正文对齐方式', '设置正文段落的水平对齐方式',
+        this.readerTextAlignOptions(), this.readerTextAlignSelectedIndex(), (index: number) => {
+          this.setReaderTextAlignByIndex(index);
+        }, 'settings_reader_text_align_select')
+      this.readerHeaderFooterSettingsPanel()
+      this.readerFontEntryItem()
+      this.readerReplaceRulesEntryItem()
+      SettingSwitchRow({
+        title: '正文扩展至状态栏',
+        description: '开启后隐藏状态栏，正文延伸到屏幕顶部',
+        isOn: this.readerExtendToStatusBar,
+        onChange: (value: boolean) => {
+          this.setReaderExtendToStatusBar(value);
+        }
+      })
+      SettingSwitchRow({
+        title: '保留段首缩进',
+        description: '章节开头与页首保留原文的全角空格缩进',
+        isOn: this.keepParagraphIndent,
+        onChange: (value: boolean) => {
+          this.setKeepParagraphIndent(value);
+        }
+      })
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
+
+    this.sectionTitle('阅读背景')
+    Column() {
+      this.readerThemePanel()
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
+
+    this.sectionTitle('操作')
+    Column() {
+      this.selectItem('翻页方式', '选择上下滑动、横向滑动或滚动阅读',
+        this.pageTurnModeOptions(), this.pageTurnModeSelectedIndex(), (index: number) => {
+          this.setReaderPageTurnMode(this.pageTurnModeByIndex(index));
+        }, 'settings_page_turn_mode_select')
+      if (this.readerPageTurnMode === 2) {
+        this.tapZoneSettingItem()
+      }
+      if (this.readerPageTurnMode === 2) {
+        this.selectItem('翻页动画', '选择翻页时使用的页面切换效果',
+          this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
+            this.setReaderPageTurnAnimationType(index);
+          }, 'settings_page_turn_animation_select_horizontal')
+      } else if (this.readerPageTurnMode === 0) {
+        this.selectItem('翻页动画', '选择翻页时使用的页面切换效果',
+          this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
+            this.setReaderPageTurnAnimationType(index);
+          }, 'settings_page_turn_animation_select_vertical')
+      }
+      SettingSwitchRow({
+        title: '使用双翻页',
+        description: '横屏或折叠屏展开等宽屏状态下同时显示左右两页',
+        isOn: this.readerLandscapeDoublePage,
+        onChange: (value: boolean) => {
+          this.setReaderLandscapeDoublePage(value);
+        }
+      })
+      this.selectItem('屏幕方向', '设置正文阅读时使用的屏幕方向',
+        this.screenOrientationOptions(), this.screenOrientationSelectedIndex(), (index: number) => {
+          this.setReaderScreenOrientationByIndex(index);
+        }, 'settings_screen_orientation_select')
+      SettingSwitchRow({
+        title: '音量键翻页',
+        description: '阅读页获得焦点时使用音量上/下键切换上一页/下一页',
+        isOn: this.readerVolumeTurnPage,
+        onChange: (value: boolean) => {
+          this.setReaderVolumeTurnPage(value);
+        }
+      })
+      SettingSwitchRow({
+        title: '快速添加书签',
+        description: '正文下拉时快速添加或删除当前页书签',
+        isOn: this.readerQuickBookmarkEnabled,
+        onChange: (value: boolean) => {
+          this.setReaderQuickBookmarkEnabled(value);
+        }
+      })
+      SettingSwitchRow({
+        title: '眼动翻页（beta）',
+        description: '视线到达正文底部后提示向上看，向上看即翻到下一页；摄像头图像仅在本机处理',
+        isOn: this.readerEyeTurnEnabled,
+        onChange: (value: boolean) => {
+          this.setReaderEyeTurnEnabled(value);
+        }
+      })
+      if (this.readerEyeTurnEnabled) {
+        this.eyeTurnCalibrationStatusItem()
+      }
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
+
+    this.sectionTitle('其他')
+    Column() {
+      this.selectItem('亮屏时间设置', '无操作达到所选时长后恢复系统息屏',
+        this.screenTimeoutOptions(), this.screenTimeoutSelectedIndex(), (index: number) => {
+          this.setReaderScreenTimeoutByIndex(index);
+        }, 'settings_screen_timeout_select')
+      this.preloadSettingPanel()
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
+
+    this.sectionTitle('预览')
+    Column() {
+      Text('第一章 风起')
+        .fontSize(AppFontSize.BODY_LARGE)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.previewTitleColor())
+        .width('100%')
+        .margin({ bottom: AppSpacing.LG })
+
+      if (this.previewFontRenderVersion % 2 === 0) {
+        this.previewReaderText()
+      } else {
+        this.previewReaderText()
+      }
+
+      Text(`当前字体：${this.previewBodyFontName()} · 当前翻页：${this.pageTurnModeText()}`)
+        .fontSize(AppFontSize.CAPTION)
+        .fontFamily(this.getPreviewBodyFontFamily())
+        .fontColor(this.previewSubTextColor())
+        .width('100%')
+        .margin({ top: AppSpacing.MD })
+    }
+    .width('calc(100% - 24vp)')
+    .padding({
+      left: this.readerMarginLeft,
+      right: this.readerMarginRight,
+      top: this.readerMarginTop,
+      bottom: this.readerMarginBottom
+    })
+    .backgroundColor(this.previewBackgroundColor())
+    .backgroundImage(this.previewBackgroundImage(), ImageRepeat.NoRepeat)
+    .backgroundImageSize(this.previewBackgroundImageSize())
+    .borderRadius(ThemeRuntime.buttonRadius())
+    .clip(true)
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG, bottom: 32 })
   }
 
   applyThemeMode(mode: string, persist: boolean = true) {
@@ -1782,27 +1804,6 @@ struct SettingsPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-
-      Text('阅读设置')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
   sectionTitle(title: string) {
     Text(title)
       .fontSize(AppFontSize.BODY)
@@ -2477,32 +2478,4 @@ struct SettingsPage {
     return options.length > 0 ? options[0].value : '';
   }
 
-  @Builder
-  switchItem(title: string, desc: string, value: boolean, onChange: (value: boolean) => void) {
-    Row() {
-      Column() {
-        Text(title)
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.primaryTextColor())
-        Text(desc)
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.subTextColor())
-          .margin({ top: AppSpacing.XS })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      AdaptiveSwitch({ isOn: value,
-        onChange: (checked: boolean) => {
-          onChange(checked);
-        },
-      })
-    }
-    .width('calc(100% - 32vp)')
-    .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
-    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .backgroundColor(Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
-  }
 }
