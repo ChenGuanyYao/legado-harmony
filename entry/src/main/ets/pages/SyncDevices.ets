@@ -1,4 +1,6 @@
-import { promptAction, router } from '@kit.ArkUI';
+import { promptAction, router, SymbolGlyphModifier } from '@kit.ArkUI';
+import deviceInfo from '@ohos.deviceInfo';
+import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
 import { AccountCommerceApi } from '../account/AccountCommerceApi';
 import { AccountSessionStore } from '../account/AccountSessionStore';
 import { CloudSyncDevice } from '../account/CloudSyncModels';
@@ -16,6 +18,8 @@ import { PageScaffold } from '../components/common/PageScaffold';
 struct SyncDevicesPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
+  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
+  @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State devices: CloudSyncDevice[] = [];
   @State currentDeviceId: string = '';
   @State loading: boolean = true;
@@ -46,7 +50,8 @@ struct SyncDevicesPage {
       }
       this.currentDeviceId = await CloudSyncStateStore.deviceId(getContext(this));
       const response = await AccountCommerceApi.fetchSyncDevices(AccountSessionStore.token());
-      this.devices = (response.devices || []).slice();
+      // 服务端会保留已移除设备的记录，列表里只显示仍然有效的设备。
+      this.devices = (response.devices || []).filter((device: CloudSyncDevice) => !device.revokedAt);
     } catch (e) {
       this.errorMessage = e instanceof Error ? e.message : String(e);
     } finally {
@@ -56,7 +61,8 @@ struct SyncDevicesPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      PageScaffold({ title: '同步设备', content: () => {
+      // 列表铺满整页并从顶栏下方滚过去，上下留白由列表里的占位项提供。
+      PageScaffold({ title: '同步设备', scrollable: false, edgeToEdge: true, content: () => {
         this.pageContent()
       }, actions: () => {
         this.titleActions()
@@ -71,65 +77,116 @@ struct SyncDevicesPage {
 
   @Builder
   pageContent() {
-    Column() {
+    List({ space: AppSpacing.MD }) {
+      ListItem() {
+        Row()
+          .width('100%')
+          .height(PageScaffold.BAR_HEIGHT + this.statusBarHeight)
+          .hitTestBehavior(HitTestMode.None)
+      }
+
       if (this.loading) {
-        Column({ space: AppSpacing.LG }) {
-          LoadingProgress()
-            .width(36)
-            .height(36)
-            .color(this.accentColor())
-          Text('正在读取同步设备…')
-            .fontSize(AppFontSize.BODY)
-            .fontColor(this.subTextColor())
+        ListItem() {
+          Column({ space: AppSpacing.LG }) {
+            LoadingProgress()
+              .width(36)
+              .height(36)
+              .color(this.accentColor())
+            Text('正在读取同步设备…')
+              .fontSize(AppFontSize.BODY)
+              .fontColor(this.subTextColor())
+          }
+          .width('100%')
+          .padding({ top: 48 })
         }
-        .width('100%')
-        .padding({ top: 48 })
       } else if (this.errorMessage) {
-        Column({ space: AppSpacing.LG }) {
-          Text(this.errorMessage)
+        ListItem() {
+          Column({ space: AppSpacing.LG }) {
+            Text(this.errorMessage)
+              .fontSize(AppFontSize.BODY)
+              .fontColor(this.subTextColor())
+              .textAlign(TextAlign.Center)
+            Button('重试')
+              .height(40)
+              .backgroundColor(this.accentColor())
+              .onClick(() => this.loadDevices())
+          }
+          .width('100%')
+          .padding(AppSpacing.XXL)
+          .margin({ top: AppSpacing.LG })
+          .borderRadius(ThemeRuntime.cardRadius())
+          .backgroundColor(this.cardColor())
+        }
+      } else {
+        ListItem() {
+          Text('已登录设备')
             .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
-            .textAlign(TextAlign.Center)
-          Button('重试')
-            .height(40)
-            .backgroundColor(this.accentColor())
-            .onClick(() => this.loadDevices())
+            .width('100%')
+            .padding({ left: AppSpacing.XS, right: AppSpacing.XS, top: AppSpacing.LG })
         }
-        .width('calc(100% - 24vp)')
-        .padding(AppSpacing.XXL)
-        .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.XXL })
-        .borderRadius(ThemeRuntime.cardRadius())
-        .backgroundColor(this.cardColor())
-      } else {
-        this.sectionTitle('已登录设备')
-        Column() {
-          if (this.devices.length === 0) {
+
+        if (this.devices.length === 0) {
+          ListItem() {
             Text('完成首次同步后，当前设备会显示在这里。')
               .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
               .width('100%')
               .padding(AppSpacing.XL)
-          } else {
-            ForEach(this.devices, (device: CloudSyncDevice, index: number) => {
-              this.deviceItem(device, index < this.devices.length - 1)
-            }, (device: CloudSyncDevice) => device.deviceId)
+              .borderRadius(ThemeRuntime.cardRadius())
+              .backgroundColor(this.cardColor())
           }
         }
-        .width('calc(100% - 24vp)')
-        .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-        .borderRadius(ThemeRuntime.cardRadius())
-        .clip(true)
-        .backgroundColor(this.cardColor())
 
-        Text('可以移除不再使用的其他设备。本机同步权限需要通过关闭云同步或退出账号进行管理。')
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.subTextColor())
-          .lineHeight(18)
-          .width('calc(100% - 32vp)')
-          .margin({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG })
+        ForEach(this.devices, (device: CloudSyncDevice) => {
+          if (deviceInfo.sdkApiVersion >= 26) {
+            HdsListItem({
+              customItemBuilder: (): void => {
+                this.deviceItem(device)
+              },
+              swipeActionOptions: this.deviceSwipeActions(device)
+            })
+          }
+          if (deviceInfo.sdkApiVersion < 26) {
+            ListItem() {
+              this.deviceItem(device)
+            }
+            .borderRadius(ThemeRuntime.mediumRadius())
+            .clip(true)
+            .swipeAction({
+              end: {
+                builder: (): void => {
+                  this.deviceSwipeButtons(device)
+                },
+                actionAreaDistance: this.isCurrentDevice(device) ? 64 : 128
+              },
+              edgeEffect: SwipeEdgeEffect.Spring
+            })
+          }
+        }, (device: CloudSyncDevice) => device.deviceId)
+
+        ListItem() {
+          Text('左滑设备可以改名，或移除不再使用的其他设备。本机同步权限需要通过关闭云同步或退出账号进行管理。')
+            .fontSize(AppFontSize.CAPTION)
+            .fontColor(this.subTextColor())
+            .lineHeight(18)
+            .width('100%')
+            .padding({ left: AppSpacing.XS, right: AppSpacing.XS, top: AppSpacing.XS })
+        }
+      }
+
+      ListItem() {
+        Row()
+          .width('100%')
+          .height(32 + this.navBarHeight)
+          .hitTestBehavior(HitTestMode.None)
       }
     }
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .scrollBar(BarState.Off)
     .width('100%')
+    .height('100%')
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
   }
 
   @Builder
@@ -143,7 +200,7 @@ struct SyncDevicesPage {
   }
 
   @Builder
-  deviceItem(device: CloudSyncDevice, showDivider: boolean) {
+  deviceItem(device: CloudSyncDevice) {
     Row({ space: AppSpacing.LG }) {
       this.deviceIcon(device)
 
@@ -152,17 +209,13 @@ struct SyncDevicesPage {
           Text(device.deviceName || 'HarmonyOS 设备')
             .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.primaryTextColor())
-          if (device.deviceId === this.currentDeviceId) {
+          if (this.isCurrentDevice(device)) {
             Text('本机')
               .fontSize(AppFontSize.CAPTION)
               .fontColor(this.accentColor())
               .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
               .borderRadius(ThemeRuntime.mediumRadius())
               .backgroundColor(this.softColor())
-          } else if (device.revokedAt) {
-            Text('已移除')
-              .fontSize(AppFontSize.CAPTION)
-              .fontColor(this.subTextColor())
           }
         }
         Text(`${device.platform || 'HarmonyOS'}${device.appVersion ? ` · ${device.appVersion}` : ''}`)
@@ -174,33 +227,69 @@ struct SyncDevicesPage {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .constraintSize({ minHeight: 86 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
+    .backgroundColor(this.cardColor())
+    .borderRadius(ThemeRuntime.cardRadius())
+    .alignItems(VerticalAlign.Center)
+  }
 
-      if (!device.revokedAt) {
-        Column({ space: AppSpacing.SM }) {
-          Button('改名')
-            .height(30)
-            .fontSize(AppFontSize.CAPTION)
-            .fontColor(this.accentColor())
-            .backgroundColor(this.softColor())
-            .onClick(() => this.openRename(device))
-          if (device.deviceId !== this.currentDeviceId) {
-            Button('移除')
-              .height(30)
-              .fontSize(AppFontSize.CAPTION)
-              .fontColor(ThemeRuntime.dangerColor(this.appDarkMode))
-              .backgroundColor(this.softColor())
-              .onClick(() => this.confirmRevoke(device))
-          }
-        }
+  private isCurrentDevice(device: CloudSyncDevice): boolean {
+    return device.deviceId === this.currentDeviceId;
+  }
+
+  private deviceSwipeActions(device: CloudSyncDevice): HdsSwipeActionOptions {
+    if (this.isCurrentDevice(device)) {
+      return { icons: [
+        { icon: new SymbolGlyphModifier($r('sys.symbol.square_and_pencil')),
+          backgroundColor: ThemeRuntime.buttonColor(this.appDarkMode),
+          iconOptions: { accessibilityText: '改名' },
+          onAction: () => this.openRename(device) }
+      ] };
+    }
+    return { icons: [
+      { icon: new SymbolGlyphModifier($r('sys.symbol.square_and_pencil')),
+        backgroundColor: ThemeRuntime.buttonColor(this.appDarkMode),
+        iconOptions: { accessibilityText: '改名' },
+        onAction: () => this.openRename(device) },
+      { icon: new SymbolGlyphModifier($r('sys.symbol.trash')),
+        backgroundColor: ThemeRuntime.dangerColor(this.appDarkMode),
+        iconOptions: { accessibilityText: '移除设备' },
+        onAction: () => this.confirmRevoke(device) }
+    ] };
+  }
+
+  @Builder
+  deviceSwipeButtons(device: CloudSyncDevice) {
+    Row() {
+      this.deviceSwipeButton($r('sys.symbol.square_and_pencil'), '改名',
+        ThemeRuntime.buttonColor(this.appDarkMode), () => this.openRename(device))
+      if (!this.isCurrentDevice(device)) {
+        this.deviceSwipeButton($r('sys.symbol.trash'), '移除',
+          ThemeRuntime.dangerColor(this.appDarkMode), () => this.confirmRevoke(device))
       }
     }
-    .width('calc(100% - 32vp)')
-    .constraintSize({ minHeight: 86 })
-    .padding({ top: AppSpacing.LG, bottom: AppSpacing.LG })
-    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .border({ width: { bottom: showDivider ? 0.5 : 0 },
-      color: ThemeRuntime.hairlineColor(this.appDarkMode) })
-    .alignItems(VerticalAlign.Center)
+    .height('100%')
+  }
+
+  @Builder
+  deviceSwipeButton(icon: Resource, label: string, color: string, action: () => void) {
+    Column({ space: AppSpacing.XS }) {
+      SymbolGlyph(icon)
+        .fontSize(22)
+        .fontColor(['#FFFFFF'])
+      Text(label)
+        .fontSize(AppFontSize.CAPTION)
+        .fontColor('#FFFFFF')
+    }
+    .width(64)
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor(color)
+    .onClick(() => action())
   }
 
   @Builder
@@ -210,25 +299,21 @@ struct SyncDevicesPage {
         .width(32)
         .height(32)
         .fillColor(this.accentColor())
-        .opacity(device.revokedAt ? 0.45 : 1)
     } else if (device.deviceKind === '2in1') {
       Image($r('app.media.ic_device_2in1'))
         .width(32)
         .height(32)
         .fillColor(this.accentColor())
-        .opacity(device.revokedAt ? 0.45 : 1)
     } else if (device.deviceKind === 'tablet') {
       Image($r('app.media.ic_device_tablet'))
         .width(32)
         .height(32)
         .fillColor(this.accentColor())
-        .opacity(device.revokedAt ? 0.45 : 1)
     } else {
       Image($r('app.media.ic_device_phone'))
         .width(32)
         .height(32)
         .fillColor(this.accentColor())
-        .opacity(device.revokedAt ? 0.45 : 1)
     }
   }
 
@@ -319,7 +404,7 @@ struct SyncDevicesPage {
   async confirmRevoke(device: CloudSyncDevice): Promise<void> {
     const result = await promptAction.showDialog({
       title: '移除同步设备',
-      message: `确定移除“${device.deviceName || 'HarmonyOS 设备'}”吗？`,
+      message: `确定移除“${device.deviceName || 'HarmonyOS 设备'}”吗？移除后该设备将停止同步。`,
       buttons: [
         { text: '取消', color: this.subTextColor() },
         { text: '移除', color: ThemeRuntime.dangerColor(this.appDarkMode) }
@@ -331,7 +416,7 @@ struct SyncDevicesPage {
     try {
       await AccountCommerceApi.revokeSyncDevice(device.deviceId, AccountSessionStore.token());
       HdsFeedback.showToast('设备已移除');
-      await this.loadDevices();
+      this.devices = this.devices.filter((item: CloudSyncDevice) => item.deviceId !== device.deviceId);
     } catch (e) {
       HdsFeedback.showToast(e instanceof Error ? `移除失败：${e.message}` : '移除设备失败');
     }
@@ -368,14 +453,4 @@ struct SyncDevicesPage {
   syncBars(): void {
     syncSystemBars(getContext(this), this.appDarkMode, this.pageColor());
   }
-
-  @Builder
-  sectionTitle(title: string) {
-    Text(title)
-      .fontSize(AppFontSize.BODY)
-      .fontColor(this.subTextColor())
-      .width('100%')
-      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
-  }
-
 }
