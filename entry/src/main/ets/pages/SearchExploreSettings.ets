@@ -1,9 +1,8 @@
-import { router } from '@kit.ArkUI';
 import { syncSystemBars } from '../utils/SystemBars';
 import { SearchExploreSettings, SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
-import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
-import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
+import { PageScaffold } from '../components/common/PageScaffold';
+import { SettingRow, SettingSwitchRow } from '../components/common/SettingRow';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
 
@@ -23,8 +22,6 @@ struct SearchExploreSettingsPage {
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
   @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
-  @StorageProp('statusBarHeight') statusBarHeight: number = 0;
-  @StorageProp('navBarHeight') navBarHeight: number = 0;
 
   aboutToAppear(): void {
     this.reloadSettings();
@@ -37,98 +34,121 @@ struct SearchExploreSettingsPage {
   }
 
   build() {
-    Stack({ alignContent: Alignment.TopStart }) {
-      Scroll() {
-        Column() {
-          this.sectionTitle('结果展示')
-          Column() {
-          this.switchItem('显示结果封面', '开启后搜索和发现结果展示书籍封面',
-            this.searchExploreShowResultCover, (value: boolean) => {
-              this.searchExploreShowResultCover = value;
-              this.onSettingChanged();
-            })
-          if (this.searchExploreShowResultCover) {
-            this.switchItem('使用书架图集', '开启后结果列表封面使用书架封面设置的浅色/深色图集',
-              this.searchExploreUseBookshelfCoverGallery, (value: boolean) => {
-                this.searchExploreUseBookshelfCoverGallery = value;
-                this.onSettingChanged();
-              })
-          }
-          this.switchItem('显示结果标签', '开启后搜索和发现结果展示书籍标签',
-            this.searchExploreShowResultTags, (value: boolean) => {
-              this.searchExploreShowResultTags = value;
-              this.onSettingChanged();
-            })
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-
-          this.sectionTitle('书架提示')
-          Column() {
-            this.switchItem('返回提示加入书架', '从搜索或发现详情点击阅读后，返回时询问是否加入书架',
-              this.searchExplorePromptAddToShelfOnBack, (value: boolean) => {
-                this.searchExplorePromptAddToShelfOnBack = value;
-                this.onSettingChanged();
-              })
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-
-          this.sectionTitle('搜索设置')
-          Column() {
-          this.switchItem('精准搜索', '开启后仅保留书名与关键词完全匹配的搜索结果',
-            this.searchExploreExactSearch, (value: boolean) => {
-              this.searchExploreExactSearch = value;
-              this.onSettingChanged();
-            })
-          this.switchItem('匹配作者', '精准搜索开启时，关键词同时匹配作者',
-            this.searchExploreExactSearchMatchAuthor, (value: boolean) => {
-              this.searchExploreExactSearchMatchAuthor = value;
-              this.onSettingChanged();
-            })
-          this.switchItem('显示搜索进度', '开启后搜索过程中显示已搜索书源数量和结果数量',
-            this.searchExploreShowSearchProgress, (value: boolean) => {
-              this.searchExploreShowSearchProgress = value;
-              this.onSettingChanged();
-            })
-          this.switchItem('聚合同名结果', '开启后同名书籍合并展示，点击后查看各个书源结果',
-            this.searchExploreAggregateResults, (value: boolean) => {
-              this.searchExploreAggregateResults = value;
-              this.onSettingChanged();
-            })
-          this.numberSettingItem('搜索并发数', '控制书籍检索、书源校验和换源同时并发请求的数量',
-            this.searchExploreSearchConcurrency, 1, 12, (value: number) => {
-              this.searchExploreSearchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(value);
-              this.onSettingChanged();
-            })
-          }
-          .width('calc(100% - 24vp)')
-          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(ThemeRuntime.cardRadius())
-          .clip(true)
-          .backgroundColor(this.cardColor())
-
-        }
-        .width('100%')
-        .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
-      }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .width('100%')
-      .height('100%')
-      .align(Alignment.TopStart)
-
-      this.titleBar()
+    Stack() {
+      PageScaffold({ title: '搜索/发现配置', content: () => {
+        this.pageContent()
+      } })
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(this.pageColor())
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  pageContent() {
+    this.sectionTitle('结果展示')
+    Column() {
+      SettingSwitchRow({
+        title: '显示结果封面',
+        description: '开启后搜索和发现结果展示书籍封面',
+        isOn: this.searchExploreShowResultCover,
+        onChange: (value: boolean) => {
+          this.searchExploreShowResultCover = value;
+          this.onSettingChanged();
+        }
+      })
+      if (this.searchExploreShowResultCover) {
+        SettingSwitchRow({
+          title: '使用书架图集',
+          description: '开启后结果列表封面使用书架封面设置的浅色/深色图集',
+          isOn: this.searchExploreUseBookshelfCoverGallery,
+          onChange: (value: boolean) => {
+            this.searchExploreUseBookshelfCoverGallery = value;
+            this.onSettingChanged();
+          }
+        })
+      }
+      SettingSwitchRow({
+        title: '显示结果标签',
+        description: '开启后搜索和发现结果展示书籍标签',
+        isOn: this.searchExploreShowResultTags,
+        onChange: (value: boolean) => {
+          this.searchExploreShowResultTags = value;
+          this.onSettingChanged();
+        }
+      })
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
+
+    this.sectionTitle('书架提示')
+    Column() {
+      SettingSwitchRow({
+        title: '返回提示加入书架',
+        description: '从搜索或发现详情点击阅读后，返回时询问是否加入书架',
+        isOn: this.searchExplorePromptAddToShelfOnBack,
+        onChange: (value: boolean) => {
+          this.searchExplorePromptAddToShelfOnBack = value;
+          this.onSettingChanged();
+        }
+      })
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
+
+    this.sectionTitle('搜索设置')
+    Column() {
+      SettingSwitchRow({
+        title: '精准搜索',
+        description: '开启后仅保留书名与关键词完全匹配的搜索结果',
+        isOn: this.searchExploreExactSearch,
+        onChange: (value: boolean) => {
+          this.searchExploreExactSearch = value;
+          this.onSettingChanged();
+        }
+      })
+      SettingSwitchRow({
+        title: '匹配作者',
+        description: '精准搜索开启时，关键词同时匹配作者',
+        isOn: this.searchExploreExactSearchMatchAuthor,
+        onChange: (value: boolean) => {
+          this.searchExploreExactSearchMatchAuthor = value;
+          this.onSettingChanged();
+        }
+      })
+      SettingSwitchRow({
+        title: '显示搜索进度',
+        description: '开启后搜索过程中显示已搜索书源数量和结果数量',
+        isOn: this.searchExploreShowSearchProgress,
+        onChange: (value: boolean) => {
+          this.searchExploreShowSearchProgress = value;
+          this.onSettingChanged();
+        }
+      })
+      SettingSwitchRow({
+        title: '聚合同名结果',
+        description: '开启后同名书籍合并展示，点击后查看各个书源结果',
+        isOn: this.searchExploreAggregateResults,
+        onChange: (value: boolean) => {
+          this.searchExploreAggregateResults = value;
+          this.onSettingChanged();
+        }
+      })
+      SettingRow({ title: '搜索并发数', description: '控制书籍检索、书源校验和换源同时并发请求的数量' }) {
+        this.concurrencyStepper()
+      }
+    }
+    .width('calc(100% - 24vp)')
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
+    .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
+    .backgroundColor(this.cardColor())
   }
 
   async reloadSettings(): Promise<void> {
@@ -146,6 +166,11 @@ struct SearchExploreSettingsPage {
     } catch (e) {
       console.warn('重新加载搜索/发现配置失败:', e);
     }
+  }
+
+  setSearchConcurrency(value: number): void {
+    this.searchExploreSearchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(value);
+    this.onSettingChanged();
   }
 
   onSettingChanged(): void {
@@ -191,26 +216,6 @@ struct SearchExploreSettingsPage {
   }
 
   @Builder
-  titleBar() {
-    Row() {
-      ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
-        buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
-        onBack: () => router.back() })
-      Text('搜索/发现配置')
-        .fontSize(AppFontSize.TITLE)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(this.primaryTextColor())
-        .layoutWeight(1)
-    }
-    .width('100%')
-    .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight })
-    .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
-    .backdropBlur(ThemeRuntime.topBarBlur())
-    .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
   sectionTitle(title: string) {
     Text(title)
       .fontSize(AppFontSize.BODY)
@@ -220,119 +225,36 @@ struct SearchExploreSettingsPage {
   }
 
   @Builder
-  switchItem(title: string, desc: string, value: boolean, onChange: (value: boolean) => void) {
+  concurrencyStepper() {
     Row() {
-      Column() {
-        Text(title)
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.primaryTextColor())
-        Text(desc)
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.subTextColor())
-          .margin({ top: AppSpacing.XS })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
+      Text('−')
+        .fontSize(AppFontSize.SUBTITLE)
+        .fontColor(this.primaryTextColor())
+        .width(30)
+        .height(30)
+        .textAlign(TextAlign.Center)
+        .onClick(() => {
+          this.setSearchConcurrency(this.searchExploreSearchConcurrency - 1);
+        })
 
-      AdaptiveSwitch({
-        isOn: value,
-        onChange: (checked: boolean) => {
-          onChange(checked);
-        }
-      })
+      Text(`${this.searchExploreSearchConcurrency}`)
+        .fontSize(AppFontSize.BODY_LARGE)
+        .fontColor(this.primaryTextColor())
+        .width(42)
+        .textAlign(TextAlign.Center)
+
+      Text('+')
+        .fontSize(AppFontSize.SUBTITLE)
+        .fontColor(this.primaryTextColor())
+        .width(30)
+        .height(30)
+        .textAlign(TextAlign.Center)
+        .onClick(() => {
+          this.setSearchConcurrency(this.searchExploreSearchConcurrency + 1);
+        })
     }
-    .width('calc(100% - 32vp)')
-    .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
-    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .backgroundColor(Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
+    .height(30)
     .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
-  numberSettingItem(title: string, desc: string, value: number, minValue: number, maxValue: number, onChange: (value: number) => void) {
-    Row() {
-      Column() {
-        Text(title)
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.primaryTextColor())
-        Text(desc)
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.subTextColor())
-          .margin({ top: AppSpacing.XS })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      Row() {
-        Text('−')
-          .fontSize(AppFontSize.SUBTITLE)
-          .fontColor(this.primaryTextColor())
-          .width(30)
-          .height(30)
-          .textAlign(TextAlign.Center)
-          .onClick(() => {
-            onChange(Math.max(minValue, this.searchExploreSearchConcurrency - 1));
-          })
-
-        Text(`${this.searchExploreSearchConcurrency}`)
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.primaryTextColor())
-          .width(42)
-          .textAlign(TextAlign.Center)
-
-        Text('+')
-          .fontSize(AppFontSize.SUBTITLE)
-          .fontColor(this.primaryTextColor())
-          .width(30)
-          .height(30)
-          .textAlign(TextAlign.Center)
-          .onClick(() => {
-            onChange(Math.min(maxValue, this.searchExploreSearchConcurrency + 1));
-          })
-      }
-      .height(30)
-      .alignItems(VerticalAlign.Center)
-    }
-    .width('calc(100% - 32vp)')
-    .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
-    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .backgroundColor(Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
-    .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
-  navItem(title: string, desc: string, url: string) {
-    Row() {
-      Column() {
-        Text(title)
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.primaryTextColor())
-        Text(desc)
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.subTextColor())
-          .margin({ top: AppSpacing.XS })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(18)
-        .fontColor([this.subTextColor()])
-    }
-    .width('calc(100% - 32vp)')
-    .height(64)
-    .padding({ left: 0, right: 0 })
-    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .backgroundColor(Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => {
-      router.pushUrl({ url: url });
-    })
   }
 
 }
