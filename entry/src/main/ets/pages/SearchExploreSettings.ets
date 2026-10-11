@@ -246,7 +246,7 @@ struct SearchExploreSettingsPage {
     .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
     .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+    .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -300,7 +300,7 @@ struct SearchExploreSettingsPage {
     .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
     .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+    .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -328,7 +328,7 @@ struct SearchExploreSettingsPage {
     .padding({ left: 0, right: 0 })
     .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+    .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
       router.pushUrl({ url: url });

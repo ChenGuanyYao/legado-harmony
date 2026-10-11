@@ -163,7 +163,7 @@ export struct ReaderTtsPlayerPanel {
               .width('100%')
               .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.SM, bottom: AppSpacing.SM })
               .borderRadius(ThemeRuntime.mediumRadius())
-              .backgroundColor(this.darkMode ? '#24FFFFFF' : '#12000000')
+              .backgroundColor(ThemeRuntime.hairlineColor(this.darkMode))
           }
           ListItem() {
             Text(this.globalTtsTextAfter || (this.globalTtsContent ? '' : '正在准备当前朗读内容…'))
@@ -284,7 +284,7 @@ export struct ReaderTtsPlayerPanel {
   control(icon: Resource, label: string, enabled: boolean, action: () => void) {
     Column({ space: AppSpacing.SM }) {
       Stack({ alignContent: Alignment.Center }) {
-        Circle().width(38).height(38).fill(this.darkMode ? '#24FFFFFF' : '#10000000')
+        Circle().width(38).height(38).fill(ThemeRuntime.hairlineColor(this.darkMode))
         SymbolGlyph(icon)
           .fontSize(19)
           .fontColor([enabled ? this.primaryTextColor : this.subTextColor])
@@ -302,7 +302,7 @@ export struct ReaderTtsPlayerPanel {
   speedControl() {
     Column({ space: AppSpacing.SM }) {
       Stack({ alignContent: Alignment.Center }) {
-        Circle().width(38).height(38).fill(this.darkMode ? '#24FFFFFF' : '#10000000')
+        Circle().width(38).height(38).fill(ThemeRuntime.hairlineColor(this.darkMode))
         SymbolGlyph($r('sys.symbol.hourglass'))
           .fontSize(19)
           .fontColor([this.primaryTextColor])
@@ -351,7 +351,7 @@ export struct ReaderTtsPlayerPanel {
       .height(30)
       .borderRadius(15)
       .backgroundColor(Math.abs(this.globalTtsSpeed - value) < 0.01 ? this.accentColor :
-        (this.darkMode ? '#20FFFFFF' : '#0D000000'))
+        (ThemeRuntime.softFillColor(this.darkMode)))
       .onClick(() => ReaderTtsFloatingSession.setSpeed(value))
   }
 
@@ -366,7 +366,7 @@ export struct ReaderTtsPlayerPanel {
       .height(30)
       .borderRadius(15)
       .backgroundColor(this.globalTtsTimerMinutes === minutes ? this.accentColor :
-        (this.darkMode ? '#20FFFFFF' : '#0D000000'))
+        (ThemeRuntime.softFillColor(this.darkMode)))
       .onClick(() => ReaderTtsFloatingSession.setTimer(minutes))
   }
 
@@ -376,7 +376,7 @@ export struct ReaderTtsPlayerPanel {
       // The API 26 Select paints its own component surface, so the speaker mark has to
       // sit inside that surface instead of beside it, matching the shelf sort chip.
       Stack({ alignContent: Alignment.Start }) {
-        this.ttsVoiceSelectControl(34, this.darkMode ? '#20FFFFFF' : '#0D000000')
+        this.ttsVoiceSelectControl(34, ThemeRuntime.softFillColor(this.darkMode))
         SymbolGlyph($r('sys.symbol.speaker_wave_3'))
           .fontSize(17)
           .fontColor([this.accentColor])
@@ -400,7 +400,7 @@ export struct ReaderTtsPlayerPanel {
       .height(44)
       .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
       .borderRadius(ThemeRuntime.mediumRadius())
-      .backgroundColor(this.darkMode ? '#20FFFFFF' : '#0D000000')
+      .backgroundColor(ThemeRuntime.softFillColor(this.darkMode))
     }
   }
 
@@ -510,7 +510,7 @@ export struct ReaderTtsPlayerPanel {
     .height(44)
     .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
     .borderRadius(ThemeRuntime.mediumRadius())
-    .backgroundColor(danger ? '#D94841' : (this.darkMode ? '#20FFFFFF' : '#0D000000'))
+    .backgroundColor(danger ? ThemeRuntime.dangerColor(this.darkMode) : (ThemeRuntime.softFillColor(this.darkMode)))
     .alignItems(VerticalAlign.Center)
     .accessibilityText(accessibility)
     .onClick(action)
@@ -537,7 +537,7 @@ export struct ReaderTtsPlayerPanel {
     .height(44)
     .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
     .borderRadius(ThemeRuntime.mediumRadius())
-    .backgroundColor(this.darkMode ? '#20FFFFFF' : '#0D000000')
+    .backgroundColor(ThemeRuntime.softFillColor(this.darkMode))
     .alignItems(VerticalAlign.Center)
     .accessibilityText('选择音色')
     .onClick(() => this.onOpenVoice())

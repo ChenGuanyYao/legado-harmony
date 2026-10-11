@@ -610,7 +610,7 @@ struct BookSourceEditPage {
       this.unsavedChangesDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示未保存确认弹窗失败:'
     });
   }
@@ -622,7 +622,7 @@ struct BookSourceEditPage {
       this.draftConflictDialogContent();
     }, {
       autoCancel: false,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示草稿冲突弹窗失败:'
     });
   }
@@ -649,7 +649,7 @@ struct BookSourceEditPage {
         .width('100%')
         .height(44)
         .backgroundColor(this.buttonColor())
-        .fontColor('#FFFFFF')
+        .fontColor(ThemeRuntime.onAccentColor())
         .margin({ bottom: AppSpacing.MD })
         .onClick(() => {
           this.saveSourceAndBackFromDialog();
@@ -701,7 +701,7 @@ struct BookSourceEditPage {
         .width('100%')
         .height(44)
         .backgroundColor(this.buttonColor())
-        .fontColor('#FFFFFF')
+        .fontColor(ThemeRuntime.onAccentColor())
         .margin({ bottom: AppSpacing.MD })
         .onClick(() => {
           this.useImportedSourceInsteadOfDraft();

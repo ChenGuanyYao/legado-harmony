@@ -309,7 +309,7 @@ struct WebDavBrowsePage {
       Column() {
         this.entryContextActionItem($r('sys.symbol.square_and_pencil'), '重命名', this.primaryTextColor(),
           () => this.openRenameEntryDialog())
-        this.entryContextActionItem($r('sys.symbol.trash'), '删除', '#E53935',
+        this.entryContextActionItem($r('sys.symbol.trash'), '删除', ThemeRuntime.dangerColor(this.appDarkMode),
           () => this.confirmDeleteEntry())
       }
       .width(148)
@@ -357,7 +357,7 @@ struct WebDavBrowsePage {
       this.entryNameDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示文件命名弹窗失败:',
       onDismiss: (): void => {
         this.showEntryNameDialog = false;
@@ -396,7 +396,7 @@ struct WebDavBrowsePage {
           .layoutWeight(1)
           .height(42)
           .backgroundColor(this.accentColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => this.submitEntryNameDialog())
       }
       .width('100%')
@@ -499,7 +499,7 @@ struct WebDavBrowsePage {
         this.fileDetailDialogContent();
       }, {
         autoCancel: true,
-        maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+        maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
         warnTag: '显示书籍详情弹窗失败:',
         onDismiss: (): void => {
           this.showFileDetail = false;
@@ -561,7 +561,7 @@ struct WebDavBrowsePage {
             .layoutWeight(1)
             .height(42)
             .fontSize(AppFontSize.BODY)
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .backgroundColor(this.accentColor())
             .onClick(() => this.readFileBookNow())
           Button('移出书架')
@@ -583,7 +583,7 @@ struct WebDavBrowsePage {
             .layoutWeight(1)
             .height(42)
             .fontSize(AppFontSize.BODY)
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .backgroundColor(this.accentColor())
             .onClick(() => this.addFileBookToShelf())
         }
@@ -652,7 +652,7 @@ struct WebDavBrowsePage {
       message: `《${book.name}》`,
       buttons: [
         { text: '取消', color: this.primaryTextColor() },
-        { text: '移出', color: '#E53935' }
+        { text: '移出', color: ThemeRuntime.dangerColor(this.appDarkMode) }
       ]
     }).then((data: promptAction.ShowDialogSuccessResponse): void => {
       if (data.index !== 1) return;
@@ -799,7 +799,7 @@ struct WebDavBrowsePage {
       title: entry.directory ? '删除文件夹' : '删除文件',
       message: entry.directory ? `确定删除“${entry.name}”及其中的全部内容吗？此操作无法撤销。` :
         `确定删除“${entry.name}”吗？此操作无法撤销。`,
-      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: '#E53935' }]
+      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: ThemeRuntime.dangerColor(this.appDarkMode) }]
     });
     if (confirmation.index !== 1) return;
     const client = this.client;
@@ -949,5 +949,5 @@ struct WebDavBrowsePage {
   primaryTextColor(): string { return ThemeRuntime.primaryTextColor(this.appDarkMode); }
   subTextColor(): string { return ThemeRuntime.subTextColor(this.appDarkMode); }
   accentColor(): string { return ThemeRuntime.accentColor(this.appDarkMode); }
-  softColor(): string { return this.appDarkMode ? '#24272D' : '#EEF2F7'; }
+  softColor(): string { return ThemeRuntime.inputColor(this.appDarkMode); }
 }

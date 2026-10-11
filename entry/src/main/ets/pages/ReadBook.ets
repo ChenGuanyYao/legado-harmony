@@ -1565,7 +1565,7 @@ struct ReadBookPage {
       this.readerCacheDialogContent(false);
     }, {
       autoCancel: false,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示全文缓存弹窗失败:'
     });
   }
@@ -1580,7 +1580,7 @@ struct ReadBookPage {
       this.readerCacheDialogContent(true);
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示章节缓存弹窗失败:',
       onDismiss: (): void => {
         this.showReaderChapterCacheDialog = false;
@@ -2376,7 +2376,7 @@ struct ReadBookPage {
           .clip(true)
         }
         .width('100%')
-        .backgroundColor('#00000000')
+        .backgroundColor(Color.Transparent)
         .height(this.readerCommentPanelHeightValue)
 
         this.readerCommentPanelDragOverlay()
@@ -2419,7 +2419,7 @@ struct ReadBookPage {
     Row()
     .width('100%')
     .height(this.readerCommentPanelDragHandleHeight())
-    .backgroundColor('#00000000')
+    .backgroundColor(Color.Transparent)
     .zIndex(50)
     .accessibilityText('上滑展开评论面板')
     .hitTestBehavior(HitTestMode.Block)
@@ -2537,7 +2537,7 @@ struct ReadBookPage {
         barSideMargin: 0,
         barBottomMargin: 4,
         gradientMask: {
-          maskColor: '#00000000',
+          maskColor: Color.Transparent,
           maskHeight: 56
         },
         adaptToHandedness: false,
@@ -2693,7 +2693,7 @@ struct ReadBookPage {
       barSideMargin: 0,
       barBottomMargin: 4,
       gradientMask: {
-        maskColor: '#00000000',
+        maskColor: Color.Transparent,
         maskHeight: 56
       },
       adaptToHandedness: false,
@@ -3209,7 +3209,7 @@ struct ReadBookPage {
       this.tapZoneSettingsContent();
     }, {
       autoCancel: false,
-      maskColor: this.isReaderThemeDark() ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.isReaderThemeDark()),
       warnTag: '显示点击区域设置弹窗失败:'
     });
   }
@@ -3275,7 +3275,7 @@ struct ReadBookPage {
       this.readerTxtCharsetDialogContent();
     }, {
       autoCancel: false,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示字符编码弹窗失败:'
     });
   }
@@ -3882,7 +3882,7 @@ struct ReadBookPage {
             this.tocPanelController.enterBookmarkMultiSelect(bookmarkId);
           }
         })
-        this.bookmarkContextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
+        this.bookmarkContextActionItem($r('sys.symbol.trash'), '删除', ThemeRuntime.dangerColor(this.appDarkMode), () => {
           if (this.pendingBookmarkAction) {
             const bookmark = this.pendingBookmarkAction;
             this.closeBookmarkActionMenu();
@@ -8640,7 +8640,7 @@ struct ReadBookPage {
         .height(34)
         .fontSize(AppFontSize.BODY)
         .backgroundColor(this.buttonColor())
-        .fontColor('#FFFFFF')
+        .fontColor(ThemeRuntime.onAccentColor())
         .margin({ left: AppSpacing.LG })
         .onClick(() => {
           this.presentTapZoneSettings();

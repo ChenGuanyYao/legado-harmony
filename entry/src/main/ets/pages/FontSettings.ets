@@ -480,7 +480,7 @@ struct FontSettingsPage {
     .padding({ top: this.statusBarHeight })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
     .backdropBlur(ThemeRuntime.topBarBlur())
-    .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+    .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -528,7 +528,7 @@ struct FontSettingsPage {
     .padding({ left: 0, right: 0, top: AppSpacing.LG, bottom: AppSpacing.LG })
     .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+    .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -552,7 +552,7 @@ struct FontSettingsPage {
     .padding({ left: 0, right: 0 })
     .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+    .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
       router.pushUrl({ url: 'pages/CustomFontManager' });

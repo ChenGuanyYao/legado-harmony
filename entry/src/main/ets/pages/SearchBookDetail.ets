@@ -325,7 +325,7 @@ struct SearchBookDetailPage {
             .fontSize(AppFontSize.BODY_LARGE)
             .layoutWeight(1)
             .backgroundColor(this.buttonColor())
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .onClick(() => {
               this.addToShelf();
             })
@@ -335,7 +335,7 @@ struct SearchBookDetailPage {
             .fontSize(AppFontSize.BODY_LARGE)
             .layoutWeight(1)
             .backgroundColor(this.buttonColor())
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .onClick(() => {
               this.openChapterList();
             })
@@ -345,7 +345,7 @@ struct SearchBookDetailPage {
             .fontSize(AppFontSize.BODY_LARGE)
             .layoutWeight(1)
             .backgroundColor(this.buttonColor())
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .onClick(() => {
               this.startRead();
             })
@@ -666,7 +666,7 @@ struct SearchBookDetailPage {
       builder: this.authorSearchDialogBuilder,
       autoCancel: true,
       alignment: DialogAlignment.Center,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000'
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode)
     }).then((dialogId: number) => {
       this.authorSearchDialogId = dialogId;
     }).catch((error: Error) => {
@@ -708,7 +708,7 @@ struct SearchBookDetailPage {
       builder: this.changeSourceDialogBuilder,
       autoCancel: true,
       alignment: DialogAlignment.Center,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000'
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode)
     }).then((dialogId: number) => {
       this.changeSourceDialogId = dialogId;
     }).catch((error: Error) => {
@@ -765,7 +765,7 @@ struct SearchBookDetailPage {
         this.addToShelfOnBackDialogContent();
       }, {
         autoCancel: false,
-        maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+        maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
         warnTag: '显示加入书架确认失败:'
       });
   }
@@ -1031,7 +1031,7 @@ struct SearchBookDetailPage {
           .height(42)
           .fontSize(AppFontSize.BODY_LARGE)
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => {
             this.confirmAddToShelfOnBack();
           })
@@ -1072,7 +1072,7 @@ struct SearchBookDetailPage {
           .height(42)
           .fontSize(AppFontSize.BODY_LARGE)
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => {
             this.confirmAuthorSearch();
           })
@@ -1113,7 +1113,7 @@ struct SearchBookDetailPage {
           .height(42)
           .fontSize(AppFontSize.BODY_LARGE)
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => {
             this.confirmChangeSource();
           })

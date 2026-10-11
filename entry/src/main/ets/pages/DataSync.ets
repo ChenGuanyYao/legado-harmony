@@ -532,7 +532,7 @@ struct DataSyncPage {
 
   statusColor(): string {
     if (this.syncStatus === CloudSyncSettingsStore.STATUS_ERROR) {
-      return '#E5484D';
+      return ThemeRuntime.dangerColor(this.appDarkMode);
     }
     if (this.cloudSyncEnabled && this.accountLoggedIn) {
       return this.accentColor();
@@ -569,7 +569,7 @@ struct DataSyncPage {
   }
 
   dividerColor(): string {
-    return this.appDarkMode ? '#24FFFFFF' : '#14000000';
+    return ThemeRuntime.hairlineColor(this.appDarkMode);
   }
 
   syncBars(): void {

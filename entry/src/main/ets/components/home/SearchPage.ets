@@ -427,7 +427,7 @@ export struct SearchPage {
         ImmersiveBackButton({
             icon: this.isSearching ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'),
             iconOffsetX: 0,
-            iconColor: this.isSearching ? '#E53935' : this.primaryTextColor(),
+            iconColor: this.isSearching ? ThemeRuntime.dangerColor(this.appDarkMode) : this.primaryTextColor(),
             darkMode: this.appDarkMode,
             buttonSize: 40,
             containerWidth: 40,
@@ -496,7 +496,7 @@ export struct SearchPage {
                 .fontSize(AppFontSize.CAPTION)
                 .borderRadius(14)
                 .backgroundColor(this.buttonColor())
-                .fontColor('#FFFFFF')
+                .fontColor(ThemeRuntime.onAccentColor())
                 .margin({ right: AppSpacing.LG })
                 .onClick(() => {
                   this.openVerification();
@@ -617,7 +617,7 @@ export struct SearchPage {
       .layoutWeight(1)
       .height(40)
       .enterKeyType(EnterKeyType.Search)
-      .backgroundColor('#00000000')
+      .backgroundColor(Color.Transparent)
       .fontColor(this.primaryTextColor())
       .placeholderColor(this.subTextColor())
       .padding({ left: AppSpacing.XL, right: AppSpacing.XS })
@@ -1363,7 +1363,7 @@ export struct SearchPage {
           .height(44)
           .margin({ top: AppSpacing.XL })
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => {
             this.showSearchSettingsDialog = false;
           })

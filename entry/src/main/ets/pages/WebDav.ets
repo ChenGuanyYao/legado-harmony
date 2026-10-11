@@ -224,7 +224,7 @@ struct WebDavPage {
           }
           Text(connection.enabled ? '已启用' : '已停用')
             .fontSize(AppFontSize.CAPTION)
-            .fontColor(connection.enabled ? this.subTextColor() : '#D9485F')
+            .fontColor(connection.enabled ? this.subTextColor() : ThemeRuntime.dangerColor(this.appDarkMode))
         }
       }
       .layoutWeight(1)
@@ -342,7 +342,7 @@ struct WebDavPage {
           () => this.testActionConnection())
         this.connectionContextActionItem($r('sys.symbol.square_and_pencil'), '编辑', this.primaryTextColor(),
           () => this.editActionConnection())
-        this.connectionContextActionItem($r('sys.symbol.trash'), '删除', '#E53935',
+        this.connectionContextActionItem($r('sys.symbol.trash'), '删除', ThemeRuntime.dangerColor(this.appDarkMode),
           () => this.confirmDeleteActionConnection())
       }
       .width(148)
@@ -507,7 +507,7 @@ struct WebDavPage {
           .layoutWeight(1)
           .height(42)
           .backgroundColor(this.accentColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => this.submitEditorDialog())
       }
       .width('100%')
@@ -598,7 +598,7 @@ struct WebDavPage {
     const confirmation = await promptAction.showDialog({
       title: '删除连接',
       message: `确定删除“${connection.name}”吗？只会删除本机配置和保存的密码，不会删除远端文件。`,
-      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: '#D9485F' }]
+      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: ThemeRuntime.dangerColor(this.appDarkMode) }]
     });
     if (confirmation.index !== 1) return;
     await WebDavSecretStore.deletePassword(getContext(this), connection.id);
@@ -637,7 +637,7 @@ struct WebDavPage {
       this.connectionEditorDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示连接编辑弹窗失败:',
       onDismiss: (): void => {
         this.showConnectionEditorDialog = false;
@@ -752,5 +752,5 @@ struct WebDavPage {
   primaryTextColor(): string { return ThemeRuntime.primaryTextColor(this.appDarkMode); }
   subTextColor(): string { return ThemeRuntime.subTextColor(this.appDarkMode); }
   accentColor(): string { return ThemeRuntime.accentColor(this.appDarkMode); }
-  softColor(): string { return this.appDarkMode ? '#24272D' : '#EEF2F7'; }
+  softColor(): string { return ThemeRuntime.inputColor(this.appDarkMode); }
 }

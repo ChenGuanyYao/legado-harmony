@@ -604,7 +604,7 @@ struct CoverGalleryManagerPage {
 
       Text(`${this.albumCount} 个图集`)
         .fontSize(AppFontSize.BODY)
-        .fontColor('#FFFFFF')
+        .fontColor(ThemeRuntime.onAccentColor())
         .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
         .borderRadius(ThemeRuntime.smallRadius())
         .backgroundColor(this.accentColor())
@@ -688,7 +688,7 @@ struct CoverGalleryManagerPage {
         .width(64)
         .fontSize(AppFontSize.BODY)
         .backgroundColor(this.buttonColor())
-        .fontColor('#FFFFFF')
+        .fontColor(ThemeRuntime.onAccentColor())
         .onClick(() => {
           this.newAlbumName = '';
           this.openCreateAlbumDialog();
@@ -822,7 +822,7 @@ struct CoverGalleryManagerPage {
       Row({ space: AppSpacing.MD }) {
         this.actionButton('导出 ZIP', this.buttonColor(), () => this.exportSelectedAlbumZip())
         this.actionButton('管理图片', this.buttonColor(), () => this.openImageManager())
-        this.actionButton('删除图集', '#E53935', () => this.requestDeleteSelectedAlbum())
+        this.actionButton('删除图集', ThemeRuntime.dangerColor(this.appDarkMode), () => this.requestDeleteSelectedAlbum())
       }
 
       this.albumPreview()
@@ -880,7 +880,7 @@ struct CoverGalleryManagerPage {
       this.createAlbumDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示新建图集弹窗失败:'
     });
   }
@@ -891,7 +891,7 @@ struct CoverGalleryManagerPage {
       this.deleteAlbumConfirmDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示删除图集弹窗失败:'
     });
   }
@@ -902,7 +902,7 @@ struct CoverGalleryManagerPage {
       this.imageManagerDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示图片管理弹窗失败:'
     });
   }
@@ -942,7 +942,7 @@ struct CoverGalleryManagerPage {
           .height(42)
           .layoutWeight(1)
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => {
             this.createAlbum();
           })
@@ -981,8 +981,8 @@ struct CoverGalleryManagerPage {
         Button('删除')
           .height(42)
           .layoutWeight(1)
-          .backgroundColor('#E53935')
-          .fontColor('#FFFFFF')
+          .backgroundColor(ThemeRuntime.dangerColor(this.appDarkMode))
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => {
             this.deleteSelectedAlbum();
           })
@@ -1023,7 +1023,7 @@ struct CoverGalleryManagerPage {
       Row({ space: AppSpacing.MD }) {
         this.imageManageButton('全选', this.buttonColor(), () => this.selectAllImages())
         this.imageManageButton('取消选择', '#60656F', () => this.clearImageSelection())
-        this.imageManageButton('删除所选', '#E53935', () => this.deleteSelectedImages())
+        this.imageManageButton('删除所选', ThemeRuntime.dangerColor(this.appDarkMode), () => this.deleteSelectedImages())
       }
       .width('100%')
 

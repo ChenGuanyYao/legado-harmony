@@ -245,7 +245,7 @@ struct BookChapterListPage {
         Button(action)
           .height(38)
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick((): void => {
             this.loadChapters();
           })
@@ -293,9 +293,9 @@ struct BookChapterListPage {
               if (chapter.cacheDate > 0) {
                 Text('已缓存')
                   .fontSize(AppFontSize.MICRO)
-                  .fontColor(this.appDarkMode ? '#7CC7A0' : '#1F8F55')
+                  .fontColor(ThemeRuntime.successColor(this.appDarkMode))
                   .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
-                  .backgroundColor(this.appDarkMode ? '#24382F' : '#E6F4EC')
+                  .backgroundColor(ThemeRuntime.successSurfaceColor(this.appDarkMode))
                   .borderRadius(ThemeRuntime.mediumRadius())
               }
             }
@@ -509,7 +509,7 @@ struct BookChapterListPage {
   }
 
   private dividerColor(): string {
-    return this.appDarkMode ? '#1FFFFFFF' : '#0D000000';
+    return ThemeRuntime.softFillColor(this.appDarkMode);
   }
 
   private pageColor(): string {

@@ -295,7 +295,7 @@ struct DataBackupPage {
       this.exportPasswordDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示导出密码弹窗失败:'
     });
   }
@@ -306,7 +306,7 @@ struct DataBackupPage {
       this.importPasswordDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示导入密码弹窗失败:'
     });
   }
@@ -712,9 +712,9 @@ struct DataBackupPage {
 
   pageColor(): string { return ThemeRuntime.pageColor(this.appDarkMode); }
   cardColor(): string { return ThemeRuntime.cardColor(this.appDarkMode); }
-  softColor(): string { return this.appDarkMode ? '#24272D' : '#EEF2F7'; }
+  softColor(): string { return ThemeRuntime.inputColor(this.appDarkMode); }
   primaryTextColor(): string { return ThemeRuntime.primaryTextColor(this.appDarkMode); }
   subTextColor(): string { return ThemeRuntime.subTextColor(this.appDarkMode); }
-  dividerColor(): string { return this.appDarkMode ? '#24FFFFFF' : '#14000000'; }
+  dividerColor(): string { return ThemeRuntime.hairlineColor(this.appDarkMode); }
   accentColor(): string { return this.appDarkMode ? this.appDarkAccentColor : this.appLightAccentColor; }
 }

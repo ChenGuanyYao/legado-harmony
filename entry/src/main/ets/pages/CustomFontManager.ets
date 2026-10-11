@@ -597,7 +597,7 @@ struct CustomFontManagerPage {
 
       Text('+')
         .fontSize(AppFontSize.HEADLINE)
-        .fontColor('#FFFFFF')
+        .fontColor(ThemeRuntime.onAccentColor())
         .textAlign(TextAlign.Center)
         .width(40)
         .height(40)
@@ -652,12 +652,12 @@ struct CustomFontManagerPage {
 
       Text('删除')
         .fontSize(AppFontSize.BODY)
-        .fontColor('#FFFFFF')
+        .fontColor(ThemeRuntime.onAccentColor())
         .textAlign(TextAlign.Center)
         .width(54)
         .height(32)
         .borderRadius(16)
-        .backgroundColor('#E53935')
+        .backgroundColor(ThemeRuntime.dangerColor(this.appDarkMode))
         .onClick(() => {
           this.deleteCustomFont(item);
         })

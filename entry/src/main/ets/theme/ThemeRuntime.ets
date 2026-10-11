@@ -372,6 +372,43 @@ export class ThemeRuntime {
       ThemeRuntime.KEY_LIGHT_DANGER_COLOR, fallback);
   }
 
+  // 以下语义色不属于主题包，各主题共用，只随深浅色变化。
+
+  /** 成功、通过、已启用等状态的文字和图标。 */
+  static successColor(darkMode: boolean): string {
+    return darkMode ? '#7CC7A0' : '#1F8F55';
+  }
+
+  /** 成功状态标签的浅底色。 */
+  static successSurfaceColor(darkMode: boolean): string {
+    return darkMode ? '#24382F' : '#E6F4EC';
+  }
+
+  /** 警告、待处理等状态。 */
+  static warningColor(_darkMode: boolean): string {
+    return '#E89725';
+  }
+
+  /** 强调色、按钮色、危险色等实色背景上的文字。 */
+  static onAccentColor(): string {
+    return '#FFFFFF';
+  }
+
+  /** 弹窗与浮层背后的遮罩。 */
+  static scrimColor(darkMode: boolean): string {
+    return darkMode ? '#99000000' : '#33000000';
+  }
+
+  /** 列表行、卡片的细分隔线和描边。 */
+  static hairlineColor(darkMode: boolean): string {
+    return darkMode ? '#24FFFFFF' : '#14000000';
+  }
+
+  /** 叠在任意底色上的浅色填充，用于次要按钮、选中行、占位块。 */
+  static softFillColor(darkMode: boolean): string {
+    return darkMode ? '#1FFFFFFF' : '#0D000000';
+  }
+
   static fontFamily(): string {
     if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
       return ThemeRuntime.customSourceTheme('typography').typography.appFontFamily || 'sans-serif';

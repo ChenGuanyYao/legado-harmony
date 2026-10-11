@@ -144,7 +144,7 @@ struct BookSourceDebugPage {
         .fontColor(this.primaryTextColor()).width('100%')
       Text(this.source.bookSourceUrl || this.sourceUrl || '未指定书源')
         .fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor()).width('100%').maxLines(2)
-      Text(`状态：${this.status}`).fontSize(AppFontSize.BODY).fontColor(this.running ? '#E89725' : this.accentColor())
+      Text(`状态：${this.status}`).fontSize(AppFontSize.BODY).fontColor(this.running ? ThemeRuntime.warningColor(this.appDarkMode) : this.accentColor())
         .width('100%')
     }
     .width('calc(100% - 24vp)').padding(AppSpacing.XL).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
@@ -164,7 +164,7 @@ struct BookSourceDebugPage {
       Row({ space: AppSpacing.MD }) {
         Button(this.running ? '取消调试' : '开始调试', { type: ButtonType.Capsule })
           .layoutWeight(1).height(44).enabled(this.running || !!this.source.bookSourceUrl)
-          .backgroundColor(this.accentColor()).fontColor('#FFFFFF').onClick(() => this.runDebug())
+          .backgroundColor(this.accentColor()).fontColor(ThemeRuntime.onAccentColor()).onClick(() => this.runDebug())
         Button('清空', { type: ButtonType.Capsule }).height(44).width(82)
           .backgroundColor(this.inputColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.clearDebugResult())
@@ -191,7 +191,7 @@ struct BookSourceDebugPage {
           Text(`正文内容（${this.debugContent.length} 字符）`).fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor()).layoutWeight(1)
           Button('复制正文', { type: ButtonType.Capsule })
-            .height(34).fontSize(AppFontSize.CAPTION).backgroundColor(this.accentColor()).fontColor('#FFFFFF')
+            .height(34).fontSize(AppFontSize.CAPTION).backgroundColor(this.accentColor()).fontColor(ThemeRuntime.onAccentColor())
             .onClick(() => this.copyDebugContent())
         }.width('100%')
       }
@@ -232,9 +232,9 @@ struct BookSourceDebugPage {
       Text(step.name).fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
           .layoutWeight(1)
         Text(`${step.status} · ${step.elapsedMs}ms`).fontSize(AppFontSize.CAPTION)
-          .fontColor(step.status === 'passed' ? '#20A464' : '#E84040')
+          .fontColor(step.status === 'passed' ? ThemeRuntime.successColor(this.appDarkMode) : ThemeRuntime.dangerColor(this.appDarkMode))
       }.width('100%')
-      if (step.error) Text(`错误：${step.error}`).fontSize(12).fontColor('#E84040').width('100%')
+      if (step.error) Text(`错误：${step.error}`).fontSize(12).fontColor(ThemeRuntime.dangerColor(this.appDarkMode)).width('100%')
         .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
         .copyOption(CopyOptions.LocalDevice)
       ForEach(step.requests, (item: BookSourceDebugNetworkTrace) => {

@@ -671,7 +671,7 @@ struct Index {
       },
       barBottomMargin: this.floatingBarBottomMargin(),
       gradientMask: {
-        maskColor: '#00000000',
+        maskColor: Color.Transparent,
         maskHeight: 96
       },
       adaptToHandedness: true,

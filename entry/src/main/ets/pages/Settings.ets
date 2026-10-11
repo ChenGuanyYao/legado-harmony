@@ -1632,7 +1632,7 @@ struct SettingsPage {
   }
 
   settingsDividerColor(): string {
-    return this.appDarkMode ? '#24FFFFFF' : '#14000000';
+    return ThemeRuntime.hairlineColor(this.appDarkMode);
   }
 
   primaryTextColor(): string {
@@ -1822,7 +1822,7 @@ struct SettingsPage {
       this.tapZoneSettingsContent();
     }, {
       autoCancel: false,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示点击区域设置弹窗失败:'
     });
   }
@@ -2022,7 +2022,7 @@ struct SettingsPage {
         .height(36)
         .fontSize(AppFontSize.BODY)
         .backgroundColor(this.buttonColor())
-        .fontColor('#FFFFFF')
+        .fontColor(ThemeRuntime.onAccentColor())
         .margin({ left: AppSpacing.LG })
         .onClick(() => {
           this.presentTapZoneSettings();
@@ -2101,7 +2101,7 @@ struct SettingsPage {
               .height(36)
               .fontSize(AppFontSize.BODY)
               .backgroundColor(this.buttonColor())
-              .fontColor('#FFFFFF')
+              .fontColor(ThemeRuntime.onAccentColor())
               .onClick(() => {
                 this.addCustomTheme();
               })
@@ -2176,7 +2176,7 @@ struct SettingsPage {
                 .height(36)
                 .fontSize(AppFontSize.BODY)
                 .backgroundColor(this.buttonColor())
-                .fontColor('#FFFFFF')
+                .fontColor(ThemeRuntime.onAccentColor())
                 .onClick(() => {
                   this.chooseCurrentCustomThemeImage();
                 })

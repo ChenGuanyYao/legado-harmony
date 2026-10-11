@@ -420,11 +420,11 @@ struct ReadingStatsPage {
         Row({ space: AppSpacing.MD }) {
           SymbolGlyph($r('sys.symbol.trash'))
             .fontSize(18)
-            .fontColor(['#E53935'])
+            .fontColor([ThemeRuntime.dangerColor(this.appDarkMode)])
             .width(24)
           Text('删除')
             .fontSize(AppFontSize.BODY_LARGE)
-            .fontColor('#E53935')
+            .fontColor(ThemeRuntime.dangerColor(this.appDarkMode))
             .layoutWeight(1)
         }
         .width('100%')
@@ -514,7 +514,7 @@ struct ReadingStatsPage {
     const confirmation = await promptAction.showDialog({
       title: '删除阅读记录',
       message: `确定删除“${item.name}”在 ${this.periodTitle()} 的阅读时长记录吗？不会影响书籍本身。`,
-      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: '#D9485F' }]
+      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: ThemeRuntime.dangerColor(this.appDarkMode) }]
     });
     if (confirmation.index !== 1) return;
     try {
@@ -668,7 +668,7 @@ struct ReadingStatsPage {
   }
 
   dividerColor(): string {
-    return this.appDarkMode ? '#24FFFFFF' : '#14000000';
+    return ThemeRuntime.hairlineColor(this.appDarkMode);
   }
 
   syncBars(): void {

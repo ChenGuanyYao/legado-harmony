@@ -135,8 +135,8 @@ export struct ReaderTtsQuickSettingsPanel {
       Button(this.speaking ? '停止朗读' : '开始朗读')
         .width('100%')
         .height(40)
-        .backgroundColor(this.speaking ? '#E53935' : this.actionColor)
-        .fontColor('#FFFFFF')
+        .backgroundColor(this.speaking ? ThemeRuntime.dangerColor(this.dark) : this.actionColor)
+        .fontColor(ThemeRuntime.onAccentColor())
         .onClick(() => this.onToggleReading())
     }
     .width('100%')

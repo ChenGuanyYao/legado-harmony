@@ -176,7 +176,7 @@ struct BookshelfSettingsPage {
                   this.openPrivatePasswordDialog('password');
                 })
               this.itemDivider()
-              this.actionItem('重置隐私书架', '删除所有隐私书籍并关闭隐私书架，忘记密码时使用', '#E53935', () => {
+              this.actionItem('重置隐私书架', '删除所有隐私书籍并关闭隐私书架，忘记密码时使用', ThemeRuntime.dangerColor(this.appDarkMode), () => {
                 this.confirmResetPrivateShelf();
               })
             }
@@ -335,7 +335,7 @@ struct BookshelfSettingsPage {
       this.privatePasswordDialogContent();
     }, {
       autoCancel: false,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示隐私书架密码弹窗失败:'
     });
   }
@@ -388,7 +388,7 @@ struct BookshelfSettingsPage {
     const confirmation = await promptAction.showDialog({
       title: '重置隐私书架',
       message: '该操作会删除所有隐私书籍，包括进度、书签等，并关闭隐私书架选项',
-      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '确认', color: '#D9485F' }]
+      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '确认', color: ThemeRuntime.dangerColor(this.appDarkMode) }]
     });
     if (confirmation.index !== 1 || this.privateShelfBusy) return;
     this.privateShelfBusy = true;
@@ -716,7 +716,7 @@ struct BookshelfSettingsPage {
   itemDivider() {
     Divider()
       .strokeWidth(0.5)
-      .color(this.appDarkMode ? '#24FFFFFF' : '#14000000')
+      .color(ThemeRuntime.hairlineColor(this.appDarkMode))
       .width('calc(100% - 32vp)')
       .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
   }
@@ -1003,7 +1003,7 @@ struct BookshelfSettingsPage {
       if (this.privatePasswordError) {
         Text(this.privatePasswordError)
           .fontSize(AppFontSize.CAPTION)
-          .fontColor('#E53935')
+          .fontColor(ThemeRuntime.dangerColor(this.appDarkMode))
           .width('100%')
       }
 
@@ -1019,7 +1019,7 @@ struct BookshelfSettingsPage {
           .layoutWeight(1)
           .height(44)
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => {
             this.submitPrivatePasswordDialog();
           })

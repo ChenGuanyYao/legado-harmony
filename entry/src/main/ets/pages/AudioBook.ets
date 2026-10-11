@@ -307,7 +307,7 @@ struct AudioBookPage {
   audioPanelControl(icon: Resource, label: string, enabled: boolean, action: () => void) {
     Column({ space: AppSpacing.SM }) {
       Stack({ alignContent: Alignment.Center }) {
-        Circle().width(38).height(38).fill(this.appDarkMode ? '#24FFFFFF' : '#10000000')
+        Circle().width(38).height(38).fill(ThemeRuntime.hairlineColor(this.appDarkMode))
         SymbolGlyph(icon).fontSize(19).fontColor([enabled ? this.primaryTextColor() : this.subTextColor()])
       }
       Text(label).fontSize(AppFontSize.MICRO).fontColor(this.subTextColor())
@@ -323,7 +323,7 @@ struct AudioBookPage {
   audioChapterControl(icon: Resource, label: string, offset: number) {
     Column({ space: AppSpacing.SM }) {
       Stack({ alignContent: Alignment.Center }) {
-        Circle().width(38).height(38).fill(this.appDarkMode ? '#24FFFFFF' : '#10000000')
+        Circle().width(38).height(38).fill(ThemeRuntime.hairlineColor(this.appDarkMode))
         SymbolGlyph(icon)
           .fontSize(19)
           .fontColor([(offset < 0 ? this.chapterIndex > 0 : this.chapterIndex < this.chapters.length - 1) &&
@@ -374,7 +374,7 @@ struct AudioBookPage {
       this.voiceCodeDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示音色代码弹窗失败:'
     });
   }
@@ -428,7 +428,7 @@ struct AudioBookPage {
         Button('保存并重新加载')
           .layoutWeight(1)
           .backgroundColor(this.accentColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => this.saveVoiceCode())
       }
       .width('100%')
@@ -539,7 +539,7 @@ struct AudioBookPage {
         .fontSize(AppFontSize.SUBTITLE)
         .enabled(this.chapters.length > 0 && this.playbackState !== 'loading')
         .backgroundColor(this.accentColor())
-        .fontColor('#FFFFFF')
+        .fontColor(ThemeRuntime.onAccentColor())
         .onClick(() => this.togglePlayback())
       Button('下一章')
         .height(44)
@@ -591,7 +591,7 @@ struct AudioBookPage {
       .height(30)
       .borderRadius(15)
       .backgroundColor(Math.abs(this.speed - value) < 0.01 ? this.accentColor() :
-        (this.appDarkMode ? '#20FFFFFF' : '#0D000000'))
+        (ThemeRuntime.softFillColor(this.appDarkMode)))
       .onClick(() => this.changeSpeed(value))
   }
 
@@ -606,7 +606,7 @@ struct AudioBookPage {
       .height(30)
       .borderRadius(15)
       .backgroundColor(this.sleepMinutes === minutes ? this.accentColor() :
-        (this.appDarkMode ? '#20FFFFFF' : '#0D000000'))
+        (ThemeRuntime.softFillColor(this.appDarkMode)))
       .onClick(() => this.setSleepTimer(minutes))
   }
 

@@ -202,7 +202,7 @@ struct BookImportPage {
     .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: showDivider ? 0.5 : 0 },
-      color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+      color: ThemeRuntime.hairlineColor(this.appDarkMode) })
     .alignItems(VerticalAlign.Center)
     .onClick(onClick)
   }

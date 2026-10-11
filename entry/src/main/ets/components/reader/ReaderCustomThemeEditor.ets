@@ -69,7 +69,7 @@ export struct ReaderCustomThemeEditor {
   }
 
   private fieldColor(): string {
-    return this.appDarkMode ? '#24FFFFFF' : '#12000000';
+    return ThemeRuntime.hairlineColor(this.appDarkMode);
   }
 
   private normalizeColor(color: string, fallback: string): string {
@@ -209,7 +209,7 @@ export struct ReaderCustomThemeEditor {
           .height(36)
           .fontSize(AppFontSize.BODY)
           .backgroundColor(this.accentColor)
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => this.add())
         Button('删除')
           .height(36)
@@ -273,7 +273,7 @@ export struct ReaderCustomThemeEditor {
             .height(36)
             .fontSize(AppFontSize.BODY)
             .backgroundColor(this.accentColor)
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .onClick(() => {
               this.chooseImage();
             })

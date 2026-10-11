@@ -406,7 +406,7 @@ export struct BookChangeSourceDialog {
                     .fontSize(AppFontSize.BODY)
                     .borderRadius(16)
                     .backgroundColor(this.buttonColor())
-                    .fontColor('#FFFFFF')
+                    .fontColor(ThemeRuntime.onAccentColor())
                     .enabled(!this.switching)
                     .onClick(() => this.switchSource(book))
                 }

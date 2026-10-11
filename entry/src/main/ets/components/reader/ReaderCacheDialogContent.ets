@@ -200,13 +200,13 @@ export struct ReaderCacheDialogContent {
       }, this.caching)
       this.actionItem('清除已缓存章节', () => {
         this.clearCachedChapters();
-      }, this.caching, '#E53935')
+      }, this.caching, ThemeRuntime.dangerColor(this.appDarkMode))
 
       Button('取消')
         .width('100%')
         .height(44)
         .margin({ top: AppSpacing.MD })
-        .backgroundColor(this.appDarkMode ? '#24272D' : '#F5F5F5')
+        .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
         .fontColor(this.textColor())
         .onClick(() => this.onClose())
     }
@@ -219,7 +219,7 @@ export struct ReaderCacheDialogContent {
       .width('100%')
       .height(44)
       .margin({ top: AppSpacing.SM })
-      .backgroundColor(this.appDarkMode ? '#24272D' : '#F5F5F5')
+      .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
       .fontColor(color || this.textColor())
       .enabled(!disabled)
       .opacity(disabled ? 0.5 : 1)
@@ -271,7 +271,7 @@ export struct ReaderCacheDialogContent {
           .layoutWeight(1)
           .height(42)
           .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
-          .backgroundColor(this.appDarkMode ? '#1FFFFFFF' : '#0D000000')
+          .backgroundColor(ThemeRuntime.softFillColor(this.appDarkMode))
           .borderRadius(ThemeRuntime.mediumRadius())
           .onChange((value: string) => {
             this.rangeDraft = value;
@@ -280,7 +280,7 @@ export struct ReaderCacheDialogContent {
           .width(96)
           .height(42)
           .fontSize(AppFontSize.BODY)
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .backgroundColor(ThemeRuntime.buttonColor(this.appDarkMode))
           .enabled(this.chapters.length > 0)
           .onClick(() => this.cacheRange())
@@ -301,9 +301,9 @@ export struct ReaderCacheDialogContent {
               if (chapter.cacheDate > 0) {
                 Text('已缓存')
                   .fontSize(AppFontSize.CAPTION)
-                  .fontColor(this.appDarkMode ? '#7CC7A0' : '#1F8F55')
+                  .fontColor(ThemeRuntime.successColor(this.appDarkMode))
                   .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
-                  .backgroundColor(this.appDarkMode ? '#24382F' : '#E6F4EC')
+                  .backgroundColor(ThemeRuntime.successSurfaceColor(this.appDarkMode))
                   .borderRadius(ThemeRuntime.smallRadius())
               }
             }

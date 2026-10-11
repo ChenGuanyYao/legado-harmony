@@ -187,7 +187,7 @@ struct AppIconSettingsPage {
         if (this.appIconId === option.id) {
           Text('✓')
             .fontSize(AppFontSize.BODY)
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .fontWeight(FontWeight.Bold)
             .width(22)
             .height(22)

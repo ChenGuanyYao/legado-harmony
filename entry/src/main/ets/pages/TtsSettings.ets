@@ -129,7 +129,7 @@ struct TtsSettingsPage {
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
-          .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+          .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
           .onClick(() => {
             router.pushUrl({ url: 'pages/CustomTtsVoiceManager' });
           })
@@ -194,8 +194,8 @@ struct TtsSettingsPage {
             Button(this.isPreviewing ? '停止试听' : '试听')
               .width('100%')
               .height(42)
-              .backgroundColor(this.isPreviewing ? '#E53935' : this.buttonColor())
-              .fontColor('#FFFFFF')
+              .backgroundColor(this.isPreviewing ? ThemeRuntime.dangerColor(this.appDarkMode) : this.buttonColor())
+              .fontColor(ThemeRuntime.onAccentColor())
               .onClick(() => {
                 this.togglePreview();
               })
@@ -1094,7 +1094,7 @@ struct TtsSettingsPage {
         if (this.ttsWalletError) {
           Text(`${this.ttsWalletError}，请点击刷新`)
             .fontSize(AppFontSize.CAPTION)
-            .fontColor('#E5484D')
+            .fontColor(ThemeRuntime.dangerColor(this.appDarkMode))
             .width('100%')
         }
 
@@ -1128,7 +1128,7 @@ struct TtsSettingsPage {
             .height(34)
             .fontSize(AppFontSize.BODY)
             .enabled(!this.redeemingTtsSku && this.accountLoggedIn && this.paidPoints >= item.points)
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .backgroundColor(this.accentColor())
             .onClick(() => {
               this.redeemTtsPackage(item);

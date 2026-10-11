@@ -367,7 +367,7 @@ struct OtherSettingsPage {
     .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: showDivider ? 0.5 : 0 },
-      color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+      color: ThemeRuntime.hairlineColor(this.appDarkMode) })
     .alignItems(VerticalAlign.Center)
     .onClick(onClick)
   }
@@ -412,7 +412,7 @@ struct OtherSettingsPage {
     .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
     .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+    .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -440,6 +440,6 @@ struct OtherSettingsPage {
     .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
     .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+    .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
   }
 }

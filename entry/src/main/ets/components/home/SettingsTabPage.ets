@@ -250,7 +250,7 @@ export struct SettingsPage {
   }
 
   dividerColor(): string {
-    return this.appDarkMode ? '#24FFFFFF' : '#14000000';
+    return ThemeRuntime.hairlineColor(this.appDarkMode);
   }
 
 }

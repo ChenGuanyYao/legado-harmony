@@ -927,7 +927,7 @@ struct ThemeSettingsPage {
         .width('100%')
         .height(40)
         .fontSize(AppFontSize.BODY)
-        .fontColor('#FFFFFF')
+        .fontColor(ThemeRuntime.onAccentColor())
         .backgroundColor(this.activeVariant(theme).colors.buttonColor)
         .onClick(() => {
           this.selectTheme(theme.id);
@@ -964,7 +964,7 @@ struct ThemeSettingsPage {
       `获取 · ${this.storeThemePricePoints(theme.id)}点`, { type: ButtonType.Normal })
       .height(40)
       .fontSize(AppFontSize.BODY)
-      .fontColor('#FFFFFF')
+      .fontColor(ThemeRuntime.onAccentColor())
       .backgroundColor(this.activeVariant(theme).colors.buttonColor)
       .layoutWeight(1)
       .enabled(!this.themeCatalogLoaded || !!this.themeOffer(theme.id))
@@ -982,7 +982,7 @@ struct ThemeSettingsPage {
     } else if (this.isTrialTheme(theme.id) || this.isSelected(theme)) {
       Text(this.isTrialTheme(theme.id) ? '试用中' : '使用中')
         .fontSize(AppFontSize.MICRO)
-        .fontColor('#FFFFFF')
+        .fontColor(ThemeRuntime.onAccentColor())
         .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
         .borderRadius(10)
         .backgroundColor(this.activeVariant(theme).colors.accentColor)
@@ -1080,7 +1080,7 @@ struct ThemeSettingsPage {
           this.showCustomThemeActionMenu = false;
           this.showRenameCustomThemeDialog = true;
         })
-        this.contextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
+        this.contextActionItem($r('sys.symbol.trash'), '删除', ThemeRuntime.dangerColor(this.appDarkMode), () => {
           this.showCustomThemeActionMenu = false;
           this.requestDeleteCustomTheme(this.actionCustomSchemeId);
         })
@@ -1159,7 +1159,7 @@ struct ThemeSettingsPage {
             .height(42)
             .borderRadius(ThemeRuntime.buttonRadius())
             .backgroundColor(this.accentColor())
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .enabled(!!this.renameCustomThemeName.trim())
             .onClick(() => this.renameCustomTheme())
         }
@@ -1214,8 +1214,8 @@ struct ThemeSettingsPage {
             .layoutWeight(1)
             .height(42)
             .borderRadius(ThemeRuntime.buttonRadius())
-            .backgroundColor('#E53935')
-            .fontColor('#FFFFFF')
+            .backgroundColor(ThemeRuntime.dangerColor(this.appDarkMode))
+            .fontColor(ThemeRuntime.onAccentColor())
             .onClick(() => this.confirmDeleteCustomTheme())
         }
         .width('100%')
@@ -1313,7 +1313,7 @@ struct ThemeSettingsPage {
             .height(42)
             .borderRadius(ThemeRuntime.buttonRadius())
             .backgroundColor(this.accentColor())
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .onClick(() => this.saveStartupText())
         }
         .width('100%')
@@ -1366,7 +1366,7 @@ struct ThemeSettingsPage {
             .height(42)
             .borderRadius(ThemeRuntime.buttonRadius())
             .backgroundColor(this.accentColor())
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .onClick(() => this.confirmThemeApply())
         }
         .width('100%')
@@ -1666,14 +1666,14 @@ struct ThemeSettingsPage {
         if (this.isTrialTheme(theme.id)) {
           Text('试用中')
             .fontSize(AppFontSize.CAPTION)
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
             .borderRadius(12)
             .backgroundColor(this.activeVariant(theme).colors.accentColor)
         } else if (this.isSelected(theme, customSchemeId)) {
           Text('已启用')
             .fontSize(AppFontSize.CAPTION)
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
             .borderRadius(12)
             .backgroundColor(this.activeVariant(theme).colors.accentColor)
@@ -1748,7 +1748,7 @@ struct ThemeSettingsPage {
           Button('编辑主题')
             .height(32)
             .fontSize(AppFontSize.CAPTION)
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .backgroundColor(this.activeVariant(theme).colors.buttonColor)
             .onClick(() => {
               router.pushUrl({
@@ -1778,7 +1778,7 @@ struct ThemeSettingsPage {
             `获取主题 · ${this.themeOffer(theme.id)?.pricePoints || AccountCommerceConfig.THEME_PRICE_POINTS}点`)
             .height(34)
             .fontSize(AppFontSize.CAPTION)
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .backgroundColor(this.activeVariant(theme).colors.buttonColor)
             .layoutWeight(1)
             .enabled(!this.themeCatalogLoaded || !!this.themeOffer(theme.id))

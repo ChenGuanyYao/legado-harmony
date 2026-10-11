@@ -1078,7 +1078,7 @@ struct CustomTtsVoiceManagerPage {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(voice.enabled ? '已启用' : '已禁用')
           .fontSize(AppFontSize.CAPTION)
-          .fontColor(voice.enabled ? '#1E8E3E' : this.subTextColor())
+          .fontColor(voice.enabled ? ThemeRuntime.successColor(this.appDarkMode) : this.subTextColor())
           .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
@@ -1162,7 +1162,7 @@ struct CustomTtsVoiceManagerPage {
           () => this.toggleActionVoiceEnabled())
         this.voiceContextActionItem($r('sys.symbol.list_bullet'), '多选', this.primaryTextColor(),
           () => this.enterActionVoiceSelection())
-        this.voiceContextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => this.deleteActionVoice())
+        this.voiceContextActionItem($r('sys.symbol.trash'), '删除', ThemeRuntime.dangerColor(this.appDarkMode), () => this.deleteActionVoice())
       }
       .width(148)
       .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
@@ -1204,7 +1204,7 @@ struct CustomTtsVoiceManagerPage {
         .height(42)
         .enabled(this.selectedVoiceIds.length > 0 && !this.isBatchOperating)
         .backgroundColor(this.buttonColor())
-        .fontColor('#FFFFFF')
+        .fontColor(ThemeRuntime.onAccentColor())
         .onClick(() => {
           this.batchSetEnabled(true);
         })
@@ -1223,8 +1223,8 @@ struct CustomTtsVoiceManagerPage {
         .height(42)
         .margin({ left: AppSpacing.MD })
         .enabled(this.selectedVoiceIds.length > 0 && !this.isBatchOperating)
-        .backgroundColor('#E53935')
-        .fontColor('#FFFFFF')
+        .backgroundColor(ThemeRuntime.dangerColor(this.appDarkMode))
+        .fontColor(ThemeRuntime.onAccentColor())
         .onClick(() => {
           this.batchDelete();
         })
@@ -1304,7 +1304,7 @@ struct CustomTtsVoiceManagerPage {
       this.importUrlDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示音色URL导入弹窗失败:'
     });
   }
@@ -1341,7 +1341,7 @@ struct CustomTtsVoiceManagerPage {
           .layoutWeight(1)
           .height(42)
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .enabled(!this.isImporting)
           .onClick(() => {
             this.importFromUrl();
@@ -1432,7 +1432,7 @@ struct CustomTtsVoiceManagerPage {
             .layoutWeight(1)
             .height(42)
             .backgroundColor(this.buttonColor())
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .onClick(() => {
               this.saveEditedVoice();
             })

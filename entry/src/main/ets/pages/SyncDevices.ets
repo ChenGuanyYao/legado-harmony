@@ -183,7 +183,7 @@ struct SyncDevicesPage {
             Button('移除')
               .height(30)
               .fontSize(AppFontSize.CAPTION)
-              .fontColor('#E5484D')
+              .fontColor(ThemeRuntime.dangerColor(this.appDarkMode))
               .backgroundColor(this.softColor())
               .onClick(() => this.confirmRevoke(device))
           }
@@ -195,7 +195,7 @@ struct SyncDevicesPage {
     .padding({ top: AppSpacing.LG, bottom: AppSpacing.LG })
     .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .border({ width: { bottom: showDivider ? 0.5 : 0 },
-      color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+      color: ThemeRuntime.hairlineColor(this.appDarkMode) })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -264,7 +264,7 @@ struct SyncDevicesPage {
       this.renameDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示设备重命名弹窗失败:'
     });
   }
@@ -302,7 +302,7 @@ struct SyncDevicesPage {
           .height(42)
           .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.accentColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .enabled(!!this.renameDeviceName.trim() && !this.renaming)
           .onClick(() => this.saveRename())
       }
@@ -318,7 +318,7 @@ struct SyncDevicesPage {
       message: `确定移除“${device.deviceName || 'HarmonyOS 设备'}”吗？`,
       buttons: [
         { text: '取消', color: this.subTextColor() },
-        { text: '移除', color: '#E5484D' }
+        { text: '移除', color: ThemeRuntime.dangerColor(this.appDarkMode) }
       ]
     });
     if (result.index !== 1) {

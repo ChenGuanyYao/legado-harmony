@@ -710,7 +710,7 @@ export struct ReaderTocPanel {
           Text(this.bookInitial())
             .fontSize(AppFontSize.HEADLINE)
             .fontWeight(FontWeight.Bold)
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .textAlign(TextAlign.Center)
             .width(52)
             .height(68)
@@ -766,7 +766,7 @@ export struct ReaderTocPanel {
       .height(44)
       .padding(AppSpacing.XXS)
       .borderRadius(22)
-      .backgroundColor(this.dark ? '#20FFFFFF' : '#12000000')
+      .backgroundColor(ThemeRuntime.softFillColor(this.dark))
       .margin({ left: AppSpacing.XXL, right: AppSpacing.XXL })
 
       if (this.tab === 0) {
@@ -829,7 +829,7 @@ export struct ReaderTocPanel {
             .height(34)
             .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
             .borderRadius(17)
-            .backgroundColor(this.dark ? '#2BFFFFFF' : '#14000000')
+            .backgroundColor(ThemeRuntime.hairlineColor(this.dark))
             .accessibilityText('输入目标章节序号，按回车定位')
             .onChange((value: string) => {
               this.quickJumpDraft = value.replace(/[^0-9]/g, '').substring(0, 6);
@@ -866,7 +866,7 @@ export struct ReaderTocPanel {
         .height(34)
         .borderRadius(17)
         .backgroundColor(this.reverseOrder ? (this.dark ? '#24384A' : '#E8F1FF') :
-          (this.dark ? '#1FFFFFFF' : '#0D000000'))
+          (ThemeRuntime.softFillColor(this.dark)))
         .accessibilityText(this.reverseOrder ? '切换为正序目录' : '切换为倒序目录')
         .onClick(() => this.toggleOrder())
         .margin({ left: AppSpacing.XS })
@@ -880,7 +880,7 @@ export struct ReaderTocPanel {
             .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
             .textAlign(TextAlign.Center)
             .borderRadius(ThemeRuntime.buttonRadius())
-            .backgroundColor(this.dark ? '#1FFFFFFF' : '#0D000000')
+            .backgroundColor(ThemeRuntime.softFillColor(this.dark))
         }
         ImmersiveBackButton({
           icon: $r('sys.symbol.arrow_clockwise'),
@@ -960,7 +960,7 @@ export struct ReaderTocPanel {
         .height(40)
         .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
         .borderRadius(20)
-        .backgroundColor(this.dark ? '#2BFFFFFF' : '#14000000')
+        .backgroundColor(ThemeRuntime.hairlineColor(this.dark))
       }
     }
     .width('100%')
@@ -1008,9 +1008,9 @@ export struct ReaderTocPanel {
               if (this.book?.origin !== 'local' && chapter.cacheDate > 0) {
                 Text('已缓存')
                   .fontSize(AppFontSize.MICRO)
-                  .fontColor(this.dark ? '#7CC7A0' : '#1F8F55')
+                  .fontColor(ThemeRuntime.successColor(this.dark))
                   .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
-                  .backgroundColor(this.dark ? '#24382F' : '#E6F4EC')
+                  .backgroundColor(ThemeRuntime.successSurfaceColor(this.dark))
                   .borderRadius(ThemeRuntime.mediumRadius())
               }
             }
@@ -1018,7 +1018,7 @@ export struct ReaderTocPanel {
             .padding({ left: AppSpacing.LG, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
             .backgroundColor(this.globalIndex(localIndex) === this.currentChapterIndex ?
               this.selectedColor : Color.Transparent)
-            .border({ width: { bottom: 0.5 }, color: this.dark ? '#1FFFFFFF' : '#0D000000' })
+            .border({ width: { bottom: 0.5 }, color: ThemeRuntime.softFillColor(this.dark) })
             .onClick(() => this.onJumpToChapter(this.globalIndex(localIndex)))
           }
         }, (chapter: BookChapter, localIndex: number) =>
@@ -1049,7 +1049,7 @@ export struct ReaderTocPanel {
           .width(3)
           .height(this.listViewportHeight)
           .borderRadius(2)
-          .backgroundColor(this.dark ? '#18FFFFFF' : '#14000000')
+          .backgroundColor(ThemeRuntime.hairlineColor(this.dark))
           .margin({ right: AppSpacing.XXS })
           .hitTestBehavior(HitTestMode.None)
         Column()
@@ -1091,7 +1091,7 @@ export struct ReaderTocPanel {
           .onClick(() => this.toggleSelectAllBookmarks())
         Text('删除')
           .fontSize(AppFontSize.BODY)
-          .fontColor(this.selectedBookmarkIds.length > 0 ? '#D94841' : this.subTextColor)
+          .fontColor(this.selectedBookmarkIds.length > 0 ? ThemeRuntime.dangerColor(this.appDarkMode) : this.subTextColor)
           .enabled(this.selectedBookmarkIds.length > 0)
           .onClick(() => {
             this.deleteSelectedBookmarks();
@@ -1212,7 +1212,7 @@ export struct ReaderTocPanel {
     .width('100%')
     .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
     .backgroundColor(this.selectedBookmarkIds.includes(bookmark.id) ? this.selectedColor : Color.Transparent)
-    .border({ width: { bottom: 0.5 }, color: this.dark ? '#1FFFFFFF' : '#0D000000' })
+    .border({ width: { bottom: 0.5 }, color: ThemeRuntime.softFillColor(this.dark) })
     .onClick(() => {
       if (this.bookmarkMultiSelectMode) this.toggleBookmarkSelection(bookmark.id)
       else this.onJumpToBookmark(bookmark)
@@ -1229,7 +1229,7 @@ export struct ReaderTocPanel {
     Row() {
       this.swipeActionButton($r('sys.symbol.checkmark_circle'), '多选', this.accentColor,
         () => this.enterBookmarkMultiSelect(bookmark.id))
-      this.swipeActionButton($r('sys.symbol.trash'), '删除', '#D94841', () => {
+      this.swipeActionButton($r('sys.symbol.trash'), '删除', ThemeRuntime.dangerColor(this.appDarkMode), () => {
         this.deleteBookmark(bookmark);
       })
     }

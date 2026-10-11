@@ -1357,7 +1357,7 @@ export struct BookshelfPage {
                 this.enterBookMultiSelect(bookUrl);
               }
             })
-            this.contextActionItem($r('sys.symbol.trash'), '移出书架', '#E53935', () => {
+            this.contextActionItem($r('sys.symbol.trash'), '移出书架', ThemeRuntime.dangerColor(this.appDarkMode), () => {
               if (this.pendingActionBook) {
                 const book = this.pendingActionBook;
                 this.closeBookActions();
@@ -1423,7 +1423,7 @@ export struct BookshelfPage {
                   .height(36)
                   .fontSize(AppFontSize.CAPTION)
                   .backgroundColor(this.buttonColor())
-                  .fontColor('#FFFFFF')
+                  .fontColor(ThemeRuntime.onAccentColor())
                   .onClick(() => this.openCustomNetworkCoverDialog())
                 Button('取消')
                   .height(36)
@@ -1678,8 +1678,8 @@ export struct BookshelfPage {
         .height(42)
         .fontSize(AppFontSize.BODY)
         .borderRadius(ThemeRuntime.buttonRadius())
-        .backgroundColor('#E53935')
-        .fontColor('#FFFFFF')
+        .backgroundColor(ThemeRuntime.dangerColor(this.appDarkMode))
+        .fontColor(ThemeRuntime.onAccentColor())
         .enabled(this.selectedBookUrls.length > 0)
         .onClick(() => {
           if (this.selectedBookUrls.length > 0) this.openBatchDeleteDialog();
@@ -1690,7 +1690,7 @@ export struct BookshelfPage {
         .fontSize(AppFontSize.BODY)
         .borderRadius(ThemeRuntime.buttonRadius())
         .backgroundColor(this.buttonColor())
-        .fontColor('#FFFFFF')
+        .fontColor(ThemeRuntime.onAccentColor())
         .enabled(this.selectedBookUrls.length > 0)
         .onClick(() => {
           if (this.selectedBookUrls.length > 0) {
@@ -1769,7 +1769,7 @@ export struct BookshelfPage {
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeBatchExportDialog())
         Button('确认', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
-          .backgroundColor(this.buttonColor()).fontColor('#FFFFFF')
+          .backgroundColor(this.buttonColor()).fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => {
             this.closeBatchExportDialog();
             this.exportSelectedLocalBooks();
@@ -1784,7 +1784,7 @@ export struct BookshelfPage {
       this.batchExportDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示保存源文件弹窗失败:'
     });
   }
@@ -1864,7 +1864,7 @@ export struct BookshelfPage {
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeAddBookGroupDialog())
         Button('新增', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
-          .backgroundColor(this.buttonColor()).fontColor('#FFFFFF').enabled(!!this.newBookGroupName.trim())
+          .backgroundColor(this.buttonColor()).fontColor(ThemeRuntime.onAccentColor()).enabled(!!this.newBookGroupName.trim())
           .onClick(() => this.addShelfBookGroup())
       }.width('100%')
     }    .padding(22)
@@ -1877,7 +1877,7 @@ export struct BookshelfPage {
       this.addBookGroupDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示新增分组弹窗失败:'
     });
   }
@@ -1902,7 +1902,7 @@ export struct BookshelfPage {
             this.showBookGroupActionMenu = false;
             this.openRenameBookGroupDialog();
           })
-        this.contextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
+        this.contextActionItem($r('sys.symbol.trash'), '删除', ThemeRuntime.dangerColor(this.appDarkMode), () => {
             this.pendingDeleteBookGroup = this.pendingBookGroup;
             this.showBookGroupActionMenu = false;
             this.openDeleteBookGroupDialog();
@@ -1930,7 +1930,7 @@ export struct BookshelfPage {
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeRenameBookGroupDialog())
         Button('保存', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
-          .backgroundColor(this.buttonColor()).fontColor('#FFFFFF').enabled(!!this.renameBookGroupName.trim())
+          .backgroundColor(this.buttonColor()).fontColor(ThemeRuntime.onAccentColor()).enabled(!!this.renameBookGroupName.trim())
           .onClick(() => this.renameShelfBookGroup())
       }.width('100%')
     }    .padding(22)
@@ -1942,7 +1942,7 @@ export struct BookshelfPage {
       this.renameBookGroupDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示重命名分组弹窗失败:'
     });
   }
@@ -1959,7 +1959,7 @@ export struct BookshelfPage {
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeDeleteBookGroupDialog())
         Button('删除', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
-          .backgroundColor('#E53935').fontColor('#FFFFFF').onClick(() => this.deleteShelfBookGroup())
+          .backgroundColor(ThemeRuntime.dangerColor(this.appDarkMode)).fontColor(ThemeRuntime.onAccentColor()).onClick(() => this.deleteShelfBookGroup())
       }.width('100%')
     }    .padding(22)
   }
@@ -1970,7 +1970,7 @@ export struct BookshelfPage {
       this.deleteBookGroupDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示删除分组弹窗失败:'
     });
   }
@@ -1987,7 +1987,7 @@ export struct BookshelfPage {
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeBatchDeleteDialog())
         Button('删除', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
-          .backgroundColor('#E53935').fontColor('#FFFFFF').onClick(() => this.deleteSelectedBooks())
+          .backgroundColor(ThemeRuntime.dangerColor(this.appDarkMode)).fontColor(ThemeRuntime.onAccentColor()).onClick(() => this.deleteSelectedBooks())
       }.width('100%')
     }    .padding(22)
   }
@@ -1998,7 +1998,7 @@ export struct BookshelfPage {
       this.batchDeleteBooksDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示批量删除弹窗失败:'
     });
   }
@@ -2029,15 +2029,15 @@ export struct BookshelfPage {
         Button('取消')
           .layoutWeight(1)
           .height(44)
-          .backgroundColor(this.appDarkMode ? '#24272D' : '#F5F5F5')
+          .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
           .fontColor(this.primaryTextColor())
           .onClick(() => this.closeDeleteBookDialog())
 
         Button('删除')
           .layoutWeight(1)
           .height(44)
-          .backgroundColor('#E53935')
-          .fontColor('#FFFFFF')
+          .backgroundColor(ThemeRuntime.dangerColor(this.appDarkMode))
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => {
             if (this.pendingDeleteBook) {
               const book = this.pendingDeleteBook;
@@ -2058,7 +2058,7 @@ export struct BookshelfPage {
       this.deleteBookDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示删除确认弹窗失败:'
     });
   }
@@ -2125,7 +2125,7 @@ export struct BookshelfPage {
           .layoutWeight(1)
           .height(44)
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .enabled(!!this.editingBookName.trim())
           .opacity(this.editingBookName.trim() ? 1 : 0.45)
           .onClick(() => this.saveLocalBookInfo())
@@ -2142,7 +2142,7 @@ export struct BookshelfPage {
       this.editBookInfoDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示编辑书籍信息弹窗失败:'
     });
   }
@@ -2224,7 +2224,7 @@ export struct BookshelfPage {
           .layoutWeight(1)
           .height(44)
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => {
             this.saveCustomTags();
           })
@@ -2240,7 +2240,7 @@ export struct BookshelfPage {
       this.tagDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示自定义标签弹窗失败:'
     });
   }
@@ -2296,7 +2296,7 @@ export struct BookshelfPage {
           .height(42)
           .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .enabled(/^https?:\/\/[^\s]+$/i.test(this.customNetworkCoverUrl.trim()))
           .onClick(() => this.applyCustomNetworkCover())
       }
@@ -2312,7 +2312,7 @@ export struct BookshelfPage {
       this.customCoverDialogContent();
     }, {
       autoCancel: false,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示自定义封面弹窗失败:'
     });
   }
@@ -4067,7 +4067,7 @@ export struct BookshelfPage {
       .width('100%')
       .height(44)
       .margin({ top: AppSpacing.SM })
-      .backgroundColor(this.appDarkMode ? '#24272D' : '#F5F5F5')
+      .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
       .fontColor(color)
       .onClick(action)
   }
@@ -4113,11 +4113,11 @@ export struct BookshelfPage {
           this.chapterCacheDialogContent();
         }, {
           autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
           warnTag: '显示章节缓存弹窗失败:'
         });
       })
-      this.actionItem('清除已缓存章节', '#E53935', () => {
+      this.actionItem('清除已缓存章节', ThemeRuntime.dangerColor(this.appDarkMode), () => {
         this.clearCachedChapters();
       })
 
@@ -4125,7 +4125,7 @@ export struct BookshelfPage {
         .width('100%')
         .height(44)
         .margin({ top: 10 })
-        .backgroundColor(this.appDarkMode ? '#24272D' : '#F5F5F5')
+        .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
         .fontColor(this.primaryTextColor())
         .onClick(() => {
           this.closeCacheDialog();
@@ -4179,7 +4179,7 @@ export struct BookshelfPage {
           .layoutWeight(1)
           .height(42)
           .padding({ left: 10, right: 10 })
-          .backgroundColor(this.appDarkMode ? '#1FFFFFFF' : '#0D000000')
+          .backgroundColor(ThemeRuntime.softFillColor(this.appDarkMode))
           .borderRadius(ThemeRuntime.mediumRadius())
           .enabled(!this.isCacheTocLoading)
           .onChange((value: string) => {
@@ -4189,7 +4189,7 @@ export struct BookshelfPage {
           .width(96)
           .height(42)
           .fontSize(AppFontSize.BODY)
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .backgroundColor(this.buttonColor())
           .enabled(this.cacheChapters.length > 0)
           .onClick(() => this.cacheChapterRange())
@@ -4210,9 +4210,9 @@ export struct BookshelfPage {
               if (chapter.cacheDate > 0) {
                 Text('已缓存')
                   .fontSize(AppFontSize.CAPTION)
-                  .fontColor(this.appDarkMode ? '#7CC7A0' : '#1F8F55')
+                  .fontColor(ThemeRuntime.successColor(this.appDarkMode))
                   .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
-                  .backgroundColor(this.appDarkMode ? '#24382F' : '#E6F4EC')
+                  .backgroundColor(ThemeRuntime.successSurfaceColor(this.appDarkMode))
                   .borderRadius(ThemeRuntime.smallRadius())
               }
             }
@@ -4353,7 +4353,7 @@ export struct BookshelfPage {
       this.cacheDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示缓存弹窗失败:'
     });
     // The catalog is loaded even while a background task runs so the panel can show which chapters
@@ -4492,7 +4492,7 @@ export struct BookshelfPage {
       if (this.privateShelfPasswordError) {
         Text(this.privateShelfPasswordError)
           .fontSize(AppFontSize.CAPTION)
-          .fontColor('#E53935')
+          .fontColor(ThemeRuntime.dangerColor(this.appDarkMode))
           .width('100%')
           .margin({ top: AppSpacing.MD })
       }
@@ -4509,7 +4509,7 @@ export struct BookshelfPage {
           .layoutWeight(1)
           .height(44)
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .enabled(this.privateShelfPasswordInput.length > 0)
           .opacity(this.privateShelfPasswordInput.length > 0 ? 1 : 0.45)
           .onClick(() => this.submitPrivateShelfUnlock())
@@ -4527,7 +4527,7 @@ export struct BookshelfPage {
       this.privateShelfUnlockDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示隐私书架密码弹窗失败:'
     });
   }

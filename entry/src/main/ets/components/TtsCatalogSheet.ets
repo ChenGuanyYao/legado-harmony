@@ -145,7 +145,7 @@ export struct TtsCatalogSheet {
         Text(this.bookInitial || '书')
           .fontSize(AppFontSize.HEADLINE)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .textAlign(TextAlign.Center)
           .width(CATALOG_COVER_WIDTH)
           .height(CATALOG_COVER_HEIGHT)
@@ -266,9 +266,9 @@ export struct TtsCatalogSheet {
               if (this.isCached(index)) {
                 Text('已缓存')
                   .fontSize(AppFontSize.MICRO)
-                  .fontColor(this.darkMode ? '#7CC7A0' : '#1F8F55')
+                  .fontColor(ThemeRuntime.successColor(this.darkMode))
                   .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
-                  .backgroundColor(this.darkMode ? '#24382F' : '#E6F4EC')
+                  .backgroundColor(ThemeRuntime.successSurfaceColor(this.darkMode))
                   .borderRadius(ThemeRuntime.mediumRadius())
               }
             }
@@ -277,7 +277,7 @@ export struct TtsCatalogSheet {
             .backgroundColor(index === this.currentDisplayIndex ?
               this.selectedRowBackgroundColor() : Color.Transparent)
             .border({ width: { bottom: 0.5 },
-              color: this.darkMode ? '#1FFFFFFF' : '#0D000000' })
+              color: ThemeRuntime.softFillColor(this.darkMode) })
             .onClick(() => this.onSelect(index))
           }
         }, (title: string, index: number) => `${index}_${title}`)
@@ -308,7 +308,7 @@ export struct TtsCatalogSheet {
           .width(3)
           .height(this.listViewportHeight)
           .borderRadius(2)
-          .backgroundColor(this.darkMode ? '#18FFFFFF' : '#14000000')
+          .backgroundColor(ThemeRuntime.hairlineColor(this.darkMode))
           .margin({ right: AppSpacing.XXS })
           .hitTestBehavior(HitTestMode.None)
         Column()
@@ -362,7 +362,7 @@ export struct TtsCatalogSheet {
   }
 
   orderToggleBackground(): string {
-    if (!this.reverseOrder) return this.darkMode ? '#1FFFFFFF' : '#0D000000';
+    if (!this.reverseOrder) return ThemeRuntime.softFillColor(this.darkMode);
     return this.accentTint(this.darkMode ? '33' : '1F');
   }
 

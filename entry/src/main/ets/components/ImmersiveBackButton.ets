@@ -69,7 +69,7 @@ export struct ImmersiveBackButton {
         barSideMargin: 0,
         barBottomMargin: 0,
         gradientMask: {
-          maskColor: '#00000000',
+          maskColor: Color.Transparent,
           maskHeight: this.materialButtonSize()
         },
         adaptToHandedness: false,

@@ -190,7 +190,7 @@ struct AccountCenterPage {
       message: '点数和主题权益仍保存在云端，下次登录后会自动恢复。',
       buttons: [
         { text: '取消', color: this.subTextColor() },
-        { text: '退出', color: '#E5484D' }
+        { text: '退出', color: ThemeRuntime.dangerColor(this.appDarkMode) }
       ]
     });
     if (result.index !== 1) {
@@ -637,7 +637,7 @@ struct AccountCenterPage {
           .fontSize(AppFontSize.BODY)
           .enabled(!this.loading)
           .backgroundColor(this.accentColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => {
             this.login();
           })
@@ -769,7 +769,7 @@ struct AccountCenterPage {
         Button(this.processingCrop ? '处理中' : '确认裁剪')
           .layoutWeight(1.35)
           .height(40)
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .backgroundColor(this.accentColor())
           .enabled(!this.processingCrop)
           .onClick(() => {
@@ -866,7 +866,7 @@ struct AccountCenterPage {
         Button(this.savingProfile ? '保存中' : '保存')
           .layoutWeight(1)
           .height(40)
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .backgroundColor(this.accentColor())
           .enabled(!this.savingProfile)
           .onClick(() => {
@@ -967,7 +967,7 @@ struct AccountCenterPage {
       builder: this.pointsUsageDialogBuilder,
       autoCancel: true,
       alignment: DialogAlignment.Center,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000'
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode)
     }).then((dialogId: number) => {
       this.pointsUsageDialogId = dialogId;
     }).catch((error: Error) => {
@@ -1039,7 +1039,7 @@ struct AccountCenterPage {
       Button('退出登录')
         .width('100%')
         .height(44)
-        .fontColor('#E5484D')
+        .fontColor(ThemeRuntime.dangerColor(this.appDarkMode))
         .backgroundColor(this.cardColor())
         .onClick(() => {
           this.logout();

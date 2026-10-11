@@ -154,7 +154,7 @@ export struct TapZoneSettingsDialogContent {
           .height(40)
           .fontSize(AppFontSize.BODY)
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => {
             this.onDone();
           })

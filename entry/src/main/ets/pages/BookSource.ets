@@ -512,7 +512,7 @@ struct BookSourcePage {
 
                       if (this.sourceNeedsLogin(source)) {
                         this.sourceLoginStatusBadge(
-                          this.sourceLoggedIn(source) ? '#1E8E3E' : '#C62828',
+                          this.sourceLoggedIn(source) ? ThemeRuntime.successColor(this.appDarkMode) : ThemeRuntime.dangerColor(this.appDarkMode),
                           this.sourceLoggedIn(source) ? '已登录' : '未登录')
                       }
                       if (source.isLocked) {
@@ -551,10 +551,10 @@ struct BookSourcePage {
                     Column() {
                       Text(source.enabled ? '已启用' : '已禁用')
                         .fontSize(AppFontSize.CAPTION)
-                        .fontColor(source.enabled ? '#1E8E3E' : this.subTextColor())
+                        .fontColor(source.enabled ? ThemeRuntime.successColor(this.appDarkMode) : this.subTextColor())
                       Text(source.enabledExplore ? '发现已启用' : '发现已禁用')
                         .fontSize(AppFontSize.CAPTION)
-                        .fontColor(source.enabledExplore ? '#1E8E3E' : this.subTextColor())
+                        .fontColor(source.enabledExplore ? ThemeRuntime.successColor(this.appDarkMode) : this.subTextColor())
                         .margin({ top: AppSpacing.XS })
                     }
                     .alignItems(HorizontalAlign.End)
@@ -654,7 +654,7 @@ struct BookSourcePage {
               .height(42)
               .enabled(this.selectedSourceUrls.length > 0 && !this.isBatchOperating)
               .backgroundColor(this.buttonColor())
-              .fontColor('#FFFFFF')
+              .fontColor(ThemeRuntime.onAccentColor())
               .onClick(() => {
                 this.batchSetEnabled(true);
               })
@@ -753,7 +753,7 @@ struct BookSourcePage {
                 .width('45%')
                 .height(44)
                 .backgroundColor(this.buttonColor())
-                .fontColor('#FFFFFF')
+                .fontColor(ThemeRuntime.onAccentColor())
                 .onClick(() => {
                   this.importFromUrl();
                 })
@@ -810,7 +810,7 @@ struct BookSourcePage {
               Button('删除')
                 .width('45%')
                 .height(44)
-                .backgroundColor('#E53935')
+                .backgroundColor(ThemeRuntime.dangerColor(this.appDarkMode))
                 .onClick(() => {
                   this.showBatchDeleteDialog = false;
                   this.batchDeleteSelectedSources();
@@ -905,7 +905,7 @@ struct BookSourcePage {
                 .width('45%')
                 .height(44)
                 .backgroundColor(this.buttonColor())
-                .fontColor('#FFFFFF')
+                .fontColor(ThemeRuntime.onAccentColor())
                 .onClick(() => {
                   this.applySelectedSourceGroup();
                 })
@@ -1020,7 +1020,7 @@ struct BookSourcePage {
                   .borderRadius(ThemeRuntime.buttonRadius())
                   .fontSize(AppFontSize.BODY)
                   .backgroundColor(this.buttonColor())
-                  .fontColor('#FFFFFF')
+                  .fontColor(ThemeRuntime.onAccentColor())
                   .onClick(() => {
                     this.continueBookSourceCheckInBackground();
                   })
@@ -1090,7 +1090,7 @@ struct BookSourcePage {
                     .borderRadius(ThemeRuntime.buttonRadius())
                     .fontSize(AppFontSize.CAPTION)
                     .enabled(this.checkBadUrls.length > 0 && !this.isBatchOperating)
-                    .backgroundColor(this.checkBadUrls.length > 0 && !this.isBatchOperating ? '#E53935' : this.inputColor())
+                    .backgroundColor(this.checkBadUrls.length > 0 && !this.isBatchOperating ? ThemeRuntime.dangerColor(this.appDarkMode) : this.inputColor())
                     .fontColor(this.checkBadUrls.length > 0 && !this.isBatchOperating ? '#FFFFFF' : this.subTextColor())
                     .onClick(() => {
                       this.deleteFailedCheckedSources();
@@ -1439,7 +1439,7 @@ struct BookSourcePage {
           this.showMoreActionDialog = false;
           this.exportSelectedSources();
         })
-        this.popupActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
+        this.popupActionItem($r('sys.symbol.trash'), '删除', ThemeRuntime.dangerColor(this.appDarkMode), () => {
           this.showMoreActionDialog = false;
           this.showBatchDeleteDialog = true;
         }, false)
@@ -1524,7 +1524,7 @@ struct BookSourcePage {
           .height(42)
           .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => this.showSourceFilterDialog = false)
       }
       .width('100%')
@@ -1811,7 +1811,7 @@ struct BookSourcePage {
         this.contextActionItem($r('sys.symbol.list_bullet'), '多选', this.primaryTextColor(),
           () => this.enterActionSourceSelection())
         if (!this.actionSourceLocked()) {
-          this.contextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
+          this.contextActionItem($r('sys.symbol.trash'), '删除', ThemeRuntime.dangerColor(this.appDarkMode), () => {
               this.showSourceActionDialog = false;
               this.openSourceDeleteDialog();
             })
@@ -1968,7 +1968,7 @@ struct BookSourcePage {
             .height(42)
             .margin({ top: AppSpacing.MD })
             .fontSize(AppFontSize.BODY)
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .backgroundColor(this.accentColor())
             .enabled(!this.isExecutingLoginAction)
             .onClick(() => {
@@ -1981,7 +1981,7 @@ struct BookSourcePage {
           .height(42)
           .margin({ top: AppSpacing.MD })
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => {
             this.saveSourceLoginInputs();
             this.showSourceLoginUiDialog = false;
@@ -2091,8 +2091,8 @@ struct BookSourcePage {
   }
 
   sourceValidationStatusColor(validationStatus: number): string {
-    if (validationStatus === BookSource.VALIDATION_PASSED) return '#1E8E3E';
-    if (validationStatus === BookSource.VALIDATION_FAILED) return '#C62828';
+    if (validationStatus === BookSource.VALIDATION_PASSED) return ThemeRuntime.successColor(this.appDarkMode);
+    if (validationStatus === BookSource.VALIDATION_FAILED) return ThemeRuntime.dangerColor(this.appDarkMode);
     if (validationStatus === BookSource.VALIDATION_NO_RESULTS) return '#8A6D3B';
     if (validationStatus === BookSource.VALIDATION_NEEDS_VERIFICATION) return '#1565C0';
     if (validationStatus === BookSource.VALIDATION_TEMPORARY_ERROR) return '#F57C00';
@@ -2152,7 +2152,7 @@ struct BookSourcePage {
               .backgroundColor(this.inputColor()).borderRadius(ThemeRuntime.smallRadius()).margin({ left: AppSpacing.SM })
           }
           if (this.sourceNeedsLogin(source)) {
-            this.sourceLoginStatusBadge(this.sourceLoggedIn(source) ? '#1E8E3E' : '#C62828', this.sourceLoggedIn(source) ? '已登录' : '未登录')
+            this.sourceLoginStatusBadge(this.sourceLoggedIn(source) ? ThemeRuntime.successColor(this.appDarkMode) : ThemeRuntime.dangerColor(this.appDarkMode), this.sourceLoggedIn(source) ? '已登录' : '未登录')
           }
         }.width('100%')
         Row({ space: AppSpacing.SM }) {
@@ -2170,9 +2170,9 @@ struct BookSourcePage {
       }))
       Column() {
         Text(source.enabled ? '已启用' : '已禁用').fontSize(AppFontSize.CAPTION)
-          .fontColor(source.enabled ? '#1E8E3E' : this.subTextColor())
+          .fontColor(source.enabled ? ThemeRuntime.successColor(this.appDarkMode) : this.subTextColor())
         Text(source.enabledExplore ? '发现已启用' : '发现已禁用').fontSize(AppFontSize.CAPTION)
-          .fontColor(source.enabledExplore ? '#1E8E3E' : this.subTextColor()).margin({ top: AppSpacing.XS })
+          .fontColor(source.enabledExplore ? ThemeRuntime.successColor(this.appDarkMode) : this.subTextColor()).margin({ top: AppSpacing.XS })
       }.alignItems(HorizontalAlign.End)
     }
     .width('100%')
@@ -2310,7 +2310,7 @@ struct BookSourcePage {
           .width(3)
           .height(this.sourceScrollbarViewportHeight())
           .borderRadius(2)
-          .backgroundColor(this.appDarkMode ? '#18FFFFFF' : '#14000000')
+          .backgroundColor(ThemeRuntime.hairlineColor(this.appDarkMode))
           .margin({ right: AppSpacing.XXS })
           .hitTestBehavior(HitTestMode.None)
         Column()
@@ -2546,7 +2546,7 @@ struct BookSourcePage {
           .borderRadius(ThemeRuntime.buttonRadius())
           .enabled(this.selectedImportSourceUrls.length > 0 && !this.isImporting)
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => this.confirmImportSourceSelection())
       }
       .width('100%')
@@ -2725,7 +2725,7 @@ struct BookSourcePage {
                   .onClick(() => this.openManagedSourceGroupRename(group))
                 Text('删除')
                   .fontSize(AppFontSize.BODY)
-                  .fontColor('#E53935')
+                  .fontColor(ThemeRuntime.dangerColor(this.appDarkMode))
                   .height(36)
                   .padding({ left: AppSpacing.MD, right: AppSpacing.XS })
                   .textAlign(TextAlign.Center)
@@ -2762,8 +2762,8 @@ struct BookSourcePage {
           .height(42)
           .borderRadius(ThemeRuntime.buttonRadius())
           .enabled(this.selectedManagedSourceGroups.length > 0 && !this.isBatchOperating)
-          .backgroundColor('#E53935')
-          .fontColor('#FFFFFF')
+          .backgroundColor(ThemeRuntime.dangerColor(this.appDarkMode))
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => this.openDeleteSelectedSourceGroupsDialog())
       }
       .width('100%')
@@ -2812,7 +2812,7 @@ struct BookSourcePage {
             this.showSourceGroupActionMenu = false;
             this.openRenameSourceGroupDialog();
           })
-        this.contextActionItem($r('sys.symbol.trash'), '删除', '#E53935', () => {
+        this.contextActionItem($r('sys.symbol.trash'), '删除', ThemeRuntime.dangerColor(this.appDarkMode), () => {
             this.showSourceGroupActionMenu = false;
             this.openDeleteSourceGroupDialog();
           })
@@ -2859,7 +2859,7 @@ struct BookSourcePage {
           .height(42)
           .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .enabled(!!this.newSourceGroupInput.trim() && !this.isBatchOperating)
           .onClick(() => this.addSourceGroup())
       }
@@ -2897,7 +2897,7 @@ struct BookSourcePage {
           .height(42)
           .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .enabled(!!this.renameSourceGroupInput.trim() && !this.isBatchOperating)
           .onClick(() => this.renameSourceGroup())
       }
@@ -2929,8 +2929,8 @@ struct BookSourcePage {
           .layoutWeight(1)
           .height(42)
           .borderRadius(ThemeRuntime.buttonRadius())
-          .backgroundColor('#E53935')
-          .fontColor('#FFFFFF')
+          .backgroundColor(ThemeRuntime.dangerColor(this.appDarkMode))
+          .fontColor(ThemeRuntime.onAccentColor())
           .enabled(!this.isBatchOperating)
           .onClick(() => this.deleteSourceGroup())
       }
@@ -2962,8 +2962,8 @@ struct BookSourcePage {
           .layoutWeight(1)
           .height(42)
           .borderRadius(ThemeRuntime.buttonRadius())
-          .backgroundColor('#E53935')
-          .fontColor('#FFFFFF')
+          .backgroundColor(ThemeRuntime.dangerColor(this.appDarkMode))
+          .fontColor(ThemeRuntime.onAccentColor())
           .enabled(this.selectedManagedSourceGroups.length > 0 && !this.isBatchOperating)
           .onClick(() => this.deleteSelectedSourceGroups())
       }
@@ -2989,7 +2989,7 @@ struct BookSourcePage {
       this.sourceFilterDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示筛选书源弹窗失败:'
     });
   }
@@ -3000,7 +3000,7 @@ struct BookSourcePage {
       this.importSourceSelectionDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示导入选择弹窗失败:'
     });
   }
@@ -3011,7 +3011,7 @@ struct BookSourcePage {
       this.sourceDeleteDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示删除书源弹窗失败:'
     });
   }
@@ -3022,7 +3022,7 @@ struct BookSourcePage {
       this.renameSourceGroupDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示重命名分组弹窗失败:'
     });
   }
@@ -3033,7 +3033,7 @@ struct BookSourcePage {
       this.deleteSourceGroupDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示删除分组弹窗失败:'
     });
   }
@@ -3044,7 +3044,7 @@ struct BookSourcePage {
       this.addSourceGroupDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示新增分组弹窗失败:'
     });
   }
@@ -3055,7 +3055,7 @@ struct BookSourcePage {
       this.sourceGroupManagerDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示分组管理弹窗失败:'
     });
   }
@@ -3066,7 +3066,7 @@ struct BookSourcePage {
       this.deleteSelectedSourceGroupsDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示删除所选分组弹窗失败:'
     });
   }

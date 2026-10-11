@@ -502,7 +502,7 @@ struct ReaderFontSettingsPage {
   }
 
   settingsDividerColor(): string {
-    return this.appDarkMode ? '#24FFFFFF' : '#14000000';
+    return ThemeRuntime.hairlineColor(this.appDarkMode);
   }
 
   primaryTextColor(): string {
@@ -749,7 +749,7 @@ struct ReaderFontSettingsPage {
           })
         Button('删除')
           .fontSize(AppFontSize.BODY)
-          .fontColor('#E53935')
+          .fontColor(ThemeRuntime.dangerColor(this.appDarkMode))
           .backgroundColor(this.inputColor())
           .height(32)
           .onClick(() => {

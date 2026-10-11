@@ -81,7 +81,7 @@ struct LocalBookSettingsPage {
           .width('100%')
           .height(44)
           .backgroundColor(this.buttonColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .enabled(!this.isScanning)
           .onClick(() => {
             this.addBooks();

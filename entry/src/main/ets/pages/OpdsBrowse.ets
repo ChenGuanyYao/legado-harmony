@@ -686,7 +686,7 @@ struct OpdsBrowsePage {
           .layoutWeight(1)
           .height(42)
           .fontSize(AppFontSize.BODY)
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .backgroundColor(this.accentColor())
           .onClick(() => this.readDetailBook())
         Button('移出书架')
@@ -708,7 +708,7 @@ struct OpdsBrowsePage {
           .layoutWeight(1)
           .height(42)
           .fontSize(AppFontSize.BODY)
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .backgroundColor(this.accentColor())
           .onClick(() => this.addBestToShelf())
       } else if (this.downloadRows.length > 0) {
@@ -1145,7 +1145,7 @@ struct OpdsBrowsePage {
       this.detailDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示书籍详情弹窗失败:',
       onDismiss: (): void => {
         this.showDetail = false;
@@ -1426,6 +1426,6 @@ struct OpdsBrowsePage {
   }
 
   softColor(): string {
-    return this.appDarkMode ? '#24272D' : '#EEF2F7';
+    return ThemeRuntime.inputColor(this.appDarkMode);
   }
 }

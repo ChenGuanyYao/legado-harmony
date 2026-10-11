@@ -46,7 +46,7 @@ struct ThemeColorOption {
       .padding({ left: 0, right: 0 })
       .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
       .backgroundColor(Color.Transparent)
-      .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+      .border({ width: { bottom: 0.5 }, color: ThemeRuntime.hairlineColor(this.appDarkMode) })
       .alignItems(VerticalAlign.Center)
 
       AdaptiveColorPicker({
@@ -634,7 +634,7 @@ struct ThemeColorSettingsPage {
     .padding({ top: AppSpacing.MD, bottom: AppSpacing.MD })
     .margin({ left: 14, right: 14 })
     .border({ width: { bottom: divider ? 0.5 : 0 },
-      color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
+      color: ThemeRuntime.hairlineColor(this.appDarkMode) })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -697,7 +697,7 @@ struct ThemeColorSettingsPage {
           { type: ButtonType.Normal })
           .height(38)
           .fontSize(AppFontSize.BODY)
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .backgroundColor(this.currentButtonColor())
           .layoutWeight(1)
           .onClick(() => this.chooseStartupImage())
@@ -852,7 +852,7 @@ struct ThemeColorSettingsPage {
         Button('主要按钮')
           .height(40)
           .layoutWeight(1)
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .backgroundColor(this.currentButtonColor())
         Text('强调文字')
           .fontSize(AppFontSize.BODY_LARGE)

@@ -36,7 +36,7 @@ export struct ReaderEyeTurnCalibrationSettingItem {
         Button(this.coordinator && this.coordinator.hasStoredCalibration() ? '重新校准' : '开始校准')
           .height(36)
           .fontSize(AppFontSize.BODY)
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .backgroundColor(this.accentColor)
           .onClick((): void => this.coordinator?.openCalibration())
       }
@@ -120,7 +120,7 @@ export struct ReaderEyeCalibrationPanel {
             .width('100%')
             .height(46)
             .fontSize(AppFontSize.BODY_LARGE)
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
             .backgroundColor(this.accentColor)
             .onClick((): void => this.coordinator?.beginCalibrationCapture())
         } else {

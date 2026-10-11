@@ -443,7 +443,7 @@ export struct ExplorePage {
               .fontSize(AppFontSize.CAPTION)
               .borderRadius(15)
               .backgroundColor(this.buttonColor())
-              .fontColor('#FFFFFF')
+              .fontColor(ThemeRuntime.onAccentColor())
               .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
               .margin({ left: AppSpacing.MD })
               .onClick(() => {
@@ -564,7 +564,7 @@ export struct ExplorePage {
               .fontSize(AppFontSize.CAPTION)
               .borderRadius(14)
               .backgroundColor(this.buttonColor())
-              .fontColor('#FFFFFF')
+              .fontColor(ThemeRuntime.onAccentColor())
               .margin({ left: AppSpacing.LG })
               .onClick(() => {
                 this.openVerification();
@@ -651,7 +651,7 @@ export struct ExplorePage {
               .borderRadius(18)
               .margin({ top: AppSpacing.LG })
               .backgroundColor(this.buttonColor())
-              .fontColor('#FFFFFF')
+              .fontColor(ThemeRuntime.onAccentColor())
               .onClick(() => {
                 this.openVerification();
               })
@@ -663,7 +663,7 @@ export struct ExplorePage {
               .borderRadius(18)
               .margin({ top: AppSpacing.LG })
               .backgroundColor(this.buttonColor())
-              .fontColor('#FFFFFF')
+              .fontColor(ThemeRuntime.onAccentColor())
               .onClick(() => {
                 this.openExploreSourceLogin();
               })
@@ -908,11 +908,11 @@ export struct ExplorePage {
         Row() {
           SymbolGlyph($r('sys.symbol.trash'))
             .fontSize(19)
-            .fontColor(['#E53935'])
+            .fontColor([ThemeRuntime.dangerColor(this.appDarkMode)])
             .width(34)
           Text('删除')
             .fontSize(AppFontSize.BODY_LARGE)
-            .fontColor('#E53935')
+            .fontColor(ThemeRuntime.dangerColor(this.appDarkMode))
             .layoutWeight(1)
         }
         .width('100%')
@@ -994,7 +994,7 @@ export struct ExplorePage {
         Button(this.savingExploreSourceVariable ? '保存中…' : '保存')
           .layoutWeight(1)
           .height(40)
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .backgroundColor(this.buttonColor())
           .enabled(!this.savingExploreSourceVariable)
           .onClick(() => this.saveExploreSourceVariable())
@@ -1010,7 +1010,7 @@ export struct ExplorePage {
       this.exploreSourceVariableDialogContent();
     }, {
       autoCancel: false,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示编辑源变量弹窗失败:'
     });
   }
@@ -1058,7 +1058,7 @@ export struct ExplorePage {
       this.exploreSourceDeleteDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示删除书源弹窗失败:'
     });
   }

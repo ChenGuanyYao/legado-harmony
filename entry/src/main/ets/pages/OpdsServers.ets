@@ -243,7 +243,7 @@ struct OpdsServersPage {
           }
           Text(server.enabled ? '已启用' : '已停用')
             .fontSize(AppFontSize.CAPTION)
-            .fontColor(server.enabled ? this.subTextColor() : '#D9485F')
+            .fontColor(server.enabled ? this.subTextColor() : ThemeRuntime.dangerColor(this.appDarkMode))
         }
       }
       .layoutWeight(1)
@@ -359,7 +359,7 @@ struct OpdsServersPage {
           () => this.testActionServer())
         this.serverContextActionItem($r('sys.symbol.square_and_pencil'), '编辑', this.primaryTextColor(),
           () => this.editActionServer())
-        this.serverContextActionItem($r('sys.symbol.trash'), '删除', '#E53935',
+        this.serverContextActionItem($r('sys.symbol.trash'), '删除', ThemeRuntime.dangerColor(this.appDarkMode),
           () => this.confirmDeleteActionServer())
       }
       .width(148)
@@ -512,7 +512,7 @@ struct OpdsServersPage {
           .layoutWeight(1)
           .height(42)
           .backgroundColor(this.accentColor())
-          .fontColor('#FFFFFF')
+          .fontColor(ThemeRuntime.onAccentColor())
           .onClick(() => this.submitEditorDialog())
       }
       .width('100%')
@@ -609,7 +609,7 @@ struct OpdsServersPage {
     const confirmation = await promptAction.showDialog({
       title: '删除书库',
       message: `确定删除“${server.name}”吗？只会删除本机配置和保存的密码，不会删除远端图书。`,
-      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: '#D9485F' }]
+      buttons: [{ text: '取消', color: this.subTextColor() }, { text: '删除', color: ThemeRuntime.dangerColor(this.appDarkMode) }]
     });
     if (confirmation.index !== 1) return;
     await OpdsSecretStore.deletePassword(getContext(this), server.id);
@@ -648,7 +648,7 @@ struct OpdsServersPage {
       this.serverEditorDialogContent();
     }, {
       autoCancel: true,
-      maskColor: this.appDarkMode ? '#99000000' : '#33000000',
+      maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示书库编辑弹窗失败:',
       onDismiss: (): void => {
         this.showServerEditorDialog = false;
@@ -756,5 +756,5 @@ struct OpdsServersPage {
   primaryTextColor(): string { return ThemeRuntime.primaryTextColor(this.appDarkMode); }
   subTextColor(): string { return ThemeRuntime.subTextColor(this.appDarkMode); }
   accentColor(): string { return ThemeRuntime.accentColor(this.appDarkMode); }
-  softColor(): string { return this.appDarkMode ? '#24272D' : '#EEF2F7'; }
+  softColor(): string { return ThemeRuntime.inputColor(this.appDarkMode); }
 }
