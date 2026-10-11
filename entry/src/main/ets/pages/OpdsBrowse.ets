@@ -23,6 +23,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 class OpdsNavFrame {
   url: string = '';
@@ -177,7 +178,7 @@ struct OpdsBrowsePage {
       this.titleBar()
 
       if (this.downloadBusy) {
-        Column({ space: 14 }) {
+        Column({ space: AppSpacing.LG }) {
           Progress({ value: this.downloadProgress, total: 100, type: ProgressType.Linear })
             .width('100%')
             .color(this.accentColor())
@@ -194,7 +195,7 @@ struct OpdsBrowsePage {
             .onClick(() => this.cancelActiveDownload())
         }
         .width('78%')
-        .padding(20)
+        .padding(AppSpacing.XXL)
         .borderRadius(ThemeRuntime.cardRadius())
         .backgroundColor(this.cardColor())
         .shadow({ radius: 18, color: this.appDarkMode ? '#66000000' : '#28000000' })
@@ -226,13 +227,13 @@ struct OpdsBrowsePage {
         SymbolGlyph($r('sys.symbol.magnifyingglass'))
           .fontSize(20)
           .fontColor([this.searchAvailable ? this.accentColor() : this.subTextColor()])
-          .padding(10)
+          .padding(AppSpacing.MD)
           .onClick(() => this.toggleSearch())
       }
     }
     .width('100%')
     .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight, right: 6 })
+    .padding({ top: this.statusBarHeight, right: AppSpacing.SM })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
     .backdropBlur(ThemeRuntime.topBarBlur())
     .alignItems(VerticalAlign.Center)
@@ -243,7 +244,7 @@ struct OpdsBrowsePage {
   @Builder
   searchBar() {
     if (this.searchLabel) {
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         SymbolGlyph($r('sys.symbol.magnifyingglass'))
           .fontSize(16)
           .fontColor([this.accentColor()])
@@ -256,7 +257,7 @@ struct OpdsBrowsePage {
         Text('修改')
           .fontSize(AppFontSize.BODY)
           .fontColor(this.accentColor())
-          .padding(8)
+          .padding(AppSpacing.MD)
           .onClick(() => {
             this.searchLabel = '';
           })
@@ -264,7 +265,7 @@ struct OpdsBrowsePage {
       .layoutWeight(1)
       .height(40)
     } else {
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         TextInput({ text: this.searchInput, placeholder: '输入书名或作者',
           controller: this.searchController })
           .layoutWeight(1)
@@ -284,7 +285,7 @@ struct OpdsBrowsePage {
         Text('取消')
           .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
-          .padding(8)
+          .padding(AppSpacing.MD)
           .onClick(() => this.exitSearch())
       }
       .layoutWeight(1)
@@ -299,7 +300,7 @@ struct OpdsBrowsePage {
         this.facetBar();
       }
       if (this.loading && this.entries.length === 0) {
-        Column({ space: 10 }) {
+        Column({ space: AppSpacing.MD }) {
           LoadingProgress()
             .width(32)
             .height(32)
@@ -312,7 +313,7 @@ struct OpdsBrowsePage {
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
       } else if (this.entries.length === 0) {
-        Column({ space: 10 }) {
+        Column({ space: AppSpacing.MD }) {
           SymbolGlyph($r('sys.symbol.book'))
             .fontSize(40)
             .fontColor([this.subTextColor()])
@@ -334,21 +335,21 @@ struct OpdsBrowsePage {
 
   @Builder
   facetBar() {
-    Column({ space: 2 }) {
+    Column({ space: AppSpacing.XXS }) {
       ForEach(this.facets, (group: OpdsFacetGroup) => {
         Scroll() {
-          Row({ space: 8 }) {
+          Row({ space: AppSpacing.MD }) {
             ForEach(group.links, (link: OpdsLink) => {
               Text(this.facetLabel(group, link))
                 .fontSize(AppFontSize.CAPTION)
                 .fontColor(link.activeFacet ? '#FFFFFF' : this.primaryTextColor())
-                .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+                .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
                 .backgroundColor(link.activeFacet ? this.accentColor() : this.softColor())
                 .borderRadius(ThemeRuntime.buttonRadius())
                 .onClick(() => this.openFacet(link))
             }, (link: OpdsLink) => `${group.group}:${link.href}`)
           }
-          .padding({ left: 12, right: 12 })
+          .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
         }
         .scrollable(ScrollDirection.Horizontal)
         .scrollBar(BarState.Off)
@@ -358,14 +359,14 @@ struct OpdsBrowsePage {
       }, (group: OpdsFacetGroup) => group.group)
     }
     .width('100%')
-    .padding({ top: 6, bottom: 6 })
+    .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
     .backdropBlur(ThemeRuntime.topBarBlur())
   }
 
   @Builder
   feedList() {
-    List({ space: 8 }) {
+    List({ space: AppSpacing.MD }) {
       LazyForEach(this.entrySource, (entry: OpdsEntry) => {
         ListItem() {
           this.feedItem(entry)
@@ -374,7 +375,7 @@ struct OpdsBrowsePage {
 
       if (this.loadingMore) {
         ListItem() {
-          Row({ space: 8 }) {
+          Row({ space: AppSpacing.MD }) {
             LoadingProgress()
               .width(18)
               .height(18)
@@ -406,7 +407,7 @@ struct OpdsBrowsePage {
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
     .layoutWeight(1)
-    .padding({ left: 12, right: 12 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
     .onReachEnd(() => this.onListReachEnd())
   }
 
@@ -421,11 +422,11 @@ struct OpdsBrowsePage {
 
   @Builder
   navItem(entry: OpdsEntry) {
-    Row({ space: 12 }) {
+    Row({ space: AppSpacing.LG }) {
       SymbolGlyph($r('sys.symbol.folder'))
         .fontSize(26)
         .fontColor([this.accentColor()])
-      Column({ space: 4 }) {
+      Column({ space: AppSpacing.XS }) {
         Text(entry.title || '未命名目录')
           .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
@@ -449,7 +450,7 @@ struct OpdsBrowsePage {
     }
     .width('100%')
     .height(60)
-    .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.MD })
     .backgroundColor(this.cardColor())
     .borderRadius(ThemeRuntime.cardRadius())
     .onClick(() => this.openEntryLink(entry))
@@ -457,9 +458,9 @@ struct OpdsBrowsePage {
 
   @Builder
   bookItem(entry: OpdsEntry) {
-    Row({ space: 12 }) {
+    Row({ space: AppSpacing.LG }) {
       this.entryCover(entry)
-      Column({ space: 4 }) {
+      Column({ space: AppSpacing.XS }) {
         Text(entry.title || '未命名')
           .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
@@ -479,14 +480,14 @@ struct OpdsBrowsePage {
         Text(this.bookFormatLabel(entry))
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.accentColor())
-          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
           .backgroundColor(this.softColor())
           .borderRadius(ThemeRuntime.mediumRadius())
       }
     }
     .width('100%')
     .height(84)
-    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.MD, bottom: AppSpacing.MD })
     .backgroundColor(this.cardColor())
     .borderRadius(ThemeRuntime.cardRadius())
     .onClick(() => this.openDetail(entry))
@@ -521,7 +522,7 @@ struct OpdsBrowsePage {
 
   @Builder
   errorView() {
-    Column({ space: 14 }) {
+    Column({ space: AppSpacing.LG }) {
       SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
         .fontSize(42)
         .fontColor([this.subTextColor()])
@@ -556,10 +557,10 @@ struct OpdsBrowsePage {
   @Builder
   detailDialogContent() {
     Scroll() {
-      Column({ space: 12 }) {
-        Row({ space: 14 }) {
+      Column({ space: AppSpacing.LG }) {
+        Row({ space: AppSpacing.LG }) {
           this.detailCoverView()
-          Column({ space: 6 }) {
+          Column({ space: AppSpacing.SM }) {
             Text(this.detailEntry.title || '未命名')
               .fontSize(AppFontSize.SUBTITLE)
               .fontWeight(FontWeight.Bold)
@@ -604,7 +605,7 @@ struct OpdsBrowsePage {
         .width('100%')
 
         if (this.detailText) {
-          Column({ space: 6 }) {
+          Column({ space: AppSpacing.SM }) {
             Text(this.detailText)
               .fontSize(AppFontSize.BODY)
               .fontColor(this.primaryTextColor())
@@ -622,7 +623,7 @@ struct OpdsBrowsePage {
             }
           }
           .width('100%')
-          .padding(12)
+          .padding(AppSpacing.LG)
           .borderRadius(ThemeRuntime.mediumRadius())
           .backgroundColor(this.softColor())
         }
@@ -649,7 +650,7 @@ struct OpdsBrowsePage {
     }
     .width('100%')
     .constraintSize({ maxHeight: 460 })
-    .padding(20)
+    .padding(AppSpacing.XXL)
   }
 
   @Builder
@@ -680,7 +681,7 @@ struct OpdsBrowsePage {
 
   @Builder
   detailPrimaryActions() {
-    Row({ space: 10 }) {
+    Row({ space: AppSpacing.MD }) {
       if (this.detailImportedBook) {
         Button('立即阅读')
           .layoutWeight(1)
@@ -828,11 +829,11 @@ struct OpdsBrowsePage {
 
   @Builder
   downloadRowView(row: OpdsDownloadRow) {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       Text(row.formatLabel)
         .fontSize(AppFontSize.CAPTION)
         .fontColor(this.accentColor())
-        .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+        .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
         .backgroundColor(this.softColor())
         .borderRadius(ThemeRuntime.mediumRadius())
       if (row.sizeText) {
@@ -848,7 +849,7 @@ struct OpdsBrowsePage {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.MD, bottom: AppSpacing.MD })
   }
 
   async bootstrap(): Promise<void> {

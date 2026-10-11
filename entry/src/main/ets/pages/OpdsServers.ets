@@ -14,6 +14,7 @@ import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -87,7 +88,7 @@ struct OpdsServersPage {
       }
 
       if (this.busy) {
-        Column({ space: 12 }) {
+        Column({ space: AppSpacing.LG }) {
           Progress({ value: this.busyProgress, total: 100, type: ProgressType.Linear })
             .width('100%')
             .color(this.accentColor())
@@ -96,7 +97,7 @@ struct OpdsServersPage {
             .fontColor(this.primaryTextColor())
         }
         .width('78%')
-        .padding(20)
+        .padding(AppSpacing.XXL)
         .borderRadius(ThemeRuntime.cardRadius())
         .backgroundColor(this.cardColor())
         .shadow({ radius: 18, color: this.appDarkMode ? '#66000000' : '#28000000' })
@@ -141,7 +142,7 @@ struct OpdsServersPage {
     }
     .width(52)
     .height(52)
-    .margin({ right: 22, bottom: this.navBarHeight + 22 })
+    .margin({ right: AppSpacing.XXL, bottom: this.navBarHeight + 22 })
     .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, this.cardColor(), 'button'))
     .backdropBlur(ThemeRuntime.glassBlur('button', 12))
     .border({ width: ThemeRuntime.glassBorderWidth('button'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'button') })
@@ -158,7 +159,7 @@ struct OpdsServersPage {
       if (this.servers.length === 0) {
         this.emptyGuide()
       } else {
-        List({ space: 8 }) {
+        List({ space: AppSpacing.MD }) {
           ListItem() {
             Row()
               .height(this.listTopInset())
@@ -201,13 +202,13 @@ struct OpdsServersPage {
               .fontColor(this.subTextColor())
               .width('100%')
               .textAlign(TextAlign.Center)
-              .padding({ top: 16, bottom: 16 })
+              .padding({ top: AppSpacing.XL, bottom: AppSpacing.XL })
           }
         }
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .layoutWeight(1)
-        .padding({ left: 12, right: 12 })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
         .margin({ top: -this.listTopInset() })
         .zIndex(0)
       }
@@ -218,11 +219,11 @@ struct OpdsServersPage {
 
   @Builder
   serverRow(server: OpdsServerConfig) {
-    Row({ space: 12 }) {
+    Row({ space: AppSpacing.LG }) {
       SymbolGlyph($r('sys.symbol.bookshelf'))
         .fontSize(26)
         .fontColor([this.accentColor()])
-      Column({ space: 4 }) {
+      Column({ space: AppSpacing.XS }) {
         Text(server.name)
           .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
@@ -233,7 +234,7 @@ struct OpdsServersPage {
           .fontColor(this.subTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Row({ space: 8 }) {
+        Row({ space: AppSpacing.MD }) {
           if (server.authType === 'basic' && server.username) {
             Text(`账号：${server.username}`)
               .fontSize(AppFontSize.CAPTION)
@@ -253,7 +254,7 @@ struct OpdsServersPage {
         .fontColor([this.subTextColor()])
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.MD })
     .backgroundColor(this.cardColor())
     .borderRadius(ThemeRuntime.cardRadius())
     .gesture(
@@ -292,7 +293,7 @@ struct OpdsServersPage {
 
   @Builder
   serverEditSwipeButton(server: OpdsServerConfig) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       SymbolGlyph($r('sys.symbol.square_and_pencil'))
         .fontSize(22)
         .fontColor(['#FFFFFF'])
@@ -312,7 +313,7 @@ struct OpdsServersPage {
 
   @Builder
   serverDeleteSwipeButton(server: OpdsServerConfig) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       SymbolGlyph($r('sys.symbol.trash'))
         .fontSize(22)
         .fontColor(['#FFFFFF'])
@@ -332,7 +333,7 @@ struct OpdsServersPage {
 
   @Builder
   emptyGuide() {
-    Column({ space: 14 }) {
+    Column({ space: AppSpacing.LG }) {
       SymbolGlyph($r('sys.symbol.bookshelf'))
         .fontSize(42)
         .fontColor([this.accentColor()])
@@ -363,7 +364,7 @@ struct OpdsServersPage {
           () => this.confirmDeleteActionServer())
       }
       .width(148)
-      .padding({ top: 6, bottom: 6 })
+      .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -380,7 +381,7 @@ struct OpdsServersPage {
 
   @Builder
   serverContextActionItem(icon: Resource, label: string, color: string, action: () => void) {
-    Row({ space: 10 }) {
+    Row({ space: AppSpacing.MD }) {
       SymbolGlyph(icon)
         .fontSize(18)
         .fontColor([color])
@@ -392,14 +393,14 @@ struct OpdsServersPage {
     }
     .width('100%')
     .height(44)
-    .padding({ left: 12, right: 12 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
     .alignItems(VerticalAlign.Center)
     .onClick(action)
   }
 
   @Builder
   serverEditorDialogContent() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Text(this.editingServerId ? '编辑书库' : '添加书库')
         .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
@@ -407,8 +408,8 @@ struct OpdsServersPage {
         .width('100%')
       // 字段区包一层滚动：弹窗高度受限（如输入法弹出）时底部字段仍可达
       Scroll() {
-        Column({ space: 12 }) {
-          Column({ space: 6 }) {
+        Column({ space: AppSpacing.LG }) {
+          Column({ space: AppSpacing.SM }) {
             Text('名称').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
             TextInput({ text: this.draftName, placeholder: '例如：我的 Calibre 书库' })
               .width('100%')
@@ -421,7 +422,7 @@ struct OpdsServersPage {
               })
           }
           .width('100%')
-          Column({ space: 6 }) {
+          Column({ space: AppSpacing.SM }) {
             Text('服务器地址').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
             TextInput({ text: this.draftBaseUrl, placeholder: 'http://192.168.1.10:8080/opds' })
               .width('100%')
@@ -435,7 +436,7 @@ struct OpdsServersPage {
           }
           .width('100%')
           Row() {
-            Column({ space: 3 }) {
+            Column({ space: AppSpacing.XXS }) {
               Text('需要登录')
                 .fontSize(AppFontSize.BODY)
                 .fontColor(this.primaryTextColor())
@@ -454,7 +455,7 @@ struct OpdsServersPage {
           }
           .width('100%')
           if (this.draftNeedLogin) {
-            Column({ space: 6 }) {
+            Column({ space: AppSpacing.SM }) {
               Text('账号').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
               TextInput({ text: this.draftUsername, placeholder: '登录用户名' })
                 .width('100%')
@@ -467,7 +468,7 @@ struct OpdsServersPage {
                 })
             }
             .width('100%')
-            Column({ space: 6 }) {
+            Column({ space: AppSpacing.SM }) {
               Text('密码').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
               TextInput({ text: this.draftPassword, placeholder: '登录密码' })
                 .type(InputType.Password)
@@ -501,7 +502,7 @@ struct OpdsServersPage {
       .width('100%')
       .layoutWeight(1)
       .scrollBar(BarState.Off)
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('取消')
           .layoutWeight(1)
           .height(42)
@@ -516,9 +517,9 @@ struct OpdsServersPage {
           .onClick(() => this.submitEditorDialog())
       }
       .width('100%')
-      .margin({ top: 6 })
+      .margin({ top: AppSpacing.SM })
     }
-    .padding(20)
+    .padding(AppSpacing.XXL)
   }
 
   onSystemDialogFlagChanged(): void {
