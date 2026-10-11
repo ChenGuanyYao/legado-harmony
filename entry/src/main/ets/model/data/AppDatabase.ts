@@ -2326,6 +2326,25 @@ export class AppDatabase {
     }
   }
 
+  private async getPrivateBookUrls(bookUrls: string[]): Promise<Set<string>> {
+    const urls = new Set<string>();
+    const candidates = bookUrls.filter((url) => !!url);
+    if (!this.store || candidates.length === 0) return urls;
+    const predicates = new relationalStore.RdbPredicates('books');
+    predicates.in('bookUrl', candidates);
+    predicates.and();
+    predicates.equalTo('isPrivate', 1);
+    const resultSet = await this.store.query(predicates, ['bookUrl']);
+    try {
+      while (resultSet.goToNextRow()) {
+        urls.add(resultSet.getString(resultSet.getColumnIndex('bookUrl')));
+      }
+    } finally {
+      resultSet.close();
+    }
+    return urls;
+  }
+
   private async performReadStatsUpsert(entry: ReadStatsEntry): Promise<void> {
     if (!this.store) return;
     const predicates = new relationalStore.RdbPredicates('read_stats');
@@ -2371,7 +2390,10 @@ export class AppDatabase {
     } finally {
       resultSet.close();
     }
-    return rows;
+    // 隐私书籍的时长照常入库，只是不在统计里显示；取消隐私后恢复显示。
+    const privateUrls = await this.getPrivateBookUrls(Array.from(new Set(rows.map((row) => row.bookUrl))));
+    if (privateUrls.size === 0) return rows;
+    return rows.filter((row) => !privateUrls.has(row.bookUrl));
   }
 
   /** 删除某本书在 [startDayKey, endDayKey] 内的阅读时长记录。 */
