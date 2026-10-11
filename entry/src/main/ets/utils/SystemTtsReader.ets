@@ -481,6 +481,8 @@ export class SystemTtsReader {
       this.speakCustomNext(generation, customVoice);
       return;
     }
+    // A cloud chapter may have left its renderer open for the handoff; the system voice never uses it.
+    this.httpReader.stop();
     this.resetSystemPcmPipeline();
     let engine: textToSpeech.TextToSpeechEngine;
     try {
@@ -827,7 +829,7 @@ export class SystemTtsReader {
   }
 
   private finish(notify: boolean): void {
-    const keepPcmOutput = notify && this.keepAudioOutputOnFinish && this.ttsPcmPlayType === 0;
+    const keepPcmOutput = notify && this.keepsPcmOutputOnFinish();
     this.readGeneration++;
     this.active = false;
     this.paused = false;
@@ -868,14 +870,19 @@ export class SystemTtsReader {
     if (notify && this.onFinished) this.onFinished();
   }
 
+  private keepsPcmOutputOnFinish(): boolean {
+    return this.keepAudioOutputOnFinish && this.ttsPcmPlayType === 0;
+  }
+
   private schedulePcmOutputRelease(): void {
     this.cancelPendingPcmOutputRelease();
-    console.info(`[TTS] keeping pcm output for chapter handoff: ${this.pcmPlayer.debugState()}`);
+    console.info(`[TTS] keeping pcm output for chapter handoff: ${this.audioDebugState()}`);
     this.pcmOutputReleaseTimerId = setTimeout(() => {
       this.pcmOutputReleaseTimerId = -1;
       if (!this.active) {
         console.info('[TTS] releasing idle pcm output after chapter handoff grace period');
         this.pcmPlayer.stop();
+        this.httpReader.stop();
       }
     }, 15000);
   }
@@ -918,7 +925,12 @@ export class SystemTtsReader {
       if (jobs.length === 0) {
         await this.httpReader.drain();
         if (this.readGeneration === generation && this.active) {
-          this.httpReader.stop();
+          // Cloud audio plays through httpReader's renderer, not this.pcmPlayer. Stopping it here
+          // rebuilt the renderer at every chapter boundary, which stuttered the next chapter's
+          // first sentence. finish() schedules its release when the output is being kept.
+          if (!this.keepsPcmOutputOnFinish()) {
+            this.httpReader.stop();
+          }
           this.finish(true);
         }
         return;

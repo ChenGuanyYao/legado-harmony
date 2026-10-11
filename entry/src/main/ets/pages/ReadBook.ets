@@ -9326,13 +9326,10 @@ struct ReadBookPage {
     try {
       this.isTtsSpeaking = true;
       this.updateVolumeKeySubscription();
-      if (manualPageTurnResume) {
-        // The page-turn path already scheduled adjacent-page/chapter preloading. Repeating it here
-        // competes with the first resumed audio buffer on the UI thread.
-        this.preloadReaderContentLater();
-      } else {
-        this.preloadReaderContent();
-      }
+      // Adjacent-page/chapter preloading competes with the first audio buffer on the UI thread,
+      // which is audible as a stutter in the first sentence after a chapter handoff. The page-turn
+      // path already scheduled it; every other start defers it past that first buffer.
+      this.preloadReaderContentLater(manualPageTurnResume ? 240 : 720);
       const backgroundStarted = await this.ttsMediaSession().startBackgroundRunning();
       if (!backgroundStarted && showToast) {
         HdsFeedback.showToast('后台朗读任务启动失败，息屏后可能中断');
