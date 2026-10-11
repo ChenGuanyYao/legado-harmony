@@ -7560,6 +7560,7 @@ struct ReadBookPage {
       return;
     }
     this.captureReaderCurlStartRegion(event);
+    this.updateReaderCurlFinger(event);
     this.readerPanActive = true;
     this.deferReaderPaginationForInteraction();
     this.readerTouchMoved = false;
@@ -7638,6 +7639,7 @@ struct ReadBookPage {
       this.readerTouchMoved = true;
       this.suppressReaderTapClick = true;
     }
+    this.updateReaderCurlFinger(event);
     this.updateSlidePageEffect(this.getReaderPageTurnGestureOffset(offsetX, offsetY));
   }
 
@@ -7646,6 +7648,7 @@ struct ReadBookPage {
       return;
     }
     this.readerPanActive = false;
+    this.readerEmulationFlipPainter.releaseCorner();
     this.deferReaderPaginationForInteraction();
     if (this.bookmarkPullActive) {
       this.readerTouchMoved = true;
@@ -7676,6 +7679,7 @@ struct ReadBookPage {
       return;
     }
     this.readerPanActive = false;
+    this.readerEmulationFlipPainter.releaseCorner();
     this.deferReaderPaginationForInteraction();
     if (this.bookmarkPullActive) {
       this.suppressReaderTapClick = true;
@@ -15847,6 +15851,16 @@ struct ReadBookPage {
     return color.length >= 9 && color.toUpperCase().endsWith('00') ? '#FFFFFF' : color;
   }
 
+  // 3D 仿真单页拖动时把手指位置交给绘制器，页角点跟随手指。手势层与卷曲画布都铺满阅读页，
+  // 手指的组件内坐标可以直接当作画布坐标。
+  updateReaderCurlFinger(event: GestureEvent): void {
+    if (!this.is3DPageTurnAnimation() || this.isLandscapeDoublePageActive() || !event || !event.fingerList ||
+      event.fingerList.length === 0) {
+      return;
+    }
+    this.readerEmulationFlipPainter.dragCorner(event.fingerList[0].localX, event.fingerList[0].localY);
+  }
+
   captureReaderCurlStartRegion(event: GestureEvent): void {
     this.readerCurlStartRegion = ReaderEmulationFlipRegion.MIDDLE;
     if (!this.is3DPageTurnAnimation() || !event || !event.fingerList || event.fingerList.length === 0) {
@@ -16108,6 +16122,7 @@ struct ReadBookPage {
   }
 
   resetReaderPageCurl(): void {
+    this.readerEmulationFlipPainter.clearCorner();
     this.readerPageCurlCaptureSerial++;
     this.readerPageCurlCapturePending = false;
     this.readerPageCurlCaptureKey = '';

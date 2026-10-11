@@ -40,8 +40,9 @@ interface FoldGeometry {
  * 仓库既有的 Canvas 管线，几何点位、路径、阴影着色与官方保持一致。
  *
  * 与官方示例的差异：
- * 1. 官方由手指的页角坐标驱动，本实现由翻页进度驱动（进度 0 表示纸张平铺，1 表示完全翻出），
- *    起始区域仍按手指落点取上/中/下。
+ * 1. 官方由手指的页角坐标驱动。本实现的翻页状态仍由进度驱动（进度 0 表示纸张平铺，1 表示完全翻出），
+ *    起始区域按手指落点取上/中/下；单页从上角或下角起手拖动时，页角点跟随手指（见 dragCorner），
+ *    松手后从松手位置滑到终点或弹回页角。点击翻页、中部起手和双页没有手指页角，按进度走固定轨迹。
  * 2. 官方只在右侧卷曲；向前翻页时这里对整个画布做一次水平镜像，把折角移到左侧，仅在绘制纸张
  *    正面贴图时再抵消一次镜像，保证正文文字不被镜像。阴影旋转角仍按官方公式在原始坐标系中计算，
  *    这样镜像后不会出现错位的斜向阴影。
@@ -66,6 +67,22 @@ export class ReaderEmulationFlipPainter {
   // 双页：卷角只轻轻卷起一点，主体运动交给绕书脊的翻转，避免纸面被折角切掉太多、
   // 正文看起来不跟着纸张走。
   private readonly doublePageFoldCap: number = 0.25;
+  // 页角从页面角落移到手指下方的过渡距离（vp）：拖动刚开始时页角还在角上，拖过这段距离后贴住手指。
+  private readonly cornerFollowRamp: number = 56;
+  private static readonly CORNER_TRAJECTORY: number = 0;
+  private static readonly CORNER_DRAGGING: number = 1;
+  private static readonly CORNER_RELEASED: number = 2;
+  // 页角点的来源：固定轨迹、跟随手指，或松手后从松手位置插值。
+  private cornerMode: number = ReaderEmulationFlipPainter.CORNER_TRAJECTORY;
+  private fingerX: number = 0;
+  private fingerY: number = 0;
+  // 最近一次绘制用的页角点与进度（镜像后的坐标系），松手时作为插值起点。
+  private lastCornerX: number = 0;
+  private lastCornerY: number = 0;
+  private lastCornerProgress: number = -1;
+  private releaseCornerX: number = 0;
+  private releaseCornerY: number = 0;
+  private releaseProgress: number = 0;
   // 官方样例的绘制坐标是 px，本绘制器使用 vp；阴影的绝对像素常量需要按该比例换算。
   private vpPerPx: number = 1;
   // paperColor 为官方米黄兜底色；其余颜色由 applyPalette 按主题纸色推导。
@@ -135,6 +152,37 @@ export class ReaderEmulationFlipPainter {
     return fallback;
   }
 
+  /** 拖动中：记录手指在画布上的位置，之后的绘制让页角点跟随它。 */
+  dragCorner(x: number, y: number): void {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return;
+    }
+    this.fingerX = x;
+    this.fingerY = y;
+    this.cornerMode = ReaderEmulationFlipPainter.CORNER_DRAGGING;
+  }
+
+  /**
+   * 松手：冻结当前页角点。之后进度继续增大时页角从这里滑向翻出终点，进度减小时弹回页面角落，
+   * 与松手前的画面连续。没有跟手绘制过（点击翻页、中部起手、双页）时回到固定轨迹。
+   */
+  releaseCorner(): void {
+    if (this.cornerMode !== ReaderEmulationFlipPainter.CORNER_DRAGGING || this.lastCornerProgress < 0) {
+      this.clearCorner();
+      return;
+    }
+    this.releaseCornerX = this.lastCornerX;
+    this.releaseCornerY = this.lastCornerY;
+    this.releaseProgress = this.lastCornerProgress;
+    this.cornerMode = ReaderEmulationFlipPainter.CORNER_RELEASED;
+  }
+
+  /** 一次翻页结束或被取消：回到固定轨迹。 */
+  clearCorner(): void {
+    this.cornerMode = ReaderEmulationFlipPainter.CORNER_TRAJECTORY;
+    this.lastCornerProgress = -1;
+  }
+
   draw(context: CanvasRenderingContext2D, page: image.PixelMap, backPage: image.PixelMap | null,
     canvasWidth: number, canvasHeight: number, progress: number, direction: number, region: number,
     doublePage: boolean, columnWidth: number, rightOrigin: number, vpPerPx: number,
@@ -168,7 +216,7 @@ export class ReaderEmulationFlipPainter {
       this.drawVerticalFold(context, page, width, height, curl, direction);
       return;
     }
-    const geometry = this.buildGeometry(width, height, curl, region);
+    const geometry = this.buildGeometry(width, height, curl, region, true, direction < 0);
     if (!geometry) {
       context.drawImage(page, 0, 0, width, height);
       return;
@@ -234,7 +282,7 @@ export class ReaderEmulationFlipPainter {
         // 双页纸只有半页宽，官方竖折构造会退化，中部一并按底角折处理。
         const leafRegion = region === ReaderEmulationFlipRegion.MIDDLE ?
           ReaderEmulationFlipRegion.BOTTOM : region;
-        const geometry = this.buildGeometry(leafWidth, height, foldCurl, leafRegion);
+        const geometry = this.buildGeometry(leafWidth, height, foldCurl, leafRegion, false, mirrored);
         if (!geometry) {
           if (mirrored) {
             context.translate(leafWidth, 0);
@@ -305,15 +353,61 @@ export class ReaderEmulationFlipPainter {
     return value * value * (3 - 2 * value);
   }
 
-  private buildGeometry(width: number, height: number, progress: number, region: number): FoldGeometry | null {
+  /**
+   * 页角点。followFinger 为 true 且正在拖动时取手指位置，松手后在松手位置与终点（或页面角落）之间插值，
+   * 其余情况按进度走固定轨迹。返回值在镜像后的坐标系里（折角总在右侧）。
+   */
+  private cornerPoint(width: number, height: number, progress: number, topCorner: boolean,
+    followFinger: boolean, mirrored: boolean): FoldPoint {
+    const trajectory = this.trajectoryCorner(width, height, progress, topCorner);
+    if (!followFinger || this.cornerMode === ReaderEmulationFlipPainter.CORNER_TRAJECTORY) {
+      return trajectory;
+    }
+    const cornerY = topCorner ? 0 : height;
+    const edgeY = topCorner ? 1 : height - 1;
+    let x = trajectory.x;
+    let y = trajectory.y;
+    if (this.cornerMode === ReaderEmulationFlipPainter.CORNER_DRAGGING) {
+      const fingerX = mirrored ? width - this.fingerX : this.fingerX;
+      // 拖动刚开始时页角还在角上，随拖动距离平滑移到手指下方，避免起手瞬间整张纸跳到手指处。
+      const ramp = Math.max(0, Math.min(1, progress * width / this.cornerFollowRamp));
+      const follow = ramp * ramp * (3 - 2 * ramp);
+      x = width + (fingerX - width) * follow;
+      y = cornerY + (this.fingerY - cornerY) * follow;
+      // 纸张不能被拉长：页角到书脊同侧端点的距离不超过页宽，超出时沿连线收回到圆上。
+      const spineDistance = Math.hypot(x, y - cornerY);
+      if (spineDistance > width) {
+        x = x * width / spineDistance;
+        y = cornerY + (y - cornerY) * width / spineDistance;
+      }
+    } else if (progress >= this.releaseProgress) {
+      // 松手后继续翻出：从松手位置直线滑到固定轨迹的终点，纸张在进度到 1 之前完全扫出窗口。
+      const remaining = Math.max(0.0001, 1 - this.releaseProgress);
+      const t = Math.max(0, Math.min(1, (progress - this.releaseProgress) / remaining));
+      const endX = (1 - this.travelOvershoot) * (width - 1);
+      x = this.releaseCornerX + (endX - this.releaseCornerX) * t;
+      y = this.releaseCornerY + (edgeY - this.releaseCornerY) * t;
+    } else {
+      // 松手后弹回：从松手位置回到页面角落。
+      const t = Math.max(0, Math.min(1, progress / Math.max(0.0001, this.releaseProgress)));
+      x = width + (this.releaseCornerX - width) * t;
+      y = cornerY + (this.releaseCornerY - cornerY) * t;
+    }
+    x = Math.min(width - 1, x);
+    y = topCorner ? Math.max(1, y) : Math.min(height - 1, y);
+    this.lastCornerX = x;
+    this.lastCornerY = y;
+    this.lastCornerProgress = progress;
+    return { x: x, y: y };
+  }
+
+  private trajectoryCorner(width: number, height: number, progress: number, topCorner: boolean): FoldPoint {
     const radius = this.cornerRadiusRatio * width;
     // 起步时页角与进度 1:1 同行，后段逐渐加速，到进度 1 时走完 travelOvershoot 个页宽。
     const travel = progress * (1 + (this.travelOvershoot - 1) * progress * progress);
     const endX = (1 - this.travelOvershoot) * (width - 1);
     let ax = (1 - travel) * (width - 1);
     ax = Math.max(endX, Math.min(width - 1, ax));
-    const topCorner = region === ReaderEmulationFlipRegion.TOP;
-    const f: FoldPoint = { x: width, y: topCorner ? 0 : height };
     // 官方对"中部起手"把页角点固定在页面下边缘，折线会退化成一条垂直线，翻过去只剩一条竖窄条，
     // 不是正常翻折。这里始终按上/下角做带圆弧约束的斜向折角（对应 calcPointAByTouchPoint）。
     // 页角先沿圆弧抬到最高点，之后按余弦平滑回落到页边：折线逐渐立直并从侧边扫出窗口，
@@ -326,9 +420,15 @@ export class ReaderEmulationFlipPainter {
       const fall = Math.min(1, (centerX - ax) / Math.max(1, centerX - endX));
       offset = radius * Math.cos(fall * Math.PI / 2);
     }
-    const ay = Math.max(1, Math.min(height - 1, topCorner ? offset : height - offset));
+    return { x: ax, y: Math.max(1, Math.min(height - 1, topCorner ? offset : height - offset)) };
+  }
+
+  private buildGeometry(width: number, height: number, progress: number, region: number, followFinger: boolean,
+    mirrored: boolean): FoldGeometry | null {
+    const topCorner = region === ReaderEmulationFlipRegion.TOP;
+    const f: FoldPoint = { x: width, y: topCorner ? 0 : height };
     const middleCorner = false;
-    const a: FoldPoint = { x: ax, y: ay };
+    const a = this.cornerPoint(width, height, progress, topCorner, followFinger, mirrored);
     const g: FoldPoint = { x: (a.x + f.x) / 2, y: (a.y + f.y) / 2 };
     const denominatorE = f.x - g.x;
     const denominatorH = f.y - g.y;
