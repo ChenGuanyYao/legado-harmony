@@ -12,6 +12,7 @@ import { SearchExploreSettings, SearchExploreSettingsStore } from '../../utils/S
 import { SearchResultAggregationStore } from '../../utils/SearchResultAggregationStore';
 import { AppThemeSettingsStore } from '../../utils/AppThemeSettingsStore';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
+import { AdaptiveSwitch } from '../AdaptiveSwitch';
 
 /** 首页"搜索"页签：搜索输入、历史、多源搜索进度与结果。 */
 @Component
@@ -1407,9 +1408,10 @@ export struct SearchPage {
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
 
-      Toggle({ type: ToggleType.Switch, isOn: checked })
-        .selectedColor(this.buttonColor())
-        .onChange(onChange)
+      AdaptiveSwitch({
+        isOn: checked,
+        onChange: onChange
+      })
     }
     .width('100%')
     .height(42)

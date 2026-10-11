@@ -3,6 +3,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 import { SearchExploreSettings, SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 
 @Entry
 @Component
@@ -231,11 +232,12 @@ struct SearchExploreSettingsPage {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      Toggle({ type: ToggleType.Switch, isOn: value })
-        .selectedColor(this.buttonColor())
-        .onChange((checked: boolean) => {
+      AdaptiveSwitch({
+        isOn: value,
+        onChange: (checked: boolean) => {
           onChange(checked);
-        })
+        }
+      })
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })

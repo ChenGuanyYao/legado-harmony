@@ -11,6 +11,7 @@ import { OpdsClient } from '../opds/OpdsClient';
 import { OpdsError } from '../opds/OpdsError';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 
 @Entry
 @Component
@@ -442,11 +443,12 @@ struct OpdsServersPage {
             }
             .layoutWeight(1)
             .alignItems(HorizontalAlign.Start)
-            Toggle({ type: ToggleType.Switch, isOn: this.draftNeedLogin })
-              .selectedColor(this.accentColor())
-              .onChange((value: boolean) => {
+            AdaptiveSwitch({
+              isOn: this.draftNeedLogin,
+              onChange: (value: boolean) => {
                 this.draftNeedLogin = value;
-              })
+              }
+            })
           }
           .width('100%')
           if (this.draftNeedLogin) {
@@ -482,11 +484,12 @@ struct OpdsServersPage {
                 .fontSize(14)
                 .fontColor(this.primaryTextColor())
                 .layoutWeight(1)
-              Toggle({ type: ToggleType.Switch, isOn: this.draftRememberPassword })
-                .selectedColor(this.accentColor())
-                .onChange((value: boolean) => {
+              AdaptiveSwitch({
+                isOn: this.draftRememberPassword,
+                onChange: (value: boolean) => {
                   this.draftRememberPassword = value;
-                })
+                }
+              })
             }
             .width('100%')
           }

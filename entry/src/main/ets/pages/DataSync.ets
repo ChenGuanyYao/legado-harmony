@@ -7,6 +7,7 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 
 @Entry
 @Component
@@ -282,13 +283,14 @@ struct DataSyncPage {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      Toggle({ type: ToggleType.Switch, isOn: value })
-        .selectedColor(this.buttonColor())
-        .enabled(enabled)
-        .opacity(enabled ? 1 : 0.45)
-        .onChange((checked: boolean) => {
+      AdaptiveSwitch({
+        isOn: value,
+        switchEnabled: enabled,
+        onChange: (checked: boolean) => {
           onChange(checked);
-        })
+        }
+      })
+        .opacity(enabled ? 1 : 0.45)
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })

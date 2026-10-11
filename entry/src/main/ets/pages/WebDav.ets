@@ -11,6 +11,7 @@ import { WebDavSecretStore } from '../webdav/WebDavSecretStore';
 import { WebDavSettingsStore } from '../webdav/WebDavSettingsStore';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 
 @Entry
 @Component
@@ -479,11 +480,12 @@ struct WebDavPage {
               .fontSize(14)
               .fontColor(this.primaryTextColor())
               .layoutWeight(1)
-            Toggle({ type: ToggleType.Switch, isOn: this.draftRememberPassword })
-              .selectedColor(this.accentColor())
-              .onChange((value: boolean) => {
+            AdaptiveSwitch({
+              isOn: this.draftRememberPassword,
+              onChange: (value: boolean) => {
                 this.draftRememberPassword = value;
-              })
+              }
+            })
           }
           .width('100%')
         }

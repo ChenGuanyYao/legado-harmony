@@ -16,6 +16,7 @@ import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 
 class VoiceEditFormDraft {
   editingVoiceId: string = '';
@@ -1399,12 +1400,13 @@ struct CustomTtsVoiceManagerPage {
                 .fontSize(15)
                 .fontColor(this.primaryTextColor())
                 .layoutWeight(1)
-              Toggle({ type: ToggleType.Switch, isOn: this.editEnabledCookieJar })
-                .selectedColor(this.buttonColor())
-                .onChange((value: boolean) => {
+              AdaptiveSwitch({
+                isOn: this.editEnabledCookieJar,
+                onChange: (value: boolean) => {
                   this.editEnabledCookieJar = value;
                   this.saveVoiceEditDraft();
-                })
+                }
+              })
             }
             .width('100%')
             .padding({ top: 4, bottom: 4 })

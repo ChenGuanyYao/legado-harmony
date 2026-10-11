@@ -47,6 +47,7 @@ import {
   ExploreReadingValidator
 } from '../core/book/ExploreReadingValidator';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 
 const BOOK_SOURCE_IMPORT_FILE_LIMIT_BYTES = 25 * 1024 * 1024;
 const BOOK_SOURCE_IMPORT_TIMEOUT_MS = 20000;
@@ -1896,12 +1897,13 @@ struct BookSourcePage {
                   .layoutWeight(1)
                   .alignItems(HorizontalAlign.Start)
 
-                  Toggle({ type: ToggleType.Switch, isOn: this.sourceLoginToggleOn(item) })
-                    .enabled(!this.isExecutingLoginAction)
-                    .selectedColor(this.accentColor())
-                    .onChange((isOn: boolean) => {
+                  AdaptiveSwitch({
+                    isOn: this.sourceLoginToggleOn(item),
+                    switchEnabled: !this.isExecutingLoginAction,
+                    onChange: (isOn: boolean) => {
                       this.updateSourceLoginToggle(index, isOn);
-                    })
+                    }
+                  })
                 }
                 .width('100%')
                 .height(48)

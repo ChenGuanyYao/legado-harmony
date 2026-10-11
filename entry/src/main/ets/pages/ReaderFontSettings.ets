@@ -1394,7 +1394,7 @@ struct ReaderFontSettingsPage {
         .fontSize(15)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
-      AdaptiveSwitch({ isOn: enabled, selectedColor: this.accentColor(),
+      AdaptiveSwitch({ isOn: enabled,
         onChange: (checked: boolean) => {
           onChange(checked);
         },
@@ -1483,7 +1483,7 @@ struct ReaderFontSettingsPage {
         .fontSize(16)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
-      AdaptiveSwitch({ isOn: this.readerRegexFontEnabled, selectedColor: this.accentColor(),
+      AdaptiveSwitch({ isOn: this.readerRegexFontEnabled,
         onChange: (checked: boolean) => {
           this.readerRegexFontEnabled = checked;
           this.saveSettings();

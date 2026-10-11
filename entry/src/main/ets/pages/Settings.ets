@@ -2339,7 +2339,7 @@ struct SettingsPage {
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
 
-        AdaptiveSwitch({ isOn: this.readerPreloadEnabled, selectedColor: this.buttonColor(),
+        AdaptiveSwitch({ isOn: this.readerPreloadEnabled,
           onChange: (checked: boolean) => {
             this.setReaderPreloadEnabled(checked);
           },
@@ -2490,7 +2490,7 @@ struct SettingsPage {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      AdaptiveSwitch({ isOn: value, selectedColor: this.buttonColor(),
+      AdaptiveSwitch({ isOn: value,
         onChange: (checked: boolean) => {
           onChange(checked);
         },

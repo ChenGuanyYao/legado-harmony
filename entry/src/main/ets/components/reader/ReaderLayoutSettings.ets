@@ -354,17 +354,11 @@ export struct ReaderHeaderFooterSettings {
   switchItem(title: string, description: string, checked: boolean, onChange: (checked: boolean) => void) {
     Row() {
       this.itemLabel(title, description)
-      if (this.cardStyle) {
-        AdaptiveSwitch({
-          isOn: checked,
-          selectedColor: this.switchColor,
-          onChange: (value: boolean) => onChange(value)
-        })
-      } else {
-        Toggle({ type: ToggleType.Switch, isOn: checked })
-          .selectedColor(this.switchColor)
-          .onChange((value: boolean) => onChange(value))
-      }
+      AdaptiveSwitch({
+        isOn: checked,
+        selectedColor: this.switchColor,
+        onChange: (value: boolean) => onChange(value)
+      })
     }
     .width(this.cardStyle ? 'calc(100% - 32vp)' : '100%')
     .constraintSize({ minHeight: this.cardStyle ? 64 : 56 })

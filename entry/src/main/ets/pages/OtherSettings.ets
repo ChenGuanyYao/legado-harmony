@@ -7,6 +7,7 @@ import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { lanReaderServer } from '../core/lan/LanReaderServer';
 import { LanReaderPasswordStore } from '../core/lan/LanReaderPasswordStore';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 
 @Entry
 @Component
@@ -427,9 +428,10 @@ struct OtherSettingsPage {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
-      Toggle({ type: ToggleType.Switch, isOn: value })
-        .selectedColor(this.buttonColor())
-        .onChange((checked: boolean) => onChange(checked))
+      AdaptiveSwitch({
+        isOn: value,
+        onChange: (checked: boolean) => onChange(checked)
+      })
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })

@@ -124,6 +124,7 @@ import { ReaderInfoBarRow } from '../components/reader/ReaderInfoBar';
 import { EpubChapterPlanner } from '../core/book/EpubChapterPlanner';
 import { EpubHeading } from '../core/book/EpubHtmlConverter';
 import { sleepMs } from '../utils/Sleep';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 
 const READER_CURRENT_PAGINATION_AHEAD_PAGE_COUNT = 4;
 const READER_ADJACENT_PAGINATION_PREVIEW_PAGE_COUNT = 2;
@@ -8723,11 +8724,12 @@ struct ReadBookPage {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      Toggle({ type: ToggleType.Switch, isOn: checked })
-        .selectedColor(this.buttonColor())
-        .onChange((value: boolean) => {
+      AdaptiveSwitch({
+        isOn: checked,
+        onChange: (value: boolean) => {
           onChange(value);
-        })
+        }
+      })
     }
     .width('100%')
     .constraintSize({ minHeight: 56 })
@@ -8849,11 +8851,12 @@ struct ReadBookPage {
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
 
-        Toggle({ type: ToggleType.Switch, isOn: this.readerPreloadEnabled })
-          .selectedColor(this.buttonColor())
-          .onChange((value: boolean) => {
+        AdaptiveSwitch({
+          isOn: this.readerPreloadEnabled,
+          onChange: (value: boolean) => {
             this.setReaderPreloadEnabled(value);
-          })
+          }
+        })
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)

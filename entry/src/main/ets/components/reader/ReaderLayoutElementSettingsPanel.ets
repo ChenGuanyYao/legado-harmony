@@ -2,6 +2,7 @@ import { ReaderSettingsStore } from '../../utils/ReaderSettingsStore';
 import { HdsFeedback } from '../../utils/HdsFeedback';
 import { ImmersiveBackButton } from '../ImmersiveBackButton';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
+import { AdaptiveSwitch } from '../AdaptiveSwitch';
 
 /**
  * 阅读页"布局元素设置"浮层：控制点击阅读页后出现哪些快捷组件。
@@ -117,9 +118,11 @@ export struct ReaderLayoutElementSettingsPanel {
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
-      Toggle({ type: ToggleType.Switch, isOn: enabled })
-        .selectedColor(this.accentColor)
-        .onChange(onChange)
+      AdaptiveSwitch({
+        isOn: enabled,
+        selectedColor: this.accentColor,
+        onChange: onChange
+      })
     }
     .width('100%')
     .constraintSize({ minHeight: 64 })

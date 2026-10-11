@@ -17,6 +17,7 @@ import { HdsFeedback } from '../utils/HdsFeedback';
 import { LocalBookService } from '../core/book/LocalBookService';
 import { BookDisplayHelper } from '../utils/BookDisplayHelper';
 import { BookCoverCache } from '../utils/BookCoverCache';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 
 @Entry
 @Component
@@ -733,11 +734,12 @@ struct BookshelfSettingsPage {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      Toggle({ type: ToggleType.Switch, isOn: value })
-        .selectedColor(this.buttonColor())
-        .onChange((checked: boolean) => {
+      AdaptiveSwitch({
+        isOn: value,
+        onChange: (checked: boolean) => {
           onChange(checked);
-        })
+        }
+      })
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
@@ -883,11 +885,12 @@ struct BookshelfSettingsPage {
 
   @Builder
   targetBookSwitch(book: Book, selected: boolean) {
-    Toggle({ type: ToggleType.Switch, isOn: selected })
-      .selectedColor(this.buttonColor())
-      .onChange((checked: boolean) => {
+    AdaptiveSwitch({
+      isOn: selected,
+      onChange: (checked: boolean) => {
         this.toggleTargetBook(book, checked);
-      })
+      }
+    })
   }
 
   // 不走 switchItem：取消关闭时开关要能弹回去，按值传参的 Builder 不会跟随状态刷新。
@@ -906,11 +909,12 @@ struct BookshelfSettingsPage {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      Toggle({ type: ToggleType.Switch, isOn: this.privateShelfSwitchOn })
-        .selectedColor(this.buttonColor())
-        .onChange((checked: boolean) => {
+      AdaptiveSwitch({
+        isOn: this.privateShelfSwitchOn,
+        onChange: (checked: boolean) => {
           this.onPrivateShelfSwitchChanged(checked);
-        })
+        }
+      })
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })

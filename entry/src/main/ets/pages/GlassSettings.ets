@@ -5,6 +5,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { GlassPresetIds, GlassSettings, GlassSettingsStore } from '../utils/GlassSettingsStore';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 
 @Entry
 @Component
@@ -459,9 +460,10 @@ struct GlassSettingsPage {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      Toggle({ type: ToggleType.Switch, isOn: this.settings.enabled })
-        .selectedColor(this.accentColor())
-        .onChange((value: boolean) => this.setGlassEnabled(value))
+      AdaptiveSwitch({
+        isOn: this.settings.enabled,
+        onChange: (value: boolean) => this.setGlassEnabled(value)
+      })
     }
     .width('100%')
     .padding(14)
@@ -473,9 +475,10 @@ struct GlassSettingsPage {
   shadowSwitch() {
     Row() {
       Text('显示悬浮阴影').fontSize(16).fontColor(this.primaryTextColor()).layoutWeight(1)
-      Toggle({ type: ToggleType.Switch, isOn: this.settings.shadowEnabled })
-        .selectedColor(this.accentColor())
-        .onChange((value: boolean) => { this.settings.shadowEnabled = value; this.changed(); })
+      AdaptiveSwitch({
+        isOn: this.settings.shadowEnabled,
+        onChange: (value: boolean) => { this.settings.shadowEnabled = value; this.changed(); }
+      })
     }
     .width('100%').padding(14).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
   }
@@ -487,9 +490,10 @@ struct GlassSettingsPage {
         Text('低性能模式').fontSize(16).fontColor(this.primaryTextColor())
         Text('禁用实时模糊和阴影，列表较多时更流畅').fontSize(12).fontColor(this.subTextColor())
       }.layoutWeight(1).alignItems(HorizontalAlign.Start)
-      Toggle({ type: ToggleType.Switch, isOn: this.settings.lowPerformance })
-        .selectedColor(this.accentColor())
-        .onChange((value: boolean) => { this.settings.lowPerformance = value; this.changed(); })
+      AdaptiveSwitch({
+        isOn: this.settings.lowPerformance,
+        onChange: (value: boolean) => { this.settings.lowPerformance = value; this.changed(); }
+      })
     }
     .width('100%').padding(14).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
   }

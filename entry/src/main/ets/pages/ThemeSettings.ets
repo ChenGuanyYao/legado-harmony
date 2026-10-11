@@ -31,6 +31,7 @@ import deviceInfo from '@ohos.deviceInfo';
 import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 
 const STORE_COVER_MIN_HEIGHT = 170;
 const STORE_COVER_MAX_HEIGHT = 340;
@@ -1407,16 +1408,16 @@ struct ThemeSettingsPage {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      Toggle({ type: ToggleType.Switch,
-        isOn: category === 'layout' ? this.applyDialogApplyLayout : this.applyDialogApplyCover })
-        .selectedColor(this.accentColor())
-        .onChange((enabled: boolean) => {
+      AdaptiveSwitch({
+        isOn: category === 'layout' ? this.applyDialogApplyLayout : this.applyDialogApplyCover,
+        onChange: (enabled: boolean) => {
           if (category === 'layout') {
             this.applyDialogApplyLayout = enabled;
           } else {
             this.applyDialogApplyCover = enabled;
           }
-        })
+        }
+      })
     }
     .width('100%')
     .padding({ top: 2, bottom: 2 })
@@ -1619,12 +1620,13 @@ struct ThemeSettingsPage {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
 
-      Toggle({ type: ToggleType.Switch, isOn: this.themeBookCoverEnabled })
-        .selectedColor(this.accentColor())
-        .enabled(!this.isTrialTheme(theme.id))
-        .onChange((enabled: boolean) => {
+      AdaptiveSwitch({
+        isOn: this.themeBookCoverEnabled,
+        switchEnabled: !this.isTrialTheme(theme.id),
+        onChange: (enabled: boolean) => {
           this.setThemeBookCoverEnabled(enabled);
-        })
+        }
+      })
     }
     .width('100%')
     .padding(12)
