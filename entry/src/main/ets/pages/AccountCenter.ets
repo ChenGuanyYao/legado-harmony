@@ -20,6 +20,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -78,7 +79,7 @@ struct AccountCenterPage {
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       Scroll() {
-        Column({ space: 14 }) {
+        Column({ space: AppSpacing.LG }) {
           if (!this.editingProfile) {
             this.accountCard()
             this.cloudSyncCard()
@@ -101,8 +102,8 @@ struct AccountCenterPage {
         }
         .width('100%')
         .padding({
-          left: 14,
-          right: 14,
+          left: AppSpacing.LG,
+          right: AppSpacing.LG,
           top: 70 + this.statusBarHeight,
           bottom: 32 + this.navBarHeight
         })
@@ -587,7 +588,7 @@ struct AccountCenterPage {
 
   @Builder
   accountCard() {
-    Row({ space: 14 }) {
+    Row({ space: AppSpacing.LG }) {
       if (this.accountLoggedIn && this.avatarUrl) {
         Image(this.avatarUrl)
           .width(56)
@@ -607,7 +608,7 @@ struct AccountCenterPage {
           .borderRadius(28)
           .objectFit(ImageFit.Cover)
       }
-      Column({ space: 5 }) {
+      Column({ space: AppSpacing.XS }) {
         Text(this.accountLoggedIn ? this.displayName : '未登录')
           .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
@@ -642,20 +643,20 @@ struct AccountCenterPage {
       }
     }
     .width('100%')
-    .padding(16)
+    .padding(AppSpacing.XL)
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 
   @Builder
   cloudSyncCard() {
-    Row({ space: 12 }) {
+    Row({ space: AppSpacing.LG }) {
       SymbolGlyph($r('sys.symbol.arrow_clockwise'))
         .fontSize(24)
         .fontColor([this.accentColor()])
         .width(32)
 
-      Column({ space: 4 }) {
+      Column({ space: AppSpacing.XS }) {
         Text('数据同步')
           .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Bold)
@@ -673,7 +674,7 @@ struct AccountCenterPage {
         .fontColor([this.subTextColor()])
     }
     .width('100%')
-    .padding(16)
+    .padding(AppSpacing.XL)
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .onClick(() => {
@@ -683,7 +684,7 @@ struct AccountCenterPage {
 
   @Builder
   avatarCropper() {
-    Column({ space: 14 }) {
+    Column({ space: AppSpacing.LG }) {
       Text('裁剪头像')
         .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
@@ -726,7 +727,7 @@ struct AccountCenterPage {
           }),
         GestureMask.IgnoreInternal
       )
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Text('缩放')
           .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
@@ -744,7 +745,7 @@ struct AccountCenterPage {
           .width(36)
       }
       .width('100%')
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('重新选择')
           .layoutWeight(1)
           .height(40)
@@ -777,20 +778,20 @@ struct AccountCenterPage {
       .width('100%')
     }
     .width('100%')
-    .padding(16)
+    .padding(AppSpacing.XL)
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 
   @Builder
   profileEditor() {
-    Column({ space: 14 }) {
+    Column({ space: AppSpacing.LG }) {
       Text('编辑个人资料')
         .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
-      Row({ space: 14 }) {
+      Row({ space: AppSpacing.LG }) {
         if (this.profileAvatarPixelMap) {
           Image(this.profileAvatarPixelMap)
             .width(64)
@@ -810,7 +811,7 @@ struct AccountCenterPage {
             .borderRadius(32)
             .objectFit(ImageFit.Cover)
         }
-        Column({ space: 8 }) {
+        Column({ space: AppSpacing.MD }) {
           Button('选择头像')
             .height(34)
             .fontSize(AppFontSize.BODY)
@@ -851,7 +852,7 @@ struct AccountCenterPage {
         .lineHeight(17)
         .fontColor(this.subTextColor())
         .width('100%')
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('取消')
           .layoutWeight(1)
           .height(40)
@@ -874,7 +875,7 @@ struct AccountCenterPage {
       .width('100%')
     }
     .width('100%')
-    .padding(16)
+    .padding(AppSpacing.XL)
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
@@ -882,8 +883,8 @@ struct AccountCenterPage {
   @Builder
   pointsCard() {
     Row() {
-      Column({ space: 5 }) {
-        Row({ space: 6 }) {
+      Column({ space: AppSpacing.XS }) {
+        Row({ space: AppSpacing.SM }) {
           Text('可用点数')
             .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
@@ -908,7 +909,7 @@ struct AccountCenterPage {
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
-      Column({ space: 5 }) {
+      Column({ space: AppSpacing.XS }) {
         Text('兑换比例')
           .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
@@ -920,14 +921,14 @@ struct AccountCenterPage {
       .alignItems(HorizontalAlign.End)
     }
     .width('100%')
-    .padding(18)
+    .padding(AppSpacing.XL)
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 
   @Builder
   pointsUsageDialogContent() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Text('点数使用说明')
         .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
@@ -952,7 +953,7 @@ struct AccountCenterPage {
           this.closePointsUsageDialog();
         })
     }
-    .padding(20)
+    .padding(AppSpacing.XXL)
   }
 
   showPointsUsageDialog(): void {
@@ -982,7 +983,7 @@ struct AccountCenterPage {
 
   @Builder
   rechargeSection() {
-    Column({ space: 10 }) {
+    Column({ space: AppSpacing.MD }) {
       Text('充值点数')
         .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
@@ -991,7 +992,7 @@ struct AccountCenterPage {
       Grid() {
         ForEach(this.products, (product: RechargeProduct) => {
           GridItem() {
-            Column({ space: 7 }) {
+            Column({ space: AppSpacing.SM }) {
               Text(`${product.points} 点`)
                 .fontSize(AppFontSize.SUBTITLE)
                 .fontWeight(FontWeight.Bold)
@@ -1019,14 +1020,14 @@ struct AccountCenterPage {
         }, (product: RechargeProduct) => product.productId)
       }
       .columnsTemplate(this.rechargeColumnsTemplate())
-      .columnsGap(10)
-      .rowsGap(10)
+      .columnsGap(AppSpacing.MD)
+      .rowsGap(AppSpacing.MD)
       .width('100%')
       .height(this.rechargeGridHeight())
       .enableScrollInteraction(false)
     }
     .width('100%')
-    .padding(16)
+    .padding(AppSpacing.XL)
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
@@ -1048,7 +1049,7 @@ struct AccountCenterPage {
 
   @Builder
   loginGuide() {
-    Column({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
       Text('登录后可用')
         .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
@@ -1061,7 +1062,7 @@ struct AccountCenterPage {
         .width('100%')
     }
     .width('100%')
-    .padding(16)
+    .padding(AppSpacing.XL)
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
@@ -1074,7 +1075,7 @@ struct AccountCenterPage {
         .fontColor('#C05A23')
         .lineHeight(18)
         .width('100%')
-        .padding(14)
+        .padding(AppSpacing.LG)
         .borderRadius(ThemeRuntime.mediumRadius())
         .backgroundColor(this.appDarkMode ? '#332216' : '#FFF3E8')
     } else {
@@ -1083,7 +1084,7 @@ struct AccountCenterPage {
         .fontColor(this.subTextColor())
         .lineHeight(17)
         .width('100%')
-        .padding({ left: 4, right: 4 })
+        .padding({ left: AppSpacing.XS, right: AppSpacing.XS })
     }
   }
 

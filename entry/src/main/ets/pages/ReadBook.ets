@@ -126,6 +126,7 @@ import { EpubHeading } from '../core/book/EpubHtmlConverter';
 import { sleepMs } from '../utils/Sleep';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 const READER_CURRENT_PAGINATION_AHEAD_PAGE_COUNT = 4;
 const READER_ADJACENT_PAGINATION_PREVIEW_PAGE_COUNT = 2;
@@ -1783,7 +1784,7 @@ struct ReadBookPage {
                     this.markReaderComicImageBroken(index, page, error);
                   })
                 if (this.readerComicBrokenPages.includes(index)) {
-                  Column({ space: 6 }) {
+                  Column({ space: AppSpacing.SM }) {
                     Text('⚠ 图片加载失败')
                       .fontSize(AppFontSize.BODY)
                       .fontColor(this.getSubTextColor())
@@ -1929,7 +1930,7 @@ struct ReadBookPage {
 
   @Builder
   readerComicBoundaryHintContent() {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       if (this.readerComicChapterSwitching) {
         LoadingProgress()
           .width(18)
@@ -1948,7 +1949,7 @@ struct ReadBookPage {
         .fontColor(this.readerComicBoundaryReady || this.readerComicChapterSwitching ?
           this.accentColor() : this.getTextColor())
     }
-    .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+    .padding({ left: 14, right: 14, top: AppSpacing.MD, bottom: AppSpacing.MD })
     .borderRadius(18)
     .backgroundColor(this.isReaderThemeDark() ? '#E61B1D20' : '#E6FFFFFF')
     .shadow({ radius: 10, color: this.isReaderThemeDark() ? '#66000000' : '#26000000', offsetY: 3 })
@@ -2443,7 +2444,7 @@ struct ReadBookPage {
       Blank()
         .layoutWeight(1)
 
-      Row({ space: 6 }) {
+      Row({ space: AppSpacing.SM }) {
         if (this.book && !LocalBookService.isLocalBook(this.book) && this.chapters.length > 0) {
           this.readerRoundMenuButton($r('sys.symbol.arrow_clockwise'), '刷新本章', () => {
             this.hideReaderPanels();
@@ -2490,7 +2491,7 @@ struct ReadBookPage {
 
   @Builder
   readerHdsFloatingBottomMenu() {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       if (this.readerUseChapterQuickJump) {
         this.readerHdsChapterTabBar()
       }
@@ -2548,7 +2549,7 @@ struct ReadBookPage {
       .height(56)
 
       if (this.menuChapterTooltipVisible) {
-        Column({ space: 2 }) {
+        Column({ space: AppSpacing.XXS }) {
           Text(this.getChapterTitle(this.getMenuChapterDisplayIndex()))
             .fontSize(AppFontSize.CAPTION)
             .fontColor('#FFFFFFFF')
@@ -2623,7 +2624,7 @@ struct ReadBookPage {
     }
     .width('100%')
     .height(48)
-    .padding({ left: 4, right: 4 })
+    .padding({ left: AppSpacing.XS, right: AppSpacing.XS })
     .alignItems(VerticalAlign.Center)
     .translate({ y: -2 })
   }
@@ -2869,7 +2870,7 @@ struct ReadBookPage {
             Text(`${this.getMenuChapterDisplayIndex() + 1}/${this.chapters.length}`)
               .fontSize(AppFontSize.CAPTION)
               .fontColor(this.getSubTextColor())
-              .margin({ left: 8 })
+              .margin({ left: AppSpacing.MD })
           }
           .width('100%')
 
@@ -2905,7 +2906,7 @@ struct ReadBookPage {
         }
         .width('100%')
         .height(56)
-        .padding({ left: 4, right: 4 })
+        .padding({ left: AppSpacing.XS, right: AppSpacing.XS })
         .borderRadius(ThemeRuntime.glassCornerRadius(28, 'panel'))
         .backgroundColor(this.readerGlassPanelColor())
         .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -2927,7 +2928,7 @@ struct ReadBookPage {
       }
       .width('100%')
       .height(56)
-      .padding({ left: 8, right: 8 })
+      .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
       .borderRadius(ThemeRuntime.glassCornerRadius(28, 'panel'))
       .backgroundColor(this.readerGlassPanelColor())
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -3054,7 +3055,7 @@ struct ReadBookPage {
         }
         .width(this.readerFloatingBarWidth())
         .height(56)
-        .padding({ left: 8, right: 8 })
+        .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
         .borderRadius(ThemeRuntime.glassCornerRadius(28, 'panel'))
         .backgroundColor(this.readerGlassPanelColor())
         .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -3146,7 +3147,7 @@ struct ReadBookPage {
       )
     }
     .width(220)
-    .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+    .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.SM, bottom: AppSpacing.SM })
     .backgroundColor(this.readerGlassPanelColor())
     .borderRadius(ThemeRuntime.glassCornerRadius(22, 'panel'))
     .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -3162,7 +3163,7 @@ struct ReadBookPage {
   readerActionMenuItem(icon: Resource, label: string, action: () => void,
     enabled: boolean = true, showDivider: boolean = true) {
     Column() {
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         SymbolGlyph(icon)
           .fontSize(21)
           .fontColor([this.getTextColor()])
@@ -3182,7 +3183,7 @@ struct ReadBookPage {
         Divider()
           .strokeWidth(0.5)
           .color(this.readerGlassBorderColor())
-          .margin({ left: 46, right: 8 })
+          .margin({ left: 46, right: AppSpacing.MD })
       }
     }
     .width('100%')
@@ -3890,7 +3891,7 @@ struct ReadBookPage {
         })
       }
       .width(148)
-      .padding({ top: 6, bottom: 6 })
+      .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
       .backgroundColor(this.readerGlassPanelColor())
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -3904,7 +3905,7 @@ struct ReadBookPage {
 
   @Builder
   bookmarkContextActionItem(icon: Resource, label: string, color: string, action: () => void) {
-    Row({ space: 12 }) {
+    Row({ space: AppSpacing.LG }) {
       SymbolGlyph(icon)
         .fontSize(21)
         .fontColor([color])
@@ -5636,7 +5637,7 @@ struct ReadBookPage {
   @Builder
   readerBookmarkPullHint() {
     Row() {
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         SymbolGlyph($r('sys.symbol.bookmark'))
           .fontSize(19)
           .fontColor([this.bookmarkPullHintColor()])
@@ -8080,7 +8081,7 @@ struct ReadBookPage {
 
   @Builder
   settingsPanel() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Row() {
         Text(this.settingsPanelTitle())
           .fontSize(AppFontSize.TITLE)
@@ -8142,7 +8143,7 @@ struct ReadBookPage {
     }
     .width(this.readerFloatingBarWidth())
     .height(this.readerSettingsPanelHeight())
-    .padding({ left: 20, right: this.readerSettingsScrollBarRightInset(), top: 16, bottom: 0 })
+    .padding({ left: AppSpacing.XXL, right: this.readerSettingsScrollBarRightInset(), top: AppSpacing.XL, bottom: 0 })
     .borderRadius(ThemeRuntime.glassCornerRadius(28, 'panel'))
     .clip(true)
     .backgroundColor(this.readerGlassPanelColor())
@@ -8171,7 +8172,7 @@ struct ReadBookPage {
 
   @Builder
   readerTypographySettingsPanel() {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       // 正文排版作为面板首项，统一调整字号、字距、行距、段距及四侧边距。
       this.readerTypographyCombinedSettings()
       this.readerSelectSettingItem('正文对齐方式', '设置正文段落的水平对齐方式',
@@ -8384,7 +8385,7 @@ struct ReadBookPage {
         Text('正文 / 标题 / 正则样式设置')
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.getSubTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
@@ -8410,7 +8411,7 @@ struct ReadBookPage {
         Text('管理正文与章节标题的替换规则')
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.getSubTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -8630,7 +8631,7 @@ struct ReadBookPage {
         Text(this.tapZoneSummaryText())
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.getSubTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -8640,7 +8641,7 @@ struct ReadBookPage {
         .fontSize(AppFontSize.BODY)
         .backgroundColor(this.buttonColor())
         .fontColor('#FFFFFF')
-        .margin({ left: 12 })
+        .margin({ left: AppSpacing.LG })
         .onClick(() => {
           this.presentTapZoneSettings();
         })
@@ -8661,7 +8662,7 @@ struct ReadBookPage {
         Text(description)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.getSubTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -8720,7 +8721,7 @@ struct ReadBookPage {
         Text(description)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.getSubTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -8762,7 +8763,7 @@ struct ReadBookPage {
           .fontSize(AppFontSize.BODY)
           .fontWeight(FontWeight.Medium)
           .fontColor('#F8FFFFFF')
-          .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.MD })
           .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor('#B35C7569')
           .shadow({ radius: 12, color: '#45000000', offsetX: 0, offsetY: 4 })
@@ -8847,7 +8848,7 @@ struct ReadBookPage {
           Text(this.readerPreloadEnabled ? '阅读过程中提前缓存后续章节' : '已关闭自动预缓存')
             .fontSize(AppFontSize.CAPTION)
             .fontColor(this.getSubTextColor())
-            .margin({ top: 4 })
+            .margin({ top: AppSpacing.XS })
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)

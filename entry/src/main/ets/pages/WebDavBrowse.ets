@@ -15,6 +15,7 @@ import { WebDavSettingsStore } from '../webdav/WebDavSettingsStore';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -102,7 +103,7 @@ struct WebDavBrowsePage {
       }
 
       if (this.busy) {
-        Column({ space: 12 }) {
+        Column({ space: AppSpacing.LG }) {
           Progress({ value: this.busyProgress, total: 100, type: ProgressType.Linear })
             .width('100%')
             .color(this.accentColor())
@@ -111,7 +112,7 @@ struct WebDavBrowsePage {
             .fontColor(this.primaryTextColor())
         }
         .width('78%')
-        .padding(20)
+        .padding(AppSpacing.XXL)
         .borderRadius(ThemeRuntime.cardRadius())
         .backgroundColor(this.cardColor())
         .shadow({ radius: 18, color: this.appDarkMode ? '#66000000' : '#28000000' })
@@ -151,7 +152,7 @@ struct WebDavBrowsePage {
 
   @Builder
   errorView() {
-    Column({ space: 14 }) {
+    Column({ space: AppSpacing.LG }) {
       SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
         .fontSize(42)
         .fontColor([this.subTextColor()])
@@ -180,7 +181,7 @@ struct WebDavBrowsePage {
   @Builder
   filesPanel() {
     Column() {
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         if (this.currentPath) {
           Button('上一级')
             .height(34)
@@ -207,13 +208,13 @@ struct WebDavBrowsePage {
         this.fileToolbarButton('刷新', () => this.refreshFiles())
       }
       .width('100%')
-      .padding({ left: 14, right: 14, top: 12, bottom: 8 })
+      .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG, bottom: AppSpacing.MD })
       .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
       .backdropBlur(ThemeRuntime.topBarBlur())
       .zIndex(2)
 
       if (this.entries.length === 0) {
-        Column({ space: 10 }) {
+        Column({ space: AppSpacing.MD }) {
           SymbolGlyph($r('sys.symbol.folder'))
             .fontSize(40)
             .fontColor([this.subTextColor()])
@@ -235,11 +236,11 @@ struct WebDavBrowsePage {
 
           ForEach(this.entries, (entry: WebDavEntry) => {
             ListItem() {
-              Row({ space: 12 }) {
+              Row({ space: AppSpacing.LG }) {
                 SymbolGlyph($r(entry.directory ? 'sys.symbol.folder' : 'sys.symbol.doc'))
                   .fontSize(26)
                   .fontColor([entry.directory ? this.accentColor() : this.subTextColor()])
-                Column({ space: 4 }) {
+                Column({ space: AppSpacing.XS }) {
                   Text(entry.name)
                     .fontSize(AppFontSize.BODY_LARGE)
                     .fontColor(this.primaryTextColor())
@@ -259,7 +260,7 @@ struct WebDavBrowsePage {
               }
               .width('100%')
               .height(64)
-              .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+              .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.MD })
               .backgroundColor(this.cardColor())
               .gesture(
                 LongPressGesture({ repeat: false })
@@ -276,7 +277,7 @@ struct WebDavBrowsePage {
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .layoutWeight(1)
-        .padding({ left: 12, right: 12 })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
         .margin({ top: -this.fileListTopInset() })
         .zIndex(0)
       }
@@ -292,7 +293,7 @@ struct WebDavBrowsePage {
       .fontSize(AppFontSize.CAPTION)
       .fontColor(this.accentColor())
       .backgroundColor(this.softColor())
-      .padding({ left: 10, right: 10 })
+      .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
       .onClick(action)
   }
 
@@ -312,7 +313,7 @@ struct WebDavBrowsePage {
           () => this.confirmDeleteEntry())
       }
       .width(148)
-      .padding({ top: 6, bottom: 6 })
+      .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -329,7 +330,7 @@ struct WebDavBrowsePage {
 
   @Builder
   entryContextActionItem(icon: Resource, label: string, color: string, action: () => void) {
-    Row({ space: 10 }) {
+    Row({ space: AppSpacing.MD }) {
       SymbolGlyph(icon)
         .fontSize(18)
         .fontColor([color])
@@ -341,7 +342,7 @@ struct WebDavBrowsePage {
     }
     .width('100%')
     .height(44)
-    .padding({ left: 12, right: 12 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
     .alignItems(VerticalAlign.Center)
     .onClick(action)
   }
@@ -373,7 +374,7 @@ struct WebDavBrowsePage {
         .fontColor(this.primaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
-        .margin({ bottom: 14 })
+        .margin({ bottom: AppSpacing.LG })
       TextInput({ text: this.entryNameDraft,
         placeholder: this.entryNameMode === 'create' ? '文件夹名称' : '新名称' })
         .width('100%')
@@ -384,7 +385,7 @@ struct WebDavBrowsePage {
         .onChange((value: string) => {
           this.entryNameDraft = value;
         })
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('取消')
           .layoutWeight(1)
           .height(42)
@@ -399,9 +400,9 @@ struct WebDavBrowsePage {
           .onClick(() => this.submitEntryNameDialog())
       }
       .width('100%')
-      .margin({ top: 14 })
+      .margin({ top: AppSpacing.LG })
     }
-    .padding(20)
+    .padding(AppSpacing.XXL)
   }
 
   async bootstrap(): Promise<void> {
@@ -510,12 +511,12 @@ struct WebDavBrowsePage {
 
   @Builder
   fileDetailDialogContent() {
-    Column({ space: 12 }) {
-      Row({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
+      Row({ space: AppSpacing.LG }) {
         SymbolGlyph($r('sys.symbol.doc'))
           .fontSize(30)
           .fontColor([this.accentColor()])
-        Column({ space: 4 }) {
+        Column({ space: AppSpacing.XS }) {
           Text(this.fileDetailEntry.name || '未命名')
             .fontSize(AppFontSize.BODY_LARGE)
             .fontWeight(FontWeight.Bold)
@@ -535,7 +536,7 @@ struct WebDavBrowsePage {
       }
       .width('100%')
 
-      Column({ space: 4 }) {
+      Column({ space: AppSpacing.XS }) {
         Text(`格式：${this.fileDetailEntry.format().toUpperCase()}`)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
@@ -550,11 +551,11 @@ struct WebDavBrowsePage {
           .width('100%')
       }
       .width('100%')
-      .padding(12)
+      .padding(AppSpacing.LG)
       .borderRadius(ThemeRuntime.mediumRadius())
       .backgroundColor(this.softColor())
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         if (this.fileDetailBook) {
           Button('立即阅读')
             .layoutWeight(1)
@@ -590,7 +591,7 @@ struct WebDavBrowsePage {
       .width('100%')
     }
     .width('100%')
-    .padding(20)
+    .padding(AppSpacing.XXL)
   }
 
   private prepareFileBook(onReady: (book: Book) => void): void {

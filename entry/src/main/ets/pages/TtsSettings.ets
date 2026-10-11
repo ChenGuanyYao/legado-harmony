@@ -23,6 +23,7 @@ import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 const TTS_CUSTOM_VOICE_IMPORT_LIMIT_BYTES: number = 2 * 1024 * 1024;
 
@@ -111,7 +112,7 @@ struct TtsSettingsPage {
               Text('导入、启用、禁用、删除自定义音色')
                 .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.subTextColor())
-                .margin({ top: 4 })
+                .margin({ top: AppSpacing.XS })
             }
             .layoutWeight(1)
             .alignItems(HorizontalAlign.Start)
@@ -123,8 +124,8 @@ struct TtsSettingsPage {
               .textAlign(TextAlign.Center)
           }
           .width('calc(100% - 24vp)')
-          .padding({ left: 16, right: 16, top: 14, bottom: 14 })
-          .margin({ left: 12, right: 12 })
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -146,7 +147,7 @@ struct TtsSettingsPage {
             }
             .width('100%')
 
-            Row({ space: 10 }) {
+            Row({ space: AppSpacing.MD }) {
               this.speedStepButton($r('sys.symbol.minus'), '降低朗读倍速', this.ttsSpeed > 0.5, () => {
                 this.applySpeed(this.ttsSpeed - 0.1);
               })
@@ -163,9 +164,9 @@ struct TtsSettingsPage {
               })
             }
             .width('100%')
-            .margin({ top: 10 })
+            .margin({ top: AppSpacing.MD })
 
-            Row({ space: 8 }) {
+            Row({ space: AppSpacing.MD }) {
               this.speedChip(0.8)
               this.speedChip(1.0)
               this.speedChip(1.2)
@@ -173,17 +174,17 @@ struct TtsSettingsPage {
               this.speedChip(2.0)
             }
             .width('100%')
-            .margin({ top: 10 })
+            .margin({ top: AppSpacing.MD })
           }
           .width('calc(100% - 24vp)')
-          .padding({ left: 16, right: 16, top: 14, bottom: 14 })
-          .margin({ left: 12, right: 12 })
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
 
           this.sectionTitle('预览')
-          Column({ space: 12 }) {
+          Column({ space: AppSpacing.LG }) {
             Text(this.previewText)
               .fontSize(AppFontSize.BODY)
               .lineHeight(22)
@@ -200,8 +201,8 @@ struct TtsSettingsPage {
               })
           }
           .width('calc(100% - 24vp)')
-          .padding(16)
-          .margin({ left: 12, right: 12 })
+          .padding(AppSpacing.XL)
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -311,8 +312,8 @@ struct TtsSettingsPage {
     }
     .width('calc(100% - 24vp)')
     .height(54)
-    .padding({ left: 16, right: 16 })
-    .margin({ left: 12, right: 12 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .onClick(() => {
@@ -366,7 +367,7 @@ struct TtsSettingsPage {
       }
       .width('calc(100% - 24vp)')
       .constraintSize({ maxWidth: 560 })
-      .padding({ top: 6, bottom: 6 })
+      .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
       // API 6 changed how backdropBlur composites for custom overlays, so the
       // translucent glass tint let page content bleed through the voice list.
       // Use the opaque card surface instead, matching the other settings
@@ -387,7 +388,7 @@ struct TtsSettingsPage {
       .fontSize(AppFontSize.CAPTION)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 14, right: 14, top: 8, bottom: 5 })
+      .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.MD, bottom: AppSpacing.XS })
   }
 
   @Builder
@@ -408,7 +409,7 @@ struct TtsSettingsPage {
     }
     .width('100%')
     .height(46)
-    .padding({ left: 14, right: 14 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
     .opacity(disabled ? 0.5 : 1)
     .onClick(() => {
       if (disabled) {
@@ -445,7 +446,7 @@ struct TtsSettingsPage {
     }
     .width('100%')
     .height(46)
-    .padding({ left: 14, right: 14 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
     .opacity((voice.available || voice.downloadable) ? 1 : 0.5)
     .onClick(() => {
       if (!voice.available && !voice.downloadable) {
@@ -473,7 +474,7 @@ struct TtsSettingsPage {
     }
     .width('100%')
     .height(46)
-    .padding({ left: 14, right: 14 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
     .onClick(() => {
       this.showVoiceDropdown = false;
       this.applyCloudVoice(voice);
@@ -1054,12 +1055,12 @@ struct TtsSettingsPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
   @Builder
   ttsCommerceSection() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Row() {
         Text(this.accountLoggedIn ? '当前额度' : '登录后可查看额度并兑换')
           .fontSize(AppFontSize.BODY_LARGE)
@@ -1075,7 +1076,7 @@ struct TtsSettingsPage {
           Text('刷新')
             .fontSize(AppFontSize.BODY)
             .fontColor(this.accentColor())
-            .padding({ left: 10, right: 2, top: 6, bottom: 6 })
+            .padding({ left: AppSpacing.MD, right: AppSpacing.XXS, top: AppSpacing.SM, bottom: AppSpacing.SM })
             .onClick(() => {
               this.loadTtsCommerce();
             })
@@ -1084,7 +1085,7 @@ struct TtsSettingsPage {
       .width('100%')
 
       if (this.accountLoggedIn) {
-        Row({ space: 10 }) {
+        Row({ space: AppSpacing.MD }) {
           this.ttsBalanceCard('标准音色', false)
           this.ttsBalanceCard('精品音色', true)
         }
@@ -1110,8 +1111,8 @@ struct TtsSettingsPage {
       }
 
       ForEach(this.ttsCatalog.packages, (item: TtsPackageInfo) => {
-        Row({ space: 10 }) {
-          Column({ space: 4 }) {
+        Row({ space: AppSpacing.MD }) {
+          Column({ space: AppSpacing.XS }) {
             Text(`${item.tier === 'PREMIUM' ? '精品' : '标准'} · ${this.formatTtsChars(item.chars)}`)
               .fontSize(AppFontSize.BODY_LARGE)
               .fontWeight(FontWeight.Medium)
@@ -1134,7 +1135,7 @@ struct TtsSettingsPage {
             })
         }
         .width('100%')
-        .padding({ left: 12, right: 10, top: 10, bottom: 10 })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.MD, top: AppSpacing.MD, bottom: AppSpacing.MD })
         .borderRadius(ThemeRuntime.mediumRadius())
         .backgroundColor(this.inputColor())
       }, (item: TtsPackageInfo) => item.sku)
@@ -1146,15 +1147,15 @@ struct TtsSettingsPage {
         .width('100%')
     }
     .width('calc(100% - 24vp)')
-    .padding(16)
-    .margin({ left: 12, right: 12, bottom: 24 })
+    .padding(AppSpacing.XL)
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG, bottom: AppSpacing.XXXL })
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 
   @Builder
   ttsBalanceCard(title: string, premium: boolean) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       Text(title)
         .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
@@ -1175,7 +1176,7 @@ struct TtsSettingsPage {
     }
     .alignItems(HorizontalAlign.Start)
     .layoutWeight(1)
-    .padding(12)
+    .padding(AppSpacing.LG)
     .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(this.inputColor())
   }

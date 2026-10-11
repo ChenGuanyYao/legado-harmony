@@ -11,6 +11,7 @@ import { ExploreResultCache } from '../utils/ExploreResultCache';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 class BookSourceEditDraft {
   sourceJson: string = '';
@@ -232,7 +233,7 @@ struct BookSourceEditPage {
             .fontColor(this.currentTab === 0 ? this.accentColor() : this.secondaryTextColor())
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
-            .padding({ top: 12, bottom: 12 })
+            .padding({ top: AppSpacing.LG, bottom: AppSpacing.LG })
             .borderWidth({ bottom: this.currentTab === 0 ? 2 : 0 })
             .borderColor(this.accentColor())
             .onClick(() => {
@@ -244,7 +245,7 @@ struct BookSourceEditPage {
             .fontColor(this.currentTab === 1 ? this.accentColor() : this.secondaryTextColor())
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
-            .padding({ top: 12, bottom: 12 })
+            .padding({ top: AppSpacing.LG, bottom: AppSpacing.LG })
             .borderWidth({ bottom: this.currentTab === 1 ? 2 : 0 })
             .borderColor(this.accentColor())
             .onClick(() => {
@@ -256,7 +257,7 @@ struct BookSourceEditPage {
             .fontColor(this.currentTab === 2 ? this.accentColor() : this.secondaryTextColor())
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
-            .padding({ top: 12, bottom: 12 })
+            .padding({ top: AppSpacing.LG, bottom: AppSpacing.LG })
             .borderWidth({ bottom: this.currentTab === 2 ? 2 : 0 })
             .borderColor(this.accentColor())
             .onClick(() => {
@@ -268,7 +269,7 @@ struct BookSourceEditPage {
             .fontColor(this.currentTab === 3 ? this.accentColor() : this.secondaryTextColor())
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
-            .padding({ top: 12, bottom: 12 })
+            .padding({ top: AppSpacing.LG, bottom: AppSpacing.LG })
             .borderWidth({ bottom: this.currentTab === 3 ? 2 : 0 })
             .borderColor(this.accentColor())
             .onClick(() => {
@@ -280,7 +281,7 @@ struct BookSourceEditPage {
             .fontColor(this.currentTab === 4 ? this.accentColor() : this.secondaryTextColor())
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
-            .padding({ top: 12, bottom: 12 })
+            .padding({ top: AppSpacing.LG, bottom: AppSpacing.LG })
             .borderWidth({ bottom: this.currentTab === 4 ? 2 : 0 })
             .borderColor(this.accentColor())
             .onClick(() => {
@@ -292,7 +293,7 @@ struct BookSourceEditPage {
             .fontColor(this.currentTab === 5 ? this.accentColor() : this.secondaryTextColor())
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
-            .padding({ top: 12, bottom: 12 })
+            .padding({ top: AppSpacing.LG, bottom: AppSpacing.LG })
             .borderWidth({ bottom: this.currentTab === 5 ? 2 : 0 })
             .borderColor(this.accentColor())
             .onClick(() => {
@@ -312,7 +313,7 @@ struct BookSourceEditPage {
             Text('加载书源中...')
               .fontSize(AppFontSize.BODY)
               .fontColor(this.secondaryTextColor())
-              .margin({ top: 8 })
+              .margin({ top: AppSpacing.MD })
           }
           .layoutWeight(1)
           .width('100%')
@@ -340,7 +341,7 @@ struct BookSourceEditPage {
             // RESIZE mode already reduces this Scroll viewport above the keyboard.
             // Do not add the full keyboard avoid height again, otherwise the form
             // gets a large blank tail and the last editor can be pushed out of view.
-            .padding({ left: 16, right: 16, top: 16, bottom: 16 + this.navBarHeight })
+            .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XL, bottom: 16 + this.navBarHeight })
           }
           .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
           .layoutWeight(1)
@@ -635,21 +636,21 @@ struct BookSourceEditPage {
         .fontColor(this.primaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
-        .margin({ bottom: 10 })
+        .margin({ bottom: AppSpacing.MD })
 
       Text('当前书源有未保存的编辑，返回前请选择是否保存。')
         .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
-        .margin({ bottom: 18 })
+        .margin({ bottom: AppSpacing.XL })
 
       Button('保存并返回')
         .width('100%')
         .height(44)
         .backgroundColor(this.buttonColor())
         .fontColor('#FFFFFF')
-        .margin({ bottom: 10 })
+        .margin({ bottom: AppSpacing.MD })
         .onClick(() => {
           this.saveSourceAndBackFromDialog();
         })
@@ -659,7 +660,7 @@ struct BookSourceEditPage {
         .height(44)
         .backgroundColor(this.inputColor())
         .fontColor(this.primaryTextColor())
-        .margin({ bottom: 10 })
+        .margin({ bottom: AppSpacing.MD })
         .onClick(() => {
           this.showUnsavedDialog = false;
           this.clearDraft();
@@ -674,7 +675,7 @@ struct BookSourceEditPage {
         .onClick(() => {
           this.showUnsavedDialog = false;
         })
-    }    .padding(22)
+    }    .padding(AppSpacing.XXL)
   }
 
 
@@ -687,21 +688,21 @@ struct BookSourceEditPage {
         .fontColor(this.primaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
-        .margin({ bottom: 10 })
+        .margin({ bottom: AppSpacing.MD })
 
       Text('检测到这个书源有一份基于旧版本的未保存草稿。使用新版可保留刚导入的内容；恢复草稿后再次保存会覆盖新版。')
         .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
-        .margin({ bottom: 18 })
+        .margin({ bottom: AppSpacing.XL })
 
       Button('使用导入的新版')
         .width('100%')
         .height(44)
         .backgroundColor(this.buttonColor())
         .fontColor('#FFFFFF')
-        .margin({ bottom: 10 })
+        .margin({ bottom: AppSpacing.MD })
         .onClick(() => {
           this.useImportedSourceInsteadOfDraft();
         })
@@ -714,13 +715,13 @@ struct BookSourceEditPage {
         .onClick(() => {
           this.restoreConflictingDraft();
         })
-    }    .padding(22)
+    }    .padding(AppSpacing.XXL)
   }
 
 
   @Builder
   basicTabBuilder() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Text(`${this.sourceLoadedVersion}`)
         .fontSize(0.1)
         .height(0)
@@ -802,7 +803,7 @@ struct BookSourceEditPage {
         })
       }
       .width('100%')
-      .padding({ top: 12, bottom: 12 })
+      .padding({ top: AppSpacing.LG, bottom: AppSpacing.LG })
 
       Row() {
         Text('启用书源')
@@ -819,7 +820,7 @@ struct BookSourceEditPage {
         })
       }
       .width('100%')
-      .padding({ top: 12, bottom: 12 })
+      .padding({ top: AppSpacing.LG, bottom: AppSpacing.LG })
 
       Row() {
         Text('启用发现')
@@ -836,7 +837,7 @@ struct BookSourceEditPage {
         })
       }
       .width('100%')
-      .padding({ top: 12, bottom: 12 })
+      .padding({ top: AppSpacing.LG, bottom: AppSpacing.LG })
 
       this.inputItemBuilder('权重', String(this.source.weight), (value: string) => {
         this.source.weight = parseInt(value) || 0;
@@ -846,7 +847,7 @@ struct BookSourceEditPage {
 
   @Builder
   searchTabBuilder() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Text('搜索规则')
         .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
@@ -901,7 +902,7 @@ struct BookSourceEditPage {
 
   @Builder
   exploreTabBuilder() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Text('发现规则')
         .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
@@ -956,7 +957,7 @@ struct BookSourceEditPage {
 
   @Builder
   infoTabBuilder() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Text('详情规则')
         .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
@@ -1011,7 +1012,7 @@ struct BookSourceEditPage {
 
   @Builder
   tocTabBuilder() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Text('目录规则')
         .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
@@ -1050,7 +1051,7 @@ struct BookSourceEditPage {
 
   @Builder
   contentTabBuilder() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Text('正文规则')
         .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
@@ -1094,7 +1095,7 @@ struct BookSourceEditPage {
         .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width('100%')
-        .margin({ bottom: 4 })
+        .margin({ bottom: AppSpacing.XS })
 
       TextInput({ text: value, placeholder: `请输入${label}` })
         .width('100%')
@@ -1103,7 +1104,7 @@ struct BookSourceEditPage {
         .backgroundColor(this.cardColor())
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.placeholderTextColor())
-        .padding({ left: 12, right: 12 })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
         .onChange((val: string) => {
           onChange(val);
           this.scheduleDraftSave();

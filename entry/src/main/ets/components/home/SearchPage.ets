@@ -14,6 +14,7 @@ import { AppThemeSettingsStore } from '../../utils/AppThemeSettingsStore';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { AdaptiveSwitch } from '../AdaptiveSwitch';
 import { AppFontSize } from '../../theme/AppFontSize';
+import { AppSpacing } from '../../theme/AppSpacing';
 
 /** 首页"搜索"页签：搜索输入、历史、多源搜索进度与结果。 */
 @Component
@@ -449,14 +450,14 @@ export struct SearchPage {
               }
             }
         })
-          .margin({ left: 8, right: -24 })
+          .margin({ left: AppSpacing.MD, right: -24 })
         }
         .width('100%')
         .height(56 + this.statusBarHeight)
-        .padding({ left: 16, right: 16, top: this.statusBarHeight })
+        .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.statusBarHeight })
         .alignItems(VerticalAlign.Center)
 
-        Row({ space: 6 }) {
+        Row({ space: AppSpacing.SM }) {
           SymbolGlyph($r('sys.symbol.magnifyingglass'))
             .fontSize(14)
             .fontColor([this.buttonColor()])
@@ -472,8 +473,8 @@ export struct SearchPage {
         }
         .width('calc(100% - 32vp)')
         .height(36)
-        .padding({ left: 12, right: 12 })
-        .margin({ left: 16, right: 16, bottom: 6 })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
+        .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.SM })
         .borderRadius(18)
         .backgroundColor(this.glassCardColor())
         .border({ width: 1, color: (this.singleSourceSearchUrl || !this.isAllSearchSourcesSelected()) ?
@@ -496,7 +497,7 @@ export struct SearchPage {
                 .borderRadius(14)
                 .backgroundColor(this.buttonColor())
                 .fontColor('#FFFFFF')
-                .margin({ right: 12 })
+                .margin({ right: AppSpacing.LG })
                 .onClick(() => {
                   this.openVerification();
                 })
@@ -552,7 +553,7 @@ export struct SearchPage {
             Text('搜索中...')
               .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
-              .margin({ top: 8 })
+              .margin({ top: AppSpacing.MD })
           }
           .width('100%')
           .layoutWeight(1)
@@ -619,7 +620,7 @@ export struct SearchPage {
       .backgroundColor('#00000000')
       .fontColor(this.primaryTextColor())
       .placeholderColor(this.subTextColor())
-      .padding({ left: 16, right: 4 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XS })
       .onFocus(() => {
         this.showSearchHistoryDropdown = this.keyword.trim().length === 0 && this.searchHistory.length > 0;
       })
@@ -675,7 +676,7 @@ export struct SearchPage {
           .fontWeight(FontWeight.Medium)
           .fontColor(this.secondaryTextColor())
           .height(32)
-          .padding({ left: 12, right: 4 })
+          .padding({ left: AppSpacing.LG, right: AppSpacing.XS })
           .textAlign(TextAlign.Center)
           .onClick(() => {
             this.clearSearchHistory();
@@ -683,12 +684,12 @@ export struct SearchPage {
       }
       .width('100%')
       .height(46)
-      .padding({ left: 14, right: 10 })
+      .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
       .alignItems(VerticalAlign.Center)
 
       Divider()
         .color(this.glassBorderColor())
-        .margin({ left: 14, right: 14 })
+        .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
 
       Scroll() {
         Flex({ wrap: FlexWrap.Wrap }) {
@@ -702,8 +703,8 @@ export struct SearchPage {
             }
             .constraintSize({ maxWidth: '72%' })
             .height(34)
-            .padding({ left: 12, right: 12 })
-            .margin({ right: 8, bottom: 8 })
+            .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
+            .margin({ right: AppSpacing.MD, bottom: AppSpacing.MD })
             .borderRadius(17)
             .backgroundColor(this.buttonBackgroundColor())
             .alignItems(VerticalAlign.Center)
@@ -724,7 +725,7 @@ export struct SearchPage {
           }, (keyword: string) => keyword)
         }
         .width('100%')
-        .padding({ left: 14, right: 6, top: 12, bottom: 4 })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.SM, top: AppSpacing.LG, bottom: AppSpacing.XS })
       }
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
@@ -757,7 +758,7 @@ export struct SearchPage {
 
       Column() {
       Row() {
-        Column({ space: 3 }) {
+        Column({ space: AppSpacing.XXS }) {
           Text('搜索范围')
             .fontSize(AppFontSize.SUBTITLE)
             .fontWeight(FontWeight.Bold)
@@ -773,7 +774,7 @@ export struct SearchPage {
           .fontWeight(FontWeight.Medium)
           .fontColor(this.buttonColor())
           .height(36)
-          .padding({ left: 16, right: 4 })
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XS })
           .textAlign(TextAlign.Center)
           .onClick(() => {
             this.applySearchSourceSelection();
@@ -795,7 +796,7 @@ export struct SearchPage {
         .border({ width: ThemeRuntime.glassBorderWidth('button'),
           color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'button') })
         .borderRadius(20)
-        .padding({ left: 14, right: 14 })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
         .onChange((value: string) => {
           this.searchSourcePickerQuery = value;
         })
@@ -804,7 +805,7 @@ export struct SearchPage {
         Toggle({ type: ToggleType.Checkbox, isOn: this.pendingSourceSelectionState(this.searchableSourceUrls()) === 2 })
           .selectedColor(this.buttonColor())
           .hitTestBehavior(HitTestMode.None)
-        Column({ space: 2 }) {
+        Column({ space: AppSpacing.XXS }) {
           Text('全部书源')
             .fontSize(AppFontSize.BODY_LARGE)
             .fontWeight(FontWeight.Medium)
@@ -821,12 +822,12 @@ export struct SearchPage {
       }
       .width('100%')
       .constraintSize({ minHeight: 56 })
-      .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-      .margin({ top: 10, bottom: 8 })
+      .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.MD, bottom: AppSpacing.MD })
+      .margin({ top: AppSpacing.MD, bottom: AppSpacing.MD })
       .alignItems(VerticalAlign.Center)
       .onClick(() => this.togglePendingAllSources())
 
-      List({ space: 8 }) {
+      List({ space: AppSpacing.MD }) {
         ForEach(this.filteredSearchSourceGroups(), (group: string) => {
           ListItem() {
             Column() {
@@ -838,10 +839,10 @@ export struct SearchPage {
                     .hitTestBehavior(HitTestMode.None)
                 }
                 .height(48)
-                .padding({ left: 12, right: 10 })
+                .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
                 .onClick(() => this.togglePendingSourceGroup(group))
 
-                Column({ space: 2 }) {
+                Column({ space: AppSpacing.XXS }) {
                   Text(group)
                     .fontSize(AppFontSize.BODY_LARGE)
                     .fontWeight(FontWeight.Medium)
@@ -871,7 +872,7 @@ export struct SearchPage {
               if (this.isSearchSourceGroupExpanded(group)) {
                 Divider()
                   .color(this.glassBorderColor())
-                  .margin({ left: 44, right: 12 })
+                  .margin({ left: 44, right: AppSpacing.LG })
 
                 ForEach(this.searchSourcesInGroup(group, !!this.searchSourcePickerQuery.trim()),
                   (source: BookSource) => {
@@ -885,11 +886,11 @@ export struct SearchPage {
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                       .layoutWeight(1)
-                      .margin({ left: 10 })
+                      .margin({ left: AppSpacing.MD })
                   }
                   .width('100%')
                   .height(44)
-                  .padding({ left: 30, right: 14 })
+                  .padding({ left: 30, right: AppSpacing.LG })
                   .alignItems(VerticalAlign.Center)
                   .onClick(() => this.togglePendingSource(source))
                 }, (source: BookSource) => source.bookSourceUrl)
@@ -916,7 +917,7 @@ export struct SearchPage {
     }
       .width(Math.min(520, Math.max(280, this.searchViewportWidth - 32)))
       .height('66%')
-      .padding(18)
+      .padding(AppSpacing.XL)
       .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
       .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
       .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
@@ -1329,7 +1330,7 @@ export struct SearchPage {
           .fontColor(this.primaryTextColor())
           .width('100%')
           .textAlign(TextAlign.Center)
-          .margin({ bottom: 16 })
+          .margin({ bottom: AppSpacing.XL })
 
         this.switchSettingRow('精准搜索', this.exactSearch, (checked: boolean) => {
           this.exactSearch = checked;
@@ -1360,7 +1361,7 @@ export struct SearchPage {
         Button('完成')
           .width('100%')
           .height(44)
-          .margin({ top: 16 })
+          .margin({ top: AppSpacing.XL })
           .backgroundColor(this.buttonColor())
           .fontColor('#FFFFFF')
           .onClick(() => {
@@ -1369,7 +1370,7 @@ export struct SearchPage {
       }
       .width(this.searchSettingsPopupPanelWidth())
       .constraintSize({ maxHeight: 430 })
-      .padding(18)
+      .padding(AppSpacing.XL)
       .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
       .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
       .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
@@ -1393,7 +1394,7 @@ export struct SearchPage {
       .fontColor([this.secondaryTextColor()])
       .width(36)
       .height(36)
-      .margin({ right: 2 })
+      .margin({ right: AppSpacing.XXS })
       .onClick(() => {
         this.showSearchHistoryDropdown = false;
         this.hideKeyboard();

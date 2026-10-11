@@ -7,6 +7,7 @@ import { Book } from '../model/data/Book';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -34,7 +35,7 @@ struct LocalBookSettingsPage {
   build() {
     Column() {
       this.titleBar()
-      Column({ space: 12 }) {
+      Column({ space: AppSpacing.LG }) {
         Row() {
           Text(`已添加书籍（${this.books.length}）`)
             .fontSize(AppFontSize.BODY_LARGE)
@@ -45,7 +46,7 @@ struct LocalBookSettingsPage {
         .width('100%')
 
         if (this.books.length === 0) {
-          Column({ space: 6 }) {
+          Column({ space: AppSpacing.SM }) {
             Text('暂无已添加书籍')
               .fontSize(AppFontSize.BODY_LARGE)
               .fontColor(this.primaryTextColor())
@@ -57,7 +58,7 @@ struct LocalBookSettingsPage {
           .layoutWeight(1)
           .justifyContent(FlexAlign.Center)
         } else {
-          List({ space: 8 }) {
+          List({ space: AppSpacing.MD }) {
             ForEach(this.books, (book: Book) => {
               ListItem() {
                 this.bookItem(book)
@@ -90,12 +91,12 @@ struct LocalBookSettingsPage {
             .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
             .width('100%')
-            .margin({ top: 8 })
+            .margin({ top: AppSpacing.MD })
         }
       }
       .width('100%')
       .layoutWeight(1)
-      .padding({ left: 16, right: 16, top: 24, bottom: 32 + this.navBarHeight })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXXL, bottom: 32 + this.navBarHeight })
     }
     .width('100%')
     .height('100%')
@@ -106,7 +107,7 @@ struct LocalBookSettingsPage {
   @Builder
   bookItem(book: Book) {
     Row() {
-      Column({ space: 5 }) {
+      Column({ space: AppSpacing.XS }) {
         Text(book.name || '未命名书籍')
           .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
@@ -123,10 +124,10 @@ struct LocalBookSettingsPage {
       Text(book.type === LocalBookService.TYPE_EPUB ? 'EPUB' : 'TXT')
         .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
-        .margin({ left: 10 })
+        .margin({ left: AppSpacing.MD })
     }
     .width('100%')
-    .padding({ left: 14, right: 14, top: 12, bottom: 12 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG, bottom: AppSpacing.LG })
     .backgroundColor(this.cardColor())
     .borderRadius(ThemeRuntime.cardRadius())
   }

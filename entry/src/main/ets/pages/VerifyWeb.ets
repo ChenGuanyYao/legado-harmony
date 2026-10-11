@@ -11,6 +11,7 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 /**
  * Restricted bridge used only by HTML passed to java.showBrowser(). Remote pages do not receive
@@ -264,7 +265,7 @@ struct VerifyWebPage {
       }
       .width('100%')
       .height(56)
-      .padding({ right: 8 })
+      .padding({ right: AppSpacing.MD })
       .backgroundColor(this.cardColor())
       .alignItems(VerticalAlign.Center)
 

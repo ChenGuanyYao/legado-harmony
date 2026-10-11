@@ -23,6 +23,7 @@ import { ExplorePage } from '../components/home/ExplorePage';
 import { SearchPage } from '../components/home/SearchPage';
 import { SettingsPage } from '../components/home/SettingsTabPage';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -457,8 +458,8 @@ struct Index {
 
   @Builder
   globalTtsMiniPlayer() {
-    Row({ space: 7 }) {
-      Row({ space: 7 }) {
+    Row({ space: AppSpacing.SM }) {
+      Row({ space: AppSpacing.SM }) {
         Stack({ alignContent: Alignment.Center }) {
           Circle().width(30).height(30).fill(this.tabBarActiveColor())
           SymbolGlyph($r('sys.symbol.speaker_wave_3'))
@@ -500,7 +501,7 @@ struct Index {
     }
     .width(184)
     .height(46)
-    .padding({ left: 8, right: 5 })
+    .padding({ left: AppSpacing.MD, right: AppSpacing.XS })
     .borderRadius(23)
     .clip(true)
     .backgroundColor(ThemeRuntime.cardColor(this.appDarkMode))
@@ -770,7 +771,7 @@ struct Index {
         selectedColor: this.tabBarActiveColor(),
         unselectedColor: this.tabBarTextColor()
       })
-      .padding({ left: 4, right: 4, top: 0, bottom: 0 })
+      .padding({ left: AppSpacing.XS, right: AppSpacing.XS, top: 0, bottom: 0 })
       .layoutMode(LayoutMode.VERTICAL)
       .verticalAlign(VerticalAlign.Center);
   }
@@ -778,7 +779,7 @@ struct Index {
   @Builder
   compatTabBar(icon: Resource, title: string, index: number) {
     Column() {
-      Column({ space: 2 }) {
+      Column({ space: AppSpacing.XXS }) {
         Column() {
           Image(icon)
             .width(22)

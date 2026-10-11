@@ -1,3 +1,4 @@
+import { AppSpacing } from '../../theme/AppSpacing';
 /** 页眉页脚里的一个槽位：一段单行文字，后面可跟电池图标和电量。 */
 @Component
 struct ReaderInfoBarSlot {
@@ -14,7 +15,7 @@ struct ReaderInfoBarSlot {
   @Prop slotMarginRight: number = 0;
 
   build() {
-    Row({ space: 4 }) {
+    Row({ space: AppSpacing.XS }) {
       if (this.text) {
         Text(this.text)
           .fontSize(this.textSize)

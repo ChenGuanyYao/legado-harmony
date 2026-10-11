@@ -5,6 +5,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -60,7 +61,7 @@ struct SearchExploreSettingsPage {
             })
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -74,7 +75,7 @@ struct SearchExploreSettingsPage {
               })
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -108,7 +109,7 @@ struct SearchExploreSettingsPage {
             })
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -215,7 +216,7 @@ struct SearchExploreSettingsPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
   @Builder
@@ -228,7 +229,7 @@ struct SearchExploreSettingsPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -242,8 +243,8 @@ struct SearchExploreSettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
     .alignItems(VerticalAlign.Center)
@@ -259,7 +260,7 @@ struct SearchExploreSettingsPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -296,8 +297,8 @@ struct SearchExploreSettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
     .alignItems(VerticalAlign.Center)
@@ -313,7 +314,7 @@ struct SearchExploreSettingsPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -325,7 +326,7 @@ struct SearchExploreSettingsPage {
     .width('calc(100% - 32vp)')
     .height(64)
     .padding({ left: 0, right: 0 })
-    .margin({ left: 16, right: 16 })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
     .alignItems(VerticalAlign.Center)

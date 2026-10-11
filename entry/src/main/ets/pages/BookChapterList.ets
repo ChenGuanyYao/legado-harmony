@@ -16,6 +16,7 @@ import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntime
 import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 /** 未分组书架条目的分组 ID，必须与 SearchBookShelfHelper 里临时阅读书的写入值一致。 */
 const TEMP_SHELF_GROUP: number = -2147483645;
@@ -176,14 +177,14 @@ struct BookChapterListPage {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
-          .margin({ top: 2 })
+          .margin({ top: AppSpacing.XXS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
     .height(56 + this.statusBarHeight)
-    .padding({ right: 16, top: this.statusBarHeight })
+    .padding({ right: AppSpacing.XL, top: this.statusBarHeight })
     .alignItems(VerticalAlign.Center)
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
     .backdropBlur(ThemeRuntime.topBarBlur())
@@ -192,7 +193,7 @@ struct BookChapterListPage {
 
   @Builder
   catalogToolbar() {
-    Row({ space: 10 }) {
+    Row({ space: AppSpacing.MD }) {
       TextInput({ placeholder: '搜索章节名', text: this.keyword })
         .layoutWeight(1)
         .height(38)
@@ -201,7 +202,7 @@ struct BookChapterListPage {
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
         .fontSize(AppFontSize.BODY)
-        .padding({ left: 14, right: 14 })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
         .onChange((value: string): void => {
           this.keyword = value;
           this.rebuildDisplayList();
@@ -210,7 +211,7 @@ struct BookChapterListPage {
       Text(this.reverseOrder ? '倒序' : '正序')
         .fontSize(AppFontSize.BODY)
         .fontColor(this.accentColor())
-        .padding({ left: 13, right: 13, top: 10, bottom: 10 })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.MD, bottom: AppSpacing.MD })
         .backgroundColor(this.inputColor())
         .borderRadius(ThemeRuntime.mediumRadius())
         .onClick((): void => {
@@ -220,12 +221,12 @@ struct BookChapterListPage {
         })
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 66 + this.statusBarHeight, bottom: 10 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: 66 + this.statusBarHeight, bottom: AppSpacing.MD })
   }
 
   @Builder
   statusView(message: string, action: string) {
-    Column({ space: 14 }) {
+    Column({ space: AppSpacing.LG }) {
       if (!action) {
         LoadingProgress()
           .width(34)
@@ -274,7 +275,7 @@ struct BookChapterListPage {
       List({ scroller: this.scroller }) {
         LazyForEach(this.dataSource, (chapter: BookChapter) => {
           ListItem() {
-            Row({ space: 10 }) {
+            Row({ space: AppSpacing.MD }) {
               Text(`${chapter.index + 1}`)
                 .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.subTextColor())
@@ -293,13 +294,13 @@ struct BookChapterListPage {
                 Text('已缓存')
                   .fontSize(AppFontSize.MICRO)
                   .fontColor(this.appDarkMode ? '#7CC7A0' : '#1F8F55')
-                  .padding({ left: 7, right: 7, top: 3, bottom: 3 })
+                  .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
                   .backgroundColor(this.appDarkMode ? '#24382F' : '#E6F4EC')
                   .borderRadius(ThemeRuntime.mediumRadius())
               }
             }
             .width('100%')
-            .padding({ left: 14, right: 16, top: 14, bottom: 14 })
+            .padding({ left: AppSpacing.LG, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
             .backgroundColor(chapter.index === this.currentIndex ? this.inputColor() : Color.Transparent)
             .border({ width: { bottom: 0.5 }, color: this.dividerColor() })
             .onClick((): void => {

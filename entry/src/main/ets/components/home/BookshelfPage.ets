@@ -34,6 +34,7 @@ import { sleepMs } from '../../utils/Sleep';
 import { PrivateShelfStore } from '../../utils/PrivateShelfStore';
 import { RecentReadCardUpdater } from '../../utils/RecentReadCardUpdater';
 import { AppFontSize } from '../../theme/AppFontSize';
+import { AppSpacing } from '../../theme/AppSpacing';
 
 const SHELF_FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS: number = 5000;
 const SHELF_COVER_INITIAL_PREFETCH_COUNT: number = 16;
@@ -1010,7 +1011,7 @@ export struct BookshelfPage {
                 this.shelfSortButton()
               }
 
-              Row({ space: 4 }) {
+              Row({ space: AppSpacing.XS }) {
                 Text(this.books.length > 0 ? `${this.books.length}本` : '')
                   .fontSize(AppFontSize.BODY)
                   .fontColor('#999')
@@ -1036,7 +1037,7 @@ export struct BookshelfPage {
         .height(56 + this.statusBarHeight)
         .padding({
           left: this.isTileGroupPage() && !this.isBookMultiSelect ? 0 : 16,
-          right: 16,
+          right: AppSpacing.XL,
           top: this.statusBarHeight
         })
         .alignItems(VerticalAlign.Center)
@@ -1063,7 +1064,7 @@ export struct BookshelfPage {
             Text('加载中...')
               .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
-              .margin({ top: 8 })
+              .margin({ top: AppSpacing.MD })
           }
           .width('100%')
           .height('100%')
@@ -1088,14 +1089,14 @@ export struct BookshelfPage {
           Column() {
             Text('📚')
               .fontSize(48)
-              .margin({ bottom: 16 })
+              .margin({ bottom: AppSpacing.XL })
             Text('暂无书籍')
               .fontSize(AppFontSize.BODY_LARGE)
               .fontColor(this.subTextColor())
             Text(this.shelfScopeEmptyHint())
               .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
-              .margin({ top: 8 })
+              .margin({ top: AppSpacing.MD })
           }
           .width('100%')
           .height('100%')
@@ -1121,7 +1122,7 @@ export struct BookshelfPage {
             if (this.isTileLayout()) {
               this.shelfTileGrid()
             } else {
-              List({ space: 8 }) {
+              List({ space: AppSpacing.MD }) {
               ListItem() {
                 Row()
                   .height(this.bookshelfTopOverlayHeight())
@@ -1133,7 +1134,7 @@ export struct BookshelfPage {
                     if (this.isBookMultiSelect) {
                       Toggle({ type: ToggleType.Checkbox, isOn: this.isBookSelected(book.bookUrl) })
                         .selectedColor(this.buttonColor())
-                        .margin({ right: 12 })
+                        .margin({ right: AppSpacing.LG })
                         .onChange((isOn: boolean) => {
                           this.setBookSelected(book.bookUrl, isOn);
                         })
@@ -1184,7 +1185,7 @@ export struct BookshelfPage {
             .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
             .width('100%')
             .height('100%')
-            .padding({ left: 16, right: 16 })
+            .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
             .backgroundColor(this.pageColor())
               .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
             }
@@ -1365,7 +1366,7 @@ export struct BookshelfPage {
             })
           }
           .width(158)
-          .padding({ top: 6, bottom: 6 })
+          .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
           .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
           .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
           .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -1417,7 +1418,7 @@ export struct BookshelfPage {
               .layoutWeight(1)
               .alignItems(HorizontalAlign.Start)
 
-              Row({ space: 8 }) {
+              Row({ space: AppSpacing.MD }) {
                 Button('自定义链接')
                   .height(36)
                   .fontSize(AppFontSize.CAPTION)
@@ -1434,7 +1435,7 @@ export struct BookshelfPage {
             .width('100%')
             .alignItems(VerticalAlign.Center)
 
-            Row({ space: 8 }) {
+            Row({ space: AppSpacing.MD }) {
               if (this.networkCoverSearching) {
                 LoadingProgress()
                   .width(18)
@@ -1447,7 +1448,7 @@ export struct BookshelfPage {
                 .layoutWeight(1)
             }
             .width('100%')
-            .margin({ top: 12, bottom: 10 })
+            .margin({ top: AppSpacing.LG, bottom: 10 })
 
             if (this.networkCoverCandidates.length === 0 && !this.networkCoverSearching) {
               Column({ space: 10 }) {
@@ -1494,14 +1495,14 @@ export struct BookshelfPage {
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
                         .width('100%')
-                        .margin({ top: 6 })
+                        .margin({ top: AppSpacing.SM })
                       Text(candidate.originName || candidate.author || '启用书源')
                         .fontSize(AppFontSize.MICRO)
                         .fontColor(this.subTextColor())
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
                         .width('100%')
-                        .margin({ top: 2 })
+                        .margin({ top: AppSpacing.XXS })
                     }
                     .width('100%')
                     .padding(5)
@@ -1528,7 +1529,7 @@ export struct BookshelfPage {
           }
           .width('100%')
           .height('72%')
-          .padding({ left: 16, right: 16, top: 18, bottom: Math.max(this.navBarHeight, 12) + 12 })
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: 18, bottom: Math.max(this.navBarHeight, 12) + 12 })
           .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
           .borderRadius({
             topLeft: ThemeRuntime.glassCornerRadius(22, 'panel'),
@@ -1572,7 +1573,7 @@ export struct BookshelfPage {
   @Builder
   shelfGroupBar() {
     Scroll() {
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         this.shelfGroupChip('全部', 0)
         ForEach(this.shelfGroups, (group: BookGroup) => {
           Text(group.groupName)
@@ -1608,7 +1609,7 @@ export struct BookshelfPage {
             this.openAddBookGroupDialog();
           })
       }
-      .padding({ left: 16, right: 16, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
     }
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
@@ -1654,18 +1655,18 @@ export struct BookshelfPage {
       Text(`已选择 ${this.selectedBookUrls.length}/${this.books.length}`)
         .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
-        .margin({ left: 8 })
+        .margin({ left: AppSpacing.MD })
         .layoutWeight(1)
 
       Text(this.areAllBooksSelected() ? '取消全选' : '全选')
         .fontSize(AppFontSize.BODY)
         .fontColor(this.accentColor())
-        .padding({ left: 12, right: 4, top: 8, bottom: 8 })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.XS, top: AppSpacing.MD, bottom: AppSpacing.MD })
         .onClick(() => this.toggleAllBooks())
     }
     .width('100%')
     .height(42)
-    .padding({ left: 16, right: 16 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -1710,7 +1711,7 @@ export struct BookshelfPage {
         })
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 10, bottom: this.multiSelectBottomPadding() })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: 10, bottom: this.multiSelectBottomPadding() })
     .backgroundColor(this.glassCardColor())
     .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
     .alignSelf(ItemAlign.End)
@@ -1745,8 +1746,8 @@ export struct BookshelfPage {
           })
       }
       .width(158)
-      .padding({ top: 6, bottom: 6 })
-      .margin({ right: 16, bottom: 58 + this.multiSelectBottomPadding() })
+      .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
+      .margin({ right: AppSpacing.XL, bottom: 58 + this.multiSelectBottomPadding() })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -1759,11 +1760,11 @@ export struct BookshelfPage {
 
   @Builder
   batchExportDialogContent() {
-    Column({ space: 16 }) {
+    Column({ space: AppSpacing.XL }) {
       Text('保存源文件').fontSize(AppFontSize.SUBTITLE).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
       Text(`只能保存本地书籍的源文件，缓存书籍无法保存。将导出选中的 ${this.selectedLocalBooks().length} 本本地书籍。`)
         .fontSize(AppFontSize.BODY).fontColor(this.secondaryTextColor()).textAlign(TextAlign.Center)
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeBatchExportDialog())
@@ -1801,7 +1802,7 @@ export struct BookshelfPage {
         .backgroundColor(this.appDarkMode ? '#36000000' : '#18000000')
         .onClick(() => this.closeBookGroupPicker())
 
-      Column({ space: 6 }) {
+      Column({ space: AppSpacing.SM }) {
         Text('移动到分组')
           .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Bold)
@@ -1810,7 +1811,7 @@ export struct BookshelfPage {
           .height(32)
           .textAlign(TextAlign.Center)
         Scroll() {
-          Column({ space: 4 }) {
+          Column({ space: AppSpacing.XS }) {
             this.bookGroupPickerItem('未分组', 0)
             ForEach(this.shelfGroups, (group: BookGroup) => {
               this.bookGroupPickerItem(group.groupName, group.groupId)
@@ -1830,7 +1831,7 @@ export struct BookshelfPage {
       .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
       .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-      .margin({ right: 16, bottom: this.bookGroupPickerBottomMargin() })
+      .margin({ right: AppSpacing.XL, bottom: this.bookGroupPickerBottomMargin() })
     }
     .width('100%')
     .height('100%')
@@ -1843,7 +1844,7 @@ export struct BookshelfPage {
       .fontColor(this.primaryTextColor())
       .width('100%')
       .height(38)
-      .padding({ left: 12, right: 12 })
+      .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
       .borderRadius(ThemeRuntime.mediumRadius())
       .backgroundColor(this.glassCardColor())
       .maxLines(1)
@@ -1853,12 +1854,12 @@ export struct BookshelfPage {
 
   @Builder
   addBookGroupDialogContent() {
-    Column({ space: 16 }) {
+    Column({ space: AppSpacing.XL }) {
       Text('新增书籍分组').fontSize(AppFontSize.SUBTITLE).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
       TextInput({ placeholder: '输入分组名称', text: this.newBookGroupName })
         .width('100%').height(42).backgroundColor(this.inputColor()).fontColor(this.primaryTextColor())
         .borderRadius(ThemeRuntime.mediumRadius()).onChange((value: string) => this.newBookGroupName = value)
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeAddBookGroupDialog())
@@ -1907,7 +1908,7 @@ export struct BookshelfPage {
             this.openDeleteBookGroupDialog();
           })
       }
-      .width(148).padding({ top: 6, bottom: 6 })
+      .width(148).padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel')).backdropBlur(ThemeRuntime.glassBlur('panel', 22))
       .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
@@ -1919,12 +1920,12 @@ export struct BookshelfPage {
 
   @Builder
   renameBookGroupDialogContent() {
-    Column({ space: 16 }) {
+    Column({ space: AppSpacing.XL }) {
       Text('重命名分组').fontSize(AppFontSize.SUBTITLE).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
       TextInput({ placeholder: '输入分组名称', text: this.renameBookGroupName })
         .width('100%').height(42).backgroundColor(this.inputColor()).fontColor(this.primaryTextColor())
         .borderRadius(ThemeRuntime.mediumRadius()).onChange((value: string) => this.renameBookGroupName = value)
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeRenameBookGroupDialog())
@@ -1949,11 +1950,11 @@ export struct BookshelfPage {
 
   @Builder
   deleteBookGroupDialogContent() {
-    Column({ space: 16 }) {
+    Column({ space: AppSpacing.XL }) {
       Text('删除分组').fontSize(AppFontSize.SUBTITLE).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
       Text(`删除“${this.pendingDeleteBookGroup?.groupName || ''}”后，分组内书籍将移到未分组。`)
         .fontSize(AppFontSize.BODY).fontColor(this.secondaryTextColor()).textAlign(TextAlign.Center)
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeDeleteBookGroupDialog())
@@ -1977,11 +1978,11 @@ export struct BookshelfPage {
 
   @Builder
   batchDeleteBooksDialogContent() {
-    Column({ space: 16 }) {
+    Column({ space: AppSpacing.XL }) {
       Text('批量删除').fontSize(AppFontSize.SUBTITLE).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
       Text(`确定从书架移除选中的 ${this.selectedBookUrls.length} 本书吗？`)
         .fontSize(AppFontSize.BODY).fontColor(this.secondaryTextColor()).textAlign(TextAlign.Center)
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         Button('取消', { type: ButtonType.Normal }).layoutWeight(1).height(42).borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(this.glassCardColor()).fontColor(this.primaryTextColor())
           .onClick(() => this.closeBatchDeleteDialog())
@@ -2015,14 +2016,14 @@ export struct BookshelfPage {
         .fontWeight(FontWeight.Bold)
         .width('100%')
         .textAlign(TextAlign.Center)
-        .margin({ bottom: 12 })
+        .margin({ bottom: AppSpacing.LG })
 
       Text(`确定要将《${this.pendingDeleteBook?.name || ''}》从书架移除吗？`)
         .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.secondaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
-        .margin({ bottom: 20 })
+        .margin({ bottom: AppSpacing.XXL })
 
       Row({ space: 10 }) {
         Button('取消')
@@ -2048,7 +2049,7 @@ export struct BookshelfPage {
       }
       .width('100%')
     }
-    .padding(24)
+    .padding(AppSpacing.XXXL)
   }
 
   openDeleteBookDialog(): void {
@@ -2082,7 +2083,7 @@ export struct BookshelfPage {
         .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width('100%')
-        .margin({ bottom: 6 })
+        .margin({ bottom: AppSpacing.SM })
 
       TextInput({ placeholder: '请输入书名', text: this.editingBookName })
         .width('100%')
@@ -2099,7 +2100,7 @@ export struct BookshelfPage {
         .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width('100%')
-        .margin({ top: 14, bottom: 6 })
+        .margin({ top: 14, bottom: AppSpacing.SM })
 
       TextInput({ placeholder: '请输入作者（可留空）', text: this.editingBookAuthor })
         .width('100%')
@@ -2132,7 +2133,7 @@ export struct BookshelfPage {
       .width('100%')
       .margin({ top: 22 })
     }
-    .padding(20)
+    .padding(AppSpacing.XXL)
   }
 
   openEditBookInfoDialog(): void {
@@ -2167,12 +2168,12 @@ export struct BookshelfPage {
               Text('×')
                 .fontSize(AppFontSize.BODY)
                 .fontColor(BookDisplayHelper.getTagTextColor(index, this.appDarkMode))
-                .margin({ left: 6 })
+                .margin({ left: AppSpacing.SM })
             }
-            .padding({ left: 10, right: 8, top: 5, bottom: 5 })
+            .padding({ left: 10, right: AppSpacing.MD, top: 5, bottom: 5 })
             .backgroundColor(BookDisplayHelper.getTagBackgroundColor(index, this.appDarkMode))
             .borderRadius(14)
-            .margin({ right: 8, bottom: 8 })
+            .margin({ right: AppSpacing.MD, bottom: AppSpacing.MD })
             .onClick(() => {
               this.removeEditingTag(tag);
             })
@@ -2185,7 +2186,7 @@ export struct BookshelfPage {
       .scrollBar(BarState.Auto)
       .width('100%')
       .constraintSize({ minHeight: 40, maxHeight: 220 })
-      .margin({ bottom: 12 })
+      .margin({ bottom: AppSpacing.LG })
 
       Row() {
         TextInput({ placeholder: '输入标签', text: this.tagInput })
@@ -2201,7 +2202,7 @@ export struct BookshelfPage {
 
         Button('添加')
           .height(40)
-          .margin({ left: 8 })
+          .margin({ left: AppSpacing.MD })
           .onClick(() => {
             this.addEditingTag();
           })
@@ -2252,7 +2253,7 @@ export struct BookshelfPage {
 
   @Builder
   customCoverDialogContent() {
-    Column({ space: 16 }) {
+    Column({ space: AppSpacing.XL }) {
       Text('使用自定义链接')
         .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
@@ -2279,7 +2280,7 @@ export struct BookshelfPage {
         .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
         .width('100%')
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         Button('取消', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
@@ -2301,7 +2302,7 @@ export struct BookshelfPage {
       }
       .width('100%')
     }
-    .padding(20)
+    .padding(AppSpacing.XXL)
   }
 
   openCustomCoverDialog(): void {
@@ -2960,7 +2961,7 @@ export struct BookshelfPage {
     .columnsTemplate(this.shelfTileColumnsTemplate())
     .columnsGap(this.shelfTileColumnGap())
     .rowsGap(this.shelfTileRowGap())
-    .padding({ left: 20, right: 20, top: 10 })
+    .padding({ left: AppSpacing.XXL, right: AppSpacing.XXL, top: 10 })
     .backgroundColor(this.pageColor())
     .scrollBar(BarState.Off)
     .cachedCount(4)
@@ -2978,9 +2979,9 @@ export struct BookshelfPage {
 
   @Builder
   shelfTileExpandedBook(book: Book) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       Stack({ alignContent: Alignment.TopStart }) {
-        Row({ space: 2 }) {
+        Row({ space: AppSpacing.XXS }) {
           Stack({ alignContent: Alignment.TopStart }) {
             this.coverView(book, '100%', '100%', ImageFit.Fill)
             if (!this.isBookMultiSelect) {
@@ -2998,7 +2999,7 @@ export struct BookshelfPage {
           }
           .layoutWeight(1)
           .height('100%')
-          .padding({ left: 7, right: 7, top: 7, bottom: 6 })
+          .padding({ left: 7, right: 7, top: 7, bottom: AppSpacing.SM })
           .backgroundColor(this.shelfTilePageColor())
           .borderRadius({ topRight: 7, bottomRight: 7 })
           .alignItems(HorizontalAlign.Start)
@@ -3024,7 +3025,7 @@ export struct BookshelfPage {
             ThemeRuntime.glassPanelColor(this.appDarkMode))
           .border({ width: 1, color: this.isBookSelected(book.bookUrl) ? this.buttonColor() : this.glassBorderColor() })
           .borderRadius(11)
-          .margin({ left: 6, top: 6 })
+          .margin({ left: AppSpacing.SM, top: AppSpacing.SM })
         }
       }
       .width('100%')
@@ -3032,7 +3033,7 @@ export struct BookshelfPage {
       .border({ width: this.isBookSelected(book.bookUrl) ? 2 : 0, color: this.accentColor() })
       .borderRadius(7)
 
-      Row({ space: 4 }) {
+      Row({ space: AppSpacing.XS }) {
         Text(this.shelfTileBookDisplayName(book))
           .fontSize(AppFontSize.CAPTION)
           .lineHeight(18)
@@ -3101,7 +3102,7 @@ export struct BookshelfPage {
 
   @Builder
   shelfTileGroupFolder(group: BookGroup) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       // Use one outer surface for both the themed folder artwork and the
       // four-cover preview so folders carry the same radius, border and shadow
       // weight as ordinary shelf cards.
@@ -3124,9 +3125,9 @@ export struct BookshelfPage {
           .height('100%')
           .columnsTemplate('1fr 1fr')
           .rowsTemplate('1fr 1fr')
-          .columnsGap(6)
-          .rowsGap(6)
-          .padding(8)
+          .columnsGap(AppSpacing.SM)
+          .rowsGap(AppSpacing.SM)
+          .padding(AppSpacing.MD)
           .backgroundColor(this.glassCardColor())
           .scrollBar(BarState.Off)
         }
@@ -3182,7 +3183,7 @@ export struct BookshelfPage {
 
   @Builder
   shelfTileBook(book: Book) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       Stack({ alignContent: Alignment.TopStart }) {
         this.coverView(book, '100%', '100%', ImageFit.Cover)
 
@@ -3205,14 +3206,14 @@ export struct BookshelfPage {
               ThemeRuntime.glassPanelColor(this.appDarkMode))
             .border({ width: 1, color: this.isBookSelected(book.bookUrl) ? this.buttonColor() : this.glassBorderColor() })
             .borderRadius(11)
-            .margin({ left: 6, top: 6 })
+            .margin({ left: AppSpacing.SM, top: AppSpacing.SM })
         }
 
         if (this.shouldShowBookSource(book)) {
           Text(this.getBookSourceText(book))
             .fontSize(AppFontSize.MICRO)
             .fontColor(this.sourceTagTextColor())
-            .padding({ left: 6, right: 6, top: 3, bottom: 3 })
+            .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: 3, bottom: 3 })
             .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode))
             .borderRadius(ThemeRuntime.mediumRadius())
             .position({ x: '100%', y: 0 })
@@ -3232,7 +3233,7 @@ export struct BookshelfPage {
       .shadow({ radius: ThemeRuntime.glassShadowRadius(), color: this.glassShadowColor(),
         offsetX: ThemeRuntime.glassShadowOffsetX(), offsetY: ThemeRuntime.glassShadowOffsetY() })
 
-      Row({ space: 4 }) {
+      Row({ space: AppSpacing.XS }) {
         Text(this.shelfTileBookDisplayName(book))
           .fontSize(AppFontSize.CAPTION)
           .lineHeight(18)
@@ -3601,14 +3602,14 @@ export struct BookshelfPage {
 
   @Builder
   compactBookContent(book: Book) {
-    Column({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
       Row() {
         // 封面高度 = 信息块高度，顶部对齐书名行、底部对齐进度条底部。
         this.coverView(book, this.shelfCoverWidth(this.shelfCompactInfoHeight()),
           this.shelfCompactInfoHeight(), ImageFit.Cover)
 
         Column({ space: this.shelfRowSpace() }) {
-          Row({ space: 6 }) {
+          Row({ space: AppSpacing.SM }) {
             this.bookTypeNameBadge(book, true)
             Text(this.shelfTileBookDisplayName(book))
               .fontSize(AppFontSize.BODY_LARGE)
@@ -3625,10 +3626,10 @@ export struct BookshelfPage {
                 .fontSize(AppFontSize.CAPTION)
                 .lineHeight(14)
                 .fontColor(this.sourceTagTextColor())
-                .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
                 .backgroundColor(this.sourceTagBackgroundColor())
                 .borderRadius(ThemeRuntime.smallRadius())
-                .margin({ left: 8 })
+                .margin({ left: AppSpacing.MD })
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .constraintSize({ maxWidth: 104 })
@@ -3671,7 +3672,7 @@ export struct BookshelfPage {
         }
         .layoutWeight(1)
         .height(this.shelfCompactInfoHeight())
-        .margin({ left: 12 })
+        .margin({ left: AppSpacing.LG })
         .alignItems(HorizontalAlign.Start)
       }
       .width('100%')
@@ -3681,19 +3682,19 @@ export struct BookshelfPage {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .padding(12)
+    .padding(AppSpacing.LG)
   }
 
   @Builder
   looseBookContent(book: Book) {
-    Column({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
       Row() {
         // 封面高度 = 信息块高度，顶部对齐书名行、底部对齐「xx章未读」那一行。
         this.coverView(book, this.shelfCoverWidth(this.shelfLooseInfoHeight()),
           this.shelfLooseInfoHeight(), ImageFit.Cover)
 
         Column({ space: this.shelfRowSpace() }) {
-          Row({ space: 6 }) {
+          Row({ space: AppSpacing.SM }) {
             this.bookTypeNameBadge(book, true)
             Text(this.shelfTileBookDisplayName(book))
               .fontSize(AppFontSize.BODY_LARGE)
@@ -3735,10 +3736,10 @@ export struct BookshelfPage {
                 .fontSize(AppFontSize.CAPTION)
                 .lineHeight(14)
                 .fontColor(this.sourceTagTextColor())
-                .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+                .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
                 .backgroundColor(this.sourceTagBackgroundColor())
                 .borderRadius(ThemeRuntime.smallRadius())
-                .margin({ right: 8 })
+                .margin({ right: AppSpacing.MD })
             }
 
             // 与作者名保持一致的格式（字号 14 + 次级文字色）。
@@ -3750,7 +3751,7 @@ export struct BookshelfPage {
         }
         .layoutWeight(1)
         .height(this.shelfLooseInfoHeight())
-        .margin({ left: 12 })
+        .margin({ left: AppSpacing.LG })
         .alignItems(HorizontalAlign.Start)
       }
       .width('100%')
@@ -3764,7 +3765,7 @@ export struct BookshelfPage {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
-    .padding(12)
+    .padding(AppSpacing.LG)
   }
 
   @Builder
@@ -4052,10 +4053,10 @@ export struct BookshelfPage {
     Text(tag)
       .fontSize(fontSize)
       .fontColor(BookDisplayHelper.getTagTextColor(index, this.appDarkMode))
-      .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+      .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: 3, bottom: 3 })
       .backgroundColor(BookDisplayHelper.getTagBackgroundColor(index, this.appDarkMode))
       .borderRadius(ThemeRuntime.mediumRadius())
-      .margin({ left: 4, bottom: 6 })
+      .margin({ left: AppSpacing.XS, bottom: AppSpacing.SM })
       .maxLines(1)
       .textOverflow({ overflow: TextOverflow.Ellipsis })
   }
@@ -4065,7 +4066,7 @@ export struct BookshelfPage {
     Button(label)
       .width('100%')
       .height(44)
-      .margin({ top: 6 })
+      .margin({ top: AppSpacing.SM })
       .backgroundColor(this.appDarkMode ? '#24272D' : '#F5F5F5')
       .fontColor(color)
       .onClick(action)
@@ -4088,7 +4089,7 @@ export struct BookshelfPage {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%')
         .textAlign(TextAlign.Center)
-        .margin({ bottom: 8 })
+        .margin({ bottom: AppSpacing.MD })
 
       if (this.cacheStatus) {
         Text(this.cacheStatus)
@@ -4096,7 +4097,7 @@ export struct BookshelfPage {
           .fontColor(this.subTextColor())
           .width('100%')
           .textAlign(TextAlign.Center)
-          .margin({ bottom: 8 })
+          .margin({ bottom: AppSpacing.MD })
       }
 
       this.actionItem(this.isCacheTargetBookCaching() ? '正在缓存...' : '缓存全文', this.primaryTextColor(), () => {
@@ -4166,10 +4167,10 @@ export struct BookshelfPage {
           .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .width('100%')
-          .margin({ bottom: 8 })
+          .margin({ bottom: AppSpacing.MD })
       }
 
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         TextInput({ placeholder: '章节范围，如 1-10、1,3,5-8', text: this.cacheRangeDraft })
           .type(InputType.Normal)
           .fontSize(AppFontSize.BODY)
@@ -4194,12 +4195,12 @@ export struct BookshelfPage {
           .onClick(() => this.cacheChapterRange())
       }
       .width('100%')
-      .margin({ bottom: 8 })
+      .margin({ bottom: AppSpacing.MD })
 
-      List({ space: 2 }) {
+      List({ space: AppSpacing.XXS }) {
         ForEach(this.cacheChapters, (chapter: BookChapter, index: number) => {
           ListItem() {
-            Row({ space: 8 }) {
+            Row({ space: AppSpacing.MD }) {
               Text(chapter.title)
                 .fontSize(AppFontSize.BODY_LARGE)
                 .fontColor(chapter.cacheDate > 0 ? this.cachedChapterTextColor() : this.primaryTextColor())
@@ -4210,13 +4211,13 @@ export struct BookshelfPage {
                 Text('已缓存')
                   .fontSize(AppFontSize.CAPTION)
                   .fontColor(this.appDarkMode ? '#7CC7A0' : '#1F8F55')
-                  .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                  .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
                   .backgroundColor(this.appDarkMode ? '#24382F' : '#E6F4EC')
                   .borderRadius(ThemeRuntime.smallRadius())
               }
             }
             .width('100%')
-            .padding({ left: 2, right: 2, top: 12, bottom: 12 })
+            .padding({ left: AppSpacing.XXS, right: AppSpacing.XXS, top: AppSpacing.LG, bottom: AppSpacing.LG })
             .onClick(() => {
               this.cacheSingleChapter(index);
             })
@@ -4244,7 +4245,7 @@ export struct BookshelfPage {
     }
     .width('100%')
     .height(44)
-    .padding({ left: 12, right: 12 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
     .alignItems(VerticalAlign.Center)
     .onClick(action)
   }
@@ -4493,7 +4494,7 @@ export struct BookshelfPage {
           .fontSize(AppFontSize.CAPTION)
           .fontColor('#E53935')
           .width('100%')
-          .margin({ top: 8 })
+          .margin({ top: AppSpacing.MD })
       }
 
       Row({ space: 10 }) {
@@ -4516,7 +4517,7 @@ export struct BookshelfPage {
       .width('100%')
       .margin({ top: 22 })
     }
-    .padding(20)
+    .padding(AppSpacing.XXL)
   }
 
   openPrivateShelfUnlockDialog(): void {
@@ -5789,7 +5790,7 @@ export struct BookshelfPage {
 
   @Builder
   shelfRefreshStatusOverlay() {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       if (this.isShelfRefreshing) {
         LoadingProgress()
           .width(18)
@@ -5860,7 +5861,7 @@ export struct BookshelfPage {
 
   @Builder
   expandedShelfScopeSegment() {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       this.scopeDropdownItem('全部', 'all')
       this.scopeDropdownItem('网络', 'network')
       this.scopeDropdownItem('本地', 'local')
@@ -5869,7 +5870,7 @@ export struct BookshelfPage {
       }
     }
     .width(116)
-    .padding(6)
+    .padding(AppSpacing.SM)
     .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
     .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
     .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -5945,20 +5946,20 @@ export struct BookshelfPage {
       Blank()
     }
     .width('100%')
-    .padding({ left: 12 })
+    .padding({ left: AppSpacing.LG })
     .position({ x: 0, y: this.statusBarHeight + 52 })
     .zIndex(11)
   }
 
   @Builder
   shelfLayoutDropdown() {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       this.layoutDropdownItem('紧凑', 'compact', $r('sys.symbol.list_bullet'))
       this.layoutDropdownItem('宽松', 'loose', $r('sys.symbol.bookshelf'))
       this.layoutDropdownItem('平铺', 'tile', $r('sys.symbol.square_grid_2x2'))
     }
     .width(132)
-    .padding(6)
+    .padding(AppSpacing.SM)
     .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
     .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -6065,13 +6066,13 @@ export struct BookshelfPage {
 
   @Builder
   shelfSortDropdown() {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       this.sortDropdownItem('新阅读', 'recentRead')
       this.sortDropdownItem('新加入', 'recentAdd')
       this.sortDropdownItem('名称', 'name')
     }
     .width(116)
-    .padding(6)
+    .padding(AppSpacing.SM)
     .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
     .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -6345,7 +6346,7 @@ export struct BookshelfPage {
 
   @Builder
   readProgressPanel(book: Book) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       Text(this.getReadProgressInfoText(book))
         .fontSize(AppFontSize.CAPTION)
         // 行高固定，shelfProgressPanelHeight() 才能算出与封面一致的高度。
@@ -6367,7 +6368,7 @@ export struct BookshelfPage {
 
   @Builder
   looseReadProgressPanel(book: Book) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       Progress({ value: this.getReadProgressValue(book), total: 100, type: ProgressType.Linear })
         .width('100%')
         .height(3)
@@ -6520,7 +6521,7 @@ export struct BookshelfPage {
         .wordBreak(WordBreak.BREAK_WORD)
         .maxLines(16)
         .textOverflow({ overflow: TextOverflow.Clip })
-        .margin({ top: 4 })
+        .margin({ top: AppSpacing.XS })
 
       Text(this.getLastReadPageNumberText(book))
         .width('100%')

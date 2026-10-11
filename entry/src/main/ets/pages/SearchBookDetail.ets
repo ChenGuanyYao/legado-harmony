@@ -21,6 +21,7 @@ import { LocalBookService } from '../core/book/LocalBookService';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -145,7 +146,7 @@ struct SearchBookDetailPage {
       Column() {
         Scroll() {
           Column() {
-            Row({ space: 16 }) {
+            Row({ space: AppSpacing.XL }) {
               this.coverView(this.name, this.displayCoverUrl(), 96, 128)
 
               Column() {
@@ -157,7 +158,7 @@ struct SearchBookDetailPage {
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
 
                 if (this.author) {
-                  Row({ space: 3 }) {
+                  Row({ space: AppSpacing.XXS }) {
                     Text(this.author)
                       .fontSize(AppFontSize.BODY_LARGE)
                       .fontColor(this.secondaryTextColor())
@@ -169,7 +170,7 @@ struct SearchBookDetailPage {
                       .fontColor(this.subTextColor())
                   }
                   .alignItems(VerticalAlign.Center)
-                  .margin({ top: 8 })
+                  .margin({ top: AppSpacing.MD })
                   .onClick(() => {
                     this.showAuthorSearchPrompt();
                   })
@@ -177,11 +178,11 @@ struct SearchBookDetailPage {
                   Text('作者未知')
                     .fontSize(AppFontSize.BODY_LARGE)
                     .fontColor(this.secondaryTextColor())
-                    .margin({ top: 8 })
+                    .margin({ top: AppSpacing.MD })
                 }
 
                 if (this.originName || this.origin) {
-                  Row({ space: 3 }) {
+                  Row({ space: AppSpacing.XXS }) {
                     Text(this.originName || this.origin)
                       .fontSize(AppFontSize.BODY)
                       .fontColor(this.subTextColor())
@@ -193,7 +194,7 @@ struct SearchBookDetailPage {
                       .fontColor(this.subTextColor())
                   }
                   .alignItems(VerticalAlign.Center)
-                  .margin({ top: 8 })
+                  .margin({ top: AppSpacing.MD })
                   .onClick(() => {
                     this.showChangeSourcePrompt();
                   })
@@ -203,7 +204,7 @@ struct SearchBookDetailPage {
               .alignItems(HorizontalAlign.Start)
             }
             .width('100%')
-            .padding({ left: 16, right: 16, top: 14, bottom: 14 })
+            .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
             .backgroundColor(this.cardColor())
             .borderRadius(ThemeRuntime.cardRadius())
             .alignItems(VerticalAlign.Center)
@@ -217,34 +218,34 @@ struct SearchBookDetailPage {
                 Text(this.wordCount)
                   .fontSize(AppFontSize.BODY)
                   .fontColor(this.secondaryTextColor())
-                  .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+                  .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
                   .backgroundColor(this.inputColor())
                   .borderRadius(ThemeRuntime.buttonRadius())
-                  .margin({ right: 8, bottom: 8 })
+                  .margin({ right: AppSpacing.MD, bottom: AppSpacing.MD })
               }
 
               if (this.updateTime) {
                 Text(`更新：${this.updateTime}`)
                   .fontSize(AppFontSize.BODY)
                   .fontColor(this.secondaryTextColor())
-                  .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+                  .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
                   .backgroundColor(this.inputColor())
                   .borderRadius(ThemeRuntime.buttonRadius())
-                  .margin({ right: 8, bottom: 8 })
+                  .margin({ right: AppSpacing.MD, bottom: AppSpacing.MD })
               }
 
               if (this.isInShelf) {
                 Text('已在书架')
                   .fontSize(AppFontSize.BODY)
                   .fontColor(this.appDarkMode ? '#7DD89B' : '#0A7D36')
-                  .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+                  .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
                   .backgroundColor(this.appDarkMode ? '#173B24' : '#E8F5E9')
                   .borderRadius(ThemeRuntime.buttonRadius())
-                  .margin({ right: 8, bottom: 8 })
+                  .margin({ right: AppSpacing.MD, bottom: AppSpacing.MD })
               }
             }
             .width('100%')
-            .padding({ left: 16, right: 16, top: 16 })
+            .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XL })
 
             // The catalog is the only entry point to the chapter list, so this card must stay
             // visible even when the source returned no latest-chapter title.
@@ -265,7 +266,7 @@ struct SearchBookDetailPage {
                 Text('›')
                   .fontSize(AppFontSize.SUBTITLE)
                   .fontColor(this.subTextColor())
-                  .margin({ left: 6 })
+                  .margin({ left: AppSpacing.SM })
               }
               .width('100%')
 
@@ -275,13 +276,13 @@ struct SearchBookDetailPage {
                 .width('100%')
                 .maxLines(2)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .margin({ top: 8 })
+                .margin({ top: AppSpacing.MD })
             }
             .width('100%')
-            .padding(16)
+            .padding(AppSpacing.XL)
             .backgroundColor(this.cardColor())
             .borderRadius(ThemeRuntime.cardRadius())
-            .margin({ top: 12 })
+            .margin({ top: AppSpacing.LG })
             .onClick(() => {
               this.openChapterList();
             })
@@ -301,23 +302,23 @@ struct SearchBookDetailPage {
                 .copyOption(CopyOptions.LocalDevice)
                 .width('100%')
                 .id(`book_detail_intro_${this.bookInfoRenderVersion}`)
-                .margin({ top: 12 })
+                .margin({ top: AppSpacing.LG })
             }
             .width('100%')
-            .padding({ left: 20, right: 20, top: 18, bottom: 22 })
+            .padding({ left: AppSpacing.XXL, right: AppSpacing.XXL, top: AppSpacing.XL, bottom: AppSpacing.XXL })
             .backgroundColor(this.cardColor())
             .borderRadius(ThemeRuntime.cardRadius())
-            .margin({ top: 12 })
+            .margin({ top: AppSpacing.LG })
           }
           .width('100%')
-          .padding({ left: 16, right: 16, top: 72 + this.statusBarHeight, bottom: 96 })
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: 72 + this.statusBarHeight, bottom: 96 })
         }
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .layoutWeight(1)
         .backgroundColor(this.pageColor())
 
-        Row({ space: 10 }) {
+        Row({ space: AppSpacing.MD }) {
           Button(this.isInShelf ? '已加入书架' : '加入书架')
             .enabled(!this.isInShelf && !this.isSaving)
             .height(44)
@@ -350,7 +351,7 @@ struct SearchBookDetailPage {
             })
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 12, bottom: 12 + this.navBarHeight })
+        .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: 12 + this.navBarHeight })
         .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
         .backdropBlur(ThemeRuntime.topBarBlur())
       }
@@ -394,7 +395,7 @@ struct SearchBookDetailPage {
     }
     .width('100%')
     .height(56 + this.statusBarHeight)
-    .padding({ right: 16, top: this.statusBarHeight })
+    .padding({ right: AppSpacing.XL, top: this.statusBarHeight })
     .alignItems(VerticalAlign.Center)
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
     .backdropBlur(ThemeRuntime.topBarBlur())
@@ -1002,7 +1003,7 @@ struct SearchBookDetailPage {
 
   @Builder
   addToShelfOnBackDialogContent() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Text('加入书架')
         .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
@@ -1014,7 +1015,7 @@ struct SearchBookDetailPage {
         .fontColor(this.secondaryTextColor())
         .width('100%')
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('不加入')
           .layoutWeight(1)
           .height(42)
@@ -1036,14 +1037,14 @@ struct SearchBookDetailPage {
           })
       }
       .width('100%')
-      .margin({ top: 4 })
+      .margin({ top: AppSpacing.XS })
     }
-    .padding(24)
+    .padding(AppSpacing.XXXL)
   }
 
   @Builder
   authorSearchDialogContent() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Text('作者检索')
         .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
@@ -1055,7 +1056,7 @@ struct SearchBookDetailPage {
         .fontColor(this.secondaryTextColor())
         .width('100%')
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('取消')
           .layoutWeight(1)
           .height(42)
@@ -1077,14 +1078,14 @@ struct SearchBookDetailPage {
           })
       }
       .width('100%')
-      .margin({ top: 4 })
+      .margin({ top: AppSpacing.XS })
     }
-    .padding(24)
+    .padding(AppSpacing.XXXL)
   }
 
   @Builder
   changeSourceConfirmDialogContent() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Text('换源')
         .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
@@ -1096,7 +1097,7 @@ struct SearchBookDetailPage {
         .fontColor(this.secondaryTextColor())
         .width('100%')
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('取消')
           .layoutWeight(1)
           .height(42)
@@ -1118,9 +1119,9 @@ struct SearchBookDetailPage {
           })
       }
       .width('100%')
-      .margin({ top: 4 })
+      .margin({ top: AppSpacing.XS })
     }
-    .padding(24)
+    .padding(AppSpacing.XXXL)
   }
 
   async findShelfBookByKey(bookKey: string, includePending: boolean = false): Promise<Book | null> {
@@ -1260,10 +1261,10 @@ struct SearchBookDetailPage {
     Text(tag)
       .fontSize(AppFontSize.BODY)
       .fontColor(BookDisplayHelper.getTagTextColor(index, this.appDarkMode))
-      .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+      .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
       .backgroundColor(BookDisplayHelper.getTagBackgroundColor(index, this.appDarkMode))
       .borderRadius(ThemeRuntime.buttonRadius())
-      .margin({ right: 8, bottom: 8 })
+      .margin({ right: AppSpacing.MD, bottom: AppSpacing.MD })
   }
 
   @Builder

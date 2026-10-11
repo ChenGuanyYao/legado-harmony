@@ -21,6 +21,7 @@ import { SystemDialogSession } from '../../utils/SystemDialogSession';
 import { CoverUrlNormalizer } from '../../utils/CoverUrlNormalizer';
 import { ExploreSourceOptionDataSource, ExploreMetadataTask } from '../../core/book/ShelfDataSources';
 import { AppFontSize } from '../../theme/AppFontSize';
+import { AppSpacing } from '../../theme/AppSpacing';
 
 /** 首页"发现"页签：发现源、筛选条件与结果列表。 */
 @Component
@@ -431,7 +432,7 @@ export struct ExplorePage {
           SymbolGlyph(this.showExploreSourcePicker ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
             .fontSize(18)
             .fontColor([this.secondaryTextColor()])
-            .margin({ left: 6 })
+            .margin({ left: AppSpacing.SM })
             .onClick(() => {
               this.toggleExploreSourcePicker();
             })
@@ -443,8 +444,8 @@ export struct ExplorePage {
               .borderRadius(15)
               .backgroundColor(this.buttonColor())
               .fontColor('#FFFFFF')
-              .padding({ left: 10, right: 10 })
-              .margin({ left: 8 })
+              .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
+              .margin({ left: AppSpacing.MD })
               .onClick(() => {
                 this.applyExploreSourceFilter();
               })
@@ -456,7 +457,7 @@ export struct ExplorePage {
           .backgroundColor(this.glassCardColor())
           .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
           .shadow({ radius: ThemeRuntime.glassShadowRadius(), color: this.glassShadowColor(), offsetX: ThemeRuntime.glassShadowOffsetX(), offsetY: ThemeRuntime.glassShadowOffsetY() })
-          .padding({ left: 16, right: 10 })
+          .padding({ left: AppSpacing.XL, right: AppSpacing.MD })
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
             if (!this.showExploreSourcePicker) {
@@ -479,11 +480,11 @@ export struct ExplorePage {
             this.loadEntries('', true);
           }
         })
-          .margin({ left: 8, right: -24 })
+          .margin({ left: AppSpacing.MD, right: -24 })
       }
       .width('100%')
       .height(56 + this.statusBarHeight)
-      .padding({ left: 16, right: 16, top: this.statusBarHeight })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.statusBarHeight })
       .alignItems(VerticalAlign.Center)
 
       if (this.exploreFilters.length > 0) {
@@ -497,12 +498,12 @@ export struct ExplorePage {
         }
       } else if (this.platformNames.length > 0) {
         Scroll() {
-          Row({ space: 8 }) {
+          Row({ space: AppSpacing.MD }) {
             ForEach(this.platformNames, (name: string) => {
               Text(name)
                 .fontSize(AppFontSize.BODY)
                 .fontColor(this.selectedPlatform === name ? '#FFFFFF' : this.primaryTextColor())
-                .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+                .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.MD, bottom: AppSpacing.MD })
                 .backgroundColor(this.selectedPlatform === name ? this.accentColor() : this.glassCardColor())
                 .borderRadius(ThemeRuntime.buttonRadius())
                 .border({ width: this.selectedPlatform === name ? 0 : 1, color: this.glassBorderColor() })
@@ -511,7 +512,7 @@ export struct ExplorePage {
                 })
             })
           }
-          .padding({ left: 16, right: 16 })
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
           .constraintSize({ minWidth: '100%' })
           .justifyContent(FlexAlign.Start)
         }
@@ -524,12 +525,12 @@ export struct ExplorePage {
 
       if (this.getActiveEntries().length > 0) {
         Scroll() {
-          Row({ space: 8 }) {
+          Row({ space: AppSpacing.MD }) {
             ForEach(this.getActiveEntries(), (entry: ExploreEntry, index: number) => {
               Text(entry.title)
                 .fontSize(AppFontSize.BODY)
                 .fontColor(this.selectedIndex === index ? '#FFFFFF' : this.secondaryTextColor())
-                .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+                .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.SM, bottom: AppSpacing.SM })
                 .backgroundColor(this.selectedIndex === index ? this.accentColor() : this.glassCardColor())
                 .borderRadius(ThemeRuntime.buttonRadius())
                 .border({ width: this.selectedIndex === index ? 0 : 1, color: this.glassBorderColor() })
@@ -539,7 +540,7 @@ export struct ExplorePage {
                 })
             })
           }
-          .padding({ left: 16, right: 16 })
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
           .constraintSize({ minWidth: '100%' })
           .justifyContent(FlexAlign.Start)
         }
@@ -564,14 +565,14 @@ export struct ExplorePage {
               .borderRadius(14)
               .backgroundColor(this.buttonColor())
               .fontColor('#FFFFFF')
-              .margin({ left: 12 })
+              .margin({ left: AppSpacing.LG })
               .onClick(() => {
                 this.openVerification();
               })
           }
         }
         .width('100%')
-        .padding({ left: 16, right: 16, top: 6, bottom: 6 })
+        .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.SM, bottom: AppSpacing.SM })
         .alignItems(VerticalAlign.Center)
       }
         }
@@ -589,7 +590,7 @@ export struct ExplorePage {
           Text('加载中...')
             .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
-            .margin({ top: 8 })
+            .margin({ top: AppSpacing.MD })
         }
         .width('100%')
         .layoutWeight(1)
@@ -640,7 +641,7 @@ export struct ExplorePage {
           Text(this.verificationUrl ? '当前书源可能需要网页验证' : '请切换书源或网站，或检查已启用书源的发现地址')
             .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
-            .margin({ top: 8 })
+            .margin({ top: AppSpacing.MD })
             .textAlign(TextAlign.Center)
             .padding({ left: 32, right: 32 })
           if (this.verificationUrl) {
@@ -648,7 +649,7 @@ export struct ExplorePage {
               .height(36)
               .fontSize(AppFontSize.BODY)
               .borderRadius(18)
-              .margin({ top: 14 })
+              .margin({ top: AppSpacing.LG })
               .backgroundColor(this.buttonColor())
               .fontColor('#FFFFFF')
               .onClick(() => {
@@ -660,7 +661,7 @@ export struct ExplorePage {
               .height(36)
               .fontSize(AppFontSize.BODY)
               .borderRadius(18)
-              .margin({ top: 14 })
+              .margin({ top: AppSpacing.LG })
               .backgroundColor(this.buttonColor())
               .fontColor('#FFFFFF')
               .onClick(() => {
@@ -788,22 +789,22 @@ export struct ExplorePage {
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .constraintSize({ maxWidth: 68 })
-                    .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                    .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
                     .borderRadius(ThemeRuntime.mediumRadius())
                     .backgroundColor(this.inputColor())
-                    .margin({ left: 8 })
+                    .margin({ left: AppSpacing.MD })
                 }
 
                 if (option.sourceUrl === this.selectedSourceUrl) {
                   Text('✓')
                     .fontSize(AppFontSize.BODY_LARGE)
                     .fontColor(this.accentColor())
-                    .margin({ left: 10 })
+                    .margin({ left: AppSpacing.MD })
                 }
               }
               .width('100%')
               .height(44)
-              .padding({ left: 14, right: 14 })
+              .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
               .borderRadius(ThemeRuntime.mediumRadius())
               .backgroundColor(option.sourceUrl === this.selectedSourceUrl ? this.exploreSelectedBackgroundColor() : '#00000000')
               .alignItems(VerticalAlign.Center)
@@ -831,7 +832,7 @@ export struct ExplorePage {
       }
     }
     .width(this.exploreSourceDropdownWidth())
-    .padding(8)
+    .padding(AppSpacing.MD)
     .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
     .clip(true)
     .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
@@ -871,7 +872,7 @@ export struct ExplorePage {
         }
         .width('100%')
         .height(44)
-        .padding({ left: 10, right: 10 })
+        .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
         .onClick(() => this.loginActionExploreSource())
 
         Row() {
@@ -886,7 +887,7 @@ export struct ExplorePage {
         }
         .width('100%')
         .height(44)
-        .padding({ left: 10, right: 10 })
+        .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
         .onClick(() => this.openExploreSourceVariableEditor())
 
         Row() {
@@ -901,7 +902,7 @@ export struct ExplorePage {
         }
         .width('100%')
         .height(44)
-        .padding({ left: 10, right: 10 })
+        .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
         .onClick(() => this.editActionExploreSource())
 
         Row() {
@@ -916,11 +917,11 @@ export struct ExplorePage {
         }
         .width('100%')
         .height(44)
-        .padding({ left: 10, right: 10 })
+        .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
         .onClick(() => this.deleteActionExploreSource())
       }
       .width(132)
-      .padding({ top: 6, bottom: 6 })
+      .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -938,7 +939,7 @@ export struct ExplorePage {
 
   @Builder
   exploreSourceVariableDialogContent() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Text('编辑源变量')
         .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
@@ -960,7 +961,7 @@ export struct ExplorePage {
           .lineHeight(18)
           .fontColor(this.secondaryTextColor())
           .width('100%')
-          .padding(10)
+          .padding(AppSpacing.MD)
           .borderRadius(ThemeRuntime.mediumRadius())
           .backgroundColor(this.inputColor())
       }
@@ -976,13 +977,13 @@ export struct ExplorePage {
         .placeholderColor(this.secondaryTextColor())
         .backgroundColor(this.inputColor())
         .borderRadius(ThemeRuntime.mediumRadius())
-        .padding(12)
+        .padding(AppSpacing.LG)
         .enabled(!this.savingExploreSourceVariable)
         .onChange((value: string) => {
           this.exploreSourceVariableValue = value;
         })
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('取消')
           .layoutWeight(1)
           .height(40)
@@ -999,7 +1000,7 @@ export struct ExplorePage {
           .onClick(() => this.saveExploreSourceVariable())
       }
       .width('100%')
-    }    .padding(18)
+    }    .padding(AppSpacing.XL)
   }
 
   openExploreSourceVariableDialog(): void {
@@ -1029,9 +1030,9 @@ export struct ExplorePage {
         .fontColor(this.secondaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
-        .margin({ top: 12, bottom: 20 })
+        .margin({ top: AppSpacing.LG, bottom: AppSpacing.XXL })
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('取消')
           .layoutWeight(1)
           .height(44)
@@ -1048,7 +1049,7 @@ export struct ExplorePage {
       }
       .width('100%')
     }
-    .padding(22)
+    .padding(AppSpacing.XXL)
   }
 
   openExploreSourceDeleteDialog(): void {
@@ -1066,13 +1067,13 @@ export struct ExplorePage {
   @Builder
   exploreSourceGroupBar() {
     Scroll() {
-      Row({ space: 7 }) {
+      Row({ space: AppSpacing.SM }) {
         this.exploreSourceGroupChip('全部', '__all__')
         ForEach(this.exploreSourceGroups, (group: string) => {
           this.exploreSourceGroupChip(group, group)
         }, (group: string) => group)
       }
-      .padding({ left: 4, right: 4, bottom: 8 })
+      .padding({ left: AppSpacing.XS, right: AppSpacing.XS, bottom: AppSpacing.MD })
       .constraintSize({ minWidth: '100%' })
     }
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
@@ -1091,7 +1092,7 @@ export struct ExplorePage {
       .maxLines(1)
       .textOverflow({ overflow: TextOverflow.Ellipsis })
       .constraintSize({ maxWidth: 128 })
-      .padding({ left: 11, right: 11 })
+      .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
       .textAlign(TextAlign.Center)
       .borderRadius(15)
       .backgroundColor(this.activeExploreSourceGroup === groupKey ? this.accentColor() : this.inputColor())
@@ -1840,7 +1841,7 @@ export struct ExplorePage {
   @Builder
   inlineExploreFilterRow(filter: ExploreFilterGroup) {
     Scroll() {
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         Text(`${filter.title}：`)
           .fontSize(AppFontSize.BODY)
           .fontColor(this.secondaryTextColor())
@@ -1849,7 +1850,7 @@ export struct ExplorePage {
           this.exploreFilterOptionChip(filter, name)
         }, (name: string): string => `${filter.title}:${name}`)
       }
-      .padding({ left: 16, right: 16 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
       .constraintSize({ minWidth: '100%' })
       .justifyContent(FlexAlign.Start)
     }
@@ -1862,16 +1863,16 @@ export struct ExplorePage {
 
   @Builder
   compactExploreFilterBar() {
-    Row({ space: 7 }) {
+    Row({ space: AppSpacing.SM }) {
       Scroll() {
-        Row({ space: 7 }) {
+        Row({ space: AppSpacing.SM }) {
           ForEach(this.exploreFilters, (filter: ExploreFilterGroup) => {
             Text(`${filter.title} · ${filter.selected || '未选'}`)
               .fontSize(AppFontSize.CAPTION)
               .fontColor(this.primaryTextColor())
               .height(30)
               .maxLines(1)
-              .padding({ left: 11, right: 11 })
+              .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
               .borderRadius(15)
               .backgroundColor(this.glassCardColor())
               .border({ width: 1, color: this.glassBorderColor() })
@@ -1889,7 +1890,7 @@ export struct ExplorePage {
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
 
-      Row({ space: 4 }) {
+      Row({ space: AppSpacing.XS }) {
         SymbolGlyph($r('sys.symbol.gearshape'))
           .fontSize(16)
           .fontColor([this.showExploreFilterPanel ? '#FFFFFF' : this.primaryTextColor()])
@@ -1898,7 +1899,7 @@ export struct ExplorePage {
           .fontColor(this.showExploreFilterPanel ? '#FFFFFF' : this.primaryTextColor())
       }
       .height(32)
-      .padding({ left: 10, right: 10 })
+      .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
       .borderRadius(16)
       .backgroundColor(this.showExploreFilterPanel ? this.accentColor() : this.inputColor())
       .flexShrink(0)
@@ -1908,7 +1909,7 @@ export struct ExplorePage {
     }
     .width('100%')
     .height(48)
-    .padding({ left: 16, right: 16 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
       this.toggleExploreFilterPanel();
@@ -1922,7 +1923,7 @@ export struct ExplorePage {
       .fontColor(filter.selected === name ? '#FFFFFF' : this.primaryTextColor())
       .height(32)
       .maxLines(1)
-      .padding({ left: 12, right: 12 })
+      .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
       .backgroundColor(filter.selected === name ? this.accentColor() : this.glassCardColor())
       .borderRadius(16)
       .border({ width: filter.selected === name ? 0 : 1, color: this.glassBorderColor() })
@@ -1938,7 +1939,7 @@ export struct ExplorePage {
       .fontColor(filter.selected === name ? '#FFFFFF' : this.primaryTextColor())
       .height(32)
       .maxLines(1)
-      .padding({ left: 12, right: 12 })
+      .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
       .backgroundColor(filter.selected === name ? this.accentColor() : this.glassCardColor())
       .borderRadius(16)
       .border({ width: filter.selected === name ? 0 : 1, color: this.glassBorderColor() })
@@ -1959,19 +1960,19 @@ export struct ExplorePage {
         Text('完成')
           .fontSize(AppFontSize.BODY)
           .fontColor(this.accentColor())
-          .padding({ left: 12, right: 4, top: 8, bottom: 8 })
+          .padding({ left: AppSpacing.LG, right: AppSpacing.XS, top: AppSpacing.MD, bottom: AppSpacing.MD })
           .onClick(() => {
             this.applyExploreFilterDrafts();
           })
       }
       .width('100%')
       .height(44)
-      .padding({ left: 14, right: 10 })
+      .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
 
       Scroll() {
         Column() {
           ForEach(this.exploreFilterDrafts, (filter: ExploreFilterGroup) => {
-            Row({ space: 8 }) {
+            Row({ space: AppSpacing.MD }) {
               Text(filter.title)
                 .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.secondaryTextColor())
@@ -1980,7 +1981,7 @@ export struct ExplorePage {
                 .textAlign(TextAlign.Start)
 
               Scroll() {
-                Row({ space: 8 }) {
+                Row({ space: AppSpacing.MD }) {
                   ForEach(filter.options, (name: string) => {
                     this.exploreFilterDraftOptionChip(filter, name)
                   }, (name: string): string => `${filter.title}:${name}`)
@@ -1996,7 +1997,7 @@ export struct ExplorePage {
             }
             .width('100%')
             .height(54)
-            .padding({ left: 14, right: 14 })
+            .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
           }, (filter: ExploreFilterGroup): string =>
             `${filter.title}:${filter.selected}:${filter.options.join('|')}`)
         }

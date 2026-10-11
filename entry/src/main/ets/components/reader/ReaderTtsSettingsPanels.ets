@@ -6,6 +6,7 @@ import { ImmersiveMaterialRuntime } from '../../utils/ImmersiveMaterialRuntime';
 import { ImmersiveBackButton } from '../ImmersiveBackButton';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { AppFontSize } from '../../theme/AppFontSize';
+import { AppSpacing } from '../../theme/AppSpacing';
 
 /**
  * 阅读设置面板里的"朗读"页：倍速、音色入口、定时、开始/停止。
@@ -39,7 +40,7 @@ export struct ReaderTtsQuickSettingsPanel {
   }
 
   build() {
-    Column({ space: 14 }) {
+    Column({ space: AppSpacing.LG }) {
       Row() {
         Text('朗读倍速')
           .fontSize(AppFontSize.BODY_LARGE)
@@ -51,7 +52,7 @@ export struct ReaderTtsQuickSettingsPanel {
       }
       .width('100%')
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         this.stepButton($r('sys.symbol.minus'), '降低朗读倍速', this.speed > 0.5, () => {
           this.onSpeedChange(this.speed - 0.1);
         })
@@ -68,7 +69,7 @@ export struct ReaderTtsQuickSettingsPanel {
       }
       .width('100%')
 
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         this.speedChip(0.8)
         this.speedChip(1.0)
         this.speedChip(1.2)
@@ -101,11 +102,11 @@ export struct ReaderTtsQuickSettingsPanel {
         SymbolGlyph($r('sys.symbol.chevron_down'))
           .fontSize(16)
           .fontColor([this.subTextColor])
-          .margin({ left: 10 })
+          .margin({ left: AppSpacing.MD })
       }
       .width('100%')
       .height(44)
-      .padding({ left: 14, right: 14 })
+      .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
       .backgroundColor(this.chipColor())
       .borderRadius(ThemeRuntime.mediumRadius())
       .onClick(() => this.onOpenVoicePicker())
@@ -122,7 +123,7 @@ export struct ReaderTtsQuickSettingsPanel {
       }
       .width('100%')
 
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         this.sleepTimerChip(15)
         this.sleepTimerChip(30)
         this.sleepTimerChip(60)
@@ -245,7 +246,7 @@ export struct ReaderTtsVoicePickerPanel {
         })
       }
       .width('100%')
-      .padding({ left: 20, right: 16, top: 12, bottom: 10 })
+      .padding({ left: AppSpacing.XXL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.MD })
       .alignItems(VerticalAlign.Center)
 
       Scroll() {
@@ -275,7 +276,7 @@ export struct ReaderTtsVoicePickerPanel {
           }
         }
         .width('100%')
-        .padding({ left: 12, right: 12, bottom: 16 })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.LG, bottom: AppSpacing.XL })
       }
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
@@ -305,7 +306,7 @@ export struct ReaderTtsVoicePickerPanel {
       .fontWeight(FontWeight.Medium)
       .fontColor(this.subTextColor)
       .width('100%')
-      .padding({ left: 10, right: 10, top: 12, bottom: 6 })
+      .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.LG, bottom: AppSpacing.SM })
   }
 
   @Builder
@@ -322,12 +323,12 @@ export struct ReaderTtsVoicePickerPanel {
         SymbolGlyph($r('sys.symbol.checkmark'))
           .fontSize(18)
           .fontColor([this.accentColor])
-          .margin({ left: 10 })
+          .margin({ left: AppSpacing.MD })
       }
     }
     .width('100%')
     .constraintSize({ minHeight: 48 })
-    .padding({ left: 12, right: 12, top: 9, bottom: 9 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.MD, bottom: AppSpacing.MD })
     .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(selected ? this.selectedColor : Color.Transparent)
     .onClick(action)

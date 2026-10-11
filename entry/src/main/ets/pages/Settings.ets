@@ -21,6 +21,7 @@ import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { TapZoneSettingsDialogContent } from '../components/TapZoneSettingsDialog';
 import { HexColor } from '../utils/HexColor';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 class ReaderCustomFontItem {
   familyName: string = '';
   filePath: string = '';
@@ -153,7 +154,7 @@ struct SettingsPage {
             this.appThemeOptions()
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -176,7 +177,7 @@ struct SettingsPage {
             })
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -186,7 +187,7 @@ struct SettingsPage {
             this.readerThemePanel()
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -234,7 +235,7 @@ struct SettingsPage {
             }
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -248,7 +249,7 @@ struct SettingsPage {
             this.preloadSettingPanel()
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -260,7 +261,7 @@ struct SettingsPage {
               .fontWeight(FontWeight.Medium)
               .fontColor(this.previewTitleColor())
               .width('100%')
-              .margin({ bottom: 12 })
+              .margin({ bottom: AppSpacing.LG })
 
             if (this.previewFontRenderVersion % 2 === 0) {
               this.previewReaderText()
@@ -273,7 +274,7 @@ struct SettingsPage {
               .fontFamily(this.getPreviewBodyFontFamily())
               .fontColor(this.previewSubTextColor())
               .width('100%')
-              .margin({ top: 10 })
+              .margin({ top: AppSpacing.MD })
           }
           .width('calc(100% - 24vp)')
           .padding({
@@ -287,7 +288,7 @@ struct SettingsPage {
           .backgroundImageSize(this.previewBackgroundImageSize())
           .borderRadius(ThemeRuntime.buttonRadius())
           .clip(true)
-          .margin({ left: 12, right: 12, bottom: 32 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG, bottom: 32 })
         }
         .width('100%')
         .padding({ top: 56 + this.statusBarHeight, bottom: this.navBarHeight })
@@ -1807,7 +1808,7 @@ struct SettingsPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
 
@@ -1868,7 +1869,7 @@ struct SettingsPage {
     }
     .width('100%')
     .constraintSize({ minHeight: 56 })
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
     .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Center)
   }
@@ -1883,14 +1884,14 @@ struct SettingsPage {
       Text('上传 / 删除')
         .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
-        .margin({ right: 8 })
+        .margin({ right: AppSpacing.MD })
       SymbolGlyph($r('sys.symbol.chevron_right'))
         .fontSize(18)
         .fontColor([this.subTextColor()])
     }
     .width('100%')
     .height(56)
-    .padding({ left: 16, right: 16 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
@@ -1901,7 +1902,7 @@ struct SettingsPage {
   @Builder
   readerFontEntryItem() {
     Row() {
-      Column({ space: 4 }) {
+      Column({ space: AppSpacing.XS }) {
         Text('阅读字体')
           .fontColor(this.primaryTextColor())
           .fontSize(AppFontSize.BODY_LARGE)
@@ -1917,8 +1918,8 @@ struct SettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 62 })
-    .padding({ left: 0, right: 0, top: 8, bottom: 8 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .border({ width: { top: 0.5, bottom: 0.5 }, color: this.settingsDividerColor() })
     .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Center)
@@ -1930,7 +1931,7 @@ struct SettingsPage {
   @Builder
   readerReplaceRulesEntryItem() {
     Row() {
-      Column({ space: 4 }) {
+      Column({ space: AppSpacing.XS }) {
         Text('替换净化')
           .fontColor(this.primaryTextColor())
           .fontSize(AppFontSize.BODY_LARGE)
@@ -1947,8 +1948,8 @@ struct SettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 62 })
-    .padding({ left: 0, right: 0, top: 8, bottom: 8 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
     .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Center)
@@ -1959,7 +1960,7 @@ struct SettingsPage {
 
   @Builder
   appThemeOptions() {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       Stack({ alignContent: Alignment.Center }) {
         Text('跟随系统')
           .fontSize(AppFontSize.BODY)
@@ -1998,7 +1999,7 @@ struct SettingsPage {
         })
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
     .backgroundColor(this.cardColor())
   }
 
@@ -2012,7 +2013,7 @@ struct SettingsPage {
         Text(this.tapZoneSummaryText())
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -2022,14 +2023,14 @@ struct SettingsPage {
         .fontSize(AppFontSize.BODY)
         .backgroundColor(this.buttonColor())
         .fontColor('#FFFFFF')
-        .margin({ left: 12 })
+        .margin({ left: AppSpacing.LG })
         .onClick(() => {
           this.presentTapZoneSettings();
         })
     }
     .width('100%')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.MD })
     .backgroundColor(this.cardColor())
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
     .alignItems(VerticalAlign.Center)
@@ -2039,10 +2040,10 @@ struct SettingsPage {
 
   @Builder
   readerThemePanel() {
-    Column({ space: 14 }) {
-      Row({ space: 4 }) {
+    Column({ space: AppSpacing.LG }) {
+      Row({ space: AppSpacing.XS }) {
         ForEach(this.currentReaderThemes(), (theme: ReaderThemeItem, index: number) => {
-          Column({ space: 6 }) {
+          Column({ space: AppSpacing.SM }) {
             Text(index === ReaderThemeHelper.CUSTOM_THEME_INDEX ? '自' :
               (index === ReaderThemeHelper.APP_THEME_INDEX ? '主' : ''))
               .fontSize(AppFontSize.BODY)
@@ -2072,8 +2073,8 @@ struct SettingsPage {
       .width('100%')
 
       if (this.currentReaderThemeIndex() === ReaderThemeHelper.CUSTOM_THEME_INDEX) {
-        Column({ space: 10 }) {
-          Row({ space: 8 }) {
+        Column({ space: AppSpacing.MD }) {
+          Row({ space: AppSpacing.MD }) {
             Select(this.customThemeOptions())
               .selected(this.currentCustomThemeSelectedIndex())
               .value(this.currentCustomThemeScheme().name)
@@ -2118,7 +2119,7 @@ struct SettingsPage {
             .fontSize(AppFontSize.BODY)
             .fontColor(this.primaryTextColor())
             .height(36)
-            .padding({ left: 10, right: 10 })
+            .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
             .backgroundColor(this.inputColor())
             .borderRadius(ThemeRuntime.mediumRadius())
             .onChange((value: string) => {
@@ -2170,7 +2171,7 @@ struct SettingsPage {
               }
             })
           } else {
-            Row({ space: 8 }) {
+            Row({ space: AppSpacing.MD }) {
               Button(this.currentCustomThemeScheme().backgroundImageUri ? '更换背景图片' : '选择背景图片')
                 .height(36)
                 .fontSize(AppFontSize.BODY)
@@ -2229,13 +2230,13 @@ struct SettingsPage {
       }
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 16 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.XL })
     .backgroundColor(this.cardColor())
   }
 
   @Builder
   typographyStepper() {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       Select(this.typographySettingOptions())
         .selected(this.typographySettingIndex)
         .value(this.typographySettingTitle())
@@ -2303,7 +2304,7 @@ struct SettingsPage {
         })
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
     .backgroundColor(this.cardColor())
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
     .alignItems(VerticalAlign.Center)
@@ -2335,7 +2336,7 @@ struct SettingsPage {
           Text(this.readerPreloadEnabled ? '阅读过程中提前缓存后续章节' : '已关闭阅读过程中的自动预缓存')
             .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
-            .margin({ top: 4 })
+            .margin({ top: AppSpacing.XS })
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
@@ -2348,8 +2349,8 @@ struct SettingsPage {
       }
       .width('calc(100% - 32vp)')
       .constraintSize({ minHeight: 64 })
-      .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-      .margin({ left: 16, right: 16 })
+      .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+      .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
       .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
       .alignItems(VerticalAlign.Center)
 
@@ -2400,7 +2401,7 @@ struct SettingsPage {
         Text(this.readerEyeCalibrationSummary())
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -2411,8 +2412,8 @@ struct SettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
     .alignItems(VerticalAlign.Center)
@@ -2432,7 +2433,7 @@ struct SettingsPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -2462,8 +2463,8 @@ struct SettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
     .alignItems(VerticalAlign.Center)
@@ -2486,7 +2487,7 @@ struct SettingsPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -2499,8 +2500,8 @@ struct SettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
   }

@@ -20,6 +20,7 @@ import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ThemeAccessPolicy } from '../account/ThemeAccessPolicy';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 class ReaderCustomFontItem {
   familyName: string = '';
@@ -171,7 +172,7 @@ struct ReaderFontSettingsPage {
             this.bodyPreviewItem()
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -187,7 +188,7 @@ struct ReaderFontSettingsPage {
             this.titlePreviewItem()
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -206,7 +207,7 @@ struct ReaderFontSettingsPage {
             }
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -551,7 +552,7 @@ struct ReaderFontSettingsPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
   @Builder
@@ -586,8 +587,8 @@ struct ReaderFontSettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
     .alignItems(VerticalAlign.Center)
@@ -595,7 +596,7 @@ struct ReaderFontSettingsPage {
 
   @Builder
   bodyFontSizeStepper() {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       Text('字体大小')
         .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.primaryTextColor())
@@ -615,8 +616,8 @@ struct ReaderFontSettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
     .alignItems(VerticalAlign.Center)
@@ -624,7 +625,7 @@ struct ReaderFontSettingsPage {
 
   @Builder
   titleFontSizeStepper() {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       Text('字体大小')
         .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.primaryTextColor())
@@ -644,8 +645,8 @@ struct ReaderFontSettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
     .alignItems(VerticalAlign.Center)
@@ -668,12 +669,12 @@ struct ReaderFontSettingsPage {
 
   @Builder
   regexTemplateActions() {
-    Column({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
       Text('添加规则')
         .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.primaryTextColor())
         .width('100%')
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('对话')
           .fontSize(AppFontSize.BODY)
           .backgroundColor(this.inputColor())
@@ -699,8 +700,8 @@ struct ReaderFontSettingsPage {
       .width('100%')
     }
     .width('calc(100% - 32vp)')
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
   }
@@ -711,17 +712,17 @@ struct ReaderFontSettingsPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('calc(100% - 32vp)')
-      .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-      .margin({ left: 16, right: 16 })
+      .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+      .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
       .backgroundColor(Color.Transparent)
       .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
   }
 
   @Builder
   regexRulePanel(rule: ReaderRegexFontRule, index: number, refreshKey: number) {
-    Column({ space: 10 }) {
+    Column({ space: AppSpacing.MD }) {
       Row() {
-        Column({ space: 4 }) {
+        Column({ space: AppSpacing.XS }) {
           Text(rule.name || `规则${index + 1}`)
             .fontSize(AppFontSize.BODY_LARGE)
             .fontWeight(FontWeight.Medium)
@@ -808,15 +809,15 @@ struct ReaderFontSettingsPage {
       }
     }
     .width('calc(100% - 32vp)')
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
   }
 
   @Builder
   bodyPreviewItem() {
-    Column({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
       Text('正文预览')
         .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
@@ -830,15 +831,15 @@ struct ReaderFontSettingsPage {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .width('calc(100% - 32vp)')
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
   }
 
   @Builder
   titlePreviewItem() {
-    Column({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
       Text('标题预览')
         .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
@@ -852,8 +853,8 @@ struct ReaderFontSettingsPage {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .width('calc(100% - 32vp)')
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
   }
@@ -1127,7 +1128,7 @@ struct ReaderFontSettingsPage {
 
   @Builder
   regexRulePreviewItem(index: number, refreshKey: number) {
-    Column({ space: 6 }) {
+    Column({ space: AppSpacing.SM }) {
       Text('规则预览')
         .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
@@ -1142,7 +1143,7 @@ struct ReaderFontSettingsPage {
       .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .width('100%')
-    .padding({ top: 4, bottom: 2 })
+    .padding({ top: AppSpacing.XS, bottom: AppSpacing.XXS })
   }
 
   emphasisModeOptions(): SelectOption[] {
@@ -1241,7 +1242,7 @@ struct ReaderFontSettingsPage {
 
   @Builder
   regexEmphasisSettings(index: number, refreshKey: number) {
-    Column({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
       Row() {
         Text('强调效果')
           .fontSize(AppFontSize.BODY_LARGE)
@@ -1403,7 +1404,7 @@ struct ReaderFontSettingsPage {
     }
     .width('100%')
     .constraintSize({ minHeight: 64 })
-    .padding({ top: 10, bottom: 10 })
+    .padding({ top: AppSpacing.MD, bottom: AppSpacing.MD })
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
     .alignItems(VerticalAlign.Center)
   }
@@ -1439,14 +1440,14 @@ struct ReaderFontSettingsPage {
     }
     .width('100%')
     .constraintSize({ minHeight: 64 })
-    .padding({ top: 10, bottom: 10 })
+    .padding({ top: AppSpacing.MD, bottom: AppSpacing.MD })
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
     .alignItems(VerticalAlign.Center)
   }
 
   @Builder
   regexFontSizeStepper(index: number) {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       Text('字体大小')
         .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.primaryTextColor())
@@ -1472,7 +1473,7 @@ struct ReaderFontSettingsPage {
     }
     .width('100%')
     .constraintSize({ minHeight: 64 })
-    .padding({ top: 10, bottom: 10 })
+    .padding({ top: AppSpacing.MD, bottom: AppSpacing.MD })
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
     .alignItems(VerticalAlign.Center)
   }
@@ -1493,8 +1494,8 @@ struct ReaderFontSettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.settingsDividerColor() })
     .alignItems(VerticalAlign.Center)

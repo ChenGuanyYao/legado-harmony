@@ -15,6 +15,7 @@ import { StartupCoverImageStore } from '../utils/StartupCoverImageStore';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Component
 struct ThemeColorOption {
@@ -43,7 +44,7 @@ struct ThemeColorOption {
       .width('calc(100% - 32vp)')
       .height(60)
       .padding({ left: 0, right: 0 })
-      .margin({ left: 16, right: 16 })
+      .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
       .backgroundColor(Color.Transparent)
       .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
       .alignItems(VerticalAlign.Center)
@@ -128,7 +129,7 @@ struct ThemeColorSettingsPage {
             this.colorOptions()
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12, top: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -535,18 +536,18 @@ struct ThemeColorSettingsPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
   @Builder
   modeOptions() {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       this.modeButton('浅色模式', 'light')
       this.modeButton('深色模式', 'dark')
     }
     .width('calc(100% - 24vp)')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-    .margin({ left: 12, right: 12 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
     .borderRadius(ThemeRuntime.cardRadius())
     .clip(true)
     .backgroundColor(this.cardColor())
@@ -583,7 +584,7 @@ struct ThemeColorSettingsPage {
       this.componentSourceRow('磨砂效果', '模糊、透明度、边框和阴影参数', 'glass', false)
     }
     .width('calc(100% - 24vp)')
-    .margin({ left: 12, right: 12 })
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
     .borderRadius(ThemeRuntime.cardRadius())
     .clip(true)
     .backgroundColor(this.cardColor())
@@ -591,7 +592,7 @@ struct ThemeColorSettingsPage {
 
   @Builder
   componentSourceRow(title: string, desc: string, category: string, divider: boolean = true) {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       Column() {
         Text(title)
           .fontSize(AppFontSize.BODY_LARGE)
@@ -599,7 +600,7 @@ struct ThemeColorSettingsPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 3 })
+          .margin({ top: AppSpacing.XXS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -630,7 +631,7 @@ struct ThemeColorSettingsPage {
     }
     .width('calc(100% - 28vp)')
     .constraintSize({ minHeight: 68 })
-    .padding({ top: 9, bottom: 9 })
+    .padding({ top: AppSpacing.MD, bottom: AppSpacing.MD })
     .margin({ left: 14, right: 14 })
     .border({ width: { bottom: divider ? 0.5 : 0 },
       color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
@@ -690,8 +691,8 @@ struct ThemeColorSettingsPage {
 
   @Builder
   startupCoverOptions() {
-    Column({ space: 12 }) {
-      Row({ space: 10 }) {
+    Column({ space: AppSpacing.LG }) {
+      Row({ space: AppSpacing.MD }) {
         Button(this.currentStartupImagePath() ? '更换自定义封面' : '上传自定义封面',
           { type: ButtonType.Normal })
           .height(38)
@@ -712,7 +713,7 @@ struct ThemeColorSettingsPage {
       }
       .width('100%')
 
-      Column({ space: 6 }) {
+      Column({ space: AppSpacing.SM }) {
         Text('主标题')
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
@@ -730,7 +731,7 @@ struct ThemeColorSettingsPage {
       .width('100%')
       .alignItems(HorizontalAlign.Start)
 
-      Column({ space: 6 }) {
+      Column({ space: AppSpacing.SM }) {
         Text('副标题')
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
@@ -749,8 +750,8 @@ struct ThemeColorSettingsPage {
       .alignItems(HorizontalAlign.Start)
     }
     .width('calc(100% - 24vp)')
-    .padding(14)
-    .margin({ left: 12, right: 12 })
+    .padding(AppSpacing.LG)
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
@@ -762,7 +763,7 @@ struct ThemeColorSettingsPage {
         .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .width('100%')
-        .margin({ bottom: 12 })
+        .margin({ bottom: AppSpacing.LG })
 
       ThemeStartupCover({
         themeId: this.customPreviewTheme().startup.styleId,
@@ -777,10 +778,10 @@ struct ThemeColorSettingsPage {
       .width('100%')
       .height(150)
       .borderRadius(this.customPreviewTheme().radius.medium)
-      .margin({ bottom: 12 })
+      .margin({ bottom: AppSpacing.LG })
       .clip(true)
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Stack() {
           ReaderThemeBackground({
             surfaceColor: this.customPreviewVariant().reader.backgroundColor,
@@ -797,8 +798,8 @@ struct ThemeColorSettingsPage {
         .borderRadius(this.customPreviewTheme().radius.medium)
         .clip(true)
 
-        Column({ space: 7 }) {
-          Row({ space: 6 }) {
+        Column({ space: AppSpacing.SM }) {
+          Row({ space: AppSpacing.SM }) {
             Blank()
               .height(8)
               .layoutWeight(1)
@@ -813,10 +814,10 @@ struct ThemeColorSettingsPage {
           Text('强调气泡')
             .fontSize(AppFontSize.CAPTION)
             .fontColor(this.customPreviewVariant().regexEmphasis.emphasisTextColor)
-            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+            .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
             .borderRadius(this.customPreviewTheme().radius.bubble)
             .backgroundColor(this.customPreviewVariant().regexEmphasis.emphasisColor)
-          Row({ space: 8 }) {
+          Row({ space: AppSpacing.MD }) {
             ForEach(['bookshelf', 'explore', 'search', 'mine'], (tabId: string) => {
               Image(ThemeAssetRegistry.navigationIcon(
                 this.customPreviewTheme().navigation.iconPackId, tabId))
@@ -843,11 +844,11 @@ struct ThemeColorSettingsPage {
         .height(44)
       }
       .width('100%')
-      .padding(12)
+      .padding(AppSpacing.LG)
       .borderRadius(this.customPreviewTheme().radius.medium)
       .backgroundColor(this.customPreviewVariant().colors.inputColor)
 
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         Button('主要按钮')
           .height(40)
           .layoutWeight(1)
@@ -859,12 +860,12 @@ struct ThemeColorSettingsPage {
           .layoutWeight(1)
       }
       .width('100%')
-      .margin({ top: 12 })
+      .margin({ top: AppSpacing.LG })
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 16, bottom: 16 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XL, bottom: AppSpacing.XL })
     .backgroundColor(this.cardColor())
-    .margin({ top: 12 })
+    .margin({ top: AppSpacing.LG })
   }
 
 }

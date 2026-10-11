@@ -1,5 +1,6 @@
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { AppFontSize } from '../../theme/AppFontSize';
+import { AppSpacing } from '../../theme/AppSpacing';
 
 /** 首页页签的占位外壳：冷启动时先显示的书架骨架，以及尚未激活页签的空白页。 */
 @Component
@@ -19,16 +20,16 @@ export struct FastBookshelfShell {
       }
       .width('100%')
       .height(56)
-      .padding({ left: 16, right: 16 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
       .alignItems(VerticalAlign.Center)
 
-      Column({ space: 10 }) {
+      Column({ space: AppSpacing.MD }) {
         this.placeholderCard(0.92)
         this.placeholderCard(0.78)
         this.placeholderCard(0.86)
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD })
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
@@ -46,7 +47,7 @@ export struct FastBookshelfShell {
         .borderRadius(6)
         .backgroundColor(this.appDarkMode ? '#24272D' : '#E6E9EE')
 
-      Column({ space: 8 }) {
+      Column({ space: AppSpacing.MD }) {
         Column()
           .width(`${Math.floor(widthRatio * 100)}%`)
           .height(16)
@@ -64,11 +65,11 @@ export struct FastBookshelfShell {
           .backgroundColor(this.appDarkMode ? '#202329' : '#ECEEF2')
       }
       .layoutWeight(1)
-      .margin({ left: 12 })
+      .margin({ left: AppSpacing.LG })
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
-    .padding(12)
+    .padding(AppSpacing.LG)
     .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(this.appDarkMode ? '#191B1F' : '#FFFFFF')
   }

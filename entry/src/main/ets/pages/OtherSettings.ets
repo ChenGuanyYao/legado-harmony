@@ -9,6 +9,7 @@ import { LanReaderPasswordStore } from '../core/lan/LanReaderPasswordStore';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -52,7 +53,7 @@ struct OtherSettingsPage {
             })
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -82,20 +83,20 @@ struct OtherSettingsPage {
                 Text('仅建议在可信局域网使用；关闭开关后令牌立即失效')
                   .fontSize(AppFontSize.CAPTION)
                   .fontColor(this.subTextColor())
-                  .margin({ top: 4 })
+                  .margin({ top: AppSpacing.XS })
                   .width('100%')
                 Text(this.lanReaderBackgroundStatus)
                   .fontSize(AppFontSize.CAPTION)
                   .fontColor(this.subTextColor())
-                  .margin({ top: 4 })
+                  .margin({ top: AppSpacing.XS })
                   .width('100%')
               }
               .width('calc(100% - 32vp)')
-              .margin({ left: 16, right: 16, bottom: 8 })
+              .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
             }
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -114,7 +115,7 @@ struct OtherSettingsPage {
             })
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -126,7 +127,7 @@ struct OtherSettingsPage {
             })
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -209,7 +210,7 @@ struct OtherSettingsPage {
         .fontSize(AppFontSize.BODY)
         .fontColor(this.primaryTextColor())
         .width('100%')
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         TextInput({ text: this.lanReaderPasswordDraft, placeholder: '留空则无需密码' })
           .type(InputType.Password)
           .layoutWeight(1)
@@ -227,16 +228,16 @@ struct OtherSettingsPage {
         }
       }
       .width('100%')
-      .margin({ top: 8 })
+      .margin({ top: AppSpacing.MD })
       Text(this.lanReaderPasswordUnreadable ? '已保存的密码无法读取，浏览器访问已锁定，请重新设置密码' :
         (this.lanReaderPassword ? '已设置密码，访问地址无需携带 token' : '未设置密码，局域网内打开地址即可进入'))
         .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
-        .margin({ top: 5 })
+        .margin({ top: AppSpacing.XS })
         .width('100%')
     }
     .width('calc(100% - 32vp)')
-    .margin({ left: 16, right: 16, bottom: 10 })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
   }
 
   async saveLanReaderPassword(): Promise<void> {
@@ -276,7 +277,7 @@ struct OtherSettingsPage {
       .onClick(() => this.copyLanReaderAddress())
     }
     .width('calc(100% - 32vp)')
-    .margin({ left: 16, right: 16, bottom: 8 })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -338,7 +339,7 @@ struct OtherSettingsPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
   @Builder
@@ -351,7 +352,7 @@ struct OtherSettingsPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -363,7 +364,7 @@ struct OtherSettingsPage {
     .width('calc(100% - 32vp)')
     .height(64)
     .padding({ left: 0, right: 0 })
-    .margin({ left: 16, right: 16 })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: showDivider ? 0.5 : 0 },
       color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
@@ -381,7 +382,7 @@ struct OtherSettingsPage {
         Text('设置鸿蒙沉浸材质的光感强度')
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -408,8 +409,8 @@ struct OtherSettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
     .alignItems(VerticalAlign.Center)
@@ -425,7 +426,7 @@ struct OtherSettingsPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -436,8 +437,8 @@ struct OtherSettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
   }

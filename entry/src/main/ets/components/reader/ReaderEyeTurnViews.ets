@@ -1,6 +1,7 @@
 import { ReaderEyeTurnCoordinator, ReaderEyeTurnViewState } from '../../core/reader/ReaderEyeTurnCoordinator';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { AppFontSize } from '../../theme/AppFontSize';
+import { AppSpacing } from '../../theme/AppSpacing';
 
 /** 阅读设置里的"眼动校准"一行：当前屏幕方向、识别状态和校准入口。 */
 @Component
@@ -25,7 +26,7 @@ export struct ReaderEyeTurnCalibrationSettingItem {
           `${this.landscape() ? '横屏' : '竖屏'} · ${this.state.status}`)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor)
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -75,7 +76,7 @@ export struct ReaderEyeCalibrationPanel {
 
   build() {
     Stack({ alignContent: Alignment.Center }) {
-      Column({ space: 18 }) {
+      Column({ space: AppSpacing.XL }) {
         Row() {
           Text('眼动翻页校准')
             .fontSize(AppFontSize.TITLE)
@@ -136,12 +137,12 @@ export struct ReaderEyeCalibrationPanel {
       }
       .width('calc(100% - 48vp)')
       .constraintSize({ maxWidth: 480 })
-      .padding(24)
+      .padding(AppSpacing.XXXL)
       .borderRadius(28)
       .backgroundColor(this.panelColor)
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
       .border({ width: 1, color: this.panelBorderColor })
-      .margin({ bottom: 24 })
+      .margin({ bottom: AppSpacing.XXXL })
 
       Stack({ alignContent: Alignment.Center }) {
         Row()
@@ -155,10 +156,10 @@ export struct ReaderEyeCalibrationPanel {
           Text(this.state.previewHint())
             .fontSize(AppFontSize.CAPTION)
             .fontColor('#FFFFFF')
-            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+            .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
             .borderRadius(ThemeRuntime.mediumRadius())
             .backgroundColor('#88000000')
-            .margin({ bottom: 8 })
+            .margin({ bottom: AppSpacing.MD })
         }
         .height('100%')
       }

@@ -13,6 +13,7 @@ import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -87,7 +88,7 @@ struct WebDavPage {
       }
 
       if (this.busy) {
-        Column({ space: 12 }) {
+        Column({ space: AppSpacing.LG }) {
           Progress({ value: this.busyProgress, total: 100, type: ProgressType.Linear })
             .width('100%')
             .color(this.accentColor())
@@ -96,7 +97,7 @@ struct WebDavPage {
             .fontColor(this.primaryTextColor())
         }
         .width('78%')
-        .padding(20)
+        .padding(AppSpacing.XXL)
         .borderRadius(ThemeRuntime.cardRadius())
         .backgroundColor(this.cardColor())
         .shadow({ radius: 18, color: this.appDarkMode ? '#66000000' : '#28000000' })
@@ -138,7 +139,7 @@ struct WebDavPage {
       if (this.connections.length === 0) {
         this.emptyGuide()
       } else {
-        List({ space: 8 }) {
+        List({ space: AppSpacing.MD }) {
           ListItem() {
             Row()
               .height(this.listTopInset())
@@ -181,13 +182,13 @@ struct WebDavPage {
               .fontColor(this.subTextColor())
               .width('100%')
               .textAlign(TextAlign.Center)
-              .padding({ top: 16, bottom: 16 })
+              .padding({ top: AppSpacing.XL, bottom: AppSpacing.XL })
           }
         }
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .layoutWeight(1)
-        .padding({ left: 12, right: 12 })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
         .margin({ top: -this.listTopInset() })
         .zIndex(0)
       }
@@ -198,11 +199,11 @@ struct WebDavPage {
 
   @Builder
   connectionRow(connection: WebDavConnection) {
-    Row({ space: 12 }) {
+    Row({ space: AppSpacing.LG }) {
       SymbolGlyph($r('sys.symbol.externaldrive'))
         .fontSize(26)
         .fontColor([this.accentColor()])
-      Column({ space: 4 }) {
+      Column({ space: AppSpacing.XS }) {
         Text(connection.name)
           .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
@@ -213,7 +214,7 @@ struct WebDavPage {
           .fontColor(this.subTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Row({ space: 8 }) {
+        Row({ space: AppSpacing.MD }) {
           if (connection.username) {
             Text(`账号：${connection.username}`)
               .fontSize(AppFontSize.CAPTION)
@@ -233,7 +234,7 @@ struct WebDavPage {
         .fontColor([this.subTextColor()])
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.MD })
     .backgroundColor(this.cardColor())
     .borderRadius(ThemeRuntime.cardRadius())
     .gesture(
@@ -272,7 +273,7 @@ struct WebDavPage {
 
   @Builder
   connectionEditSwipeButton(connection: WebDavConnection) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       SymbolGlyph($r('sys.symbol.square_and_pencil'))
         .fontSize(22)
         .fontColor(['#FFFFFF'])
@@ -292,7 +293,7 @@ struct WebDavPage {
 
   @Builder
   connectionDeleteSwipeButton(connection: WebDavConnection) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       SymbolGlyph($r('sys.symbol.trash'))
         .fontSize(22)
         .fontColor(['#FFFFFF'])
@@ -312,7 +313,7 @@ struct WebDavPage {
 
   @Builder
   emptyGuide() {
-    Column({ space: 14 }) {
+    Column({ space: AppSpacing.LG }) {
       SymbolGlyph($r('sys.symbol.externaldrive'))
         .fontSize(42)
         .fontColor([this.accentColor()])
@@ -345,7 +346,7 @@ struct WebDavPage {
           () => this.confirmDeleteActionConnection())
       }
       .width(148)
-      .padding({ top: 6, bottom: 6 })
+      .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -362,7 +363,7 @@ struct WebDavPage {
 
   @Builder
   connectionContextActionItem(icon: Resource, label: string, color: string, action: () => void) {
-    Row({ space: 10 }) {
+    Row({ space: AppSpacing.MD }) {
       SymbolGlyph(icon)
         .fontSize(18)
         .fontColor([color])
@@ -374,7 +375,7 @@ struct WebDavPage {
     }
     .width('100%')
     .height(44)
-    .padding({ left: 12, right: 12 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
     .alignItems(VerticalAlign.Center)
     .onClick(action)
   }
@@ -388,7 +389,7 @@ struct WebDavPage {
     }
     .width(52)
     .height(52)
-    .margin({ right: 22, bottom: this.navBarHeight + 22 })
+    .margin({ right: AppSpacing.XXL, bottom: this.navBarHeight + 22 })
     .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, this.cardColor(), 'button'))
     .backdropBlur(ThemeRuntime.glassBlur('button', 12))
     .border({ width: ThemeRuntime.glassBorderWidth('button'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'button') })
@@ -401,7 +402,7 @@ struct WebDavPage {
 
   @Builder
   connectionEditorDialogContent() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Text(this.editingConnectionId ? '编辑连接' : '添加连接')
         .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
@@ -409,8 +410,8 @@ struct WebDavPage {
         .width('100%')
       // 字段区包一层滚动：弹窗高度受限（如输入法弹出）时底部字段仍可达
       Scroll() {
-        Column({ space: 12 }) {
-          Column({ space: 6 }) {
+        Column({ space: AppSpacing.LG }) {
+          Column({ space: AppSpacing.SM }) {
             Text('名称').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
             TextInput({ text: this.draftName, placeholder: '例如：我的云盘' })
               .width('100%')
@@ -423,7 +424,7 @@ struct WebDavPage {
               })
           }
           .width('100%')
-          Column({ space: 6 }) {
+          Column({ space: AppSpacing.SM }) {
             Text('服务器地址').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
             TextInput({ text: this.draftBaseUrl, placeholder: 'http://192.168.1.10:8080/webdav' })
               .width('100%')
@@ -436,7 +437,7 @@ struct WebDavPage {
               })
           }
           .width('100%')
-          Column({ space: 6 }) {
+          Column({ space: AppSpacing.SM }) {
             Text('书籍目录').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
             TextInput({ text: this.draftLibraryRoot, placeholder: '留空表示 WebDAV 根目录' })
               .width('100%')
@@ -449,7 +450,7 @@ struct WebDavPage {
               })
           }
           .width('100%')
-          Column({ space: 6 }) {
+          Column({ space: AppSpacing.SM }) {
             Text('用户名').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
             TextInput({ text: this.draftUsername, placeholder: 'WebDAV 用户名' })
               .width('100%')
@@ -462,7 +463,7 @@ struct WebDavPage {
               })
           }
           .width('100%')
-          Column({ space: 6 }) {
+          Column({ space: AppSpacing.SM }) {
             Text('密码').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
             TextInput({ text: this.draftPassword, placeholder: '密码 / 应用专用密码' })
               .type(InputType.Password)
@@ -495,7 +496,7 @@ struct WebDavPage {
       .width('100%')
       .layoutWeight(1)
       .scrollBar(BarState.Off)
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('取消')
           .layoutWeight(1)
           .height(42)
@@ -510,9 +511,9 @@ struct WebDavPage {
           .onClick(() => this.submitEditorDialog())
       }
       .width('100%')
-      .margin({ top: 6 })
+      .margin({ top: AppSpacing.SM })
     }
-    .padding(20)
+    .padding(AppSpacing.XXL)
   }
 
   onSystemDialogFlagChanged(): void {

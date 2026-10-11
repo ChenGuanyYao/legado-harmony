@@ -10,6 +10,7 @@ import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 /**
  * 换源面板（书架长按"换源"与书籍详情页"换源"共用）。
@@ -310,7 +311,7 @@ export struct BookChangeSourceDialog {
 
       Column() {
         Row() {
-          Column({ space: 3 }) {
+          Column({ space: AppSpacing.XXS }) {
             Text('换源')
               .fontSize(AppFontSize.TITLE)
               .fontWeight(FontWeight.Bold)
@@ -328,14 +329,14 @@ export struct BookChangeSourceDialog {
             LoadingProgress()
               .width(26)
               .height(26)
-              .margin({ right: 14 })
+              .margin({ right: AppSpacing.LG })
           } else {
             SymbolGlyph($r('sys.symbol.arrow_clockwise'))
               .fontSize(21)
               .fontColor([this.primaryTextColor()])
               .width(40)
               .height(40)
-              .margin({ right: 4 })
+              .margin({ right: AppSpacing.XS })
               .onClick(() => this.refreshResults())
           }
           SymbolGlyph($r('sys.symbol.xmark'))
@@ -354,10 +355,10 @@ export struct BookChangeSourceDialog {
           .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .width('100%')
-          .margin({ top: 8, bottom: 10 })
+          .margin({ top: AppSpacing.MD, bottom: AppSpacing.MD })
 
         if (this.searching && this.results.length === 0) {
-          Column({ space: 10 }) {
+          Column({ space: AppSpacing.MD }) {
             LoadingProgress().width(36).height(36)
             Text('正在搜索可用书源...')
               .fontSize(AppFontSize.BODY)
@@ -374,11 +375,11 @@ export struct BookChangeSourceDialog {
             .height(260)
             .textAlign(TextAlign.Center)
         } else {
-          List({ space: 8 }) {
+          List({ space: AppSpacing.MD }) {
             ForEach(this.results, (book: SearchBook) => {
               ListItem() {
                 Row() {
-                  Column({ space: 4 }) {
+                  Column({ space: AppSpacing.XS }) {
                     Text(book.originName || book.origin)
                       .fontSize(AppFontSize.BODY_LARGE)
                       .fontWeight(FontWeight.Bold)
@@ -410,7 +411,7 @@ export struct BookChangeSourceDialog {
                     .onClick(() => this.switchSource(book))
                 }
                 .width('100%')
-                .padding(12)
+                .padding(AppSpacing.LG)
                 .backgroundColor(this.inputColor())
                 .borderRadius(ThemeRuntime.mediumRadius())
               }
@@ -418,7 +419,7 @@ export struct BookChangeSourceDialog {
 
             if (this.searching) {
               ListItem() {
-                Row({ space: 8 }) {
+                Row({ space: AppSpacing.MD }) {
                   LoadingProgress().width(20).height(20)
                   Text('继续加载中...').fontSize(AppFontSize.BODY).fontColor(this.subTextColor())
                 }
@@ -434,7 +435,7 @@ export struct BookChangeSourceDialog {
         }
       }
       .width('90%')
-      .padding(20)
+      .padding(AppSpacing.XXL)
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
       .clip(true)
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))

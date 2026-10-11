@@ -7,6 +7,7 @@ import { HdsFeedback } from '../../utils/HdsFeedback';
 import { ImmersiveBackButton } from '../ImmersiveBackButton';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { AppFontSize } from '../../theme/AppFontSize';
+import { AppSpacing } from '../../theme/AppSpacing';
 
 /**
  * 阅读页"缓存"对话框的内容（配合系统自定义对话框使用）。两种形态共用这一个组件：
@@ -180,7 +181,7 @@ export struct ReaderCacheDialogContent {
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%')
         .textAlign(TextAlign.Center)
-        .margin({ bottom: 8 })
+        .margin({ bottom: AppSpacing.MD })
 
       if (this.panelStatus()) {
         Text(this.panelStatus())
@@ -188,7 +189,7 @@ export struct ReaderCacheDialogContent {
           .fontColor(this.subTextColor())
           .width('100%')
           .textAlign(TextAlign.Center)
-          .margin({ bottom: 8 })
+          .margin({ bottom: AppSpacing.MD })
       }
 
       this.actionItem(this.caching ? '正在缓存...' : '缓存全文', () => {
@@ -204,12 +205,12 @@ export struct ReaderCacheDialogContent {
       Button('取消')
         .width('100%')
         .height(44)
-        .margin({ top: 10 })
+        .margin({ top: AppSpacing.MD })
         .backgroundColor(this.appDarkMode ? '#24272D' : '#F5F5F5')
         .fontColor(this.textColor())
         .onClick(() => this.onClose())
     }
-    .padding({ left: 18, right: 18, top: 18, bottom: 18 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XL, bottom: AppSpacing.XL })
   }
 
   @Builder
@@ -217,7 +218,7 @@ export struct ReaderCacheDialogContent {
     Button(label)
       .width('100%')
       .height(44)
-      .margin({ top: 6 })
+      .margin({ top: AppSpacing.SM })
       .backgroundColor(this.appDarkMode ? '#24272D' : '#F5F5F5')
       .fontColor(color || this.textColor())
       .enabled(!disabled)
@@ -258,10 +259,10 @@ export struct ReaderCacheDialogContent {
           .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .width('100%')
-          .margin({ bottom: 8 })
+          .margin({ bottom: AppSpacing.MD })
       }
 
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         TextInput({ placeholder: '章节范围，如 1-10、1,3,5-8', text: this.rangeDraft })
           .type(InputType.Normal)
           .fontSize(AppFontSize.BODY)
@@ -269,7 +270,7 @@ export struct ReaderCacheDialogContent {
           .placeholderColor(this.subTextColor())
           .layoutWeight(1)
           .height(42)
-          .padding({ left: 10, right: 10 })
+          .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
           .backgroundColor(this.appDarkMode ? '#1FFFFFFF' : '#0D000000')
           .borderRadius(ThemeRuntime.mediumRadius())
           .onChange((value: string) => {
@@ -285,12 +286,12 @@ export struct ReaderCacheDialogContent {
           .onClick(() => this.cacheRange())
       }
       .width('100%')
-      .margin({ bottom: 8 })
+      .margin({ bottom: AppSpacing.MD })
 
-      List({ space: 2 }) {
+      List({ space: AppSpacing.XXS }) {
         ForEach(this.chapters, (chapter: BookChapter, index: number) => {
           ListItem() {
-            Row({ space: 8 }) {
+            Row({ space: AppSpacing.MD }) {
               Text(chapter.title)
                 .fontSize(AppFontSize.BODY_LARGE)
                 .fontColor(chapter.cacheDate > 0 ? (this.appDarkMode ? '#DDEFE5' : '#244B35') : this.textColor())
@@ -301,13 +302,13 @@ export struct ReaderCacheDialogContent {
                 Text('已缓存')
                   .fontSize(AppFontSize.CAPTION)
                   .fontColor(this.appDarkMode ? '#7CC7A0' : '#1F8F55')
-                  .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                  .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
                   .backgroundColor(this.appDarkMode ? '#24382F' : '#E6F4EC')
                   .borderRadius(ThemeRuntime.smallRadius())
               }
             }
             .width('100%')
-            .padding({ left: 2, right: 2, top: 12, bottom: 12 })
+            .padding({ left: AppSpacing.XXS, right: AppSpacing.XXS, top: AppSpacing.LG, bottom: AppSpacing.LG })
             .onClick(() => this.startScopedCache([index]))
           }
         }, (chapter: BookChapter, index: number) =>
@@ -317,6 +318,6 @@ export struct ReaderCacheDialogContent {
       .width('100%')
       .height(380)
     }
-    .padding({ left: 18, right: 18, top: 18, bottom: 18 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XL, bottom: AppSpacing.XL })
   }
 }

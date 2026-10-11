@@ -9,6 +9,7 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 class ReaderCustomFontItem {
   familyName: string = '';
@@ -67,7 +68,7 @@ struct FontSettingsPage {
             this.customFontEntryItem()
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -489,7 +490,7 @@ struct FontSettingsPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
   @Builder
@@ -524,8 +525,8 @@ struct FontSettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 56 })
-    .padding({ left: 0, right: 0, top: 12, bottom: 12 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.LG, bottom: AppSpacing.LG })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
     .alignItems(VerticalAlign.Center)
@@ -541,7 +542,7 @@ struct FontSettingsPage {
       Text('上传 / 删除')
         .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
-        .margin({ right: 8 })
+        .margin({ right: AppSpacing.MD })
       SymbolGlyph($r('sys.symbol.chevron_right'))
         .fontSize(18)
         .fontColor([this.subTextColor()])
@@ -549,7 +550,7 @@ struct FontSettingsPage {
     .width('calc(100% - 32vp)')
     .height(56)
     .padding({ left: 0, right: 0 })
-    .margin({ left: 16, right: 16 })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
     .alignItems(VerticalAlign.Center)

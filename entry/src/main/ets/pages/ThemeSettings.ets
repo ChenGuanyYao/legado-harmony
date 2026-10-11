@@ -33,6 +33,7 @@ import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 const STORE_COVER_MIN_HEIGHT = 170;
 const STORE_COVER_MAX_HEIGHT = 340;
@@ -145,7 +146,7 @@ struct ThemeSettingsPage {
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
-      List({ space: 12, scroller: this.themeListScroller }) {
+      List({ space: AppSpacing.LG, scroller: this.themeListScroller }) {
         // List padding is fixed to the viewport in ArkUI. Use real list items
         // for the safe-area gaps so they scroll away with the content.
         ListItem() {
@@ -214,8 +215,8 @@ struct ThemeSettingsPage {
       // only its parent leaves the List viewport clipped to the safe area.
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
       .padding({
-        left: 14,
-        right: 14
+        left: AppSpacing.LG,
+        right: AppSpacing.LG
       })
       .scrollBar(BarState.Off)
       .backgroundColor(this.pageColor())
@@ -627,7 +628,7 @@ struct ThemeSettingsPage {
     // additional opaque strip above it while keeping controls out of the
     // system status area.
     .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight, right: 12 })
+    .padding({ top: this.statusBarHeight, right: AppSpacing.LG })
     .backgroundColor(this.titleBarSurfaceColor())
     .backdropBlur(ThemeRuntime.topBarBlur())
     .alignItems(VerticalAlign.Center)
@@ -639,12 +640,12 @@ struct ThemeSettingsPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 2, top: 6, bottom: 0 })
+      .padding({ left: AppSpacing.XXS, top: AppSpacing.SM, bottom: 0 })
   }
 
   @Builder
   themeStoreEntryButton() {
-    Row({ space: 5 }) {
+    Row({ space: AppSpacing.XS }) {
       SymbolGlyph($r('sys.symbol.bag'))
         .fontSize(14)
         .fontColor([this.accentColor()])
@@ -653,7 +654,7 @@ struct ThemeSettingsPage {
         .fontColor(this.accentColor())
     }
     .height(30)
-    .padding({ left: 10, right: 10 })
+    .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
     .borderRadius(15)
     .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
     .alignItems(VerticalAlign.Center)
@@ -663,7 +664,7 @@ struct ThemeSettingsPage {
 
   @Builder
   purchasedThemesEmptyHint() {
-    Row({ space: 3 }) {
+    Row({ space: AppSpacing.XXS }) {
       Text('暂无已购主题，去主题商店逛逛')
         .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
@@ -672,7 +673,7 @@ struct ThemeSettingsPage {
         .fontColor([this.subTextColor()])
     }
     .width('100%')
-    .padding({ left: 2, top: 8, bottom: 4 })
+    .padding({ left: AppSpacing.XXS, top: AppSpacing.MD, bottom: AppSpacing.XS })
     .alignItems(VerticalAlign.Center)
     .onClick(() => this.openThemeStore())
   }
@@ -686,7 +687,7 @@ struct ThemeSettingsPage {
         .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
         .width('100%')
-        .padding({ left: 20, top: 10, bottom: 2 })
+        .padding({ left: AppSpacing.XXL, top: AppSpacing.MD, bottom: AppSpacing.XXS })
       this.themeStoreSwiper()
       this.storePageDots()
     }
@@ -711,19 +712,19 @@ struct ThemeSettingsPage {
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
-        .margin({ left: 2 })
+        .margin({ left: AppSpacing.XXS })
       if (this.accountLoggedIn) {
         Text(`${this.accountPoints} 点`)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.accentColor())
-          .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+          .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
           .borderRadius(ThemeRuntime.buttonRadius())
           .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
       }
     }
     .width('100%')
     .height(56 + this.statusBarHeight)
-    .padding({ top: this.statusBarHeight, left: 12, right: 14 })
+    .padding({ top: this.statusBarHeight, left: AppSpacing.LG, right: AppSpacing.LG })
     .backgroundColor(this.titleBarSurfaceColor())
     .backdropBlur(ThemeRuntime.topBarBlur())
     .alignItems(VerticalAlign.Center)
@@ -758,12 +759,12 @@ struct ThemeSettingsPage {
     })
     .width('100%')
     .layoutWeight(1)
-    .padding({ left: 18, right: 18, top: 8, bottom: 6 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.SM })
   }
 
   @Builder
   storePageDots() {
-    Row({ space: 6 }) {
+    Row({ space: AppSpacing.SM }) {
       ForEach(this.storeThemes(), (theme: ThemePack, index: number) => {
         Row()
           .width(index === this.storePageIndex ? 16 : 6)
@@ -781,7 +782,7 @@ struct ThemeSettingsPage {
   /** One full detail page per theme: cover art, reader sample, pricing and actions. */
   @Builder
   storeThemePage(theme: ThemePack) {
-    Column({ space: 10 }) {
+    Column({ space: AppSpacing.MD }) {
       Stack() {
         ThemeStartupCover({
           themeId: theme.startup.styleId,
@@ -794,7 +795,7 @@ struct ThemeSettingsPage {
       .borderRadius(theme.radius.large)
       .clip(true)
 
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         Text(theme.name)
           .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
@@ -808,7 +809,7 @@ struct ThemeSettingsPage {
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Text(theme.description)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.activeVariant(theme).colors.subTextColor)
@@ -827,7 +828,7 @@ struct ThemeSettingsPage {
       this.storeThemeActions(theme)
     }
     .width('100%')
-    .padding(12)
+    .padding(AppSpacing.LG)
     .alignItems(HorizontalAlign.Start)
     .borderRadius(theme.radius.card)
     .backgroundColor(this.activeVariant(theme).colors.cardColor)
@@ -847,7 +848,7 @@ struct ThemeSettingsPage {
         backgroundAssetId: this.activeVariant(theme).reader.backgroundAssetId,
         compact: true
       })
-      Column({ space: 7 }) {
+      Column({ space: AppSpacing.SM }) {
         Text('正文预览 · 护眼底色与字色')
           .fontSize(AppFontSize.MICRO)
           .fontColor(this.activeVariant(theme).reader.subTextColor)
@@ -879,7 +880,7 @@ struct ThemeSettingsPage {
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
       .width('100%')
-      .padding(12)
+      .padding(AppSpacing.LG)
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
@@ -890,7 +891,7 @@ struct ThemeSettingsPage {
 
   @Builder
   storeNavInfoRow(theme: ThemePack) {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       ForEach(['bookshelf', 'explore', 'search', 'mine'], (tabId: string) => {
         Image(ThemeAssetRegistry.navigationIcon(theme.navigation.iconPackId, tabId))
           .width(16)
@@ -932,7 +933,7 @@ struct ThemeSettingsPage {
           this.selectTheme(theme.id);
         })
     } else {
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         this.storeTrialButton(theme)
         this.storeAcquireButton(theme)
       }
@@ -982,21 +983,21 @@ struct ThemeSettingsPage {
       Text(this.isTrialTheme(theme.id) ? '试用中' : '使用中')
         .fontSize(AppFontSize.MICRO)
         .fontColor('#FFFFFF')
-        .padding({ left: 7, right: 7, top: 3, bottom: 3 })
+        .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
         .borderRadius(10)
         .backgroundColor(this.activeVariant(theme).colors.accentColor)
     } else if (BuiltinThemeRegistry.isFree(theme.id) || AccountSessionStore.hasValidEntitlement(theme.id)) {
       Text(BuiltinThemeRegistry.isFree(theme.id) ? '免费' : '已购')
         .fontSize(AppFontSize.MICRO)
         .fontColor(this.activeVariant(theme).colors.accentColor)
-        .padding({ left: 7, right: 7, top: 3, bottom: 3 })
+        .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
         .borderRadius(10)
         .backgroundColor(this.activeVariant(theme).colors.inputColor)
     } else {
       Text(`${this.storeThemePricePoints(theme.id)}点`)
         .fontSize(AppFontSize.MICRO)
         .fontColor(this.activeVariant(theme).colors.subTextColor)
-        .padding({ left: 7, right: 7, top: 3, bottom: 3 })
+        .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
         .borderRadius(10)
         .backgroundColor(this.activeVariant(theme).colors.inputColor)
     }
@@ -1004,7 +1005,7 @@ struct ThemeSettingsPage {
 
   @Builder
   customThemeSectionTitle() {
-    Row({ space: 10 }) {
+    Row({ space: AppSpacing.MD }) {
       Text(`自定义主题 · ${this.customSchemes.length}/${CustomThemeSchemeStore.MAX_SCHEMES}`)
         .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
@@ -1022,7 +1023,7 @@ struct ThemeSettingsPage {
         })
     }
     .width('100%')
-    .padding({ left: 2, top: 6, bottom: 0 })
+    .padding({ left: AppSpacing.XXS, top: AppSpacing.SM, bottom: 0 })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -1044,7 +1045,7 @@ struct ThemeSettingsPage {
 
   @Builder
   customThemeDeleteSwipeAction(scheme: CustomThemeScheme) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       SymbolGlyph($r('sys.symbol.trash'))
         .fontSize(22)
         .fontColor(['#FFFFFF'])
@@ -1085,7 +1086,7 @@ struct ThemeSettingsPage {
         })
       }
       .width(148)
-      .padding({ top: 6, bottom: 6 })
+      .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -1110,7 +1111,7 @@ struct ThemeSettingsPage {
 
   @Builder
   contextActionItem(icon: Resource, label: string, color: string, action: () => void) {
-    Row({ space: 10 }) {
+    Row({ space: AppSpacing.MD }) {
       SymbolGlyph(icon)
         .fontSize(18)
         .fontColor([color])
@@ -1122,7 +1123,7 @@ struct ThemeSettingsPage {
     }
     .width('100%')
     .height(46)
-    .padding({ left: 12, right: 12 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
     .alignItems(VerticalAlign.Center)
     .onClick(action)
   }
@@ -1130,7 +1131,7 @@ struct ThemeSettingsPage {
   @Builder
   renameCustomThemeDialog() {
     Column() {
-      Column({ space: 16 }) {
+      Column({ space: AppSpacing.XL }) {
         Text('重命名自定义主题')
           .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
@@ -1145,7 +1146,7 @@ struct ThemeSettingsPage {
           .onChange((value: string) => {
             this.renameCustomThemeName = value;
           })
-        Row({ space: 12 }) {
+        Row({ space: AppSpacing.LG }) {
           Button('取消', { type: ButtonType.Normal })
             .layoutWeight(1)
             .height(42)
@@ -1166,7 +1167,7 @@ struct ThemeSettingsPage {
       }
       .width('calc(100% - 48vp)')
       .constraintSize({ maxWidth: 360 })
-      .padding(20)
+      .padding(AppSpacing.XXL)
       .borderRadius(ThemeRuntime.glassCornerRadius(18, 'panel'))
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -1192,7 +1193,7 @@ struct ThemeSettingsPage {
   @Builder
   deleteCustomThemeDialog() {
     Column() {
-      Column({ space: 14 }) {
+      Column({ space: AppSpacing.LG }) {
         Text('删除自定义主题')
           .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
@@ -1201,7 +1202,7 @@ struct ThemeSettingsPage {
           .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .width('100%')
-        Row({ space: 12 }) {
+        Row({ space: AppSpacing.LG }) {
           Button('取消', { type: ButtonType.Normal })
             .layoutWeight(1)
             .height(42)
@@ -1221,7 +1222,7 @@ struct ThemeSettingsPage {
       }
       .width('calc(100% - 48vp)')
       .constraintSize({ maxWidth: 360 })
-      .padding(20)
+      .padding(AppSpacing.XXL)
       .borderRadius(ThemeRuntime.glassCornerRadius(18, 'panel'))
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -1247,12 +1248,12 @@ struct ThemeSettingsPage {
   @Builder
   startupTextDialog() {
     Column() {
-      Column({ space: 14 }) {
+      Column({ space: AppSpacing.LG }) {
         Text(`编辑「${BuiltinThemeRegistry.findById(this.startupTextThemeId).name}」启动文案`)
           .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
-        Column({ space: 6 }) {
+        Column({ space: AppSpacing.SM }) {
           Text('主标题')
             .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
@@ -1271,7 +1272,7 @@ struct ThemeSettingsPage {
         }
         .width('100%')
         .alignItems(HorizontalAlign.Start)
-        Column({ space: 6 }) {
+        Column({ space: AppSpacing.SM }) {
           Text('副标题')
             .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
@@ -1299,7 +1300,7 @@ struct ThemeSettingsPage {
             this.startupTextTitle = '开源轻页';
             this.startupTextSubtitle = StartupCoverTextStore.defaultSubtitle(this.startupTextThemeId);
           })
-        Row({ space: 12 }) {
+        Row({ space: AppSpacing.LG }) {
           Button('取消', { type: ButtonType.Normal })
             .layoutWeight(1)
             .height(42)
@@ -1319,7 +1320,7 @@ struct ThemeSettingsPage {
       }
       .width('calc(100% - 48vp)')
       .constraintSize({ maxWidth: 360 })
-      .padding(20)
+      .padding(AppSpacing.XXL)
       .borderRadius(ThemeRuntime.glassCornerRadius(18, 'panel'))
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -1339,7 +1340,7 @@ struct ThemeSettingsPage {
   @Builder
   themeApplyDialog() {
     Column() {
-      Column({ space: 14 }) {
+      Column({ space: AppSpacing.LG }) {
         Text(`应用「${this.applyDialogThemeName}」`)
           .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
@@ -1352,7 +1353,7 @@ struct ThemeSettingsPage {
         if (this.applyDialogHasCover) {
           this.themeApplyToggleRow('cover')
         }
-        Row({ space: 12 }) {
+        Row({ space: AppSpacing.LG }) {
           Button('取消', { type: ButtonType.Normal })
             .layoutWeight(1)
             .height(42)
@@ -1372,7 +1373,7 @@ struct ThemeSettingsPage {
       }
       .width('calc(100% - 48vp)')
       .constraintSize({ maxWidth: 360 })
-      .padding(20)
+      .padding(AppSpacing.XXL)
       .borderRadius(ThemeRuntime.glassCornerRadius(18, 'panel'))
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -1397,8 +1398,8 @@ struct ThemeSettingsPage {
 
   @Builder
   themeApplyToggleRow(category: string) {
-    Row({ space: 12 }) {
-      Column({ space: 3 }) {
+    Row({ space: AppSpacing.LG }) {
+      Column({ space: AppSpacing.XXS }) {
         Text(category === 'layout' ? '应用主题排版' : '应用主题封面')
           .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
@@ -1421,7 +1422,7 @@ struct ThemeSettingsPage {
       })
     }
     .width('100%')
-    .padding({ top: 2, bottom: 2 })
+    .padding({ top: AppSpacing.XXS, bottom: AppSpacing.XXS })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -1583,7 +1584,7 @@ struct ThemeSettingsPage {
 
   @Builder
   themeBookCoverSetting(theme: ThemePack) {
-    Row({ space: 12 }) {
+    Row({ space: AppSpacing.LG }) {
       Stack() {
         Swiper() {
           ForEach(this.themeCoverSet(theme), (cover: ResourceStr, index: number) => {
@@ -1609,7 +1610,7 @@ struct ThemeSettingsPage {
       .width(42)
       .height(58)
 
-      Column({ space: 4 }) {
+      Column({ space: AppSpacing.XS }) {
         Text('主题书籍封面')
           .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Medium)
@@ -1630,7 +1631,7 @@ struct ThemeSettingsPage {
       })
     }
     .width('100%')
-    .padding(12)
+    .padding(AppSpacing.LG)
     .alignItems(VerticalAlign.Center)
     .borderRadius(theme.radius.medium)
     .backgroundColor(this.activeVariant(theme).colors.inputColor)
@@ -1638,8 +1639,8 @@ struct ThemeSettingsPage {
 
   @Builder
   themeCard(theme: ThemePack, customSchemeId: string = '') {
-    Column({ space: 12 }) {
-      Row({ space: 10 }) {
+    Column({ space: AppSpacing.LG }) {
+      Row({ space: AppSpacing.MD }) {
         Image(ThemeAssetRegistry.themeLogo(theme.id))
           .width(42)
           .height(42)
@@ -1647,7 +1648,7 @@ struct ThemeSettingsPage {
           .objectFit(ImageFit.Contain)
           .draggable(false)
 
-        Column({ space: 3 }) {
+        Column({ space: AppSpacing.XXS }) {
           Text(theme.name)
             .fontSize(AppFontSize.SUBTITLE)
             .fontWeight(FontWeight.Bold)
@@ -1666,14 +1667,14 @@ struct ThemeSettingsPage {
           Text('试用中')
             .fontSize(AppFontSize.CAPTION)
             .fontColor('#FFFFFF')
-            .padding({ left: 9, right: 9, top: 4, bottom: 4 })
+            .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
             .borderRadius(12)
             .backgroundColor(this.activeVariant(theme).colors.accentColor)
         } else if (this.isSelected(theme, customSchemeId)) {
           Text('已启用')
             .fontSize(AppFontSize.CAPTION)
             .fontColor('#FFFFFF')
-            .padding({ left: 9, right: 9, top: 4, bottom: 4 })
+            .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
             .borderRadius(12)
             .backgroundColor(this.activeVariant(theme).colors.accentColor)
         } else if (this.applyingThemeId === (customSchemeId || theme.id)) {
@@ -1684,7 +1685,7 @@ struct ThemeSettingsPage {
           Text('待应用')
             .fontSize(AppFontSize.CAPTION)
             .fontColor(this.activeVariant(theme).colors.accentColor)
-            .padding({ left: 9, right: 9, top: 4, bottom: 4 })
+            .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
             .borderRadius(12)
             .backgroundColor(this.activeVariant(theme).colors.inputColor)
         } else if (theme.id !== ThemeIds.CUSTOM) {
@@ -1692,7 +1693,7 @@ struct ThemeSettingsPage {
             .fontSize(AppFontSize.CAPTION)
             .fontColor(this.hasThemeAccess(theme.id) ?
               this.activeVariant(theme).colors.accentColor : this.activeVariant(theme).colors.subTextColor)
-            .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+            .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
             .borderRadius(11)
             .backgroundColor(this.activeVariant(theme).colors.inputColor)
         }
@@ -1703,7 +1704,7 @@ struct ThemeSettingsPage {
       if (this.isSelected(theme, customSchemeId) && this.themeHasBookCover(theme)) {
         this.themeBookCoverSetting(theme)
       }
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         if (!this.isSelected(theme, customSchemeId) && this.themeHasBookCover(theme)) {
           Stack() {
             Swiper() {
@@ -1759,7 +1760,7 @@ struct ThemeSettingsPage {
         .width('100%')
       }
       if (this.focusedThemeId === theme.id && this.isThemeTrialCandidate(theme.id)) {
-        Row({ space: 10 }) {
+        Row({ space: AppSpacing.MD }) {
           Button(this.isTrialTheme(theme.id) ? '结束试用' : '试用5分钟')
             .height(34)
             .fontSize(AppFontSize.CAPTION)
@@ -1789,7 +1790,7 @@ struct ThemeSettingsPage {
       }
     }
     .width('100%')
-    .padding(14)
+    .padding(AppSpacing.LG)
     .borderRadius(theme.radius.card)
     .backgroundColor(this.activeVariant(theme).colors.cardColor)
     .border({
@@ -1980,7 +1981,7 @@ struct ThemeSettingsPage {
 
   @Builder
   themeVisualPreview(theme: ThemePack, customSchemeId: string = '') {
-    Column({ space: 9 }) {
+    Column({ space: AppSpacing.MD }) {
       Stack({ alignContent: Alignment.TopStart }) {
         ThemeStartupCover({
           themeId: theme.startup.styleId,
@@ -2000,7 +2001,7 @@ struct ThemeSettingsPage {
       .borderRadius(theme.radius.medium)
       .clip(true)
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
       Stack() {
         ReaderThemeBackground({
           surfaceColor: this.activeVariant(theme).reader.backgroundColor,
@@ -2017,8 +2018,8 @@ struct ThemeSettingsPage {
       .borderRadius(theme.radius.medium)
       .clip(true)
 
-      Column({ space: 7 }) {
-        Row({ space: 6 }) {
+      Column({ space: AppSpacing.SM }) {
+        Row({ space: AppSpacing.SM }) {
           Blank()
             .height(8)
             .layoutWeight(1)
@@ -2051,7 +2052,7 @@ struct ThemeSettingsPage {
           }
           .textBackgroundStyle(this.themeRegexPreviewBackground(theme))
         }
-        Row({ space: 5 }) {
+        Row({ space: AppSpacing.XS }) {
           ForEach(['bookshelf', 'explore', 'search', 'mine'], (tabId: string) => {
             Image(ThemeAssetRegistry.navigationIcon(theme.navigation.iconPackId, tabId))
               .width(16)
@@ -2067,7 +2068,7 @@ struct ThemeSettingsPage {
       .width('100%')
     }
     .width('100%')
-    .padding(10)
+    .padding(AppSpacing.MD)
     .borderRadius(theme.radius.medium)
     .backgroundColor(this.activeVariant(theme).colors.inputColor)
   }

@@ -4,6 +4,7 @@ import { SearchExploreSettings } from '../../utils/SearchExploreSettingsStore';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { CloudSyncSettingsStore } from '../../account/CloudSyncSettingsStore';
 import { AppFontSize } from '../../theme/AppFontSize';
+import { AppSpacing } from '../../theme/AppSpacing';
 
 /** 首页"我的"页签：设置入口列表。 */
 @Component
@@ -24,7 +25,7 @@ export struct SettingsPage {
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       Scroll() {
-        Column({ space: 12 }) {
+        Column({ space: AppSpacing.LG }) {
           Row()
             .width('100%')
             .height(56 + this.statusBarHeight)
@@ -76,7 +77,7 @@ export struct SettingsPage {
             .height(56 + Math.max(this.navBarHeight, 8) + 20)
         }
         .width('calc(100% - 24vp)')
-        .margin({ left: 12, right: 12, top: 12 })
+        .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG })
         .justifyContent(FlexAlign.Start)
       }
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
@@ -96,7 +97,7 @@ export struct SettingsPage {
       .width('100%')
       .height(56 + this.statusBarHeight)
       .alignItems(VerticalAlign.Center)
-      .padding({ left: 16, top: this.statusBarHeight })
+      .padding({ left: AppSpacing.XL, top: this.statusBarHeight })
       .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
       .backdropBlur(ThemeRuntime.topBarBlur())
     }
@@ -108,7 +109,7 @@ export struct SettingsPage {
 
   @Builder
   accountSummaryCard() {
-    Row({ space: 12 }) {
+    Row({ space: AppSpacing.LG }) {
       if (this.accountLoggedIn && this.accountAvatarUrl) {
         Image(this.accountAvatarUrl)
           .width(48)
@@ -123,7 +124,7 @@ export struct SettingsPage {
           .objectFit(ImageFit.Cover)
       }
 
-      Column({ space: 4 }) {
+      Column({ space: AppSpacing.XS }) {
         Text(this.accountLoggedIn ? this.accountDisplayName : '登录华为账号')
           .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Bold)
@@ -140,7 +141,7 @@ export struct SettingsPage {
         .fontColor([this.subTextColor()])
     }
     .width('100%')
-    .padding(16)
+    .padding(AppSpacing.XL)
     .borderRadius(ThemeRuntime.largeRadius())
     .backgroundColor(this.glassCardColor())
     .onClick(() => {
@@ -157,7 +158,7 @@ export struct SettingsPage {
           .fontColor([this.subTextColor()])
           .width(32)
 
-        Column({ space: 3 }) {
+        Column({ space: AppSpacing.XXS }) {
           Text('数据同步')
             .fontSize(AppFontSize.BODY_LARGE)
             .fontWeight(FontWeight.Medium)
@@ -169,7 +170,7 @@ export struct SettingsPage {
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
-        .margin({ left: 12 })
+        .margin({ left: AppSpacing.LG })
 
         SymbolGlyph($r('sys.symbol.chevron_right'))
           .fontSize(18)
@@ -177,7 +178,7 @@ export struct SettingsPage {
       }
       .width('100%')
       .height(64)
-      .padding({ left: 16, right: 16 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
       .alignItems(VerticalAlign.Center)
 
       Divider()
@@ -206,7 +207,7 @@ export struct SettingsPage {
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
-          .margin({ left: 12 })
+          .margin({ left: AppSpacing.LG })
 
         SymbolGlyph($r('sys.symbol.chevron_right'))
           .fontSize(18)
@@ -214,14 +215,14 @@ export struct SettingsPage {
       }
       .width('100%')
       .height(56)
-      .padding({ left: 16, right: 16 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
       .alignItems(VerticalAlign.Center)
 
       if (showDivider) {
         Divider()
           .strokeWidth(0.5)
           .color(this.dividerColor())
-          .margin({ left: 60, right: 16 })
+          .margin({ left: 60, right: AppSpacing.XL })
       }
     }
     .width('100%')

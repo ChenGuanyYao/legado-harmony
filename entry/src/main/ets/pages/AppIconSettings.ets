@@ -7,6 +7,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -42,7 +43,7 @@ struct AppIconSettingsPage {
             .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
             .width('100%')
-            .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+            .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
 
           Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween }) {
             ForEach(AppIconManager.OPTIONS, (option: AppIconOption) => {
@@ -50,7 +51,7 @@ struct AppIconSettingsPage {
             }, (option: AppIconOption) => option.id)
           }
           .width('100%')
-          .padding({ left: 12, right: 12 })
+          .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
         }
         .width('100%')
         .padding({ top: 56 + this.statusBarHeight, bottom: 32 + this.navBarHeight })
@@ -206,34 +207,34 @@ struct AppIconSettingsPage {
         .fontWeight(FontWeight.Medium)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ top: 8 })
+        .margin({ top: AppSpacing.MD })
 
       Text(option.desc)
         .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .margin({ top: 3 })
+        .margin({ top: AppSpacing.XXS })
 
       if (this.loadedDynamicIcons && !this.isConfigured(option)) {
         Text('未生效')
           .fontSize(AppFontSize.MICRO)
           .fontColor('#B46A00')
-          .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+          .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
           .backgroundColor('#FFF2D6')
           .borderRadius(ThemeRuntime.mediumRadius())
-          .margin({ top: 8 })
+          .margin({ top: AppSpacing.MD })
       } else if (this.applyingIconId === option.id) {
         Text('切换中')
           .fontSize(AppFontSize.MICRO)
           .fontColor(this.subTextColor())
-          .margin({ top: 8 })
+          .margin({ top: AppSpacing.MD })
       }
     }
     .width('48%')
     .height(166)
-    .padding({ top: 14, left: 10, right: 10, bottom: 12 })
-    .margin({ bottom: 12 })
+    .padding({ top: AppSpacing.LG, left: AppSpacing.MD, right: AppSpacing.MD, bottom: AppSpacing.LG })
+    .margin({ bottom: AppSpacing.LG })
     .backgroundColor(this.cardColor())
     .borderRadius(ThemeRuntime.cardRadius())
     .border({ width: 1, color: this.optionBorderColor(this.appIconId === option.id) })

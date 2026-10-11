@@ -7,6 +7,7 @@ import deviceInfo from '@ohos.deviceInfo';
 import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { AppFontSize } from '../../theme/AppFontSize';
+import { AppSpacing } from '../../theme/AppSpacing';
 
 export type SearchBookAction = (book: SearchBook) => void;
 
@@ -88,7 +89,7 @@ export struct SearchBookResultList {
   }
 
   build() {
-    List({ scroller: this.scroller, space: 8 }) {
+    List({ scroller: this.scroller, space: AppSpacing.MD }) {
       if (this.topPadding > 0) {
         ListItem() {
           Row()
@@ -109,7 +110,7 @@ export struct SearchBookResultList {
             Text('继续加载中...')
               .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor)
-              .margin({ left: 8 })
+              .margin({ left: AppSpacing.MD })
           }
           .width('100%')
           .height(44)
@@ -125,7 +126,7 @@ export struct SearchBookResultList {
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
     .layoutWeight(1)
-    .padding({ left: 16, right: 16 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(this.pageColor)
     .scrollBar(BarState.Auto)
     .onReachEnd(() => {
@@ -184,7 +185,7 @@ export struct SearchBookResultList {
         Text(this.safeText(book.author, '作者未知'))
           .fontSize(AppFontSize.BODY)
           .fontColor(this.secondaryTextColor)
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
 
         if (this.showResultTags && this.getTags(book).length > 0) {
           Flex({ wrap: FlexWrap.Wrap }) {
@@ -193,14 +194,14 @@ export struct SearchBookResultList {
             })
           }
           .width('100%')
-          .margin({ top: 7 })
+          .margin({ top: AppSpacing.SM })
         }
 
         if (this.metadataLine(book)) {
           Text(this.metadataLine(book))
             .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor)
-            .margin({ top: 3 })
+            .margin({ top: AppSpacing.XXS })
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
@@ -223,7 +224,7 @@ export struct SearchBookResultList {
       }
     }
     .width('100%')
-    .padding(12)
+    .padding(AppSpacing.LG)
     .backgroundColor(this.cardColor)
     .borderRadius(ThemeRuntime.cardRadius())
     .border({ width: this.itemBorderWidth, color: this.itemBorderColor })
@@ -276,7 +277,7 @@ export struct SearchBookResultList {
   @Builder
   searchResultFallbackSwipeActions(book: SearchBook) {
     Row() {
-      Column({ space: 4 }) {
+      Column({ space: AppSpacing.XS }) {
         SymbolGlyph(this.searchResultShelfActionIcon(book))
           .fontSize(22)
           .fontColor(['#FFFFFF'])
@@ -291,7 +292,7 @@ export struct SearchBookResultList {
       .backgroundColor(ThemeRuntime.buttonColor(this.isDarkMode()))
       .onClick(() => this.onToggleShelf(book))
 
-      Column({ space: 4 }) {
+      Column({ space: AppSpacing.XS }) {
         SymbolGlyph($r('sys.symbol.book'))
           .fontSize(22)
           .fontColor(['#FFFFFF'])
@@ -311,7 +312,7 @@ export struct SearchBookResultList {
 
   @Builder
   aggregationIndicator(book: SearchBook) {
-    Column({ space: 3 }) {
+    Column({ space: AppSpacing.XXS }) {
       Text(`${book.aggregationCount}`)
         .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
@@ -322,7 +323,7 @@ export struct SearchBookResultList {
     }
     .width(64)
     .height(44)
-    .margin({ left: 12 })
+    .margin({ left: AppSpacing.LG })
     .justifyContent(FlexAlign.Center)
   }
 
@@ -351,10 +352,10 @@ export struct SearchBookResultList {
     Text(tag)
       .fontSize(AppFontSize.CAPTION)
       .fontColor(BookDisplayHelper.getTagTextColor(index, this.isDarkMode()))
-      .padding({ left: 7, right: 7, top: 3, bottom: 3 })
+      .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
       .backgroundColor(BookDisplayHelper.getTagBackgroundColor(index, this.isDarkMode()))
       .borderRadius(ThemeRuntime.mediumRadius())
-      .margin({ right: 6, bottom: 4 })
+      .margin({ right: AppSpacing.SM, bottom: AppSpacing.XS })
   }
 
   @Builder

@@ -18,6 +18,7 @@ import { ReplaceRuleImport } from '../core/rule/ReplaceRuleImport';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 const REPLACE_RULE_IMPORT_FILE_LIMIT_BYTES: number = 5 * 1024 * 1024;
 const REPLACE_RULE_IMPORT_TIMEOUT_MS: number = 20000;
@@ -308,7 +309,7 @@ struct ReaderReplaceRulesPage {
         }
         .width(52)
         .height(52)
-        .margin({ right: 22, bottom: this.navBarHeight + 22 })
+        .margin({ right: AppSpacing.XXL, bottom: this.navBarHeight + 22 })
         .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, this.cardColor(), 'button'))
         .backdropBlur(ThemeRuntime.glassBlur('button', 12))
         .border({ width: ThemeRuntime.glassBorderWidth('button'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'button') })
@@ -385,7 +386,7 @@ struct ReaderReplaceRulesPage {
     .width('100%')
     .height(56 + this.statusBarHeight)
     // Keep the action text aligned with the content/search field right edge.
-    .padding({ right: 16, top: this.statusBarHeight })
+    .padding({ right: AppSpacing.XL, top: this.statusBarHeight })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
     .backdropBlur(ThemeRuntime.topBarBlur())
     .alignItems(VerticalAlign.Center)
@@ -417,13 +418,13 @@ struct ReaderReplaceRulesPage {
         }, false)
       }
       .width(188)
-      .padding({ left: 6, right: 6, top: 6, bottom: 6 })
+      .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.SM, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, this.cardColor(), 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(16, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
       .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
       .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-      .margin({ right: 22, bottom: this.navBarHeight + 82 })
+      .margin({ right: AppSpacing.XXL, bottom: this.navBarHeight + 82 })
     }
     .width('100%')
     .height('100%')
@@ -432,7 +433,7 @@ struct ReaderReplaceRulesPage {
   @Builder
   ruleAddActionItem(icon: Resource, label: string, action: () => void, showDivider: boolean = true) {
     Column() {
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         SymbolGlyph(icon)
           .fontSize(19)
           .fontColor([this.primaryTextColor()])
@@ -443,14 +444,14 @@ struct ReaderReplaceRulesPage {
       }
       .width('100%')
       .height(42)
-      .padding({ left: 10, right: 10 })
+      .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
       .alignItems(VerticalAlign.Center)
       .onClick(action)
       if (showDivider) {
         Divider()
           .strokeWidth(0.5)
           .color(ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel'))
-          .margin({ left: 10, right: 10 })
+          .margin({ left: AppSpacing.MD, right: AppSpacing.MD })
       }
     }
     .width('100%')
@@ -481,7 +482,7 @@ struct ReaderReplaceRulesPage {
         .fontColor(this.primaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
-        .margin({ bottom: 16 })
+        .margin({ bottom: AppSpacing.XL })
 
       TextInput({ placeholder: '规则 URL（兼容阅读/YueDu 导出）', text: this.importUrl })
         .width('100%')
@@ -490,11 +491,11 @@ struct ReaderReplaceRulesPage {
         .backgroundColor(this.inputColor())
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
-        .padding({ left: 12, right: 12 })
-        .margin({ bottom: 16 })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
+        .margin({ bottom: AppSpacing.XL })
         .onChange((value: string) => this.importUrl = value)
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('取消')
           .layoutWeight(1)
           .height(44)
@@ -514,7 +515,7 @@ struct ReaderReplaceRulesPage {
       }
       .width('100%')
     }    .constraintSize({ maxWidth: 420 })
-    .padding(24)
+    .padding(AppSpacing.XXXL)
   }
 
 
@@ -530,14 +531,14 @@ struct ReaderReplaceRulesPage {
           .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
-          .margin({ top: 14 })
+          .margin({ top: AppSpacing.LG })
         Text('请稍候')
           .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
-          .margin({ top: 6 })
+          .margin({ top: AppSpacing.SM })
       }
       .width(210)
-      .padding({ left: 24, right: 24, top: 26, bottom: 24 })
+      .padding({ left: AppSpacing.XXXL, right: AppSpacing.XXXL, top: AppSpacing.XXXL, bottom: AppSpacing.XXXL })
       .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
       .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
       .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
@@ -564,8 +565,8 @@ struct ReaderReplaceRulesPage {
         .placeholderColor(this.subTextColor())
         .backgroundColor(this.inputColor())
         .borderRadius(22)
-        .padding({ left: 16, right: 16 })
-        .margin({ left: 16, right: 16, top: 12, bottom: 10 })
+        .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
+        .margin({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.MD })
         .onChange((value: string) => this.query = value)
 
       if (this.selectionMode) {
@@ -573,7 +574,7 @@ struct ReaderReplaceRulesPage {
       }
 
       if (this.filteredRules().length === 0) {
-        Column({ space: 10 }) {
+        Column({ space: AppSpacing.MD }) {
           SymbolGlyph($r('sys.symbol.arrow_left_arrow_right'))
             .fontSize(36)
             .fontColor([this.subTextColor()])
@@ -588,7 +589,7 @@ struct ReaderReplaceRulesPage {
         .width('100%')
         .justifyContent(FlexAlign.Center)
       } else {
-        List({ space: 10, scroller: this.ruleListScroller }) {
+        List({ space: AppSpacing.MD, scroller: this.ruleListScroller }) {
           ForEach(this.filteredRules(), (rule: ReaderReplaceRule) => {
             if (deviceInfo.sdkApiVersion >= 26) {
               HdsListItem({
@@ -625,7 +626,7 @@ struct ReaderReplaceRulesPage {
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .layoutWeight(1)
         .width('100%')
-        .padding({ left: 16, right: 16 })
+        .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
         .clip(true)
         .lanes(ResponsiveManagerListLayout.laneCount(this.contextViewportWidth),
           ResponsiveManagerListLayout.gutter(this.contextViewportWidth))
@@ -675,7 +676,7 @@ struct ReaderReplaceRulesPage {
         this.ruleSelectionSafeArea(rule)
       }
 
-      Column({ space: 5 }) {
+      Column({ space: AppSpacing.XS }) {
         Text(rule.name || '未命名规则')
           .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Medium)
@@ -716,10 +717,10 @@ struct ReaderReplaceRulesPage {
           .fontColor(rule.enabled ? '#1E8E3E' : this.subTextColor())
       }
       .alignItems(HorizontalAlign.End)
-      .margin({ left: 12 })
+      .margin({ left: AppSpacing.LG })
     }
     .width('100%')
-    .padding(14)
+    .padding(AppSpacing.LG)
     .backgroundColor(this.cardColor())
     .borderRadius(ThemeRuntime.cardRadius())
     .border({ width: ThemeRuntime.glassBorderWidth(), color: ThemeRuntime.glassBorderColor(this.appDarkMode) })
@@ -742,9 +743,9 @@ struct ReaderReplaceRulesPage {
 
   @Builder
   currentChapterPreviewCard() {
-    Column({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
       Row() {
-        Column({ space: 3 }) {
+        Column({ space: AppSpacing.XXS }) {
           Text('当前章节生效检查')
             .fontSize(AppFontSize.BODY_LARGE)
             .fontWeight(FontWeight.Bold)
@@ -765,7 +766,7 @@ struct ReaderReplaceRulesPage {
       .alignItems(VerticalAlign.Center)
 
       if (this.previewChanged()) {
-        Column({ space: 3 }) {
+        Column({ space: AppSpacing.XXS }) {
           Text('替换前').fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor()).width('100%')
           Text(this.previewBeforeExcerpt())
             .fontSize(AppFontSize.CAPTION)
@@ -773,7 +774,7 @@ struct ReaderReplaceRulesPage {
             .maxLines(3)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
-          Text('替换后').fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor()).width('100%').margin({ top: 3 })
+          Text('替换后').fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor()).width('100%').margin({ top: AppSpacing.XXS })
           Text(this.previewAfterExcerpt())
             .fontSize(AppFontSize.CAPTION)
             .fontColor(this.primaryTextColor())
@@ -782,7 +783,7 @@ struct ReaderReplaceRulesPage {
             .width('100%')
         }
         .width('100%')
-        .padding(10)
+        .padding(AppSpacing.MD)
         .borderRadius(ThemeRuntime.mediumRadius())
         .backgroundColor(this.inputColor())
       } else {
@@ -794,8 +795,8 @@ struct ReaderReplaceRulesPage {
       }
     }
     .width('calc(100% - 32vp)')
-    .padding(14)
-    .margin({ left: 16, right: 16, top: 12 })
+    .padding(AppSpacing.LG)
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG })
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .border({ width: ThemeRuntime.glassBorderWidth(), color: ThemeRuntime.glassBorderColor(this.appDarkMode) })
@@ -909,7 +910,7 @@ struct ReaderReplaceRulesPage {
       Text(`已选择 ${this.selectedRuleIds.length}/${this.filteredRules().length}`)
         .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
-        .margin({ left: 8 })
+        .margin({ left: AppSpacing.MD })
         .layoutWeight(1)
       Text(this.areAllVisibleRulesSelected() ? '取消全选' : '全选')
         .fontSize(AppFontSize.BODY)
@@ -918,7 +919,7 @@ struct ReaderReplaceRulesPage {
     }
     .width('100%')
     .height(42)
-    .padding({ left: 16, right: 16 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
   }
 
   @Builder
@@ -934,7 +935,7 @@ struct ReaderReplaceRulesPage {
       Button('禁用')
         .layoutWeight(1)
         .height(42)
-        .margin({ left: 8 })
+        .margin({ left: AppSpacing.MD })
         .enabled(this.selectedRuleIds.length > 0 && !this.isBatchOperating)
         .backgroundColor(this.inputColor())
         .fontColor(this.primaryTextColor())
@@ -942,7 +943,7 @@ struct ReaderReplaceRulesPage {
       Button('删除')
         .layoutWeight(1)
         .height(42)
-        .margin({ left: 8 })
+        .margin({ left: AppSpacing.MD })
         .enabled(this.selectedRuleIds.length > 0 && !this.isBatchOperating)
         .backgroundColor('#E53935')
         .fontColor('#FFFFFF')
@@ -950,14 +951,14 @@ struct ReaderReplaceRulesPage {
       Button('更多')
         .layoutWeight(1)
         .height(42)
-        .margin({ left: 8 })
+        .margin({ left: AppSpacing.MD })
         .enabled(!this.isBatchOperating)
         .backgroundColor(this.inputColor())
         .fontColor(this.primaryTextColor())
         .onClick(() => this.showRuleMoreDialog = true)
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 10, bottom: 12 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.LG })
     .backgroundColor(this.cardColor())
   }
 
@@ -975,7 +976,7 @@ struct ReaderReplaceRulesPage {
           .fontColor(this.subTextColor())
           .width('100%')
           .height(34)
-          .padding({ left: 12, right: 12 })
+          .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
           .textAlign(TextAlign.Start)
         this.ruleAddActionItem($r('sys.symbol.download'), '导出 JSON', () => {
           this.showRuleMoreDialog = false;
@@ -983,13 +984,13 @@ struct ReaderReplaceRulesPage {
         }, false)
       }
       .width(188)
-      .padding({ left: 6, right: 6, top: 4, bottom: 6 })
+      .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XS, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(16, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
       .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
       .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-      .margin({ right: 16, bottom: this.navBarHeight + 78 })
+      .margin({ right: AppSpacing.XL, bottom: this.navBarHeight + 78 })
     }
     .width('100%')
     .height('100%')
@@ -998,7 +999,7 @@ struct ReaderReplaceRulesPage {
   @Builder
   editorView() {
     Scroll() {
-      Column({ space: 12 }) {
+      Column({ space: AppSpacing.LG }) {
         this.inputField('规则名称', this.draft.name, '例如：去除章节末广告', (value: string) => {
           this.draft.name = value;
           this.refreshDraft();
@@ -1012,7 +1013,7 @@ struct ReaderReplaceRulesPage {
           this.refreshDraft();
         })
 
-        Row({ space: 8 }) {
+        Row({ space: AppSpacing.MD }) {
           this.titleOptionChip()
           this.contentOptionChip()
           Blank()
@@ -1032,7 +1033,7 @@ struct ReaderReplaceRulesPage {
           this.timeoutDraft = value.replace(/[^0-9]/g, '').substring(0, 5);
         }, InputType.Number)
 
-        Row({ space: 12 }) {
+        Row({ space: AppSpacing.LG }) {
           Button('取消', { type: ButtonType.Capsule })
             .layoutWeight(1)
             .height(44)
@@ -1047,10 +1048,10 @@ struct ReaderReplaceRulesPage {
             .onClick(() => this.saveDraft())
         }
         .width('100%')
-        .margin({ top: 8, bottom: 28 })
+        .margin({ top: AppSpacing.MD, bottom: 28 })
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 14 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG })
     }
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .layoutWeight(1)
@@ -1065,7 +1066,7 @@ struct ReaderReplaceRulesPage {
     onChange: (value: string) => void,
     inputType: InputType = InputType.Normal
   ) {
-    Column({ space: 6 }) {
+    Column({ space: AppSpacing.SM }) {
       Text(label).fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
       TextInput({ placeholder: placeholder, text: value })
         .type(inputType)
@@ -1086,7 +1087,7 @@ struct ReaderReplaceRulesPage {
 
   @Builder
   textAreaField(label: string, value: string, placeholder: string, onChange: (value: string) => void) {
-    Column({ space: 6 }) {
+    Column({ space: AppSpacing.SM }) {
       Text(label).fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
       TextArea({ placeholder: placeholder, text: value })
         .width('100%')
@@ -1096,7 +1097,7 @@ struct ReaderReplaceRulesPage {
         .placeholderColor(this.subTextColor())
         .backgroundColor(this.inputColor())
         .borderRadius(ThemeRuntime.mediumRadius())
-        .padding(12)
+        .padding(AppSpacing.LG)
         .onChange((nextValue: string) => {
           onChange(nextValue);
           this.saveRuleFormDraft();
@@ -1108,7 +1109,7 @@ struct ReaderReplaceRulesPage {
   @Builder
   titleOptionChip() {
     Button({ type: ButtonType.Capsule, stateEffect: true }) {
-      Row({ space: 5 }) {
+      Row({ space: AppSpacing.XS }) {
         if (this.draftApplyToTitle) {
           SymbolGlyph($r('sys.symbol.checkmark'))
             .fontSize(14)
@@ -1120,7 +1121,7 @@ struct ReaderReplaceRulesPage {
       }
     }
     .height(36)
-    .padding({ left: 12, right: 12 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
     .backgroundColor(this.draftApplyToTitle ? ThemeRuntime.accentSurfaceColor(this.appDarkMode) : this.inputColor())
     .borderRadius(18)
     .onClick(() => {
@@ -1132,7 +1133,7 @@ struct ReaderReplaceRulesPage {
   @Builder
   contentOptionChip() {
     Button({ type: ButtonType.Capsule, stateEffect: true }) {
-      Row({ space: 5 }) {
+      Row({ space: AppSpacing.XS }) {
         if (this.draftApplyToContent) {
           SymbolGlyph($r('sys.symbol.checkmark'))
             .fontSize(14)
@@ -1144,7 +1145,7 @@ struct ReaderReplaceRulesPage {
       }
     }
     .height(36)
-    .padding({ left: 12, right: 12 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
     .backgroundColor(this.draftApplyToContent ? ThemeRuntime.accentSurfaceColor(this.appDarkMode) : this.inputColor())
     .borderRadius(18)
     .onClick(() => {
@@ -1156,7 +1157,7 @@ struct ReaderReplaceRulesPage {
   @Builder
   regexOptionChip() {
     Button({ type: ButtonType.Capsule, stateEffect: true }) {
-      Row({ space: 5 }) {
+      Row({ space: AppSpacing.XS }) {
         if (this.draftIsRegex) {
           SymbolGlyph($r('sys.symbol.checkmark'))
             .fontSize(14)
@@ -1168,7 +1169,7 @@ struct ReaderReplaceRulesPage {
       }
     }
     .height(36)
-    .padding({ left: 12, right: 12 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
     .backgroundColor(this.draftIsRegex ? ThemeRuntime.accentSurfaceColor(this.appDarkMode) : this.inputColor())
     .borderRadius(18)
     .onClick(() => {
@@ -1178,7 +1179,7 @@ struct ReaderReplaceRulesPage {
 
   @Builder
   ruleEnableSwipeAction(rule: ReaderReplaceRule) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       SymbolGlyph(rule.enabled ? $r('sys.symbol.minus_circle') : $r('sys.symbol.checkmark_circle'))
         .fontSize(22)
         .fontColor(['#FFFFFF'])
@@ -1196,7 +1197,7 @@ struct ReaderReplaceRulesPage {
 
   @Builder
   ruleDeleteSwipeAction(rule: ReaderReplaceRule) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       SymbolGlyph($r('sys.symbol.trash'))
         .fontSize(22)
         .fontColor(['#FFFFFF'])
@@ -1246,7 +1247,7 @@ struct ReaderReplaceRulesPage {
         })
       }
       .width(158)
-      .padding({ top: 6, bottom: 6 })
+      .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -1260,7 +1261,7 @@ struct ReaderReplaceRulesPage {
 
   @Builder
   contextActionItem(icon: Resource, label: string, color: string, action: () => void) {
-    Row({ space: 10 }) {
+    Row({ space: AppSpacing.MD }) {
       SymbolGlyph(icon)
         .fontSize(18)
         .fontColor([color])
@@ -1272,7 +1273,7 @@ struct ReaderReplaceRulesPage {
     }
     .width('100%')
     .height(44)
-    .padding({ left: 12, right: 12 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
     .alignItems(VerticalAlign.Center)
     .onClick(action)
   }
@@ -1498,7 +1499,7 @@ struct ReaderReplaceRulesPage {
     }
     .width(56)
     .height(68)
-    .margin({ left: -10, right: 2 })
+    .margin({ left: -10, right: AppSpacing.XXS })
     .priorityGesture(
       GestureGroup(GestureMode.Exclusive,
         PanGesture({ direction: PanDirection.Vertical, distance: 2 })

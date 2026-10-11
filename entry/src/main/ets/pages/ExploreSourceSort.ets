@@ -7,6 +7,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -88,7 +89,7 @@ struct ExploreSourceSortPage {
           Text('加载中...')
             .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
-            .margin({ top: 8 })
+            .margin({ top: AppSpacing.MD })
         }
         .width('100%')
         .layoutWeight(1)
@@ -101,13 +102,13 @@ struct ExploreSourceSortPage {
           Text('请先在书源管理中启用发现')
             .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
-            .margin({ top: 8 })
+            .margin({ top: AppSpacing.MD })
         }
         .width('100%')
         .layoutWeight(1)
         .justifyContent(FlexAlign.Center)
       } else {
-        List({ space: 8 }) {
+        List({ space: AppSpacing.MD }) {
           ForEach(this.sources, (source: BookSource, index: number) => {
             ListItem() {
               Row() {
@@ -116,7 +117,7 @@ struct ExploreSourceSortPage {
                   .fontColor(this.subTextColor())
                   .width(24)
                   .textAlign(TextAlign.Center)
-                  .margin({ right: 4 })
+                  .margin({ right: AppSpacing.XS })
 
                 Text(`${index + 1}`)
                   .fontSize(AppFontSize.CAPTION)
@@ -134,7 +135,7 @@ struct ExploreSourceSortPage {
                   Text(source.bookSourceUrl)
                     .fontSize(AppFontSize.CAPTION)
                     .fontColor(this.subTextColor())
-                    .margin({ top: 4 })
+                    .margin({ top: AppSpacing.XS })
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                 }
@@ -159,7 +160,7 @@ struct ExploreSourceSortPage {
                   .width(36)
                   .height(32)
                   .fontSize(AppFontSize.SUBTITLE)
-                  .margin({ left: 6 })
+                  .margin({ left: AppSpacing.SM })
                   .fontColor(index < this.sources.length - 1 ? this.primaryTextColor() : this.disabledTextColor())
                   .textAlign(TextAlign.Center)
                   .backgroundColor(index < this.sources.length - 1 ? this.inputColor() : this.disabledButtonColor())
@@ -171,7 +172,7 @@ struct ExploreSourceSortPage {
                   })
               }
               .width('100%')
-              .padding(12)
+              .padding(AppSpacing.LG)
               .backgroundColor(this.cardColor())
               .borderRadius(ThemeRuntime.cardRadius())
             }
@@ -185,7 +186,7 @@ struct ExploreSourceSortPage {
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .width('100%')
         .layoutWeight(1)
-        .padding({ left: 16, right: 16, top: 12, bottom: 16 })
+        .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.XL })
         .onItemDragStart((event: ItemDragInfo, itemIndex: number) => {
           this.draggingIndex = itemIndex;
           return this.sourceDragPreview;
@@ -294,7 +295,7 @@ struct ExploreSourceSortPage {
         .fontColor(this.subTextColor())
         .width(24)
         .textAlign(TextAlign.Center)
-        .margin({ right: 8 })
+        .margin({ right: AppSpacing.MD })
       Column() {
         Text(this.draggingTitle())
           .fontSize(AppFontSize.BODY_LARGE)
@@ -305,7 +306,7 @@ struct ExploreSourceSortPage {
         Text(this.draggingUrl())
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
@@ -313,7 +314,7 @@ struct ExploreSourceSortPage {
       .alignItems(HorizontalAlign.Start)
     }
     .width(280)
-    .padding(12)
+    .padding(AppSpacing.LG)
     .backgroundColor(this.cardColor())
     .borderRadius(ThemeRuntime.cardRadius())
     .shadow({ radius: 12, color: this.appDarkMode ? '#66000000' : '#22000000', offsetX: 0, offsetY: 4 })

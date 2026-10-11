@@ -5,6 +5,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -38,7 +39,7 @@ struct AboutPage {
           .height(72)
           .borderRadius(18)
           .justifyContent(FlexAlign.Center)
-          .margin({ top: 28, bottom: 14 })
+          .margin({ top: 28, bottom: AppSpacing.LG })
 
           Text('开源轻页')
             .fontSize(AppFontSize.HEADLINE)
@@ -47,7 +48,7 @@ struct AboutPage {
           Text(this.appVersionName || '-')
             .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
-            .margin({ top: 6, bottom: 24 })
+            .margin({ top: AppSpacing.SM, bottom: AppSpacing.XXXL })
 
           this.infoCard('项目说明',
             '开源轻页是一个本地阅读与书源规则兼容项目，用于验证用户自行提供且有合法使用权限的规则在移动端的导入、解析和阅读体验。')
@@ -75,7 +76,7 @@ struct AboutPage {
               .textAlign(TextAlign.Center)
           }
           .width('100%')
-          .padding({ left: 24, right: 24, top: 20, bottom: 32 + this.navBarHeight })
+          .padding({ left: AppSpacing.XXXL, right: AppSpacing.XXXL, top: AppSpacing.XXL, bottom: 32 + this.navBarHeight })
         }
         .width('100%')
         .padding({ top: 56 + this.statusBarHeight })
@@ -122,13 +123,13 @@ struct AboutPage {
         .fontColor(this.secondaryTextColor())
         .lineHeight(22)
         .width('100%')
-        .margin({ top: 8 })
+        .margin({ top: AppSpacing.MD })
     }
     .width('100%')
-    .padding(16)
+    .padding(AppSpacing.XL)
     .backgroundColor(this.cardColor())
     .borderRadius(ThemeRuntime.cardRadius())
-    .margin({ left: 16, right: 16, bottom: 12 })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.LG })
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -151,10 +152,10 @@ struct AboutPage {
       })
     }
     .width('100%')
-    .padding(16)
+    .padding(AppSpacing.XL)
     .backgroundColor(this.cardColor())
     .borderRadius(ThemeRuntime.cardRadius())
-    .margin({ left: 16, right: 16, bottom: 12 })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.LG })
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -170,7 +171,7 @@ struct AboutPage {
         .fontColor(this.accentColor())
     }
     .width('100%')
-    .padding({ top: 12, bottom: 2 })
+    .padding({ top: AppSpacing.LG, bottom: AppSpacing.XXS })
     .justifyContent(FlexAlign.Start)
     .onClick(action)
   }
@@ -193,21 +194,21 @@ struct AboutPage {
           .fontColor(this.secondaryTextColor())
           .lineHeight(22)
           .width('100%')
-          .margin({ top: 8 })
+          .margin({ top: AppSpacing.MD })
         Text('查看主项目源码信息、版权声明和完整许可文本')
           .fontSize(AppFontSize.BODY)
           .fontColor(this.accentColor())
           .width('100%')
-          .margin({ top: 8 })
+          .margin({ top: AppSpacing.MD })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
-    .padding(16)
+    .padding(AppSpacing.XL)
     .backgroundColor(this.cardColor())
     .borderRadius(ThemeRuntime.cardRadius())
-    .margin({ left: 16, right: 16, bottom: 12 })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.LG })
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
       router.pushUrl({ url: 'pages/OpenSourceLicenses' });

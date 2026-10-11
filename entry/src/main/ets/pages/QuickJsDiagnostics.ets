@@ -8,6 +8,7 @@ import { QuickJsValidationStore } from '../core/script/QuickJsValidationStore';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -34,7 +35,7 @@ struct QuickJsDiagnosticsPage {
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       Scroll() {
-        Column({ space: 12 }) {
+        Column({ space: AppSpacing.LG }) {
           this.infoCard()
           this.modeCard()
           this.statsCard()
@@ -80,7 +81,7 @@ struct QuickJsDiagnosticsPage {
 
   @Builder
   infoCard() {
-    Column({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
       Row() {
         Text('运行状态').fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
         Blank()
@@ -94,7 +95,7 @@ struct QuickJsDiagnosticsPage {
         .width('100%')
     }
     .width('calc(100% - 24vp)')
-    .padding(16)
+    .padding(AppSpacing.XL)
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .alignItems(HorizontalAlign.Start)
@@ -107,7 +108,7 @@ struct QuickJsDiagnosticsPage {
         .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .width('100%')
-        .padding({ left: 16, top: 14, bottom: 8 })
+        .padding({ left: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.MD })
       this.modeItem(QuickJsRuntimeMode.OFF, '关闭', '全部使用原有引擎')
       this.modeItem(QuickJsRuntimeMode.SHADOW, '影子校验（推荐）', '原有结果生效，后台对比 QuickJS')
       this.modeItem(QuickJsRuntimeMode.CANARY, '灰度接管', '仅接管已连续验证合格的纯表达式')
@@ -121,8 +122,8 @@ struct QuickJsDiagnosticsPage {
 
   @Builder
   modeItem(mode: QuickJsRuntimeMode, title: string, desc: string) {
-    Row({ space: 12 }) {
-      Column({ space: 3 }) {
+    Row({ space: AppSpacing.LG }) {
+      Column({ space: AppSpacing.XXS }) {
         Text(title).fontSize(AppFontSize.BODY_LARGE).fontColor(this.primaryTextColor())
         Text(desc).fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor())
       }
@@ -140,13 +141,13 @@ struct QuickJsDiagnosticsPage {
     }
     .width('100%')
     .height(64)
-    .padding({ left: 16, right: 16 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
     .onClick((): void => this.setMode(mode))
   }
 
   @Builder
   statsCard() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Text('累计统计').fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
         .width('100%')
       Row() {
@@ -161,7 +162,7 @@ struct QuickJsDiagnosticsPage {
       }.width('100%')
     }
     .width('calc(100% - 24vp)')
-    .padding(16)
+    .padding(AppSpacing.XL)
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .alignItems(HorizontalAlign.Start)
@@ -169,7 +170,7 @@ struct QuickJsDiagnosticsPage {
 
   @Builder
   statItem(label: string, value: number, color: string) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       Text(`${value}`).fontSize(AppFontSize.TITLE).fontWeight(FontWeight.Bold).fontColor(color)
       Text(label).fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor())
     }.layoutWeight(1)
@@ -177,7 +178,7 @@ struct QuickJsDiagnosticsPage {
 
   @Builder
   privacyCard() {
-    Column({ space: 6 }) {
+    Column({ space: AppSpacing.SM }) {
       Text('边界说明').fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
       Text('QuickJS 当前只执行无网络、Cookie、文件或平台桥接的纯表达式。复杂脚本继续使用现有受控运行环境；统计只保存表达式指纹和计数。')
         .fontSize(AppFontSize.CAPTION)
@@ -185,7 +186,7 @@ struct QuickJsDiagnosticsPage {
         .lineHeight(19)
     }
     .width('calc(100% - 24vp)')
-    .padding(16)
+    .padding(AppSpacing.XL)
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .alignItems(HorizontalAlign.Start)

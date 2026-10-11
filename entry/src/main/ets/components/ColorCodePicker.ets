@@ -2,6 +2,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { HexColor } from '../utils/HexColor';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 class HsvColor {
   hue: number = 0;
@@ -269,7 +270,7 @@ export struct ColorCodePicker {
   build() {
     Column() {
       if (this.colorMode !== '') {
-        Row({ space: 10 }) {
+        Row({ space: AppSpacing.MD }) {
           Text('自定义高亮色')
             .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.primaryTextColor())
@@ -345,7 +346,7 @@ export struct ColorCodePicker {
           }
           .width('100%')
           .height(60)
-          .padding({ left: 16, right: 16 })
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
           .backgroundColor(this.pageColor())
           .alignItems(VerticalAlign.Center)
           .onClick(() => {
@@ -387,7 +388,7 @@ export struct ColorCodePicker {
 
   @Builder
   colorPickerSheet() {
-    Column({ space: 18 }) {
+    Column({ space: AppSpacing.XL }) {
       Row() {
         Text('选择颜色')
           .fontSize(AppFontSize.HEADLINE)
@@ -398,7 +399,7 @@ export struct ColorCodePicker {
           Text('跟随强调色')
             .fontSize(AppFontSize.BODY)
             .fontColor(this.accentColor)
-            .margin({ left: 12 })
+            .margin({ left: AppSpacing.LG })
             .onClick(() => {
               this.onColorChange('');
               this.pickerVisible = false;
@@ -407,7 +408,7 @@ export struct ColorCodePicker {
       }
       .width('100%')
 
-      Row({ space: 14 }) {
+      Row({ space: AppSpacing.LG }) {
         Stack({ alignContent: Alignment.TopStart }) {
           Row()
             .width('100%')
@@ -503,7 +504,7 @@ export struct ColorCodePicker {
       }
       .width('100%')
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Row()
           .width(48)
           .height(36)
@@ -546,7 +547,7 @@ export struct ColorCodePicker {
               .backgroundColor(color)
               .border({ width: this.draftColor === color ? 3 : 1,
                 color: this.draftColor === color ? this.primaryTextColor() : '#22000000' })
-              .margin({ right: 8, bottom: 6 })
+              .margin({ right: AppSpacing.MD, bottom: AppSpacing.SM })
               .onClick(() => {
                 this.draftColor = color;
                 this.updateHsvFromColor(color);
@@ -556,7 +557,7 @@ export struct ColorCodePicker {
         .width('100%')
       }
 
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         Button('预置颜色')
           .height(42)
           .fontColor(this.accentColor)
@@ -575,11 +576,11 @@ export struct ColorCodePicker {
           })
       }
       .width('100%')
-      .margin({ top: 4 })
+      .margin({ top: AppSpacing.XS })
     }
     .width('100%')
     .height('100%')
-    .padding({ left: 20, right: 20, top: 12, bottom: 20 })
+    .padding({ left: AppSpacing.XXL, right: AppSpacing.XXL, top: AppSpacing.LG, bottom: AppSpacing.XXL })
     .backgroundColor(this.pageColor())
   }
 }

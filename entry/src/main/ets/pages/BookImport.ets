@@ -5,6 +5,7 @@ import { LocalBookScanResult, LocalBookService } from '../core/book/LocalBookSer
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -48,10 +49,10 @@ struct BookImportPage {
               .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
               .width('100%')
-              .padding({ left: 16, right: 16, top: 10, bottom: 12 })
+              .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.LG })
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -67,7 +68,7 @@ struct BookImportPage {
       this.titleBar()
 
       if (this.isScanning) {
-        Column({ space: 12 }) {
+        Column({ space: AppSpacing.LG }) {
           LoadingProgress()
             .width(36)
             .height(36)
@@ -77,7 +78,7 @@ struct BookImportPage {
             .fontColor(this.primaryTextColor())
         }
         .width('78%')
-        .padding(20)
+        .padding(AppSpacing.XXL)
         .borderRadius(ThemeRuntime.cardRadius())
         .backgroundColor(this.cardColor())
         .shadow({ radius: 18, color: this.appDarkMode ? '#66000000' : '#28000000' })
@@ -165,7 +166,7 @@ struct BookImportPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
   @Builder
@@ -183,13 +184,13 @@ struct BookImportPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
-      .margin({ left: 12 })
+      .margin({ left: AppSpacing.LG })
 
       SymbolGlyph($r('sys.symbol.chevron_right'))
         .fontSize(18)
@@ -197,8 +198,8 @@ struct BookImportPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .border({ width: { bottom: showDivider ? 0.5 : 0 },
       color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })

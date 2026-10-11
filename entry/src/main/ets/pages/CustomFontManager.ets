@@ -10,6 +10,7 @@ import fileUri from '@ohos.file.fileuri';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 class ReaderCustomFontItem {
   familyName: string = '';
@@ -576,7 +577,7 @@ struct CustomFontManagerPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
   @Builder
@@ -589,7 +590,7 @@ struct CustomFontManagerPage {
         Text('支持 ttf / otf / ttc，上传后会出现在阅读设置的字体下拉框中')
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -605,7 +606,7 @@ struct CustomFontManagerPage {
     }
     .width('100%')
     .constraintSize({ minHeight: 72 })
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
     .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Center)
     .onClick(() => {
@@ -622,7 +623,7 @@ struct CustomFontManagerPage {
       Text('点击上方上传按钮添加字体文件')
         .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
-        .margin({ top: 6 })
+        .margin({ top: AppSpacing.SM })
     }
     .width('100%')
     .padding({ top: 28, bottom: 28 })
@@ -644,7 +645,7 @@ struct CustomFontManagerPage {
           .fontColor(this.subTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -663,7 +664,7 @@ struct CustomFontManagerPage {
     }
     .width('100%')
     .constraintSize({ minHeight: 68 })
-    .padding({ left: 16, right: 16, top: 10, bottom: 10 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.MD })
     .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Center)
   }

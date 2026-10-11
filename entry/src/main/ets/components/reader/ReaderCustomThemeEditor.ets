@@ -9,6 +9,7 @@ import { AdaptiveColorPicker } from '../AdaptiveColorPicker';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { HexColor } from '../../utils/HexColor';
 import { AppFontSize } from '../../theme/AppFontSize';
+import { AppSpacing } from '../../theme/AppSpacing';
 
 /**
  * 阅读页"自定义"配色的编辑器：多套方案的新增、删除、改名，背景色或背景图片，文字颜色。
@@ -184,8 +185,8 @@ export struct ReaderCustomThemeEditor {
   }
 
   build() {
-    Column({ space: 10 }) {
-      Row({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
+      Row({ space: AppSpacing.MD }) {
         Select(this.schemes().map((item: ReaderCustomThemeScheme): SelectOption => ({ value: item.name })))
           .selected(this.selectedIndex())
           .value(this.scheme().name)
@@ -223,7 +224,7 @@ export struct ReaderCustomThemeEditor {
         .fontSize(AppFontSize.BODY)
         .fontColor(this.textColor)
         .height(36)
-        .padding({ left: 10, right: 10 })
+        .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
         .backgroundColor(this.fieldColor())
         .borderRadius(ThemeRuntime.mediumRadius())
         .onChange((value: string) => {
@@ -267,7 +268,7 @@ export struct ReaderCustomThemeEditor {
           onColorChange: (value: string) => this.setBackgroundColor(value)
         })
       } else {
-        Row({ space: 8 }) {
+        Row({ space: AppSpacing.MD }) {
           Button(this.scheme().backgroundImageUri ? '更换背景图片' : '选择背景图片')
             .height(36)
             .fontSize(AppFontSize.BODY)

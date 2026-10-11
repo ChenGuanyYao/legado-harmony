@@ -9,6 +9,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -63,7 +64,7 @@ struct SyncDevicesPage {
             .height(56 + this.statusBarHeight)
 
           if (this.loading) {
-            Column({ space: 12 }) {
+            Column({ space: AppSpacing.LG }) {
               LoadingProgress()
                 .width(36)
                 .height(36)
@@ -75,7 +76,7 @@ struct SyncDevicesPage {
             .width('100%')
             .padding({ top: 48 })
           } else if (this.errorMessage) {
-            Column({ space: 12 }) {
+            Column({ space: AppSpacing.LG }) {
               Text(this.errorMessage)
                 .fontSize(AppFontSize.BODY)
                 .fontColor(this.subTextColor())
@@ -86,8 +87,8 @@ struct SyncDevicesPage {
                 .onClick(() => this.loadDevices())
             }
             .width('calc(100% - 24vp)')
-            .padding(20)
-            .margin({ left: 12, right: 12, top: 20 })
+            .padding(AppSpacing.XXL)
+            .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.XXL })
             .borderRadius(ThemeRuntime.cardRadius())
             .backgroundColor(this.cardColor())
           } else {
@@ -98,7 +99,7 @@ struct SyncDevicesPage {
                   .fontSize(AppFontSize.BODY)
                   .fontColor(this.subTextColor())
                   .width('100%')
-                  .padding(16)
+                  .padding(AppSpacing.XL)
               } else {
                 ForEach(this.devices, (device: CloudSyncDevice, index: number) => {
                   this.deviceItem(device, index < this.devices.length - 1)
@@ -106,7 +107,7 @@ struct SyncDevicesPage {
               }
             }
             .width('calc(100% - 24vp)')
-            .margin({ left: 12, right: 12 })
+            .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
             .borderRadius(ThemeRuntime.cardRadius())
             .clip(true)
             .backgroundColor(this.cardColor())
@@ -116,7 +117,7 @@ struct SyncDevicesPage {
               .fontColor(this.subTextColor())
               .lineHeight(18)
               .width('calc(100% - 32vp)')
-              .margin({ left: 16, right: 16, top: 14 })
+              .margin({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG })
           }
 
           Row()
@@ -139,11 +140,11 @@ struct SyncDevicesPage {
 
   @Builder
   deviceItem(device: CloudSyncDevice, showDivider: boolean) {
-    Row({ space: 12 }) {
+    Row({ space: AppSpacing.LG }) {
       this.deviceIcon(device)
 
-      Column({ space: 4 }) {
-        Row({ space: 8 }) {
+      Column({ space: AppSpacing.XS }) {
+        Row({ space: AppSpacing.MD }) {
           Text(device.deviceName || 'HarmonyOS 设备')
             .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.primaryTextColor())
@@ -151,7 +152,7 @@ struct SyncDevicesPage {
             Text('本机')
               .fontSize(AppFontSize.CAPTION)
               .fontColor(this.accentColor())
-              .padding({ left: 7, right: 7, top: 2, bottom: 2 })
+              .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
               .borderRadius(ThemeRuntime.mediumRadius())
               .backgroundColor(this.softColor())
           } else if (device.revokedAt) {
@@ -171,7 +172,7 @@ struct SyncDevicesPage {
       .alignItems(HorizontalAlign.Start)
 
       if (!device.revokedAt) {
-        Column({ space: 6 }) {
+        Column({ space: AppSpacing.SM }) {
           Button('改名')
             .height(30)
             .fontSize(AppFontSize.CAPTION)
@@ -191,8 +192,8 @@ struct SyncDevicesPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 86 })
-    .padding({ top: 12, bottom: 12 })
-    .margin({ left: 16, right: 16 })
+    .padding({ top: AppSpacing.LG, bottom: AppSpacing.LG })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .border({ width: { bottom: showDivider ? 0.5 : 0 },
       color: this.appDarkMode ? '#24FFFFFF' : '#14000000' })
     .alignItems(VerticalAlign.Center)
@@ -270,7 +271,7 @@ struct SyncDevicesPage {
 
   @Builder
   renameDialogContent() {
-    Column({ space: 16 }) {
+    Column({ space: AppSpacing.XL }) {
       Text('修改设备名称')
         .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
@@ -286,7 +287,7 @@ struct SyncDevicesPage {
         .onChange((value: string) => {
           this.renameDeviceName = value;
         })
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         Button('取消', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
@@ -307,7 +308,7 @@ struct SyncDevicesPage {
       }
       .width('100%')
     }    .constraintSize({ maxWidth: 360 })
-    .padding(20)
+    .padding(AppSpacing.XXL)
   }
 
 
@@ -370,7 +371,7 @@ struct SyncDevicesPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
   @Builder

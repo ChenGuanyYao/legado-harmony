@@ -1,5 +1,6 @@
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { AppFontSize } from '../../theme/AppFontSize';
+import { AppSpacing } from '../../theme/AppSpacing';
 
 /**
  * 朗读/听书悬浮胶囊：本页朗读与后台朗读共用同一外观。
@@ -32,8 +33,8 @@ export struct ReaderTtsCapsule {
   static readonly HEIGHT: number = 46;
 
   build() {
-    Row({ space: 7 }) {
-      Row({ space: 7 }) {
+    Row({ space: AppSpacing.SM }) {
+      Row({ space: AppSpacing.SM }) {
         Stack({ alignContent: Alignment.Center }) {
           Circle().width(30).height(30).fill(this.accentColor)
           SymbolGlyph($r('sys.symbol.speaker_wave_3'))
@@ -74,7 +75,7 @@ export struct ReaderTtsCapsule {
     }
     .width(ReaderTtsCapsule.WIDTH)
     .height(ReaderTtsCapsule.HEIGHT)
-    .padding({ left: 8, right: 5 })
+    .padding({ left: AppSpacing.MD, right: AppSpacing.XS })
     .borderRadius(23)
     .clip(true)
     .backgroundColor(this.panelColor)

@@ -12,6 +12,7 @@ import {
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -92,11 +93,11 @@ struct DataBackupPage {
               .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
               .width('calc(100% - 32vp)')
-              .margin({ left: 16, right: 16, top: 10 })
+              .margin({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD })
             Button('选择保存位置并导出')
               .width('calc(100% - 24vp)')
               .height(46)
-              .margin({ left: 12, right: 12, top: 12 })
+              .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG })
               .enabled(!this.busy && this.hasExportSelection())
               .opacity(this.hasExportSelection() ? 1 : 0.45)
               .backgroundColor(this.accentColor())
@@ -116,11 +117,11 @@ struct DataBackupPage {
                 .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.subTextColor())
                 .width('100%')
-                .margin({ top: 10 })
+                .margin({ top: AppSpacing.MD })
             }
             .width('calc(100% - 24vp)')
-            .padding(14)
-            .margin({ left: 12, right: 12 })
+            .padding(AppSpacing.LG)
+            .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
             .borderRadius(ThemeRuntime.cardRadius())
             .backgroundColor(this.cardColor())
 
@@ -130,7 +131,7 @@ struct DataBackupPage {
               Button('导入所选数据')
                 .width('calc(100% - 24vp)')
                 .height(46)
-                .margin({ left: 12, right: 12, top: 12 })
+                .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG })
                 .enabled(!this.busy && this.hasImportSelection())
                 .opacity(this.hasImportSelection() ? 1 : 0.45)
                 .backgroundColor(this.accentColor())
@@ -141,7 +142,7 @@ struct DataBackupPage {
               .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
               .width('calc(100% - 32vp)')
-              .margin({ left: 16, right: 16, top: 16 })
+              .margin({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XL })
           }
 
           Row()
@@ -166,7 +167,7 @@ struct DataBackupPage {
             .height('100%')
             .backgroundColor('#66000000')
 
-          Column({ space: 12 }) {
+          Column({ space: AppSpacing.LG }) {
             LoadingProgress()
               .width(42)
               .height(42)
@@ -183,7 +184,7 @@ struct DataBackupPage {
             }
           }
           .width(240)
-          .padding(22)
+          .padding(AppSpacing.XXL)
           .borderRadius(ThemeRuntime.largeRadius())
           .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
           .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
@@ -238,7 +239,7 @@ struct DataBackupPage {
         AppDataBackupService.CATEGORY_SEARCH_HISTORY, false)
     }
     .width('calc(100% - 24vp)')
-    .margin({ left: 12, right: 12 })
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
     .borderRadius(ThemeRuntime.cardRadius())
     .clip(true)
     .backgroundColor(this.cardColor())
@@ -254,7 +255,7 @@ struct DataBackupPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 3 })
+          .margin({ top: AppSpacing.XXS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -267,7 +268,7 @@ struct DataBackupPage {
     }
     .width('calc(100% - 28vp)')
     .height(68)
-    .padding({ top: 9, bottom: 9 })
+    .padding({ top: AppSpacing.MD, bottom: AppSpacing.MD })
     .margin({ left: 14, right: 14 })
     .border({ width: { bottom: divider ? 0.5 : 0 }, color: this.dividerColor() })
     .alignItems(VerticalAlign.Center)
@@ -279,7 +280,7 @@ struct DataBackupPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
 
@@ -335,7 +336,7 @@ struct DataBackupPage {
         .fontColor(this.subTextColor())
         .lineHeight(18)
         .width('100%')
-        .margin({ top: 8, bottom: 14 })
+        .margin({ top: AppSpacing.MD, bottom: AppSpacing.LG })
 
       TextInput({
         text: exporting ? this.exportPassword : this.importPassword,
@@ -357,7 +358,7 @@ struct DataBackupPage {
           .height(44)
           .fontColor(this.primaryTextColor())
           .backgroundColor(this.softColor())
-          .margin({ top: 10 })
+          .margin({ top: AppSpacing.MD })
           .onChange((value: string) => {
             this.exportPasswordConfirm = value;
             this.passwordError = '';
@@ -369,10 +370,10 @@ struct DataBackupPage {
           .fontSize(AppFontSize.CAPTION)
           .fontColor('#E84026')
           .width('100%')
-          .margin({ top: 9 })
+          .margin({ top: AppSpacing.MD })
       }
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('取消')
           .layoutWeight(1)
           .height(42)
@@ -389,8 +390,8 @@ struct DataBackupPage {
           })
       }
       .width('100%')
-      .margin({ top: 18 })
-    }    .padding(20)
+      .margin({ top: AppSpacing.XL })
+    }    .padding(AppSpacing.XXL)
   }
 
 

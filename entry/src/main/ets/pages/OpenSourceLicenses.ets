@@ -5,6 +5,7 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -36,10 +37,10 @@ struct OpenSourceLicensesPage {
               .width('100%')
           }
           .width('100%')
-          .padding(16)
+          .padding(AppSpacing.XL)
           .backgroundColor(this.cardColor())
           .borderRadius(ThemeRuntime.cardRadius())
-          .margin({ left: 16, right: 16, bottom: 12 })
+          .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.LG })
           .alignItems(HorizontalAlign.Start)
 
           Column() {
@@ -51,10 +52,10 @@ struct OpenSourceLicensesPage {
               .copyOption(CopyOptions.LocalDevice)
           }
           .width('100%')
-          .padding(16)
+          .padding(AppSpacing.XL)
           .backgroundColor(this.cardColor())
           .borderRadius(ThemeRuntime.cardRadius())
-          .margin({ left: 16, right: 16, bottom: 24 + this.navBarHeight })
+          .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: 24 + this.navBarHeight })
           .alignItems(HorizontalAlign.Start)
         }
         .width('100%')

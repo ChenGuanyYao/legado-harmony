@@ -49,6 +49,7 @@ import {
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 const BOOK_SOURCE_IMPORT_FILE_LIMIT_BYTES = 25 * 1024 * 1024;
 const BOOK_SOURCE_IMPORT_TIMEOUT_MS = 20000;
@@ -360,14 +361,14 @@ struct BookSourcePage {
               .shadow({ radius: ThemeRuntime.glassShadowRadius(), color: this.glassShadowColor(), offsetX: ThemeRuntime.glassShadowOffsetX(), offsetY: ThemeRuntime.glassShadowOffsetY() })
               .fontColor(this.primaryTextColor())
               .placeholderColor(this.placeholderTextColor())
-              .padding({ left: 16, right: 16 })
+              .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
               .onChange((value: string) => {
                 this.searchText = value;
                 this.searchSources();
               })
           }
           .width('100%')
-          .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.MD })
 
           if (!this.selectionMode) {
             this.sourceGroupBar()
@@ -390,7 +391,7 @@ struct BookSourcePage {
               Text(`已选择 ${this.selectedSourceUrls.length}/${this.allSources.length}`)
                 .fontSize(AppFontSize.BODY)
                 .fontColor(this.secondaryTextColor())
-                .margin({ left: 8 })
+                .margin({ left: AppSpacing.MD })
                 .layoutWeight(1)
 
               Text(this.isAllSelected() ? '取消全选' : '全选')
@@ -405,7 +406,7 @@ struct BookSourcePage {
             }
             .width('100%')
             .height(42)
-            .padding({ left: 16, right: 16 })
+            .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
           }
         }
         .width('100%')
@@ -421,7 +422,7 @@ struct BookSourcePage {
             Text('加载中...')
               .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
-              .margin({ top: 8 })
+              .margin({ top: AppSpacing.MD })
           }
           .width('100%')
           .height('100%')
@@ -434,14 +435,14 @@ struct BookSourcePage {
             Text(this.emptySourceDescription())
               .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
-              .margin({ top: 8 })
+              .margin({ top: AppSpacing.MD })
           }
           .width('100%')
           .height('100%')
           .justifyContent(FlexAlign.Center)
         } else {
           Stack({ alignContent: Alignment.TopEnd }) {
-            List({ space: 8, scroller: this.sourceListScroller }) {
+            List({ space: AppSpacing.MD, scroller: this.sourceListScroller }) {
             ForEach(this.sourceListSpacerKeys(), (_spacerKey: string) => {
               ListItem() {
                 Row()
@@ -474,7 +475,7 @@ struct BookSourcePage {
                     }
                     .width(52)
                     .height(56)
-                    .margin({ left: -8, right: 4 })
+                    .margin({ left: -8, right: AppSpacing.XS })
                     .hitTestBehavior(HitTestMode.Transparent)
                     .accessibilityText(`长按拖动排序：${source.bookSourceName}`)
                   }
@@ -503,10 +504,10 @@ struct BookSourcePage {
                           .maxLines(1)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
                           .constraintSize({ maxWidth: 72 })
-                          .padding({ left: 7, right: 7, top: 3, bottom: 3 })
+                          .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
                           .backgroundColor(this.inputColor())
                           .borderRadius(ThemeRuntime.smallRadius())
-                          .margin({ left: 6 })
+                          .margin({ left: AppSpacing.SM })
                       }
 
                       if (this.sourceNeedsLogin(source)) {
@@ -521,7 +522,7 @@ struct BookSourcePage {
                     .width('100%')
                     .alignItems(VerticalAlign.Center)
 
-                    Row({ space: 7 }) {
+                    Row({ space: AppSpacing.SM }) {
                       this.sourceValidationStatusBadge(source.validationStatus)
                       Text(source.bookSourceUrl)
                         .fontSize(AppFontSize.CAPTION)
@@ -531,7 +532,7 @@ struct BookSourcePage {
                         .layoutWeight(1)
                     }
                     .width('100%')
-                    .margin({ top: 4 })
+                    .margin({ top: AppSpacing.XS })
                     .alignItems(VerticalAlign.Center)
 
                   }
@@ -554,13 +555,13 @@ struct BookSourcePage {
                       Text(source.enabledExplore ? '发现已启用' : '发现已禁用')
                         .fontSize(AppFontSize.CAPTION)
                         .fontColor(source.enabledExplore ? '#1E8E3E' : this.subTextColor())
-                        .margin({ top: 4 })
+                        .margin({ top: AppSpacing.XS })
                     }
                     .alignItems(HorizontalAlign.End)
                   }
                 }
                 .width('100%')
-                .padding(12)
+                .padding(AppSpacing.LG)
                 .backgroundColor(this.glassCardColor())
                 .borderRadius(ThemeRuntime.mediumRadius())
                 .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
@@ -608,7 +609,7 @@ struct BookSourcePage {
             .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
             .width('100%')
             .height('100%')
-            .padding({ left: 16, right: 16 })
+            .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
             .lanes(ResponsiveManagerListLayout.laneCount(this.contextViewportWidth),
               ResponsiveManagerListLayout.gutter(this.contextViewportWidth))
             .scrollBar(BarState.Off)
@@ -661,7 +662,7 @@ struct BookSourcePage {
             Button('禁用')
               .layoutWeight(1)
               .height(42)
-              .margin({ left: 8 })
+              .margin({ left: AppSpacing.MD })
               .enabled(this.selectedSourceUrls.length > 0 && !this.isBatchOperating)
               .backgroundColor(this.inputColor())
               .fontColor(this.primaryTextColor())
@@ -672,7 +673,7 @@ struct BookSourcePage {
             Button('分组')
               .layoutWeight(1)
               .height(42)
-              .margin({ left: 8 })
+              .margin({ left: AppSpacing.MD })
               .enabled(this.selectedSourceUrls.length > 0 && !this.isBatchOperating)
               .backgroundColor(this.inputColor())
               .fontColor(this.primaryTextColor())
@@ -684,7 +685,7 @@ struct BookSourcePage {
             Button('更多')
               .layoutWeight(1)
               .height(42)
-              .margin({ left: 8 })
+              .margin({ left: AppSpacing.MD })
               .enabled(this.selectedSourceUrls.length > 0 && !this.isBatchOperating)
               .backgroundColor(this.inputColor())
               .fontColor(this.primaryTextColor())
@@ -693,7 +694,7 @@ struct BookSourcePage {
               })
           }
           .width('100%')
-          .padding({ left: 16, right: 16, top: 10, bottom: 12 })
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.LG })
           .backgroundColor(this.glassCardColor())
           .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
         }
@@ -722,7 +723,7 @@ struct BookSourcePage {
               .fontColor(this.primaryTextColor())
               .width('100%')
               .textAlign(TextAlign.Center)
-              .margin({ bottom: 16 })
+              .margin({ bottom: AppSpacing.XL })
 
             TextInput({ placeholder: '请输入书源URL', text: this.importUrl })
               .width('100%')
@@ -731,8 +732,8 @@ struct BookSourcePage {
               .backgroundColor(this.inputColor())
               .fontColor(this.primaryTextColor())
               .placeholderColor(this.placeholderTextColor())
-              .padding({ left: 12, right: 12 })
-              .margin({ bottom: 16 })
+              .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
+              .margin({ bottom: AppSpacing.XL })
               .onChange((value: string) => {
                 this.importUrl = value;
               })
@@ -761,7 +762,7 @@ struct BookSourcePage {
             .justifyContent(FlexAlign.SpaceBetween)
           }
           .width('90%')
-          .padding(24)
+          .padding(AppSpacing.XXXL)
           .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
           .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
           .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
@@ -787,14 +788,14 @@ struct BookSourcePage {
               .fontColor(this.primaryTextColor())
               .width('100%')
               .textAlign(TextAlign.Center)
-              .margin({ bottom: 12 })
+              .margin({ bottom: AppSpacing.LG })
 
             Text(`确定删除已选择的 ${this.selectedSourceUrls.length} 个书源吗？删除后不可恢复。`)
               .fontSize(AppFontSize.BODY_LARGE)
               .fontColor(this.secondaryTextColor())
               .width('100%')
               .textAlign(TextAlign.Center)
-              .margin({ bottom: 20 })
+              .margin({ bottom: AppSpacing.XXL })
 
             Row() {
               Button('取消')
@@ -819,7 +820,7 @@ struct BookSourcePage {
             .justifyContent(FlexAlign.SpaceBetween)
           }
           .width('85%')
-          .padding(24)
+          .padding(AppSpacing.XXXL)
           .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
           .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
           .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
@@ -844,7 +845,7 @@ struct BookSourcePage {
               .fontColor(this.primaryTextColor())
               .width('100%')
               .textAlign(TextAlign.Center)
-              .margin({ bottom: 12 })
+              .margin({ bottom: AppSpacing.LG })
 
             Text(this.groupActionSourceUrl ? `书源：${this.actionGroupingSourceName()}` :
               `已选择 ${this.selectedSourceUrls.length} 个书源`)
@@ -852,7 +853,7 @@ struct BookSourcePage {
               .fontColor(this.subTextColor())
               .width('100%')
               .textAlign(TextAlign.Center)
-              .margin({ bottom: 14 })
+              .margin({ bottom: AppSpacing.LG })
 
             TextInput({ placeholder: '输入新分组名称，留空为未分组', text: this.groupNameInput })
               .width('100%')
@@ -861,7 +862,7 @@ struct BookSourcePage {
               .backgroundColor(this.inputColor())
               .fontColor(this.primaryTextColor())
               .placeholderColor(this.placeholderTextColor())
-              .padding({ left: 12, right: 12 })
+              .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
               .onChange((value: string) => {
                 this.groupNameInput = value;
               })
@@ -873,10 +874,10 @@ struct BookSourcePage {
                     Text(group)
                       .fontSize(AppFontSize.BODY)
                       .fontColor(this.secondaryTextColor())
-                      .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+                      .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
                       .backgroundColor(this.inputColor())
                       .borderRadius(ThemeRuntime.buttonRadius())
-                      .margin({ right: 8, top: 10 })
+                      .margin({ right: AppSpacing.MD, top: AppSpacing.MD })
                       .onClick(() => {
                         this.groupNameInput = group;
                       })
@@ -911,11 +912,11 @@ struct BookSourcePage {
             }
             .width('100%')
             .justifyContent(FlexAlign.SpaceBetween)
-            .margin({ top: 18 })
+            .margin({ top: AppSpacing.XL })
           }
           .width('88%')
           .constraintSize({ maxHeight: '78%' })
-          .padding(24)
+          .padding(AppSpacing.XXXL)
           .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
           .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
           .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
@@ -971,14 +972,14 @@ struct BookSourcePage {
               .fontColor(this.primaryTextColor())
               .width('100%')
               .textAlign(TextAlign.Center)
-              .margin({ bottom: 12 })
+              .margin({ bottom: AppSpacing.LG })
 
             if (this.isCheckingSources) {
               LoadingProgress()
                 .width(42)
                 .height(42)
                 .color(this.accentColor())
-                .margin({ bottom: 12 })
+                .margin({ bottom: AppSpacing.LG })
             }
 
             Text(this.checkDialogStatusText())
@@ -986,14 +987,14 @@ struct BookSourcePage {
               .fontColor(this.secondaryTextColor())
               .width('100%')
               .textAlign(TextAlign.Center)
-              .margin({ bottom: 12 })
+              .margin({ bottom: AppSpacing.LG })
 
             Progress({ value: this.checkDone, total: Math.max(this.checkTotal, 1), type: ProgressType.Linear })
               .width('100%')
               .height(8)
               .color(this.buttonColor())
               .backgroundColor(this.inputColor())
-              .margin({ bottom: 12 })
+              .margin({ bottom: AppSpacing.LG })
 
             Text(`${this.checkDone}/${this.checkTotal}`)
               .fontSize(AppFontSize.BODY)
@@ -1001,7 +1002,7 @@ struct BookSourcePage {
               .margin({ bottom: this.isCheckingSources ? 0 : 12 })
 
             if (this.isCheckingSources) {
-              Row({ space: 10 }) {
+              Row({ space: AppSpacing.MD }) {
                 Button('取消', { type: ButtonType.Normal })
                   .layoutWeight(1)
                   .height(42)
@@ -1025,7 +1026,7 @@ struct BookSourcePage {
                   })
               }
               .width('100%')
-              .margin({ top: 16 })
+              .margin({ top: AppSpacing.XL })
             }
 
             if (!this.isCheckingSources) {
@@ -1048,10 +1049,10 @@ struct BookSourcePage {
                 .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
                 .width('100%')
                 .height(Math.min(this.checkResultDetails.length * 40 + 20, 160))
-                .padding(10)
+                .padding(AppSpacing.MD)
                 .backgroundColor(this.inputColor())
                 .borderRadius(ThemeRuntime.mediumRadius())
-                .margin({ bottom: 16 })
+                .margin({ bottom: AppSpacing.XL })
                 .scrollBar(BarState.Auto)
               }
 
@@ -1063,13 +1064,13 @@ struct BookSourcePage {
                   .fontSize(AppFontSize.BODY)
                   .backgroundColor('#B26A00')
                   .fontColor('#FFFFFF')
-                  .margin({ bottom: 10 })
+                  .margin({ bottom: AppSpacing.MD })
                   .onClick(() => {
                     this.trustCheckCertificateHostsAndRetry();
                   })
               }
 
-              Row({ space: 8 }) {
+              Row({ space: AppSpacing.MD }) {
                 if (this.checkInvalidAction === 'none') {
                   Button('禁用失败项', { type: ButtonType.Normal })
                     .layoutWeight(1)
@@ -1113,7 +1114,7 @@ struct BookSourcePage {
           }
           .width('88%')
           .constraintSize({ maxHeight: '78%' })
-          .padding(24)
+          .padding(AppSpacing.XXXL)
           .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
           .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
           .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
@@ -1183,15 +1184,15 @@ struct BookSourcePage {
               .fontSize(AppFontSize.BODY_LARGE)
               .fontWeight(FontWeight.Bold)
               .fontColor(this.primaryTextColor())
-              .margin({ top: 14 })
+              .margin({ top: AppSpacing.LG })
 
             Text('请稍候')
               .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
-              .margin({ top: 6 })
+              .margin({ top: AppSpacing.SM })
           }
           .width(180)
-          .padding({ left: 24, right: 24, top: 26, bottom: 24 })
+          .padding({ left: AppSpacing.XXXL, right: AppSpacing.XXXL, top: AppSpacing.XXXL, bottom: AppSpacing.XXXL })
           .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
           .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
           .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
@@ -1219,15 +1220,15 @@ struct BookSourcePage {
               .fontSize(AppFontSize.BODY_LARGE)
               .fontWeight(FontWeight.Bold)
               .fontColor(this.primaryTextColor())
-              .margin({ top: 14 })
+              .margin({ top: AppSpacing.LG })
 
             Text('请稍候')
               .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
-              .margin({ top: 6 })
+              .margin({ top: AppSpacing.SM })
           }
           .width(190)
-          .padding({ left: 24, right: 24, top: 26, bottom: 24 })
+          .padding({ left: AppSpacing.XXXL, right: AppSpacing.XXXL, top: AppSpacing.XXXL, bottom: AppSpacing.XXXL })
           .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
           .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
           .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
@@ -1265,7 +1266,7 @@ struct BookSourcePage {
 
       if (!this.selectionMode) {
         Stack({ alignContent: Alignment.Center }) {
-          Column({ space: 3 }) {
+          Column({ space: AppSpacing.XXS }) {
             Row()
               .width(20)
               .height(2)
@@ -1328,7 +1329,7 @@ struct BookSourcePage {
     }
     .width('100%')
     .height(56 + this.statusBarHeight)
-    .padding({ right: 16, top: this.statusBarHeight })
+    .padding({ right: AppSpacing.XL, top: this.statusBarHeight })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
     .backdropBlur(ThemeRuntime.topBarBlur())
     .alignItems(VerticalAlign.Center)
@@ -1344,7 +1345,7 @@ struct BookSourcePage {
     }
     .width(52)
     .height(52)
-    .margin({ right: 22, bottom: this.navBarHeight + 22 })
+    .margin({ right: AppSpacing.XXL, bottom: this.navBarHeight + 22 })
     .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, this.cardColor(), 'button'))
     .backdropBlur(ThemeRuntime.glassBlur('button', 12))
     .border({ width: ThemeRuntime.glassBorderWidth('button'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'button') })
@@ -1383,13 +1384,13 @@ struct BookSourcePage {
         }, false)
       }
       .width(188)
-      .padding({ left: 6, right: 6, top: 6, bottom: 6 })
+      .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.SM, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(16, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
       .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
       .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-      .margin({ right: 22, bottom: this.navBarHeight + 82 })
+      .margin({ right: AppSpacing.XXL, bottom: this.navBarHeight + 82 })
     }
     .width('100%')
     .height('100%')
@@ -1411,7 +1412,7 @@ struct BookSourcePage {
           .fontColor(this.subTextColor())
           .width('100%')
           .height(34)
-          .padding({ left: 12, right: 12 })
+          .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
           .textAlign(TextAlign.Start)
 
         this.popupActionItem($r('sys.symbol.checkmark_shield'), '校验所选', this.primaryTextColor(), () => {
@@ -1444,7 +1445,7 @@ struct BookSourcePage {
         }, false)
       }
       .width(188)
-      .padding({ left: 6, right: 6, top: 4, bottom: 6 })
+      .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XS, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(16, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -1461,7 +1462,7 @@ struct BookSourcePage {
   popupActionItem(icon: Resource, label: string, color: string, action: () => void,
     showDivider: boolean = true) {
     Column() {
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         SymbolGlyph(icon)
           .fontSize(19)
           .fontColor([color])
@@ -1473,13 +1474,13 @@ struct BookSourcePage {
       }
       .width('100%')
       .height(44)
-      .padding({ left: 10, right: 10 })
+      .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
 
       if (showDivider) {
         Divider()
           .strokeWidth(0.5)
           .color(ThemeRuntime.glassBorderColor(this.appDarkMode))
-          .margin({ left: 44, right: 8 })
+          .margin({ left: 44, right: AppSpacing.MD })
       }
     }
     .width('100%')
@@ -1488,7 +1489,7 @@ struct BookSourcePage {
 
   @Builder
   sourceFilterDialogContent() {
-    Column({ space: 14 }) {
+    Column({ space: AppSpacing.LG }) {
       Row() {
         Text('筛选书源')
           .fontSize(AppFontSize.SUBTITLE)
@@ -1509,7 +1510,7 @@ struct BookSourcePage {
       this.sourceFilterRow('发现状态', 'exploreEnabled', '已启用', '未启用')
       this.sourceFilterRow('登录要求', 'login', '需要登录', '无需登录')
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('重置', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
@@ -1527,20 +1528,20 @@ struct BookSourcePage {
           .onClick(() => this.showSourceFilterDialog = false)
       }
       .width('100%')
-      .margin({ top: 4 })
+      .margin({ top: AppSpacing.XS })
     }    .constraintSize({ maxWidth: 540 })
-    .padding(22)
+    .padding(AppSpacing.XXL)
   }
 
 
   @Builder
   sourceSortFilterRow() {
-    Row({ space: 10 }) {
+    Row({ space: AppSpacing.MD }) {
       Text('排序')
         .fontSize(AppFontSize.BODY)
         .fontColor(this.primaryTextColor())
         .width(66)
-      Row({ space: 6 }) {
+      Row({ space: AppSpacing.SM }) {
         this.sourceSortChoice('custom', '默认')
         this.sourceSortChoice('latest', '最新在前')
         this.sourceSortChoice('oldest', '最旧在前')
@@ -1571,12 +1572,12 @@ struct BookSourcePage {
 
   @Builder
   sourceFilterRow(label: string, filterKey: string, yesLabel: string, noLabel: string) {
-    Row({ space: 10 }) {
+    Row({ space: AppSpacing.MD }) {
       Text(label)
         .fontSize(AppFontSize.BODY)
         .fontColor(this.primaryTextColor())
         .width(66)
-      Row({ space: 6 }) {
+      Row({ space: AppSpacing.SM }) {
         this.sourceFilterChoice(filterKey, 'all', '不限')
         this.sourceFilterChoice(filterKey, 'yes', yesLabel)
         this.sourceFilterChoice(filterKey, 'no', noLabel)
@@ -1589,7 +1590,7 @@ struct BookSourcePage {
 
   @Builder
   sourceValidationFilterRow() {
-    Row({ space: 10 }) {
+    Row({ space: AppSpacing.MD }) {
       Text('校验状态')
         .fontSize(AppFontSize.BODY)
         .fontColor(this.primaryTextColor())
@@ -1616,7 +1617,7 @@ struct BookSourcePage {
       .fontColor(this.sourceValidationFilter === value ? '#FFFFFF' : this.secondaryTextColor())
       .width('32%')
       .height(34)
-      .margin({ bottom: 6 })
+      .margin({ bottom: AppSpacing.SM })
       .textAlign(TextAlign.Center)
       .maxLines(1)
       .backgroundColor(this.sourceValidationFilter === value ? this.accentColor() : this.inputColor())
@@ -1650,7 +1651,7 @@ struct BookSourcePage {
           this.showCheckOptionsDialog = false;
         })
 
-      Column({ space: 12 }) {
+      Column({ space: AppSpacing.LG }) {
         Text('校验设置')
           .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
@@ -1664,7 +1665,7 @@ struct BookSourcePage {
           .fontColor(this.secondaryTextColor())
           .width('100%')
 
-        Row({ space: 8 }) {
+        Row({ space: AppSpacing.MD }) {
           this.checkModeOption('search', '搜索能力')
           this.checkModeOption('exploreReading', '发现/阅读链路')
         }
@@ -1676,7 +1677,7 @@ struct BookSourcePage {
           this.checkActionOption('自动删除', '仅删除明确失败的书源，此操作不可恢复', 'delete', true)
         }
 
-        Row({ space: 10 }) {
+        Row({ space: AppSpacing.MD }) {
           Button('取消')
             .layoutWeight(1)
             .height(42)
@@ -1698,17 +1699,17 @@ struct BookSourcePage {
             })
         }
         .width('100%')
-        .margin({ top: 4 })
+        .margin({ top: AppSpacing.XS })
       }
       .width('calc(100% - 24vp)')
       .constraintSize({ maxWidth: 360 })
-      .padding(18)
+      .padding(AppSpacing.XL)
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
       .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
       .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-      .margin({ top: this.statusBarHeight + 62, right: 12 })
+      .margin({ top: this.statusBarHeight + 62, right: AppSpacing.LG })
       .onClick(() => {
       })
     }
@@ -1749,13 +1750,13 @@ struct BookSourcePage {
         Text(description)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 3 })
+          .margin({ top: AppSpacing.XXS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.MD, bottom: AppSpacing.MD })
     .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(this.checkInvalidAction === action ? this.inputColor() : this.cardColor())
     .border({
@@ -1817,7 +1818,7 @@ struct BookSourcePage {
         }
       }
       .width(158)
-      .padding({ top: 6, bottom: 6 })
+      .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -1842,18 +1843,18 @@ struct BookSourcePage {
           .fontColor(this.primaryTextColor())
           .width('100%')
           .textAlign(TextAlign.Center)
-          .margin({ bottom: 12 })
+          .margin({ bottom: AppSpacing.LG })
 
         Scroll() {
-          Column({ space: 8 }) {
+          Column({ space: AppSpacing.MD }) {
             ForEach(this.sourceLoginItems, (item: BookSourceLoginItem, index: number) => {
               if (this.isSourceLoginInput(item)) {
-                Column({ space: 4 }) {
+                Column({ space: AppSpacing.XS }) {
                   Text(item.name)
                     .fontSize(AppFontSize.CAPTION)
                     .fontColor(this.subTextColor())
                     .width('100%')
-                  Row({ space: 8 }) {
+                  Row({ space: AppSpacing.MD }) {
                     TextInput({ text: item.value, placeholder: item.placeholder || item.name })
                       .type(item.type.toLowerCase() === 'password' ? InputType.Password : InputType.Normal)
                       .layoutWeight(1)
@@ -1862,7 +1863,7 @@ struct BookSourcePage {
                       .backgroundColor(this.inputColor())
                       .fontColor(this.primaryTextColor())
                       .placeholderColor(this.placeholderTextColor())
-                      .padding({ left: 12, right: 12 })
+                      .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
                       .enabled(!this.isExecutingLoginAction)
                       .onChange((value: string) => {
                         this.updateSourceLoginInput(index, value);
@@ -1884,8 +1885,8 @@ struct BookSourcePage {
                 }
                 .width('100%')
               } else if (this.isSourceLoginToggle(item)) {
-                Row({ space: 12 }) {
-                  Column({ space: 3 }) {
+                Row({ space: AppSpacing.LG }) {
+                  Column({ space: AppSpacing.XXS }) {
                     Text(this.sourceLoginItemDisplayName(item))
                       .fontSize(AppFontSize.BODY)
                       .fontColor(this.primaryTextColor())
@@ -1908,11 +1909,11 @@ struct BookSourcePage {
                 }
                 .width('100%')
                 .height(48)
-                .padding({ left: 12, right: 12 })
+                .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
                 .borderRadius(ThemeRuntime.mediumRadius())
                 .backgroundColor(this.inputColor())
               } else if (this.isSourceLoginSelect(item)) {
-                Row({ space: 12 }) {
+                Row({ space: AppSpacing.LG }) {
                   Text(this.sourceLoginItemDisplayName(item))
                     .fontSize(AppFontSize.BODY)
                     .fontColor(this.primaryTextColor())
@@ -1935,7 +1936,7 @@ struct BookSourcePage {
                 }
                 .width('100%')
                 .height(48)
-                .padding({ left: 12, right: 8 })
+                .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
                 .borderRadius(ThemeRuntime.mediumRadius())
                 .backgroundColor(this.inputColor())
               } else {
@@ -1965,7 +1966,7 @@ struct BookSourcePage {
           Button(this.isExecutingLoginAction ? '登录中...' : '确认登录', { type: ButtonType.Normal })
             .width('100%')
             .height(42)
-            .margin({ top: 8 })
+            .margin({ top: AppSpacing.MD })
             .fontSize(AppFontSize.BODY)
             .fontColor('#FFFFFF')
             .backgroundColor(this.accentColor())
@@ -1978,7 +1979,7 @@ struct BookSourcePage {
         Button('关闭')
           .width('100%')
           .height(42)
-          .margin({ top: 8 })
+          .margin({ top: AppSpacing.MD })
           .backgroundColor(this.buttonColor())
           .fontColor('#FFFFFF')
           .onClick(() => {
@@ -1990,7 +1991,7 @@ struct BookSourcePage {
           })
       }
       .width('90%')
-      .padding(22)
+      .padding(AppSpacing.XXL)
       .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
       .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
       .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
@@ -2005,7 +2006,7 @@ struct BookSourcePage {
 
   @Builder
   contextActionItem(icon: Resource, label: string, color: string, action: () => void) {
-    Row({ space: 10 }) {
+    Row({ space: AppSpacing.MD }) {
       SymbolGlyph(icon)
         .fontSize(18)
         .fontColor([color])
@@ -2017,7 +2018,7 @@ struct BookSourcePage {
     }
     .width('100%')
     .height(44)
-    .padding({ left: 12, right: 12 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
     .alignItems(VerticalAlign.Center)
     .onClick(action)
   }
@@ -2033,7 +2034,7 @@ struct BookSourcePage {
       .textAlign(TextAlign.Center)
       .backgroundColor(this.inputColor())
       .borderRadius(12)
-      .margin({ left: 6 })
+      .margin({ left: AppSpacing.SM })
       .accessibilityText(accessibilityLabel)
   }
 
@@ -2048,7 +2049,7 @@ struct BookSourcePage {
     .height(24)
     .borderRadius(12)
     .backgroundColor(this.inputColor())
-    .margin({ left: 6 })
+    .margin({ left: AppSpacing.SM })
     .accessibilityText(accessibilityLabel)
   }
 
@@ -2063,7 +2064,7 @@ struct BookSourcePage {
       .textAlign(TextAlign.Center)
       .backgroundColor(this.inputColor())
       .borderRadius(12)
-      .margin({ left: 6 })
+      .margin({ left: AppSpacing.SM })
       .accessibilityText(accessibilityLabel)
   }
 
@@ -2073,7 +2074,7 @@ struct BookSourcePage {
       .fontSize(AppFontSize.MICRO)
       .fontWeight(FontWeight.Medium)
       .fontColor(this.sourceValidationStatusColor(validationStatus))
-      .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+      .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
       .backgroundColor(this.inputColor())
       .borderRadius(ThemeRuntime.smallRadius())
       .maxLines(1)
@@ -2100,7 +2101,7 @@ struct BookSourcePage {
 
   @Builder
   sourceDisableSwipeAction(source: BookSource) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       SymbolGlyph(source.enabled ? $r('sys.symbol.minus_circle') : $r('sys.symbol.checkmark_circle'))
         .fontSize(22)
         .fontColor(['#FFFFFF'])
@@ -2132,7 +2133,7 @@ struct BookSourcePage {
         }
         .width(52)
         .height(56)
-        .margin({ left: -8, right: 4 })
+        .margin({ left: -8, right: AppSpacing.XS })
         .hitTestBehavior(HitTestMode.Transparent)
         .accessibilityText(`长按拖动排序：${source.bookSourceName}`)
       }
@@ -2147,20 +2148,20 @@ struct BookSourcePage {
           if (source.isLocked) this.sourceStatusIcon($r('sys.symbol.lock'), this.accentColor(), '已锁定')
           if (source.bookSourceGroup) {
             Text(source.bookSourceGroup).fontSize(AppFontSize.CAPTION).fontColor(this.accentColor())
-              .constraintSize({ maxWidth: 72 }).padding({ left: 7, right: 7, top: 3, bottom: 3 })
-              .backgroundColor(this.inputColor()).borderRadius(ThemeRuntime.smallRadius()).margin({ left: 6 })
+              .constraintSize({ maxWidth: 72 }).padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
+              .backgroundColor(this.inputColor()).borderRadius(ThemeRuntime.smallRadius()).margin({ left: AppSpacing.SM })
           }
           if (this.sourceNeedsLogin(source)) {
             this.sourceLoginStatusBadge(this.sourceLoggedIn(source) ? '#1E8E3E' : '#C62828', this.sourceLoggedIn(source) ? '已登录' : '未登录')
           }
         }.width('100%')
-        Row({ space: 7 }) {
+        Row({ space: AppSpacing.SM }) {
           this.sourceValidationStatusBadge(source.validationStatus)
           Text(source.bookSourceUrl)
             .fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor())
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
-        }.width('100%').margin({ top: 4 })
+        }.width('100%').margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -2171,11 +2172,11 @@ struct BookSourcePage {
         Text(source.enabled ? '已启用' : '已禁用').fontSize(AppFontSize.CAPTION)
           .fontColor(source.enabled ? '#1E8E3E' : this.subTextColor())
         Text(source.enabledExplore ? '发现已启用' : '发现已禁用').fontSize(AppFontSize.CAPTION)
-          .fontColor(source.enabledExplore ? '#1E8E3E' : this.subTextColor()).margin({ top: 4 })
+          .fontColor(source.enabledExplore ? '#1E8E3E' : this.subTextColor()).margin({ top: AppSpacing.XS })
       }.alignItems(HorizontalAlign.End)
     }
     .width('100%')
-    .padding(12)
+    .padding(AppSpacing.LG)
     .backgroundColor(this.glassCardColor())
     .borderRadius(ThemeRuntime.mediumRadius())
     .opacity(source.enabled ? 1 : 0.45)
@@ -2208,7 +2209,7 @@ struct BookSourcePage {
 
   @Builder
   sourceDeleteSwipeAction(source: BookSource) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       SymbolGlyph($r('sys.symbol.trash'))
         .fontSize(22)
         .fontColor(['#FFFFFF'])
@@ -2241,9 +2242,9 @@ struct BookSourcePage {
         .fontColor(this.secondaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
-        .margin({ top: 12, bottom: 20 })
+        .margin({ top: AppSpacing.LG, bottom: AppSpacing.XXL })
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('取消')
           .layoutWeight(1)
           .height(44)
@@ -2264,7 +2265,7 @@ struct BookSourcePage {
           })
       }
       .width('100%')
-    }    .padding(22)
+    }    .padding(AppSpacing.XXL)
   }
 
 
@@ -2276,7 +2277,7 @@ struct BookSourcePage {
         .fontColor(this.subTextColor())
         .width(28)
         .textAlign(TextAlign.Center)
-        .margin({ right: 8 })
+        .margin({ right: AppSpacing.MD })
       Column() {
         Text(this.draggingSourceName())
           .fontSize(AppFontSize.BODY_LARGE)
@@ -2287,7 +2288,7 @@ struct BookSourcePage {
         Text(this.draggingSourceUrl)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
@@ -2295,7 +2296,7 @@ struct BookSourcePage {
       .alignItems(HorizontalAlign.Start)
     }
     .width(280)
-    .padding(12)
+    .padding(AppSpacing.LG)
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .shadow({ radius: 12, color: this.appDarkMode ? '#66000000' : '#22000000', offsetX: 0, offsetY: 4 })
@@ -2310,14 +2311,14 @@ struct BookSourcePage {
           .height(this.sourceScrollbarViewportHeight())
           .borderRadius(2)
           .backgroundColor(this.appDarkMode ? '#18FFFFFF' : '#14000000')
-          .margin({ right: 3 })
+          .margin({ right: AppSpacing.XXS })
           .hitTestBehavior(HitTestMode.None)
         Column()
           .width(this.sourceScrollbarDragging ? 6 : 4)
           .height(this.sourceScrollbarThumbLength())
           .borderRadius(3)
           .backgroundColor(this.appDarkMode ? '#BFD5D8DE' : '#A87A6F63')
-          .margin({ right: 2 })
+          .margin({ right: AppSpacing.XXS })
           .translate({ y: this.sourceDisplayedScrollbarThumbOffset() })
           .hitTestBehavior(HitTestMode.None)
       }
@@ -2457,7 +2458,7 @@ struct BookSourcePage {
 
   @Builder
   importSourceSelectionDialogContent() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Text('选择要导入的书源')
         .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
@@ -2485,13 +2486,13 @@ struct BookSourcePage {
         Text(this.areAllImportSourcesSelected() ? '取消全选' : '全选')
           .fontSize(AppFontSize.BODY)
           .fontColor(this.accentColor())
-          .margin({ left: 8 })
+          .margin({ left: AppSpacing.MD })
         Blank().layoutWeight(1)
       }
       .width('100%')
 
       Scroll() {
-        Column({ space: 6 }) {
+        Column({ space: AppSpacing.SM }) {
           ForEach(this.pendingImportSources, (source: BookSource) => {
             Row() {
               Toggle({ type: ToggleType.Checkbox, isOn: this.isImportSourceSelected(source) })
@@ -2514,13 +2515,13 @@ struct BookSourcePage {
                   .fontColor(this.subTextColor())
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .margin({ top: 2 })
+                  .margin({ top: AppSpacing.XXS })
               }
               .layoutWeight(1)
-              .margin({ left: 8 })
+              .margin({ left: AppSpacing.MD })
             }
             .width('100%')
-            .padding({ left: 6, right: 6, top: 8, bottom: 8 })
+            .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.MD, bottom: AppSpacing.MD })
             .borderRadius(ThemeRuntime.mediumRadius())
             .backgroundColor(this.inputColor())
           }, (source: BookSource) => source.bookSourceUrl)
@@ -2531,7 +2532,7 @@ struct BookSourcePage {
       .constraintSize({ maxHeight: 360 })
       .scrollBar(BarState.Auto)
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('取消', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
@@ -2550,14 +2551,14 @@ struct BookSourcePage {
       }
       .width('100%')
     }    .constraintSize({ maxWidth: 520 })
-    .padding(22)
+    .padding(AppSpacing.XXL)
   }
 
 
   @Builder
   sourceGroupBar() {
     Scroll() {
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         Stack({ alignContent: Alignment.Center }) {
           SymbolGlyph($r('sys.symbol.more'))
             .fontSize(18)
@@ -2592,7 +2593,7 @@ struct BookSourcePage {
             this.openAddSourceGroupDialog();
           })
       }
-      .padding({ left: 16, right: 16, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
       .constraintSize({ minWidth: '100%' })
       .justifyContent(FlexAlign.Start)
     }
@@ -2631,7 +2632,7 @@ struct BookSourcePage {
         })
       }
       .width(166)
-      .padding({ top: 6, bottom: 6 })
+      .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -2655,7 +2656,7 @@ struct BookSourcePage {
         Text('新建')
           .fontSize(AppFontSize.BODY)
           .fontColor(this.accentColor())
-          .padding({ left: 10, right: 2, top: 8, bottom: 8 })
+          .padding({ left: AppSpacing.MD, right: AppSpacing.XXS, top: AppSpacing.MD, bottom: AppSpacing.MD })
           .onClick(() => {
             this.newSourceGroupInput = '';
             this.openAddSourceGroupDialog();
@@ -2665,7 +2666,7 @@ struct BookSourcePage {
       .alignItems(VerticalAlign.Center)
 
       if (this.getSourceGroups().length === 0) {
-        Column({ space: 8 }) {
+        Column({ space: AppSpacing.MD }) {
           SymbolGlyph($r('sys.symbol.folder'))
             .fontSize(30)
             .fontColor([this.subTextColor()])
@@ -2684,7 +2685,7 @@ struct BookSourcePage {
           Text(this.areAllManagedSourceGroupsSelected() ? '取消全选' : '全选')
             .fontSize(AppFontSize.BODY)
             .fontColor(this.secondaryTextColor())
-            .margin({ left: 8 })
+            .margin({ left: AppSpacing.MD })
             .layoutWeight(1)
           Text(`已选 ${this.selectedManagedSourceGroups.length} 项`)
             .fontSize(AppFontSize.CAPTION)
@@ -2692,10 +2693,10 @@ struct BookSourcePage {
         }
         .width('100%')
         .height(40)
-        .padding({ left: 4, right: 4 })
+        .padding({ left: AppSpacing.XS, right: AppSpacing.XS })
 
         Scroll() {
-          Column({ space: 6 }) {
+          Column({ space: AppSpacing.SM }) {
             ForEach(this.getSourceGroups(), (group: string) => {
               Row() {
                 Toggle({ type: ToggleType.Checkbox, isOn: this.isManagedSourceGroupSelected(group) })
@@ -2710,29 +2711,29 @@ struct BookSourcePage {
                   Text(`${this.sourceGroupCount(group)} 个书源`)
                     .fontSize(AppFontSize.CAPTION)
                     .fontColor(this.subTextColor())
-                    .margin({ top: 2 })
+                    .margin({ top: AppSpacing.XXS })
                 }
                 .layoutWeight(1)
-                .margin({ left: 8 })
+                .margin({ left: AppSpacing.MD })
                 .alignItems(HorizontalAlign.Start)
                 Text('编辑')
                   .fontSize(AppFontSize.BODY)
                   .fontColor(this.accentColor())
                   .height(36)
-                  .padding({ left: 9, right: 9 })
+                  .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
                   .textAlign(TextAlign.Center)
                   .onClick(() => this.openManagedSourceGroupRename(group))
                 Text('删除')
                   .fontSize(AppFontSize.BODY)
                   .fontColor('#E53935')
                   .height(36)
-                  .padding({ left: 9, right: 4 })
+                  .padding({ left: AppSpacing.MD, right: AppSpacing.XS })
                   .textAlign(TextAlign.Center)
                   .onClick(() => this.openManagedSourceGroupDelete(group))
               }
               .width('100%')
               .height(56)
-              .padding({ left: 8, right: 8 })
+              .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
               .borderRadius(ThemeRuntime.mediumRadius())
               .backgroundColor(this.inputColor())
             }, (group: string) => group)
@@ -2745,7 +2746,7 @@ struct BookSourcePage {
         .scrollBar(BarState.Auto)
       }
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('关闭', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
@@ -2766,9 +2767,9 @@ struct BookSourcePage {
           .onClick(() => this.openDeleteSelectedSourceGroupsDialog())
       }
       .width('100%')
-      .margin({ top: 16 })
+      .margin({ top: AppSpacing.XL })
     }    .constraintSize({ maxWidth: 520 })
-    .padding(22)
+    .padding(AppSpacing.XXL)
   }
 
 
@@ -2778,7 +2779,7 @@ struct BookSourcePage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.activeSourceGroup === groupKey ? '#FFFFFF' : this.primaryTextColor())
       .maxLines(1)
-      .padding({ left: 13, right: 13, top: 7, bottom: 7 })
+      .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.SM, bottom: AppSpacing.SM })
       .borderRadius(ThemeRuntime.buttonRadius())
       .backgroundColor(this.activeSourceGroup === groupKey ? this.accentColor() : this.glassCardColor())
       .border({ width: this.activeSourceGroup === groupKey ? 0 : 1, color: this.glassBorderColor() })
@@ -2817,7 +2818,7 @@ struct BookSourcePage {
           })
       }
       .width(148)
-      .padding({ top: 6, bottom: 6 })
+      .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -2831,7 +2832,7 @@ struct BookSourcePage {
 
   @Builder
   addSourceGroupDialogContent() {
-    Column({ space: 16 }) {
+    Column({ space: AppSpacing.XL }) {
       Text('新增书源分组')
         .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
@@ -2845,7 +2846,7 @@ struct BookSourcePage {
         .borderRadius(ThemeRuntime.mediumRadius())
         .onChange((value: string) => this.newSourceGroupInput = value)
 
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         Button('取消', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
@@ -2863,13 +2864,13 @@ struct BookSourcePage {
           .onClick(() => this.addSourceGroup())
       }
       .width('100%')
-    }    .padding(22)
+    }    .padding(AppSpacing.XXL)
   }
 
 
   @Builder
   renameSourceGroupDialogContent() {
-    Column({ space: 16 }) {
+    Column({ space: AppSpacing.XL }) {
       Text('重命名书源分组')
         .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
@@ -2883,7 +2884,7 @@ struct BookSourcePage {
         .borderRadius(ThemeRuntime.mediumRadius())
         .onChange((value: string) => this.renameSourceGroupInput = value)
 
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         Button('取消', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
@@ -2901,13 +2902,13 @@ struct BookSourcePage {
           .onClick(() => this.renameSourceGroup())
       }
       .width('100%')
-    }    .padding(22)
+    }    .padding(AppSpacing.XXL)
   }
 
 
   @Builder
   deleteSourceGroupDialogContent() {
-    Column({ space: 16 }) {
+    Column({ space: AppSpacing.XL }) {
       Text('删除书源分组')
         .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
@@ -2916,7 +2917,7 @@ struct BookSourcePage {
         .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .textAlign(TextAlign.Center)
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         Button('取消', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
@@ -2934,13 +2935,13 @@ struct BookSourcePage {
           .onClick(() => this.deleteSourceGroup())
       }
       .width('100%')
-    }    .padding(22)
+    }    .padding(AppSpacing.XXL)
   }
 
 
   @Builder
   deleteSelectedSourceGroupsDialogContent() {
-    Column({ space: 16 }) {
+    Column({ space: AppSpacing.XL }) {
       Text('删除所选分组')
         .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
@@ -2949,7 +2950,7 @@ struct BookSourcePage {
         .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .textAlign(TextAlign.Center)
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         Button('取消', { type: ButtonType.Normal })
           .layoutWeight(1)
           .height(42)
@@ -2967,7 +2968,7 @@ struct BookSourcePage {
           .onClick(() => this.deleteSelectedSourceGroups())
       }
       .width('100%')
-    }    .padding(22)
+    }    .padding(AppSpacing.XXL)
   }
 
 
@@ -3145,7 +3146,7 @@ struct BookSourcePage {
     }
     .width(56)
     .height(64)
-    .margin({ left: -10, right: 2 })
+    .margin({ left: -10, right: AppSpacing.XXS })
     .priorityGesture(
       GestureGroup(GestureMode.Exclusive,
         PanGesture({ direction: PanDirection.Vertical, distance: 2 })

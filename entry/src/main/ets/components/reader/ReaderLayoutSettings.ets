@@ -4,6 +4,7 @@ import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { AdaptiveSwitch } from '../AdaptiveSwitch';
 import { ReaderInfoBarConfig, ReaderInfoItem, ReaderInfoProgressBar } from '../../core/reader/ReaderInfoBarModel';
 import { AppFontSize } from '../../theme/AppFontSize';
+import { AppSpacing } from '../../theme/AppSpacing';
 
 /** 排版参数在草稿数组里的下标。 */
 export class ReaderTypographyField {
@@ -87,7 +88,7 @@ export struct ReaderTypographyStepper {
   }
 
   build() {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       Select(ReaderTypographyField.LABELS.map((label: string): SelectOption => ({ value: label })))
         .id('reader_typography_selector')
         .selected(this.field)
@@ -150,7 +151,7 @@ export struct ReaderTypographyStepper {
     }
     .width('100%')
     // Keep the selector on the same content baseline as the settings below.
-    .padding({ left: 0, right: 0, top: 12, bottom: 12 })
+    .padding({ left: 0, right: 0, top: AppSpacing.LG, bottom: AppSpacing.LG })
     .alignItems(VerticalAlign.Center)
   }
 
@@ -266,7 +267,7 @@ export struct ReaderHeaderFooterSettings {
   }
 
   build() {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       this.switchItem('显示页眉', '在正文顶部显示书名、章节、时间等信息', this.readerHeaderEnabled,
         (checked: boolean) => {
           this.readerHeaderEnabled = checked;
@@ -344,7 +345,7 @@ export struct ReaderHeaderFooterSettings {
         Text(description)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor)
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
     }
     .layoutWeight(1)
@@ -414,7 +415,7 @@ export struct ReaderHeaderFooterSettings {
   // 数值直接从配置读取而不是经参数传入，保证点击加减后文字立即刷新。
   @Builder
   stepperItem(title: string, field: number) {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       this.itemLabel(title, '')
       this.stepButton($r('sys.symbol.minus'), `减小${title}`, this.stepperValue(field) > this.stepperMin(field),
         () => this.stepBy(field, -1))

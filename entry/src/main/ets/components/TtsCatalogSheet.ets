@@ -2,6 +2,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
 import { ImmersiveBackButton } from './ImmersiveBackButton';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 /**
  * The catalog list feeds on chapter *titles*, not chapter records. Declaring the
@@ -133,7 +134,7 @@ export struct TtsCatalogSheet {
 
   @Builder
   catalogHeader() {
-    Row({ space: 14 }) {
+    Row({ space: AppSpacing.LG }) {
       if (this.cover !== '') {
         Image(this.cover)
           .width(CATALOG_COVER_WIDTH)
@@ -152,7 +153,7 @@ export struct TtsCatalogSheet {
           .backgroundColor(this.accentColor)
       }
 
-      Column({ space: 5 }) {
+      Column({ space: AppSpacing.XS }) {
         Text(this.bookName || '目录')
           .fontSize(AppFontSize.TITLE)
           .fontWeight(FontWeight.Bold)
@@ -188,22 +189,22 @@ export struct TtsCatalogSheet {
         onBack: () => this.onClose()
       })
         .alignSelf(ItemAlign.Start)
-        .margin({ top: 4 })
+        .margin({ top: AppSpacing.XS })
     }
     .width('100%')
-    .padding({ left: 20, right: 16, top: 12, bottom: 10 })
+    .padding({ left: AppSpacing.XXL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.MD })
     .alignItems(VerticalAlign.Center)
   }
 
   @Builder
   catalogSummary() {
-    Column({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
       Row() {
         Text(`共 ${this.count} 章`)
           .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor)
-          .margin({ left: 6 })
-          .padding({ left: 8, right: 8 })
+          .margin({ left: AppSpacing.SM })
+          .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
           .height(34)
           .textAlign(TextAlign.Center)
 
@@ -224,7 +225,7 @@ export struct TtsCatalogSheet {
         .backgroundColor(this.orderToggleBackground())
         .accessibilityText(this.reverseOrder ? '切换为正序目录' : '切换为倒序目录')
         .onClick(() => this.onToggleOrder())
-        .margin({ left: 4 })
+        .margin({ left: AppSpacing.XS })
 
         Blank()
           .layoutWeight(1)
@@ -237,7 +238,7 @@ export struct TtsCatalogSheet {
       .alignItems(VerticalAlign.Center)
     }
     .width('100%')
-    .padding({ left: 20, right: 16, top: 18, bottom: 10 })
+    .padding({ left: AppSpacing.XXL, right: AppSpacing.XL, top: AppSpacing.XL, bottom: AppSpacing.MD })
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -247,7 +248,7 @@ export struct TtsCatalogSheet {
       List({ space: 0, scroller: this.scroller }) {
         LazyForEach(this.source, (title: string, index: number) => {
           ListItem() {
-            Row({ space: 10 }) {
+            Row({ space: AppSpacing.MD }) {
               Text(index === this.currentDisplayIndex ? '•' : '·')
                 .fontSize(index === this.currentDisplayIndex ? 22 : 18)
                 .fontColor(index === this.currentDisplayIndex ? this.accentColor : this.subTextColor)
@@ -266,13 +267,13 @@ export struct TtsCatalogSheet {
                 Text('已缓存')
                   .fontSize(AppFontSize.MICRO)
                   .fontColor(this.darkMode ? '#7CC7A0' : '#1F8F55')
-                  .padding({ left: 7, right: 7, top: 3, bottom: 3 })
+                  .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
                   .backgroundColor(this.darkMode ? '#24382F' : '#E6F4EC')
                   .borderRadius(ThemeRuntime.mediumRadius())
               }
             }
             .width('100%')
-            .padding({ left: 14, right: 16, top: 14, bottom: 14 })
+            .padding({ left: AppSpacing.LG, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
             .backgroundColor(index === this.currentDisplayIndex ?
               this.selectedRowBackgroundColor() : Color.Transparent)
             .border({ width: { bottom: 0.5 },
@@ -308,14 +309,14 @@ export struct TtsCatalogSheet {
           .height(this.listViewportHeight)
           .borderRadius(2)
           .backgroundColor(this.darkMode ? '#18FFFFFF' : '#14000000')
-          .margin({ right: 3 })
+          .margin({ right: AppSpacing.XXS })
           .hitTestBehavior(HitTestMode.None)
         Column()
           .width(this.scrollbarDragging ? 6 : 4)
           .height(this.thumbLength())
           .borderRadius(3)
           .backgroundColor(this.darkMode ? '#BFD5D8DE' : '#A87A6F63')
-          .margin({ right: 2 })
+          .margin({ right: AppSpacing.XXS })
           .translate({ y: this.displayedThumbOffset() })
           .hitTestBehavior(HitTestMode.None)
       }

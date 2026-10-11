@@ -2,6 +2,7 @@ import { ReaderTxtCharsetOption } from '../../core/reader/ReaderSettingsModels';
 import { ImmersiveBackButton } from '../ImmersiveBackButton';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { AppFontSize } from '../../theme/AppFontSize';
+import { AppSpacing } from '../../theme/AppSpacing';
 
 /** 本地 TXT 可手动指定的字符编码。 */
 export class ReaderTxtCharsets {
@@ -81,9 +82,9 @@ export struct ReaderTxtCharsetDialogContent {
   }
 
   build() {
-    Column({ space: 10 }) {
+    Column({ space: AppSpacing.MD }) {
       Row() {
-        Column({ space: 3 }) {
+        Column({ space: AppSpacing.XXS }) {
           Text('选择字符编码')
             .fontSize(AppFontSize.TITLE)
             .fontWeight(FontWeight.Bold)
@@ -114,7 +115,7 @@ export struct ReaderTxtCharsetDialogContent {
       .alignItems(VerticalAlign.Center)
 
       Scroll() {
-        Column({ space: 4 }) {
+        Column({ space: AppSpacing.XS }) {
           ForEach(ReaderTxtCharsets.options(), (option: ReaderTxtCharsetOption) => {
             this.optionRow(option)
           }, (option: ReaderTxtCharsetOption) => option.value || 'auto')
@@ -126,7 +127,7 @@ export struct ReaderTxtCharsetDialogContent {
       .height(this.listHeight)
       .scrollBar(BarState.Auto)
 
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         Button('取消')
           .layoutWeight(1)
           .height(42)
@@ -146,13 +147,13 @@ export struct ReaderTxtCharsetDialogContent {
     }
     .width('100%')
     .constraintSize({ maxWidth: 440 })
-    .padding({ left: 18, right: 18, top: 16, bottom: 16 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XL, bottom: AppSpacing.XL })
   }
 
   @Builder
   optionRow(option: ReaderTxtCharsetOption) {
-    Row({ space: 12 }) {
-      Column({ space: 3 }) {
+    Row({ space: AppSpacing.LG }) {
+      Column({ space: AppSpacing.XXS }) {
         Text(option.label)
           .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.textColor())
@@ -170,7 +171,7 @@ export struct ReaderTxtCharsetDialogContent {
     }
     .width('100%')
     .constraintSize({ minHeight: 56 })
-    .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.SM, bottom: AppSpacing.SM })
     .borderRadius(ThemeRuntime.largeRadius())
     .backgroundColor(this.draft === option.value ?
       ThemeRuntime.accentSurfaceColor(this.appDarkMode) : Color.Transparent)

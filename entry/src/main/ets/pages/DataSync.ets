@@ -9,6 +9,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -101,7 +102,7 @@ struct DataSyncPage {
                 }, false)
             }
             .width('calc(100% - 24vp)')
-            .margin({ left: 12, right: 12 })
+            .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
             .borderRadius(ThemeRuntime.cardRadius())
             .clip(true)
             .backgroundColor(this.cardColor())
@@ -126,7 +127,7 @@ struct DataSyncPage {
                 }, false)
             }
             .width('calc(100% - 24vp)')
-            .margin({ left: 12, right: 12 })
+            .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
             .borderRadius(ThemeRuntime.cardRadius())
             .clip(true)
             .backgroundColor(this.cardColor())
@@ -153,7 +154,7 @@ struct DataSyncPage {
             })
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -163,7 +164,7 @@ struct DataSyncPage {
             .fontColor(this.subTextColor())
             .lineHeight(18)
             .width('calc(100% - 32vp)')
-            .margin({ left: 16, right: 16, top: 14, bottom: 32 + this.navBarHeight })
+            .margin({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: 32 + this.navBarHeight })
         }
         .width('100%')
       }
@@ -182,9 +183,9 @@ struct DataSyncPage {
 
   @Builder
   statusCard() {
-    Column({ space: 12 }) {
+    Column({ space: AppSpacing.LG }) {
       Row() {
-        Column({ space: 4 }) {
+        Column({ space: AppSpacing.XS }) {
           Text('云同步')
             .fontSize(AppFontSize.SUBTITLE)
             .fontWeight(FontWeight.Bold)
@@ -205,7 +206,7 @@ struct DataSyncPage {
           Text(this.cloudSyncEnabled && this.accountLoggedIn ? '已开启' : '未开启')
             .fontSize(AppFontSize.CAPTION)
             .fontColor(this.cloudSyncEnabled && this.accountLoggedIn ? this.accentColor() : this.subTextColor())
-            .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+            .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
             .borderRadius(ThemeRuntime.mediumRadius())
             .backgroundColor(this.softColor())
         }
@@ -242,15 +243,15 @@ struct DataSyncPage {
       }
     }
     .width('calc(100% - 24vp)')
-    .padding(16)
-    .margin({ left: 12, right: 12, top: 12 })
+    .padding(AppSpacing.XL)
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG })
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 
   @Builder
   settingsLoadingCard() {
-    Row({ space: 10 }) {
+    Row({ space: AppSpacing.MD }) {
       LoadingProgress()
         .width(22)
         .height(22)
@@ -261,8 +262,8 @@ struct DataSyncPage {
     }
     .width('calc(100% - 24vp)')
     .height(72)
-    .padding({ left: 16, right: 16 })
-    .margin({ left: 12, right: 12 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Center)
@@ -279,7 +280,7 @@ struct DataSyncPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -295,8 +296,8 @@ struct DataSyncPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .border({ width: { bottom: showDivider ? 0.5 : 0 },
       color: this.dividerColor() })
     .alignItems(VerticalAlign.Center)
@@ -314,7 +315,7 @@ struct DataSyncPage {
           .fontColor(this.subTextColor())
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -325,8 +326,8 @@ struct DataSyncPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .border({ width: { bottom: showDivider ? 0.5 : 0 },
       color: this.dividerColor() })
     .alignItems(VerticalAlign.Center)
@@ -581,7 +582,7 @@ struct DataSyncPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
   @Builder

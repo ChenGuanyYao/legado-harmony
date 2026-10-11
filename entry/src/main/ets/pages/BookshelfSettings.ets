@@ -19,6 +19,7 @@ import { BookDisplayHelper } from '../utils/BookDisplayHelper';
 import { BookCoverCache } from '../utils/BookCoverCache';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -159,7 +160,7 @@ struct BookshelfSettingsPage {
 
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -181,7 +182,7 @@ struct BookshelfSettingsPage {
             }
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -214,7 +215,7 @@ struct BookshelfSettingsPage {
           }
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -224,7 +225,7 @@ struct BookshelfSettingsPage {
             this.navItem('图集管理', '新建图集、导入图片、重命名和预览封面', 'pages/CoverGalleryManager')
           }
           .width('calc(100% - 24vp)')
-          .margin({ left: 12, right: 12 })
+          .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
           .borderRadius(ThemeRuntime.cardRadius())
           .clip(true)
           .backgroundColor(this.cardColor())
@@ -708,7 +709,7 @@ struct BookshelfSettingsPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
   @Builder
@@ -717,7 +718,7 @@ struct BookshelfSettingsPage {
       .strokeWidth(0.5)
       .color(this.appDarkMode ? '#24FFFFFF' : '#14000000')
       .width('calc(100% - 32vp)')
-      .margin({ left: 16, right: 16 })
+      .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
   }
 
   @Builder
@@ -730,7 +731,7 @@ struct BookshelfSettingsPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -744,8 +745,8 @@ struct BookshelfSettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
   }
 
@@ -759,7 +760,7 @@ struct BookshelfSettingsPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -788,8 +789,8 @@ struct BookshelfSettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 66 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .alignItems(VerticalAlign.Center)
   }
@@ -804,7 +805,7 @@ struct BookshelfSettingsPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -838,22 +839,22 @@ struct BookshelfSettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 66 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .alignItems(VerticalAlign.Center)
   }
 
   @Builder
   targetBooksPanel() {
-    Column({ space: 2 }) {
+    Column({ space: AppSpacing.XXS }) {
       if (this.targetBooksLoading) {
         Text('正在加载书籍...')
           .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .width('100%')
           .height(48)
-          .padding({ left: 16, right: 16 })
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
           .textAlign(TextAlign.Start)
       } else if (this.books.length === 0) {
         Text('暂无可选择书籍')
@@ -861,7 +862,7 @@ struct BookshelfSettingsPage {
           .fontColor(this.subTextColor())
           .width('100%')
           .height(48)
-          .padding({ left: 16, right: 16 })
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
           .textAlign(TextAlign.Start)
       } else {
         ForEach(this.books, (book: Book) => {
@@ -876,7 +877,7 @@ struct BookshelfSettingsPage {
           }
           .width('100%')
           .height(48)
-          .padding({ left: 16, right: 16 })
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
         }, (book: Book) => this.targetBookKey(book))
       }
     }
@@ -905,7 +906,7 @@ struct BookshelfSettingsPage {
         Text('开启后书架左上角增加“隐私”入口；关闭后隐私书籍继续隐藏')
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -919,8 +920,8 @@ struct BookshelfSettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
   }
 
@@ -934,7 +935,7 @@ struct BookshelfSettingsPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -946,8 +947,8 @@ struct BookshelfSettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 66 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .alignItems(VerticalAlign.Center)
     .onClick(onClick)
@@ -963,7 +964,7 @@ struct BookshelfSettingsPage {
       .placeholderColor(this.subTextColor())
       .backgroundColor(this.inputColor())
       .borderRadius(ThemeRuntime.mediumRadius())
-      .margin({ bottom: 10 })
+      .margin({ bottom: AppSpacing.MD })
       .onChange((text: string) => {
         onChange(text);
       })
@@ -978,7 +979,7 @@ struct BookshelfSettingsPage {
         .fontColor(this.primaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
-        .margin({ bottom: 18 })
+        .margin({ bottom: AppSpacing.XL })
 
       if (this.privateShelfHasPassword) {
         this.privatePasswordField('当前密码', this.privatePasswordCurrent, (value: string) => {
@@ -1006,7 +1007,7 @@ struct BookshelfSettingsPage {
           .width('100%')
       }
 
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('取消')
           .layoutWeight(1)
           .height(44)
@@ -1024,9 +1025,9 @@ struct BookshelfSettingsPage {
           })
       }
       .width('100%')
-      .margin({ top: 12 })
+      .margin({ top: AppSpacing.LG })
     }
-    .padding(20)
+    .padding(AppSpacing.XXL)
   }
 
   @Builder
@@ -1039,7 +1040,7 @@ struct BookshelfSettingsPage {
         Text(desc)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -1051,8 +1052,8 @@ struct BookshelfSettingsPage {
     }
     .width('calc(100% - 32vp)')
     .constraintSize({ minHeight: 66 })
-    .padding({ left: 0, right: 0, top: 10, bottom: 10 })
-    .margin({ left: 16, right: 16 })
+    .padding({ left: 0, right: 0, top: AppSpacing.MD, bottom: AppSpacing.MD })
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
     .backgroundColor(Color.Transparent)
     .alignItems(VerticalAlign.Center)
     .onClick(() => {

@@ -7,6 +7,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -40,9 +41,9 @@ struct GlassSettingsPage {
       this.titleBar()
       this.floatingPreview()
       Scroll() {
-        Column({ space: 12 }) {
+        Column({ space: AppSpacing.LG }) {
           this.glassEnabledSwitch()
-          Column({ space: 12 }) {
+          Column({ space: AppSpacing.LG }) {
             this.sectionTitle('效果预设')
             this.presets()
             this.sectionTitle('模糊强度')
@@ -68,7 +69,7 @@ struct GlassSettingsPage {
           .opacity(this.settings.enabled ? 1 : 0.42)
         }
         .width('100%')
-        .padding({ left: 14, right: 14, top: 6, bottom: 32 + this.navBarHeight })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.SM, bottom: 32 + this.navBarHeight })
       }
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .layoutWeight(1)
@@ -235,7 +236,7 @@ struct GlassSettingsPage {
     }
     .width('100%')
     .height(56 + this.statusBarHeight)
-    .padding({ right: 12, top: this.statusBarHeight })
+    .padding({ right: AppSpacing.LG, top: this.statusBarHeight })
     .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
     .backdropBlur(ThemeRuntime.topBarBlur())
   }
@@ -246,7 +247,7 @@ struct GlassSettingsPage {
       this.preview()
     }
     .width('100%')
-    .padding({ left: 14, right: 14, top: 10, bottom: 6 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.MD, bottom: AppSpacing.SM })
     .zIndex(2)
   }
 
@@ -275,11 +276,11 @@ struct GlassSettingsPage {
           .fontSize(AppFontSize.CAPTION)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
-          .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+          .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
           .borderRadius(ThemeRuntime.mediumRadius())
           .backgroundColor(this.previewGlassColor())
         Blank().layoutWeight(1)
-        Row({ space: 5 }) {
+        Row({ space: AppSpacing.XS }) {
           ForEach([0, 1, 2, 3, 4], (index: number) => {
             Circle()
               .width(this.previewIndex === index ? 12 : 5)
@@ -290,7 +291,7 @@ struct GlassSettingsPage {
         }
       }
       .width('100%')
-      .padding({ left: 10, right: 10, bottom: 7 })
+      .padding({ left: AppSpacing.MD, right: AppSpacing.MD, bottom: AppSpacing.SM })
       .alignItems(VerticalAlign.Center)
       .position({ x: 0, y: '100%' })
       .translate({ y: -27 })
@@ -308,7 +309,7 @@ struct GlassSettingsPage {
 
   @Builder
   previewBackdrop() {
-    Row({ space: 18 }) {
+    Row({ space: AppSpacing.XL }) {
       Circle().width(72).height(72).fill(this.accentColor())
       Circle().width(62).height(62).fill(ThemeRuntime.dangerColor(this.appDarkMode))
     }
@@ -322,12 +323,12 @@ struct GlassSettingsPage {
   panelPreview() {
     Stack({ alignContent: Alignment.Center }) {
       this.previewBackdrop()
-      Column({ space: 4 }) {
+      Column({ space: AppSpacing.XS }) {
         Text('内容面板').fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
         Text('承载主要内容').fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor())
       }
       .width('78%')
-      .padding(14)
+      .padding(AppSpacing.LG)
       .borderRadius(this.settings.cornerRadius)
       .backgroundColor(this.previewGlassColor())
       .backdropBlur(this.previewBlur())
@@ -341,11 +342,11 @@ struct GlassSettingsPage {
   popoverPreview() {
     Stack({ alignContent: Alignment.Center }) {
       this.previewBackdrop()
-      Column({ space: 5 }) {
+      Column({ space: AppSpacing.XS }) {
         Text('弹出提示').fontSize(AppFontSize.BODY).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
         Text('这是浮在内容上方的弹出层').fontSize(AppFontSize.MICRO).fontColor(this.subTextColor())
       }
-      .width('64%').padding(12).borderRadius(this.settings.cornerRadius)
+      .width('64%').padding(AppSpacing.LG).borderRadius(this.settings.cornerRadius)
       .backgroundColor(this.previewGlassColor(true))
       .backdropBlur(this.previewBlur())
       .border({ width: this.settings.borderWidth, color: this.previewBorderColor() })
@@ -358,7 +359,7 @@ struct GlassSettingsPage {
   buttonPreview() {
     Stack({ alignContent: Alignment.Center }) {
       this.previewBackdrop()
-      Row({ space: 12 }) {
+      Row({ space: AppSpacing.LG }) {
         Button('Aa').width(48).height(48).fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .backgroundColor(this.previewGlassColor())
@@ -404,7 +405,7 @@ struct GlassSettingsPage {
         this.previewMenuItem('分享')
         this.previewMenuItem('删除')
       }
-      .width(126).padding({ top: 4, bottom: 4 })
+      .width(126).padding({ top: AppSpacing.XS, bottom: AppSpacing.XS })
       .borderRadius(this.settings.cornerRadius)
       .backgroundColor(this.previewGlassColor())
       .backdropBlur(this.previewBlur())
@@ -422,12 +423,12 @@ struct GlassSettingsPage {
 
   @Builder
   sectionTitle(title: string) {
-    Text(title).fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%').padding({ left: 2, top: 6 })
+    Text(title).fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%').padding({ left: AppSpacing.XXS, top: AppSpacing.SM })
   }
 
   @Builder
   presets() {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       this.presetButton('轻盈', GlassPresetIds.LIGHT)
       this.presetButton('标准', GlassPresetIds.STANDARD)
       this.presetButton('强烈', GlassPresetIds.STRONG)
@@ -453,7 +454,7 @@ struct GlassSettingsPage {
   @Builder
   glassEnabledSwitch() {
     Row() {
-      Column({ space: 3 }) {
+      Column({ space: AppSpacing.XXS }) {
         Text('启用磨砂玻璃').fontSize(AppFontSize.BODY_LARGE).fontColor(this.primaryTextColor())
         Text(this.settings.enabled ? '已启用，可选择预设或调整参数' : '已关闭，下方参数暂不可调整')
           .fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor())
@@ -467,7 +468,7 @@ struct GlassSettingsPage {
       })
     }
     .width('100%')
-    .padding(14)
+    .padding(AppSpacing.LG)
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
@@ -481,13 +482,13 @@ struct GlassSettingsPage {
         onChange: (value: boolean) => { this.settings.shadowEnabled = value; this.changed(); }
       })
     }
-    .width('100%').padding(14).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
+    .width('100%').padding(AppSpacing.LG).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
   }
 
   @Builder
   performanceCard() {
     Row() {
-      Column({ space: 3 }) {
+      Column({ space: AppSpacing.XXS }) {
         Text('低性能模式').fontSize(AppFontSize.BODY_LARGE).fontColor(this.primaryTextColor())
         Text('禁用实时模糊和阴影，列表较多时更流畅').fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor())
       }.layoutWeight(1).alignItems(HorizontalAlign.Start)
@@ -496,17 +497,17 @@ struct GlassSettingsPage {
         onChange: (value: boolean) => { this.settings.lowPerformance = value; this.changed(); }
       })
     }
-    .width('100%').padding(14).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
+    .width('100%').padding(AppSpacing.LG).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
   }
 
   @Builder
   sliderCard(title: string, key: string, min: number, max: number, step: number) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       Row() {
         Text(title).fontSize(AppFontSize.BODY_LARGE).fontColor(this.primaryTextColor()).layoutWeight(1)
         Text(this.sliderDisplayValue(key)).fontSize(AppFontSize.BODY).fontColor(this.accentColor())
       }.width('100%')
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         this.sliderStepButton($r('sys.symbol.minus'), '减小', this.sliderValue(key) > min, () => {
           this.stepSliderValue(key, min, max, -step);
         })
@@ -523,7 +524,7 @@ struct GlassSettingsPage {
       }
       .width('100%')
     }
-    .width('100%').padding({ left: 14, right: 14, top: 10, bottom: 8 })
+    .width('100%').padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.MD, bottom: AppSpacing.MD })
     .borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
   }
 

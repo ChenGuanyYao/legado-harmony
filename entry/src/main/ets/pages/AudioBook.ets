@@ -23,6 +23,7 @@ import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 class AudioBookPlaybackListener implements RemoteAudioPlaybackListener {
   private readonly stateCallback: (state: string) => void;
@@ -204,14 +205,14 @@ struct AudioBookPage {
 
   @Builder
   audioPlayerHeader() {
-    Row({ space: 11 }) {
+    Row({ space: AppSpacing.LG }) {
       Stack({ alignContent: Alignment.Center }) {
         Circle().width(38).height(38).fill(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
         SymbolGlyph($r('sys.symbol.speaker_wave_3'))
           .fontSize(19)
           .fontColor([this.accentColor()])
       }
-      Column({ space: 3 }) {
+      Column({ space: AppSpacing.XXS }) {
         Text(this.book?.name || '快速听书')
           .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
@@ -238,7 +239,7 @@ struct AudioBookPage {
 
   @Builder
   audioIntroCard() {
-    Column({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
       Stack({ alignContent: Alignment.Center }) {
         if (this.displayCover()) {
           Image(this.displayCover())
@@ -262,7 +263,7 @@ struct AudioBookPage {
       .width('100%')
       .height(Math.min(250, Math.max(130,
         (this.viewportHeight - this.statusBarHeight - this.navBarHeight) * 0.32)))
-      .padding(10)
+      .padding(AppSpacing.MD)
       .borderRadius(14)
       .clip(true)
       Scroll() {
@@ -277,12 +278,12 @@ struct AudioBookPage {
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .layoutWeight(1)
       .width('100%')
-      .padding({ left: 4, right: 4 })
+      .padding({ left: AppSpacing.XS, right: AppSpacing.XS })
       .scrollBar(BarState.Auto)
     }
     .layoutWeight(1)
     .width('100%')
-    .padding(14)
+    .padding(AppSpacing.LG)
     .borderRadius(ThemeRuntime.largeRadius())
     .backgroundColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
   }
@@ -304,7 +305,7 @@ struct AudioBookPage {
 
   @Builder
   audioPanelControl(icon: Resource, label: string, enabled: boolean, action: () => void) {
-    Column({ space: 6 }) {
+    Column({ space: AppSpacing.SM }) {
       Stack({ alignContent: Alignment.Center }) {
         Circle().width(38).height(38).fill(this.appDarkMode ? '#24FFFFFF' : '#10000000')
         SymbolGlyph(icon).fontSize(19).fontColor([enabled ? this.primaryTextColor() : this.subTextColor()])
@@ -320,7 +321,7 @@ struct AudioBookPage {
 
   @Builder
   audioChapterControl(icon: Resource, label: string, offset: number) {
-    Column({ space: 6 }) {
+    Column({ space: AppSpacing.SM }) {
       Stack({ alignContent: Alignment.Center }) {
         Circle().width(38).height(38).fill(this.appDarkMode ? '#24FFFFFF' : '#10000000')
         SymbolGlyph(icon)
@@ -344,7 +345,7 @@ struct AudioBookPage {
 
   @Builder
   audioPlaybackControl() {
-    Column({ space: 6 }) {
+    Column({ space: AppSpacing.SM }) {
       Stack({ alignContent: Alignment.Center }) {
         Circle().width(46).height(46).fill(this.accentColor())
         SymbolGlyph(this.isPlaying() ? $r('sys.symbol.pause') : $r('sys.symbol.play'))
@@ -380,7 +381,7 @@ struct AudioBookPage {
 
   @Builder
   audioPanelActions() {
-    Row({ space: 10 }) {
+    Row({ space: AppSpacing.MD }) {
       Button(`音色 · ${this.currentVoiceCode()}`)
         .layoutWeight(1)
         .height(40)
@@ -399,7 +400,7 @@ struct AudioBookPage {
 
   @Builder
   voiceCodeDialogContent() {
-    Column({ space: 14 }) {
+    Column({ space: AppSpacing.LG }) {
       Text('听书音色代码')
         .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
@@ -416,7 +417,7 @@ struct AudioBookPage {
         .onChange((value: string) => {
           this.voiceCodeInput = value;
         })
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button('取消')
           .layoutWeight(1)
           .backgroundColor(this.inputColor())
@@ -431,7 +432,7 @@ struct AudioBookPage {
           .onClick(() => this.saveVoiceCode())
       }
       .width('100%')
-    }    .padding(20)
+    }    .padding(AppSpacing.XXL)
   }
 
 
@@ -462,12 +463,12 @@ struct AudioBookPage {
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .textAlign(TextAlign.Center)
-        .margin({ top: 18 })
+        .margin({ top: AppSpacing.XL })
       Text(this.book?.author || this.book?.originName || '')
         .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .maxLines(1)
-        .margin({ top: 7 })
+        .margin({ top: AppSpacing.SM })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
@@ -486,10 +487,10 @@ struct AudioBookPage {
       Text(this.chapters.length > 0 ? `${this.chapterIndex + 1} / ${this.chapters.length}` : '- / -')
         .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
-        .margin({ top: 6 })
+        .margin({ top: AppSpacing.SM })
     }
     .width('100%')
-    .margin({ top: 24 })
+    .margin({ top: AppSpacing.XXXL })
   }
 
   @Builder
@@ -551,12 +552,12 @@ struct AudioBookPage {
     .width('100%')
     .justifyContent(FlexAlign.SpaceAround)
     .alignItems(VerticalAlign.Center)
-    .margin({ top: 20 })
+    .margin({ top: AppSpacing.XXL })
   }
 
   @Builder
   speedSection() {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       this.audioSpeedChip(0.8)
       this.audioSpeedChip(1.0)
       this.audioSpeedChip(1.2)
@@ -568,7 +569,7 @@ struct AudioBookPage {
 
   @Builder
   sleepSection() {
-    Row({ space: 6 }) {
+    Row({ space: AppSpacing.SM }) {
       this.audioTimerChip(0, '关闭')
       this.audioTimerChip(15, '15分')
       this.audioTimerChip(30, '30分')

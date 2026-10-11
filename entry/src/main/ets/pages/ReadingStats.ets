@@ -8,6 +8,7 @@ import { appDb } from '../model/data/AppDatabase';
 import { ReadStatsTracker, readStatsTracker } from '../core/stats/ReadStatsTracker';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 const STATS_MODES: string[] = ['day', 'week', 'month'];
 const STATS_MODE_LABELS: string[] = ['日', '周', '月'];
@@ -179,7 +180,7 @@ struct ReadingStatsPage {
             .scrollBar(BarState.Off)
             .enableScrollInteraction(false)
             .width('calc(100% - 24vp)')
-            .margin({ left: 12, right: 12 })
+            .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
             .borderRadius(ThemeRuntime.cardRadius())
             .clip(true)
             .backgroundColor(this.cardColor())
@@ -211,15 +212,15 @@ struct ReadingStatsPage {
 
   @Builder
   summaryCard() {
-    Column({ space: 14 }) {
+    Column({ space: AppSpacing.LG }) {
       Row() {
-        Row({ space: 4 }) {
+        Row({ space: AppSpacing.XS }) {
           ForEach(STATS_MODES, (value: string, index: number) => {
             Text(STATS_MODE_LABELS[index])
               .fontSize(AppFontSize.BODY)
               .fontWeight(this.mode === value ? FontWeight.Medium : FontWeight.Normal)
               .fontColor(this.mode === value ? Color.White : this.subTextColor())
-              .padding({ left: 14, right: 14, top: 6, bottom: 6 })
+              .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.SM, bottom: AppSpacing.SM })
               .borderRadius(ThemeRuntime.buttonRadius())
               .backgroundColor(this.mode === value ? this.accentColor() : Color.Transparent)
               .onClick(() => {
@@ -229,7 +230,7 @@ struct ReadingStatsPage {
               })
           }, (value: string) => value)
         }
-        .padding(3)
+        .padding(AppSpacing.XXS)
         .borderRadius(17)
         .backgroundColor(this.softColor())
       }
@@ -240,7 +241,7 @@ struct ReadingStatsPage {
         SymbolGlyph($r('sys.symbol.chevron_left'))
           .fontSize(18)
           .fontColor([this.subTextColor()])
-          .padding(8)
+          .padding(AppSpacing.MD)
           .onClick(() => {
             this.shiftPeriod(-1);
           })
@@ -258,7 +259,7 @@ struct ReadingStatsPage {
           SymbolGlyph($r('sys.symbol.chevron_right'))
             .fontSize(18)
             .fontColor([this.subTextColor()])
-            .padding(8)
+            .padding(AppSpacing.MD)
             .onClick(() => {
               this.shiftPeriod(1);
             })
@@ -271,7 +272,7 @@ struct ReadingStatsPage {
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
-      Column({ space: 6 }) {
+      Column({ space: AppSpacing.SM }) {
         Text(this.formatDuration(this.totalMs))
           .fontSize(28)
           .fontWeight(FontWeight.Bold)
@@ -284,15 +285,15 @@ struct ReadingStatsPage {
       .alignItems(HorizontalAlign.Start)
     }
     .width('calc(100% - 24vp)')
-    .padding(16)
-    .margin({ left: 12, right: 12, top: 12 })
+    .padding(AppSpacing.XL)
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG })
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
   }
 
   @Builder
   bookRow(item: StatBookItem) {
-    Row({ space: 12 }) {
+    Row({ space: AppSpacing.LG }) {
       Stack() {
         Column() {
           Text(item.name ? item.name.substring(0, 1) : '书')
@@ -317,8 +318,8 @@ struct ReadingStatsPage {
       .borderRadius(6)
       .clip(true)
 
-      Column({ space: 6 }) {
-        Row({ space: 8 }) {
+      Column({ space: AppSpacing.SM }) {
+        Row({ space: AppSpacing.MD }) {
           Text(item.name)
             .fontSize(AppFontSize.BODY_LARGE)
             .fontWeight(FontWeight.Medium)
@@ -366,7 +367,7 @@ struct ReadingStatsPage {
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
     .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Top)
     .gesture(
@@ -388,7 +389,7 @@ struct ReadingStatsPage {
 
   @Builder
   itemDeleteSwipeButton(item: StatBookItem) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       SymbolGlyph($r('sys.symbol.trash'))
         .fontSize(22)
         .fontColor(['#FFFFFF'])
@@ -416,7 +417,7 @@ struct ReadingStatsPage {
         .backdropBlur(ThemeRuntime.glassBlur('button', 12))
         .onClick(() => this.closeItemActions())
       Column() {
-        Row({ space: 10 }) {
+        Row({ space: AppSpacing.MD }) {
           SymbolGlyph($r('sys.symbol.trash'))
             .fontSize(18)
             .fontColor(['#E53935'])
@@ -428,12 +429,12 @@ struct ReadingStatsPage {
         }
         .width('100%')
         .height(44)
-        .padding({ left: 12, right: 12 })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
         .alignItems(VerticalAlign.Center)
         .onClick(() => this.confirmDeleteActionItem())
       }
       .width(148)
-      .padding({ top: 6, bottom: 6 })
+      .padding({ top: AppSpacing.SM, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
       .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
@@ -450,7 +451,7 @@ struct ReadingStatsPage {
 
   @Builder
   loadingCard() {
-    Row({ space: 10 }) {
+    Row({ space: AppSpacing.MD }) {
       LoadingProgress()
         .width(22)
         .height(22)
@@ -461,8 +462,8 @@ struct ReadingStatsPage {
     }
     .width('calc(100% - 24vp)')
     .height(88)
-    .padding({ left: 16, right: 16 })
-    .margin({ left: 12, right: 12 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .alignItems(VerticalAlign.Center)
@@ -471,7 +472,7 @@ struct ReadingStatsPage {
 
   @Builder
   emptyCard() {
-    Column({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
       SymbolGlyph($r('sys.symbol.timer'))
         .fontSize(28)
         .fontColor([this.subTextColor()])
@@ -481,8 +482,8 @@ struct ReadingStatsPage {
     }
     .width('calc(100% - 24vp)')
     .constraintSize({ minHeight: 120 })
-    .padding({ top: 20, bottom: 20 })
-    .margin({ left: 12, right: 12 })
+    .padding({ top: AppSpacing.XXL, bottom: AppSpacing.XXL })
+    .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
     .borderRadius(ThemeRuntime.cardRadius())
     .backgroundColor(this.cardColor())
     .justifyContent(FlexAlign.Center)
@@ -680,7 +681,7 @@ struct ReadingStatsPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
-      .padding({ left: 16, right: 16, top: 20, bottom: 8 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.XXL, bottom: AppSpacing.MD })
   }
 
   @Builder

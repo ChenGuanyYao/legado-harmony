@@ -8,6 +8,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Entry
 @Component
@@ -68,7 +69,7 @@ struct SearchResultGroupPage {
           onToggleShelf: (book: SearchBook) => this.toggleShelf(book)
         })
       } else {
-        Column({ space: 10 }) {
+        Column({ space: AppSpacing.MD }) {
           Text('聚合结果已失效，请返回重新搜索')
             .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.subTextColor())
@@ -93,7 +94,7 @@ struct SearchResultGroupPage {
           onBack: () => router.back()
         })
 
-        Column({ space: 2 }) {
+        Column({ space: AppSpacing.XXS }) {
           Text(this.groupTitle)
             .fontSize(AppFontSize.SUBTITLE)
             .fontWeight(FontWeight.Bold)
@@ -109,7 +110,7 @@ struct SearchResultGroupPage {
       }
       .width('100%')
       .height(56 + this.statusBarHeight)
-      .padding({ left: 4, right: 16, top: this.statusBarHeight })
+      .padding({ left: AppSpacing.XS, right: AppSpacing.XL, top: this.statusBarHeight })
       .alignItems(VerticalAlign.Center)
       .backgroundColor(ThemeRuntime.topBarColor(this.appDarkMode))
       .backdropBlur(ThemeRuntime.topBarBlur())

@@ -3,6 +3,7 @@ import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import deviceInfo from '@ohos.deviceInfo';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 @Component
 export struct ReaderTtsPlayerPanel {
@@ -59,7 +60,7 @@ export struct ReaderTtsPlayerPanel {
         .backdropBlur(ThemeRuntime.glassBlur('popover', 10))
         .onClick(() => this.close())
 
-      Column({ space: 14 }) {
+      Column({ space: AppSpacing.LG }) {
         this.header()
         this.contentPanel()
 
@@ -79,7 +80,7 @@ export struct ReaderTtsPlayerPanel {
       }
       .width('100%')
       .height('100%')
-      .padding({ left: 18, right: 18, top: this.topInset + 16, bottom: this.bottomInset + 16 })
+      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.topInset + 16, bottom: this.bottomInset + 16 })
       .backgroundColor(this.panelColor)
       .backdropBlur(ThemeRuntime.glassBlur('panel', 24))
       .transition(TransitionEffect.translate({ y: 520 })
@@ -92,14 +93,14 @@ export struct ReaderTtsPlayerPanel {
 
   @Builder
   header() {
-    Row({ space: 11 }) {
+    Row({ space: AppSpacing.LG }) {
       Stack({ alignContent: Alignment.Center }) {
         Circle().width(38).height(38).fill(ThemeRuntime.accentSurfaceColor(this.darkMode))
         SymbolGlyph($r('sys.symbol.speaker_wave_3'))
           .fontSize(19)
           .fontColor([this.accentColor])
       }
-      Column({ space: 3 }) {
+      Column({ space: AppSpacing.XXS }) {
         Text(this.globalTtsBookName || '快速朗读')
           .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
@@ -127,7 +128,7 @@ export struct ReaderTtsPlayerPanel {
 
   @Builder
   contentPanel() {
-    Column({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
       this.bookCover()
       if (this.globalTtsMode === 'audio') {
         Scroll() {
@@ -142,10 +143,10 @@ export struct ReaderTtsPlayerPanel {
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .layoutWeight(1)
         .width('100%')
-        .padding({ left: 4, right: 4 })
+        .padding({ left: AppSpacing.XS, right: AppSpacing.XS })
         .scrollBar(BarState.Auto)
       } else {
-        List({ scroller: this.textScroller, space: 8 }) {
+        List({ scroller: this.textScroller, space: AppSpacing.MD }) {
           ListItem() {
             Text(this.globalTtsTextBefore)
               .fontSize(AppFontSize.BODY_LARGE)
@@ -160,7 +161,7 @@ export struct ReaderTtsPlayerPanel {
               .lineHeight(26)
               .fontColor(this.primaryTextColor)
               .width('100%')
-              .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+              .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.SM, bottom: AppSpacing.SM })
               .borderRadius(ThemeRuntime.mediumRadius())
               .backgroundColor(this.darkMode ? '#24FFFFFF' : '#12000000')
           }
@@ -175,7 +176,7 @@ export struct ReaderTtsPlayerPanel {
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
         .layoutWeight(1)
         .width('100%')
-        .padding({ left: 4, right: 4 })
+        .padding({ left: AppSpacing.XS, right: AppSpacing.XS })
         .scrollBar(BarState.Auto)
       }
       Row() {
@@ -203,7 +204,7 @@ export struct ReaderTtsPlayerPanel {
     }
     .layoutWeight(1)
     .width('100%')
-    .padding(14)
+    .padding(AppSpacing.LG)
     .borderRadius(ThemeRuntime.largeRadius())
     .backgroundColor(ThemeRuntime.accentSurfaceColor(this.darkMode))
   }
@@ -238,7 +239,7 @@ export struct ReaderTtsPlayerPanel {
     }
     .width('100%')
     .height(this.coverHeight())
-    .padding(10)
+    .padding(AppSpacing.MD)
     .borderRadius(14)
     .clip(true)
   }
@@ -261,7 +262,7 @@ export struct ReaderTtsPlayerPanel {
 
   @Builder
   playbackControl() {
-    Column({ space: 6 }) {
+    Column({ space: AppSpacing.SM }) {
       Stack({ alignContent: Alignment.Center }) {
         Circle().width(46).height(46).fill(this.accentColor)
         SymbolGlyph(this.globalTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
@@ -281,7 +282,7 @@ export struct ReaderTtsPlayerPanel {
 
   @Builder
   control(icon: Resource, label: string, enabled: boolean, action: () => void) {
-    Column({ space: 6 }) {
+    Column({ space: AppSpacing.SM }) {
       Stack({ alignContent: Alignment.Center }) {
         Circle().width(38).height(38).fill(this.darkMode ? '#24FFFFFF' : '#10000000')
         SymbolGlyph(icon)
@@ -299,7 +300,7 @@ export struct ReaderTtsPlayerPanel {
 
   @Builder
   speedControl() {
-    Column({ space: 6 }) {
+    Column({ space: AppSpacing.SM }) {
       Stack({ alignContent: Alignment.Center }) {
         Circle().width(38).height(38).fill(this.darkMode ? '#24FFFFFF' : '#10000000')
         SymbolGlyph($r('sys.symbol.hourglass'))
@@ -316,7 +317,7 @@ export struct ReaderTtsPlayerPanel {
 
   @Builder
   timerOptions() {
-    Row({ space: 6 }) {
+    Row({ space: AppSpacing.SM }) {
       this.timerChip(0, '关闭')
       this.timerChip(15, '15分')
       this.timerChip(30, '30分')
@@ -329,7 +330,7 @@ export struct ReaderTtsPlayerPanel {
 
   @Builder
   speedOptions() {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       this.speedChip(0.8)
       this.speedChip(1.0)
       this.speedChip(1.2)
@@ -380,14 +381,14 @@ export struct ReaderTtsPlayerPanel {
           .fontSize(17)
           .fontColor([this.accentColor])
           .width(22)
-          .margin({ left: 11 })
+          .margin({ left: AppSpacing.LG })
           .hitTestBehavior(HitTestMode.None)
       }
       .layoutWeight(1)
       .width('100%')
       .height(44)
     } else {
-      Row({ space: 8 }) {
+      Row({ space: AppSpacing.MD }) {
         SymbolGlyph($r('sys.symbol.speaker_wave_3'))
           .fontSize(17)
           .fontColor([this.accentColor])
@@ -397,7 +398,7 @@ export struct ReaderTtsPlayerPanel {
       .layoutWeight(1)
       .width('100%')
       .height(44)
-      .padding({ left: 12, right: 10 })
+      .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
       .borderRadius(ThemeRuntime.mediumRadius())
       .backgroundColor(this.darkMode ? '#20FFFFFF' : '#0D000000')
     }
@@ -445,7 +446,7 @@ export struct ReaderTtsPlayerPanel {
 
   @Builder
   audioProgress() {
-    Column({ space: 2 }) {
+    Column({ space: AppSpacing.XXS }) {
       Slider({ value: this.globalTtsAudioPositionMs, min: 0,
         max: Math.max(1, this.globalTtsAudioDurationMs), step: 1000 })
         .width('100%')
@@ -475,7 +476,7 @@ export struct ReaderTtsPlayerPanel {
    */
   @Builder
   bottomActions() {
-    Row({ space: 8 }) {
+    Row({ space: AppSpacing.MD }) {
       if (this.globalTtsMode === 'audio') {
         this.voiceButton()
       } else if (ReaderTtsFloatingSession.ttsVoiceTitles().length > 0) {
@@ -497,7 +498,7 @@ export struct ReaderTtsPlayerPanel {
   @Builder
   bottomAction(icon: Resource, label: string, accessibility: string, danger: boolean,
     action: () => void) {
-    Row({ space: 4 }) {
+    Row({ space: AppSpacing.XS }) {
       SymbolGlyph(icon)
         .fontSize(16)
         .fontColor([danger ? '#FFFFFF' : this.primaryTextColor])
@@ -507,7 +508,7 @@ export struct ReaderTtsPlayerPanel {
         .maxLines(1)
     }
     .height(44)
-    .padding({ left: 10, right: 10 })
+    .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
     .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(danger ? '#D94841' : (this.darkMode ? '#20FFFFFF' : '#0D000000'))
     .alignItems(VerticalAlign.Center)
@@ -518,7 +519,7 @@ export struct ReaderTtsPlayerPanel {
   /** Voice entry for the audio mode, whose voice list comes from the book source. */
   @Builder
   voiceButton() {
-    Row({ space: 6 }) {
+    Row({ space: AppSpacing.SM }) {
       SymbolGlyph($r('sys.symbol.speaker_wave_3'))
         .fontSize(16)
         .fontColor([this.accentColor])
@@ -534,7 +535,7 @@ export struct ReaderTtsPlayerPanel {
     }
     .layoutWeight(1)
     .height(44)
-    .padding({ left: 12, right: 10 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
     .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(this.darkMode ? '#20FFFFFF' : '#0D000000')
     .alignItems(VerticalAlign.Center)

@@ -4,6 +4,7 @@ import { ImmersiveBackButton } from '../ImmersiveBackButton';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { AdaptiveSwitch } from '../AdaptiveSwitch';
 import { AppFontSize } from '../../theme/AppFontSize';
+import { AppSpacing } from '../../theme/AppSpacing';
 
 /**
  * 阅读页"布局元素设置"浮层：控制点击阅读页后出现哪些快捷组件。
@@ -45,7 +46,7 @@ export struct ReaderLayoutElementSettingsPanel {
         .backdropBlur(ThemeRuntime.glassBlur('overlay', 18))
         .onClick(() => this.onClose())
 
-      Column({ space: 4 }) {
+      Column({ space: AppSpacing.XS }) {
         Row() {
           Text('布局元素设置')
             .fontSize(AppFontSize.TITLE)
@@ -73,7 +74,7 @@ export struct ReaderLayoutElementSettingsPanel {
           .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor)
           .width('100%')
-          .margin({ bottom: 8 })
+          .margin({ bottom: AppSpacing.MD })
 
         this.toggleRow('使用快速朗读组件', '显示朗读快捷按钮与朗读悬浮胶囊', this.readerUseTtsQuickAction,
           (enabled: boolean) => {
@@ -88,7 +89,7 @@ export struct ReaderLayoutElementSettingsPanel {
           })
       }
       .width(this.panelWidth)
-      .padding({ left: 20, right: 20, top: 18, bottom: 18 })
+      .padding({ left: AppSpacing.XXL, right: AppSpacing.XXL, top: AppSpacing.XL, bottom: AppSpacing.XL })
       .borderRadius(ThemeRuntime.glassCornerRadius(24, 'overlay'))
       .backgroundColor(this.panelColor)
       .backdropBlur(ThemeRuntime.glassBlur('overlay', 24))
@@ -108,8 +109,8 @@ export struct ReaderLayoutElementSettingsPanel {
 
   @Builder
   toggleRow(title: string, description: string, enabled: boolean, onChange: (enabled: boolean) => void) {
-    Row({ space: 12 }) {
-      Column({ space: 4 }) {
+    Row({ space: AppSpacing.LG }) {
+      Column({ space: AppSpacing.XS }) {
         Text(title)
           .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.textColor)
@@ -127,7 +128,7 @@ export struct ReaderLayoutElementSettingsPanel {
     }
     .width('100%')
     .constraintSize({ minHeight: 64 })
-    .padding({ left: 12, right: 8 })
+    .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
     .borderRadius(ThemeRuntime.largeRadius())
     .backgroundColor(this.dark ? '#1FFFFFFF' : '#0D000000')
     .alignItems(VerticalAlign.Center)

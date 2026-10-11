@@ -18,6 +18,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AppFontSize } from '../theme/AppFontSize';
+import { AppSpacing } from '../theme/AppSpacing';
 
 class BookSourceDebugExportReport {
   reportVersion: number = 1;
@@ -96,7 +97,7 @@ struct BookSourceDebugPage {
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
       Scroll() {
-        Column({ space: 12 }) {
+        Column({ space: AppSpacing.LG }) {
           this.sourceCard()
           this.inputCard()
           this.resultCard()
@@ -127,7 +128,7 @@ struct BookSourceDebugPage {
         .width(88)
         .height(56)
         .textAlign(TextAlign.Center)
-        .margin({ right: 12 })
+        .margin({ right: AppSpacing.LG })
         .opacity(this.hasDebugReport() ? 1 : 0.45)
         .onClick(() => this.exportDebugReport())
     }
@@ -138,7 +139,7 @@ struct BookSourceDebugPage {
 
   @Builder
   sourceCard() {
-    Column({ space: 5 }) {
+    Column({ space: AppSpacing.XS }) {
       Text(this.source.bookSourceName || '正在加载书源').fontSize(AppFontSize.SUBTITLE).fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor()).width('100%')
       Text(this.source.bookSourceUrl || this.sourceUrl || '未指定书源')
@@ -146,13 +147,13 @@ struct BookSourceDebugPage {
       Text(`状态：${this.status}`).fontSize(AppFontSize.BODY).fontColor(this.running ? '#E89725' : this.accentColor())
         .width('100%')
     }
-    .width('calc(100% - 24vp)').padding(16).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
+    .width('calc(100% - 24vp)').padding(AppSpacing.XL).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
     .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
   inputCard() {
-    Column({ space: 10 }) {
+    Column({ space: AppSpacing.MD }) {
       Text('调试阶段').fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Medium)
         .fontColor(this.primaryTextColor()).width('100%')
       Text('默认执行全链路：搜索 → 发现 → 详情 → 目录 → 正文')
@@ -160,7 +161,7 @@ struct BookSourceDebugPage {
       TextInput({ text: this.keyword, placeholder: this.stageInputPlaceholder() })
         .height(44).width('100%').fontColor(this.primaryTextColor())
         .backgroundColor(this.inputColor()).onChange((value: string) => this.keyword = value)
-      Row({ space: 10 }) {
+      Row({ space: AppSpacing.MD }) {
         Button(this.running ? '取消调试' : '开始调试', { type: ButtonType.Capsule })
           .layoutWeight(1).height(44).enabled(this.running || !!this.source.bookSourceUrl)
           .backgroundColor(this.accentColor()).fontColor('#FFFFFF').onClick(() => this.runDebug())
@@ -169,14 +170,14 @@ struct BookSourceDebugPage {
           .onClick(() => this.clearDebugResult())
       }.width('100%')
     }
-    .width('calc(100% - 24vp)').padding(16).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
+    .width('calc(100% - 24vp)').padding(AppSpacing.XL).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
     .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
   resultCard() {
-    Column({ space: 10 }) {
-      Row({ space: 10 }) {
+    Column({ space: AppSpacing.MD }) {
+      Row({ space: AppSpacing.MD }) {
         Text('执行明细').fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor()).layoutWeight(1)
         if (this.hasDebugReport() || this.debugContent.length > 0) {
@@ -186,7 +187,7 @@ struct BookSourceDebugPage {
         }
       }.width('100%')
       if (this.debugContent.length > 0) {
-        Row({ space: 10 }) {
+        Row({ space: AppSpacing.MD }) {
           Text(`正文内容（${this.debugContent.length} 字符）`).fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor()).layoutWeight(1)
           Button('复制正文', { type: ButtonType.Capsule })
@@ -220,13 +221,13 @@ struct BookSourceDebugPage {
           .copyOption(CopyOptions.LocalDevice)
       }, (log: BookSourceDebugLog) => `${log.timestamp}_${log.message}`)
     }
-    .width('calc(100% - 24vp)').padding(16).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
+    .width('calc(100% - 24vp)').padding(AppSpacing.XL).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
     .alignItems(HorizontalAlign.Start)
   }
 
   @Builder
   stepView(step: BookSourceDebugStep) {
-    Column({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
       Row() {
       Text(step.name).fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
           .layoutWeight(1)
@@ -264,7 +265,7 @@ struct BookSourceDebugPage {
           .copyOption(CopyOptions.LocalDevice)
       }, (key: string) => key)
     }
-    .width('100%').padding(12).borderRadius(ThemeRuntime.mediumRadius()).backgroundColor(this.inputColor())
+    .width('100%').padding(AppSpacing.LG).borderRadius(ThemeRuntime.mediumRadius()).backgroundColor(this.inputColor())
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -275,7 +276,7 @@ struct BookSourceDebugPage {
       .onClick(() => this.fillDebugLink(url, stage))
       .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
       .copyOption(CopyOptions.LocalDevice)
-      .padding({ top: 4, bottom: 4 })
+      .padding({ top: AppSpacing.XS, bottom: AppSpacing.XS })
   }
 
   private async loadSource(): Promise<void> {

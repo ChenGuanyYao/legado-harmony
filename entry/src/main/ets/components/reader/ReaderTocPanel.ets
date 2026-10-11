@@ -8,6 +8,7 @@ import { VirtualListScrollbar } from '../../utils/VirtualListScrollbar';
 import { ImmersiveBackButton } from '../ImmersiveBackButton';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { AppFontSize } from '../../theme/AppFontSize';
+import { AppSpacing } from '../../theme/AppSpacing';
 
 const TOC_WINDOW_PAGE_SIZE = 72;
 const TOC_SCROLLBAR_DRAG_UPDATE_INTERVAL_MS = 90;
@@ -698,7 +699,7 @@ export struct ReaderTocPanel {
 
   build() {
     Column() {
-      Row({ space: 14 }) {
+      Row({ space: AppSpacing.LG }) {
         if (this.bookCover()) {
           Image(this.bookCover())
             .width(52)
@@ -717,7 +718,7 @@ export struct ReaderTocPanel {
             .backgroundColor(this.accentColor)
         }
 
-        Column({ space: 5 }) {
+        Column({ space: AppSpacing.XS }) {
           Text(this.book?.name || '目录')
             .fontSize(AppFontSize.TITLE)
             .fontWeight(FontWeight.Bold)
@@ -748,10 +749,10 @@ export struct ReaderTocPanel {
           onBack: () => this.onClose()
         })
           .alignSelf(ItemAlign.Start)
-          .margin({ top: 4 })
+          .margin({ top: AppSpacing.XS })
       }
       .width('100%')
-      .padding({ left: 20, right: 16, top: 12, bottom: 10 })
+      .padding({ left: AppSpacing.XXL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.MD })
       .alignItems(VerticalAlign.Center)
 
       Row() {
@@ -763,10 +764,10 @@ export struct ReaderTocPanel {
       }
       .width('calc(100% - 40vp)')
       .height(44)
-      .padding(2)
+      .padding(AppSpacing.XXS)
       .borderRadius(22)
       .backgroundColor(this.dark ? '#20FFFFFF' : '#12000000')
-      .margin({ left: 20, right: 20 })
+      .margin({ left: AppSpacing.XXL, right: AppSpacing.XXL })
 
       if (this.tab === 0) {
         this.tocSummary()
@@ -813,7 +814,7 @@ export struct ReaderTocPanel {
 
   @Builder
   tocSummary() {
-    Column({ space: 8 }) {
+    Column({ space: AppSpacing.MD }) {
       Row() {
         if (this.quickJumpInputVisible && !this.isSearchActive()) {
           TextInput({ text: this.quickJumpDraft, placeholder: `1-${this.chapters.length}` })
@@ -826,7 +827,7 @@ export struct ReaderTocPanel {
             .textAlign(TextAlign.Center)
             .width(92)
             .height(34)
-            .padding({ left: 8, right: 8 })
+            .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
             .borderRadius(17)
             .backgroundColor(this.dark ? '#2BFFFFFF' : '#14000000')
             .accessibilityText('输入目标章节序号，按回车定位')
@@ -838,13 +839,13 @@ export struct ReaderTocPanel {
           Text(`找到 ${this.searchChapterIndexes.length} 章`)
             .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor)
-            .margin({ left: 6 })
+            .margin({ left: AppSpacing.SM })
         } else {
           Text(`共 ${this.chapters.length} 章`)
             .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor)
-            .margin({ left: 6 })
-            .padding({ left: 8, right: 8 })
+            .margin({ left: AppSpacing.SM })
+            .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
             .height(34)
             .textAlign(TextAlign.Center)
             .accessibilityText(this.quickJumpArmed ? '再次点击输入目标章节' : '点击回到当前章节')
@@ -868,7 +869,7 @@ export struct ReaderTocPanel {
           (this.dark ? '#1FFFFFFF' : '#0D000000'))
         .accessibilityText(this.reverseOrder ? '切换为正序目录' : '切换为倒序目录')
         .onClick(() => this.toggleOrder())
-        .margin({ left: 4 })
+        .margin({ left: AppSpacing.XS })
         Blank()
           .layoutWeight(1)
         if (this.isSearchActive()) {
@@ -876,7 +877,7 @@ export struct ReaderTocPanel {
             .fontSize(AppFontSize.CAPTION)
             .fontColor(this.textColor)
             .height(34)
-            .padding({ left: 12, right: 12 })
+            .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
             .textAlign(TextAlign.Center)
             .borderRadius(ThemeRuntime.buttonRadius())
             .backgroundColor(this.dark ? '#1FFFFFFF' : '#0D000000')
@@ -897,7 +898,7 @@ export struct ReaderTocPanel {
             this.refreshToc();
           }
         })
-          .margin({ left: 8 })
+          .margin({ left: AppSpacing.MD })
         ImmersiveBackButton({
           icon: $r('sys.symbol.magnifyingglass'),
           iconOffsetX: 0,
@@ -912,13 +913,13 @@ export struct ReaderTocPanel {
           accessibilityLabel: '搜索目录',
           onBack: () => this.toggleSearch()
         })
-          .margin({ left: 8 })
+          .margin({ left: AppSpacing.MD })
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
       if (this.searchVisible) {
-        Row({ space: 8 }) {
+        Row({ space: AppSpacing.MD }) {
           SymbolGlyph($r('sys.symbol.magnifyingglass'))
             .fontSize(18)
             .fontColor([this.subTextColor])
@@ -957,13 +958,13 @@ export struct ReaderTocPanel {
         }
         .width('100%')
         .height(40)
-        .padding({ left: 12, right: 8 })
+        .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
         .borderRadius(20)
         .backgroundColor(this.dark ? '#2BFFFFFF' : '#14000000')
       }
     }
     .width('100%')
-    .padding({ left: 20, right: 16, top: 18, bottom: 10 })
+    .padding({ left: AppSpacing.XXL, right: AppSpacing.XL, top: AppSpacing.XL, bottom: AppSpacing.MD })
     .alignItems(HorizontalAlign.Start)
   }
 
@@ -973,7 +974,7 @@ export struct ReaderTocPanel {
       List({ space: 0, scroller: this.tocScroller }) {
         if (this.isSearchActive() && this.visibleChapters.length === 0) {
           ListItem() {
-            Column({ space: 8 }) {
+            Column({ space: AppSpacing.MD }) {
               SymbolGlyph($r('sys.symbol.magnifyingglass'))
                 .fontSize(28)
                 .fontColor([this.subTextColor])
@@ -987,7 +988,7 @@ export struct ReaderTocPanel {
         }
         ForEach(this.visibleChapters, (chapter: BookChapter, localIndex: number) => {
           ListItem() {
-            Row({ space: 10 }) {
+            Row({ space: AppSpacing.MD }) {
               Text(this.globalIndex(localIndex) === this.currentChapterIndex ? '•' : '·')
                 .fontSize(this.globalIndex(localIndex) === this.currentChapterIndex ? 22 : 18)
                 .fontColor(this.globalIndex(localIndex) === this.currentChapterIndex ?
@@ -1008,13 +1009,13 @@ export struct ReaderTocPanel {
                 Text('已缓存')
                   .fontSize(AppFontSize.MICRO)
                   .fontColor(this.dark ? '#7CC7A0' : '#1F8F55')
-                  .padding({ left: 7, right: 7, top: 3, bottom: 3 })
+                  .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
                   .backgroundColor(this.dark ? '#24382F' : '#E6F4EC')
                   .borderRadius(ThemeRuntime.mediumRadius())
               }
             }
             .width('100%')
-            .padding({ left: 14, right: 16, top: 14, bottom: 14 })
+            .padding({ left: AppSpacing.LG, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
             .backgroundColor(this.globalIndex(localIndex) === this.currentChapterIndex ?
               this.selectedColor : Color.Transparent)
             .border({ width: { bottom: 0.5 }, color: this.dark ? '#1FFFFFFF' : '#0D000000' })
@@ -1049,14 +1050,14 @@ export struct ReaderTocPanel {
           .height(this.listViewportHeight)
           .borderRadius(2)
           .backgroundColor(this.dark ? '#18FFFFFF' : '#14000000')
-          .margin({ right: 3 })
+          .margin({ right: AppSpacing.XXS })
           .hitTestBehavior(HitTestMode.None)
         Column()
           .width(this.scrollbarDragging ? 6 : 4)
           .height(this.scrollbarThumbLength())
           .borderRadius(3)
           .backgroundColor(this.dark ? '#BFD5D8DE' : '#A87A6F63')
-          .margin({ right: 2 })
+          .margin({ right: AppSpacing.XXS })
           .translate({ y: this.displayedScrollbarThumbOffset() })
           .hitTestBehavior(HitTestMode.None)
       }
@@ -1079,7 +1080,7 @@ export struct ReaderTocPanel {
   @Builder
   bookmarkSummary() {
     if (this.bookmarkMultiSelectMode) {
-      Row({ space: 16 }) {
+      Row({ space: AppSpacing.XL }) {
         Text(`已选 ${this.selectedBookmarkIds.length} 项`)
           .fontSize(AppFontSize.BODY)
           .fontColor(this.textColor)
@@ -1102,7 +1103,7 @@ export struct ReaderTocPanel {
       }
       .width('100%')
       .height(52)
-      .padding({ left: 20, right: 20 })
+      .padding({ left: AppSpacing.XXL, right: AppSpacing.XXL })
       .alignItems(VerticalAlign.Center)
     } else {
       Row() {
@@ -1112,14 +1113,14 @@ export struct ReaderTocPanel {
           .layoutWeight(1)
       }
       .width('100%')
-      .padding({ left: 20, right: 20, top: 18, bottom: 10 })
+      .padding({ left: AppSpacing.XXL, right: AppSpacing.XXL, top: AppSpacing.XL, bottom: AppSpacing.MD })
     }
   }
 
   @Builder
   bookmarkList() {
     if (this.bookmarks.length === 0) {
-      Column({ space: 12 }) {
+      Column({ space: AppSpacing.LG }) {
         SymbolGlyph($r('sys.symbol.bookmark'))
           .fontSize(34)
           .fontColor([this.subTextColor])
@@ -1180,7 +1181,7 @@ export struct ReaderTocPanel {
 
   @Builder
   bookmarkCard(bookmark: Bookmark) {
-    Column({ space: 5 }) {
+    Column({ space: AppSpacing.XS }) {
       Row() {
         SymbolGlyph($r('sys.symbol.bookmark'))
           .fontSize(18)
@@ -1209,7 +1210,7 @@ export struct ReaderTocPanel {
         .width('100%')
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.LG })
     .backgroundColor(this.selectedBookmarkIds.includes(bookmark.id) ? this.selectedColor : Color.Transparent)
     .border({ width: { bottom: 0.5 }, color: this.dark ? '#1FFFFFFF' : '#0D000000' })
     .onClick(() => {
@@ -1237,7 +1238,7 @@ export struct ReaderTocPanel {
 
   @Builder
   swipeActionButton(icon: Resource, label: string, color: string, action: () => void) {
-    Column({ space: 4 }) {
+    Column({ space: AppSpacing.XS }) {
       SymbolGlyph(icon)
         .fontSize(22)
         .fontColor(['#FFFFFF'])
