@@ -1,6 +1,8 @@
 import { authentication } from '@kit.AccountKit';
 import { common, Context } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
+import { image } from '@kit.ImageKit';
+import { http } from '@kit.NetworkKit';
 import { AccountCommerceApi } from './AccountCommerceApi';
 import {
   AccountApiError,
@@ -12,6 +14,8 @@ import {
 import { AccountSessionStore } from './AccountSessionStore';
 import { CloudSyncSettingsStore } from './CloudSyncSettingsStore';
 
+const DEFAULT_DISPLAY_NAME = '华为用户';
+
 export class HuaweiAccountService {
   private static renewing: Promise<void> | null = null;
 
@@ -20,12 +24,16 @@ export class HuaweiAccountService {
   }
 
   static async login(context: common.UIAbilityContext): Promise<AccountSnapshot> {
-    const request = new authentication.HuaweiIDProvider().createLoginWithHuaweiIDRequest();
-    request.forceLogin = true;
+    // LoginWithHuaweiIDRequest only returns identifiers. The nickname and avatar are only
+    // available through the authorization request with the profile scope.
+    const request = new authentication.HuaweiIDProvider().createAuthorizationWithHuaweiIDRequest();
+    request.scopes = ['profile'];
+    request.permissions = ['serviceauthcode'];
+    request.forceAuthorization = true;
     request.state = util.generateRandomUUID();
     const controller = new authentication.AuthenticationController(context);
     const response =
-      await controller.executeRequest(request) as authentication.LoginWithHuaweiIDResponse;
+      await controller.executeRequest(request) as authentication.AuthorizationWithHuaweiIDResponse;
     if (response.state && response.state !== request.state) {
       throw new Error('华为账号登录状态校验失败');
     }
@@ -39,7 +47,90 @@ export class HuaweiAccountService {
     }
     await AccountSessionStore.saveLogin(context, loginResponse);
     await CloudSyncSettingsStore.load(context, AccountSessionStore.account().userId);
+    await HuaweiAccountService.seedProfile(
+      context, response.data?.nickName || '', response.data?.avatarUri || '');
     return AccountSessionStore.account();
+  }
+
+  // Fills the server profile from the Huawei account only while it still holds the defaults,
+  // so a nickname or avatar the user edited in the app is never overwritten by a later login.
+  private static async seedProfile(context: Context, nickName: string, avatarUri: string): Promise<void> {
+    try {
+      const account = AccountSessionStore.account();
+      const huaweiName = nickName.trim().substring(0, 30);
+      const displayName =
+        account.displayName === DEFAULT_DISPLAY_NAME && huaweiName ? huaweiName : account.displayName;
+      const avatarBase64 =
+        account.avatarUrl ? '' : await HuaweiAccountService.downloadAvatarBase64(avatarUri);
+      if (displayName === account.displayName && !avatarBase64) {
+        return;
+      }
+      const snapshot = await AccountCommerceApi.updateProfile(
+        displayName, avatarBase64, false, AccountSessionStore.token());
+      await AccountSessionStore.updateSnapshot(context, snapshot);
+    } catch (e) {
+      // Login has already succeeded; the profile can still be edited manually.
+      console.warn('同步华为账号昵称头像失败:', e);
+    }
+  }
+
+  // The Huawei avatar link expires, so it is re-encoded to the same 256px JPEG the profile
+  // editor uploads instead of being stored as a URL.
+  private static async downloadAvatarBase64(avatarUri: string): Promise<string> {
+    if (!avatarUri.startsWith('https://')) {
+      return '';
+    }
+    const client = http.createHttp();
+    let source: image.ImageSource | null = null;
+    let pixelMap: image.PixelMap | null = null;
+    let packer: image.ImagePacker | null = null;
+    try {
+      const response = await client.request(avatarUri, {
+        method: http.RequestMethod.GET,
+        expectDataType: http.HttpDataType.ARRAY_BUFFER,
+        connectTimeout: 10000,
+        readTimeout: 10000,
+        maxLimit: 2 * 1024 * 1024
+      });
+      if (response.responseCode !== 200 || !(response.result instanceof ArrayBuffer) ||
+        response.result.byteLength === 0) {
+        return '';
+      }
+      source = image.createImageSource(response.result);
+      pixelMap = await source.createPixelMap({
+        desiredSize: {
+          width: 256,
+          height: 256
+        }
+      });
+      packer = image.createImagePacker();
+      const packed = await packer.packToData(pixelMap, {
+        format: 'image/jpeg',
+        quality: 82,
+        bufferSize: 512 * 1024
+      });
+      return new util.Base64Helper().encodeToStringSync(new Uint8Array(packed));
+    } finally {
+      client.destroy();
+      if (pixelMap) {
+        try {
+          await pixelMap.release();
+        } catch (e) {
+        }
+      }
+      if (source) {
+        try {
+          await source.release();
+        } catch (e) {
+        }
+      }
+      if (packer) {
+        try {
+          await packer.release();
+        } catch (e) {
+        }
+      }
+    }
   }
 
   static async refresh(context: Context): Promise<AccountSnapshot> {

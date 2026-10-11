@@ -160,7 +160,8 @@ struct AccountCenterPage {
       await this.recoverUnfinishedPurchases();
     } catch (e) {
       const error = e as BusinessError;
-      if (error.code !== 1001502005) {
+      // 1001502012: the user dismissed the authorization sheet.
+      if (error.code !== 1001502005 && error.code !== 1001502012) {
         HdsFeedback.showToast(this.errorMessage(e, '华为账号登录失败'));
       }
     } finally {
