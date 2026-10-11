@@ -79,15 +79,9 @@ export class OpdsSettingsStore {
     return result;
   }
 
+  // 尾斜杠原样保留：有的服务器只认 /opds/（talebook），有的只认不带斜杠的地址（Komga），
+  // 两种写法都连不上时由 OpdsClient.fetchCatalog 自动换另一种再试。
   static normalizeBaseUrl(value: string): string {
-    const result = (value || '').trim();
-    if (!/^https:\/\//i.test(result) && !/^http:\/\//i.test(result)) return result;
-    if (!result.endsWith('/')) return result;
-    const withoutTrailingSlashes = result.replace(/\/+$/, '');
-    if (!withoutTrailingSlashes) return result;
-    // OPDS 地址去掉尾斜杠；仅根路径（如 http://example.com/）保留单个尾斜杠。
-    const pathPart = withoutTrailingSlashes.replace(/^https?:\/\//i, '');
-    if (pathPart.indexOf('/') >= 0) return withoutTrailingSlashes;
-    return `${withoutTrailingSlashes}/`;
+    return (value || '').trim();
   }
 }

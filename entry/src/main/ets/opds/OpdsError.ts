@@ -6,12 +6,15 @@
 export class OpdsError extends Error {
   code: string = '';
   userMessage: string = '';
+  // 服务器给出了 HTTP 响应时的状态码；连接本身失败（超时、拒绝连接等）为 0。
+  httpStatus: number = 0;
 
-  constructor(code: string, userMessage: string) {
+  constructor(code: string, userMessage: string, httpStatus: number = 0) {
     super(userMessage);
     this.name = 'OpdsError';
     this.code = code || 'unknown';
     this.userMessage = userMessage || '未知错误';
+    this.httpStatus = httpStatus;
   }
 
   static message(error: Object, fallback: string = '未知错误'): string {

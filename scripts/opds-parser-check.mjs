@@ -195,6 +195,32 @@ function main() {
     'http://komga.example.com/opds/v1.2/series/ABC123/thumbnail',
     'komga: 绝对 href 原样保留');
 
+  // ---- talebook.xml：基于 Calibre 的 talebook，旧式封面 rel、内联搜索模板、xhtml 简介 ----
+  const talebook = OpdsXmlParser.parseFeed(fixture('talebook.xml'), 'http://tale.example.com:8883/opds/');
+  assertEquals(talebook.entries.length, 1, 'talebook: 条目数');
+  assertTrue(!talebook.isNavigationFeed(), 'talebook: 含 acquisition 条目应判定为图书 feed');
+  const taleSearch = talebook.searchLink();
+  assertTrue(taleSearch !== null && !taleSearch.isSearchDescription(),
+    'talebook: rel=search 是内联模板而不是 opensearch 描述');
+  if (taleSearch !== null) {
+    assertEquals(taleSearch.href, 'http://tale.example.com:8883/opds/search/{searchTerms}',
+      'talebook: 模板里的 {searchTerms} 占位符在 URL 解析后应原样保留');
+  }
+  const taleNext = talebook.nextLink();
+  assertEquals(taleNext === null ? '' : taleNext.href,
+    'http://tale.example.com:8883/opds/nav/4f6e6577657374?offset=50', 'talebook: 下一页保留端口和查询串');
+  const taleBook = talebook.entries[0];
+  assertEquals(taleBook.artworkImage(), 'http://tale.example.com:8883/get/cover/1.jpg',
+    'talebook: 旧式 rel=.../cover 识别为封面');
+  assertEquals(taleBook.artworkThumbnail(), 'http://tale.example.com:8883/get/cover/1.jpg?thumb=1',
+    'talebook: 旧式 rel=.../thumbnail 识别为缩略图');
+  assertEquals(taleBook.acquisitionLinks().map((link) => opdsFormatOfType(link.type)), ['epub', 'pdf'],
+    'talebook: 两种格式的获取链接');
+  assertEquals(taleBook.acquisitionLinks()[0].href, 'http://tale.example.com:8883/api/book/1.epub?from=opds',
+    'talebook: 下载地址');
+  assertTrue(taleBook.contentIsHtml && taleBook.displayText().indexOf('TAGS: 示例') >= 0,
+    'talebook: xhtml 简介取到内层文本');
+
   // ---- kavita.xml：多格式 acquisition 链接 ----
   const kavita = OpdsXmlParser.parseFeed(fixture('kavita.xml'), 'http://kavita.example.com/api/opds');
   const kavitaAcq = kavita.entries[0].acquisitionLinks();
@@ -289,4 +315,4 @@ try {
   console.error(`OPDS parser check failed:\n- ${error.message}`);
   process.exit(1);
 }
-console.log(`OPDS parser check passed: 7 fixtures, ${assertions} assertions.`);
+console.log(`OPDS parser check passed: 8 fixtures, ${assertions} assertions.`);

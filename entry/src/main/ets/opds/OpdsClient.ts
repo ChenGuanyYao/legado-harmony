@@ -70,30 +70,51 @@ export class OpdsClient {
     }
   }
 
-  // 书库入口：填的是站点根地址（如 Calibre 的 http://ip:8080）时自动改试 /opds。
+  // 书库入口：按用户填的地址连不上时，依次换尾斜杠写法、补 /opds 再试，返回实际可用的地址。
   async fetchCatalog(url: string): Promise<OpdsCatalogRoot> {
-    try {
-      const feed = await this.fetchFeed(url);
-      return { url: url, feed: feed };
-    } catch (error) {
-      const fallback = OpdsClient.catalogFallbackUrl(url);
-      const code = error instanceof OpdsError ? error.code : '';
-      if (!fallback || (code !== 'not-opds' && code !== 'not-found')) throw error as Error;
+    const candidates = OpdsClient.catalogCandidates(url);
+    let first: Error | null = null;
+    let budget = candidates.length;
+    for (let index = 0; index < candidates.length && index < budget; index++) {
       try {
-        const feed = await this.fetchFeed(fallback);
-        return { url: fallback, feed: feed };
-      } catch (_) {
-        throw error as Error;
+        const feed = await this.fetchFeed(candidates[index]);
+        return { url: candidates[index], feed: feed };
+      } catch (error) {
+        if (!first) {
+          first = error as Error;
+          budget = 1 + OpdsClient.extraAddressBudget(error as Object, candidates.length - 1);
+        }
       }
     }
+    throw first as Error;
   }
 
-  static catalogFallbackUrl(url: string): string {
+  // 首个地址失败后还值得再试几个地址。服务器有响应但地址不对：全部试完；
+  // 连接层失败（如 /opds 被重定向到丢了端口的地址）：只再试一个，免得主机不通时干等；
+  // 认证、证书、超时：换地址也没用。
+  private static extraAddressBudget(error: Object, remaining: number): number {
+    if (!(error instanceof OpdsError)) return 0;
+    if (error.code === 'not-opds' || error.code === 'not-found') return remaining;
+    if (error.code !== 'network') return 0;
+    if (error.httpStatus > 0) return remaining;
+    return /2300028|timed?\s*out|timeout/i.test(error.userMessage) ? 0 : Math.min(1, remaining);
+  }
+
+  static catalogCandidates(url: string): string[] {
     const value = (url || '').trim();
-    if (!/^https?:\/\//i.test(value) || value.indexOf('?') >= 0 || value.indexOf('#') >= 0) return '';
+    const candidates: string[] = [value];
+    if (!/^https?:\/\//i.test(value) || value.indexOf('?') >= 0 || value.indexOf('#') >= 0) return candidates;
     const trimmed = value.replace(/\/+$/, '');
-    if (/\/opds$/i.test(trimmed)) return '';
-    return `${trimmed}/opds`;
+    const add = (candidate: string): void => {
+      if (candidates.indexOf(candidate) < 0) candidates.push(candidate);
+    };
+    // 站点根地址带不带斜杠是同一个资源，不必重复请求。
+    if (!/^https?:\/\/[^/]+$/i.test(trimmed)) add(value.endsWith('/') ? trimmed : `${trimmed}/`);
+    if (!/\/opds$/i.test(trimmed)) {
+      add(`${trimmed}/opds/`);
+      add(`${trimmed}/opds`);
+    }
+    return candidates;
   }
 
   async fetchEntry(url: string): Promise<OpdsEntry> {
@@ -281,9 +302,13 @@ export class OpdsClient {
 
   private async fetchAtom(url: string): Promise<string> {
     const body = await this.fetchXml(url);
-    if (!/<(?:[A-Za-z_][\w.-]*:)?(?:feed|entry)[\s>]/.test(body.substring(0, 4096))) {
-      throw new OpdsError('not-opds',
-        '该地址不是有效的 OPDS 目录。Calibre 的地址一般以 /opds 结尾，Kavita 请在「用户设置 → OPDS」里复制完整地址');
+    const head = body.substring(0, 4096);
+    if (!/<(?:[A-Za-z_][\w.-]*:)?(?:feed|entry)[\s>]/.test(head)) {
+      if (/<title>\s*Kavita/i.test(head)) {
+        throw new OpdsError('not-opds', '这是 Kavita 的网页地址，不是 OPDS 地址。请在 Kavita 网页端的用户设置里' +
+          '复制 OPDS 地址（形如 http://主机:端口/api/opds/一串密钥）；Kavita 的 OPDS 靠地址里的密钥认证，无需填写账号密码');
+      }
+      throw new OpdsError('not-opds', '该地址不是有效的 OPDS 目录。Calibre、talebook 的地址一般以 /opds 结尾');
     }
     return body;
   }
@@ -306,7 +331,7 @@ export class OpdsClient {
       throw new OpdsError('auth', this.server.username ? '用户名或密码错误' : '书库需要登录，请在书库设置里填写账号和密码');
     }
     if (response.statusCode === 404) {
-      throw new OpdsError('not-found', '书库地址不存在（404）');
+      throw new OpdsError('not-found', '书库地址不存在（404）', 404);
     }
     if (!response.success) {
       const detail = response.error || '';
@@ -318,7 +343,7 @@ export class OpdsClient {
         }
         throw new OpdsError('network', detail || '网络连接失败');
       }
-      throw new OpdsError('network', `书库请求失败（HTTP ${response.statusCode}）`);
+      throw new OpdsError('network', `书库请求失败（HTTP ${response.statusCode}）`, response.statusCode);
     }
     return response.body || '';
   }

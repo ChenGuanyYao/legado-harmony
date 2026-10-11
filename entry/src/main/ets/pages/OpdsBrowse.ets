@@ -907,9 +907,12 @@ struct OpdsBrowsePage {
         }
         if (seq !== this.requestSeq) return;
         if (catalogUrl !== url && this.stack.length === 1) {
-          // 入口被自动改到了 /opds：后续相对链接、搜索描述都以实际地址为准
+          // 入口地址被自动纠正（尾斜杠、/opds）：后续相对链接、搜索都以实际地址为准，
+          // 并存回配置，下次打开不用再试错
           this.rememberFeed(catalogUrl, feed);
           this.stack[0].url = catalogUrl;
+          this.server.baseUrl = catalogUrl;
+          OpdsSettingsStore.saveServer(getContext(this), this.server).catch((): void => {});
         }
         this.applyFeed(feed);
         if (this.stack.length === 1 && !this.searchTemplate) {

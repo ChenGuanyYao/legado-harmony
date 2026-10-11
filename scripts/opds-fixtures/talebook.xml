@@ -1,0 +1,29 @@
+<?xml version='1.0' encoding='utf-8'?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:dc="http://purl.org/dc/terms/" xmlns:opds="http://opds-spec.org/2010/catalog">
+  <title>TaleBook Library :: By Newest</title>
+  <author>
+    <name>TaleBook</name>
+    <uri>http://calibre-ebook.com</uri>
+  </author>
+  <id>calibre-all:timestamp</id>
+  <icon>/favicon.png</icon>
+  <updated>2026-05-13T21:28:37+00:00</updated>
+  <link type="application/atom+xml" rel="search" title="Search" href="/opds/search/{searchTerms}"/>
+  <link type="application/atom+xml;type=feed;profile=opds-catalog" rel="start" href="/opds"/>
+  <link type="application/atom+xml;type=feed;profile=opds-catalog" rel="next" title="Next" href="/opds/nav/4f6e6577657374?offset=50"/>
+  <entry>
+    <title>示例图书</title>
+    <author>
+      <name>佚名</name>
+    </author>
+    <id>urn:uuid:00000000-0000-4000-8000-000000000001</id>
+    <updated>2026-05-13T21:28:37+00:00</updated>
+    <content type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml">TAGS: 示例<br/></div>
+    </content>
+    <link type="application/epub+zip" href="/api/book/1.epub?from=opds" rel="http://opds-spec.org/acquisition"/>
+    <link type="application/pdf" href="/api/book/1.pdf?from=opds" rel="http://opds-spec.org/acquisition"/>
+    <link type="image/jpeg" href="/get/cover/1.jpg" rel="http://opds-spec.org/cover"/>
+    <link type="image/jpeg" href="/get/cover/1.jpg?thumb=1" rel="http://opds-spec.org/thumbnail"/>
+  </entry>
+</feed>
