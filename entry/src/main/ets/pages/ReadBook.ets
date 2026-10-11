@@ -4773,18 +4773,19 @@ struct ReadBookPage {
     // 普通阅读容器已经通过 getReaderTopSafePadding() 避让状态栏；叠页/仿真为了让纸张
     // 覆盖全屏而不消费顶部安全区，需要在页眉自身补回这段高度。
     return (this.getReaderTopSafePadding() <= 0 ? this.getReaderPageContentTopPadding() : 0) +
-      this.getReaderHeaderExtendedTopGap();
+      this.getReaderHeaderTopGap();
   }
 
-  getReaderHeaderExtendedTopGap(): number {
+  getReaderHeaderTopGap(): number {
     // 扩展模式下状态栏已隐藏，页眉从屏幕顶端开始；留一小段间距，避免文字紧贴屏幕边缘和圆角。
-    return this.readerExtendToStatusBar ? 8 : 0;
+    // 再加上用户设置的页眉下移距离。正文的页眉预留同步增加，页眉下移不会压住首行。
+    return (this.readerExtendToStatusBar ? 8 : 0) + this.getReaderInfoBarConfig().headerOffset;
   }
 
   getReaderHeaderContentReserve(): number {
     return this.isReaderHeaderVisible() ?
       this.getReaderHeaderInfoBarHeight() + this.getReaderInfoBarConfig().headerExtraHeight() + 4 +
-        this.getReaderHeaderExtendedTopGap() : 0;
+        this.getReaderHeaderTopGap() : 0;
   }
 
   getEffectiveReaderMarginBottom(): number {
@@ -6285,7 +6286,9 @@ struct ReadBookPage {
   getReaderBottomInfoBarBottomInset(): number {
     // Only lift the footer enough to sit immediately above the gesture indicator. Use half of the reported
     // navigation inset and keep the result in a narrow range so large three-button areas cannot create a gap.
-    return Math.max(6, Math.min(8, Math.max(0, this.navBarHeight) * 0.5));
+    // 用户设置的页脚上移距离加在这段上抬之上；正文的页脚预留用的是同一个值，页脚上移不会压住末行。
+    return Math.max(6, Math.min(8, Math.max(0, this.navBarHeight) * 0.5)) +
+      this.getReaderInfoBarConfig().footerOffset;
   }
 
   getReaderBottomInfoBarContentGap(): number {

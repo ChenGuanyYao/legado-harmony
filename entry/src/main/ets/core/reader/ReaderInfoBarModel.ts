@@ -91,6 +91,8 @@ export class ReaderInfoBarConfig {
   static readonly OPACITY_MAX: number = 100;
   static readonly OPACITY_STEP: number = 10;
   static readonly FIXED_SIDE_PADDING: number = 28;
+  static readonly OFFSET_MAX: number = 40;
+  static readonly OFFSET_STEP: number = 2;
 
   headerLeft: string = ReaderInfoItem.CHAPTER_TITLE;
   headerCenter: string = ReaderInfoItem.NONE;
@@ -103,6 +105,10 @@ export class ReaderInfoBarConfig {
   opacity: number = ReaderInfoBarConfig.OPACITY_MAX;
   /** 左右边距跟随正文边距；关闭时使用固定边距。 */
   followMargin: boolean = false;
+  /** 页眉在默认位置基础上再下移的距离（vp）。 */
+  headerOffset: number = 0;
+  /** 页脚在默认位置基础上再上移的距离（vp），用来让开手势指示条。 */
+  footerOffset: number = 0;
   headerDivider: boolean = false;
   footerDivider: boolean = false;
   progressBar: string = ReaderInfoProgressBar.NONE;
@@ -155,6 +161,8 @@ export class ReaderInfoBarConfig {
       config.fontSize = ReaderInfoBarConfig.clampFontSize(source.fontSize);
       config.opacity = ReaderInfoBarConfig.clampOpacity(source.opacity);
       config.followMargin = source.followMargin === true;
+      config.headerOffset = ReaderInfoBarConfig.clampOffset(source.headerOffset);
+      config.footerOffset = ReaderInfoBarConfig.clampOffset(source.footerOffset);
       config.headerDivider = source.headerDivider === true;
       config.footerDivider = source.footerDivider === true;
       config.progressBar = ReaderInfoProgressBar.VALUES.indexOf(source.progressBar) >= 0 ?
@@ -170,6 +178,11 @@ export class ReaderInfoBarConfig {
   static clampFontSize(value: number): number {
     if (typeof value !== 'number' || !Number.isFinite(value)) return ReaderInfoBarConfig.FONT_SIZE_DEFAULT;
     return Math.max(ReaderInfoBarConfig.FONT_SIZE_MIN, Math.min(Math.round(value), ReaderInfoBarConfig.FONT_SIZE_MAX));
+  }
+
+  static clampOffset(value: number): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+    return Math.max(0, Math.min(Math.round(value), ReaderInfoBarConfig.OFFSET_MAX));
   }
 
   static clampOpacity(value: number): number {
@@ -232,7 +245,8 @@ export class ReaderInfoBarConfig {
 
   /** 只包含会改变正文可用高度的项；内容槽位变化不需要重新分页。 */
   layoutIdentity(): string {
-    return `${this.fontSize}_${this.headerVisible()}_${this.headerExtraHeight()}_${this.footerExtraHeight()}`;
+    return `${this.fontSize}_${this.headerVisible()}_${this.headerExtraHeight()}_${this.footerExtraHeight()}_` +
+      `${this.headerOffset}_${this.footerOffset}`;
   }
 }
 

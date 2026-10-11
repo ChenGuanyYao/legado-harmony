@@ -67,6 +67,13 @@ check(bigger.layoutIdentity() !== base.layoutIdentity(), '字号变化改变分�
 const withBar = base.copy();
 withBar.progressBar = Bar.FOOTER;
 check(withBar.layoutIdentity() !== base.layoutIdentity(), '进度条变化改变分页标识');
+const shifted = base.copy();
+shifted.footerOffset = 12;
+check(shifted.layoutIdentity() !== base.layoutIdentity(), '页脚上移改变分页标识');
+equal(Config.parse(JSON.stringify({ headerOffset: 999, footerOffset: -5 })).headerOffset, Config.OFFSET_MAX,
+  '页眉下移被限制在上限');
+equal(Config.parse(JSON.stringify({ footerOffset: -5 })).footerOffset, 0, '页脚上移不能为负');
+equal(Config.parse(migrated.serialize()).footerOffset, 0, '旧配置没有位置偏移时默认为 0');
 equal(base.headerLineHeight(), 18, '默认字号下页眉行高保持 18');
 equal(base.footerExtraHeight(), 0, '默认配置页脚没有附加高度');
 equal(withBar.footerExtraHeight(), 5, '页脚进度条附加高度保持 5');

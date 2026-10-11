@@ -203,6 +203,8 @@ export struct ReaderHeaderFooterSettings {
   private static readonly SLOT_FOOTER_RIGHT: number = 5;
   private static readonly STEPPER_FONT_SIZE: number = 0;
   private static readonly STEPPER_OPACITY: number = 1;
+  private static readonly STEPPER_HEADER_OFFSET: number = 2;
+  private static readonly STEPPER_FOOTER_OFFSET: number = 3;
 
   private config(): ReaderInfoBarConfig {
     return ReaderInfoBarConfig.parse(this.readerInfoBarConfig) ?? new ReaderInfoBarConfig();
@@ -238,15 +240,24 @@ export struct ReaderHeaderFooterSettings {
 
   private stepperValue(field: number): number {
     const config = this.config();
+    if (field === ReaderHeaderFooterSettings.STEPPER_HEADER_OFFSET) return config.headerOffset;
+    if (field === ReaderHeaderFooterSettings.STEPPER_FOOTER_OFFSET) return config.footerOffset;
     return field === ReaderHeaderFooterSettings.STEPPER_OPACITY ? config.opacity : config.fontSize;
   }
 
+  private isOffsetStepper(field: number): boolean {
+    return field === ReaderHeaderFooterSettings.STEPPER_HEADER_OFFSET ||
+      field === ReaderHeaderFooterSettings.STEPPER_FOOTER_OFFSET;
+  }
+
   private stepperMin(field: number): number {
+    if (this.isOffsetStepper(field)) return 0;
     return field === ReaderHeaderFooterSettings.STEPPER_OPACITY ?
       ReaderInfoBarConfig.OPACITY_MIN : ReaderInfoBarConfig.FONT_SIZE_MIN;
   }
 
   private stepperMax(field: number): number {
+    if (this.isOffsetStepper(field)) return ReaderInfoBarConfig.OFFSET_MAX;
     return field === ReaderHeaderFooterSettings.STEPPER_OPACITY ?
       ReaderInfoBarConfig.OPACITY_MAX : ReaderInfoBarConfig.FONT_SIZE_MAX;
   }
@@ -258,7 +269,13 @@ export struct ReaderHeaderFooterSettings {
 
   private stepBy(field: number, direction: number): void {
     const config = this.config();
-    if (field === ReaderHeaderFooterSettings.STEPPER_OPACITY) {
+    if (field === ReaderHeaderFooterSettings.STEPPER_HEADER_OFFSET) {
+      config.headerOffset = ReaderInfoBarConfig.clampOffset(
+        config.headerOffset + direction * ReaderInfoBarConfig.OFFSET_STEP);
+    } else if (field === ReaderHeaderFooterSettings.STEPPER_FOOTER_OFFSET) {
+      config.footerOffset = ReaderInfoBarConfig.clampOffset(
+        config.footerOffset + direction * ReaderInfoBarConfig.OFFSET_STEP);
+    } else if (field === ReaderHeaderFooterSettings.STEPPER_OPACITY) {
       config.opacity = ReaderInfoBarConfig.clampOpacity(config.opacity + direction * ReaderInfoBarConfig.OPACITY_STEP);
     } else {
       config.fontSize = ReaderInfoBarConfig.clampFontSize(config.fontSize + direction);
@@ -278,6 +295,7 @@ export struct ReaderHeaderFooterSettings {
         this.slotItem('页眉左侧', ReaderHeaderFooterSettings.SLOT_HEADER_LEFT, 'reader_header_left_select')
         this.slotItem('页眉中间', ReaderHeaderFooterSettings.SLOT_HEADER_CENTER, 'reader_header_center_select')
         this.slotItem('页眉右侧', ReaderHeaderFooterSettings.SLOT_HEADER_RIGHT, 'reader_header_right_select')
+        this.stepperItem('页眉下移', ReaderHeaderFooterSettings.STEPPER_HEADER_OFFSET)
         this.switchItem('页眉分隔线', '在页眉下方画一条细线', this.config().headerDivider, (checked: boolean) => {
           const config = this.config();
           config.headerDivider = checked;
@@ -295,6 +313,7 @@ export struct ReaderHeaderFooterSettings {
         this.slotItem('页脚左侧', ReaderHeaderFooterSettings.SLOT_FOOTER_LEFT, 'reader_footer_left_select')
         this.slotItem('页脚中间', ReaderHeaderFooterSettings.SLOT_FOOTER_CENTER, 'reader_footer_center_select')
         this.slotItem('页脚右侧', ReaderHeaderFooterSettings.SLOT_FOOTER_RIGHT, 'reader_footer_right_select')
+        this.stepperItem('页脚上移', ReaderHeaderFooterSettings.STEPPER_FOOTER_OFFSET)
         this.switchItem('页脚分隔线', '在页脚上方画一条细线', this.config().footerDivider, (checked: boolean) => {
           const config = this.config();
           config.footerDivider = checked;
@@ -417,15 +436,13 @@ export struct ReaderHeaderFooterSettings {
   stepperItem(title: string, field: number) {
     Row({ space: AppSpacing.MD }) {
       this.itemLabel(title, '')
-      this.stepButton($r('sys.symbol.minus'), `减小${title}`, this.stepperValue(field) > this.stepperMin(field),
-        () => this.stepBy(field, -1))
+      this.stepperButton($r('sys.symbol.minus'), `减小${title}`, field, -1)
       Text(this.stepperText(field))
         .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.textColor)
         .width(52)
         .textAlign(TextAlign.Center)
-      this.stepButton($r('sys.symbol.plus'), `增大${title}`, this.stepperValue(field) < this.stepperMax(field),
-        () => this.stepBy(field, 1))
+      this.stepperButton($r('sys.symbol.plus'), `增大${title}`, field, 1)
     }
     .width(this.cardStyle ? 'calc(100% - 32vp)' : '100%')
     .constraintSize({ minHeight: this.cardStyle ? 52 : 44 })
@@ -434,21 +451,28 @@ export struct ReaderHeaderFooterSettings {
     .alignItems(VerticalAlign.Center)
   }
 
+  private canStep(field: number, direction: number): boolean {
+    return direction < 0 ? this.stepperValue(field) > this.stepperMin(field) :
+      this.stepperValue(field) < this.stepperMax(field);
+  }
+
+  // 可用状态在这里直接从配置读取。按值传进来的布尔参数不会随配置刷新：初始值在下限的项
+  // （页眉下移、页脚上移从 0 开始）减号一开始是禁用的，数值增加后也不会恢复可用。
   @Builder
-  stepButton(icon: Resource, accessibilityText: string, enabled: boolean, action: () => void) {
+  stepperButton(icon: Resource, accessibilityText: string, field: number, direction: number) {
     ImmersiveBackButton({
       icon: icon,
       accessibilityLabel: accessibilityText,
       iconColor: this.dark ? '#FFFFFFFF' : '#FF202124',
       disabledIconColor: this.subTextColor,
       darkMode: this.dark,
-      buttonEnabled: enabled,
+      buttonEnabled: this.canStep(field, direction),
       buttonSize: 34,
       containerWidth: 34,
       containerHeight: 34,
       startInset: 0,
       compactLayout: true,
-      onBack: action
+      onBack: (): void => this.stepBy(field, direction)
     })
   }
 }
