@@ -6,6 +6,7 @@ import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
 import deviceInfo from '@ohos.deviceInfo';
 import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
+import { AppFontSize } from '../../theme/AppFontSize';
 
 export type SearchBookAction = (book: SearchBook) => void;
 
@@ -106,7 +107,7 @@ export struct SearchBookResultList {
               .width(20)
               .height(20)
             Text('继续加载中...')
-              .fontSize(13)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor)
               .margin({ left: 8 })
           }
@@ -174,14 +175,14 @@ export struct SearchBookResultList {
 
       Column() {
         Text(this.safeText(book.name, '未知书名'))
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
         Text(this.safeText(book.author, '作者未知'))
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.secondaryTextColor)
           .margin({ top: 4 })
 
@@ -197,7 +198,7 @@ export struct SearchBookResultList {
 
         if (this.metadataLine(book)) {
           Text(this.metadataLine(book))
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor)
             .margin({ top: 3 })
             .maxLines(2)
@@ -206,7 +207,7 @@ export struct SearchBookResultList {
 
         if (this.showSourceLine) {
           Text(this.sourceLine(book))
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor)
             .margin({ top: this.showResultTags && this.getTags(book).length > 0 ? 6 : 4 })
             .maxLines(1)
@@ -280,7 +281,7 @@ export struct SearchBookResultList {
           .fontSize(22)
           .fontColor(['#FFFFFF'])
         Text(SearchBookShelfHelper.isInShelf(book, this.shelfBookKeys) ? '移出书架' : '加入书架')
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor('#FFFFFF')
       }
       .width(82)
@@ -295,7 +296,7 @@ export struct SearchBookResultList {
           .fontSize(22)
           .fontColor(['#FFFFFF'])
         Text('阅读')
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor('#FFFFFF')
       }
       .width(64)
@@ -312,11 +313,11 @@ export struct SearchBookResultList {
   aggregationIndicator(book: SearchBook) {
     Column({ space: 3 }) {
       Text(`${book.aggregationCount}`)
-        .fontSize(16)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.accentColor())
       Text('结果')
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor)
     }
     .width(64)
@@ -348,7 +349,7 @@ export struct SearchBookResultList {
   @Builder
   tagChip(tag: string, index: number) {
     Text(tag)
-      .fontSize(11)
+      .fontSize(AppFontSize.CAPTION)
       .fontColor(BookDisplayHelper.getTagTextColor(index, this.isDarkMode()))
       .padding({ left: 7, right: 7, top: 3, bottom: 3 })
       .backgroundColor(BookDisplayHelper.getTagBackgroundColor(index, this.isDarkMode()))
@@ -361,7 +362,7 @@ export struct SearchBookResultList {
     Stack() {
       Column() {
         Text(this.safeText(book.name, '书').substring(0, 1))
-          .fontSize(22)
+          .fontSize(AppFontSize.HEADLINE)
           .fontColor('#FFFFFF')
       }
       .width(54)

@@ -3,6 +3,7 @@ import { ImmersiveBackButton } from '../ImmersiveBackButton';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { AdaptiveSwitch } from '../AdaptiveSwitch';
 import { ReaderInfoBarConfig, ReaderInfoItem, ReaderInfoProgressBar } from '../../core/reader/ReaderInfoBarModel';
+import { AppFontSize } from '../../theme/AppFontSize';
 
 /** 排版参数在草稿数组里的下标。 */
 export class ReaderTypographyField {
@@ -91,7 +92,7 @@ export struct ReaderTypographyStepper {
         .id('reader_typography_selector')
         .selected(this.field)
         .value(ReaderTypographyField.LABELS[this.field])
-        .font({ size: 15 })
+        .font({ size: AppFontSize.BODY_LARGE })
         .fontColor(this.subTextColor)
         .backgroundColor(Color.Transparent)
         .arrowPosition(ArrowPosition.START)
@@ -119,7 +120,7 @@ export struct ReaderTypographyStepper {
           .type(InputType.Number)
           .enterKeyType(EnterKeyType.Done)
           .defaultFocus(true)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.textColor)
           .width(52)
           .height(36)
@@ -134,7 +135,7 @@ export struct ReaderTypographyStepper {
           .onBlur(() => this.applyInput())
       } else {
         Text(`${Math.round(this.current())}`)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.textColor)
           .width(52)
           .height(36)
@@ -341,7 +342,7 @@ export struct ReaderHeaderFooterSettings {
         .fontColor(this.textColor)
       if (description) {
         Text(description)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor)
           .margin({ top: 4 })
       }
@@ -384,7 +385,7 @@ export struct ReaderHeaderFooterSettings {
         .id(controlId)
         .selected(selected)
         .value(selected >= 0 && selected < labels.length ? labels[selected] : (labels.length > 0 ? labels[0] : ''))
-        .font({ size: 14 })
+        .font({ size: AppFontSize.BODY })
         .fontColor(this.subTextColor)
         .backgroundColor(Color.Transparent)
         .arrowPosition(ArrowPosition.END)
@@ -418,7 +419,7 @@ export struct ReaderHeaderFooterSettings {
       this.stepButton($r('sys.symbol.minus'), `减小${title}`, this.stepperValue(field) > this.stepperMin(field),
         () => this.stepBy(field, -1))
       Text(this.stepperText(field))
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.textColor)
         .width(52)
         .textAlign(TextAlign.Center)

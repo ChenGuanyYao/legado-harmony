@@ -17,6 +17,7 @@ import { JavaRegexCompat } from '../core/rule/JavaRegexCompat';
 import { ReplaceRuleImport } from '../core/rule/ReplaceRuleImport';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
+import { AppFontSize } from '../theme/AppFontSize';
 
 const REPLACE_RULE_IMPORT_FILE_LIMIT_BYTES: number = 5 * 1024 * 1024;
 const REPLACE_RULE_IMPORT_TIMEOUT_MS: number = 20000;
@@ -361,13 +362,13 @@ struct ReaderReplaceRulesPage {
       })
       Text(this.editing ? (this.draft.name ? '编辑替换规则' : '新增替换规则') :
         (this.previewMode ? '替换净化配置' : '替换净化'))
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
       if (!this.editing) {
         Text(this.selectionMode ? '取消' : '选择')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .width(52)
           .height(56)
@@ -436,7 +437,7 @@ struct ReaderReplaceRulesPage {
           .fontSize(19)
           .fontColor([this.primaryTextColor()])
         Text(label)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
       }
@@ -475,7 +476,7 @@ struct ReaderReplaceRulesPage {
   importUrlDialogContent() {
     Column() {
       Text('从 URL 导入替换规则')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
@@ -526,12 +527,12 @@ struct ReaderReplaceRulesPage {
           .height(46)
           .color(this.accentColor())
         Text('正在导入替换规则...')
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .margin({ top: 14 })
         Text('请稍候')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .margin({ top: 6 })
       }
@@ -558,7 +559,7 @@ struct ReaderReplaceRulesPage {
       }
       TextInput({ placeholder: '搜索规则名称或匹配内容', text: this.query })
         .height(44)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
         .backgroundColor(this.inputColor())
@@ -577,10 +578,10 @@ struct ReaderReplaceRulesPage {
             .fontSize(36)
             .fontColor([this.subTextColor()])
           Text(this.query ? '没有匹配的规则' : '暂无替换净化规则')
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.secondaryTextColor())
           Text(this.query ? '尝试更换搜索词' : '点击右下角添加规则')
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
         }
         .layoutWeight(1)
@@ -676,31 +677,31 @@ struct ReaderReplaceRulesPage {
 
       Column({ space: 5 }) {
         Text(rule.name || '未命名规则')
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
         Text(rule.pattern || '未填写匹配规则')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.secondaryTextColor())
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
 
         Text(this.ruleScopeSummary(rule))
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
 
         if (this.previewMode) {
           Text(this.ruleEffectLabel(rule))
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.ruleEffectColor(rule))
         }
 
         if (this.ruleCompatibilityNotes(rule).length > 0) {
           Text(`已按 Android 正则转换：${this.ruleCompatibilityNotes(rule).join('；')}`)
-            .fontSize(11)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -711,7 +712,7 @@ struct ReaderReplaceRulesPage {
 
       Column() {
         Text(rule.enabled ? '已启用' : '已禁用')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(rule.enabled ? '#1E8E3E' : this.subTextColor())
       }
       .alignItems(HorizontalAlign.End)
@@ -745,11 +746,11 @@ struct ReaderReplaceRulesPage {
       Row() {
         Column({ space: 3 }) {
           Text('当前章节生效检查')
-            .fontSize(16)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
           Text(this.previewTitle || '当前章节')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -757,7 +758,7 @@ struct ReaderReplaceRulesPage {
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
         Text(this.previewSummaryText())
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.previewEffectiveCount() > 0 ? '#1E8E3E' : this.subTextColor())
       }
       .width('100%')
@@ -765,16 +766,16 @@ struct ReaderReplaceRulesPage {
 
       if (this.previewChanged()) {
         Column({ space: 3 }) {
-          Text('替换前').fontSize(11).fontColor(this.subTextColor()).width('100%')
+          Text('替换前').fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor()).width('100%')
           Text(this.previewBeforeExcerpt())
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.secondaryTextColor())
             .maxLines(3)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .width('100%')
-          Text('替换后').fontSize(11).fontColor(this.subTextColor()).width('100%').margin({ top: 3 })
+          Text('替换后').fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor()).width('100%').margin({ top: 3 })
           Text(this.previewAfterExcerpt())
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.primaryTextColor())
             .maxLines(3)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -787,7 +788,7 @@ struct ReaderReplaceRulesPage {
       } else {
         Text(this.rules.length === 0 ? '尚未配置规则，可点击右下角新增。' :
           '当前规则未改变本章内容；可查看每条规则下方的检查状态。')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.secondaryTextColor())
           .width('100%')
       }
@@ -900,18 +901,18 @@ struct ReaderReplaceRulesPage {
   ruleSelectionHeader() {
     Row() {
       Text(this.areAllVisibleRulesSelected() ? '☑' : '☐')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontColor(this.accentColor())
         .width(28)
         .textAlign(TextAlign.Center)
         .onClick(() => this.toggleAllVisibleRules())
       Text(`已选择 ${this.selectedRuleIds.length}/${this.filteredRules().length}`)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .margin({ left: 8 })
         .layoutWeight(1)
       Text(this.areAllVisibleRulesSelected() ? '取消全选' : '全选')
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.accentColor())
         .onClick(() => this.toggleAllVisibleRules())
     }
@@ -970,7 +971,7 @@ struct ReaderReplaceRulesPage {
 
       Column() {
         Text(`已选择 ${this.selectedRuleIds.length} 条规则`)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .width('100%')
           .height(34)
@@ -1065,12 +1066,12 @@ struct ReaderReplaceRulesPage {
     inputType: InputType = InputType.Normal
   ) {
     Column({ space: 6 }) {
-      Text(label).fontSize(13).fontColor(this.subTextColor()).width('100%')
+      Text(label).fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
       TextInput({ placeholder: placeholder, text: value })
         .type(inputType)
         .width('100%')
         .height(46)
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
         .backgroundColor(this.inputColor())
@@ -1086,11 +1087,11 @@ struct ReaderReplaceRulesPage {
   @Builder
   textAreaField(label: string, value: string, placeholder: string, onChange: (value: string) => void) {
     Column({ space: 6 }) {
-      Text(label).fontSize(13).fontColor(this.subTextColor()).width('100%')
+      Text(label).fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
       TextArea({ placeholder: placeholder, text: value })
         .width('100%')
         .height(86)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
         .backgroundColor(this.inputColor())
@@ -1114,7 +1115,7 @@ struct ReaderReplaceRulesPage {
             .fontColor([this.accentColor()])
         }
         Text('标题')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.draftApplyToTitle ? this.accentColor() : this.secondaryTextColor())
       }
     }
@@ -1138,7 +1139,7 @@ struct ReaderReplaceRulesPage {
             .fontColor([this.accentColor()])
         }
         Text('正文')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.draftApplyToContent ? this.accentColor() : this.secondaryTextColor())
       }
     }
@@ -1162,7 +1163,7 @@ struct ReaderReplaceRulesPage {
             .fontColor([this.accentColor()])
         }
         Text('使用正则')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.draftIsRegex ? this.accentColor() : this.secondaryTextColor())
       }
     }
@@ -1182,7 +1183,7 @@ struct ReaderReplaceRulesPage {
         .fontSize(22)
         .fontColor(['#FFFFFF'])
       Text(rule.enabled ? '禁用' : '启用')
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor('#FFFFFF')
     }
     .width(64)
@@ -1200,7 +1201,7 @@ struct ReaderReplaceRulesPage {
         .fontSize(22)
         .fontColor(['#FFFFFF'])
       Text('删除')
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor('#FFFFFF')
     }
     .width(64)
@@ -1265,7 +1266,7 @@ struct ReaderReplaceRulesPage {
         .fontColor([color])
         .width(24)
       Text(label)
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(color)
         .layoutWeight(1)
     }

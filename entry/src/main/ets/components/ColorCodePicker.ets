@@ -1,6 +1,7 @@
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { HexColor } from '../utils/HexColor';
+import { AppFontSize } from '../theme/AppFontSize';
 
 class HsvColor {
   hue: number = 0;
@@ -270,7 +271,7 @@ export struct ColorCodePicker {
       if (this.colorMode !== '') {
         Row({ space: 10 }) {
           Text('自定义高亮色')
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.primaryTextColor())
             .layoutWeight(1)
           Select([
@@ -280,7 +281,7 @@ export struct ColorCodePicker {
           ])
             .selected(this.colorModeIndex())
             .value(this.colorModeLabel())
-            .font({ size: 13 })
+            .font({ size: AppFontSize.BODY })
             .fontColor(this.subTextColor())
             .backgroundColor(Color.Transparent)
             .arrowPosition(ArrowPosition.END)
@@ -332,7 +333,7 @@ export struct ColorCodePicker {
         } else {
           Row() {
             Text(this.optionTitle)
-              .fontSize(16)
+              .fontSize(AppFontSize.BODY_LARGE)
               .fontColor(this.primaryTextColor())
               .layoutWeight(1)
             Row()
@@ -354,7 +355,7 @@ export struct ColorCodePicker {
       } else {
         TextInput({ text: this.value, placeholder: this.placeholder })
           .height(42)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.primaryTextColor())
           .placeholderColor(this.subTextColor())
           .backgroundColor(this.inputColor())
@@ -389,13 +390,13 @@ export struct ColorCodePicker {
     Column({ space: 18 }) {
       Row() {
         Text('选择颜色')
-          .fontSize(24)
+          .fontSize(AppFontSize.HEADLINE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
         if (this.allowEmpty) {
           Text('跟随强调色')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.accentColor)
             .margin({ left: 12 })
             .onClick(() => {
@@ -510,7 +511,7 @@ export struct ColorCodePicker {
           .backgroundColor(this.originalColor)
           .border({ width: 1, color: this.appDarkMode ? '#44FFFFFF' : '#22000000' })
         Text('→')
-          .fontSize(20)
+          .fontSize(AppFontSize.TITLE)
           .fontColor(this.subTextColor())
         Row()
           .width(48)
@@ -520,7 +521,7 @@ export struct ColorCodePicker {
           .border({ width: 1, color: this.appDarkMode ? '#44FFFFFF' : '#22000000' })
         TextInput({ text: this.draftColor, placeholder: '#007DFF' })
           .height(40)
-          .fontSize(17)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontColor(this.primaryTextColor())
           .backgroundColor(Color.Transparent)
           .borderRadius(ThemeRuntime.mediumRadius())

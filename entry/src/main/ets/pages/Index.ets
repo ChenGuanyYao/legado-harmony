@@ -22,6 +22,7 @@ import { BookshelfPage } from '../components/home/BookshelfPage';
 import { ExplorePage } from '../components/home/ExplorePage';
 import { SearchPage } from '../components/home/SearchPage';
 import { SettingsPage } from '../components/home/SettingsTabPage';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -466,7 +467,7 @@ struct Index {
         }
         Column({ space: 1 }) {
           Text(this.globalTtsPaused ? '已暂停' : (this.globalTtsMode === 'audio' ? '听书中' : '朗读中'))
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontWeight(FontWeight.Medium)
             .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
           Text(this.globalTtsChapterProgress || (this.globalTtsMode === 'audio' ? '后台听书' : '后台朗读'))
@@ -790,7 +791,7 @@ struct Index {
         .alignItems(HorizontalAlign.Center)
 
         Text(title)
-          .fontSize(11)
+          .fontSize(AppFontSize.MICRO)
           .lineHeight(14)
           .height(14)
           .fontColor(this.currentIndex === index ? this.tabBarActiveColor() : this.tabBarTextColor())

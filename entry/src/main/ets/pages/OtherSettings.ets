@@ -8,6 +8,7 @@ import { lanReaderServer } from '../core/lan/LanReaderServer';
 import { LanReaderPasswordStore } from '../core/lan/LanReaderPasswordStore';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -70,7 +71,7 @@ struct OtherSettingsPage {
               Column() {
                 Text(this.lanReaderStatus === '运行中' ?
                   `访问地址：${this.lanReaderUrl()}` : `状态：${this.lanReaderStatus}`)
-                  .fontSize(13)
+                  .fontSize(AppFontSize.BODY)
                   .fontColor(this.subTextColor())
                   .width('100%')
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -79,12 +80,12 @@ struct OtherSettingsPage {
                     this.copyLanReaderAddress();
                   })
                 Text('仅建议在可信局域网使用；关闭开关后令牌立即失效')
-                  .fontSize(12)
+                  .fontSize(AppFontSize.CAPTION)
                   .fontColor(this.subTextColor())
                   .margin({ top: 4 })
                   .width('100%')
                 Text(this.lanReaderBackgroundStatus)
-                  .fontSize(12)
+                  .fontSize(AppFontSize.CAPTION)
                   .fontColor(this.subTextColor())
                   .margin({ top: 4 })
                   .width('100%')
@@ -205,7 +206,7 @@ struct OtherSettingsPage {
   lanReaderPasswordRow() {
     Column() {
       Text('访问密码（可选）')
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.primaryTextColor())
         .width('100%')
       Row({ space: 8 }) {
@@ -214,11 +215,11 @@ struct OtherSettingsPage {
           .layoutWeight(1)
           .onChange((value: string) => this.lanReaderPasswordDraft = value)
         Button(this.lanReaderPassword ? '修改' : '设置')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .onClick(() => this.saveLanReaderPassword())
         if (this.lanReaderPassword) {
           Button('清除')
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .onClick(() => {
               this.lanReaderPasswordDraft = '';
               this.saveLanReaderPassword();
@@ -229,7 +230,7 @@ struct OtherSettingsPage {
       .margin({ top: 8 })
       Text(this.lanReaderPasswordUnreadable ? '已保存的密码无法读取，浏览器访问已锁定，请重新设置密码' :
         (this.lanReaderPassword ? '已设置密码，访问地址无需携带 token' : '未设置密码，局域网内打开地址即可进入'))
-        .fontSize(12)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
         .margin({ top: 5 })
         .width('100%')
@@ -259,7 +260,7 @@ struct OtherSettingsPage {
   lanReaderAddressRow() {
     Row() {
       Text(this.lanReaderUrl() || this.lanReaderStatus)
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .layoutWeight(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -267,7 +268,7 @@ struct OtherSettingsPage {
         .onClick(() => this.copyLanReaderAddress())
       Button() {
         Text('⧉')
-          .fontSize(20)
+          .fontSize(AppFontSize.TITLE)
       }
       .width(40)
       .height(36)
@@ -318,7 +319,7 @@ struct OtherSettingsPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text('其他设置')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -334,7 +335,7 @@ struct OtherSettingsPage {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
@@ -345,10 +346,10 @@ struct OtherSettingsPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(desc)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }
@@ -375,10 +376,10 @@ struct OtherSettingsPage {
     Row() {
       Column() {
         Text('沉浸光感')
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text('设置鸿蒙沉浸材质的光感强度')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }
@@ -388,7 +389,7 @@ struct OtherSettingsPage {
       Select(this.immersiveLightLevelOptions())
         .selected(this.immersiveLightLevelSelectedIndex())
         .value(this.immersiveLightLevelOptions()[this.immersiveLightLevelSelectedIndex()].value)
-        .font({ size: 14 })
+        .font({ size: AppFontSize.BODY })
         .fontColor(this.subTextColor())
         .backgroundColor(Color.Transparent)
         .arrowPosition(ArrowPosition.END)
@@ -419,10 +420,10 @@ struct OtherSettingsPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(desc)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }

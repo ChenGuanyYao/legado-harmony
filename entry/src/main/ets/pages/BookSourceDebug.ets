@@ -17,6 +17,7 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AppFontSize } from '../theme/AppFontSize';
 
 class BookSourceDebugExportReport {
   reportVersion: number = 1;
@@ -120,9 +121,9 @@ struct BookSourceDebugPage {
       ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
-      Text('书源调试').fontSize(20).fontWeight(FontWeight.Bold)
+      Text('书源调试').fontSize(AppFontSize.TITLE).fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor()).layoutWeight(1)
-      Text('导出报告').fontSize(14).fontColor(this.accentColor())
+      Text('导出报告').fontSize(AppFontSize.BODY).fontColor(this.accentColor())
         .width(88)
         .height(56)
         .textAlign(TextAlign.Center)
@@ -138,11 +139,11 @@ struct BookSourceDebugPage {
   @Builder
   sourceCard() {
     Column({ space: 5 }) {
-      Text(this.source.bookSourceName || '正在加载书源').fontSize(17).fontWeight(FontWeight.Bold)
+      Text(this.source.bookSourceName || '正在加载书源').fontSize(AppFontSize.SUBTITLE).fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor()).width('100%')
       Text(this.source.bookSourceUrl || this.sourceUrl || '未指定书源')
-        .fontSize(12).fontColor(this.subTextColor()).width('100%').maxLines(2)
-      Text(`状态：${this.status}`).fontSize(13).fontColor(this.running ? '#E89725' : this.accentColor())
+        .fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor()).width('100%').maxLines(2)
+      Text(`状态：${this.status}`).fontSize(AppFontSize.BODY).fontColor(this.running ? '#E89725' : this.accentColor())
         .width('100%')
     }
     .width('calc(100% - 24vp)').padding(16).borderRadius(ThemeRuntime.cardRadius()).backgroundColor(this.cardColor())
@@ -152,10 +153,10 @@ struct BookSourceDebugPage {
   @Builder
   inputCard() {
     Column({ space: 10 }) {
-      Text('调试阶段').fontSize(16).fontWeight(FontWeight.Medium)
+      Text('调试阶段').fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Medium)
         .fontColor(this.primaryTextColor()).width('100%')
       Text('默认执行全链路：搜索 → 发现 → 详情 → 目录 → 正文')
-        .fontSize(13).fontColor(this.subTextColor()).width('100%')
+        .fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
       TextInput({ text: this.keyword, placeholder: this.stageInputPlaceholder() })
         .height(44).width('100%').fontColor(this.primaryTextColor())
         .backgroundColor(this.inputColor()).onChange((value: string) => this.keyword = value)
@@ -176,45 +177,45 @@ struct BookSourceDebugPage {
   resultCard() {
     Column({ space: 10 }) {
       Row({ space: 10 }) {
-        Text('执行明细').fontSize(16).fontWeight(FontWeight.Medium)
+        Text('执行明细').fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor()).layoutWeight(1)
         if (this.hasDebugReport() || this.debugContent.length > 0) {
           Button('复制调试内容', { type: ButtonType.Capsule })
-            .height(34).fontSize(12).backgroundColor(this.inputColor()).fontColor(this.primaryTextColor())
+            .height(34).fontSize(AppFontSize.CAPTION).backgroundColor(this.inputColor()).fontColor(this.primaryTextColor())
             .onClick(() => this.copyDebugReport())
         }
       }.width('100%')
       if (this.debugContent.length > 0) {
         Row({ space: 10 }) {
-          Text(`正文内容（${this.debugContent.length} 字符）`).fontSize(13)
+          Text(`正文内容（${this.debugContent.length} 字符）`).fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor()).layoutWeight(1)
           Button('复制正文', { type: ButtonType.Capsule })
-            .height(34).fontSize(12).backgroundColor(this.accentColor()).fontColor('#FFFFFF')
+            .height(34).fontSize(AppFontSize.CAPTION).backgroundColor(this.accentColor()).fontColor('#FFFFFF')
             .onClick(() => this.copyDebugContent())
         }.width('100%')
       }
       if (this.debugSearchLinks.length > 0) {
-        Text('搜索链接（点击填入）').fontSize(13).fontWeight(FontWeight.Medium)
+        Text('搜索链接（点击填入）').fontSize(AppFontSize.BODY).fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor()).width('100%')
         ForEach(this.debugSearchLinks, (url: string) => {
           this.debugLinkItem(url, SourceRuntimeStage.SEARCH)
         }, (url: string) => `search_${url}`)
       }
       if (this.debugExploreLinks.length > 0) {
-        Text('发现链接（点击填入）').fontSize(13).fontWeight(FontWeight.Medium)
+        Text('发现链接（点击填入）').fontSize(AppFontSize.BODY).fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor()).width('100%')
         ForEach(this.debugExploreLinks, (url: string) => {
           this.debugLinkItem(url, SourceRuntimeStage.EXPLORE)
         }, (url: string) => `explore_${url}`)
       }
       if (this.session.steps.length === 0 && this.session.logs.length === 0) {
-        Text('运行后显示请求、规则匹配和错误详情').fontSize(13).fontColor(this.subTextColor()).width('100%')
+        Text('运行后显示请求、规则匹配和错误详情').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
       }
       ForEach(this.session.steps, (step: BookSourceDebugStep) => {
         this.stepView(step)
       }, (step: BookSourceDebugStep) => `${step.stage}_${step.startedAt}`)
       ForEach(this.session.logs, (log: BookSourceDebugLog) => {
-        Text(`[${log.level}] ${log.message}`).fontSize(12).fontColor(this.subTextColor()).width('100%')
+        Text(`[${log.level}] ${log.message}`).fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor()).width('100%')
           .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
           .copyOption(CopyOptions.LocalDevice)
       }, (log: BookSourceDebugLog) => `${log.timestamp}_${log.message}`)
@@ -227,9 +228,9 @@ struct BookSourceDebugPage {
   stepView(step: BookSourceDebugStep) {
     Column({ space: 8 }) {
       Row() {
-      Text(step.name).fontSize(15).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
+      Text(step.name).fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
           .layoutWeight(1)
-        Text(`${step.status} · ${step.elapsedMs}ms`).fontSize(12)
+        Text(`${step.status} · ${step.elapsedMs}ms`).fontSize(AppFontSize.CAPTION)
           .fontColor(step.status === 'passed' ? '#20A464' : '#E84040')
       }.width('100%')
       if (step.error) Text(`错误：${step.error}`).fontSize(12).fontColor('#E84040').width('100%')
@@ -237,11 +238,11 @@ struct BookSourceDebugPage {
         .copyOption(CopyOptions.LocalDevice)
       ForEach(step.requests, (item: BookSourceDebugNetworkTrace) => {
         Text(`${item.method} ${item.url}\nHTTP ${item.statusCode} · ${item.responseBytes} 字符 · ${item.elapsedMs}ms${item.error ? `\n${item.error}` : ''}`)
-          .fontSize(12).fontColor(this.subTextColor()).width('100%')
+          .fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor()).width('100%')
           .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
           .copyOption(CopyOptions.LocalDevice)
         if (item.bodyPreview) {
-          Text(`响应预览：${item.bodyPreview}`).fontSize(11).fontColor(this.subTextColor())
+          Text(`响应预览：${item.bodyPreview}`).fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor())
             .width('100%').maxLines(8)
             .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
             .copyOption(CopyOptions.LocalDevice)
@@ -249,7 +250,7 @@ struct BookSourceDebugPage {
       }, (item: BookSourceDebugNetworkTrace) => `${item.method}_${item.url}_${item.elapsedMs}`)
       ForEach(step.rules, (item: BookSourceDebugRuleTrace) => {
         Text(`${item.field} [${item.ruleType}] 匹配 ${item.matchedCount}/${item.inputCount} · ${item.elapsedMs}ms\n规则：${item.rule}${item.error ? `\n${item.error}` : ''}${item.outputPreview ? `\n结果：${item.outputPreview}` : ''}`)
-          .fontSize(12).fontColor(this.subTextColor()).width('100%')
+          .fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor()).width('100%')
           .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
           .copyOption(CopyOptions.LocalDevice)
       }, (item: BookSourceDebugRuleTrace) => `${item.field}_${item.elapsedMs}`)
@@ -269,7 +270,7 @@ struct BookSourceDebugPage {
 
   @Builder
   debugLinkItem(url: string, stage: string) {
-    Text(url).fontSize(11).fontColor(this.accentColor()).width('100%')
+    Text(url).fontSize(AppFontSize.CAPTION).fontColor(this.accentColor()).width('100%')
       .maxLines(2).textOverflow({ overflow: TextOverflow.Ellipsis })
       .onClick(() => this.fillDebugLink(url, stage))
       .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)

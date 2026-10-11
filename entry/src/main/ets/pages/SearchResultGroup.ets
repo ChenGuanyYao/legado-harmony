@@ -7,6 +7,7 @@ import { SearchBookShelfChange, SearchBookShelfHelper } from '../utils/SearchBoo
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -69,7 +70,7 @@ struct SearchResultGroupPage {
       } else {
         Column({ space: 10 }) {
           Text('聚合结果已失效，请返回重新搜索')
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.subTextColor())
         }
         .width('100%')
@@ -94,13 +95,13 @@ struct SearchResultGroupPage {
 
         Column({ space: 2 }) {
           Text(this.groupTitle)
-            .fontSize(18)
+            .fontSize(AppFontSize.SUBTITLE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Text(`${this.books.length} 个同名结果`)
-            .fontSize(11)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
         }
         .layoutWeight(1)

@@ -7,6 +7,7 @@ import { QuickJsRuntimeMode } from '../core/script/QuickJsRuntimeStatus';
 import { QuickJsValidationStore } from '../core/script/QuickJsValidationStore';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -40,7 +41,7 @@ struct QuickJsDiagnosticsPage {
           this.privacyCard()
           Button('书源脚本回归测试')
             .type(ButtonType.Capsule)
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor('#FFFFFF')
             .backgroundColor(ThemeRuntime.accentColor(this.appDarkMode))
             .width('calc(100% - 24vp)')
@@ -50,7 +51,7 @@ struct QuickJsDiagnosticsPage {
             })
           Button('清除迁移统计')
             .type(ButtonType.Capsule)
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor('#E84040')
             .backgroundColor(this.cardColor())
             .width('calc(100% - 24vp)')
@@ -81,14 +82,14 @@ struct QuickJsDiagnosticsPage {
   infoCard() {
     Column({ space: 8 }) {
       Row() {
-        Text('运行状态').fontSize(16).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
+        Text('运行状态').fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
         Blank()
         Text(this.snapshot.selfTestPassed ? '自检通过' : '自检未通过')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.snapshot.selfTestPassed ? '#20A464' : '#E84040')
       }.width('100%')
       Text(this.circuitText())
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .width('100%')
     }
@@ -103,7 +104,7 @@ struct QuickJsDiagnosticsPage {
   modeCard() {
     Column() {
       Text('执行模式')
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .width('100%')
         .padding({ left: 16, top: 14, bottom: 8 })
@@ -122,8 +123,8 @@ struct QuickJsDiagnosticsPage {
   modeItem(mode: QuickJsRuntimeMode, title: string, desc: string) {
     Row({ space: 12 }) {
       Column({ space: 3 }) {
-        Text(title).fontSize(15).fontColor(this.primaryTextColor())
-        Text(desc).fontSize(12).fontColor(this.subTextColor())
+        Text(title).fontSize(AppFontSize.BODY_LARGE).fontColor(this.primaryTextColor())
+        Text(desc).fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor())
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -146,7 +147,7 @@ struct QuickJsDiagnosticsPage {
   @Builder
   statsCard() {
     Column({ space: 12 }) {
-      Text('累计统计').fontSize(16).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
+      Text('累计统计').fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
         .width('100%')
       Row() {
         this.statItem('一致', this.snapshot.shadowMatches, '#20A464')
@@ -169,17 +170,17 @@ struct QuickJsDiagnosticsPage {
   @Builder
   statItem(label: string, value: number, color: string) {
     Column({ space: 4 }) {
-      Text(`${value}`).fontSize(20).fontWeight(FontWeight.Bold).fontColor(color)
-      Text(label).fontSize(12).fontColor(this.subTextColor())
+      Text(`${value}`).fontSize(AppFontSize.TITLE).fontWeight(FontWeight.Bold).fontColor(color)
+      Text(label).fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor())
     }.layoutWeight(1)
   }
 
   @Builder
   privacyCard() {
     Column({ space: 6 }) {
-      Text('边界说明').fontSize(15).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
+      Text('边界说明').fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Medium).fontColor(this.primaryTextColor())
       Text('QuickJS 当前只执行无网络、Cookie、文件或平台桥接的纯表达式。复杂脚本继续使用现有受控运行环境；统计只保存表达式指纹和计数。')
-        .fontSize(12)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
         .lineHeight(19)
     }
@@ -197,7 +198,7 @@ struct QuickJsDiagnosticsPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text('脚本引擎迁移')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)

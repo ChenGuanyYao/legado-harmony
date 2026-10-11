@@ -4,6 +4,7 @@ import { SearchExploreSettings, SearchExploreSettingsStore } from '../utils/Sear
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -195,7 +196,7 @@ struct SearchExploreSettingsPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text('搜索/发现配置')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -211,7 +212,7 @@ struct SearchExploreSettingsPage {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
@@ -222,10 +223,10 @@ struct SearchExploreSettingsPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(desc)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }
@@ -253,10 +254,10 @@ struct SearchExploreSettingsPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(desc)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }
@@ -265,7 +266,7 @@ struct SearchExploreSettingsPage {
 
       Row() {
         Text('−')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontColor(this.primaryTextColor())
           .width(30)
           .height(30)
@@ -275,13 +276,13 @@ struct SearchExploreSettingsPage {
           })
 
         Text(`${this.searchExploreSearchConcurrency}`)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .width(42)
           .textAlign(TextAlign.Center)
 
         Text('+')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontColor(this.primaryTextColor())
           .width(30)
           .height(30)
@@ -307,10 +308,10 @@ struct SearchExploreSettingsPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(desc)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }

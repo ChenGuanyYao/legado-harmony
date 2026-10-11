@@ -3,6 +3,7 @@ import { BookSource } from '../../model/data/Book';
 import { SearchExploreSettings } from '../../utils/SearchExploreSettingsStore';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { CloudSyncSettingsStore } from '../../account/CloudSyncSettingsStore';
+import { AppFontSize } from '../../theme/AppFontSize';
 
 /** 首页"我的"页签：设置入口列表。 */
 @Component
@@ -87,7 +88,7 @@ export struct SettingsPage {
 
       Row() {
         Text('我的')
-          .fontSize(20)
+          .fontSize(AppFontSize.TITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
@@ -124,11 +125,11 @@ export struct SettingsPage {
 
       Column({ space: 4 }) {
         Text(this.accountLoggedIn ? this.accountDisplayName : '登录华为账号')
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
         Text(this.accountLoggedIn ? `${this.accountPoints} 点` : '首次登录免费送 300 点')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
       }
       .layoutWeight(1)
@@ -158,12 +159,12 @@ export struct SettingsPage {
 
         Column({ space: 3 }) {
           Text('数据同步')
-            .fontSize(16)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.primaryTextColor())
           Text(CloudSyncSettingsStore.statusSummary(this.accountLoggedIn, this.cloudSyncEnabled,
             this.cloudSyncStatus, this.cloudSyncPendingCount, this.cloudSyncLastSuccessAt))
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.cloudSyncEnabled && this.accountLoggedIn ? this.accentColor() : this.subTextColor())
         }
         .layoutWeight(1)
@@ -201,7 +202,7 @@ export struct SettingsPage {
           .width(32)
 
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)

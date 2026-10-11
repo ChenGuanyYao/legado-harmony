@@ -22,6 +22,7 @@ import { TtsSettings, TtsSettingsStore } from '../utils/TtsSettingsStore';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AppFontSize } from '../theme/AppFontSize';
 
 const TTS_CUSTOM_VOICE_IMPORT_LIMIT_BYTES: number = 2 * 1024 * 1024;
 
@@ -103,12 +104,12 @@ struct TtsSettingsPage {
           Row() {
             Column() {
               Text(this.customVoiceSummary())
-                .fontSize(16)
+                .fontSize(AppFontSize.BODY_LARGE)
                 .fontColor(this.primaryTextColor())
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
               Text('导入、启用、禁用、删除自定义音色')
-                .fontSize(12)
+                .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.subTextColor())
                 .margin({ top: 4 })
             }
@@ -116,7 +117,7 @@ struct TtsSettingsPage {
             .alignItems(HorizontalAlign.Start)
 
             Text('管理')
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.accentColor())
               .width(52)
               .textAlign(TextAlign.Center)
@@ -136,11 +137,11 @@ struct TtsSettingsPage {
           Column() {
             Row() {
               Text('倍速')
-                .fontSize(16)
+                .fontSize(AppFontSize.BODY_LARGE)
                 .fontColor(this.primaryTextColor())
                 .layoutWeight(1)
               Text(`${this.ttsSpeed.toFixed(1)}x`)
-                .fontSize(14)
+                .fontSize(AppFontSize.BODY)
                 .fontColor(this.subTextColor())
             }
             .width('100%')
@@ -184,7 +185,7 @@ struct TtsSettingsPage {
           this.sectionTitle('预览')
           Column({ space: 12 }) {
             Text(this.previewText)
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .lineHeight(22)
               .fontColor(this.subTextColor())
               .width('100%')
@@ -297,7 +298,7 @@ struct TtsSettingsPage {
   voiceDropdownSelector() {
     Row() {
       Text(this.selectedVoiceTitle())
-        .fontSize(16)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
         .maxLines(1)
@@ -383,7 +384,7 @@ struct TtsSettingsPage {
   @Builder
   voiceDropdownSectionTitle(title: string) {
     Text(title)
-      .fontSize(12)
+      .fontSize(AppFontSize.CAPTION)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 14, right: 14, top: 8, bottom: 5 })
@@ -393,7 +394,7 @@ struct TtsSettingsPage {
   customVoiceDropdownOption(voice: HttpTTS, disabled: boolean) {
     Row() {
       Text(TtsVoiceCatalog.customVoiceTitle(voice))
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(disabled ? this.subTextColor() : this.primaryTextColor())
         .layoutWeight(1)
         .maxLines(1)
@@ -422,7 +423,7 @@ struct TtsSettingsPage {
   systemVoiceDropdownOption(voice: TtsVoiceOption) {
     Row() {
       Text(this.voiceTitle(voice))
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor((voice.available || voice.downloadable) ? this.primaryTextColor() : this.subTextColor())
         .layoutWeight(1)
         .maxLines(1)
@@ -430,7 +431,7 @@ struct TtsSettingsPage {
 
       if (this.isVoiceDownloading(voice)) {
         Text(this.downloadProgressText || '下载中')
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.accentColor())
       } else if (this.isVoiceSelected(voice)) {
         SymbolGlyph($r('sys.symbol.checkmark'))
@@ -438,7 +439,7 @@ struct TtsSettingsPage {
           .fontColor([this.accentColor()])
       } else if (!voice.available && voice.downloadable) {
         Text('下载')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.accentColor())
       }
     }
@@ -459,7 +460,7 @@ struct TtsSettingsPage {
   cloudVoiceDropdownOption(voice: TtsVoiceInfo) {
     Row() {
       Text(TtsVoiceCatalog.cloudVoiceTitle(voice))
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
         .maxLines(1)
@@ -1034,7 +1035,7 @@ struct TtsSettingsPage {
         onBack: () => router.back() })
 
       Text('朗读设置')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -1050,7 +1051,7 @@ struct TtsSettingsPage {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
@@ -1061,7 +1062,7 @@ struct TtsSettingsPage {
     Column({ space: 12 }) {
       Row() {
         Text(this.accountLoggedIn ? '当前额度' : '登录后可查看额度并兑换')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
@@ -1072,7 +1073,7 @@ struct TtsSettingsPage {
             .color(this.accentColor())
         } else {
           Text('刷新')
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.accentColor())
             .padding({ left: 10, right: 2, top: 6, bottom: 6 })
             .onClick(() => {
@@ -1091,18 +1092,18 @@ struct TtsSettingsPage {
 
         if (this.ttsWalletError) {
           Text(`${this.ttsWalletError}，请点击刷新`)
-            .fontSize(11)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor('#E5484D')
             .width('100%')
         }
 
         Text(`可用于兑换：${this.paidPoints} 充值点 · 赠送点 ${this.promoPoints} 仅可兑换主题`)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .width('100%')
       } else {
         Text('请先在“我的-账号与点数”登录华为账号，再返回这里兑换在线朗读字数。')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .lineHeight(18)
           .fontColor(this.subTextColor())
           .width('100%')
@@ -1112,11 +1113,11 @@ struct TtsSettingsPage {
         Row({ space: 10 }) {
           Column({ space: 4 }) {
             Text(`${item.tier === 'PREMIUM' ? '精品' : '标准'} · ${this.formatTtsChars(item.chars)}`)
-              .fontSize(15)
+              .fontSize(AppFontSize.BODY_LARGE)
               .fontWeight(FontWeight.Medium)
               .fontColor(this.primaryTextColor())
             Text(`${item.validDays} 天有效`)
-              .fontSize(11)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
           }
           .alignItems(HorizontalAlign.Start)
@@ -1124,7 +1125,7 @@ struct TtsSettingsPage {
 
           Button(this.redeemingTtsSku === item.sku ? '兑换中' : `${item.points} 点`)
             .height(34)
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .enabled(!this.redeemingTtsSku && this.accountLoggedIn && this.paidPoints >= item.points)
             .fontColor('#FFFFFF')
             .backgroundColor(this.accentColor())
@@ -1139,7 +1140,7 @@ struct TtsSettingsPage {
       }, (item: TtsPackageInfo) => item.sku)
 
       Text('标准音色每次按 100 字向上取整，精品音色每次按 50 字向上取整；相同音色、文字和倍速会优先使用本地缓存。')
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .lineHeight(17)
         .fontColor(this.subTextColor())
         .width('100%')
@@ -1155,12 +1156,12 @@ struct TtsSettingsPage {
   ttsBalanceCard(title: string, premium: boolean) {
     Column({ space: 4 }) {
       Text(title)
-        .fontSize(12)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
       Text(this.ttsWalletLoaded
         ? this.formatTtsChars(premium ? this.ttsPremiumChars : this.ttsStandardChars)
         : '--')
-        .fontSize(19)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
       Text(this.ttsWalletLoaded
@@ -1169,7 +1170,7 @@ struct TtsSettingsPage {
             .toLocaleDateString()} 到期`
           : '暂无额度')
         : (this.ttsWalletError ? '同步失败' : '正在同步'))
-        .fontSize(10)
+        .fontSize(AppFontSize.MICRO)
         .fontColor(this.subTextColor())
     }
     .alignItems(HorizontalAlign.Start)
@@ -1222,7 +1223,7 @@ struct TtsSettingsPage {
   speedChip(value: number) {
     Stack({ alignContent: Alignment.Center }) {
       Text(`${value.toFixed(1)}x`)
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(Math.abs(this.ttsSpeed - value) < 0.01 ? '#FFFFFF' : this.primaryTextColor())
     }
         .layoutWeight(1)

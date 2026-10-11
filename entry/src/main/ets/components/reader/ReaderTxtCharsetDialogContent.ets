@@ -1,6 +1,7 @@
 import { ReaderTxtCharsetOption } from '../../core/reader/ReaderSettingsModels';
 import { ImmersiveBackButton } from '../ImmersiveBackButton';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
+import { AppFontSize } from '../../theme/AppFontSize';
 
 /** 本地 TXT 可手动指定的字符编码。 */
 export class ReaderTxtCharsets {
@@ -84,11 +85,11 @@ export struct ReaderTxtCharsetDialogContent {
       Row() {
         Column({ space: 3 }) {
           Text('选择字符编码')
-            .fontSize(20)
+            .fontSize(AppFontSize.TITLE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.textColor())
           Text(`当前解析：${ReaderTxtCharsets.label(this.parsedCharset)}`)
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
         }
         .layoutWeight(1)
@@ -153,10 +154,10 @@ export struct ReaderTxtCharsetDialogContent {
     Row({ space: 12 }) {
       Column({ space: 3 }) {
         Text(option.label)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.textColor())
         Text(option.description)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
       }
       .layoutWeight(1)

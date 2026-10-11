@@ -17,6 +17,7 @@ import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
+import { AppFontSize } from '../theme/AppFontSize';
 
 class VoiceEditFormDraft {
   editingVoiceId: string = '';
@@ -128,10 +129,10 @@ struct CustomTtsVoiceManagerPage {
         if (this.filteredVoices().length === 0) {
           Column() {
             Text(this.searchText ? '未找到匹配音色' : '暂无自定义音色')
-              .fontSize(16)
+              .fontSize(AppFontSize.BODY_LARGE)
               .fontColor(this.subTextColor())
             Text('点击右下角“+”导入原版 HttpTTS JSON')
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
               .margin({ top: 8 })
           }
@@ -962,13 +963,13 @@ struct CustomTtsVoiceManagerPage {
         onBack: () => router.back() })
 
       Text('自定义音色管理')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
 
       Text(this.selectionMode ? '取消' : '选择')
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.primaryTextColor())
         .width(52)
         .height(56)
@@ -1030,7 +1031,7 @@ struct CustomTtsVoiceManagerPage {
   selectionHeader() {
     Row() {
       Text(this.isAllSelected() ? '☑' : '☐')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontColor(this.accentColor())
         .width(28)
         .textAlign(TextAlign.Center)
@@ -1038,12 +1039,12 @@ struct CustomTtsVoiceManagerPage {
           this.toggleAllVoices();
         })
       Text(`已选择 ${this.selectedVoiceIds.length}/${this.filteredVoices().length}`)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .margin({ left: 8 })
         .layoutWeight(1)
       Text(this.isAllSelected() ? '取消全选' : '全选')
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.accentColor())
         .onClick(() => {
           this.toggleAllVoices();
@@ -1063,19 +1064,19 @@ struct CustomTtsVoiceManagerPage {
 
       Column() {
         Text(voice.name || '未命名音色')
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(voice.url || '')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(voice.enabled ? '已启用' : '已禁用')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(voice.enabled ? '#1E8E3E' : this.subTextColor())
           .margin({ top: 4 })
       }
@@ -1110,7 +1111,7 @@ struct CustomTtsVoiceManagerPage {
         .fontSize(22)
         .fontColor(['#FFFFFF'])
       Text(voice.enabled ? '禁用' : '启用')
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor('#FFFFFF')
     }
     .width(64)
@@ -1130,7 +1131,7 @@ struct CustomTtsVoiceManagerPage {
         .fontSize(22)
         .fontColor(['#FFFFFF'])
       Text('删除')
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor('#FFFFFF')
     }
     .width(64)
@@ -1183,7 +1184,7 @@ struct CustomTtsVoiceManagerPage {
         .fontColor([color])
         .width(24)
       Text(label)
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(color)
         .layoutWeight(1)
     }
@@ -1274,7 +1275,7 @@ struct CustomTtsVoiceManagerPage {
   addVoiceMenuItem(label: string, action: () => void, showDivider: boolean = true) {
     Column() {
       Text(label)
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.primaryTextColor())
         .width('100%')
         .height(44)
@@ -1311,7 +1312,7 @@ struct CustomTtsVoiceManagerPage {
   importUrlDialogContent() {
     Column() {
       Text('从URL导入')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
@@ -1356,7 +1357,7 @@ struct CustomTtsVoiceManagerPage {
     Column() {
       Column() {
         Text(this.editingVoiceId ? '编辑自定义音色' : '新建自定义音色')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .width('100%')
@@ -1397,7 +1398,7 @@ struct CustomTtsVoiceManagerPage {
             })
             Row() {
               Text('启用 CookieJar')
-                .fontSize(15)
+                .fontSize(AppFontSize.BODY_LARGE)
                 .fontColor(this.primaryTextColor())
                 .layoutWeight(1)
               AdaptiveSwitch({
@@ -1456,7 +1457,7 @@ struct CustomTtsVoiceManagerPage {
   editInput(label: string, placeholder: string, value: string, onChange: (value: string) => void) {
     Column() {
       Text(label)
-        .fontSize(12)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
         .width('100%')
         .margin({ bottom: 4 })

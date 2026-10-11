@@ -5,6 +5,7 @@ import { TtsVoiceCatalog } from '../../utils/TtsVoiceCatalog';
 import { ImmersiveMaterialRuntime } from '../../utils/ImmersiveMaterialRuntime';
 import { ImmersiveBackButton } from '../ImmersiveBackButton';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
+import { AppFontSize } from '../../theme/AppFontSize';
 
 /**
  * 阅读设置面板里的"朗读"页：倍速、音色入口、定时、开始/停止。
@@ -41,11 +42,11 @@ export struct ReaderTtsQuickSettingsPanel {
     Column({ space: 14 }) {
       Row() {
         Text('朗读倍速')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.textColor)
           .layoutWeight(1)
         Text(`${this.speed.toFixed(1)}x`)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor)
       }
       .width('100%')
@@ -78,12 +79,12 @@ export struct ReaderTtsQuickSettingsPanel {
 
       Row() {
         Text('朗读音色')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.textColor)
           .layoutWeight(1)
         if (this.voicesLoading) {
           Text('加载中')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor)
         }
       }
@@ -91,7 +92,7 @@ export struct ReaderTtsQuickSettingsPanel {
 
       Row() {
         Text(this.voiceTitle)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.textColor)
           .layoutWeight(1)
           .maxLines(1)
@@ -111,12 +112,12 @@ export struct ReaderTtsQuickSettingsPanel {
 
       Row() {
         Text('朗读定时')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.textColor)
           .layoutWeight(1)
         Text(this.sleepTimerMinutes > 0 ?
           `剩余 ${Math.max(1, Math.ceil(this.sleepTimerRemainingSeconds / 60))} 分钟` : '未设置')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor)
       }
       .width('100%')
@@ -161,7 +162,7 @@ export struct ReaderTtsQuickSettingsPanel {
   @Builder
   speedChip(value: number) {
     Text(`${value.toFixed(1)}x`)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(Math.abs(this.speed - value) < 0.01 ? '#FFFFFF' : this.textColor)
       .textAlign(TextAlign.Center)
       .layoutWeight(1)
@@ -174,7 +175,7 @@ export struct ReaderTtsQuickSettingsPanel {
   @Builder
   sleepTimerChip(minutes: number) {
     Text(`${minutes}分`)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.sleepTimerMinutes === minutes ? '#FFFFFF' : this.textColor)
       .textAlign(TextAlign.Center)
       .layoutWeight(1)
@@ -221,7 +222,7 @@ export struct ReaderTtsVoicePickerPanel {
     Column() {
       Row() {
         Text('朗读音色')
-          .fontSize(20)
+          .fontSize(AppFontSize.TITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.textColor)
 
@@ -300,7 +301,7 @@ export struct ReaderTtsVoicePickerPanel {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(12)
+      .fontSize(AppFontSize.CAPTION)
       .fontWeight(FontWeight.Medium)
       .fontColor(this.subTextColor)
       .width('100%')
@@ -311,7 +312,7 @@ export struct ReaderTtsVoicePickerPanel {
   option(title: string, selected: boolean, action: () => void) {
     Row() {
       Text(title)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.textColor)
         .layoutWeight(1)
         .maxLines(2)

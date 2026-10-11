@@ -1,4 +1,5 @@
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
+import { AppFontSize } from '../../theme/AppFontSize';
 
 /** 首页页签的占位外壳：冷启动时先显示的书架骨架，以及尚未激活页签的空白页。 */
 @Component
@@ -11,7 +12,7 @@ export struct FastBookshelfShell {
     Column() {
       Row() {
         Text('书架')
-          .fontSize(20)
+          .fontSize(AppFontSize.TITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)

@@ -6,6 +6,7 @@ import { ReaderFullTextCacheController } from '../../core/reader/ReaderFullTextC
 import { HdsFeedback } from '../../utils/HdsFeedback';
 import { ImmersiveBackButton } from '../ImmersiveBackButton';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
+import { AppFontSize } from '../../theme/AppFontSize';
 
 /**
  * 阅读页"缓存"对话框的内容（配合系统自定义对话框使用）。两种形态共用这一个组件：
@@ -172,7 +173,7 @@ export struct ReaderCacheDialogContent {
   entryMenu() {
     Column() {
       Text(`缓存《${this.book?.name || '当前书籍'}》`)
-        .fontSize(17)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.textColor())
         .maxLines(1)
@@ -183,7 +184,7 @@ export struct ReaderCacheDialogContent {
 
       if (this.panelStatus()) {
         Text(this.panelStatus())
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .width('100%')
           .textAlign(TextAlign.Center)
@@ -229,7 +230,7 @@ export struct ReaderCacheDialogContent {
     Column() {
       Row() {
         Text('选择章节缓存')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.textColor())
           .layoutWeight(1)
@@ -254,7 +255,7 @@ export struct ReaderCacheDialogContent {
 
       if (this.panelStatus()) {
         Text(this.panelStatus())
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .width('100%')
           .margin({ bottom: 8 })
@@ -263,7 +264,7 @@ export struct ReaderCacheDialogContent {
       Row({ space: 8 }) {
         TextInput({ placeholder: '章节范围，如 1-10、1,3,5-8', text: this.rangeDraft })
           .type(InputType.Normal)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.textColor())
           .placeholderColor(this.subTextColor())
           .layoutWeight(1)
@@ -277,7 +278,7 @@ export struct ReaderCacheDialogContent {
         Button('缓存')
           .width(96)
           .height(42)
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor('#FFFFFF')
           .backgroundColor(ThemeRuntime.buttonColor(this.appDarkMode))
           .enabled(this.chapters.length > 0)
@@ -291,14 +292,14 @@ export struct ReaderCacheDialogContent {
           ListItem() {
             Row({ space: 8 }) {
               Text(chapter.title)
-                .fontSize(15)
+                .fontSize(AppFontSize.BODY_LARGE)
                 .fontColor(chapter.cacheDate > 0 ? (this.appDarkMode ? '#DDEFE5' : '#244B35') : this.textColor())
                 .maxLines(2)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .layoutWeight(1)
               if (chapter.cacheDate > 0) {
                 Text('已缓存')
-                  .fontSize(11)
+                  .fontSize(AppFontSize.CAPTION)
                   .fontColor(this.appDarkMode ? '#7CC7A0' : '#1F8F55')
                   .padding({ left: 6, right: 6, top: 2, bottom: 2 })
                   .backgroundColor(this.appDarkMode ? '#24382F' : '#E6F4EC')

@@ -7,6 +7,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 import { appDb } from '../model/data/AppDatabase';
 import { ReadStatsTracker, readStatsTracker } from '../core/stats/ReadStatsTracker';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AppFontSize } from '../theme/AppFontSize';
 
 const STATS_MODES: string[] = ['day', 'week', 'month'];
 const STATS_MODE_LABELS: string[] = ['日', '周', '月'];
@@ -215,7 +216,7 @@ struct ReadingStatsPage {
         Row({ space: 4 }) {
           ForEach(STATS_MODES, (value: string, index: number) => {
             Text(STATS_MODE_LABELS[index])
-              .fontSize(13)
+              .fontSize(AppFontSize.BODY)
               .fontWeight(this.mode === value ? FontWeight.Medium : FontWeight.Normal)
               .fontColor(this.mode === value ? Color.White : this.subTextColor())
               .padding({ left: 14, right: 14, top: 6, bottom: 6 })
@@ -245,7 +246,7 @@ struct ReadingStatsPage {
           })
 
         Text(this.periodTitle())
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
@@ -276,7 +277,7 @@ struct ReadingStatsPage {
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
         Text(this.summarySubtitle())
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
       }
       .width('100%')
@@ -295,7 +296,7 @@ struct ReadingStatsPage {
       Stack() {
         Column() {
           Text(item.name ? item.name.substring(0, 1) : '书')
-            .fontSize(16)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontWeight(FontWeight.Medium)
             .fontColor(Color.White)
         }
@@ -319,26 +320,26 @@ struct ReadingStatsPage {
       Column({ space: 6 }) {
         Row({ space: 8 }) {
           Text(item.name)
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.primaryTextColor())
             .layoutWeight(1)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Text(this.formatDuration(item.durationMs))
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.primaryTextColor())
         }
         .width('100%')
 
         Row() {
           Text(`${item.percent}%`)
-            .fontSize(11)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
             .layoutWeight(1)
           if (item.author) {
             Text(item.author)
-              .fontSize(11)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -392,7 +393,7 @@ struct ReadingStatsPage {
         .fontSize(22)
         .fontColor(['#FFFFFF'])
       Text('删除')
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor('#FFFFFF')
     }
     .width(64)
@@ -421,7 +422,7 @@ struct ReadingStatsPage {
             .fontColor(['#E53935'])
             .width(24)
           Text('删除')
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor('#E53935')
             .layoutWeight(1)
         }
@@ -455,7 +456,7 @@ struct ReadingStatsPage {
         .height(22)
         .color(this.accentColor())
       Text('正在统计阅读时长')
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
     }
     .width('calc(100% - 24vp)')
@@ -475,7 +476,7 @@ struct ReadingStatsPage {
         .fontSize(28)
         .fontColor([this.subTextColor()])
       Text('该时段暂无阅读记录')
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
     }
     .width('calc(100% - 24vp)')
@@ -676,7 +677,7 @@ struct ReadingStatsPage {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
@@ -689,7 +690,7 @@ struct ReadingStatsPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text('阅读统计')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)

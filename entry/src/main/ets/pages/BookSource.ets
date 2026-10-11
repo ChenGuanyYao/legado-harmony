@@ -48,6 +48,7 @@ import {
 } from '../core/book/ExploreReadingValidator';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
+import { AppFontSize } from '../theme/AppFontSize';
 
 const BOOK_SOURCE_IMPORT_FILE_LIMIT_BYTES = 25 * 1024 * 1024;
 const BOOK_SOURCE_IMPORT_TIMEOUT_MS = 20000;
@@ -375,7 +376,7 @@ struct BookSourcePage {
           if (this.selectionMode) {
             Row() {
               Text(this.isAllSelected() ? '☑' : '☐')
-                .fontSize(20)
+                .fontSize(AppFontSize.TITLE)
                 .fontColor(this.accentColor())
                 .width(28)
                 .textAlign(TextAlign.Center)
@@ -387,13 +388,13 @@ struct BookSourcePage {
                 })
 
               Text(`已选择 ${this.selectedSourceUrls.length}/${this.allSources.length}`)
-                .fontSize(14)
+                .fontSize(AppFontSize.BODY)
                 .fontColor(this.secondaryTextColor())
                 .margin({ left: 8 })
                 .layoutWeight(1)
 
               Text(this.isAllSelected() ? '取消全选' : '全选')
-                .fontSize(14)
+                .fontSize(AppFontSize.BODY)
                 .fontColor(this.isBatchOperating ? this.subTextColor() : this.accentColor())
                 .onClick(() => {
                   if (this.isBatchOperating) {
@@ -418,7 +419,7 @@ struct BookSourcePage {
               .width(40)
               .height(40)
             Text('加载中...')
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
               .margin({ top: 8 })
           }
@@ -428,10 +429,10 @@ struct BookSourcePage {
         } else if (this.sources.length === 0) {
           Column() {
             Text(this.emptySourceTitle())
-              .fontSize(16)
+              .fontSize(AppFontSize.BODY_LARGE)
               .fontColor(this.subTextColor())
             Text(this.emptySourceDescription())
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
               .margin({ top: 8 })
           }
@@ -468,7 +469,7 @@ struct BookSourcePage {
                   if (!this.selectionMode) {
                     Stack({ alignContent: Alignment.Center }) {
                       Text('☰')
-                        .fontSize(18)
+                        .fontSize(AppFontSize.SUBTITLE)
                         .fontColor(this.subTextColor())
                     }
                     .width(52)
@@ -481,7 +482,7 @@ struct BookSourcePage {
                   Column() {
                     Row() {
                       Text(source.bookSourceName)
-                        .fontSize(16)
+                        .fontSize(AppFontSize.BODY_LARGE)
                         .fontWeight(FontWeight.Bold)
                         .fontColor(this.primaryTextColor())
                         .maxLines(1)
@@ -497,7 +498,7 @@ struct BookSourcePage {
 
                       if (source.bookSourceGroup) {
                         Text(source.bookSourceGroup)
-                          .fontSize(11)
+                          .fontSize(AppFontSize.CAPTION)
                           .fontColor(this.accentColor())
                           .maxLines(1)
                           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -523,7 +524,7 @@ struct BookSourcePage {
                     Row({ space: 7 }) {
                       this.sourceValidationStatusBadge(source.validationStatus)
                       Text(source.bookSourceUrl)
-                        .fontSize(12)
+                        .fontSize(AppFontSize.CAPTION)
                         .fontColor(this.subTextColor())
                         .maxLines(1)
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -548,10 +549,10 @@ struct BookSourcePage {
                   if (this.selectionMode) {
                     Column() {
                       Text(source.enabled ? '已启用' : '已禁用')
-                        .fontSize(12)
+                        .fontSize(AppFontSize.CAPTION)
                         .fontColor(source.enabled ? '#1E8E3E' : this.subTextColor())
                       Text(source.enabledExplore ? '发现已启用' : '发现已禁用')
-                        .fontSize(12)
+                        .fontSize(AppFontSize.CAPTION)
                         .fontColor(source.enabledExplore ? '#1E8E3E' : this.subTextColor())
                         .margin({ top: 4 })
                     }
@@ -716,7 +717,7 @@ struct BookSourcePage {
         Column() {
           Column() {
             Text('从URL导入')
-              .fontSize(18)
+              .fontSize(AppFontSize.SUBTITLE)
               .fontWeight(FontWeight.Bold)
               .fontColor(this.primaryTextColor())
               .width('100%')
@@ -781,7 +782,7 @@ struct BookSourcePage {
         Column() {
           Column() {
             Text('确认删除')
-              .fontSize(18)
+              .fontSize(AppFontSize.SUBTITLE)
               .fontWeight(FontWeight.Bold)
               .fontColor(this.primaryTextColor())
               .width('100%')
@@ -789,7 +790,7 @@ struct BookSourcePage {
               .margin({ bottom: 12 })
 
             Text(`确定删除已选择的 ${this.selectedSourceUrls.length} 个书源吗？删除后不可恢复。`)
-              .fontSize(15)
+              .fontSize(AppFontSize.BODY_LARGE)
               .fontColor(this.secondaryTextColor())
               .width('100%')
               .textAlign(TextAlign.Center)
@@ -838,7 +839,7 @@ struct BookSourcePage {
         Column() {
           Column() {
             Text('设置书源分组')
-              .fontSize(18)
+              .fontSize(AppFontSize.SUBTITLE)
               .fontWeight(FontWeight.Bold)
               .fontColor(this.primaryTextColor())
               .width('100%')
@@ -847,7 +848,7 @@ struct BookSourcePage {
 
             Text(this.groupActionSourceUrl ? `书源：${this.actionGroupingSourceName()}` :
               `已选择 ${this.selectedSourceUrls.length} 个书源`)
-              .fontSize(13)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
               .width('100%')
               .textAlign(TextAlign.Center)
@@ -870,7 +871,7 @@ struct BookSourcePage {
                 Flex({ wrap: FlexWrap.Wrap }) {
                   ForEach(this.getSourceGroups(), (group: string) => {
                     Text(group)
-                      .fontSize(13)
+                      .fontSize(AppFontSize.BODY)
                       .fontColor(this.secondaryTextColor())
                       .padding({ left: 10, right: 10, top: 5, bottom: 5 })
                       .backgroundColor(this.inputColor())
@@ -965,7 +966,7 @@ struct BookSourcePage {
         Column() {
           Column() {
             Text(this.isCheckingSources ? '正在校验书源' : '校验完成')
-              .fontSize(18)
+              .fontSize(AppFontSize.SUBTITLE)
               .fontWeight(FontWeight.Bold)
               .fontColor(this.primaryTextColor())
               .width('100%')
@@ -981,7 +982,7 @@ struct BookSourcePage {
             }
 
             Text(this.checkDialogStatusText())
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.secondaryTextColor())
               .width('100%')
               .textAlign(TextAlign.Center)
@@ -995,7 +996,7 @@ struct BookSourcePage {
               .margin({ bottom: 12 })
 
             Text(`${this.checkDone}/${this.checkTotal}`)
-              .fontSize(13)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
               .margin({ bottom: this.isCheckingSources ? 0 : 12 })
 
@@ -1005,7 +1006,7 @@ struct BookSourcePage {
                   .layoutWeight(1)
                   .height(42)
                   .borderRadius(ThemeRuntime.buttonRadius())
-                  .fontSize(13)
+                  .fontSize(AppFontSize.BODY)
                   .backgroundColor(this.inputColor())
                   .fontColor(this.primaryTextColor())
                   .onClick(() => {
@@ -1016,7 +1017,7 @@ struct BookSourcePage {
                   .layoutWeight(1)
                   .height(42)
                   .borderRadius(ThemeRuntime.buttonRadius())
-                  .fontSize(13)
+                  .fontSize(AppFontSize.BODY)
                   .backgroundColor(this.buttonColor())
                   .fontColor('#FFFFFF')
                   .onClick(() => {
@@ -1033,7 +1034,7 @@ struct BookSourcePage {
                   Column() {
                     ForEach(this.checkResultDetails, (name: string, index: number) => {
                       Text(name)
-                        .fontSize(13)
+                        .fontSize(AppFontSize.BODY)
                         .fontColor(this.subTextColor())
                         .width('100%')
                         .maxLines(2)
@@ -1059,7 +1060,7 @@ struct BookSourcePage {
                   .width('100%')
                   .height(42)
                   .borderRadius(ThemeRuntime.buttonRadius())
-                  .fontSize(13)
+                  .fontSize(AppFontSize.BODY)
                   .backgroundColor('#B26A00')
                   .fontColor('#FFFFFF')
                   .margin({ bottom: 10 })
@@ -1074,7 +1075,7 @@ struct BookSourcePage {
                     .layoutWeight(1)
                     .height(42)
                     .borderRadius(ThemeRuntime.buttonRadius())
-                    .fontSize(11)
+                    .fontSize(AppFontSize.CAPTION)
                     .enabled(this.checkBadUrls.length > 0 && !this.isBatchOperating)
                     .backgroundColor(this.checkBadUrls.length > 0 && !this.isBatchOperating ? '#F57C00' : this.inputColor())
                     .fontColor(this.checkBadUrls.length > 0 && !this.isBatchOperating ? '#FFFFFF' : this.subTextColor())
@@ -1086,7 +1087,7 @@ struct BookSourcePage {
                     .layoutWeight(1)
                     .height(42)
                     .borderRadius(ThemeRuntime.buttonRadius())
-                    .fontSize(11)
+                    .fontSize(AppFontSize.CAPTION)
                     .enabled(this.checkBadUrls.length > 0 && !this.isBatchOperating)
                     .backgroundColor(this.checkBadUrls.length > 0 && !this.isBatchOperating ? '#E53935' : this.inputColor())
                     .fontColor(this.checkBadUrls.length > 0 && !this.isBatchOperating ? '#FFFFFF' : this.subTextColor())
@@ -1099,7 +1100,7 @@ struct BookSourcePage {
                   .layoutWeight(1)
                   .height(42)
                   .borderRadius(ThemeRuntime.buttonRadius())
-                  .fontSize(11)
+                  .fontSize(AppFontSize.CAPTION)
                   .backgroundColor(this.inputColor())
                   .fontColor(this.primaryTextColor())
                   .onClick(() => {
@@ -1179,13 +1180,13 @@ struct BookSourcePage {
               .color(this.accentColor())
 
             Text('正在导入书源...')
-              .fontSize(16)
+              .fontSize(AppFontSize.BODY_LARGE)
               .fontWeight(FontWeight.Bold)
               .fontColor(this.primaryTextColor())
               .margin({ top: 14 })
 
             Text('请稍候')
-              .fontSize(13)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
               .margin({ top: 6 })
           }
@@ -1215,13 +1216,13 @@ struct BookSourcePage {
               .color(this.accentColor())
 
             Text(this.batchOperationText)
-              .fontSize(16)
+              .fontSize(AppFontSize.BODY_LARGE)
               .fontWeight(FontWeight.Bold)
               .fontColor(this.primaryTextColor())
               .margin({ top: 14 })
 
             Text('请稍候')
-              .fontSize(13)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
               .margin({ top: 6 })
           }
@@ -1257,7 +1258,7 @@ struct BookSourcePage {
         onBack: () => router.back() })
 
       Text('书源管理')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -1299,7 +1300,7 @@ struct BookSourcePage {
         })
 
         Text('校验')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.isCheckingSources ? this.subTextColor() : this.primaryTextColor())
           .width(44)
           .height(40)
@@ -1310,7 +1311,7 @@ struct BookSourcePage {
       }
 
       Text(this.selectionMode ? '取消' : '选择')
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.isBatchOperating ? this.subTextColor() : this.primaryTextColor())
         .width(44)
         .height(40)
@@ -1406,7 +1407,7 @@ struct BookSourcePage {
 
       Column() {
         Text(`已选择 ${this.selectedSourceUrls.length} 个书源`)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .width('100%')
           .height(34)
@@ -1466,7 +1467,7 @@ struct BookSourcePage {
           .fontColor([color])
           .width(24)
         Text(label)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(color)
           .layoutWeight(1)
       }
@@ -1490,12 +1491,12 @@ struct BookSourcePage {
     Column({ space: 14 }) {
       Row() {
         Text('筛选书源')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
         Text(`当前 ${this.sources.length}/${this.allSources.length}`)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
       }
       .width('100%')
@@ -1536,7 +1537,7 @@ struct BookSourcePage {
   sourceSortFilterRow() {
     Row({ space: 10 }) {
       Text('排序')
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.primaryTextColor())
         .width(66)
       Row({ space: 6 }) {
@@ -1554,7 +1555,7 @@ struct BookSourcePage {
   @Builder
   sourceSortChoice(value: string, label: string) {
     Text(label)
-      .fontSize(12)
+      .fontSize(AppFontSize.CAPTION)
       .fontColor(this.sourceSortMode === value ? '#FFFFFF' : this.secondaryTextColor())
       .layoutWeight(1)
       .height(34)
@@ -1572,7 +1573,7 @@ struct BookSourcePage {
   sourceFilterRow(label: string, filterKey: string, yesLabel: string, noLabel: string) {
     Row({ space: 10 }) {
       Text(label)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.primaryTextColor())
         .width(66)
       Row({ space: 6 }) {
@@ -1590,7 +1591,7 @@ struct BookSourcePage {
   sourceValidationFilterRow() {
     Row({ space: 10 }) {
       Text('校验状态')
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.primaryTextColor())
         .width(66)
       Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.SpaceBetween }) {
@@ -1611,7 +1612,7 @@ struct BookSourcePage {
   @Builder
   sourceValidationFilterChoice(value: string, label: string) {
     Text(label)
-      .fontSize(12)
+      .fontSize(AppFontSize.CAPTION)
       .fontColor(this.sourceValidationFilter === value ? '#FFFFFF' : this.secondaryTextColor())
       .width('32%')
       .height(34)
@@ -1626,7 +1627,7 @@ struct BookSourcePage {
   @Builder
   sourceFilterChoice(filterKey: string, value: string, label: string) {
     Text(label)
-      .fontSize(12)
+      .fontSize(AppFontSize.CAPTION)
       .fontColor(this.sourceFilterValue(filterKey) === value ? '#FFFFFF' : this.secondaryTextColor())
       .layoutWeight(1)
       .height(34)
@@ -1651,7 +1652,7 @@ struct BookSourcePage {
 
       Column({ space: 12 }) {
         Text('校验设置')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .width('100%')
@@ -1659,7 +1660,7 @@ struct BookSourcePage {
         Text(this.checkValidationMode === 'exploreReading' ?
           '逐源运行发现、详情、目录与首个非付费章节。登录、验证、VIP 或付费内容只会提示用户处理。' :
           '只有明确的请求或规则错误会标记为失败并参与自动处理；无结果、需要验证和暂时异常不会被禁用或删除。')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.secondaryTextColor())
           .width('100%')
 
@@ -1718,7 +1719,7 @@ struct BookSourcePage {
   @Builder
   checkModeOption(value: string, label: string) {
     Text(label)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.checkValidationMode === value ? '#FFFFFF' : this.primaryTextColor())
       .layoutWeight(1)
       .height(38)
@@ -1735,18 +1736,18 @@ struct BookSourcePage {
   checkActionOption(title: string, description: string, action: string, danger: boolean = false) {
     Row() {
       Text(this.checkInvalidAction === action ? '●' : '○')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontColor(this.checkInvalidAction === action ?
           (danger ? '#B71C1C' : this.accentColor()) : this.subTextColor())
         .width(28)
 
       Column() {
         Text(title)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Medium)
           .fontColor(danger ? '#B71C1C' : this.primaryTextColor())
         Text(description)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 3 })
       }
@@ -1836,7 +1837,7 @@ struct BookSourcePage {
     Column() {
       Column() {
         Text(`${this.actionSourceName()} · 登录与接口`)
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .width('100%')
@@ -1849,7 +1850,7 @@ struct BookSourcePage {
               if (this.isSourceLoginInput(item)) {
                 Column({ space: 4 }) {
                   Text(item.name)
-                    .fontSize(12)
+                    .fontSize(AppFontSize.CAPTION)
                     .fontColor(this.subTextColor())
                     .width('100%')
                   Row({ space: 8 }) {
@@ -1870,7 +1871,7 @@ struct BookSourcePage {
                       Button(this.isExecutingLoginAction ? '执行中' : '执行', { type: ButtonType.Normal })
                         .width(68)
                         .height(42)
-                        .fontSize(13)
+                        .fontSize(AppFontSize.BODY)
                         .fontColor(this.primaryTextColor())
                         .backgroundColor(this.inputColor())
                         .enabled(!this.isExecutingLoginAction)
@@ -1886,11 +1887,11 @@ struct BookSourcePage {
                 Row({ space: 12 }) {
                   Column({ space: 3 }) {
                     Text(this.sourceLoginItemDisplayName(item))
-                      .fontSize(14)
+                      .fontSize(AppFontSize.BODY)
                       .fontColor(this.primaryTextColor())
                       .width('100%')
                     Text(this.sourceLoginToggleOn(item) ? '已开启' : '已关闭')
-                      .fontSize(11)
+                      .fontSize(AppFontSize.CAPTION)
                       .fontColor(this.sourceLoginToggleOn(item) ? this.accentColor() : this.subTextColor())
                       .width('100%')
                   }
@@ -1913,7 +1914,7 @@ struct BookSourcePage {
               } else if (this.isSourceLoginSelect(item)) {
                 Row({ space: 12 }) {
                   Text(this.sourceLoginItemDisplayName(item))
-                    .fontSize(14)
+                    .fontSize(AppFontSize.BODY)
                     .fontColor(this.primaryTextColor())
                     .layoutWeight(1)
                     .maxLines(2)
@@ -1943,7 +1944,7 @@ struct BookSourcePage {
                   { type: ButtonType.Normal })
                   .width('100%')
                   .height(40)
-                  .fontSize(14)
+                  .fontSize(AppFontSize.BODY)
                   .fontColor(item.action ? this.primaryTextColor() : this.subTextColor())
                   .backgroundColor(item.action ? this.inputColor() : this.cardColor())
                   .enabled(!!item.action && !this.isExecutingLoginAction)
@@ -1965,7 +1966,7 @@ struct BookSourcePage {
             .width('100%')
             .height(42)
             .margin({ top: 8 })
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor('#FFFFFF')
             .backgroundColor(this.accentColor())
             .enabled(!this.isExecutingLoginAction)
@@ -2010,7 +2011,7 @@ struct BookSourcePage {
         .fontColor([color])
         .width(24)
       Text(label)
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(color)
         .layoutWeight(1)
     }
@@ -2024,7 +2025,7 @@ struct BookSourcePage {
   @Builder
   sourceOrderStatusBadge(label: string, accessibilityLabel: string) {
     Text(label)
-      .fontSize(11)
+      .fontSize(AppFontSize.MICRO)
       .fontWeight(FontWeight.Medium)
       .fontColor(this.accentColor())
       .width(24)
@@ -2054,7 +2055,7 @@ struct BookSourcePage {
   @Builder
   sourceLoginStatusBadge(color: string, accessibilityLabel: string) {
     Text('登')
-      .fontSize(11)
+      .fontSize(AppFontSize.MICRO)
       .fontWeight(FontWeight.Medium)
       .fontColor(color)
       .width(24)
@@ -2069,7 +2070,7 @@ struct BookSourcePage {
   @Builder
   sourceValidationStatusBadge(validationStatus: number) {
     Text(this.sourceValidationStatusLabel(validationStatus))
-      .fontSize(10)
+      .fontSize(AppFontSize.MICRO)
       .fontWeight(FontWeight.Medium)
       .fontColor(this.sourceValidationStatusColor(validationStatus))
       .padding({ left: 6, right: 6, top: 2, bottom: 2 })
@@ -2104,7 +2105,7 @@ struct BookSourcePage {
         .fontSize(22)
         .fontColor(['#FFFFFF'])
       Text(source.enabled ? '禁用' : '启用')
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor('#FFFFFF')
     }
     .width(64)
@@ -2126,7 +2127,7 @@ struct BookSourcePage {
       if (!this.selectionMode) {
         Stack({ alignContent: Alignment.Center }) {
           Text('☰')
-            .fontSize(18)
+            .fontSize(AppFontSize.SUBTITLE)
             .fontColor(this.subTextColor())
         }
         .width(52)
@@ -2138,14 +2139,14 @@ struct BookSourcePage {
       Column() {
         Row() {
           Text(source.bookSourceName)
-            .fontSize(16).fontWeight(FontWeight.Bold)
+            .fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
           if (source.isPinned) this.sourceStatusIcon($r('sys.symbol.pin'), this.accentColor(), '已置顶')
           if (source.isLocked) this.sourceStatusIcon($r('sys.symbol.lock'), this.accentColor(), '已锁定')
           if (source.bookSourceGroup) {
-            Text(source.bookSourceGroup).fontSize(11).fontColor(this.accentColor())
+            Text(source.bookSourceGroup).fontSize(AppFontSize.CAPTION).fontColor(this.accentColor())
               .constraintSize({ maxWidth: 72 }).padding({ left: 7, right: 7, top: 3, bottom: 3 })
               .backgroundColor(this.inputColor()).borderRadius(ThemeRuntime.smallRadius()).margin({ left: 6 })
           }
@@ -2156,7 +2157,7 @@ struct BookSourcePage {
         Row({ space: 7 }) {
           this.sourceValidationStatusBadge(source.validationStatus)
           Text(source.bookSourceUrl)
-            .fontSize(12).fontColor(this.subTextColor())
+            .fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor())
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
         }.width('100%').margin({ top: 4 })
@@ -2167,9 +2168,9 @@ struct BookSourcePage {
         if (!this.selectionMode && !this.isBatchOperating) this.openSourceActions(source, event)
       }))
       Column() {
-        Text(source.enabled ? '已启用' : '已禁用').fontSize(12)
+        Text(source.enabled ? '已启用' : '已禁用').fontSize(AppFontSize.CAPTION)
           .fontColor(source.enabled ? '#1E8E3E' : this.subTextColor())
-        Text(source.enabledExplore ? '发现已启用' : '发现已禁用').fontSize(12)
+        Text(source.enabledExplore ? '发现已启用' : '发现已禁用').fontSize(AppFontSize.CAPTION)
           .fontColor(source.enabledExplore ? '#1E8E3E' : this.subTextColor()).margin({ top: 4 })
       }.alignItems(HorizontalAlign.End)
     }
@@ -2212,7 +2213,7 @@ struct BookSourcePage {
         .fontSize(22)
         .fontColor(['#FFFFFF'])
       Text('删除')
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor('#FFFFFF')
     }
     .width(64)
@@ -2229,14 +2230,14 @@ struct BookSourcePage {
   sourceDeleteDialogContent() {
     Column() {
       Text('删除书源')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
 
       Text(`确定删除“${this.actionSourceName()}”吗？删除后不可恢复。`)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
@@ -2271,20 +2272,20 @@ struct BookSourcePage {
   sourceDragPreview() {
     Row() {
       Text('☰')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontColor(this.subTextColor())
         .width(28)
         .textAlign(TextAlign.Center)
         .margin({ right: 8 })
       Column() {
         Text(this.draggingSourceName())
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(this.draggingSourceUrl)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
           .maxLines(1)
@@ -2458,14 +2459,14 @@ struct BookSourcePage {
   importSourceSelectionDialogContent() {
     Column({ space: 12 }) {
       Text('选择要导入的书源')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
 
       Text(`共 ${this.pendingImportSources.length} 个书源，已选择 ${this.selectedImportSourceUrls.length} 个`)
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
@@ -2482,7 +2483,7 @@ struct BookSourcePage {
             }
           })
         Text(this.areAllImportSourcesSelected() ? '取消全选' : '全选')
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.accentColor())
           .margin({ left: 8 })
         Blank().layoutWeight(1)
@@ -2504,12 +2505,12 @@ struct BookSourcePage {
                 })
               Column() {
                 Text(source.bookSourceName || '未命名书源')
-                  .fontSize(15)
+                  .fontSize(AppFontSize.BODY_LARGE)
                   .fontColor(this.primaryTextColor())
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
                 Text(source.bookSourceUrl || '')
-                  .fontSize(11)
+                  .fontSize(AppFontSize.CAPTION)
                   .fontColor(this.subTextColor())
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -2578,7 +2579,7 @@ struct BookSourcePage {
         }, (group: string) => group)
         this.sourceGroupChip('未分组', '__ungrouped__')
         Text('＋')
-          .fontSize(20)
+          .fontSize(AppFontSize.TITLE)
           .fontColor(this.accentColor())
           .width(34)
           .height(34)
@@ -2647,12 +2648,12 @@ struct BookSourcePage {
     Column() {
       Row() {
         Text('分组管理')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
         Text('新建')
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.accentColor())
           .padding({ left: 10, right: 2, top: 8, bottom: 8 })
           .onClick(() => {
@@ -2669,7 +2670,7 @@ struct BookSourcePage {
             .fontSize(30)
             .fontColor([this.subTextColor()])
           Text('暂无书源分组')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
         }
         .width('100%')
@@ -2681,12 +2682,12 @@ struct BookSourcePage {
             .selectedColor(this.buttonColor())
             .onChange((isOn: boolean) => this.selectAllManagedSourceGroups(isOn))
           Text(this.areAllManagedSourceGroupsSelected() ? '取消全选' : '全选')
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.secondaryTextColor())
             .margin({ left: 8 })
             .layoutWeight(1)
           Text(`已选 ${this.selectedManagedSourceGroups.length} 项`)
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
         }
         .width('100%')
@@ -2702,12 +2703,12 @@ struct BookSourcePage {
                   .onChange((isOn: boolean) => this.setManagedSourceGroupSelected(group, isOn))
                 Column() {
                   Text(group)
-                    .fontSize(15)
+                    .fontSize(AppFontSize.BODY_LARGE)
                     .fontColor(this.primaryTextColor())
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                   Text(`${this.sourceGroupCount(group)} 个书源`)
-                    .fontSize(11)
+                    .fontSize(AppFontSize.CAPTION)
                     .fontColor(this.subTextColor())
                     .margin({ top: 2 })
                 }
@@ -2715,14 +2716,14 @@ struct BookSourcePage {
                 .margin({ left: 8 })
                 .alignItems(HorizontalAlign.Start)
                 Text('编辑')
-                  .fontSize(13)
+                  .fontSize(AppFontSize.BODY)
                   .fontColor(this.accentColor())
                   .height(36)
                   .padding({ left: 9, right: 9 })
                   .textAlign(TextAlign.Center)
                   .onClick(() => this.openManagedSourceGroupRename(group))
                 Text('删除')
-                  .fontSize(13)
+                  .fontSize(AppFontSize.BODY)
                   .fontColor('#E53935')
                   .height(36)
                   .padding({ left: 9, right: 4 })
@@ -2774,7 +2775,7 @@ struct BookSourcePage {
   @Builder
   sourceGroupChip(label: string, groupKey: string, editable: boolean = false) {
     Text(label)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.activeSourceGroup === groupKey ? '#FFFFFF' : this.primaryTextColor())
       .maxLines(1)
       .padding({ left: 13, right: 13, top: 7, bottom: 7 })
@@ -2832,7 +2833,7 @@ struct BookSourcePage {
   addSourceGroupDialogContent() {
     Column({ space: 16 }) {
       Text('新增书源分组')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
 
@@ -2870,7 +2871,7 @@ struct BookSourcePage {
   renameSourceGroupDialogContent() {
     Column({ space: 16 }) {
       Text('重命名书源分组')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
 
@@ -2908,11 +2909,11 @@ struct BookSourcePage {
   deleteSourceGroupDialogContent() {
     Column({ space: 16 }) {
       Text('删除书源分组')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
       Text(`删除“${this.pendingSourceGroup}”后，分组内书源将移到未分组，书源本身不会删除。`)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .textAlign(TextAlign.Center)
       Row({ space: 12 }) {
@@ -2941,11 +2942,11 @@ struct BookSourcePage {
   deleteSelectedSourceGroupsDialogContent() {
     Column({ space: 16 }) {
       Text('删除所选分组')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
       Text(`确定删除所选 ${this.selectedManagedSourceGroups.length} 个分组吗？分组内书源将移到未分组。`)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .textAlign(TextAlign.Center)
       Row({ space: 12 }) {

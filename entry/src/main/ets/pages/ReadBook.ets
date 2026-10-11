@@ -125,6 +125,7 @@ import { EpubChapterPlanner } from '../core/book/EpubChapterPlanner';
 import { EpubHeading } from '../core/book/EpubHtmlConverter';
 import { sleepMs } from '../utils/Sleep';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
+import { AppFontSize } from '../theme/AppFontSize';
 
 const READER_CURRENT_PAGINATION_AHEAD_PAGE_COUNT = 4;
 const READER_ADJACENT_PAGINATION_PREVIEW_PAGE_COUNT = 2;
@@ -1711,7 +1712,7 @@ struct ReadBookPage {
         .height(40)
         .color(this.accentColor())
       Text(this.getReaderLoadingText())
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.isReaderThemeDark() ? '#AEB4BE' : '#777777')
         .margin({ top: 10 })
     }
@@ -1729,11 +1730,11 @@ struct ReadBookPage {
         .height(44)
         .color(this.accentColor())
       Text('正在解析漫画')
-        .fontSize(16)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.getTextColor())
       Text(`已解析 ${this.readerComicPaginationParsedPages} / ${this.readerComicPaginationTotalPages} 页`)
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.isReaderThemeDark() ? '#AEB4BE' : '#777777')
       Progress({
         value: this.readerComicPaginationParsedPages,
@@ -1745,7 +1746,7 @@ struct ReadBookPage {
         .color(this.accentColor())
         .backgroundColor(this.isReaderThemeDark() ? '#3A3D43' : '#DDD8D0')
       Text('解析完成后自动开始阅读')
-        .fontSize(12)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.isReaderThemeDark() ? '#858B94' : '#999999')
     }
     .width('100%')
@@ -1784,11 +1785,11 @@ struct ReadBookPage {
                 if (this.readerComicBrokenPages.includes(index)) {
                   Column({ space: 6 }) {
                     Text('⚠ 图片加载失败')
-                      .fontSize(13)
+                      .fontSize(AppFontSize.BODY)
                       .fontColor(this.getSubTextColor())
                     Text(/^(?:https?:|data:)/i.test(LocalBookService.epubImagePathFromMarker(page)) ?
                       '网络图片加载失败，点击重试' : '文件可能已被移动、删除或尚未重新导入')
-                      .fontSize(11)
+                      .fontSize(AppFontSize.CAPTION)
                       .fontColor(this.getSubTextColor())
                       .opacity(0.8)
                   }
@@ -1941,7 +1942,7 @@ struct ReadBookPage {
           .fontColor([this.readerComicBoundaryReady ? this.accentColor() : this.getTextColor()])
       }
       Text(this.readerComicBoundaryHintText())
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontWeight(this.readerComicBoundaryReady || this.readerComicChapterSwitching ? FontWeight.Medium :
           FontWeight.Regular)
         .fontColor(this.readerComicBoundaryReady || this.readerComicChapterSwitching ?
@@ -2353,7 +2354,7 @@ struct ReadBookPage {
                   .height(38)
                   .color(this.accentColor())
                 Text('评论加载中…')
-                  .fontSize(13)
+                  .fontSize(AppFontSize.BODY)
                   .fontColor(this.getTextColor())
               }
               .width('100%')
@@ -2549,12 +2550,12 @@ struct ReadBookPage {
       if (this.menuChapterTooltipVisible) {
         Column({ space: 2 }) {
           Text(this.getChapterTitle(this.getMenuChapterDisplayIndex()))
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor('#FFFFFFFF')
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Text(`${this.getMenuChapterDisplayIndex() + 1}/${this.chapters.length}`)
-            .fontSize(11)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor('#CCFFFFFF')
         }
         .width(this.readerChapterTooltipWidth())
@@ -2860,13 +2861,13 @@ struct ReadBookPage {
         Column({ space: 1 }) {
           Row() {
             Text(this.getChapterTitle(this.getMenuChapterDisplayIndex()))
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.getSubTextColor())
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
               .layoutWeight(1)
             Text(`${this.getMenuChapterDisplayIndex() + 1}/${this.chapters.length}`)
-              .fontSize(11)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.getSubTextColor())
               .margin({ left: 8 })
           }
@@ -3168,7 +3169,7 @@ struct ReadBookPage {
           .width(24)
 
         Text(label)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.getTextColor())
           .maxLines(1)
           .layoutWeight(1)
@@ -3909,7 +3910,7 @@ struct ReadBookPage {
         .fontColor([color])
         .width(26)
       Text(label)
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(color)
         .layoutWeight(1)
     }
@@ -5640,7 +5641,7 @@ struct ReadBookPage {
           .fontSize(19)
           .fontColor([this.bookmarkPullHintColor()])
         Text(this.bookmarkPullHintText())
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontWeight(this.bookmarkPullReady ? FontWeight.Bold : FontWeight.Medium)
           .fontColor(this.bookmarkPullHintColor())
       }
@@ -8082,7 +8083,7 @@ struct ReadBookPage {
     Column({ space: 12 }) {
       Row() {
         Text(this.settingsPanelTitle())
-          .fontSize(20)
+          .fontSize(AppFontSize.TITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.getTextColor())
 
@@ -8339,7 +8340,7 @@ struct ReadBookPage {
             .width(42)
             .height(42)
             .borderRadius(21)
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(theme.textColor)
             .textAlign(TextAlign.Center)
             .backgroundColor(theme.backgroundColor)
@@ -8378,10 +8379,10 @@ struct ReadBookPage {
     Row() {
       Column() {
         Text('阅读字体')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.getTextColor())
         Text('正文 / 标题 / 正则样式设置')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.getSubTextColor())
           .margin({ top: 4 })
       }
@@ -8404,10 +8405,10 @@ struct ReadBookPage {
     Row() {
       Column() {
         Text('替换净化')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.getTextColor())
         Text('管理正文与章节标题的替换规则')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.getSubTextColor())
           .margin({ top: 4 })
       }
@@ -8624,10 +8625,10 @@ struct ReadBookPage {
     Row() {
       Column() {
         Text('点击区域动作')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.getTextColor())
         Text(this.tapZoneSummaryText())
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.getSubTextColor())
           .margin({ top: 4 })
       }
@@ -8636,7 +8637,7 @@ struct ReadBookPage {
 
       Button('配置')
         .height(34)
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .backgroundColor(this.buttonColor())
         .fontColor('#FFFFFF')
         .margin({ left: 12 })
@@ -8655,10 +8656,10 @@ struct ReadBookPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.getTextColor())
         Text(description)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.getSubTextColor())
           .margin({ top: 4 })
       }
@@ -8669,7 +8670,7 @@ struct ReadBookPage {
         .id(controlId)
         .selected(selected)
         .value(this.readerSelectOptionValue(options, selected))
-        .font({ size: 14 })
+        .font({ size: AppFontSize.BODY })
         .fontColor(this.getSubTextColor())
         .backgroundColor(Color.Transparent)
         .arrowPosition(ArrowPosition.END)
@@ -8714,10 +8715,10 @@ struct ReadBookPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.getTextColor())
         Text(description)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.getSubTextColor())
           .margin({ top: 4 })
       }
@@ -8758,7 +8759,7 @@ struct ReadBookPage {
     if (this.eyeTurnState.promptVisible()) {
       Row() {
         Text('向上看，翻下一页')
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontWeight(FontWeight.Medium)
           .fontColor('#F8FFFFFF')
           .padding({ left: 16, right: 16, top: 8, bottom: 8 })
@@ -8841,10 +8842,10 @@ struct ReadBookPage {
       Row() {
         Column() {
           Text('预缓存设置')
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.getTextColor())
           Text(this.readerPreloadEnabled ? '阅读过程中提前缓存后续章节' : '已关闭自动预缓存')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.getSubTextColor())
             .margin({ top: 4 })
         }
@@ -13034,7 +13035,7 @@ struct ReadBookPage {
           })
         if (this.readerV2BrokenImageSources.includes(fragment.imageSource)) {
           Text('图片加载失败')
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.getSubTextColor())
             .textAlign(TextAlign.Center)
             .width(px2vp(fragment.imageRect.width()))
@@ -13996,7 +13997,7 @@ struct ReadBookPage {
           })
         if (this.readerV2BrokenImageSources.includes(fragment.imageSource)) {
           Text('图片加载失败')
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.getSubTextColor())
             .textAlign(TextAlign.Center)
             .width(px2vp(fragment.imageRect.width()))

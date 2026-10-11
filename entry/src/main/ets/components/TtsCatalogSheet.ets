@@ -1,6 +1,7 @@
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { VirtualListScrollbar } from '../utils/VirtualListScrollbar';
 import { ImmersiveBackButton } from './ImmersiveBackButton';
+import { AppFontSize } from '../theme/AppFontSize';
 
 /**
  * The catalog list feeds on chapter *titles*, not chapter records. Declaring the
@@ -141,7 +142,7 @@ export struct TtsCatalogSheet {
           .objectFit(ImageFit.Cover)
       } else {
         Text(this.bookInitial || '书')
-          .fontSize(22)
+          .fontSize(AppFontSize.HEADLINE)
           .fontWeight(FontWeight.Bold)
           .fontColor('#FFFFFF')
           .textAlign(TextAlign.Center)
@@ -153,7 +154,7 @@ export struct TtsCatalogSheet {
 
       Column({ space: 5 }) {
         Text(this.bookName || '目录')
-          .fontSize(20)
+          .fontSize(AppFontSize.TITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor)
           .maxLines(1)
@@ -163,7 +164,7 @@ export struct TtsCatalogSheet {
         // instead of a misleading "未知作者".
         if (this.bookSubtitle) {
           Text(this.bookSubtitle)
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -199,7 +200,7 @@ export struct TtsCatalogSheet {
     Column({ space: 8 }) {
       Row() {
         Text(`共 ${this.count} 章`)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor)
           .margin({ left: 6 })
           .padding({ left: 8, right: 8 })
@@ -229,7 +230,7 @@ export struct TtsCatalogSheet {
           .layoutWeight(1)
 
         Text(this.progressText)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor)
       }
       .width('100%')
@@ -254,7 +255,7 @@ export struct TtsCatalogSheet {
                 .textAlign(TextAlign.Center)
 
               Text(title || `第${this.canonicalIndex(index) + 1}章`)
-                .fontSize(15)
+                .fontSize(AppFontSize.BODY_LARGE)
                 .fontWeight(index === this.currentDisplayIndex ? FontWeight.Medium : FontWeight.Regular)
                 .fontColor(this.catalogTitleColor(index))
                 .maxLines(2)
@@ -263,7 +264,7 @@ export struct TtsCatalogSheet {
 
               if (this.isCached(index)) {
                 Text('已缓存')
-                  .fontSize(10)
+                  .fontSize(AppFontSize.MICRO)
                   .fontColor(this.darkMode ? '#7CC7A0' : '#1F8F55')
                   .padding({ left: 7, right: 7, top: 3, bottom: 3 })
                   .backgroundColor(this.darkMode ? '#24382F' : '#E6F4EC')

@@ -22,6 +22,7 @@ import { BookSourceAudioWebRuntimeHost } from '../components/BookSourceAudioWebR
 import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
+import { AppFontSize } from '../theme/AppFontSize';
 
 class AudioBookPlaybackListener implements RemoteAudioPlaybackListener {
   private readonly stateCallback: (state: string) => void;
@@ -212,13 +213,13 @@ struct AudioBookPage {
       }
       Column({ space: 3 }) {
         Text(this.book?.name || '快速听书')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(this.currentChapter()?.title || this.statusText)
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -266,7 +267,7 @@ struct AudioBookPage {
       .clip(true)
       Scroll() {
         Text(this.displayIntro())
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .lineHeight(25)
           .fontColor(this.primaryTextColor())
           .copyOption(CopyOptions.LocalDevice)
@@ -308,7 +309,7 @@ struct AudioBookPage {
         Circle().width(38).height(38).fill(this.appDarkMode ? '#24FFFFFF' : '#10000000')
         SymbolGlyph(icon).fontSize(19).fontColor([enabled ? this.primaryTextColor() : this.subTextColor()])
       }
-      Text(label).fontSize(10).fontColor(this.subTextColor())
+      Text(label).fontSize(AppFontSize.MICRO).fontColor(this.subTextColor())
     }
     .layoutWeight(1)
     .height(68)
@@ -327,7 +328,7 @@ struct AudioBookPage {
           .fontColor([(offset < 0 ? this.chapterIndex > 0 : this.chapterIndex < this.chapters.length - 1) &&
             !this.chapterSwitching ? this.primaryTextColor() : this.subTextColor()])
       }
-      Text(label).fontSize(10).fontColor(this.subTextColor())
+      Text(label).fontSize(AppFontSize.MICRO).fontColor(this.subTextColor())
     }
     .layoutWeight(1)
     .height(68)
@@ -351,7 +352,7 @@ struct AudioBookPage {
           .fontColor(['#FFFFFF'])
       }
       Text(this.playbackState === 'loading' ? '加载中' : (this.isPlaying() ? '暂停' : '播放'))
-        .fontSize(10)
+        .fontSize(AppFontSize.MICRO)
         .fontColor(this.subTextColor())
     }
     .layoutWeight(1)
@@ -400,11 +401,11 @@ struct AudioBookPage {
   voiceCodeDialogContent() {
     Column({ space: 14 }) {
       Text('听书音色代码')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
       Text('填写书源详情中列出的数字音色代码；留空使用书源默认音色')
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
       TextInput({ text: this.voiceCodeInput, placeholder: '留空使用书源默认音色' })
         .type(InputType.Number)
@@ -455,7 +456,7 @@ struct AudioBookPage {
         .justifyContent(FlexAlign.Center)
       }
       Text(this.book?.name || '正在加载')
-        .fontSize(22)
+        .fontSize(AppFontSize.HEADLINE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .maxLines(2)
@@ -463,7 +464,7 @@ struct AudioBookPage {
         .textAlign(TextAlign.Center)
         .margin({ top: 18 })
       Text(this.book?.author || this.book?.originName || '')
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .maxLines(1)
         .margin({ top: 7 })
@@ -476,14 +477,14 @@ struct AudioBookPage {
   chapterSection() {
     Column() {
       Text(this.currentChapter()?.title || '正在获取目录...')
-        .fontSize(17)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.primaryTextColor())
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .textAlign(TextAlign.Center)
       Text(this.chapters.length > 0 ? `${this.chapterIndex + 1} / ${this.chapters.length}` : '- / -')
-        .fontSize(12)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
         .margin({ top: 6 })
     }
@@ -509,11 +510,11 @@ struct AudioBookPage {
         })
       Row() {
         Text(this.formatDuration(this.positionMs))
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
         Blank()
         Text(this.formatDuration(this.durationMs))
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
       }
       .width('100%')
@@ -526,7 +527,7 @@ struct AudioBookPage {
     Row() {
       Button('上一章')
         .height(44)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .enabled(this.chapterIndex > 0 && !this.chapterSwitching)
         .backgroundColor(this.inputColor())
         .fontColor(this.primaryTextColor())
@@ -534,14 +535,14 @@ struct AudioBookPage {
       Button(this.isPlaying() ? '暂停' : (this.playbackState === 'loading' ? '加载中' : '播放'))
         .width(100)
         .height(52)
-        .fontSize(17)
+        .fontSize(AppFontSize.SUBTITLE)
         .enabled(this.chapters.length > 0 && this.playbackState !== 'loading')
         .backgroundColor(this.accentColor())
         .fontColor('#FFFFFF')
         .onClick(() => this.togglePlayback())
       Button('下一章')
         .height(44)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .enabled(this.chapterIndex < this.chapters.length - 1 && !this.chapterSwitching)
         .backgroundColor(this.inputColor())
         .fontColor(this.primaryTextColor())
@@ -581,7 +582,7 @@ struct AudioBookPage {
   @Builder
   audioSpeedChip(value: number) {
     Text(`${value.toFixed(1)}x`)
-      .fontSize(11)
+      .fontSize(AppFontSize.CAPTION)
       .fontWeight(Math.abs(this.speed - value) < 0.01 ? FontWeight.Bold : FontWeight.Regular)
       .fontColor(Math.abs(this.speed - value) < 0.01 ? '#FFFFFF' : this.primaryTextColor())
       .textAlign(TextAlign.Center)
@@ -596,7 +597,7 @@ struct AudioBookPage {
   @Builder
   audioTimerChip(minutes: number, label: string) {
     Text(label)
-      .fontSize(11)
+      .fontSize(AppFontSize.CAPTION)
       .fontWeight(this.sleepMinutes === minutes ? FontWeight.Bold : FontWeight.Regular)
       .fontColor(this.sleepMinutes === minutes ? '#FFFFFF' : this.primaryTextColor())
       .textAlign(TextAlign.Center)

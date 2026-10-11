@@ -18,6 +18,7 @@ import { LocalBookService } from '../core/book/LocalBookService';
 import { BookDisplayHelper } from '../utils/BookDisplayHelper';
 import { BookCoverCache } from '../utils/BookCoverCache';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -688,7 +689,7 @@ struct BookshelfSettingsPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text('书架设置')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -704,7 +705,7 @@ struct BookshelfSettingsPage {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
@@ -724,10 +725,10 @@ struct BookshelfSettingsPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(desc)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }
@@ -753,10 +754,10 @@ struct BookshelfSettingsPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(desc)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }
@@ -766,7 +767,7 @@ struct BookshelfSettingsPage {
       Select(options)
         .selected(selected)
         .value(this.optionValue(options, selected))
-        .font({ size: 14 })
+        .font({ size: AppFontSize.BODY })
         .fontColor(this.subTextColor())
         .backgroundColor(Color.Transparent)
         .arrowPosition(ArrowPosition.END)
@@ -798,10 +799,10 @@ struct BookshelfSettingsPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(desc)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }
@@ -811,7 +812,7 @@ struct BookshelfSettingsPage {
       Select(this.albumOptions())
         .selected(this.albumSelectedIndex(dark))
         .value(this.optionValue(this.albumOptions(), this.albumSelectedIndex(dark)))
-        .font({ size: 14 })
+        .font({ size: AppFontSize.BODY })
         .fontColor(this.subTextColor())
         .backgroundColor(Color.Transparent)
         .arrowPosition(ArrowPosition.END)
@@ -848,7 +849,7 @@ struct BookshelfSettingsPage {
     Column({ space: 2 }) {
       if (this.targetBooksLoading) {
         Text('正在加载书籍...')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .width('100%')
           .height(48)
@@ -856,7 +857,7 @@ struct BookshelfSettingsPage {
           .textAlign(TextAlign.Start)
       } else if (this.books.length === 0) {
         Text('暂无可选择书籍')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .width('100%')
           .height(48)
@@ -866,7 +867,7 @@ struct BookshelfSettingsPage {
         ForEach(this.books, (book: Book) => {
           Row() {
             Text(book.name || '未命名书籍')
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.primaryTextColor())
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -899,10 +900,10 @@ struct BookshelfSettingsPage {
     Row() {
       Column() {
         Text('隐私书架')
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text('开启后书架左上角增加“隐私”入口；关闭后隐私书籍继续隐藏')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }
@@ -928,10 +929,10 @@ struct BookshelfSettingsPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(titleColor)
         Text(desc)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }
@@ -972,7 +973,7 @@ struct BookshelfSettingsPage {
   privatePasswordDialogContent() {
     Column() {
       Text(this.privatePasswordDialogMode === 'disable' ? '关闭隐私书架' : '隐私书架密码')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
@@ -1000,7 +1001,7 @@ struct BookshelfSettingsPage {
 
       if (this.privatePasswordError) {
         Text(this.privatePasswordError)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor('#E53935')
           .width('100%')
       }
@@ -1033,10 +1034,10 @@ struct BookshelfSettingsPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(desc)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }

@@ -4,6 +4,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -40,11 +41,11 @@ struct AboutPage {
           .margin({ top: 28, bottom: 14 })
 
           Text('开源轻页')
-            .fontSize(22)
+            .fontSize(AppFontSize.HEADLINE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
           Text(this.appVersionName || '-')
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
             .margin({ top: 6, bottom: 24 })
 
@@ -69,7 +70,7 @@ struct AboutPage {
 
           Column() {
             Text('请仅使用自有、授权或明确允许访问的内容与规则。')
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
               .textAlign(TextAlign.Center)
           }
@@ -90,7 +91,7 @@ struct AboutPage {
           onBack: () => router.back() })
 
         Text('关于')
-          .fontSize(20)
+          .fontSize(AppFontSize.TITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
@@ -112,12 +113,12 @@ struct AboutPage {
   infoCard(title: string, content: string) {
     Column() {
       Text(title)
-        .fontSize(16)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.primaryTextColor())
         .width('100%')
       Text(content)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .lineHeight(22)
         .width('100%')
@@ -135,7 +136,7 @@ struct AboutPage {
   feedbackCard() {
     Column() {
       Text('问题反馈')
-        .fontSize(16)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Medium)
         .fontColor(this.primaryTextColor())
         .width('100%')
@@ -161,11 +162,11 @@ struct AboutPage {
   feedbackRow(label: string, value: string, action: () => void) {
     Row() {
       Text(`${label}：`)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width(76)
       Text(value)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.accentColor())
     }
     .width('100%')
@@ -183,18 +184,18 @@ struct AboutPage {
     Row() {
       Column() {
         Text('开源许可')
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
           .width('100%')
         Text('开源轻页采用 GPL-3.0 许可证，并包含适用 MIT、Apache-2.0 许可证的第三方组件。')
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.secondaryTextColor())
           .lineHeight(22)
           .width('100%')
           .margin({ top: 8 })
         Text('查看主项目源码信息、版权声明和完整许可文本')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.accentColor())
           .width('100%')
           .margin({ top: 8 })

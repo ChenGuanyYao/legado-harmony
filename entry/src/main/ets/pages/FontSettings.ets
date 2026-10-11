@@ -8,6 +8,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AppFontSize } from '../theme/AppFontSize';
 
 class ReaderCustomFontItem {
   familyName: string = '';
@@ -468,7 +469,7 @@ struct FontSettingsPage {
         onBack: () => router.back() })
 
       Text('字体设置')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -485,7 +486,7 @@ struct FontSettingsPage {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
@@ -495,14 +496,14 @@ struct FontSettingsPage {
   fontSettingPanel() {
     Row() {
       Text('全局字体设置')
-        .fontSize(16)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
 
       Select(this.readerFontOptions())
         .selected(this.readerFontSelectedIndex())
         .value(this.readerFontValue())
-        .font({ size: 14 })
+        .font({ size: AppFontSize.BODY })
         .fontColor(this.subTextColor())
         .backgroundColor(Color.Transparent)
         .arrowPosition(ArrowPosition.END)
@@ -535,10 +536,10 @@ struct FontSettingsPage {
     Row() {
       Text('自定义字体')
         .fontColor(this.primaryTextColor())
-        .fontSize(16)
+        .fontSize(AppFontSize.BODY_LARGE)
         .layoutWeight(1)
       Text('上传 / 删除')
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .margin({ right: 8 })
       SymbolGlyph($r('sys.symbol.chevron_right'))

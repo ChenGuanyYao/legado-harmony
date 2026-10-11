@@ -4,6 +4,7 @@ import { webview } from '@kit.ArkWeb';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -29,7 +30,7 @@ struct HelpPage {
           onBack: () => router.back() })
 
         Text('使用说明')
-          .fontSize(20)
+          .fontSize(AppFontSize.TITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)

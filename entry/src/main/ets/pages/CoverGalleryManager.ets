@@ -12,6 +12,7 @@ import { RecentReadCardUpdater } from '../utils/RecentReadCardUpdater';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
+import { AppFontSize } from '../theme/AppFontSize';
 
 class CoverGalleryExportResult {
   zipPath: string = '';
@@ -596,12 +597,12 @@ struct CoverGalleryManagerPage {
           router.back();
         } })
       Text('封面图集')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
 
       Text(`${this.albumCount} 个图集`)
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor('#FFFFFF')
         .padding({ left: 10, right: 10, top: 4, bottom: 4 })
         .borderRadius(ThemeRuntime.smallRadius())
@@ -622,7 +623,7 @@ struct CoverGalleryManagerPage {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
@@ -632,18 +633,18 @@ struct CoverGalleryManagerPage {
   summaryPanel() {
     Column({ space: 14 }) {
       Text(`当前：${this.selectedAlbumName()}`)
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .width('100%')
 
       Row({ space: 8 }) {
         Column() {
           Text(`${this.totalCoverSize}`)
-            .fontSize(18)
+            .fontSize(AppFontSize.SUBTITLE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
           Text('图片总数')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
             .margin({ top: 3 })
         }
@@ -654,11 +655,11 @@ struct CoverGalleryManagerPage {
 
         Column() {
           Text(`${this.selectedAlbumCoverSize}`)
-            .fontSize(18)
+            .fontSize(AppFontSize.SUBTITLE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
           Text('当前图集')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
             .margin({ top: 3 })
         }
@@ -678,13 +679,13 @@ struct CoverGalleryManagerPage {
   albumSectionTitle() {
     Row({ space: 8 }) {
       Text('图集')
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
 
       Button('新建')
         .height(28)
         .width(64)
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .backgroundColor(this.buttonColor())
         .fontColor('#FFFFFF')
         .onClick(() => {
@@ -714,10 +715,10 @@ struct CoverGalleryManagerPage {
     } else {
       Column() {
         Text('暂无图集')
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text('新建图集后，可上传图片或 ZIP 压缩包。')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .margin({ top: 6 })
       }
@@ -734,13 +735,13 @@ struct CoverGalleryManagerPage {
 
       Column() {
         Text(album.name)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(`${album.covers.length} 张图片`)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }
@@ -749,14 +750,14 @@ struct CoverGalleryManagerPage {
 
       if (this.selectedAlbumId === album.id) {
         Text('已选')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.accentColor())
           .padding({ left: 8, right: 8, top: 4, bottom: 4 })
           .borderRadius(ThemeRuntime.smallRadius())
           .backgroundColor(this.selectedColor())
       } else {
         Text('选择')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
       }
     }
@@ -787,7 +788,7 @@ struct CoverGalleryManagerPage {
           .borderRadius(6)
       } else {
         Text('封')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontColor(this.subTextColor())
       }
     }
@@ -833,7 +834,7 @@ struct CoverGalleryManagerPage {
   @Builder
   actionButton(title: string, color: string, action: () => void) {
     Button(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor('#FFFFFF')
       .height(38)
       .layoutWeight(1)
@@ -858,7 +859,7 @@ struct CoverGalleryManagerPage {
       .width('100%')
     } else {
       Text('当前图集还没有图片。')
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .width('100%')
       .padding({ top: 8, bottom: 4 })
@@ -909,7 +910,7 @@ struct CoverGalleryManagerPage {
   createAlbumDialogContent() {
     Column({ space: 14 }) {
       Text('新建图集')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
@@ -954,14 +955,14 @@ struct CoverGalleryManagerPage {
   deleteAlbumConfirmDialogContent() {
     Column({ space: 14 }) {
       Text('删除图集')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
 
       Text(`确定删除《${this.selectedAlbumName()}》吗？`)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .lineHeight(22)
         .width('100%')
@@ -996,11 +997,11 @@ struct CoverGalleryManagerPage {
       Row() {
         Column() {
           Text('管理图片')
-            .fontSize(18)
+            .fontSize(AppFontSize.SUBTITLE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
           Text(`${this.selectedAlbumCoverSize} 张图片，已选 ${this.selectedImages.length} 张`)
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
             .margin({ top: 4 })
         }
@@ -1009,7 +1010,7 @@ struct CoverGalleryManagerPage {
 
         Button('关闭')
           .height(34)
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .backgroundColor(this.inputColor())
           .fontColor(this.primaryTextColor())
           .onClick(() => {
@@ -1041,7 +1042,7 @@ struct CoverGalleryManagerPage {
       } else {
         Column() {
           Text('当前图集还没有图片。')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
         }
         .width('100%')
@@ -1059,7 +1060,7 @@ struct CoverGalleryManagerPage {
   imageManageButton(title: string, color: string, action: () => void) {
     Button(title)
       .height(36)
-      .fontSize(12)
+      .fontSize(AppFontSize.CAPTION)
       .layoutWeight(1)
       .fontColor('#FFFFFF')
       .backgroundColor(color)
@@ -1079,7 +1080,7 @@ struct CoverGalleryManagerPage {
       if (this.isImageSelected(cover)) {
         Column() {
           Text('✓')
-            .fontSize(24)
+            .fontSize(AppFontSize.HEADLINE)
             .fontColor('#FFFFFF')
         }
         .width(66)

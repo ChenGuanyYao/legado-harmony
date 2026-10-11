@@ -10,6 +10,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AppFontSize } from '../theme/AppFontSize';
 
 /**
  * Restricted bridge used only by HTML passed to java.showBrowser(). Remote pages do not receive
@@ -237,13 +238,13 @@ struct VerifyWebPage {
 
         Column() {
           Text(this.title)
-            .fontSize(18)
+            .fontSize(AppFontSize.SUBTITLE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Text(this.currentUrl)
-            .fontSize(11)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -252,7 +253,7 @@ struct VerifyWebPage {
         .alignItems(HorizontalAlign.Start)
 
         Text('完成')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.accentColor())
           .width(56)
           .height(56)

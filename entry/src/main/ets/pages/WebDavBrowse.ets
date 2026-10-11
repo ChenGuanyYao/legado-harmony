@@ -14,6 +14,7 @@ import { WebDavSecretStore } from '../webdav/WebDavSecretStore';
 import { WebDavSettingsStore } from '../webdav/WebDavSettingsStore';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -106,7 +107,7 @@ struct WebDavBrowsePage {
             .width('100%')
             .color(this.accentColor())
           Text(this.busyText || '处理中...')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.primaryTextColor())
         }
         .width('78%')
@@ -131,7 +132,7 @@ struct WebDavBrowsePage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text(this.currentTitle())
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .maxLines(1)
@@ -155,7 +156,7 @@ struct WebDavBrowsePage {
         .fontSize(42)
         .fontColor([this.subTextColor()])
       Text(this.errorMessage || '连接配置不存在')
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .textAlign(TextAlign.Center)
       if (this.connectionMissing) {
@@ -183,18 +184,18 @@ struct WebDavBrowsePage {
         if (this.currentPath) {
           Button('上一级')
             .height(34)
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.accentColor())
             .backgroundColor(this.softColor())
             .onClick(() => this.goParent())
         }
         Column() {
           Text(this.connection.name)
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.primaryTextColor())
           Text(this.currentPath ? `/${this.currentPath}` : '/')
-            .fontSize(11)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -217,7 +218,7 @@ struct WebDavBrowsePage {
             .fontSize(40)
             .fontColor([this.subTextColor()])
           Text('这个目录还是空的')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
             .textAlign(TextAlign.Center)
         }
@@ -240,12 +241,12 @@ struct WebDavBrowsePage {
                   .fontColor([entry.directory ? this.accentColor() : this.subTextColor()])
                 Column({ space: 4 }) {
                   Text(entry.name)
-                    .fontSize(15)
+                    .fontSize(AppFontSize.BODY_LARGE)
                     .fontColor(this.primaryTextColor())
                     .maxLines(2)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                   Text(entry.directory ? '文件夹' : this.fileDescription(entry))
-                    .fontSize(11)
+                    .fontSize(AppFontSize.CAPTION)
                     .fontColor(this.subTextColor())
                 }
                 .layoutWeight(1)
@@ -288,7 +289,7 @@ struct WebDavBrowsePage {
   fileToolbarButton(label: string, action: () => void) {
     Button(label)
       .height(34)
-      .fontSize(12)
+      .fontSize(AppFontSize.CAPTION)
       .fontColor(this.accentColor())
       .backgroundColor(this.softColor())
       .padding({ left: 10, right: 10 })
@@ -334,7 +335,7 @@ struct WebDavBrowsePage {
         .fontColor([color])
         .width(24)
       Text(label)
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(color)
         .layoutWeight(1)
     }
@@ -367,7 +368,7 @@ struct WebDavBrowsePage {
   entryNameDialogContent() {
     Column() {
       Text(this.entryNameMode === 'create' ? '创建文件夹' : '重命名')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
@@ -516,14 +517,14 @@ struct WebDavBrowsePage {
           .fontColor([this.accentColor()])
         Column({ space: 4 }) {
           Text(this.fileDetailEntry.name || '未命名')
-            .fontSize(16)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
             .width('100%')
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Text(`/${this.fileDetailEntry.relativePath}`)
-            .fontSize(11)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
             .width('100%')
             .maxLines(1)
@@ -536,15 +537,15 @@ struct WebDavBrowsePage {
 
       Column({ space: 4 }) {
         Text(`格式：${this.fileDetailEntry.format().toUpperCase()}`)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .width('100%')
         Text(`大小：${this.formatSize(this.fileDetailEntry.size)}`)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .width('100%')
         Text(`修改时间：${this.formatDate(this.fileDetailEntry.lastModified)}`)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .width('100%')
       }
@@ -558,14 +559,14 @@ struct WebDavBrowsePage {
           Button('立即阅读')
             .layoutWeight(1)
             .height(42)
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor('#FFFFFF')
             .backgroundColor(this.accentColor())
             .onClick(() => this.readFileBookNow())
           Button('移出书架')
             .layoutWeight(1)
             .height(42)
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.primaryTextColor())
             .backgroundColor(this.softColor())
             .onClick(() => this.removeFileBook())
@@ -573,14 +574,14 @@ struct WebDavBrowsePage {
           Button('在线预览')
             .layoutWeight(1)
             .height(42)
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.primaryTextColor())
             .backgroundColor(this.softColor())
             .onClick(() => this.previewFileBook())
           Button('加入书架')
             .layoutWeight(1)
             .height(42)
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor('#FFFFFF')
             .backgroundColor(this.accentColor())
             .onClick(() => this.addFileBookToShelf())

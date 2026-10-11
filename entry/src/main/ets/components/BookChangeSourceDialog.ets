@@ -9,6 +9,7 @@ import { BookFieldSanitizer } from '../utils/BookFieldSanitizer';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppFontSize } from '../theme/AppFontSize';
 
 /**
  * 换源面板（书架长按"换源"与书籍详情页"换源"共用）。
@@ -311,11 +312,11 @@ export struct BookChangeSourceDialog {
         Row() {
           Column({ space: 3 }) {
             Text('换源')
-              .fontSize(19)
+              .fontSize(AppFontSize.TITLE)
               .fontWeight(FontWeight.Bold)
               .fontColor(this.primaryTextColor())
             Text(`《${this.targetBook?.name || ''}》`)
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -350,7 +351,7 @@ export struct BookChangeSourceDialog {
         .alignItems(VerticalAlign.Center)
 
         Text(this.status || '将使用当前书名进行全词匹配搜索')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .width('100%')
           .margin({ top: 8, bottom: 10 })
@@ -359,7 +360,7 @@ export struct BookChangeSourceDialog {
           Column({ space: 10 }) {
             LoadingProgress().width(36).height(36)
             Text('正在搜索可用书源...')
-              .fontSize(13)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
           }
           .width('100%')
@@ -367,7 +368,7 @@ export struct BookChangeSourceDialog {
           .justifyContent(FlexAlign.Center)
         } else if (this.results.length === 0) {
           Text('暂无可切换书源')
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.subTextColor())
             .width('100%')
             .height(260)
@@ -379,18 +380,18 @@ export struct BookChangeSourceDialog {
                 Row() {
                   Column({ space: 4 }) {
                     Text(book.originName || book.origin)
-                      .fontSize(15)
+                      .fontSize(AppFontSize.BODY_LARGE)
                       .fontWeight(FontWeight.Bold)
                       .fontColor(this.primaryTextColor())
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                     Text(`作者：${book.author || '未知'}`)
-                      .fontSize(12)
+                      .fontSize(AppFontSize.CAPTION)
                       .fontColor(this.subTextColor())
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                     Text(`最新：${book.latestChapterTitle || '书源未提供'}`)
-                      .fontSize(12)
+                      .fontSize(AppFontSize.CAPTION)
                       .fontColor(this.subTextColor())
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -401,7 +402,7 @@ export struct BookChangeSourceDialog {
                   Button(this.switching ? '切换中' : '切换')
                     .width(68)
                     .height(32)
-                    .fontSize(13)
+                    .fontSize(AppFontSize.BODY)
                     .borderRadius(16)
                     .backgroundColor(this.buttonColor())
                     .fontColor('#FFFFFF')
@@ -419,7 +420,7 @@ export struct BookChangeSourceDialog {
               ListItem() {
                 Row({ space: 8 }) {
                   LoadingProgress().width(20).height(20)
-                  Text('继续加载中...').fontSize(13).fontColor(this.subTextColor())
+                  Text('继续加载中...').fontSize(AppFontSize.BODY).fontColor(this.subTextColor())
                 }
                 .width('100%')
                 .height(42)

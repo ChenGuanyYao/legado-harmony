@@ -9,6 +9,7 @@ import fs from '@ohos.file.fs';
 import fileUri from '@ohos.file.fileuri';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AppFontSize } from '../theme/AppFontSize';
 
 class ReaderCustomFontItem {
   familyName: string = '';
@@ -556,7 +557,7 @@ struct CustomFontManagerPage {
         onBack: () => router.back() })
 
       Text('自定义字体')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -572,7 +573,7 @@ struct CustomFontManagerPage {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
@@ -583,10 +584,10 @@ struct CustomFontManagerPage {
     Row() {
       Column() {
         Text('上传字体')
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text('支持 ttf / otf / ttc，上传后会出现在阅读设置的字体下拉框中')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }
@@ -594,7 +595,7 @@ struct CustomFontManagerPage {
       .alignItems(HorizontalAlign.Start)
 
       Text('+')
-        .fontSize(24)
+        .fontSize(AppFontSize.HEADLINE)
         .fontColor('#FFFFFF')
         .textAlign(TextAlign.Center)
         .width(40)
@@ -616,10 +617,10 @@ struct CustomFontManagerPage {
   emptyPanel() {
     Column() {
       Text('还没有上传字体')
-        .fontSize(16)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.subTextColor())
       Text('点击上方上传按钮添加字体文件')
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .margin({ top: 6 })
     }
@@ -633,13 +634,13 @@ struct CustomFontManagerPage {
     Row() {
       Column() {
         Text(item.sourceName || item.familyName)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontFamily(this.previewFontFamily(item))
           .fontColor(this.primaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(item.filePath)
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -649,7 +650,7 @@ struct CustomFontManagerPage {
       .alignItems(HorizontalAlign.Start)
 
       Text('删除')
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor('#FFFFFF')
         .textAlign(TextAlign.Center)
         .width(54)

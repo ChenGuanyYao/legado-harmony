@@ -15,6 +15,7 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
 import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AppFontSize } from '../theme/AppFontSize';
 
 /** 未分组书架条目的分组 ID，必须与 SearchBookShelfHelper 里临时阅读书的写入值一致。 */
 const TEMP_SHELF_GROUP: number = -2147483645;
@@ -162,7 +163,7 @@ struct BookChapterListPage {
 
       Column() {
         Text(this.name || '目录')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .maxLines(1)
@@ -170,7 +171,7 @@ struct BookChapterListPage {
           .width('100%')
 
         Text(this.subtitleText())
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -199,7 +200,7 @@ struct BookChapterListPage {
         .backgroundColor(this.inputColor())
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .padding({ left: 14, right: 14 })
         .onChange((value: string): void => {
           this.keyword = value;
@@ -207,7 +208,7 @@ struct BookChapterListPage {
         })
 
       Text(this.reverseOrder ? '倒序' : '正序')
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.accentColor())
         .padding({ left: 13, right: 13, top: 10, bottom: 10 })
         .backgroundColor(this.inputColor())
@@ -233,7 +234,7 @@ struct BookChapterListPage {
       }
 
       Text(message)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .textAlign(TextAlign.Center)
         .lineHeight(22)
@@ -261,7 +262,7 @@ struct BookChapterListPage {
     if (this.displayedCount === 0) {
       Column() {
         Text('没有匹配的章节')
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
       }
       .width('100%')
@@ -275,13 +276,13 @@ struct BookChapterListPage {
           ListItem() {
             Row({ space: 10 }) {
               Text(`${chapter.index + 1}`)
-                .fontSize(12)
+                .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.subTextColor())
                 .width(40)
                 .textAlign(TextAlign.End)
 
               Text(chapter.title || `第${chapter.index + 1}章`)
-                .fontSize(15)
+                .fontSize(AppFontSize.BODY_LARGE)
                 .fontWeight(chapter.index === this.currentIndex ? FontWeight.Medium : FontWeight.Regular)
                 .fontColor(chapter.index === this.currentIndex ? this.accentColor() : this.primaryTextColor())
                 .maxLines(2)
@@ -290,7 +291,7 @@ struct BookChapterListPage {
 
               if (chapter.cacheDate > 0) {
                 Text('已缓存')
-                  .fontSize(10)
+                  .fontSize(AppFontSize.MICRO)
                   .fontColor(this.appDarkMode ? '#7CC7A0' : '#1F8F55')
                   .padding({ left: 7, right: 7, top: 3, bottom: 3 })
                   .backgroundColor(this.appDarkMode ? '#24382F' : '#E6F4EC')

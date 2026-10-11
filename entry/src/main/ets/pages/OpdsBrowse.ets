@@ -22,6 +22,7 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
+import { AppFontSize } from '../theme/AppFontSize';
 
 class OpdsNavFrame {
   url: string = '';
@@ -179,13 +180,13 @@ struct OpdsBrowsePage {
             .width('100%')
             .color(this.accentColor())
           Text(this.downloadText || '正在下载...')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.primaryTextColor())
             .maxLines(2)
             .textAlign(TextAlign.Center)
           Button('取消')
             .height(36)
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.primaryTextColor())
             .backgroundColor(this.softColor())
             .onClick(() => this.cancelActiveDownload())
@@ -214,7 +215,7 @@ struct OpdsBrowsePage {
         this.searchBar()
       } else {
         Text(this.currentTitle())
-          .fontSize(20)
+          .fontSize(AppFontSize.TITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .maxLines(1)
@@ -245,13 +246,13 @@ struct OpdsBrowsePage {
           .fontSize(16)
           .fontColor([this.accentColor()])
         Text(this.searchLabel)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
         Text('修改')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.accentColor())
           .padding(8)
           .onClick(() => {
@@ -266,7 +267,7 @@ struct OpdsBrowsePage {
           controller: this.searchController })
           .layoutWeight(1)
           .height(38)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.primaryTextColor())
           .placeholderColor(this.subTextColor())
           .backgroundColor(this.softColor())
@@ -279,7 +280,7 @@ struct OpdsBrowsePage {
             this.submitSearch();
           })
         Text('取消')
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .padding(8)
           .onClick(() => this.exitSearch())
@@ -302,7 +303,7 @@ struct OpdsBrowsePage {
             .height(32)
             .color(this.accentColor())
           Text('加载中...')
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
         }
         .width('100%')
@@ -314,7 +315,7 @@ struct OpdsBrowsePage {
             .fontSize(40)
             .fontColor([this.subTextColor()])
           Text(this.emptyHint)
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
             .textAlign(TextAlign.Center)
         }
@@ -337,7 +338,7 @@ struct OpdsBrowsePage {
           Row({ space: 8 }) {
             ForEach(group.links, (link: OpdsLink) => {
               Text(this.facetLabel(group, link))
-                .fontSize(12)
+                .fontSize(AppFontSize.CAPTION)
                 .fontColor(link.activeFacet ? '#FFFFFF' : this.primaryTextColor())
                 .padding({ left: 10, right: 10, top: 5, bottom: 5 })
                 .backgroundColor(link.activeFacet ? this.accentColor() : this.softColor())
@@ -377,7 +378,7 @@ struct OpdsBrowsePage {
               .height(18)
               .color(this.accentColor())
             Text('加载中...')
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
           }
           .width('100%')
@@ -387,7 +388,7 @@ struct OpdsBrowsePage {
       } else if (!this.hasMore) {
         ListItem() {
           Text('没有更多了')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
             .width('100%')
             .height(40)
@@ -424,14 +425,14 @@ struct OpdsBrowsePage {
         .fontColor([this.accentColor()])
       Column({ space: 4 }) {
         Text(entry.title || '未命名目录')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
         if (this.navSubtitle(entry)) {
           Text(this.navSubtitle(entry))
-            .fontSize(11)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -458,13 +459,13 @@ struct OpdsBrowsePage {
       this.entryCover(entry)
       Column({ space: 4 }) {
         Text(entry.title || '未命名')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
         Text(entry.displayAuthor() || entry.publisher || '作者未知')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -474,7 +475,7 @@ struct OpdsBrowsePage {
       .alignItems(HorizontalAlign.Start)
       if (this.bookFormatLabel(entry)) {
         Text(this.bookFormatLabel(entry))
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.accentColor())
           .padding({ left: 8, right: 8, top: 4, bottom: 4 })
           .backgroundColor(this.softColor())
@@ -494,7 +495,7 @@ struct OpdsBrowsePage {
     Stack() {
       Column() {
         Text((entry.title || '书').substring(0, 1))
-          .fontSize(22)
+          .fontSize(AppFontSize.HEADLINE)
           .fontColor('#FFFFFF')
       }
       .width(48)
@@ -523,7 +524,7 @@ struct OpdsBrowsePage {
         .fontSize(42)
         .fontColor([this.subTextColor()])
       Text(this.errorMessage || '服务器配置不存在')
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .textAlign(TextAlign.Center)
       if (this.serverMissing) {
@@ -558,13 +559,13 @@ struct OpdsBrowsePage {
           this.detailCoverView()
           Column({ space: 6 }) {
             Text(this.detailEntry.title || '未命名')
-              .fontSize(17)
+              .fontSize(AppFontSize.SUBTITLE)
               .fontWeight(FontWeight.Bold)
               .fontColor(this.primaryTextColor())
               .width('100%')
             if (this.detailEntry.displayAuthor()) {
               Text(this.detailEntry.displayAuthor())
-                .fontSize(13)
+                .fontSize(AppFontSize.BODY)
                 .fontColor(this.subTextColor())
                 .width('100%')
                 .maxLines(2)
@@ -572,7 +573,7 @@ struct OpdsBrowsePage {
             }
             if (this.detailEntry.publisher) {
               Text(`出版社：${this.detailEntry.publisher}`)
-                .fontSize(12)
+                .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.subTextColor())
                 .width('100%')
                 .maxLines(1)
@@ -580,7 +581,7 @@ struct OpdsBrowsePage {
             }
             if (this.detailEntry.series) {
               Text(`系列：${this.detailEntry.series}`)
-                .fontSize(12)
+                .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.subTextColor())
                 .width('100%')
                 .maxLines(1)
@@ -588,7 +589,7 @@ struct OpdsBrowsePage {
             }
             if (this.detailEntry.language) {
               Text(`语言：${this.detailEntry.language}`)
-                .fontSize(12)
+                .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.subTextColor())
                 .width('100%')
                 .maxLines(1)
@@ -603,14 +604,14 @@ struct OpdsBrowsePage {
         if (this.detailText) {
           Column({ space: 6 }) {
             Text(this.detailText)
-              .fontSize(13)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.primaryTextColor())
               .width('100%')
               .maxLines(this.detailTextExpanded ? 100 : 8)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
             if (this.detailTextLong) {
               Text(this.detailTextExpanded ? '收起' : '展开')
-                .fontSize(12)
+                .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.accentColor())
                 .width('100%')
                 .onClick(() => {
@@ -628,7 +629,7 @@ struct OpdsBrowsePage {
 
         if (this.downloadRows.length > 0) {
           Text('获取本书')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.primaryTextColor())
             .width('100%')
@@ -637,7 +638,7 @@ struct OpdsBrowsePage {
           }, (row: OpdsDownloadRow) => row.key)
         } else {
           Text('该书库没有提供获取链接')
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
             .width('100%')
         }
@@ -682,14 +683,14 @@ struct OpdsBrowsePage {
         Button('立即阅读')
           .layoutWeight(1)
           .height(42)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor('#FFFFFF')
           .backgroundColor(this.accentColor())
           .onClick(() => this.readDetailBook())
         Button('移出书架')
           .layoutWeight(1)
           .height(42)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.primaryTextColor())
           .backgroundColor(this.softColor())
           .onClick(() => this.removeDetailBook())
@@ -697,20 +698,20 @@ struct OpdsBrowsePage {
         Button('在线预览')
           .layoutWeight(1)
           .height(42)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.primaryTextColor())
           .backgroundColor(this.softColor())
           .onClick(() => this.startBestPreview())
         Button('加入书架')
           .layoutWeight(1)
           .height(42)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor('#FFFFFF')
           .backgroundColor(this.accentColor())
           .onClick(() => this.addBestToShelf())
       } else if (this.downloadRows.length > 0) {
         Text('该获取方式暂不支持，请到书库网页端操作')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .width('100%')
           .textAlign(TextAlign.Center)
@@ -827,18 +828,18 @@ struct OpdsBrowsePage {
   downloadRowView(row: OpdsDownloadRow) {
     Row({ space: 8 }) {
       Text(row.formatLabel)
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.accentColor())
         .padding({ left: 8, right: 8, top: 3, bottom: 3 })
         .backgroundColor(this.softColor())
         .borderRadius(ThemeRuntime.mediumRadius())
       if (row.sizeText) {
         Text(row.sizeText)
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
       }
       Text(row.kindLabel)
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
         .layoutWeight(1)
         .maxLines(1)

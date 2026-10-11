@@ -4,6 +4,7 @@ import { util } from '@kit.ArkTS';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -29,7 +30,7 @@ struct OpenSourceLicensesPage {
         Column() {
           Column() {
             Text('开源轻页采用 GPL-3.0 许可证，并包含 ohos_quickjs、QuickJS 和部分 OpenHarmony/Huawei N-API 封装代码。以下源码信息、版权声明与完整许可文本随 HAP 一同分发。')
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.secondaryTextColor())
               .lineHeight(22)
               .width('100%')
@@ -43,7 +44,7 @@ struct OpenSourceLicensesPage {
 
           Column() {
             Text(this.licenseText)
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.primaryTextColor())
               .lineHeight(19)
               .width('100%')
@@ -70,7 +71,7 @@ struct OpenSourceLicensesPage {
           onBack: () => router.back() })
 
         Text('开源软件许可')
-          .fontSize(20)
+          .fontSize(AppFontSize.TITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)

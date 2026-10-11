@@ -12,6 +12,7 @@ import { WebDavSettingsStore } from '../webdav/WebDavSettingsStore';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -91,7 +92,7 @@ struct WebDavPage {
             .width('100%')
             .color(this.accentColor())
           Text(this.busyText || '处理中...')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.primaryTextColor())
         }
         .width('78%')
@@ -116,7 +117,7 @@ struct WebDavPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text('WebDAV')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -176,7 +177,7 @@ struct WebDavPage {
 
           ListItem() {
             Text('仅支持下载 TXT / EPUB 格式')
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
               .width('100%')
               .textAlign(TextAlign.Center)
@@ -203,25 +204,25 @@ struct WebDavPage {
         .fontColor([this.accentColor()])
       Column({ space: 4 }) {
         Text(connection.name)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(connection.baseUrl)
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Row({ space: 8 }) {
           if (connection.username) {
             Text(`账号：${connection.username}`)
-              .fontSize(11)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
           Text(connection.enabled ? '已启用' : '已停用')
-            .fontSize(11)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(connection.enabled ? this.subTextColor() : '#D9485F')
         }
       }
@@ -276,7 +277,7 @@ struct WebDavPage {
         .fontSize(22)
         .fontColor(['#FFFFFF'])
       Text('编辑')
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor('#FFFFFF')
     }
     .width(64)
@@ -296,7 +297,7 @@ struct WebDavPage {
         .fontSize(22)
         .fontColor(['#FFFFFF'])
       Text('删除')
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor('#FFFFFF')
     }
     .width(64)
@@ -316,7 +317,7 @@ struct WebDavPage {
         .fontSize(42)
         .fontColor([this.accentColor()])
       Text('点击右下角添加 WebDAV 服务')
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .textAlign(TextAlign.Center)
     }
@@ -367,7 +368,7 @@ struct WebDavPage {
         .fontColor([color])
         .width(24)
       Text(label)
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(color)
         .layoutWeight(1)
     }
@@ -402,7 +403,7 @@ struct WebDavPage {
   connectionEditorDialogContent() {
     Column({ space: 12 }) {
       Text(this.editingConnectionId ? '编辑连接' : '添加连接')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
@@ -410,7 +411,7 @@ struct WebDavPage {
       Scroll() {
         Column({ space: 12 }) {
           Column({ space: 6 }) {
-            Text('名称').fontSize(13).fontColor(this.subTextColor()).width('100%')
+            Text('名称').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
             TextInput({ text: this.draftName, placeholder: '例如：我的云盘' })
               .width('100%')
               .height(44)
@@ -423,7 +424,7 @@ struct WebDavPage {
           }
           .width('100%')
           Column({ space: 6 }) {
-            Text('服务器地址').fontSize(13).fontColor(this.subTextColor()).width('100%')
+            Text('服务器地址').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
             TextInput({ text: this.draftBaseUrl, placeholder: 'http://192.168.1.10:8080/webdav' })
               .width('100%')
               .height(44)
@@ -436,7 +437,7 @@ struct WebDavPage {
           }
           .width('100%')
           Column({ space: 6 }) {
-            Text('书籍目录').fontSize(13).fontColor(this.subTextColor()).width('100%')
+            Text('书籍目录').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
             TextInput({ text: this.draftLibraryRoot, placeholder: '留空表示 WebDAV 根目录' })
               .width('100%')
               .height(44)
@@ -449,7 +450,7 @@ struct WebDavPage {
           }
           .width('100%')
           Column({ space: 6 }) {
-            Text('用户名').fontSize(13).fontColor(this.subTextColor()).width('100%')
+            Text('用户名').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
             TextInput({ text: this.draftUsername, placeholder: 'WebDAV 用户名' })
               .width('100%')
               .height(44)
@@ -462,7 +463,7 @@ struct WebDavPage {
           }
           .width('100%')
           Column({ space: 6 }) {
-            Text('密码').fontSize(13).fontColor(this.subTextColor()).width('100%')
+            Text('密码').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
             TextInput({ text: this.draftPassword, placeholder: '密码 / 应用专用密码' })
               .type(InputType.Password)
               .width('100%')
@@ -477,7 +478,7 @@ struct WebDavPage {
           .width('100%')
           Row() {
             Text('记住密码')
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.primaryTextColor())
               .layoutWeight(1)
             AdaptiveSwitch({

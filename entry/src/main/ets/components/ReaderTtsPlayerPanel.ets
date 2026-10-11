@@ -2,6 +2,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import deviceInfo from '@ohos.deviceInfo';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Component
 export struct ReaderTtsPlayerPanel {
@@ -100,13 +101,13 @@ export struct ReaderTtsPlayerPanel {
       }
       Column({ space: 3 }) {
         Text(this.globalTtsBookName || '快速朗读')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(this.globalTtsChapterTitle || this.globalTtsChapterProgress)
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -131,7 +132,7 @@ export struct ReaderTtsPlayerPanel {
       if (this.globalTtsMode === 'audio') {
         Scroll() {
           Text(this.globalTtsContent || '暂无书籍简介')
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .lineHeight(25)
             .fontColor(this.primaryTextColor)
             .copyOption(CopyOptions.LocalDevice)
@@ -147,14 +148,14 @@ export struct ReaderTtsPlayerPanel {
         List({ scroller: this.textScroller, space: 8 }) {
           ListItem() {
             Text(this.globalTtsTextBefore)
-              .fontSize(15)
+              .fontSize(AppFontSize.BODY_LARGE)
               .lineHeight(25)
               .fontColor(this.subTextColor)
               .width('100%')
           }
           ListItem() {
             Text(this.globalTtsCurrentText || '正在定位当前朗读内容…')
-              .fontSize(16)
+              .fontSize(AppFontSize.BODY_LARGE)
               .fontWeight(FontWeight.Medium)
               .lineHeight(26)
               .fontColor(this.primaryTextColor)
@@ -165,7 +166,7 @@ export struct ReaderTtsPlayerPanel {
           }
           ListItem() {
             Text(this.globalTtsTextAfter || (this.globalTtsContent ? '' : '正在准备当前朗读内容…'))
-              .fontSize(15)
+              .fontSize(AppFontSize.BODY_LARGE)
               .lineHeight(25)
               .fontColor(this.subTextColor)
               .width('100%')
@@ -179,12 +180,12 @@ export struct ReaderTtsPlayerPanel {
       }
       Row() {
         Text(this.globalTtsChapterProgress || (this.globalTtsMode === 'audio' ? '后台听书' : '正在朗读'))
-          .fontSize(10)
+          .fontSize(AppFontSize.MICRO)
           .fontColor(this.subTextColor)
           .layoutWeight(1)
         if (this.globalTtsVoiceCode) {
           Text(this.globalTtsVoiceCode)
-            .fontSize(10)
+            .fontSize(AppFontSize.MICRO)
             .fontColor(this.subTextColor)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -269,7 +270,7 @@ export struct ReaderTtsPlayerPanel {
           .fontColor(['#FFFFFF'])
       }
       Text(this.globalTtsPaused ? '播放' : '暂停')
-        .fontSize(10)
+        .fontSize(AppFontSize.MICRO)
         .fontColor(this.subTextColor)
     }
     .layoutWeight(1)
@@ -287,7 +288,7 @@ export struct ReaderTtsPlayerPanel {
           .fontSize(19)
           .fontColor([enabled ? this.primaryTextColor : this.subTextColor])
       }
-      Text(label).fontSize(10).fontColor(this.subTextColor)
+      Text(label).fontSize(AppFontSize.MICRO).fontColor(this.subTextColor)
     }
     .layoutWeight(1)
     .height(68)
@@ -305,7 +306,7 @@ export struct ReaderTtsPlayerPanel {
           .fontSize(19)
           .fontColor([this.primaryTextColor])
       }
-      Text(`${this.globalTtsSpeed.toFixed(1)}x`).fontSize(10).fontColor(this.subTextColor)
+      Text(`${this.globalTtsSpeed.toFixed(1)}x`).fontSize(AppFontSize.MICRO).fontColor(this.subTextColor)
     }
     .layoutWeight(1)
     .height(68)
@@ -341,7 +342,7 @@ export struct ReaderTtsPlayerPanel {
   @Builder
   speedChip(value: number) {
     Text(`${value.toFixed(1)}x`)
-      .fontSize(11)
+      .fontSize(AppFontSize.CAPTION)
       .fontWeight(Math.abs(this.globalTtsSpeed - value) < 0.01 ? FontWeight.Bold : FontWeight.Regular)
       .fontColor(Math.abs(this.globalTtsSpeed - value) < 0.01 ? '#FFFFFF' : this.primaryTextColor)
       .textAlign(TextAlign.Center)
@@ -356,7 +357,7 @@ export struct ReaderTtsPlayerPanel {
   @Builder
   timerChip(minutes: number, label: string) {
     Text(label)
-      .fontSize(11)
+      .fontSize(AppFontSize.CAPTION)
       .fontWeight(this.globalTtsTimerMinutes === minutes ? FontWeight.Bold : FontWeight.Regular)
       .fontColor(this.globalTtsTimerMinutes === minutes ? '#FFFFFF' : this.primaryTextColor)
       .textAlign(TextAlign.Center)
@@ -408,7 +409,7 @@ export struct ReaderTtsPlayerPanel {
       .id(`shared_tts_voice_${this.globalTtsVoiceRevision}_${ReaderTtsFloatingSession.ttsVoiceIndex()}`)
       .selected(ReaderTtsFloatingSession.ttsVoiceIndex())
       .value(this.globalTtsVoiceCode)
-      .font({ size: 13 })
+      .font({ size: AppFontSize.BODY })
       .fontColor(this.primaryTextColor)
       // The API 26 branch fills its Stack by width; inside the legacy Row the
       // layoutWeight owns the main axis and this width is ignored, so both
@@ -458,9 +459,9 @@ export struct ReaderTtsPlayerPanel {
           }
         })
       Row() {
-        Text(this.formatAudioDuration(this.globalTtsAudioPositionMs)).fontSize(11).fontColor(this.subTextColor)
+        Text(this.formatAudioDuration(this.globalTtsAudioPositionMs)).fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor)
         Blank()
-        Text(this.formatAudioDuration(this.globalTtsAudioDurationMs)).fontSize(11).fontColor(this.subTextColor)
+        Text(this.formatAudioDuration(this.globalTtsAudioDurationMs)).fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor)
       }
       .width('100%')
     }
@@ -501,7 +502,7 @@ export struct ReaderTtsPlayerPanel {
         .fontSize(16)
         .fontColor([danger ? '#FFFFFF' : this.primaryTextColor])
       Text(label)
-        .fontSize(12)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(danger ? '#FFFFFF' : this.primaryTextColor)
         .maxLines(1)
     }
@@ -522,7 +523,7 @@ export struct ReaderTtsPlayerPanel {
         .fontSize(16)
         .fontColor([this.accentColor])
       Text(`音色 · ${this.globalTtsVoiceCode || '4'}`)
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.primaryTextColor)
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })

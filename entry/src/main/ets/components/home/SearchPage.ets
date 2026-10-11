@@ -13,6 +13,7 @@ import { SearchResultAggregationStore } from '../../utils/SearchResultAggregatio
 import { AppThemeSettingsStore } from '../../utils/AppThemeSettingsStore';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { AdaptiveSwitch } from '../AdaptiveSwitch';
+import { AppFontSize } from '../../theme/AppFontSize';
 
 /** 首页"搜索"页签：搜索输入、历史、多源搜索进度与结果。 */
 @Component
@@ -460,13 +461,13 @@ export struct SearchPage {
             .fontSize(14)
             .fontColor([this.buttonColor()])
           Text(`搜索范围：${this.searchScopeSummary()}`)
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.primaryTextColor())
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
           Text('选择')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.buttonColor())
         }
         .width('calc(100% - 32vp)')
@@ -483,7 +484,7 @@ export struct SearchPage {
         if (this.statusMessage) {
           Row() {
             Text(this.statusMessage)
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.secondaryTextColor())
               .layoutWeight(1)
               .textAlign(TextAlign.Center)
@@ -491,7 +492,7 @@ export struct SearchPage {
             if (this.verificationUrl) {
               Button('去验证')
                 .height(28)
-                .fontSize(12)
+                .fontSize(AppFontSize.CAPTION)
                 .borderRadius(14)
                 .backgroundColor(this.buttonColor())
                 .fontColor('#FFFFFF')
@@ -549,7 +550,7 @@ export struct SearchPage {
               .width(40)
               .height(40)
             Text('搜索中...')
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
               .margin({ top: 8 })
           }
@@ -560,7 +561,7 @@ export struct SearchPage {
         } else if (this.showResult && this.displayedSearchResults.length === 0) {
           Column() {
             Text('未找到相关书籍')
-              .fontSize(16)
+              .fontSize(AppFontSize.BODY_LARGE)
               .fontColor(this.subTextColor())
           }
           .width('100%')
@@ -570,7 +571,7 @@ export struct SearchPage {
         } else {
           Column() {
             Text('输入关键词搜索书籍')
-              .fontSize(16)
+              .fontSize(AppFontSize.BODY_LARGE)
               .fontColor(this.subTextColor())
           }
           .width('100%')
@@ -664,13 +665,13 @@ export struct SearchPage {
     Column() {
       Row() {
         Text('搜索历史')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
 
         Text('清除')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.secondaryTextColor())
           .height(32)
@@ -694,7 +695,7 @@ export struct SearchPage {
           ForEach(this.searchHistory, (keyword: string) => {
             Row() {
               Text(keyword)
-                .fontSize(14)
+                .fontSize(AppFontSize.BODY)
                 .fontColor(this.secondaryTextColor())
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -758,17 +759,17 @@ export struct SearchPage {
       Row() {
         Column({ space: 3 }) {
           Text('搜索范围')
-            .fontSize(18)
+            .fontSize(AppFontSize.SUBTITLE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
           Text(`已选 ${this.pendingSelectedSourceUrls().length} / ${this.searchableSources.length} 个书源`)
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
         Text('完成')
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.buttonColor())
           .height(36)
@@ -785,7 +786,7 @@ export struct SearchPage {
       TextInput({ placeholder: '搜索书源或分组', text: this.searchSourcePickerQuery })
         .width('100%')
         .height(40)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.subTextColor())
         .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode,
@@ -805,17 +806,17 @@ export struct SearchPage {
           .hitTestBehavior(HitTestMode.None)
         Column({ space: 2 }) {
           Text('全部书源')
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.primaryTextColor())
           Text(`已启用且支持搜索的 ${this.searchableSources.length} 个书源`)
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
         }
         .layoutWeight(1)
         .alignItems(HorizontalAlign.Start)
         Text(this.pendingSourceSelectionState(this.searchableSourceUrls()) === 2 ? '取消全选' : '全选')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.buttonColor())
       }
       .width('100%')
@@ -842,7 +843,7 @@ export struct SearchPage {
 
                 Column({ space: 2 }) {
                   Text(group)
-                    .fontSize(15)
+                    .fontSize(AppFontSize.BODY_LARGE)
                     .fontWeight(FontWeight.Medium)
                     .fontColor(this.primaryTextColor())
                     .maxLines(1)
@@ -850,7 +851,7 @@ export struct SearchPage {
                   Text(`${this.searchSourcesInGroup(group).filter((source: BookSource): boolean =>
                     this.pendingSelectedSourceUrls().includes(source.bookSourceUrl)).length} / ` +
                     `${this.searchSourcesInGroup(group).length} 个书源`)
-                    .fontSize(12)
+                    .fontSize(AppFontSize.CAPTION)
                     .fontColor(this.subTextColor())
                 }
                 .layoutWeight(1)
@@ -879,7 +880,7 @@ export struct SearchPage {
                       .selectedColor(this.buttonColor())
                       .hitTestBehavior(HitTestMode.None)
                     Text(source.bookSourceName || source.bookSourceUrl)
-                      .fontSize(14)
+                      .fontSize(AppFontSize.BODY)
                       .fontColor(this.secondaryTextColor())
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -901,7 +902,7 @@ export struct SearchPage {
         if (this.filteredSearchSourceGroups().length === 0) {
           ListItem() {
             Text('没有匹配的书源')
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
               .width('100%')
               .height(96)
@@ -1323,7 +1324,7 @@ export struct SearchPage {
 
       Column() {
         Text('搜索设置')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .width('100%')
@@ -1404,7 +1405,7 @@ export struct SearchPage {
   switchSettingRow(title: string, checked: boolean, onChange: (checked: boolean) => void) {
     Row() {
       Text(title)
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
 
@@ -1422,13 +1423,13 @@ export struct SearchPage {
   numberSettingRow(title: string, value: number, minValue: number, maxValue: number, onChange: (value: number) => void) {
     Row() {
       Text(title)
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
 
       Row() {
         Text('−')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontColor(this.primaryTextColor())
           .width(30)
           .height(30)
@@ -1437,12 +1438,12 @@ export struct SearchPage {
             onChange(Math.max(minValue, this.searchConcurrency - 1));
           })
         Text(`${this.searchConcurrency}`)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .width(42)
           .textAlign(TextAlign.Center)
         Text('+')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontColor(this.primaryTextColor())
           .width(30)
           .height(30)

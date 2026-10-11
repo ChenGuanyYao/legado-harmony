@@ -6,6 +6,7 @@ import { GlassPresetIds, GlassSettings, GlassSettingsStore } from '../utils/Glas
 import { syncSystemBars } from '../utils/SystemBars';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -227,7 +228,7 @@ struct GlassSettingsPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text('磨砂玻璃')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -271,7 +272,7 @@ struct GlassSettingsPage {
 
       Row() {
         Text(this.previewTitle())
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
           .padding({ left: 8, right: 8, top: 3, bottom: 3 })
@@ -322,8 +323,8 @@ struct GlassSettingsPage {
     Stack({ alignContent: Alignment.Center }) {
       this.previewBackdrop()
       Column({ space: 4 }) {
-        Text('内容面板').fontSize(16).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
-        Text('承载主要内容').fontSize(11).fontColor(this.subTextColor())
+        Text('内容面板').fontSize(AppFontSize.BODY_LARGE).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
+        Text('承载主要内容').fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor())
       }
       .width('78%')
       .padding(14)
@@ -341,8 +342,8 @@ struct GlassSettingsPage {
     Stack({ alignContent: Alignment.Center }) {
       this.previewBackdrop()
       Column({ space: 5 }) {
-        Text('弹出提示').fontSize(14).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
-        Text('这是浮在内容上方的弹出层').fontSize(10).fontColor(this.subTextColor())
+        Text('弹出提示').fontSize(AppFontSize.BODY).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
+        Text('这是浮在内容上方的弹出层').fontSize(AppFontSize.MICRO).fontColor(this.subTextColor())
       }
       .width('64%').padding(12).borderRadius(this.settings.cornerRadius)
       .backgroundColor(this.previewGlassColor(true))
@@ -358,7 +359,7 @@ struct GlassSettingsPage {
     Stack({ alignContent: Alignment.Center }) {
       this.previewBackdrop()
       Row({ space: 12 }) {
-        Button('Aa').width(48).height(48).fontSize(16)
+        Button('Aa').width(48).height(48).fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .backgroundColor(this.previewGlassColor())
           .backdropBlur(this.previewBlur())
@@ -366,7 +367,7 @@ struct GlassSettingsPage {
           .border({ width: this.settings.borderWidth, color: this.previewBorderColor() })
           .shadow({ color: this.previewShadowColor(), radius: this.previewShadowRadius(),
             offsetX: this.settings.shadowOffsetX, offsetY: this.settings.shadowOffsetY })
-        Button('操作').height(42).fontSize(13).fontColor(this.primaryTextColor())
+        Button('操作').height(42).fontSize(AppFontSize.BODY).fontColor(this.primaryTextColor())
           .backgroundColor(this.previewGlassColor())
           .backdropBlur(this.previewBlur())
           .borderRadius(this.settings.cornerRadius)
@@ -382,7 +383,7 @@ struct GlassSettingsPage {
     Stack({ alignContent: Alignment.Center }) {
       this.previewBackdrop()
       Column() {
-        Text('背景遮罩').fontSize(14).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
+        Text('背景遮罩').fontSize(AppFontSize.BODY).fontWeight(FontWeight.Bold).fontColor(this.primaryTextColor())
       }
       .width('88%').height('76%').justifyContent(FlexAlign.Center)
       .borderRadius(this.settings.cornerRadius)
@@ -415,13 +416,13 @@ struct GlassSettingsPage {
 
   @Builder
   previewMenuItem(title: string) {
-    Text(title).width('100%').height(28).fontSize(11).fontColor(this.primaryTextColor())
+    Text(title).width('100%').height(28).fontSize(AppFontSize.CAPTION).fontColor(this.primaryTextColor())
       .textAlign(TextAlign.Center)
   }
 
   @Builder
   sectionTitle(title: string) {
-    Text(title).fontSize(13).fontColor(this.subTextColor()).width('100%').padding({ left: 2, top: 6 })
+    Text(title).fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%').padding({ left: 2, top: 6 })
   }
 
   @Builder
@@ -439,7 +440,7 @@ struct GlassSettingsPage {
   presetButton(title: string, id: string) {
     Stack({ alignContent: Alignment.Center }) {
       Text(title)
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.selectedPresetId === id ? '#FFFFFF' : this.primaryTextColor())
     }
       .layoutWeight(1)
@@ -453,9 +454,9 @@ struct GlassSettingsPage {
   glassEnabledSwitch() {
     Row() {
       Column({ space: 3 }) {
-        Text('启用磨砂玻璃').fontSize(16).fontColor(this.primaryTextColor())
+        Text('启用磨砂玻璃').fontSize(AppFontSize.BODY_LARGE).fontColor(this.primaryTextColor())
         Text(this.settings.enabled ? '已启用，可选择预设或调整参数' : '已关闭，下方参数暂不可调整')
-          .fontSize(12).fontColor(this.subTextColor())
+          .fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor())
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -474,7 +475,7 @@ struct GlassSettingsPage {
   @Builder
   shadowSwitch() {
     Row() {
-      Text('显示悬浮阴影').fontSize(16).fontColor(this.primaryTextColor()).layoutWeight(1)
+      Text('显示悬浮阴影').fontSize(AppFontSize.BODY_LARGE).fontColor(this.primaryTextColor()).layoutWeight(1)
       AdaptiveSwitch({
         isOn: this.settings.shadowEnabled,
         onChange: (value: boolean) => { this.settings.shadowEnabled = value; this.changed(); }
@@ -487,8 +488,8 @@ struct GlassSettingsPage {
   performanceCard() {
     Row() {
       Column({ space: 3 }) {
-        Text('低性能模式').fontSize(16).fontColor(this.primaryTextColor())
-        Text('禁用实时模糊和阴影，列表较多时更流畅').fontSize(12).fontColor(this.subTextColor())
+        Text('低性能模式').fontSize(AppFontSize.BODY_LARGE).fontColor(this.primaryTextColor())
+        Text('禁用实时模糊和阴影，列表较多时更流畅').fontSize(AppFontSize.CAPTION).fontColor(this.subTextColor())
       }.layoutWeight(1).alignItems(HorizontalAlign.Start)
       AdaptiveSwitch({
         isOn: this.settings.lowPerformance,
@@ -502,8 +503,8 @@ struct GlassSettingsPage {
   sliderCard(title: string, key: string, min: number, max: number, step: number) {
     Column({ space: 4 }) {
       Row() {
-        Text(title).fontSize(15).fontColor(this.primaryTextColor()).layoutWeight(1)
-        Text(this.sliderDisplayValue(key)).fontSize(13).fontColor(this.accentColor())
+        Text(title).fontSize(AppFontSize.BODY_LARGE).fontColor(this.primaryTextColor()).layoutWeight(1)
+        Text(this.sliderDisplayValue(key)).fontSize(AppFontSize.BODY).fontColor(this.accentColor())
       }.width('100%')
       Row({ space: 10 }) {
         this.sliderStepButton($r('sys.symbol.minus'), '减小', this.sliderValue(key) > min, () => {

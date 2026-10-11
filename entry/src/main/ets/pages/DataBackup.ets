@@ -11,6 +11,7 @@ import {
 } from '../utils/AppDataBackupService';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -88,7 +89,7 @@ struct DataBackupPage {
             this.sectionTitle('选择导出内容')
             this.selectionCard(true)
             Text('备份将使用密码和 AES-256-GCM 加密；Cookie、密码、Token、授权信息及登录 Header 不会写入备份。')
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
               .width('calc(100% - 32vp)')
               .margin({ left: 16, right: 16, top: 10 })
@@ -112,7 +113,7 @@ struct DataBackupPage {
                 .onClick(() => this.chooseImportFile())
 
               Text(this.importDescription)
-                .fontSize(12)
+                .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.subTextColor())
                 .width('100%')
                 .margin({ top: 10 })
@@ -137,7 +138,7 @@ struct DataBackupPage {
             }
 
             Text('导入采用同类数据合并与覆盖方式，不会先清空整套应用数据。设置和自定义资源导入后建议重新启动应用。')
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
               .width('calc(100% - 32vp)')
               .margin({ left: 16, right: 16, top: 16 })
@@ -171,13 +172,13 @@ struct DataBackupPage {
               .height(42)
               .color(this.accentColor())
             Text(this.busyText || '正在处理...')
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.primaryTextColor())
               .textAlign(TextAlign.Center)
               .width('100%')
             if (this.busyProgress > 0) {
               Text(`${this.busyProgress}%`)
-                .fontSize(12)
+                .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.subTextColor())
             }
           }
@@ -205,7 +206,7 @@ struct DataBackupPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text(this.mode === 'import' ? '数据导入' : '数据导出')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -248,10 +249,10 @@ struct DataBackupPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(desc)
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 3 })
       }
@@ -275,7 +276,7 @@ struct DataBackupPage {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
@@ -323,14 +324,14 @@ struct DataBackupPage {
   passwordDialogContent(exporting: boolean) {
     Column() {
       Text(exporting ? '设置备份密码' : '输入备份密码')
-        .fontSize(19)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
 
       Text(exporting ? '密码至少 8 个字符。密码不会被保存，遗忘后无法恢复此备份。' :
         '该备份已加密，请输入创建备份时设置的密码。')
-        .fontSize(12)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
         .lineHeight(18)
         .width('100%')
@@ -365,7 +366,7 @@ struct DataBackupPage {
 
       if (this.passwordError) {
         Text(this.passwordError)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor('#E84026')
           .width('100%')
           .margin({ top: 9 })

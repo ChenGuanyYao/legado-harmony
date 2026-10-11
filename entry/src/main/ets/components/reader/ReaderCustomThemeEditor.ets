@@ -8,6 +8,7 @@ import { HdsFeedback } from '../../utils/HdsFeedback';
 import { AdaptiveColorPicker } from '../AdaptiveColorPicker';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { HexColor } from '../../utils/HexColor';
+import { AppFontSize } from '../../theme/AppFontSize';
 
 /**
  * 阅读页"自定义"配色的编辑器：多套方案的新增、删除、改名，背景色或背景图片，文字颜色。
@@ -188,7 +189,7 @@ export struct ReaderCustomThemeEditor {
         Select(this.schemes().map((item: ReaderCustomThemeScheme): SelectOption => ({ value: item.name })))
           .selected(this.selectedIndex())
           .value(this.scheme().name)
-          .font({ size: 14 })
+          .font({ size: AppFontSize.BODY })
           .fontColor(this.textColor)
           .backgroundColor(this.fieldColor())
           .borderRadius(16)
@@ -205,13 +206,13 @@ export struct ReaderCustomThemeEditor {
           .onSelect((index: number) => this.select(index))
         Button('新增')
           .height(36)
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .backgroundColor(this.accentColor)
           .fontColor('#FFFFFF')
           .onClick(() => this.add())
         Button('删除')
           .height(36)
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .backgroundColor(this.fieldColor())
           .fontColor(this.textColor)
           .onClick(() => this.removeCurrent())
@@ -219,7 +220,7 @@ export struct ReaderCustomThemeEditor {
       .width('100%')
 
       TextInput({ text: this.nameDraft, placeholder: '输入方案名称' })
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.textColor)
         .height(36)
         .padding({ left: 10, right: 10 })
@@ -233,13 +234,13 @@ export struct ReaderCustomThemeEditor {
 
       Row() {
         Text('背景设置')
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.textColor)
         Blank()
         Select([{ value: '背景色' }, { value: '背景图片' }])
           .selected(this.backgroundTypeIndex())
           .value(this.backgroundTypeIndex() === 1 ? '背景图片' : '背景色')
-          .font({ size: 14 })
+          .font({ size: AppFontSize.BODY })
           .fontColor(this.textColor)
           .backgroundColor(this.fieldColor())
           .borderRadius(16)
@@ -269,7 +270,7 @@ export struct ReaderCustomThemeEditor {
         Row({ space: 8 }) {
           Button(this.scheme().backgroundImageUri ? '更换背景图片' : '选择背景图片')
             .height(36)
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .backgroundColor(this.accentColor)
             .fontColor('#FFFFFF')
             .onClick(() => {
@@ -278,14 +279,14 @@ export struct ReaderCustomThemeEditor {
           if (this.scheme().backgroundImageUri) {
             Button('移除图片')
               .height(36)
-              .fontSize(13)
+              .fontSize(AppFontSize.BODY)
               .backgroundColor(this.fieldColor())
               .fontColor(this.textColor)
               .onClick(() => this.clearImage())
             Select([{ value: '裁剪填充' }, { value: '完整显示' }, { value: '拉伸铺满' }])
               .selected(this.fitIndex())
               .value(['裁剪填充', '完整显示', '拉伸铺满'][this.fitIndex()])
-              .font({ size: 13 })
+              .font({ size: AppFontSize.BODY })
               .fontColor(this.textColor)
               .backgroundColor(this.fieldColor())
               .borderRadius(16)

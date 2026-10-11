@@ -8,6 +8,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -68,7 +69,7 @@ struct SyncDevicesPage {
                 .height(36)
                 .color(this.accentColor())
               Text('正在读取同步设备…')
-                .fontSize(13)
+                .fontSize(AppFontSize.BODY)
                 .fontColor(this.subTextColor())
             }
             .width('100%')
@@ -76,7 +77,7 @@ struct SyncDevicesPage {
           } else if (this.errorMessage) {
             Column({ space: 12 }) {
               Text(this.errorMessage)
-                .fontSize(14)
+                .fontSize(AppFontSize.BODY)
                 .fontColor(this.subTextColor())
                 .textAlign(TextAlign.Center)
               Button('重试')
@@ -94,7 +95,7 @@ struct SyncDevicesPage {
             Column() {
               if (this.devices.length === 0) {
                 Text('完成首次同步后，当前设备会显示在这里。')
-                  .fontSize(13)
+                  .fontSize(AppFontSize.BODY)
                   .fontColor(this.subTextColor())
                   .width('100%')
                   .padding(16)
@@ -111,7 +112,7 @@ struct SyncDevicesPage {
             .backgroundColor(this.cardColor())
 
             Text('可以移除不再使用的其他设备。本机同步权限需要通过关闭云同步或退出账号进行管理。')
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
               .lineHeight(18)
               .width('calc(100% - 32vp)')
@@ -144,26 +145,26 @@ struct SyncDevicesPage {
       Column({ space: 4 }) {
         Row({ space: 8 }) {
           Text(device.deviceName || 'HarmonyOS 设备')
-            .fontSize(16)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.primaryTextColor())
           if (device.deviceId === this.currentDeviceId) {
             Text('本机')
-              .fontSize(11)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.accentColor())
               .padding({ left: 7, right: 7, top: 2, bottom: 2 })
               .borderRadius(ThemeRuntime.mediumRadius())
               .backgroundColor(this.softColor())
           } else if (device.revokedAt) {
             Text('已移除')
-              .fontSize(11)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
           }
         }
         Text(`${device.platform || 'HarmonyOS'}${device.appVersion ? ` · ${device.appVersion}` : ''}`)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
         Text(`最近同步：${this.timeText(device.lastSeenAt)}`)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
       }
       .layoutWeight(1)
@@ -173,14 +174,14 @@ struct SyncDevicesPage {
         Column({ space: 6 }) {
           Button('改名')
             .height(30)
-            .fontSize(11)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.accentColor())
             .backgroundColor(this.softColor())
             .onClick(() => this.openRename(device))
           if (device.deviceId !== this.currentDeviceId) {
             Button('移除')
               .height(30)
-              .fontSize(11)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor('#E5484D')
               .backgroundColor(this.softColor())
               .onClick(() => this.confirmRevoke(device))
@@ -271,7 +272,7 @@ struct SyncDevicesPage {
   renameDialogContent() {
     Column({ space: 16 }) {
       Text('修改设备名称')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
       TextInput({ placeholder: '输入设备名称', text: this.renameDeviceName })
@@ -366,7 +367,7 @@ struct SyncDevicesPage {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
@@ -379,7 +380,7 @@ struct SyncDevicesPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text('同步设备')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)

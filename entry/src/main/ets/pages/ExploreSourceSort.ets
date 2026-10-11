@@ -6,6 +6,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -85,7 +86,7 @@ struct ExploreSourceSortPage {
             .width(40)
             .height(40)
           Text('加载中...')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
             .margin({ top: 8 })
         }
@@ -95,10 +96,10 @@ struct ExploreSourceSortPage {
       } else if (this.sources.length === 0) {
         Column() {
           Text('暂无启用发现的书源')
-            .fontSize(16)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.subTextColor())
           Text('请先在书源管理中启用发现')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
             .margin({ top: 8 })
         }
@@ -111,27 +112,27 @@ struct ExploreSourceSortPage {
             ListItem() {
               Row() {
                 Text('☰')
-                  .fontSize(18)
+                  .fontSize(AppFontSize.SUBTITLE)
                   .fontColor(this.subTextColor())
                   .width(24)
                   .textAlign(TextAlign.Center)
                   .margin({ right: 4 })
 
                 Text(`${index + 1}`)
-                  .fontSize(13)
+                  .fontSize(AppFontSize.CAPTION)
                   .fontColor(this.subTextColor())
                   .width(28)
                   .textAlign(TextAlign.Center)
 
                 Column() {
                   Text(source.bookSourceName || '未命名书源')
-                    .fontSize(16)
+                    .fontSize(AppFontSize.BODY_LARGE)
                     .fontWeight(FontWeight.Bold)
                     .fontColor(this.primaryTextColor())
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                   Text(source.bookSourceUrl)
-                    .fontSize(12)
+                    .fontSize(AppFontSize.CAPTION)
                     .fontColor(this.subTextColor())
                     .margin({ top: 4 })
                     .maxLines(1)
@@ -143,7 +144,7 @@ struct ExploreSourceSortPage {
                 Text('↑')
                   .width(36)
                   .height(32)
-                  .fontSize(18)
+                  .fontSize(AppFontSize.SUBTITLE)
                   .fontColor(index > 0 ? this.primaryTextColor() : this.disabledTextColor())
                   .textAlign(TextAlign.Center)
                   .backgroundColor(index > 0 ? this.inputColor() : this.disabledButtonColor())
@@ -157,7 +158,7 @@ struct ExploreSourceSortPage {
                 Text('↓')
                   .width(36)
                   .height(32)
-                  .fontSize(18)
+                  .fontSize(AppFontSize.SUBTITLE)
                   .margin({ left: 6 })
                   .fontColor(index < this.sources.length - 1 ? this.primaryTextColor() : this.disabledTextColor())
                   .textAlign(TextAlign.Center)
@@ -289,20 +290,20 @@ struct ExploreSourceSortPage {
   sourceDragPreview() {
     Row() {
       Text('☰')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontColor(this.subTextColor())
         .width(24)
         .textAlign(TextAlign.Center)
         .margin({ right: 8 })
       Column() {
         Text(this.draggingTitle())
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(this.draggingUrl())
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
           .maxLines(1)
@@ -339,7 +340,7 @@ struct ExploreSourceSortPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text('书源排序')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)

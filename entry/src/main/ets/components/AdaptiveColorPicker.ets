@@ -1,5 +1,6 @@
 import { HdsColorPicker, HdsColorPickerOptions, HdsColorPickerTabType } from '@kit.UIDesignKit';
 import { ColorCodePicker } from './ColorCodePicker';
+import { AppFontSize } from '../theme/AppFontSize';
 
 /**
  * Uses the API 26 HDS color picker when available and keeps the existing
@@ -45,7 +46,7 @@ export struct AdaptiveColorPicker {
         if (!this.hideOptionTrigger) {
           Row() {
             Text(this.optionTitle || '颜色')
-              .fontSize(16)
+              .fontSize(AppFontSize.BODY_LARGE)
               .layoutWeight(1)
             Row()
               .width(30)

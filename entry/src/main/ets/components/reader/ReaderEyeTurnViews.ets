@@ -1,5 +1,6 @@
 import { ReaderEyeTurnCoordinator, ReaderEyeTurnViewState } from '../../core/reader/ReaderEyeTurnCoordinator';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
+import { AppFontSize } from '../../theme/AppFontSize';
 
 /** 阅读设置里的"眼动校准"一行：当前屏幕方向、识别状态和校准入口。 */
 @Component
@@ -18,11 +19,11 @@ export struct ReaderEyeTurnCalibrationSettingItem {
     Row() {
       Column() {
         Text('眼动校准')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.textColor)
         Text(this.state.arFaceActive ? 'AR 自动校准 · 无需手动校准' :
           `${this.landscape() ? '横屏' : '竖屏'} · ${this.state.status}`)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor)
           .margin({ top: 4 })
       }
@@ -33,7 +34,7 @@ export struct ReaderEyeTurnCalibrationSettingItem {
         // AR Engine gaze needs no per-device calibration; only the camera pipeline does.
         Button(this.coordinator && this.coordinator.hasStoredCalibration() ? '重新校准' : '开始校准')
           .height(36)
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor('#FFFFFF')
           .backgroundColor(this.accentColor)
           .onClick((): void => this.coordinator?.openCalibration())
@@ -77,7 +78,7 @@ export struct ReaderEyeCalibrationPanel {
       Column({ space: 18 }) {
         Row() {
           Text('眼动翻页校准')
-            .fontSize(20)
+            .fontSize(AppFontSize.TITLE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.textColor)
           Blank()
@@ -94,13 +95,13 @@ export struct ReaderEyeCalibrationPanel {
         .width('100%')
 
         Text(this.state.instruction())
-          .fontSize(17)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.textColor)
           .textAlign(TextAlign.Center)
 
         Text('头部和手机保持稳定，只用眼睛注视目标点。每一步先看准目标点，再点击「开始采样」并保持视线不动。')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor)
           .textAlign(TextAlign.Center)
           .lineHeight(20)
@@ -110,14 +111,14 @@ export struct ReaderEyeCalibrationPanel {
           .height(6)
           .color(this.accentColor)
         Text(this.state.status)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor)
           .textAlign(TextAlign.Center)
         if (!this.state.calibrationSessionActive) {
           Button('开始三步校准')
             .width('100%')
             .height(46)
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor('#FFFFFF')
             .backgroundColor(this.accentColor)
             .onClick((): void => this.coordinator?.beginCalibrationCapture())
@@ -125,7 +126,7 @@ export struct ReaderEyeCalibrationPanel {
           Button(this.state.calibrationCapturing ? '采样中…' : `开始采样（${this.state.targetLabel()}）`)
             .width('100%')
             .height(46)
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor('#FFFFFF')
             .backgroundColor(this.state.calibrationCapturing ? (this.dark ? '#33FFFFFF' : '#33000000') :
             this.accentColor)
@@ -152,7 +153,7 @@ export struct ReaderEyeCalibrationPanel {
         Column() {
           Blank()
           Text(this.state.previewHint())
-            .fontSize(11)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor('#FFFFFF')
             .padding({ left: 10, right: 10, top: 5, bottom: 5 })
             .borderRadius(ThemeRuntime.mediumRadius())

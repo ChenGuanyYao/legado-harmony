@@ -20,6 +20,7 @@ import { BookUrlResolver } from '../core/book/BookUrlResolver';
 import { LocalBookService } from '../core/book/LocalBookService';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -149,7 +150,7 @@ struct SearchBookDetailPage {
 
               Column() {
                 Text(this.name || '未知书名')
-                  .fontSize(22)
+                  .fontSize(AppFontSize.HEADLINE)
                   .fontWeight(FontWeight.Bold)
                   .fontColor(this.primaryTextColor())
                   .maxLines(2)
@@ -158,13 +159,13 @@ struct SearchBookDetailPage {
                 if (this.author) {
                   Row({ space: 3 }) {
                     Text(this.author)
-                      .fontSize(15)
+                      .fontSize(AppFontSize.BODY_LARGE)
                       .fontColor(this.secondaryTextColor())
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
 
                     Text('›')
-                      .fontSize(16)
+                      .fontSize(AppFontSize.BODY_LARGE)
                       .fontColor(this.subTextColor())
                   }
                   .alignItems(VerticalAlign.Center)
@@ -174,7 +175,7 @@ struct SearchBookDetailPage {
                   })
                 } else {
                   Text('作者未知')
-                    .fontSize(15)
+                    .fontSize(AppFontSize.BODY_LARGE)
                     .fontColor(this.secondaryTextColor())
                     .margin({ top: 8 })
                 }
@@ -182,13 +183,13 @@ struct SearchBookDetailPage {
                 if (this.originName || this.origin) {
                   Row({ space: 3 }) {
                     Text(this.originName || this.origin)
-                      .fontSize(13)
+                      .fontSize(AppFontSize.BODY)
                       .fontColor(this.subTextColor())
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
 
                     Text('›')
-                      .fontSize(14)
+                      .fontSize(AppFontSize.BODY)
                       .fontColor(this.subTextColor())
                   }
                   .alignItems(VerticalAlign.Center)
@@ -214,7 +215,7 @@ struct SearchBookDetailPage {
 
               if (this.wordCount) {
                 Text(this.wordCount)
-                  .fontSize(13)
+                  .fontSize(AppFontSize.BODY)
                   .fontColor(this.secondaryTextColor())
                   .padding({ left: 10, right: 10, top: 5, bottom: 5 })
                   .backgroundColor(this.inputColor())
@@ -224,7 +225,7 @@ struct SearchBookDetailPage {
 
               if (this.updateTime) {
                 Text(`更新：${this.updateTime}`)
-                  .fontSize(13)
+                  .fontSize(AppFontSize.BODY)
                   .fontColor(this.secondaryTextColor())
                   .padding({ left: 10, right: 10, top: 5, bottom: 5 })
                   .backgroundColor(this.inputColor())
@@ -234,7 +235,7 @@ struct SearchBookDetailPage {
 
               if (this.isInShelf) {
                 Text('已在书架')
-                  .fontSize(13)
+                  .fontSize(AppFontSize.BODY)
                   .fontColor(this.appDarkMode ? '#7DD89B' : '#0A7D36')
                   .padding({ left: 10, right: 10, top: 5, bottom: 5 })
                   .backgroundColor(this.appDarkMode ? '#173B24' : '#E8F5E9')
@@ -250,26 +251,26 @@ struct SearchBookDetailPage {
             Column() {
               Row() {
                 Text('目录')
-                  .fontSize(15)
+                  .fontSize(AppFontSize.BODY_LARGE)
                   .fontWeight(FontWeight.Bold)
                   .fontColor(this.primaryTextColor())
                   .layoutWeight(1)
 
                 if (this.totalChapterNum > 0) {
                   Text(`共 ${this.totalChapterNum} 章`)
-                    .fontSize(13)
+                    .fontSize(AppFontSize.BODY)
                     .fontColor(this.subTextColor())
                 }
 
                 Text('›')
-                  .fontSize(18)
+                  .fontSize(AppFontSize.SUBTITLE)
                   .fontColor(this.subTextColor())
                   .margin({ left: 6 })
               }
               .width('100%')
 
               Text(this.latestChapterTitle || '点击查看该书源的完整章节列表')
-                .fontSize(14)
+                .fontSize(AppFontSize.BODY)
                 .fontColor(this.secondaryTextColor())
                 .width('100%')
                 .maxLines(2)
@@ -287,14 +288,14 @@ struct SearchBookDetailPage {
 
             Column() {
               Text('简介')
-                .fontSize(18)
+                .fontSize(AppFontSize.SUBTITLE)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(this.primaryTextColor())
                 .width('100%')
                 .textAlign(TextAlign.Center)
 
               Text(this.intro || (this.isLoadingBookInfo ? '简介加载中...' : '暂无简介'))
-                .fontSize(16)
+                .fontSize(AppFontSize.BODY_LARGE)
                 .fontColor(this.secondaryTextColor())
                 .lineHeight(26)
                 .copyOption(CopyOptions.LocalDevice)
@@ -320,7 +321,7 @@ struct SearchBookDetailPage {
           Button(this.isInShelf ? '已加入书架' : '加入书架')
             .enabled(!this.isInShelf && !this.isSaving)
             .height(44)
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .layoutWeight(1)
             .backgroundColor(this.buttonColor())
             .fontColor('#FFFFFF')
@@ -330,7 +331,7 @@ struct SearchBookDetailPage {
 
           Button('目录')
             .height(44)
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .layoutWeight(1)
             .backgroundColor(this.buttonColor())
             .fontColor('#FFFFFF')
@@ -340,7 +341,7 @@ struct SearchBookDetailPage {
 
           Button(BookTypeSupport.isAudio(this.detailTypeProbe()) ? '开始听书' : '开始阅读')
             .height(44)
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .layoutWeight(1)
             .backgroundColor(this.buttonColor())
             .fontColor('#FFFFFF')
@@ -386,7 +387,7 @@ struct SearchBookDetailPage {
         onBack: () => this.handleBack() })
 
       Text('书籍详情')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -1003,13 +1004,13 @@ struct SearchBookDetailPage {
   addToShelfOnBackDialogContent() {
     Column({ space: 12 }) {
       Text('加入书架')
-        .fontSize(17)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
 
       Text(`是否将《${this.name || '这本书'}》加入书架？`)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width('100%')
 
@@ -1017,7 +1018,7 @@ struct SearchBookDetailPage {
         Button('不加入')
           .layoutWeight(1)
           .height(42)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .backgroundColor(this.inputColor())
           .fontColor(this.primaryTextColor())
           .onClick(() => {
@@ -1027,7 +1028,7 @@ struct SearchBookDetailPage {
         Button('加入书架')
           .layoutWeight(1)
           .height(42)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .backgroundColor(this.buttonColor())
           .fontColor('#FFFFFF')
           .onClick(() => {
@@ -1044,13 +1045,13 @@ struct SearchBookDetailPage {
   authorSearchDialogContent() {
     Column({ space: 12 }) {
       Text('作者检索')
-        .fontSize(17)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
 
       Text(`是否以作者“${this.author}”为关键词发起搜索？`)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width('100%')
 
@@ -1058,7 +1059,7 @@ struct SearchBookDetailPage {
         Button('取消')
           .layoutWeight(1)
           .height(42)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .backgroundColor(this.inputColor())
           .fontColor(this.primaryTextColor())
           .onClick(() => {
@@ -1068,7 +1069,7 @@ struct SearchBookDetailPage {
         Button('搜索')
           .layoutWeight(1)
           .height(42)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .backgroundColor(this.buttonColor())
           .fontColor('#FFFFFF')
           .onClick(() => {
@@ -1085,13 +1086,13 @@ struct SearchBookDetailPage {
   changeSourceConfirmDialogContent() {
     Column({ space: 12 }) {
       Text('换源')
-        .fontSize(17)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
 
       Text(`是否为《${this.name || '这本书'}》搜索可切换的书源？`)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width('100%')
 
@@ -1099,7 +1100,7 @@ struct SearchBookDetailPage {
         Button('取消')
           .layoutWeight(1)
           .height(42)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .backgroundColor(this.inputColor())
           .fontColor(this.primaryTextColor())
           .onClick(() => {
@@ -1109,7 +1110,7 @@ struct SearchBookDetailPage {
         Button('换源')
           .layoutWeight(1)
           .height(42)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .backgroundColor(this.buttonColor())
           .fontColor('#FFFFFF')
           .onClick(() => {
@@ -1257,7 +1258,7 @@ struct SearchBookDetailPage {
   @Builder
   tagChip(tag: string, index: number) {
     Text(tag)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(BookDisplayHelper.getTagTextColor(index, this.appDarkMode))
       .padding({ left: 10, right: 10, top: 5, bottom: 5 })
       .backgroundColor(BookDisplayHelper.getTagBackgroundColor(index, this.appDarkMode))

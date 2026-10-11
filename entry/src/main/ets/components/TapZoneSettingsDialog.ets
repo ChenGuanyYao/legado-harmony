@@ -1,5 +1,6 @@
 import { ReaderSettingsStore } from '../utils/ReaderSettingsStore';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { AppFontSize } from '../theme/AppFontSize';
 
 /**
  * 点击区域动作设置内容（配合系统自定义对话框使用，表面材质由系统渲染）。
@@ -95,13 +96,13 @@ export struct TapZoneSettingsDialogContent {
     Column({ space: 14 }) {
       Row() {
         Text('点击区域动作')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
 
         Button('×')
-          .fontSize(24)
+          .fontSize(AppFontSize.HEADLINE)
           .fontColor(this.primaryTextColor())
           .width(44)
           .height(44)
@@ -116,7 +117,7 @@ export struct TapZoneSettingsDialogContent {
       .alignItems(VerticalAlign.Center)
 
       Text('点击九宫格可循环设置：无动作、菜单、下一页、上一页')
-        .fontSize(12)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
         .width('100%')
 
@@ -140,7 +141,7 @@ export struct TapZoneSettingsDialogContent {
         Button('重置默认')
           .layoutWeight(1)
           .height(40)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .backgroundColor(this.inputColor())
           .fontColor(this.primaryTextColor())
           .onClick(() => {
@@ -150,7 +151,7 @@ export struct TapZoneSettingsDialogContent {
         Button('完成')
           .layoutWeight(1)
           .height(40)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .backgroundColor(this.buttonColor())
           .fontColor('#FFFFFF')
           .onClick(() => {
@@ -167,7 +168,7 @@ export struct TapZoneSettingsDialogContent {
   @Builder
   cell(index: number) {
     Text(this.actionLabel(this.actionAt(index)))
-      .fontSize(16)
+      .fontSize(AppFontSize.BODY_LARGE)
       .fontWeight(FontWeight.Medium)
       .fontColor(this.primaryTextColor())
       .textAlign(TextAlign.Center)

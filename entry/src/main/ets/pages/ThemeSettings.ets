@@ -32,6 +32,7 @@ import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
+import { AppFontSize } from '../theme/AppFontSize';
 
 const STORE_COVER_MIN_HEIGHT = 170;
 const STORE_COVER_MAX_HEIGHT = 340;
@@ -615,7 +616,7 @@ struct ThemeSettingsPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text('主题')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -635,7 +636,7 @@ struct ThemeSettingsPage {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 2, top: 6, bottom: 0 })
@@ -648,7 +649,7 @@ struct ThemeSettingsPage {
         .fontSize(14)
         .fontColor([this.accentColor()])
       Text('主题商店')
-        .fontSize(12)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.accentColor())
     }
     .height(30)
@@ -664,7 +665,7 @@ struct ThemeSettingsPage {
   purchasedThemesEmptyHint() {
     Row({ space: 3 }) {
       Text('暂无已购主题，去主题商店逛逛')
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
       SymbolGlyph($r('sys.symbol.chevron_right'))
         .fontSize(12)
@@ -682,7 +683,7 @@ struct ThemeSettingsPage {
     Column() {
       this.themeStoreHeader()
       Text('左右滑动浏览全部主题')
-        .fontSize(12)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
         .width('100%')
         .padding({ left: 20, top: 10, bottom: 2 })
@@ -706,14 +707,14 @@ struct ThemeSettingsPage {
         startInset: 0, materialScale: 0.83, compactLayout: true,
         accessibilityLabel: '返回主题设置', onBack: () => this.closeThemeStore() })
       Text('主题商店')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
         .margin({ left: 2 })
       if (this.accountLoggedIn) {
         Text(`${this.accountPoints} 点`)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.accentColor())
           .padding({ left: 10, right: 10, top: 5, bottom: 5 })
           .borderRadius(ThemeRuntime.buttonRadius())
@@ -795,7 +796,7 @@ struct ThemeSettingsPage {
 
       Row({ space: 8 }) {
         Text(theme.name)
-          .fontSize(17)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontFamily(theme.typography.appFontFamily)
           .fontColor(this.activeVariant(theme).colors.primaryTextColor)
@@ -809,13 +810,13 @@ struct ThemeSettingsPage {
 
       Row({ space: 10 }) {
         Text(theme.description)
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.activeVariant(theme).colors.subTextColor)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
         Text(this.storeThemeCaption(theme))
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.activeVariant(theme).colors.accentColor)
       }
       .width('100%')
@@ -848,7 +849,7 @@ struct ThemeSettingsPage {
       })
       Column({ space: 7 }) {
         Text('正文预览 · 护眼底色与字色')
-          .fontSize(10)
+          .fontSize(AppFontSize.MICRO)
           .fontColor(this.activeVariant(theme).reader.subTextColor)
         Text() {
           ContainerSpan() {
@@ -858,7 +859,7 @@ struct ThemeSettingsPage {
               .objectFit(ImageFit.Contain)
               .verticalAlign(ImageSpanAlignment.CENTER)
             Span('重点标注')
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.themeRegexPreview(theme).textColor)
               .textShadow(this.themeRegexPreviewShadow(theme))
             ImageSpan(ThemeAssetRegistry.regexBubbleCap(this.activeVariant(theme).regexEmphasis.bubbleStyle))
@@ -871,7 +872,7 @@ struct ThemeSettingsPage {
           .textBackgroundStyle(this.themeRegexPreviewBackground(theme))
         }
         Text('一行正文示例，用于预览阅读页的排版与配色。')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontFamily(theme.typography.appFontFamily)
           .fontColor(this.activeVariant(theme).reader.textColor)
           .maxLines(1)
@@ -900,7 +901,7 @@ struct ThemeSettingsPage {
       Blank()
       Text(`字号 ${theme.readerLayout.fontSize} · 行距 ${theme.readerLayout.lineHeight} · ` +
         `边距 ${theme.readerLayout.marginLeft}/${theme.readerLayout.marginRight}`)
-        .fontSize(10)
+        .fontSize(AppFontSize.MICRO)
         .fontColor(this.activeVariant(theme).colors.subTextColor)
     }
     .width('100%')
@@ -912,7 +913,7 @@ struct ThemeSettingsPage {
     if (this.isSelected(theme)) {
       Row() {
         Text(this.isTrialTheme(theme.id) ? '试用中 · 5分钟后自动恢复' : '正在使用该主题')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.activeVariant(theme).colors.accentColor)
       }
       .width('100%')
@@ -924,7 +925,7 @@ struct ThemeSettingsPage {
       Button('应用主题', { type: ButtonType.Normal })
         .width('100%')
         .height(40)
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor('#FFFFFF')
         .backgroundColor(this.activeVariant(theme).colors.buttonColor)
         .onClick(() => {
@@ -943,7 +944,7 @@ struct ThemeSettingsPage {
   storeTrialButton(theme: ThemePack) {
     Button(this.isTrialTheme(theme.id) ? '结束试用' : '试用5分钟', { type: ButtonType.Normal })
       .height(40)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.activeVariant(theme).colors.accentColor)
       .backgroundColor(this.activeVariant(theme).colors.inputColor)
       .layoutWeight(1)
@@ -961,7 +962,7 @@ struct ThemeSettingsPage {
     Button(this.themeCatalogLoaded && !this.themeOffer(theme.id) ? '暂未上架' :
       `获取 · ${this.storeThemePricePoints(theme.id)}点`, { type: ButtonType.Normal })
       .height(40)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor('#FFFFFF')
       .backgroundColor(this.activeVariant(theme).colors.buttonColor)
       .layoutWeight(1)
@@ -975,25 +976,25 @@ struct ThemeSettingsPage {
   storeThemeStatusPill(theme: ThemePack) {
     if (this.applyingThemeId === theme.id && !this.isSelected(theme) && !this.isTrialTheme(theme.id)) {
       Text('应用中')
-        .fontSize(10)
+        .fontSize(AppFontSize.MICRO)
         .fontColor(this.activeVariant(theme).colors.accentColor)
     } else if (this.isTrialTheme(theme.id) || this.isSelected(theme)) {
       Text(this.isTrialTheme(theme.id) ? '试用中' : '使用中')
-        .fontSize(10)
+        .fontSize(AppFontSize.MICRO)
         .fontColor('#FFFFFF')
         .padding({ left: 7, right: 7, top: 3, bottom: 3 })
         .borderRadius(10)
         .backgroundColor(this.activeVariant(theme).colors.accentColor)
     } else if (BuiltinThemeRegistry.isFree(theme.id) || AccountSessionStore.hasValidEntitlement(theme.id)) {
       Text(BuiltinThemeRegistry.isFree(theme.id) ? '免费' : '已购')
-        .fontSize(10)
+        .fontSize(AppFontSize.MICRO)
         .fontColor(this.activeVariant(theme).colors.accentColor)
         .padding({ left: 7, right: 7, top: 3, bottom: 3 })
         .borderRadius(10)
         .backgroundColor(this.activeVariant(theme).colors.inputColor)
     } else {
       Text(`${this.storeThemePricePoints(theme.id)}点`)
-        .fontSize(10)
+        .fontSize(AppFontSize.MICRO)
         .fontColor(this.activeVariant(theme).colors.subTextColor)
         .padding({ left: 7, right: 7, top: 3, bottom: 3 })
         .borderRadius(10)
@@ -1005,12 +1006,12 @@ struct ThemeSettingsPage {
   customThemeSectionTitle() {
     Row({ space: 10 }) {
       Text(`自定义主题 · ${this.customSchemes.length}/${CustomThemeSchemeStore.MAX_SCHEMES}`)
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .layoutWeight(1)
       Button('添加方案')
         .height(30)
-        .fontSize(12)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.customSchemes.length < CustomThemeSchemeStore.MAX_SCHEMES ?
           '#FFFFFF' : this.subTextColor())
         .backgroundColor(this.customSchemes.length < CustomThemeSchemeStore.MAX_SCHEMES ?
@@ -1048,7 +1049,7 @@ struct ThemeSettingsPage {
         .fontSize(22)
         .fontColor(['#FFFFFF'])
       Text('删除')
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor('#FFFFFF')
     }
     .width(64)
@@ -1115,7 +1116,7 @@ struct ThemeSettingsPage {
         .fontColor([color])
         .width(24)
       Text(label)
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(color)
         .layoutWeight(1)
     }
@@ -1131,7 +1132,7 @@ struct ThemeSettingsPage {
     Column() {
       Column({ space: 16 }) {
         Text('重命名自定义主题')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
         TextInput({ placeholder: '输入方案名称', text: this.renameCustomThemeName })
@@ -1193,11 +1194,11 @@ struct ThemeSettingsPage {
     Column() {
       Column({ space: 14 }) {
         Text('删除自定义主题')
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
         Text(`确定删除「${this.actionCustomScheme()?.name || '该方案'}」吗？此操作无法撤销。`)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .width('100%')
         Row({ space: 12 }) {
@@ -1248,12 +1249,12 @@ struct ThemeSettingsPage {
     Column() {
       Column({ space: 14 }) {
         Text(`编辑「${BuiltinThemeRegistry.findById(this.startupTextThemeId).name}」启动文案`)
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
         Column({ space: 6 }) {
           Text('主标题')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
             .width('100%')
           TextInput({ placeholder: '可留空', text: this.startupTextTitle })
@@ -1272,7 +1273,7 @@ struct ThemeSettingsPage {
         .alignItems(HorizontalAlign.Start)
         Column({ space: 6 }) {
           Text('副标题')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
             .width('100%')
           TextInput({ placeholder: '可留空', text: this.startupTextSubtitle })
@@ -1291,7 +1292,7 @@ struct ThemeSettingsPage {
         .alignItems(HorizontalAlign.Start)
         Button('恢复默认文案', { type: ButtonType.Normal })
           .height(34)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.accentColor())
           .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
           .onClick(() => {
@@ -1340,11 +1341,11 @@ struct ThemeSettingsPage {
     Column() {
       Column({ space: 14 }) {
         Text(`应用「${this.applyDialogThemeName}」`)
-          .fontSize(18)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
         Text('选择要随主题一起应用的内容，关闭的选项会保留当前设置。')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .width('100%')
         this.themeApplyToggleRow('layout')
@@ -1399,10 +1400,10 @@ struct ThemeSettingsPage {
     Row({ space: 12 }) {
       Column({ space: 3 }) {
         Text(category === 'layout' ? '应用主题排版' : '应用主题封面')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(category === 'layout' ? this.applyDialogLayoutHint : '书架使用主题封面与配套书籍边框')
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
       }
       .layoutWeight(1)
@@ -1610,11 +1611,11 @@ struct ThemeSettingsPage {
 
       Column({ space: 4 }) {
         Text('主题书籍封面')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.activeVariant(theme).colors.primaryTextColor)
         Text(this.themeBookCoverEnabled ? '书架已使用主题封面和配套边框' : '保留每本书原有封面')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.activeVariant(theme).colors.subTextColor)
       }
       .layoutWeight(1)
@@ -1648,12 +1649,12 @@ struct ThemeSettingsPage {
 
         Column({ space: 3 }) {
           Text(theme.name)
-            .fontSize(17)
+            .fontSize(AppFontSize.SUBTITLE)
             .fontWeight(FontWeight.Bold)
             .fontFamily(theme.typography.appFontFamily)
             .fontColor(this.activeVariant(theme).colors.primaryTextColor)
           Text(theme.description)
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.activeVariant(theme).colors.subTextColor)
             .maxLines(2)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -1663,32 +1664,32 @@ struct ThemeSettingsPage {
 
         if (this.isTrialTheme(theme.id)) {
           Text('试用中')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor('#FFFFFF')
             .padding({ left: 9, right: 9, top: 4, bottom: 4 })
             .borderRadius(12)
             .backgroundColor(this.activeVariant(theme).colors.accentColor)
         } else if (this.isSelected(theme, customSchemeId)) {
           Text('已启用')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor('#FFFFFF')
             .padding({ left: 9, right: 9, top: 4, bottom: 4 })
             .borderRadius(12)
             .backgroundColor(this.activeVariant(theme).colors.accentColor)
         } else if (this.applyingThemeId === (customSchemeId || theme.id)) {
           Text('应用中')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.activeVariant(theme).colors.accentColor)
         } else if (this.isCustomSchemePending(theme, customSchemeId)) {
           Text('待应用')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.activeVariant(theme).colors.accentColor)
             .padding({ left: 9, right: 9, top: 4, bottom: 4 })
             .borderRadius(12)
             .backgroundColor(this.activeVariant(theme).colors.inputColor)
         } else if (theme.id !== ThemeIds.CUSTOM) {
           Text(this.themeAccessLabel(theme.id))
-            .fontSize(11)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.hasThemeAccess(theme.id) ?
               this.activeVariant(theme).colors.accentColor : this.activeVariant(theme).colors.subTextColor)
             .padding({ left: 8, right: 8, top: 4, bottom: 4 })
@@ -1731,7 +1732,7 @@ struct ThemeSettingsPage {
         }
         Text(`${theme.readerLayout.fontSize} 字号 · ${theme.readerLayout.lineHeight} 行距 · ` +
           `${theme.readerLayout.marginLeft}/${theme.readerLayout.marginRight} 左右边距`)
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.activeVariant(theme).colors.subTextColor)
           .layoutWeight(1)
       }
@@ -1740,12 +1741,12 @@ struct ThemeSettingsPage {
       if (theme.id === ThemeIds.CUSTOM) {
         Row() {
           Text('浅色 / 深色可分别组合全部主题部件')
-            .fontSize(11)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.activeVariant(theme).colors.subTextColor)
             .layoutWeight(1)
           Button('编辑主题')
             .height(32)
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor('#FFFFFF')
             .backgroundColor(this.activeVariant(theme).colors.buttonColor)
             .onClick(() => {
@@ -1761,7 +1762,7 @@ struct ThemeSettingsPage {
         Row({ space: 10 }) {
           Button(this.isTrialTheme(theme.id) ? '结束试用' : '试用5分钟')
             .height(34)
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.activeVariant(theme).colors.accentColor)
             .backgroundColor(this.activeVariant(theme).colors.inputColor)
             .layoutWeight(1)
@@ -1775,7 +1776,7 @@ struct ThemeSettingsPage {
           Button(this.themeCatalogLoaded && !this.themeOffer(theme.id) ? '暂未上架' :
             `获取主题 · ${this.themeOffer(theme.id)?.pricePoints || AccountCommerceConfig.THEME_PRICE_POINTS}点`)
             .height(34)
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor('#FFFFFF')
             .backgroundColor(this.activeVariant(theme).colors.buttonColor)
             .layoutWeight(1)
@@ -2007,7 +2008,7 @@ struct ThemeSettingsPage {
           compact: true
         })
         Text('阅读')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontFamily(theme.typography.appFontFamily)
           .fontColor(this.activeVariant(theme).reader.textColor)
       }
@@ -2037,7 +2038,7 @@ struct ThemeSettingsPage {
               .objectFit(ImageFit.Contain)
               .verticalAlign(ImageSpanAlignment.CENTER)
             Span(this.themeRegexPreviewLabel(theme))
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.themeRegexPreview(theme).textColor)
               .textShadow(this.themeRegexPreviewShadow(theme))
               .decoration({ type: TextDecorationType.None })

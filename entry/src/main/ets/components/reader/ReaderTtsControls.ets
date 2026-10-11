@@ -1,4 +1,5 @@
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
+import { AppFontSize } from '../../theme/AppFontSize';
 
 /**
  * 朗读/听书悬浮胶囊：本页朗读与后台朗读共用同一外观。
@@ -42,7 +43,7 @@ export struct ReaderTtsCapsule {
 
         Column({ space: 1 }) {
           Text(this.title)
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontWeight(FontWeight.Medium)
             .fontColor(this.textColor)
           Text(this.subtitle)

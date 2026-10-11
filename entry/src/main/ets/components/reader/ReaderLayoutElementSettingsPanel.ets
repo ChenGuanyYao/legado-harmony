@@ -3,6 +3,7 @@ import { HdsFeedback } from '../../utils/HdsFeedback';
 import { ImmersiveBackButton } from '../ImmersiveBackButton';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { AdaptiveSwitch } from '../AdaptiveSwitch';
+import { AppFontSize } from '../../theme/AppFontSize';
 
 /**
  * 阅读页"布局元素设置"浮层：控制点击阅读页后出现哪些快捷组件。
@@ -47,7 +48,7 @@ export struct ReaderLayoutElementSettingsPanel {
       Column({ space: 4 }) {
         Row() {
           Text('布局元素设置')
-            .fontSize(20)
+            .fontSize(AppFontSize.TITLE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.textColor)
             .layoutWeight(1)
@@ -69,7 +70,7 @@ export struct ReaderLayoutElementSettingsPanel {
         .alignItems(VerticalAlign.Center)
 
         Text('控制点击阅读页后出现的快捷组件')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor)
           .width('100%')
           .margin({ bottom: 8 })
@@ -110,10 +111,10 @@ export struct ReaderLayoutElementSettingsPanel {
     Row({ space: 12 }) {
       Column({ space: 4 }) {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.textColor)
         Text(description)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor)
       }
       .layoutWeight(1)

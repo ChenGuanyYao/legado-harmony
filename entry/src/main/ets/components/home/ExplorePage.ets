@@ -20,6 +20,7 @@ import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
 import { SystemDialogSession } from '../../utils/SystemDialogSession';
 import { CoverUrlNormalizer } from '../../utils/CoverUrlNormalizer';
 import { ExploreSourceOptionDataSource, ExploreMetadataTask } from '../../core/book/ShelfDataSources';
+import { AppFontSize } from '../../theme/AppFontSize';
 
 /** 首页"发现"页签：发现源、筛选条件与结果列表。 */
 @Component
@@ -402,7 +403,7 @@ export struct ExplorePage {
         Row() {
           if (this.showExploreSourcePicker) {
             TextInput({ placeholder: '输入书源关键词', text: this.exploreSourceFilterInput })
-              .fontSize(15)
+              .fontSize(AppFontSize.BODY_LARGE)
               .fontColor(this.primaryTextColor())
               .placeholderColor(this.secondaryTextColor())
               .layoutWeight(1)
@@ -417,7 +418,7 @@ export struct ExplorePage {
               })
           } else {
             Text(this.selectedSourceName || '发现')
-              .fontSize(16)
+              .fontSize(AppFontSize.BODY_LARGE)
               .fontColor(this.primaryTextColor())
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -438,7 +439,7 @@ export struct ExplorePage {
           if (this.showExploreSourcePicker) {
             Button('搜索')
               .height(30)
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .borderRadius(15)
               .backgroundColor(this.buttonColor())
               .fontColor('#FFFFFF')
@@ -499,7 +500,7 @@ export struct ExplorePage {
           Row({ space: 8 }) {
             ForEach(this.platformNames, (name: string) => {
               Text(name)
-                .fontSize(13)
+                .fontSize(AppFontSize.BODY)
                 .fontColor(this.selectedPlatform === name ? '#FFFFFF' : this.primaryTextColor())
                 .padding({ left: 12, right: 12, top: 8, bottom: 8 })
                 .backgroundColor(this.selectedPlatform === name ? this.accentColor() : this.glassCardColor())
@@ -526,7 +527,7 @@ export struct ExplorePage {
           Row({ space: 8 }) {
             ForEach(this.getActiveEntries(), (entry: ExploreEntry, index: number) => {
               Text(entry.title)
-                .fontSize(13)
+                .fontSize(AppFontSize.BODY)
                 .fontColor(this.selectedIndex === index ? '#FFFFFF' : this.secondaryTextColor())
                 .padding({ left: 12, right: 12, top: 7, bottom: 7 })
                 .backgroundColor(this.selectedIndex === index ? this.accentColor() : this.glassCardColor())
@@ -552,14 +553,14 @@ export struct ExplorePage {
       if (this.shouldShowExploreStatus()) {
         Row() {
           Text(this.status)
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.secondaryTextColor())
             .layoutWeight(1)
 
           if (this.verificationUrl) {
             Button('去验证')
               .height(28)
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .borderRadius(14)
               .backgroundColor(this.buttonColor())
               .fontColor('#FFFFFF')
@@ -586,7 +587,7 @@ export struct ExplorePage {
             .width(36)
             .height(36)
           Text('加载中...')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
             .margin({ top: 8 })
         }
@@ -634,10 +635,10 @@ export struct ExplorePage {
       } else {
         Column() {
           Text('没有发现内容')
-            .fontSize(16)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.subTextColor())
           Text(this.verificationUrl ? '当前书源可能需要网页验证' : '请切换书源或网站，或检查已启用书源的发现地址')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
             .margin({ top: 8 })
             .textAlign(TextAlign.Center)
@@ -645,7 +646,7 @@ export struct ExplorePage {
           if (this.verificationUrl) {
             Button('去验证')
               .height(36)
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .borderRadius(18)
               .margin({ top: 14 })
               .backgroundColor(this.buttonColor())
@@ -657,7 +658,7 @@ export struct ExplorePage {
           if (this.shouldOfferExploreSourceLogin()) {
             Button(this.exploreSourceLoginButtonLabel())
               .height(36)
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .borderRadius(18)
               .margin({ top: 14 })
               .backgroundColor(this.buttonColor())
@@ -760,7 +761,7 @@ export struct ExplorePage {
       if (this.getFilteredExploreSourceOptions().length === 0) {
         Column() {
             Text(this.activeExploreSourceGroup === '__all__' ? '没有匹配的书源' : '当前分组没有匹配的书源')
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.secondaryTextColor())
               .width('100%')
               .height(52)
@@ -773,7 +774,7 @@ export struct ExplorePage {
             ListItem() {
               Row() {
                 Text(this.exploreSourceDisplayName(option))
-                  .fontSize(16)
+                  .fontSize(AppFontSize.BODY_LARGE)
                   .fontColor(option.sourceUrl === this.selectedSourceUrl ? this.accentColor() : this.primaryTextColor())
                   .fontWeight(option.sourceUrl === this.selectedSourceUrl ? FontWeight.Medium : FontWeight.Regular)
                   .maxLines(1)
@@ -782,7 +783,7 @@ export struct ExplorePage {
 
                 if (this.activeExploreSourceGroup === '__all__') {
                   Text(this.exploreSourceGroupLabel(option.sourceGroup))
-                    .fontSize(10)
+                    .fontSize(AppFontSize.MICRO)
                     .fontColor(this.secondaryTextColor())
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -795,7 +796,7 @@ export struct ExplorePage {
 
                 if (option.sourceUrl === this.selectedSourceUrl) {
                   Text('✓')
-                    .fontSize(15)
+                    .fontSize(AppFontSize.BODY_LARGE)
                     .fontColor(this.accentColor())
                     .margin({ left: 10 })
                 }
@@ -864,7 +865,7 @@ export struct ExplorePage {
             .fontColor([this.primaryTextColor()])
             .width(34)
           Text('登录')
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.primaryTextColor())
             .layoutWeight(1)
         }
@@ -879,7 +880,7 @@ export struct ExplorePage {
             .fontColor([this.primaryTextColor()])
             .width(34)
           Text('源变量')
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.primaryTextColor())
             .layoutWeight(1)
         }
@@ -894,7 +895,7 @@ export struct ExplorePage {
             .fontColor([this.primaryTextColor()])
             .width(34)
           Text('编辑')
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.primaryTextColor())
             .layoutWeight(1)
         }
@@ -909,7 +910,7 @@ export struct ExplorePage {
             .fontColor(['#E53935'])
             .width(34)
           Text('删除')
-            .fontSize(15)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor('#E53935')
             .layoutWeight(1)
         }
@@ -939,14 +940,14 @@ export struct ExplorePage {
   exploreSourceVariableDialogContent() {
     Column({ space: 12 }) {
       Text('编辑源变量')
-        .fontSize(19)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
 
       Text(this.exploreSourceVariableName || this.exploreSourceVariableUrl)
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width('100%')
         .maxLines(1)
@@ -955,7 +956,7 @@ export struct ExplorePage {
 
       if (this.exploreSourceVariableComment) {
         Text(this.exploreSourceVariableComment)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .lineHeight(18)
           .fontColor(this.secondaryTextColor())
           .width('100%')
@@ -970,7 +971,7 @@ export struct ExplorePage {
       })
         .width('100%')
         .height(180)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.primaryTextColor())
         .placeholderColor(this.secondaryTextColor())
         .backgroundColor(this.inputColor())
@@ -1017,14 +1018,14 @@ export struct ExplorePage {
   exploreSourceDeleteDialogContent() {
     Column() {
       Text('删除书源')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
 
       Text(`确定删除“${this.exploreSourceDeleteName || this.exploreSourceDeleteUrl}”吗？删除后不可恢复。`)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
@@ -1084,7 +1085,7 @@ export struct ExplorePage {
   @Builder
   exploreSourceGroupChip(label: string, groupKey: string) {
     Text(label)
-      .fontSize(12)
+      .fontSize(AppFontSize.CAPTION)
       .fontColor(this.activeExploreSourceGroup === groupKey ? '#FFFFFF' : this.secondaryTextColor())
       .height(30)
       .maxLines(1)
@@ -1841,7 +1842,7 @@ export struct ExplorePage {
     Scroll() {
       Row({ space: 8 }) {
         Text(`${filter.title}：`)
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.secondaryTextColor())
           .flexShrink(0)
         ForEach(filter.options, (name: string) => {
@@ -1866,7 +1867,7 @@ export struct ExplorePage {
         Row({ space: 7 }) {
           ForEach(this.exploreFilters, (filter: ExploreFilterGroup) => {
             Text(`${filter.title} · ${filter.selected || '未选'}`)
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.primaryTextColor())
               .height(30)
               .maxLines(1)
@@ -1893,7 +1894,7 @@ export struct ExplorePage {
           .fontSize(16)
           .fontColor([this.showExploreFilterPanel ? '#FFFFFF' : this.primaryTextColor()])
         Text('筛选')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.showExploreFilterPanel ? '#FFFFFF' : this.primaryTextColor())
       }
       .height(32)
@@ -1917,7 +1918,7 @@ export struct ExplorePage {
   @Builder
   exploreFilterOptionChip(filter: ExploreFilterGroup, name: string) {
     Text(name)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(filter.selected === name ? '#FFFFFF' : this.primaryTextColor())
       .height(32)
       .maxLines(1)
@@ -1933,7 +1934,7 @@ export struct ExplorePage {
   @Builder
   exploreFilterDraftOptionChip(filter: ExploreFilterGroup, name: string) {
     Text(name)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(filter.selected === name ? '#FFFFFF' : this.primaryTextColor())
       .height(32)
       .maxLines(1)
@@ -1951,12 +1952,12 @@ export struct ExplorePage {
     Column() {
       Row() {
         Text('筛选条件')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
         Text('完成')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.accentColor())
           .padding({ left: 12, right: 4, top: 8, bottom: 8 })
           .onClick(() => {
@@ -1972,7 +1973,7 @@ export struct ExplorePage {
           ForEach(this.exploreFilterDrafts, (filter: ExploreFilterGroup) => {
             Row({ space: 8 }) {
               Text(filter.title)
-                .fontSize(12)
+                .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.secondaryTextColor())
                 .width(46)
                 .maxLines(1)

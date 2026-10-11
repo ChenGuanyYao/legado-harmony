@@ -6,6 +6,7 @@ import { AppIconSettings, AppIconSettingsStore } from '../utils/AppIconSettingsS
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -38,7 +39,7 @@ struct AppIconSettingsPage {
       Scroll() {
         Column() {
           Text('选择桌面图标')
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
             .width('100%')
             .padding({ left: 16, right: 16, top: 20, bottom: 8 })
@@ -160,7 +161,7 @@ struct AppIconSettingsPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => this.backSafely() })
       Text('图标设置')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -184,7 +185,7 @@ struct AppIconSettingsPage {
           .objectFit(ImageFit.Cover)
         if (this.appIconId === option.id) {
           Text('✓')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor('#FFFFFF')
             .fontWeight(FontWeight.Bold)
             .width(22)
@@ -200,7 +201,7 @@ struct AppIconSettingsPage {
       .alignContent(Alignment.Center)
 
       Text(option.title)
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.primaryTextColor())
         .fontWeight(FontWeight.Medium)
         .maxLines(1)
@@ -208,7 +209,7 @@ struct AppIconSettingsPage {
         .margin({ top: 8 })
 
       Text(option.desc)
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -216,7 +217,7 @@ struct AppIconSettingsPage {
 
       if (this.loadedDynamicIcons && !this.isConfigured(option)) {
         Text('未生效')
-          .fontSize(10)
+          .fontSize(AppFontSize.MICRO)
           .fontColor('#B46A00')
           .padding({ left: 8, right: 8, top: 2, bottom: 2 })
           .backgroundColor('#FFF2D6')
@@ -224,7 +225,7 @@ struct AppIconSettingsPage {
           .margin({ top: 8 })
       } else if (this.applyingIconId === option.id) {
         Text('切换中')
-          .fontSize(10)
+          .fontSize(AppFontSize.MICRO)
           .fontColor(this.subTextColor())
           .margin({ top: 8 })
       }

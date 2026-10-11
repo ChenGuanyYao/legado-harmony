@@ -4,6 +4,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { LocalBookScanResult, LocalBookService } from '../core/book/LocalBookService';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -44,7 +45,7 @@ struct BookImportPage {
                 this.addBooks();
               })
             Text('仅支持 TXT / EPUB 格式')
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
               .width('100%')
               .padding({ left: 16, right: 16, top: 10, bottom: 12 })
@@ -72,7 +73,7 @@ struct BookImportPage {
             .height(36)
             .color(this.accentColor())
           Text(this.statusText || '处理中...')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.primaryTextColor())
         }
         .width('78%')
@@ -145,7 +146,7 @@ struct BookImportPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text('书籍导入')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -161,7 +162,7 @@ struct BookImportPage {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
@@ -177,10 +178,10 @@ struct BookImportPage {
 
       Column() {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(desc)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
           .maxLines(2)

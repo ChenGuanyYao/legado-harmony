@@ -20,6 +20,7 @@ import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { TapZoneSettingsDialogContent } from '../components/TapZoneSettingsDialog';
 import { HexColor } from '../utils/HexColor';
+import { AppFontSize } from '../theme/AppFontSize';
 class ReaderCustomFontItem {
   familyName: string = '';
   filePath: string = '';
@@ -255,7 +256,7 @@ struct SettingsPage {
           this.sectionTitle('预览')
           Column() {
             Text('第一章 风起')
-              .fontSize(16)
+              .fontSize(AppFontSize.BODY_LARGE)
               .fontWeight(FontWeight.Medium)
               .fontColor(this.previewTitleColor())
               .width('100%')
@@ -268,7 +269,7 @@ struct SettingsPage {
             }
 
             Text(`当前字体：${this.previewBodyFontName()} · 当前翻页：${this.pageTurnModeText()}`)
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontFamily(this.getPreviewBodyFontFamily())
               .fontColor(this.previewSubTextColor())
               .width('100%')
@@ -1787,7 +1788,7 @@ struct SettingsPage {
         onBack: () => router.back() })
 
       Text('阅读设置')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -1803,7 +1804,7 @@ struct SettingsPage {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
@@ -1839,14 +1840,14 @@ struct SettingsPage {
   fontSettingPanel() {
     Row() {
       Text('字体设置')
-        .fontSize(16)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
 
       Select(this.readerFontOptions())
         .selected(this.readerFontSelectedIndex())
         .value(this.readerFontValue())
-        .font({ size: 14 })
+        .font({ size: AppFontSize.BODY })
         .fontColor(this.subTextColor())
         .backgroundColor(Color.Transparent)
         .arrowPosition(ArrowPosition.END)
@@ -1877,10 +1878,10 @@ struct SettingsPage {
     Row() {
       Text('自定义字体')
         .fontColor(this.primaryTextColor())
-        .fontSize(16)
+        .fontSize(AppFontSize.BODY_LARGE)
         .layoutWeight(1)
       Text('上传 / 删除')
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .margin({ right: 8 })
       SymbolGlyph($r('sys.symbol.chevron_right'))
@@ -1903,9 +1904,9 @@ struct SettingsPage {
       Column({ space: 4 }) {
         Text('阅读字体')
           .fontColor(this.primaryTextColor())
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
         Text('正文 / 标题 / 正则样式设置')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
       }
         .layoutWeight(1)
@@ -1932,9 +1933,9 @@ struct SettingsPage {
       Column({ space: 4 }) {
         Text('替换净化')
           .fontColor(this.primaryTextColor())
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
         Text('管理正文与章节标题的替换规则')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
       }
       .layoutWeight(1)
@@ -1961,7 +1962,7 @@ struct SettingsPage {
     Row({ space: 8 }) {
       Stack({ alignContent: Alignment.Center }) {
         Text('跟随系统')
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.appThemeMode === 'system' ? '#FFFFFF' : this.primaryTextColor())
       }
         .layoutWeight(1)
@@ -1973,7 +1974,7 @@ struct SettingsPage {
         })
       Stack({ alignContent: Alignment.Center }) {
         Text('浅色')
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.appThemeMode === 'light' ? '#FFFFFF' : this.primaryTextColor())
       }
         .layoutWeight(1)
@@ -1985,7 +1986,7 @@ struct SettingsPage {
         })
       Stack({ alignContent: Alignment.Center }) {
         Text('深色')
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.appThemeMode === 'dark' ? '#FFFFFF' : this.primaryTextColor())
       }
         .layoutWeight(1)
@@ -2006,10 +2007,10 @@ struct SettingsPage {
     Row() {
       Column() {
         Text('点击区域动作')
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(this.tapZoneSummaryText())
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }
@@ -2018,7 +2019,7 @@ struct SettingsPage {
 
       Button('配置')
         .height(36)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .backgroundColor(this.buttonColor())
         .fontColor('#FFFFFF')
         .margin({ left: 12 })
@@ -2044,7 +2045,7 @@ struct SettingsPage {
           Column({ space: 6 }) {
             Text(index === ReaderThemeHelper.CUSTOM_THEME_INDEX ? '自' :
               (index === ReaderThemeHelper.APP_THEME_INDEX ? '主' : ''))
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(theme.textColor)
               .textAlign(TextAlign.Center)
               .width(44)
@@ -2058,7 +2059,7 @@ struct SettingsPage {
                 color: this.currentReaderThemeIndex() === index ? this.accentColor() : '#22000000'
               })
             Text(theme.name)
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
           }
           .layoutWeight(1)
@@ -2076,7 +2077,7 @@ struct SettingsPage {
             Select(this.customThemeOptions())
               .selected(this.currentCustomThemeSelectedIndex())
               .value(this.currentCustomThemeScheme().name)
-              .font({ size: 14 })
+              .font({ size: AppFontSize.BODY })
               .fontColor(this.subTextColor())
               .backgroundColor(Color.Transparent)
               .arrowPosition(ArrowPosition.START)
@@ -2097,7 +2098,7 @@ struct SettingsPage {
               })
             Button('新增')
               .height(36)
-              .fontSize(13)
+              .fontSize(AppFontSize.BODY)
               .backgroundColor(this.buttonColor())
               .fontColor('#FFFFFF')
               .onClick(() => {
@@ -2105,7 +2106,7 @@ struct SettingsPage {
               })
             Button('删除')
               .height(36)
-              .fontSize(13)
+              .fontSize(AppFontSize.BODY)
               .backgroundColor(this.inputColor())
               .fontColor(this.primaryTextColor())
               .onClick(() => {
@@ -2114,7 +2115,7 @@ struct SettingsPage {
           }
           .width('100%')
           TextInput({ text: this.customThemeNameDraft, placeholder: '输入方案名称' })
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.primaryTextColor())
             .height(36)
             .padding({ left: 10, right: 10 })
@@ -2131,13 +2132,13 @@ struct SettingsPage {
             })
           Row() {
             Text('背景设置')
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.primaryTextColor())
             Blank()
             Select([{ value: '背景色' }, { value: '背景图片' }])
               .selected(this.currentCustomThemeBackgroundTypeIndex())
               .value(this.currentCustomThemeBackgroundTypeIndex() === 1 ? '背景图片' : '背景色')
-              .font({ size: 14 })
+              .font({ size: AppFontSize.BODY })
               .fontColor(this.subTextColor())
               .backgroundColor(Color.Transparent)
               .arrowPosition(ArrowPosition.END)
@@ -2172,7 +2173,7 @@ struct SettingsPage {
             Row({ space: 8 }) {
               Button(this.currentCustomThemeScheme().backgroundImageUri ? '更换背景图片' : '选择背景图片')
                 .height(36)
-                .fontSize(13)
+                .fontSize(AppFontSize.BODY)
                 .backgroundColor(this.buttonColor())
                 .fontColor('#FFFFFF')
                 .onClick(() => {
@@ -2181,7 +2182,7 @@ struct SettingsPage {
               if (this.currentCustomThemeScheme().backgroundImageUri) {
                 Button('移除图片')
                   .height(36)
-                  .fontSize(13)
+                  .fontSize(AppFontSize.BODY)
                   .backgroundColor(this.inputColor())
                   .fontColor(this.primaryTextColor())
                   .onClick(() => {
@@ -2190,7 +2191,7 @@ struct SettingsPage {
                 Select([{ value: '裁剪填充' }, { value: '完整显示' }, { value: '拉伸铺满' }])
                   .selected(this.customThemeFitSelectedIndex())
                   .value(['裁剪填充', '完整显示', '拉伸铺满'][this.customThemeFitSelectedIndex()])
-                  .font({ size: 13 })
+                  .font({ size: AppFontSize.BODY })
                   .fontColor(this.subTextColor())
                   .backgroundColor(Color.Transparent)
                   .arrowPosition(ArrowPosition.END)
@@ -2238,7 +2239,7 @@ struct SettingsPage {
       Select(this.typographySettingOptions())
         .selected(this.typographySettingIndex)
         .value(this.typographySettingTitle())
-        .font({ size: 15 })
+        .font({ size: AppFontSize.BODY_LARGE })
         .fontColor(this.subTextColor())
         .backgroundColor(Color.Transparent)
         .arrowPosition(ArrowPosition.START)
@@ -2268,7 +2269,7 @@ struct SettingsPage {
           .type(InputType.Number)
           .enterKeyType(EnterKeyType.Done)
           .defaultFocus(true)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .width(52)
           .height(36)
@@ -2287,7 +2288,7 @@ struct SettingsPage {
           })
       } else {
         Text(`${this.currentTypographySettingValue()}`)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .width(52)
           .height(36)
@@ -2329,10 +2330,10 @@ struct SettingsPage {
       Row() {
         Column() {
           Text('预缓存设置')
-            .fontSize(16)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.primaryTextColor())
           Text(this.readerPreloadEnabled ? '阅读过程中提前缓存后续章节' : '已关闭阅读过程中的自动预缓存')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
             .margin({ top: 4 })
         }
@@ -2394,10 +2395,10 @@ struct SettingsPage {
     Row() {
       Column() {
         Text('眼动校准')
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(this.readerEyeCalibrationSummary())
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }
@@ -2405,7 +2406,7 @@ struct SettingsPage {
       .alignItems(HorizontalAlign.Start)
 
       Text('在正文内校准')
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.accentColor())
     }
     .width('calc(100% - 32vp)')
@@ -2426,10 +2427,10 @@ struct SettingsPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(desc)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }
@@ -2440,7 +2441,7 @@ struct SettingsPage {
         .id(controlId)
         .selected(selected)
         .value(this.optionValue(options, selected))
-        .font({ size: 14 })
+        .font({ size: AppFontSize.BODY })
         .fontColor(this.subTextColor())
         .backgroundColor(Color.Transparent)
         .arrowPosition(ArrowPosition.END)
@@ -2480,10 +2481,10 @@ struct SettingsPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(desc)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }

@@ -6,6 +6,7 @@ import { AppDatabase } from '../model/data/AppDatabase';
 import { Book } from '../model/data/Book';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -36,7 +37,7 @@ struct LocalBookSettingsPage {
       Column({ space: 12 }) {
         Row() {
           Text(`已添加书籍（${this.books.length}）`)
-            .fontSize(16)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
             .layoutWeight(1)
@@ -46,10 +47,10 @@ struct LocalBookSettingsPage {
         if (this.books.length === 0) {
           Column({ space: 6 }) {
             Text('暂无已添加书籍')
-              .fontSize(15)
+              .fontSize(AppFontSize.BODY_LARGE)
               .fontColor(this.primaryTextColor())
             Text('点击下方按钮选择 TXT 或 EPUB 文件')
-              .fontSize(13)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.subTextColor())
           }
           .width('100%')
@@ -70,10 +71,10 @@ struct LocalBookSettingsPage {
         }
 
         Text('选择 TXT 或 EPUB 文件导入书架')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text('支持一次选择多个文件，导入后文件会复制到应用内部存储，不依赖原文件位置。')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
         Button(this.isScanning ? '正在导入' : '选择书籍文件')
           .width('100%')
@@ -86,7 +87,7 @@ struct LocalBookSettingsPage {
           })
         if (this.statusText) {
           Text(this.statusText)
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor())
             .width('100%')
             .margin({ top: 8 })
@@ -107,12 +108,12 @@ struct LocalBookSettingsPage {
     Row() {
       Column({ space: 5 }) {
         Text(book.name || '未命名书籍')
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(book.author ? `${book.author} · ${book.totalChapterNum}章` : `${book.totalChapterNum}章`)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -120,7 +121,7 @@ struct LocalBookSettingsPage {
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
       Text(book.type === LocalBookService.TYPE_EPUB ? 'EPUB' : 'TXT')
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
         .margin({ left: 10 })
     }
@@ -148,7 +149,7 @@ struct LocalBookSettingsPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text('添加书籍')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)

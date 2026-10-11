@@ -7,6 +7,7 @@ import { HdsFeedback } from '../../utils/HdsFeedback';
 import { VirtualListScrollbar } from '../../utils/VirtualListScrollbar';
 import { ImmersiveBackButton } from '../ImmersiveBackButton';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
+import { AppFontSize } from '../../theme/AppFontSize';
 
 const TOC_WINDOW_PAGE_SIZE = 72;
 const TOC_SCROLLBAR_DRAG_UPDATE_INTERVAL_MS = 90;
@@ -706,7 +707,7 @@ export struct ReaderTocPanel {
             .objectFit(ImageFit.Cover)
         } else {
           Text(this.bookInitial())
-            .fontSize(22)
+            .fontSize(AppFontSize.HEADLINE)
             .fontWeight(FontWeight.Bold)
             .fontColor('#FFFFFF')
             .textAlign(TextAlign.Center)
@@ -718,13 +719,13 @@ export struct ReaderTocPanel {
 
         Column({ space: 5 }) {
           Text(this.book?.name || '目录')
-            .fontSize(20)
+            .fontSize(AppFontSize.TITLE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.textColor)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
           Text(this.book?.author || '未知作者')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor)
             .maxLines(1)
             .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -793,7 +794,7 @@ export struct ReaderTocPanel {
   @Builder
   tabButton(label: string, index: number, action: () => void) {
     Text(label)
-      .fontSize(15)
+      .fontSize(AppFontSize.BODY_LARGE)
       .fontWeight(FontWeight.Bold)
       .fontColor(this.tab === index ? this.textColor : this.subTextColor)
       .textAlign(TextAlign.Center)
@@ -820,7 +821,7 @@ export struct ReaderTocPanel {
             .enterKeyType(EnterKeyType.Go)
             .key(TOC_QUICK_JUMP_INPUT_KEY)
             .defaultFocus(true)
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.textColor)
             .textAlign(TextAlign.Center)
             .width(92)
@@ -835,12 +836,12 @@ export struct ReaderTocPanel {
             .onSubmit(() => this.submitQuickJump())
         } else if (this.isSearchActive()) {
           Text(`找到 ${this.searchChapterIndexes.length} 章`)
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor)
             .margin({ left: 6 })
         } else {
           Text(`共 ${this.chapters.length} 章`)
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.subTextColor)
             .margin({ left: 6 })
             .padding({ left: 8, right: 8 })
@@ -872,7 +873,7 @@ export struct ReaderTocPanel {
           .layoutWeight(1)
         if (this.isSearchActive()) {
           Text(`匹配 ${this.searchChapterIndexes.length}`)
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.textColor)
             .height(34)
             .padding({ left: 12, right: 12 })
@@ -927,7 +928,7 @@ export struct ReaderTocPanel {
           })
             .key(TOC_SEARCH_INPUT_KEY)
             .defaultFocus(true)
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.textColor)
             .layoutWeight(1)
             .height(38)
@@ -942,7 +943,7 @@ export struct ReaderTocPanel {
             })
           if (this.searchQuery) {
             Text('×')
-              .fontSize(22)
+              .fontSize(AppFontSize.TITLE)
               .fontColor(this.subTextColor)
               .width(32)
               .height(38)
@@ -977,7 +978,7 @@ export struct ReaderTocPanel {
                 .fontSize(28)
                 .fontColor([this.subTextColor])
               Text('未找到匹配章节')
-                .fontSize(14)
+                .fontSize(AppFontSize.BODY)
                 .fontColor(this.subTextColor)
             }
             .width('100%')
@@ -995,7 +996,7 @@ export struct ReaderTocPanel {
                 .textAlign(TextAlign.Center)
 
               Text(this.chapterTitle(this.globalIndex(localIndex)))
-                .fontSize(15)
+                .fontSize(AppFontSize.BODY_LARGE)
                 .fontWeight(this.globalIndex(localIndex) === this.currentChapterIndex ?
                   FontWeight.Medium : FontWeight.Regular)
                 .fontColor(this.titleColor(chapter, this.globalIndex(localIndex)))
@@ -1005,7 +1006,7 @@ export struct ReaderTocPanel {
 
               if (this.book?.origin !== 'local' && chapter.cacheDate > 0) {
                 Text('已缓存')
-                  .fontSize(10)
+                  .fontSize(AppFontSize.MICRO)
                   .fontColor(this.dark ? '#7CC7A0' : '#1F8F55')
                   .padding({ left: 7, right: 7, top: 3, bottom: 3 })
                   .backgroundColor(this.dark ? '#24382F' : '#E6F4EC')
@@ -1080,22 +1081,22 @@ export struct ReaderTocPanel {
     if (this.bookmarkMultiSelectMode) {
       Row({ space: 16 }) {
         Text(`已选 ${this.selectedBookmarkIds.length} 项`)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.textColor)
           .layoutWeight(1)
         Text(this.selectedBookmarkIds.length === this.bookmarks.length ? '取消全选' : '全选')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.accentColor)
           .onClick(() => this.toggleSelectAllBookmarks())
         Text('删除')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.selectedBookmarkIds.length > 0 ? '#D94841' : this.subTextColor)
           .enabled(this.selectedBookmarkIds.length > 0)
           .onClick(() => {
             this.deleteSelectedBookmarks();
           })
         Text('取消')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor)
           .onClick(() => this.cancelBookmarkMultiSelect())
       }
@@ -1106,7 +1107,7 @@ export struct ReaderTocPanel {
     } else {
       Row() {
         Text(`${this.bookmarks.length} 条书签`)
-          .fontSize(14)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor)
           .layoutWeight(1)
       }
@@ -1123,10 +1124,10 @@ export struct ReaderTocPanel {
           .fontSize(34)
           .fontColor([this.subTextColor])
         Text('暂无书签')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.subTextColor)
         Text('可使用底栏最右侧按钮添加当前阅读位置')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor)
       }
       .layoutWeight(1)
@@ -1186,24 +1187,24 @@ export struct ReaderTocPanel {
           .fontColor([this.accentColor])
           .width(26)
         Text(bookmark.chapterName || `第 ${bookmark.chapterIndex + 1} 章`)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Medium)
           .fontColor(this.textColor)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
         Text(`第 ${bookmark.pageIndex + 1} 页`)
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor)
       }
       Text(bookmark.content || '已保存阅读位置')
-        .fontSize(12)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor)
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .width('100%')
       Text(this.formatBookmarkTime(bookmark.createTime))
-        .fontSize(10)
+        .fontSize(AppFontSize.MICRO)
         .fontColor(this.subTextColor)
         .width('100%')
     }
@@ -1241,7 +1242,7 @@ export struct ReaderTocPanel {
         .fontSize(22)
         .fontColor(['#FFFFFF'])
       Text(label)
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor('#FFFFFF')
     }
     .width(64)

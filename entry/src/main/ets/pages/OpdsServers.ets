@@ -12,6 +12,7 @@ import { OpdsError } from '../opds/OpdsError';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -90,7 +91,7 @@ struct OpdsServersPage {
             .width('100%')
             .color(this.accentColor())
           Text(this.busyText || '处理中...')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.primaryTextColor())
         }
         .width('78%')
@@ -115,7 +116,7 @@ struct OpdsServersPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text('OPDS 书库')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -195,7 +196,7 @@ struct OpdsServersPage {
 
           ListItem() {
             Text('仅支持下载 EPUB / TXT 格式')
-              .fontSize(12)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
               .width('100%')
               .textAlign(TextAlign.Center)
@@ -222,25 +223,25 @@ struct OpdsServersPage {
         .fontColor([this.accentColor()])
       Column({ space: 4 }) {
         Text(server.name)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Text(server.baseUrl)
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         Row({ space: 8 }) {
           if (server.authType === 'basic' && server.username) {
             Text(`账号：${server.username}`)
-              .fontSize(11)
+              .fontSize(AppFontSize.CAPTION)
               .fontColor(this.subTextColor())
               .maxLines(1)
               .textOverflow({ overflow: TextOverflow.Ellipsis })
           }
           Text(server.enabled ? '已启用' : '已停用')
-            .fontSize(11)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(server.enabled ? this.subTextColor() : '#D9485F')
         }
       }
@@ -295,7 +296,7 @@ struct OpdsServersPage {
         .fontSize(22)
         .fontColor(['#FFFFFF'])
       Text('编辑')
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor('#FFFFFF')
     }
     .width(64)
@@ -315,7 +316,7 @@ struct OpdsServersPage {
         .fontSize(22)
         .fontColor(['#FFFFFF'])
       Text('删除')
-        .fontSize(11)
+        .fontSize(AppFontSize.CAPTION)
         .fontColor('#FFFFFF')
     }
     .width(64)
@@ -335,7 +336,7 @@ struct OpdsServersPage {
         .fontSize(42)
         .fontColor([this.accentColor()])
       Text('点击右下角添加 Calibre、Komga、Kavita 等 OPDS 书库')
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .textAlign(TextAlign.Center)
     }
@@ -384,7 +385,7 @@ struct OpdsServersPage {
         .fontColor([color])
         .width(24)
       Text(label)
-        .fontSize(15)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontColor(color)
         .layoutWeight(1)
     }
@@ -399,7 +400,7 @@ struct OpdsServersPage {
   serverEditorDialogContent() {
     Column({ space: 12 }) {
       Text(this.editingServerId ? '编辑书库' : '添加书库')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
@@ -407,7 +408,7 @@ struct OpdsServersPage {
       Scroll() {
         Column({ space: 12 }) {
           Column({ space: 6 }) {
-            Text('名称').fontSize(13).fontColor(this.subTextColor()).width('100%')
+            Text('名称').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
             TextInput({ text: this.draftName, placeholder: '例如：我的 Calibre 书库' })
               .width('100%')
               .height(44)
@@ -420,7 +421,7 @@ struct OpdsServersPage {
           }
           .width('100%')
           Column({ space: 6 }) {
-            Text('服务器地址').fontSize(13).fontColor(this.subTextColor()).width('100%')
+            Text('服务器地址').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
             TextInput({ text: this.draftBaseUrl, placeholder: 'http://192.168.1.10:8080/opds' })
               .width('100%')
               .height(44)
@@ -435,10 +436,10 @@ struct OpdsServersPage {
           Row() {
             Column({ space: 3 }) {
               Text('需要登录')
-                .fontSize(14)
+                .fontSize(AppFontSize.BODY)
                 .fontColor(this.primaryTextColor())
               Text('HTTP Basic 认证，如 Calibre、Komga')
-                .fontSize(11)
+                .fontSize(AppFontSize.CAPTION)
                 .fontColor(this.subTextColor())
             }
             .layoutWeight(1)
@@ -453,7 +454,7 @@ struct OpdsServersPage {
           .width('100%')
           if (this.draftNeedLogin) {
             Column({ space: 6 }) {
-              Text('账号').fontSize(13).fontColor(this.subTextColor()).width('100%')
+              Text('账号').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
               TextInput({ text: this.draftUsername, placeholder: '登录用户名' })
                 .width('100%')
                 .height(44)
@@ -466,7 +467,7 @@ struct OpdsServersPage {
             }
             .width('100%')
             Column({ space: 6 }) {
-              Text('密码').fontSize(13).fontColor(this.subTextColor()).width('100%')
+              Text('密码').fontSize(AppFontSize.BODY).fontColor(this.subTextColor()).width('100%')
               TextInput({ text: this.draftPassword, placeholder: '登录密码' })
                 .type(InputType.Password)
                 .width('100%')
@@ -481,7 +482,7 @@ struct OpdsServersPage {
             .width('100%')
             Row() {
               Text('记住密码')
-                .fontSize(14)
+                .fontSize(AppFontSize.BODY)
                 .fontColor(this.primaryTextColor())
                 .layoutWeight(1)
               AdaptiveSwitch({

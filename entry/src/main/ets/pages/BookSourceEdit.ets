@@ -10,6 +10,7 @@ import { HdsFeedback } from '../utils/HdsFeedback';
 import { ExploreResultCache } from '../utils/ExploreResultCache';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
+import { AppFontSize } from '../theme/AppFontSize';
 
 class BookSourceEditDraft {
   sourceJson: string = '';
@@ -192,13 +193,13 @@ struct BookSourceEditPage {
             onBack: () => this.requestBack() })
 
           Text(this.bookSourceUrl ? '编辑书源' : '新建书源')
-            .fontSize(20)
+            .fontSize(AppFontSize.TITLE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
             .layoutWeight(1)
 
           Text('保存')
-            .fontSize(16)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.accentColor())
             .width(60)
             .height(56)
@@ -208,7 +209,7 @@ struct BookSourceEditPage {
             })
 
           Text('调试')
-            .fontSize(16)
+            .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.accentColor())
             .width(60)
             .height(56)
@@ -227,7 +228,7 @@ struct BookSourceEditPage {
         // Tab栏
         Row() {
           Text('基本')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.currentTab === 0 ? this.accentColor() : this.secondaryTextColor())
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
@@ -239,7 +240,7 @@ struct BookSourceEditPage {
             })
 
           Text('搜索')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.currentTab === 1 ? this.accentColor() : this.secondaryTextColor())
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
@@ -251,7 +252,7 @@ struct BookSourceEditPage {
             })
 
           Text('发现')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.currentTab === 2 ? this.accentColor() : this.secondaryTextColor())
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
@@ -263,7 +264,7 @@ struct BookSourceEditPage {
             })
 
           Text('详情')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.currentTab === 3 ? this.accentColor() : this.secondaryTextColor())
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
@@ -275,7 +276,7 @@ struct BookSourceEditPage {
             })
 
           Text('目录')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.currentTab === 4 ? this.accentColor() : this.secondaryTextColor())
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
@@ -287,7 +288,7 @@ struct BookSourceEditPage {
             })
 
           Text('正文')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.currentTab === 5 ? this.accentColor() : this.secondaryTextColor())
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
@@ -309,7 +310,7 @@ struct BookSourceEditPage {
               .width(40)
               .height(40)
             Text('加载书源中...')
-              .fontSize(14)
+              .fontSize(AppFontSize.BODY)
               .fontColor(this.secondaryTextColor())
               .margin({ top: 8 })
           }
@@ -629,7 +630,7 @@ struct BookSourceEditPage {
   unsavedChangesDialogContent() {
     Column() {
       Text('保存书源修改？')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
@@ -637,7 +638,7 @@ struct BookSourceEditPage {
         .margin({ bottom: 10 })
 
       Text('当前书源有未保存的编辑，返回前请选择是否保存。')
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
@@ -681,7 +682,7 @@ struct BookSourceEditPage {
   draftConflictDialogContent() {
     Column() {
       Text('书源已经更新')
-        .fontSize(18)
+        .fontSize(AppFontSize.SUBTITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
@@ -689,7 +690,7 @@ struct BookSourceEditPage {
         .margin({ bottom: 10 })
 
       Text('检测到这个书源有一份基于旧版本的未保存草稿。使用新版可保留刚导入的内容；恢复草稿后再次保存会覆盖新版。')
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width('100%')
         .textAlign(TextAlign.Center)
@@ -788,7 +789,7 @@ struct BookSourceEditPage {
 
       Row() {
         Text('启用 Cookie')
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
 
@@ -805,7 +806,7 @@ struct BookSourceEditPage {
 
       Row() {
         Text('启用书源')
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
 
@@ -822,7 +823,7 @@ struct BookSourceEditPage {
 
       Row() {
         Text('启用发现')
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
 
@@ -847,7 +848,7 @@ struct BookSourceEditPage {
   searchTabBuilder() {
     Column({ space: 12 }) {
       Text('搜索规则')
-        .fontSize(16)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
@@ -902,7 +903,7 @@ struct BookSourceEditPage {
   exploreTabBuilder() {
     Column({ space: 12 }) {
       Text('发现规则')
-        .fontSize(16)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
@@ -957,7 +958,7 @@ struct BookSourceEditPage {
   infoTabBuilder() {
     Column({ space: 12 }) {
       Text('详情规则')
-        .fontSize(16)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
@@ -1012,7 +1013,7 @@ struct BookSourceEditPage {
   tocTabBuilder() {
     Column({ space: 12 }) {
       Text('目录规则')
-        .fontSize(16)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
@@ -1051,7 +1052,7 @@ struct BookSourceEditPage {
   contentTabBuilder() {
     Column({ space: 12 }) {
       Text('正文规则')
-        .fontSize(16)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .width('100%')
@@ -1090,7 +1091,7 @@ struct BookSourceEditPage {
   inputItemBuilder(label: string, value: string, onChange: (value: string) => void) {
     Column() {
       Text(label)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.secondaryTextColor())
         .width('100%')
         .margin({ bottom: 4 })

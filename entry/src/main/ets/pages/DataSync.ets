@@ -8,6 +8,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Entry
 @Component
@@ -158,7 +159,7 @@ struct DataSyncPage {
           .backgroundColor(this.cardColor())
 
           Text('数据导入和导出仍位于“其他设置”，用于手动备份，不会代替云同步。')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.subTextColor())
             .lineHeight(18)
             .width('calc(100% - 32vp)')
@@ -185,11 +186,11 @@ struct DataSyncPage {
       Row() {
         Column({ space: 4 }) {
           Text('云同步')
-            .fontSize(18)
+            .fontSize(AppFontSize.SUBTITLE)
             .fontWeight(FontWeight.Bold)
             .fontColor(this.primaryTextColor())
           Text(this.statusSummary())
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.statusColor())
         }
         .layoutWeight(1)
@@ -202,7 +203,7 @@ struct DataSyncPage {
             .color(this.accentColor())
         } else {
           Text(this.cloudSyncEnabled && this.accountLoggedIn ? '已开启' : '未开启')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.cloudSyncEnabled && this.accountLoggedIn ? this.accentColor() : this.subTextColor())
             .padding({ left: 10, right: 10, top: 5, bottom: 5 })
             .borderRadius(ThemeRuntime.mediumRadius())
@@ -213,7 +214,7 @@ struct DataSyncPage {
 
       if (!this.accountLoggedIn) {
         Text('登录华为账号后，可跨设备同步书架、阅读进度和阅读设置；本地书不会上传文件。')
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor(this.subTextColor())
           .lineHeight(20)
           .width('100%')
@@ -226,7 +227,7 @@ struct DataSyncPage {
           })
       } else {
         Text(this.lastSyncDescription())
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .width('100%')
         Button(this.syncStatus === CloudSyncSettingsStore.STATUS_SYNCING ? '正在同步' : '立即同步')
@@ -255,7 +256,7 @@ struct DataSyncPage {
         .height(22)
         .color(this.accentColor())
       Text('正在读取本机同步设置')
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
     }
     .width('calc(100% - 24vp)')
@@ -273,10 +274,10 @@ struct DataSyncPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(enabled ? this.primaryTextColor() : this.subTextColor())
         Text(desc)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 4 })
       }
@@ -306,10 +307,10 @@ struct DataSyncPage {
     Row() {
       Column() {
         Text(title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(desc)
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .maxLines(2)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -577,7 +578,7 @@ struct DataSyncPage {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
@@ -590,7 +591,7 @@ struct DataSyncPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => router.back() })
       Text('数据同步')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)

@@ -14,6 +14,7 @@ import { ReaderThemeBackground } from '../components/ReaderThemeBackground';
 import { StartupCoverImageStore } from '../utils/StartupCoverImageStore';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { AppFontSize } from '../theme/AppFontSize';
 
 @Component
 struct ThemeColorOption {
@@ -29,7 +30,7 @@ struct ThemeColorOption {
     Stack() {
       Row() {
         Text(this.title)
-          .fontSize(16)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor)
           .layoutWeight(1)
         Row()
@@ -515,7 +516,7 @@ struct ThemeColorSettingsPage {
         buttonSize: 40, containerWidth: 56, materialScale: 0.83, compactLayout: true,
         onBack: () => this.closeEditor() })
       Text('自定义主题')
-        .fontSize(20)
+        .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
         .layoutWeight(1)
@@ -531,7 +532,7 @@ struct ThemeColorSettingsPage {
   @Builder
   sectionTitle(title: string) {
     Text(title)
-      .fontSize(13)
+      .fontSize(AppFontSize.BODY)
       .fontColor(this.subTextColor())
       .width('100%')
       .padding({ left: 16, right: 16, top: 20, bottom: 8 })
@@ -555,7 +556,7 @@ struct ThemeColorSettingsPage {
   modeButton(title: string, mode: string) {
     Stack({ alignContent: Alignment.Center }) {
       Text(title)
-        .fontSize(14)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.selectedMode === mode ? '#FFFFFF' : this.primaryTextColor())
     }
       .layoutWeight(1)
@@ -593,10 +594,10 @@ struct ThemeColorSettingsPage {
     Row({ space: 8 }) {
       Column() {
         Text(title)
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.primaryTextColor())
         Text(desc)
-          .fontSize(11)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .margin({ top: 3 })
       }
@@ -606,7 +607,7 @@ struct ThemeColorSettingsPage {
       Select(this.themeOptions())
         .selected(this.sourceSelectedIndex(category))
         .value(BuiltinThemeRegistry.findById(this.sourceThemeId(category)).name)
-        .font({ size: 13 })
+        .font({ size: AppFontSize.BODY })
         .fontColor(this.subTextColor())
         .backgroundColor(Color.Transparent)
         .arrowPosition(ArrowPosition.END)
@@ -694,7 +695,7 @@ struct ThemeColorSettingsPage {
         Button(this.currentStartupImagePath() ? '更换自定义封面' : '上传自定义封面',
           { type: ButtonType.Normal })
           .height(38)
-          .fontSize(13)
+          .fontSize(AppFontSize.BODY)
           .fontColor('#FFFFFF')
           .backgroundColor(this.currentButtonColor())
           .layoutWeight(1)
@@ -702,7 +703,7 @@ struct ThemeColorSettingsPage {
         if (this.currentStartupImagePath()) {
           Button('恢复主题封面', { type: ButtonType.Normal })
             .height(38)
-            .fontSize(13)
+            .fontSize(AppFontSize.BODY)
             .fontColor(this.currentAccentColor())
             .backgroundColor(this.inputColor())
             .layoutWeight(1)
@@ -713,7 +714,7 @@ struct ThemeColorSettingsPage {
 
       Column({ space: 6 }) {
         Text('主标题')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .width('100%')
         TextInput({ placeholder: '可留空', text: this.currentStartupTitle() })
@@ -731,7 +732,7 @@ struct ThemeColorSettingsPage {
 
       Column({ space: 6 }) {
         Text('副标题')
-          .fontSize(12)
+          .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor())
           .width('100%')
         TextInput({ placeholder: '可留空', text: this.currentStartupSubtitle() })
@@ -758,7 +759,7 @@ struct ThemeColorSettingsPage {
   previewPanel() {
     Column() {
       Text(`${this.selectedMode === 'dark' ? '深色' : '浅色'}模式预览`)
-        .fontSize(13)
+        .fontSize(AppFontSize.BODY)
         .fontColor(this.subTextColor())
         .width('100%')
         .margin({ bottom: 12 })
@@ -787,7 +788,7 @@ struct ThemeColorSettingsPage {
             compact: true
           })
           Text('阅读')
-            .fontSize(14)
+            .fontSize(AppFontSize.BODY)
             .fontFamily(this.customPreviewTheme().typography.appFontFamily)
             .fontColor(this.customPreviewVariant().reader.textColor)
         }
@@ -810,7 +811,7 @@ struct ThemeColorSettingsPage {
               .backgroundColor(this.customPreviewVariant().colors.subTextColor)
           }
           Text('强调气泡')
-            .fontSize(12)
+            .fontSize(AppFontSize.CAPTION)
             .fontColor(this.customPreviewVariant().regexEmphasis.emphasisTextColor)
             .padding({ left: 8, right: 8, top: 3, bottom: 3 })
             .borderRadius(this.customPreviewTheme().radius.bubble)
@@ -853,7 +854,7 @@ struct ThemeColorSettingsPage {
           .fontColor('#FFFFFF')
           .backgroundColor(this.currentButtonColor())
         Text('强调文字')
-          .fontSize(15)
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.currentAccentColor())
           .layoutWeight(1)
       }
