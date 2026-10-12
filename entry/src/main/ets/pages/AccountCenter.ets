@@ -828,7 +828,7 @@ struct AccountCenterPage {
         .onChange((value: string) => {
           this.profileNameInput = value;
         })
-      Text('昵称和头像由你主动设置，将保存到账号服务端，不会申请华为账号敏感资料权限。')
+      Text('登录时默认使用华为账号的昵称和头像，在这里修改后不会再被覆盖。资料保存在账号服务端并随账号跨设备同步。')
         .fontSize(AppFontSize.CAPTION)
         .lineHeight(17)
         .fontColor(this.subTextColor())
@@ -1060,7 +1060,7 @@ struct AccountCenterPage {
         .borderRadius(ThemeRuntime.mediumRadius())
         .backgroundColor(this.appDarkMode ? '#332216' : '#FFF3E8')
     } else {
-      Text('登录和购买表示你同意应用的用户协议、隐私政策与点数服务规则。你主动设置的昵称和头像将保存到账号服务端并随华为账号同步；点数仅用于本应用数字内容，不支持转让或提现。')
+      Text('登录和购买表示你同意应用的用户协议、隐私政策与点数服务规则。登录时会获取华为账号的昵称和头像作为默认资料，昵称和头像保存到账号服务端并随账号同步；点数仅用于本应用数字内容，不支持转让或提现。')
         .fontSize(AppFontSize.CAPTION)
         .fontColor(this.subTextColor())
         .lineHeight(17)
