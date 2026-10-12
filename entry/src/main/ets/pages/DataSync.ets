@@ -88,7 +88,7 @@ struct DataSyncPage {
       Column() {
         SettingSwitchRow({
           title: '云同步',
-          description: '登录后在设备之间同步阅读数据和阅读偏好',
+          description: '登录后在多台设备间同步',
           isOn: this.cloudSyncEnabled,
           onChange: (value: boolean) => {
             this.setCloudSyncEnabled(value);
@@ -96,7 +96,7 @@ struct DataSyncPage {
         })
         SettingSwitchRow({
           title: '自动同步',
-          description: '数据修改后自动同步，失败时保留待同步任务',
+          description: '数据变更后自动同步，失败后稍后重试',
           isOn: this.autoSyncEnabled,
           onChange: (value: boolean) => {
             this.autoSyncEnabled = value;
@@ -105,7 +105,7 @@ struct DataSyncPage {
         })
         SettingSwitchRow({
           title: '仅 Wi-Fi 自动同步',
-          description: '开启后移动网络下仍可手动同步',
+          description: '移动网络下仍可手动同步',
           isOn: this.wifiOnly,
           onChange: (value: boolean) => {
             this.wifiOnly = value;
@@ -114,7 +114,7 @@ struct DataSyncPage {
         })
         SettingSwitchRow({
           title: '回到前台时同步',
-          description: '打开应用或重新进入前台时检查云端变更',
+          description: '打开或切回应用时检查云端变更',
           isOn: this.foregroundSyncEnabled,
           showDivider: false,
           onChange: (value: boolean) => {
@@ -133,7 +133,7 @@ struct DataSyncPage {
       Column() {
         SettingSwitchRow({
           title: '阅读数据',
-          description: '在线书架、分组、排序、阅读进度、书签；本地书仅同步阅读进度',
+          description: '在线书架、分组、排序、进度、书签；本地书仅同步进度',
           isOn: this.readingDataEnabled,
           onChange: (value: boolean) => {
             this.setScopeEnabled(true, value);
@@ -141,7 +141,7 @@ struct DataSyncPage {
         })
         SettingSwitchRow({
           title: '书源',
-          description: '书源配置、分组、排序、启用和锁定状态，不同步登录凭证',
+          description: '配置、分组、排序、启用和锁定状态；不含登录凭证',
           isOn: this.bookSourcesEnabled,
           onChange: (value: boolean) => {
             this.setBookSourcesEnabled(value);
@@ -149,7 +149,7 @@ struct DataSyncPage {
         })
         SettingSwitchRow({
           title: '阅读偏好',
-          description: '字体大小、边距、字体规则、替换规则、主题设置',
+          description: '字号、边距、字体规则、替换规则、主题',
           isOn: this.readingPreferencesEnabled,
           onChange: (value: boolean) => {
             this.setScopeEnabled(false, value);
@@ -157,7 +157,7 @@ struct DataSyncPage {
         })
         SettingSwitchRow({
           title: '应用偏好',
-          description: '显示模式、书架布局、搜索显示、自定义主题方案',
+          description: '显示模式、书架布局、搜索显示、自定义主题',
           isOn: this.applicationPreferencesEnabled,
           showDivider: false,
           onChange: (value: boolean) => {
@@ -174,14 +174,14 @@ struct DataSyncPage {
 
     this.sectionTitle('管理')
     Column() {
-      this.actionItem('同步设备', '查看和管理使用当前账号同步的设备', true, () => {
+      this.actionItem('同步设备', '查看和管理当前账号下的设备', true, () => {
         if (!this.accountLoggedIn) {
           HdsFeedback.showToast('请先登录华为账号');
           return;
         }
         router.pushUrl({ url: 'pages/SyncDevices' });
       })
-      this.actionItem('同步问题', this.syncErrorMessage || '当前没有需要处理的同步问题', true, () => {
+      this.actionItem('同步问题', this.syncErrorMessage || '暂无待处理的问题', true, () => {
         if (this.syncErrorMessage) {
           HdsFeedback.showToast(this.syncErrorMessage);
         } else {

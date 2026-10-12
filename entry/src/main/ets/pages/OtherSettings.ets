@@ -78,7 +78,7 @@ struct OtherSettingsPage {
     Column() {
       SettingSwitchRow({
         title: '浏览器看书',
-        description: '开启后，同一局域网内的手机、平板或电脑可访问本机书架',
+        description: '同一局域网内的设备可用浏览器访问本机书架',
         isOn: this.lanReaderEnabled,
         onChange: (value: boolean) => {
           this.setLanReaderEnabled(value);
@@ -99,24 +99,24 @@ struct OtherSettingsPage {
     Column() {
       SettingNavRow({
         title: '磨砂玻璃',
-        description: '预设 / 模糊 / 透明度 / 边框 / 阴影',
+        description: '预设、模糊、透明度、边框、阴影',
         onTap: () => {
           router.pushUrl({ url: 'pages/GlassSettings' });
         }
       })
-      SettingRow({ title: '沉浸光感', description: '设置鸿蒙沉浸材质的光感强度' }) {
+      SettingRow({ title: '沉浸光感', description: '沉浸材质的光感强度' }) {
         this.immersiveLightLevelSelect()
       }
       SettingNavRow({
         title: '字体设置',
-        description: '全局字体 / 自定义字体',
+        description: '全局字体、自定义字体',
         onTap: () => {
           router.pushUrl({ url: 'pages/FontSettings' });
         }
       })
       SettingNavRow({
         title: '图标设置',
-        description: '桌面图标 / 候选图标',
+        description: '更换桌面图标',
         showDivider: false,
         onTap: () => {
           router.pushUrl({ url: 'pages/AppIconSettings' });
@@ -133,7 +133,7 @@ struct OtherSettingsPage {
     Column() {
       SettingNavRow({
         title: '脚本引擎迁移',
-        description: 'QuickJS 影子校验、灰度路由与自动回退状态',
+        description: 'QuickJS 影子校验、灰度路由、自动回退状态',
         showDivider: false,
         onTap: () => {
           router.pushUrl({ url: 'pages/QuickJsDiagnostics' });

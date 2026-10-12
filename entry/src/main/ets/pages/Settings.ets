@@ -172,7 +172,7 @@ struct SettingsPage {
     this.sectionTitle('排版')
     Column() {
       this.typographyStepper()
-      this.selectItem('正文对齐方式', '设置正文段落的水平对齐方式',
+      this.selectItem('正文对齐方式', '正文段落的水平对齐',
         this.readerTextAlignOptions(), this.readerTextAlignSelectedIndex(), (index: number) => {
           this.setReaderTextAlignByIndex(index);
         }, 'settings_reader_text_align_select')
@@ -181,7 +181,7 @@ struct SettingsPage {
       this.readerReplaceRulesEntryItem()
       SettingSwitchRow({
         title: '正文扩展至状态栏',
-        description: '开启后隐藏状态栏，正文延伸到屏幕顶部',
+        description: '隐藏状态栏，正文延伸到屏幕顶部',
         isOn: this.readerExtendToStatusBar,
         onChange: (value: boolean) => {
           this.setReaderExtendToStatusBar(value);
@@ -215,7 +215,7 @@ struct SettingsPage {
 
     this.sectionTitle('操作')
     Column() {
-      this.selectItem('翻页方式', '选择上下滑动、横向滑动或滚动阅读',
+      this.selectItem('翻页方式', '上下滑动、横向滑动或滚动阅读',
         this.pageTurnModeOptions(), this.pageTurnModeSelectedIndex(), (index: number) => {
           this.setReaderPageTurnMode(this.pageTurnModeByIndex(index));
         }, 'settings_page_turn_mode_select')
@@ -223,31 +223,31 @@ struct SettingsPage {
         this.tapZoneSettingItem()
       }
       if (this.readerPageTurnMode === 2) {
-        this.selectItem('翻页动画', '选择翻页时使用的页面切换效果',
+        this.selectItem('翻页动画', '翻页时的切换效果',
           this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
             this.setReaderPageTurnAnimationType(index);
           }, 'settings_page_turn_animation_select_horizontal')
       } else if (this.readerPageTurnMode === 0) {
-        this.selectItem('翻页动画', '选择翻页时使用的页面切换效果',
+        this.selectItem('翻页动画', '翻页时的切换效果',
           this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
             this.setReaderPageTurnAnimationType(index);
           }, 'settings_page_turn_animation_select_vertical')
       }
       SettingSwitchRow({
         title: '使用双翻页',
-        description: '横屏或折叠屏展开等宽屏状态下同时显示左右两页',
+        description: '横屏、折叠屏展开等宽屏下并排显示两页',
         isOn: this.readerLandscapeDoublePage,
         onChange: (value: boolean) => {
           this.setReaderLandscapeDoublePage(value);
         }
       })
-      this.selectItem('屏幕方向', '设置正文阅读时使用的屏幕方向',
+      this.selectItem('屏幕方向', '阅读正文时的屏幕方向',
         this.screenOrientationOptions(), this.screenOrientationSelectedIndex(), (index: number) => {
           this.setReaderScreenOrientationByIndex(index);
         }, 'settings_screen_orientation_select')
       SettingSwitchRow({
         title: '音量键翻页',
-        description: '阅读页获得焦点时使用音量上/下键切换上一页/下一页',
+        description: '音量上/下键翻到上一页/下一页',
         isOn: this.readerVolumeTurnPage,
         onChange: (value: boolean) => {
           this.setReaderVolumeTurnPage(value);
@@ -255,7 +255,7 @@ struct SettingsPage {
       })
       SettingSwitchRow({
         title: '快速添加书签',
-        description: '正文下拉时快速添加或删除当前页书签',
+        description: '下拉正文添加或删除当前页书签',
         isOn: this.readerQuickBookmarkEnabled,
         onChange: (value: boolean) => {
           this.setReaderQuickBookmarkEnabled(value);
@@ -263,7 +263,7 @@ struct SettingsPage {
       })
       SettingSwitchRow({
         title: '眼动翻页（beta）',
-        description: '视线到达正文底部后提示向上看，向上看即翻到下一页；摄像头图像仅在本机处理',
+        description: '看到页底后向上看即翻页；摄像头图像仅在本机处理',
         isOn: this.readerEyeTurnEnabled,
         showDivider: this.readerEyeTurnEnabled,
         onChange: (value: boolean) => {
@@ -1905,7 +1905,7 @@ struct SettingsPage {
   readerFontEntryItem() {
     SettingNavRow({
       title: '阅读字体',
-      description: '正文 / 标题 / 正则样式设置',
+      description: '正文、标题、正则样式',
       onTap: () => {
         router.pushUrl({ url: 'pages/ReaderFontSettings' });
       }
@@ -1916,7 +1916,7 @@ struct SettingsPage {
   readerReplaceRulesEntryItem() {
     SettingNavRow({
       title: '替换净化',
-      description: '管理正文与章节标题的替换规则',
+      description: '正文与章节标题的替换规则',
       onTap: () => {
         router.pushUrl({ url: 'pages/ReaderReplaceRules' });
       }
@@ -2276,7 +2276,7 @@ struct SettingsPage {
   preloadSettingPanel() {
     SettingSwitchRow({
       title: '预缓存设置',
-      description: this.readerPreloadEnabled ? '阅读过程中提前缓存后续章节' : '已关闭阅读过程中的自动预缓存',
+      description: '阅读时提前缓存后续章节',
       isOn: this.readerPreloadEnabled,
       showDivider: this.readerPreloadEnabled,
       onChange: (checked: boolean) => {
@@ -2284,7 +2284,7 @@ struct SettingsPage {
       }
     })
     if (this.readerPreloadEnabled) {
-      this.selectItem('下一章节数', '选择自动预缓存的后续章节数量',
+      this.selectItem('下一章节数', '预缓存的后续章节数',
         this.readerPreloadChapterOptions(), this.readerPreloadChapterCount - 1,
         (index: number) => this.setReaderPreloadChapterCount(index + 1),
         'settings_reader_preload_chapter_count_select', false)

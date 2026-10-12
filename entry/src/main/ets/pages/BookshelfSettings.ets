@@ -105,7 +105,7 @@ struct BookshelfSettingsPage {
     Column() {
     SettingSwitchRow({
       title: '书籍打开动画',
-      description: '开启后点击书籍时显示封面展开动画',
+      description: '点击书籍时播放封面展开动画',
       isOn: this.bookshelfBookOpenAnimation,
       showDivider: false,
       onChange: (value: boolean) => {
@@ -116,7 +116,7 @@ struct BookshelfSettingsPage {
     this.itemDivider()
     SettingSwitchRow({
       title: '类型标识',
-      description: '在书名前显示“书／漫／声”，区分普通书、漫画和有声书',
+      description: '书名前标注“书／漫／声”',
       isOn: this.bookshelfShowTypeBadge,
       showDivider: false,
       onChange: (value: boolean) => {
@@ -127,7 +127,7 @@ struct BookshelfSettingsPage {
     this.itemDivider()
     SettingSwitchRow({
       title: '书籍标签',
-      description: '控制书架卡片是否显示书籍标签',
+      description: '在书架卡片上显示标签',
       isOn: this.bookshelfShowTags,
       showDivider: false,
       onChange: (value: boolean) => {
@@ -138,7 +138,7 @@ struct BookshelfSettingsPage {
     this.itemDivider()
     SettingSwitchRow({
       title: '书籍来源',
-      description: '控制书架卡片是否显示书籍来源',
+      description: '在书架卡片上显示来源',
       isOn: this.bookshelfShowSource,
       showDivider: false,
       onChange: (value: boolean) => {
@@ -149,7 +149,7 @@ struct BookshelfSettingsPage {
     this.itemDivider()
     SettingSwitchRow({
       title: '书籍简介',
-      description: '开启后显示书源抓取的简介内容',
+      description: '在书架卡片上显示简介',
       isOn: this.bookshelfShowIntro,
       showDivider: false,
       onChange: (value: boolean) => {
@@ -161,7 +161,7 @@ struct BookshelfSettingsPage {
       this.itemDivider()
       SettingSwitchRow({
         title: '显示全部简介',
-        description: '开启后书架卡片显示完整简介内容',
+        description: '简介不截断，完整显示',
         isOn: this.bookshelfShowFullIntro,
         showDivider: false,
         onChange: (value: boolean) => {
@@ -173,7 +173,7 @@ struct BookshelfSettingsPage {
     this.itemDivider()
     SettingSwitchRow({
       title: '使用阅读进度条',
-      description: '开启后在书架卡片底部显示阅读百分比和阅读信息',
+      description: '在卡片底部显示阅读百分比和阅读信息',
       isOn: this.bookshelfShowProgressBar,
       showDivider: false,
       onChange: (value: boolean) => {
@@ -185,7 +185,7 @@ struct BookshelfSettingsPage {
       this.itemDivider()
       SettingSwitchRow({
         title: '显示最后阅读时间',
-        description: '开启后阅读进度条旁显示最近一次阅读时间',
+        description: '在进度条旁显示上次阅读时间',
         isOn: this.bookshelfShowLastReadTime,
         showDivider: false,
         onChange: (value: boolean) => {
@@ -196,7 +196,7 @@ struct BookshelfSettingsPage {
       this.itemDivider()
       SettingSwitchRow({
         title: '显示最后阅读章节',
-        description: '开启后阅读进度条旁显示最近一次阅读章节',
+        description: '在进度条旁显示上次阅读章节',
         isOn: this.bookshelfShowLastReadChapter,
         showDivider: false,
         onChange: (value: boolean) => {
@@ -206,14 +206,14 @@ struct BookshelfSettingsPage {
       })
     }
     this.itemDivider()
-    this.selectItem('书架布局', '切换列表信息密度或封面平铺展示',
+    this.selectItem('书架布局', '列表疏密或封面平铺',
       this.bookshelfLayoutOptions(), this.bookshelfLayoutSelectedIndex(), (index: number) => {
         this.bookshelfLayoutMode = index === 2 ? 'tile' : (index === 1 ? 'loose' : 'compact');
         this.onDisplaySettingChanged();
       })
     if (this.bookshelfLayoutMode === 'tile') {
       this.itemDivider()
-      this.selectItem('上次阅读扉页设置', '设置最近阅读书籍封面右侧的展示内容',
+      this.selectItem('上次阅读扉页设置', '最近阅读书籍封面右侧的展示内容',
         this.lastReadLeafOptions(), this.lastReadLeafSelectedIndex(), (index: number) => {
           this.bookshelfLastReadLeafMode = index === 0 ? 'bookInfo' :
             (index === 1 ? 'contentPreview' : 'adaptive');
@@ -234,12 +234,12 @@ struct BookshelfSettingsPage {
       if (this.privateShelfEnabled) {
         this.itemDivider()
         this.actionItem('隐私书架密码',
-          this.privateShelfHasPassword ? '已设置，进入隐私书架时需要输入' : '未设置，设置后进入隐私书架需要输入密码',
+          this.privateShelfHasPassword ? '已设置，进入时需输入' : '未设置',
           this.primaryTextColor(), () => {
             this.openPrivatePasswordDialog('password');
           })
         this.itemDivider()
-        this.actionItem('重置隐私书架', '删除所有隐私书籍并关闭隐私书架，忘记密码时使用', ThemeRuntime.dangerColor(this.appDarkMode), () => {
+        this.actionItem('重置隐私书架', '删除全部隐私书籍并关闭，忘记密码时使用', ThemeRuntime.dangerColor(this.appDarkMode), () => {
           this.confirmResetPrivateShelf();
         })
       }
@@ -254,7 +254,7 @@ struct BookshelfSettingsPage {
     Column() {
     SettingSwitchRow({
       title: '忽略原始封面',
-      description: '开启后书架封面只使用当前应用的封面图集',
+      description: '书架封面只用应用内的封面图集',
       isOn: this.bookshelfIgnoreSourceCover,
       showDivider: false,
       onChange: (value: boolean) => {
@@ -263,7 +263,7 @@ struct BookshelfSettingsPage {
       }
     })
     this.itemDivider()
-    this.selectItem('封面模式', '控制多张封面的展示顺序',
+    this.selectItem('封面模式', '多张封面的展示顺序',
       this.modeOptions(), this.modeSelectedIndex(), (index: number) => {
         this.bookshelfCoverMode = index === 1 ? 'random' : 'sequence';
         this.onCoverSettingChanged();
@@ -273,7 +273,7 @@ struct BookshelfSettingsPage {
     this.itemDivider()
     this.albumSelectItem('深色配色图集', '深色模式下使用的封面图集', true)
     this.itemDivider()
-    this.selectItem('图集应用范围', '选择图集作用于全部书籍或指定书籍',
+    this.selectItem('图集应用范围', '作用于全部书籍或指定书籍',
       this.scopeOptions(), this.scopeSelectedIndex(), (index: number) => {
         this.setCoverApplyScope(index === 1 ? 'books' : 'all');
       })
@@ -291,7 +291,7 @@ struct BookshelfSettingsPage {
 
     this.sectionTitle('封面图集')
     Column() {
-      this.navItem('图集管理', '新建图集、导入图片、重命名和预览封面', 'pages/CoverGalleryManager')
+      this.navItem('图集管理', '新建、导入图片、重命名、预览', 'pages/CoverGalleryManager')
     }
     .width('calc(100% - 24vp)')
     .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
@@ -887,7 +887,7 @@ struct BookshelfSettingsPage {
   privateShelfSwitchItem() {
     SettingSwitchRow({
       title: '隐私书架',
-      description: '开启后书架左上角增加“隐私”入口；关闭后隐私书籍继续隐藏',
+      description: '在书架左上角显示“隐私”入口；关闭后隐私书籍仍隐藏',
       isOn: this.privateShelfSwitchOn,
       showDivider: false,
       onChange: (checked: boolean) => {

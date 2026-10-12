@@ -50,7 +50,7 @@ struct SearchExploreSettingsPage {
     Column() {
       SettingSwitchRow({
         title: '显示结果封面',
-        description: '开启后搜索和发现结果展示书籍封面',
+        description: '在搜索和发现结果中显示封面',
         isOn: this.searchExploreShowResultCover,
         onChange: (value: boolean) => {
           this.searchExploreShowResultCover = value;
@@ -60,7 +60,7 @@ struct SearchExploreSettingsPage {
       if (this.searchExploreShowResultCover) {
         SettingSwitchRow({
           title: '使用书架图集',
-          description: '开启后结果列表封面使用书架封面设置的浅色/深色图集',
+          description: '结果封面改用书架设置里的封面图集',
           isOn: this.searchExploreUseBookshelfCoverGallery,
           onChange: (value: boolean) => {
             this.searchExploreUseBookshelfCoverGallery = value;
@@ -70,7 +70,7 @@ struct SearchExploreSettingsPage {
       }
       SettingSwitchRow({
         title: '显示结果标签',
-        description: '开启后搜索和发现结果展示书籍标签',
+        description: '在搜索和发现结果中显示标签',
         isOn: this.searchExploreShowResultTags,
         showDivider: false,
         onChange: (value: boolean) => {
@@ -89,7 +89,7 @@ struct SearchExploreSettingsPage {
     Column() {
       SettingSwitchRow({
         title: '返回提示加入书架',
-        description: '从搜索或发现详情点击阅读后，返回时询问是否加入书架',
+        description: '从搜索或发现试读后，返回时询问是否加入书架',
         isOn: this.searchExplorePromptAddToShelfOnBack,
         showDivider: false,
         onChange: (value: boolean) => {
@@ -108,7 +108,7 @@ struct SearchExploreSettingsPage {
     Column() {
       SettingSwitchRow({
         title: '精准搜索',
-        description: '开启后仅保留书名与关键词完全匹配的搜索结果',
+        description: '只保留书名与关键词完全一致的结果',
         isOn: this.searchExploreExactSearch,
         onChange: (value: boolean) => {
           this.searchExploreExactSearch = value;
@@ -117,7 +117,7 @@ struct SearchExploreSettingsPage {
       })
       SettingSwitchRow({
         title: '匹配作者',
-        description: '精准搜索开启时，关键词同时匹配作者',
+        description: '精准搜索时，关键词也可匹配作者',
         isOn: this.searchExploreExactSearchMatchAuthor,
         onChange: (value: boolean) => {
           this.searchExploreExactSearchMatchAuthor = value;
@@ -126,7 +126,7 @@ struct SearchExploreSettingsPage {
       })
       SettingSwitchRow({
         title: '显示搜索进度',
-        description: '开启后搜索过程中显示已搜索书源数量和结果数量',
+        description: '搜索时显示已搜书源数和结果数',
         isOn: this.searchExploreShowSearchProgress,
         onChange: (value: boolean) => {
           this.searchExploreShowSearchProgress = value;
@@ -135,14 +135,14 @@ struct SearchExploreSettingsPage {
       })
       SettingSwitchRow({
         title: '聚合同名结果',
-        description: '开启后同名书籍合并展示，点击后查看各个书源结果',
+        description: '同名书合并为一条，点开查看各书源结果',
         isOn: this.searchExploreAggregateResults,
         onChange: (value: boolean) => {
           this.searchExploreAggregateResults = value;
           this.onSettingChanged();
         }
       })
-      SettingRow({ title: '搜索并发数', description: '控制书籍检索、书源校验和换源同时并发请求的数量',
+      SettingRow({ title: '搜索并发数', description: '同时请求的书源数，搜书、换源、找封面和搜索校验共用',
         showDivider: false }) {
         this.concurrencyStepper()
       }
