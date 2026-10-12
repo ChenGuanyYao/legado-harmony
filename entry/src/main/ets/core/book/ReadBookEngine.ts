@@ -47,6 +47,28 @@ export class ReadBookEngine {
     return new ReadBookEngine();
   }
 
+  /**
+   * Copies the shared session for `bookUrl` into a private engine. A reader that left the route stack but keeps
+   * reading aloud uses it so that opening another book on the shared engine cannot take its chapters away.
+   * Returns null when the shared engine already belongs to another book or is still opening.
+   */
+  static forkSession(bookUrl: string): ReadBookEngine | null {
+    const live = ReadBookEngine.inst;
+    if (!live || !bookUrl || live.book?.bookUrl !== bookUrl || live.chapters.length === 0) return null;
+    const fork = new ReadBookEngine();
+    fork.book = live.book;
+    fork.source = live.source;
+    fork.chapters = [...live.chapters];
+    fork.curIdx = live.curIdx;
+    fork.curPos = live.curPos;
+    fork.content = live.content;
+    fork.chapterCache = new Map(live.chapterCache);
+    fork.sourceInteractionIdentity = live.sourceInteractionIdentity;
+    fork.sourceLoadedAt = live.sourceLoadedAt;
+    fork.sourceLoadedOrigin = live.sourceLoadedOrigin;
+    return fork;
+  }
+
   async openBook(book: Book, sourceHint: BookSource | null = null): Promise<void> {
     if (this.openBookTask && this.openBookTaskUrl === book.bookUrl) {
       ReaderOpenTrace.mark(book.bookUrl, 'engine-open-await-existing');

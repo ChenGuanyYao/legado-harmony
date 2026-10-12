@@ -661,6 +661,9 @@ struct ReadBookPage {
   // Until that restore is confirmed, lifecycle saves must keep using the immutable database snapshot below.
   private readerProgressRestoreConfirmed: boolean = false;
   private readerExitProgressSaved: boolean = false;
+  private readerPageDetachedFromRoute: boolean = false;
+  private detachedReaderEngine: ReadBookEngine | null = null;
+  private detachedReaderEngineReady: Promise<void> | null = null;
   private openedFromShortcut: boolean = false;
   private shortcutReplacedPreviousPage: boolean = false;
   private shortcutRoutingActive: boolean = false;
@@ -684,7 +687,7 @@ struct ReadBookPage {
 
   async aboutToAppear() {
     ReaderProgressCheckpoint.attach(this.ttsFloatingSessionOwnerId,
-      (): Promise<void> => this.flushReadingProgressCheckpoint());
+      (): Promise<void> => this.flushReadingProgressCheckpoint(), (): string => this.bookUrl);
     this.readerPageVisible = true;
     this.readerObservedBackgroundRevision = AppStorage.get<number>('appLifecycleBackgroundRevision') || 0;
     this.applyReaderStatusBarSafeHeight(this.storedStatusBarHeight);
@@ -704,7 +707,7 @@ struct ReadBookPage {
       this.isLoading = true;
       this.loadStatus = '正在加载...';
       this.resetReaderStateForBookLoad();
-      ReadBookEngine.get().prewarmOpen(this.bookUrl).catch((error: Error) => {
+      this.readerEngine().prewarmOpen(this.bookUrl).catch((error: Error) => {
         console.warn('[ReaderOpen] reader prewarm failed:', error);
       });
     }
@@ -890,7 +893,7 @@ struct ReadBookPage {
 
   async reloadSourceInteractionsAfterPageShow(): Promise<void> {
     if (!this.book || this.book.origin === 'local' || this.chapters.length === 0) return;
-    const engine = ReadBookEngine.get();
+    const engine = this.readerEngine();
     const changed = await engine.refreshSourceInteractionState();
     if (!changed) return;
     this.book = engine.book || this.book;
@@ -953,9 +956,15 @@ struct ReadBookPage {
     this.flushPendingTtsSpeedSettings();
     this.cancelMirroredTtsManualPageTurn();
     const finalProgressSave = this.flushReadingProgressCheckpoint();
+    this.readerPageDetachedFromRoute = true;
     if (!ReaderTtsFloatingSession.isOwner(this.ttsFloatingSessionOwnerId)) {
       this.stopTtsReading();
       this.ttsReader.shutdown();
+    } else {
+      // This page keeps reading aloud after it leaves the route stack. Without a retained write permission every
+      // later sentence/chapter save was dropped and reopening the book returned to the exit position.
+      ReaderProgressCheckpoint.retainBackground(this.ttsFloatingSessionOwnerId, (): string => this.bookUrl);
+      this.detachReaderEngineForBackgroundTts();
     }
     if (!this.readerExitProgressSaved) {
       finalProgressSave.then(() => {
@@ -972,6 +981,27 @@ struct ReadBookPage {
     });
     this.unregisterVolumeKeyTurn();
     this.exitReaderImmersive();
+  }
+
+  readerEngine(): ReadBookEngine {
+    return this.detachedReaderEngine || ReadBookEngine.get();
+  }
+
+  detachReaderEngineForBackgroundTts(): void {
+    if (this.detachedReaderEngine || !this.book) return;
+    // The shared engine follows whichever reader page is visible. Reading aloud behind the bookshelf must keep
+    // loading its own chapters after another book is opened, so it continues on a private engine.
+    const fork = ReadBookEngine.forkSession(this.book.bookUrl);
+    if (fork) {
+      this.detachedReaderEngine = fork;
+      return;
+    }
+    // A replacement reader page already took the shared engine; open this book again on a private one.
+    const worker = ReadBookEngine.createBackgroundWorker();
+    this.detachedReaderEngine = worker;
+    this.detachedReaderEngineReady = worker.openBook(this.book).catch((error: Error) => {
+      console.warn('[TTS] 后台朗读独立引擎打开书籍失败:', error);
+    });
   }
 
   onLaunchShortcutChanged(): void {
@@ -1083,7 +1113,7 @@ struct ReadBookPage {
       await db.initWithContext(getContext(this));
       ReaderOpenTrace.mark(this.bookUrl, 'database-ready');
 
-      const engine = ReadBookEngine.get();
+      const engine = this.readerEngine();
       const preparedBook = engine.getPreparedBook(this.bookUrl);
       // The retained engine is valuable for chapters/content, but its Book object can lag behind the serialized
       // exit checkpoint while the shelf close animation is refreshing. Always take progress metadata (including
@@ -1228,7 +1258,7 @@ struct ReadBookPage {
 
   async retryFetchChapters() {
     try {
-      const engine = ReadBookEngine.get();
+      const engine = this.readerEngine();
       await engine.refreshToc();
       this.book = engine.book || this.book;
       this.chapters = engine.chapters;
@@ -1373,8 +1403,9 @@ struct ReadBookPage {
       this.isLoading = false;
       return false;
     }
-    
-    const engine = ReadBookEngine.get();
+
+    if (this.detachedReaderEngineReady) await this.detachedReaderEngineReady;
+    const engine = this.readerEngine();
     if (engine.book?.bookUrl !== (this.book?.bookUrl || this.bookUrl)) return false;
     const chapterIndex = this.clampChapterIndex(targetChapterIndex);
     const loadSerial = ++this.contentLoadSerial;
@@ -1454,7 +1485,7 @@ struct ReadBookPage {
       return;
     }
 
-    const engine = ReadBookEngine.get();
+    const engine = this.readerEngine();
     const chapterIndex = this.currentChapterIndex;
     // Treat an explicit reload as a new content generation. Previously reloadContent() replaced `content` while
     // the old incremental pagination session, retained V2 document and TTS source mapping remained alive. When the
@@ -3332,7 +3363,7 @@ struct ReadBookPage {
       this.chapters[this.clampChapterIndex(this.currentChapterIndex)] : null;
     const rawTitle = chapter ? this.cleanChapterTitle(chapter.title || '') : '';
     const cached = this.chapters.length > 0 ?
-      ReadBookEngine.get().getCachedContent(this.currentChapterIndex) : '';
+      this.readerEngine().getCachedContent(this.currentChapterIndex) : '';
     const rawContent = cached || this.content || '';
     AppStorage.setOrCreate('readerReplacePreviewTitle', rawTitle);
     AppStorage.setOrCreate('readerReplacePreviewContent', rawContent.substring(0, 20000));
@@ -3378,7 +3409,7 @@ struct ReadBookPage {
   }
 
   currentReaderSource(): BookSource | null {
-    return ReadBookEngine.get().source;
+    return this.readerEngine().source;
   }
 
   readerSourceNeedsLogin(): boolean {
@@ -4014,7 +4045,7 @@ struct ReadBookPage {
       return;
     }
     this.pendingRestorePageIndex = Math.max(this.pendingRestorePageIndex, this.currentPageIndex);
-    const raw = ReadBookEngine.get().getCachedContent(this.currentChapterIndex);
+    const raw = this.readerEngine().getCachedContent(this.currentChapterIndex);
     if (!raw) {
       return;
     }
@@ -7072,7 +7103,7 @@ struct ReadBookPage {
       console.info('[ReaderProgress] ignored save from superseded reader page');
       return;
     }
-    const engine = ReadBookEngine.get();
+    const engine = this.readerEngine();
     const stableVisibleProgress = this.canSaveReadingProgress();
     let chapterIndex = this.clampChapterIndex(this.currentChapterIndex);
     let pageIndex = Math.max(0, Math.min(this.currentPageIndex, Math.max(0, this.contentPages.length - 1)));
@@ -9163,6 +9194,10 @@ struct ReadBookPage {
       () => this.isTtsPaused || this.ttsReader.isPaused(),
       () => this.stopTtsFloatingSession()
     );
+    // A voice/speed change restarts reading through stop + start; the stop released the background permission.
+    if (this.readerPageDetachedFromRoute) {
+      ReaderProgressCheckpoint.retainBackground(this.ttsFloatingSessionOwnerId, (): string => this.bookUrl);
+    }
     ReaderTtsFloatingSession.configureControls(
       this.ttsFloatingSessionOwnerId,
       () => { this.playPreviousChapterFromMediaSession(); },
@@ -9443,6 +9478,7 @@ struct ReadBookPage {
     this.clearTtsSleepTimer();
     this.isTtsPaused = false;
     ReaderTtsFloatingSession.clear(this.ttsFloatingSessionOwnerId);
+    this.releaseBackgroundProgressWriterAfterTtsStop();
     if (userCancelled) {
       this.ttsAutoContinue = false;
       this.ttsReadToken++;
@@ -9730,6 +9766,7 @@ struct ReadBookPage {
     this.isTtsSpeaking = false;
     this.isTtsPaused = false;
     ReaderTtsFloatingSession.clear(this.ttsFloatingSessionOwnerId);
+    this.releaseBackgroundProgressWriterAfterTtsStop();
     this.updateVolumeKeySubscription();
     this.ttsReader.stop();
     this.invalidateTtsFocusSession();
@@ -10534,8 +10571,18 @@ struct ReadBookPage {
     if (this.ttsProgressSaveTimerId < 0) return;
     clearTimeout(this.ttsProgressSaveTimerId);
     this.ttsProgressSaveTimerId = -1;
-    this.saveReadingProgress().catch((error: Error) => {
+    // When reading stops behind the bookshelf, the shelf is the visible page and must pick up the new position.
+    this.saveReadingProgress(!this.readerPageVisible).catch((error: Error) => {
       console.warn('立即保存朗读句子位置失败:', error);
+    });
+  }
+
+  releaseBackgroundProgressWriterAfterTtsStop(): void {
+    // The stop-time save is queued; keep the permission until it settles. A chapter switch re-attaches the
+    // floating session right away, in which case this page is still the reader and keeps its permission.
+    this.readingProgressSaveQueue.finally(() => {
+      if (ReaderTtsFloatingSession.isOwner(this.ttsFloatingSessionOwnerId)) return;
+      ReaderProgressCheckpoint.releaseBackground(this.ttsFloatingSessionOwnerId);
     });
   }
 
@@ -14546,7 +14593,7 @@ struct ReadBookPage {
         (this.currentChapterIndex !== sourceChapterIndex && this.currentChapterIndex !== targetChapterIndex)) {
         return;
       }
-      ReadBookEngine.get().peekContent(targetChapterIndex)
+      this.readerEngine().peekContent(targetChapterIndex)
         .then(async (body: string): Promise<void> => {
           if (!body || !this.readerPageVisible || serial !== this.adjacentPaginationPreloadSerial ||
             !this.isCurrentReaderEngineBook(sessionBookUrl) ||
@@ -14639,7 +14686,7 @@ struct ReadBookPage {
     const targetChapterIndex = sourceChapterIndex - 1;
     // "Preload" off disables speculative network requests, but a chapter the user just left is already cached.
     // Its tail pagination is required for a correct instant backward turn and is safe to prepare locally.
-    if (!this.readerPreloadEnabled && !ReadBookEngine.get().hasCachedContent(targetChapterIndex)) return;
+    if (!this.readerPreloadEnabled && !this.readerEngine().hasCachedContent(targetChapterIndex)) return;
     const sessionBookUrl = this.book?.bookUrl || this.bookUrl;
     const activeKey = `${sessionBookUrl}_${sourceChapterIndex}_${targetChapterIndex}_` +
       `${this.readerTypographyCacheIdentity()}_${this.readerParagraphCommentPaginationIdentity()}`;
@@ -14654,7 +14701,7 @@ struct ReadBookPage {
       if (!this.readerPageVisible || serial !== this.previousPaginationPreloadSerial ||
         !this.isCurrentReaderEngineBook(sessionBookUrl) ||
         this.currentChapterIndex !== sourceChapterIndex) return;
-      ReadBookEngine.get().peekContent(targetChapterIndex)
+      this.readerEngine().peekContent(targetChapterIndex)
         .then(async (body: string): Promise<void> => {
           if (!body || !this.readerPageVisible || serial !== this.previousPaginationPreloadSerial ||
             !this.isCurrentReaderEngineBook(sessionBookUrl) ||
@@ -14904,7 +14951,7 @@ struct ReadBookPage {
       this.preloadReaderContentLater(240);
       return;
     }
-    const engine = ReadBookEngine.get();
+    const engine = this.readerEngine();
     if (!this.isCurrentReaderEngineBook()) return;
     engine.preloadAround(this.currentChapterIndex, this.normalizePreloadChapterCount(this.readerPreloadChapterCount), 0);
     this.preloadNextChapterPaginationLater();
@@ -14920,7 +14967,7 @@ struct ReadBookPage {
     if (!this.isTtsSpeaking || !this.ttsAutoContinue || !this.isCurrentReaderEngineBook()) return;
     const forwardCount = this.readerPreloadEnabled ?
       this.normalizePreloadChapterCount(this.readerPreloadChapterCount) : 1;
-    ReadBookEngine.get().preloadAround(this.currentChapterIndex, forwardCount, 0);
+    this.readerEngine().preloadAround(this.currentChapterIndex, forwardCount, 0);
   }
 
   normalizePreloadChapterCount(count: number): number {
@@ -14959,7 +15006,7 @@ struct ReadBookPage {
     if (!this.hasPagedReaderArea() || this.currentChapterIndex <= 0) return true;
     if (!this.isCurrentReaderEngineBook()) return false;
     const targetChapterIndex = this.currentChapterIndex - 1;
-    const body = ReadBookEngine.get().getCachedContent(targetChapterIndex);
+    const body = this.readerEngine().getCachedContent(targetChapterIndex);
     if (!body) return false;
     const prepared = this.getPreparedReaderContent(body, targetChapterIndex);
     if (!prepared && this.readerContentNeedsPreparation(body)) return false;
@@ -15010,7 +15057,7 @@ struct ReadBookPage {
     if (this.pageTurnIncomingChapterIndex !== targetChapterIndex) return;
     if (this.pageTurnIncomingText !== this.getPageTurnLoadingText(targetChapterIndex)) return;
     const title = this.getChapterTitle(targetChapterIndex).trim();
-    const waiting = ReadBookEngine.get().getCachedContent(targetChapterIndex) ?
+    const waiting = this.readerEngine().getCachedContent(targetChapterIndex) ?
       '上一章排版中，请稍候...' : '正在加载上一章...';
     this.setPageTurnIncomingState(this.pageTurnIncomingPageIndex,
       title ? `${title}\n\n${waiting}` : waiting, true, targetChapterIndex);
@@ -15631,7 +15678,7 @@ struct ReadBookPage {
     if (!this.isCurrentReaderEngineBook()) {
       return { text: '', pageIndex: 0, chapterIndex: chapterIndex };
     }
-    const body = ReadBookEngine.get().getCachedContent(chapterIndex);
+    const body = this.readerEngine().getCachedContent(chapterIndex);
     if (!body) {
       return { text: '', pageIndex: 0, chapterIndex: chapterIndex };
     }
@@ -15687,7 +15734,7 @@ struct ReadBookPage {
     const sessionBookUrl = this.book?.bookUrl || this.bookUrl;
     if (!this.isCurrentReaderEngineBook(sessionBookUrl)) return;
     this.pageTurnPreviewLoadingKey = key;
-    ReadBookEngine.get().peekContent(chapterIndex)
+    this.readerEngine().peekContent(chapterIndex)
       .then(async (body: string): Promise<void> => {
         if (!this.isCurrentReaderEngineBook(sessionBookUrl) || this.pageTurnPreviewKey !== key ||
           this.pageSlideDirection !== direction) {
@@ -15712,7 +15759,7 @@ struct ReadBookPage {
   }
 
   isCurrentReaderEngineBook(expectedBookUrl: string = this.book?.bookUrl || this.bookUrl): boolean {
-    return !!expectedBookUrl && ReadBookEngine.get().book?.bookUrl === expectedBookUrl;
+    return !!expectedBookUrl && this.readerEngine().book?.bookUrl === expectedBookUrl;
   }
 
   updateSlidePageEffect(offset: number): void {
