@@ -44,7 +44,7 @@
 ### 书架与本地书籍
 
 - 统一管理普通书、漫画和有声书：继续阅读、分组、排序、置顶、换源和批量操作。
-- 隐私书架：可设密码，隐私书籍不出现在桌面卡片、最近阅读快捷方式和局域网阅读中。
+- 隐私书架：可设密码，隐私书籍不出现在桌面卡片、最近阅读快捷方式、局域网阅读和阅读统计中。
 - 平铺、紧凑、宽松三种布局，可显示封面、简介、标签、阅读进度、最新章节和更新时间。
 - 「我的 → 书籍导入」统一提供本地导入、OPDS 书库和 WebDAV 服务三个入口；本地导入可一次多选 TXT/EPUB，使用应用自身的文件访问能力，不扫描公共目录。
 - 指定章节范围缓存或全文后台缓存，以可取消的后台通知任务执行。
@@ -52,9 +52,9 @@
 
 ### 搜索与发现
 
-- 对已启用书源并发搜索、增量出结果，支持停止、精准搜索、作者匹配、分组筛选和单书源搜索。
+- 对已启用书源并发搜索、增量出结果，支持停止、精准搜索、作者匹配、分组筛选和单书源搜索；单个书源超过 60 秒未完成即放弃并让出并发槽。
 - 发现页读取书源的站点、分类和榜单入口，按“源站/平台 → 站内分类”分层筛选，结果带缓存。
-- 详情页可直接查看完整目录、点击作者搜索、换源；未入库的书也能临时试读，退出时再决定是否加入书架。
+- 详情页可直接查看完整目录、点击作者搜索、换源（并发数跟随搜索并发数设置）；未入库的书也能临时试读，退出时再决定是否加入书架。
 
 ### 书源管理
 
@@ -68,8 +68,8 @@
 ### 阅读
 
 - 自研 V2 排版引擎：原生段落测量、增量分页、文本选区、正则样式和朗读高亮；进度按字符偏移保存和恢复。
-- 上下滑动、横向滑动、滚动阅读和横屏双页；横向翻页可选无动画、平移、淡入、叠页、仿真和 3D 仿真，翻页模式下末行对齐版心底边。
-- 页眉页脚按槽位自定义：书名、作者、章节、页码、剩余页数、进度百分比、时间和电量，可加本章或全书进度条。
+- 上下滑动、横向滑动、滚动阅读和横屏双页；横向翻页可选无动画、平移、淡入、叠页、仿真和 3D 仿真（从页角拖动时纸角跟随手指），翻页模式下末行对齐版心底边。
+- 页眉页脚按槽位自定义：书名、作者、章节、页码、剩余页数、进度百分比、时间和电量，可加本章或全书进度条，并可调节页眉下移、页脚上移的距离。
 - 字号、行距、段距、边距、对齐方式、自定义字体、背景、深色模式、沉浸式布局和段首缩进。
 - 书签、章节评论/段评、替换净化（可直接导入 Android 阅读与 YueDu 导出的规则，Java 正则自动转换；每条规则带超时保护，超时跳过并保留原文）。
 - EPUB 图文混排：随文图片与整页插图分别排版。
@@ -86,13 +86,15 @@
 ### 局域网阅读、OPDS 与 WebDAV
 
 - 在 App 内启动局域网浏览器阅读服务，同一局域网的浏览器可查看书架、搜索、发现并阅读小说或漫画，章节进度同步；可设置访问密码（加密存储，连续输错会暂时锁定）。
-- 添加 Calibre、Komga、Kavita 等 OPDS 书库（不预置任何服务器地址），支持目录浏览、站内搜索、Basic / Digest 认证与网页登录，Kavita 可用账号密码自动获取 OPDS 地址，下载的 EPUB/TXT 作为本地书导入。
-- 添加 WebDAV 服务并指定书籍目录，浏览后下载 TXT/EPUB 到书架。
+- 添加 Calibre、Komga、Kavita、talebook 等 OPDS 书库（不预置任何服务器地址），支持目录浏览、站内搜索、Basic / Digest 认证（自动协商）与网页登录；入口连不上时自动换尾斜杠写法或补 `/opds` 重试，Kavita 可用账号密码自动获取 OPDS 地址，下载的 EPUB/TXT 作为本地书导入。
+- 添加 WebDAV 服务并指定书籍目录，支持 Basic / Digest 认证和匿名访问，可浏览、上传、新建文件夹、重命名和删除，下载 TXT/EPUB 到书架。
 
 ### 数据、同步与个性化
 
-- 应用数据本地备份/恢复（可选加密）和账号云同步；本地书籍通过内容指纹跨设备匹配，只同步进度，不上传正文。
-- 浅色/深色模式、主题包与主题商店、按钮色、强调色、自定义字体、阅读背景、封面图库和应用图标。
+- 应用数据本地备份/恢复（可选加密）和账号云同步；本地书籍通过内容指纹跨设备匹配，只同步进度，不上传正文；可查看、改名和移除同步设备。
+- 华为账号登录后自动带入昵称和头像（不覆盖应用内改过的资料），点数与主题权益跨设备同步。
+- 浅色/深色模式、按钮色、强调色、自定义字体、阅读背景、封面图库和应用图标；主题页集中展示当前使用、默认与自定义方案、已购主题和更多主题，可在详情页预览、试用或获取。
+- 「我的 → 帮助」可离线查看随应用打包的使用说明书。
 
 ## 快速开始
 
@@ -102,6 +104,7 @@
 4. 在「搜索」或「发现」中查找书籍，加入书架后开始阅读。
 5. 阅读本地文件时，进入「我的 → 书籍导入 → 本地导入」，选择一个或多个 TXT/EPUB 文件；也可在同一页面从 OPDS 书库或 WebDAV 服务下载。
 6. 在阅读页呼出菜单，调整排版、翻页、主题、预缓存与朗读设置。
+7. 各项功能的用法见「我的 → 帮助」或[使用说明书](docs/manual/index.html)。
 
 ## 书源规则兼容
 
@@ -128,6 +131,7 @@ legado-harmony/
 │   └── src/main/ets/
 │       ├── account/                  # 华为账号、云同步与云端朗读
 │       ├── components/               # 通用 ArkUI 组件
+│       │   ├── common/               # 二级页面骨架 PageScaffold 与设置行 SettingRow
 │       │   ├── home/                 # 首页各页签：书架、发现、搜索、我的
 │       │   └── reader/               # 阅读页面板：目录、缓存、排版、配色、朗读控制、眼动校准
 │       ├── core/
@@ -144,12 +148,12 @@ legado-harmony/
 │       ├── model/                    # 数据模型与本地数据库
 │       ├── opds/                     # OPDS 目录解析与下载
 │       ├── pages/                    # 页面与设置界面
-│       ├── theme/                    # 主题模型、注册表和运行时令牌
+│       ├── theme/                    # 主题模型、注册表、运行时令牌，以及字号 / 间距档位
 │       ├── utils/                    # 设置、缓存、字体、TTS 与音频工具
 │       ├── webdav/                   # WebDAV 书籍浏览与下载
 │       └── widgets/                  # 桌面服务卡片界面
 ├── quickjs/                          # QuickJS 原生模块
-├── docs/                             # 开发文档
+├── docs/                             # 开发文档与使用说明书网站（docs/manual）
 └── scripts/                          # 构建前与架构回归检查
 ```
 
@@ -160,7 +164,7 @@ legado-harmony/
 | `SearchCoordinator` / `ExploreCoordinator` | 搜索与发现的并发、进度、解析和结果汇总。 |
 | `WebBookService` / `ReadBookEngine` | 详情、目录、正文、缓存和阅读状态。 |
 | `AnalyzeUrl` / `AnalyzeRule` | 请求描述、选择器、正则与脚本规则解析。 |
-| `JavaRegexCompat` / `BudgetedRegexReplace` | Android 正则方言转换（含 `w`、`d`、`` 的 Unicode 语义），以及带时间预算的净化替换。 |
+| `JavaRegexCompat` / `BudgetedRegexReplace` | Android 正则方言转换（含 `\w`、`\d`、`\b` 的 Unicode 语义），以及带时间预算的净化替换。 |
 | `BookSourceRuntimeRouter` / `BookSourceStageWebRuntime` / `BookSourceHeaderRuntime` | 复杂 JavaScript 的分阶段运行、受控桥接与 `@js:` 动态请求头。 |
 | `QuickJsScriptRuntime` / `QuickJsRuntimeStatus` | QuickJS 自检、资源限制和纯表达式影子比对。 |
 | `WebBookFetchRuntime` | 书源显式声明的 `webView: true` / `webJs` 页面抓取。 |
@@ -171,6 +175,10 @@ legado-harmony/
 | `FullTextCacheCancelCoordinator` | 把通知栏取消动作关联到具体全文缓存任务，并中止活动请求与规则解析。 |
 | `SystemTtsReader` / `HttpTtsReader` / `RemoteAudioPlayback` | 系统朗读、HTTP TTS 与有声书播放。 |
 | `EyeTurnController` / `ArEngineEyeTracker` | 本地人脸/眼部采样、校准和翻页判定。 |
+| `HttpAuth` / `OpdsKavita` | OPDS 与 WebDAV 共用的 Basic / Digest 认证协商；Kavita 网页地址识别与登录换取 OPDS 密钥。 |
+| `PageScaffold` / `SettingRow` | 二级页面的统一顶栏、底色、安全区留白和滚动容器；设置页的开关行、跳转行与下拉行。 |
+| `ThemeRuntime` / `AppFontSize` / `AppSpacing` | 主题色与圆角令牌，界面字号 7 档、间距 8 档。 |
+| `WebRuntimeAvailability` | 挂载隐藏 ArkWeb 宿主前探测 Web 能力，缺失时不挂载。 |
 | `LanReaderServer` | 局域网浏览器阅读服务：会话令牌、登录失败锁定、Host/Origin 校验和图片代理的内网地址过滤。 |
 | `ReaderOpenTrace` | 从书架点击到阅读首屏的阶段耗时记录。 |
 | `AppDatabase` | 书源、书籍、章节、搜索历史、分页缓存和本地配置。 |
@@ -234,7 +242,7 @@ node scripts/neutral-source-engine-check.mjs
 node scripts/thread-blocking-check.mjs
 node scripts/theme-framework-check.mjs
 node scripts/log-policy-check.mjs
-node scripts/opds-parser-check.mjs
+node --experimental-strip-types scripts/opds-parser-check.mjs
 node --experimental-strip-types scripts/http-auth-check.mjs
 node --experimental-strip-types scripts/opds-kavita-check.mjs
 node --experimental-strip-types scripts/java-regex-compat-check.mjs
@@ -256,7 +264,7 @@ node --experimental-strip-types scripts/reader-info-bar-check.mjs
 | `opds-parser-check` | OPDS 目录、条目和 OpenSearch 描述的解析（基于 `scripts/opds-fixtures`）。 |
 | `http-auth-check` | OPDS / WebDAV 共用的 HTTP 认证：`WWW-Authenticate` 质询解析与 Digest 应答（RFC 2617 / 7616 标准向量）。 |
 | `opds-kavita-check` | Kavita 适配：OPDS 地址识别、登录响应取密钥、展示时遮住密钥。 |
-| `java-regex-compat-check` | Android/Java 正则方言到 JavaScript 的转换，含 `w`、`d`、`` 的 Unicode 语义。 |
+| `java-regex-compat-check` | Android/Java 正则方言到 JavaScript 的转换，含 `\w`、`\d`、`\b` 的 Unicode 语义。 |
 | `budgeted-regex-replace-check` | 净化替换的逐行执行、跨行判定和超时放弃。 |
 | `replace-rule-import-check` | 阅读/Legado/YueDu 替换净化规则的字段别名映射。 |
 | `reader-text-normalizer-check` | 正文归一化与字符偏移到页码的映射。 |
@@ -291,7 +299,8 @@ node --experimental-strip-types scripts/reader-info-bar-check.mjs
 
 - 书源兼容层不是完整的 Android Java/WebView 环境；分阶段 ArkWeb 只开放受控桥接，`fetch`、`XMLHttpRequest`、`WebSocket`、任意 Java 导入、文件、进程、反射和系统组件不会自动可用。
 - QuickJS 只接受无主机副作用的短纯表达式，默认影子校验；选择器、网络、Cookie、书源变量和复杂阶段脚本仍由现有解析器或 ArkWeb 执行。
-- 替换净化规则单条最多执行 3 秒、整章 8 秒，超时的规则会被跳过；`w`、`d`、`` 按 Android 的 Unicode 语义匹配，与浏览器中的 ASCII 语义不同。
+- 规则单次求值最多保留 50000 条结果、JSON 遍历最多 200000 个节点，超出部分被截断。
+- 替换净化规则单条最多执行 3 秒、整章 8 秒，超时的规则会被跳过；`\w`、`\d`、`\b` 按 Android 的 Unicode 语义匹配，与浏览器中的 ASCII 语义不同。
 - `webView: true` 仅支持书源明确给出的 HTTP(S) GET/POST 地址，不承诺自动通过交互式验证码、证书错误、浏览器指纹或反自动化挑战。
 - 依赖浏览器指纹、长期动态渲染、强反爬、付费权限或私有登录流程的站点不保证支持；私有评论、音频或聚合协议受服务授权、会话 Token 和接口变更影响。
 - 请求层不按站点名称补充平台参数，也不提供内置站点接口、镜像或内容后端；额外会话行为必须由书源显式声明。
@@ -301,6 +310,7 @@ node --experimental-strip-types scripts/reader-info-bar-check.mjs
 
 ## 文档
 
+- [使用说明书](docs/manual/index.html)：面向用户的功能说明，纯静态页面，可直接部署；应用内「我的 → 帮助」加载的是同一份内容（`entry/src/main/resources/rawfile/manual`），修改时两处需同步。
 - [书源开发文档](docs/book-source-development.md)
 - [主题开发指南](docs/theme-development.md)
 
