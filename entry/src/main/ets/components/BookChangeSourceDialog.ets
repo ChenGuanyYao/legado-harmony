@@ -105,7 +105,7 @@ export struct BookChangeSourceDialog {
     const target = this.targetBook;
     if (!target) return;
     const cacheBookName = target.name;
-    const coordinator = new SearchCoordinator(Math.min(2, SearchExploreSettingsStore.getSearchConcurrency()));
+    const coordinator = new SearchCoordinator(SearchExploreSettingsStore.getSearchConcurrency());
     this.activeCoordinator = coordinator;
     this.searching = true;
     this.status = '正在搜索可用书源...';
