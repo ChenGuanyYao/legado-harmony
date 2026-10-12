@@ -863,7 +863,7 @@ struct AudioBookPage {
       this.startAudioBackground().catch((error: Error) => {
         console.warn('启动听书后台播放失败:', error);
       });
-    } else if (state === 'paused') {
+    } else if (state === 'paused' || state === 'stopped') {
       this.updateFloatingSession();
       this.updateAudioAvSessionState(avSession.PlaybackState.PLAYBACK_STATE_PAUSE).catch(() => {});
     } else if (state === 'loading' || state === 'initialized' || state === 'prepared') {
@@ -1361,7 +1361,7 @@ struct AudioBookPage {
 
   stateLabel(state: string): string {
     if (state === 'playing') return '正在播放';
-    if (state === 'paused') return '已暂停';
+    if (state === 'paused' || state === 'stopped') return '已暂停';
     if (state === 'loading' || state === 'initialized' || state === 'prepared') return '正在加载音频...';
     if (state === 'completed') return '本章播放完成';
     if (state === 'error') return '播放失败，可点击播放重试';
@@ -1505,7 +1505,9 @@ struct AudioBookPage {
 
   registerAudioAvSessionCommands(session: avSession.AVSession): void {
     session.on('play', (): void => {
-      this.playback.resume().catch(() => {});
+      this.playback.resume().catch((error: Error) => {
+        this.onPlaybackError(this.errorMessage(error));
+      });
     });
     session.on('pause', (): void => {
       this.playback.pause().catch(() => {});

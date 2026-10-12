@@ -21,6 +21,7 @@ export class RemoteAudioPlayback {
   bookUrl: string = '';
   chapterIndex: number = -1;
   mediaUrl: string = '';
+  private mediaHeaders: Record<string, string> = {};
   state: string = 'idle';
   positionMs: number = 0;
   durationMs: number = 0;
@@ -53,6 +54,7 @@ export class RemoteAudioPlayback {
     this.bookUrl = bookUrl;
     this.chapterIndex = chapterIndex;
     this.mediaUrl = url;
+    this.mediaHeaders = headers;
     this.positionMs = Math.max(0, startPositionMs || 0);
     this.durationMs = 0;
     this.speed = this.normalizeSpeed(speed);
@@ -132,13 +134,30 @@ export class RemoteAudioPlayback {
   }
 
   async resume(): Promise<void> {
+    if (this.state === 'loading') return;
     const player = this.player;
-    if (!player) return;
-    if (player.state === 'paused' || player.state === 'prepared' || player.state === 'completed') {
-      if (player.state === 'completed') player.seek(0, media.SeekMode.SEEK_CLOSEST);
-      await player.play();
-      if (player === this.player) this.setState('playing');
+    const playerState = player?.state || '';
+    if (player && playerState === 'playing') {
+      this.setState('playing');
+      return;
     }
+    if (player && (playerState === 'paused' || playerState === 'prepared' || playerState === 'completed')) {
+      try {
+        if (playerState === 'completed') player.seek(0, media.SeekMode.SEEK_CLOSEST);
+        await player.play();
+        if (player === this.player) this.setState('playing');
+        return;
+      } catch (error) {
+        if (player !== this.player) return;
+        console.warn('[AudioBook] resume failed, rebuilding player:', error);
+      }
+    }
+    // Another app taking audio focus permanently (forced STOP interrupt) leaves AVPlayer in
+    // stopped/error, where play() is illegal. Without a rebuild every play button, including
+    // the system media capsule, stays dead until the process restarts.
+    if (!this.mediaUrl) return;
+    await this.play(this.bookUrl, this.chapterIndex, this.mediaUrl, this.mediaHeaders, this.positionMs,
+      this.speed);
   }
 
   seek(positionMs: number): void {
@@ -181,6 +200,7 @@ export class RemoteAudioPlayback {
     this.bookUrl = '';
     this.chapterIndex = -1;
     this.mediaUrl = '';
+    this.mediaHeaders = {};
     this.positionMs = 0;
     this.durationMs = 0;
     this.setState('idle');
@@ -237,21 +257,32 @@ export class RemoteAudioPlayback {
       if (event.forceType === audio.InterruptForceType.INTERRUPT_SHARE && player.state === 'playing') {
         player.pause().catch(() => {});
       }
+      this.syncStateAfterInterrupt(player, generation);
       return;
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_STOP) {
       this.interruptPaused = false;
+      this.syncStateAfterInterrupt(player, generation);
       return;
     }
     if (hint === audio.InterruptHint.INTERRUPT_HINT_RESUME) {
       try { player.setVolume(1); } catch (_) {}
-      if (this.interruptPaused && (player.state === 'paused' || player.state === 'prepared')) {
+      if (this.interruptPaused && player.state !== 'playing') {
         this.interruptPaused = false;
-        player.play().catch(() => {});
+        this.resume().catch((error: Error) => {
+          this.listener?.onPlaybackError(error.message || String(error));
+        });
       } else {
         this.interruptPaused = false;
       }
     }
+  }
+
+  /** A forced interrupt stops timeUpdate, so the stateChange fallback there never runs. */
+  private syncStateAfterInterrupt(player: media.AVPlayer, generation: number): void {
+    setTimeout((): void => {
+      if (player.state !== 'playing') this.syncPlayerState(player, generation);
+    }, 300);
   }
 
   private async releasePlayer(): Promise<void> {
