@@ -285,7 +285,7 @@ export struct ReaderHeaderFooterSettings {
 
   build() {
     Column({ space: AppSpacing.XS }) {
-      this.switchItem('显示页眉', '在正文顶部显示书名、章节、时间等信息', this.readerHeaderEnabled,
+      this.switchItem('显示页眉', '正文顶部显示书名、章节、时间等', this.readerHeaderEnabled,
         (checked: boolean) => {
           this.readerHeaderEnabled = checked;
           this.onChanged();
@@ -296,14 +296,14 @@ export struct ReaderHeaderFooterSettings {
         this.slotItem('页眉中间', ReaderHeaderFooterSettings.SLOT_HEADER_CENTER, 'reader_header_center_select')
         this.slotItem('页眉右侧', ReaderHeaderFooterSettings.SLOT_HEADER_RIGHT, 'reader_header_right_select')
         this.stepperItem('页眉下移', ReaderHeaderFooterSettings.STEPPER_HEADER_OFFSET)
-        this.switchItem('页眉分隔线', '在页眉下方画一条细线', this.config().headerDivider, (checked: boolean) => {
+        this.switchItem('页眉分隔线', '页眉下方的细线', this.config().headerDivider, (checked: boolean) => {
           const config = this.config();
           config.headerDivider = checked;
           this.commit(config);
         })
       }
 
-      this.switchItem('显示页脚', '在正文底部显示章节信息和阅读进度', this.readerFooterEnabled,
+      this.switchItem('显示页脚', '正文底部显示章节信息和进度', this.readerFooterEnabled,
         (checked: boolean) => {
           this.readerFooterEnabled = checked;
           this.onChanged();
@@ -314,7 +314,7 @@ export struct ReaderHeaderFooterSettings {
         this.slotItem('页脚中间', ReaderHeaderFooterSettings.SLOT_FOOTER_CENTER, 'reader_footer_center_select')
         this.slotItem('页脚右侧', ReaderHeaderFooterSettings.SLOT_FOOTER_RIGHT, 'reader_footer_right_select')
         this.stepperItem('页脚上移', ReaderHeaderFooterSettings.STEPPER_FOOTER_OFFSET)
-        this.switchItem('页脚分隔线', '在页脚上方画一条细线', this.config().footerDivider, (checked: boolean) => {
+        this.switchItem('页脚分隔线', '页脚上方的细线', this.config().footerDivider, (checked: boolean) => {
           const config = this.config();
           config.footerDivider = checked;
           this.commit(config);
@@ -324,13 +324,13 @@ export struct ReaderHeaderFooterSettings {
       if (this.readerHeaderEnabled || this.readerFooterEnabled) {
         this.stepperItem('页眉页脚字号', ReaderHeaderFooterSettings.STEPPER_FONT_SIZE)
         this.stepperItem('页眉页脚不透明度', ReaderHeaderFooterSettings.STEPPER_OPACITY)
-        this.switchItem('边距跟随正文', '页眉页脚的左右边距与正文保持一致', this.config().followMargin,
+        this.switchItem('边距跟随正文', '页眉页脚的左右边距与正文一致', this.config().followMargin,
           (checked: boolean) => {
             const config = this.config();
             config.followMargin = checked;
             this.commit(config);
           })
-        this.selectItem('进度条', '在页眉下方或页脚上方显示阅读进度', ReaderInfoProgressBar.LABELS,
+        this.selectItem('进度条', '显示在页眉下方或页脚上方', ReaderInfoProgressBar.LABELS,
           Math.max(0, ReaderInfoProgressBar.VALUES.indexOf(this.config().progressBar)),
           (index: number) => {
             const config = this.config();
@@ -339,7 +339,7 @@ export struct ReaderHeaderFooterSettings {
             this.commit(config);
           }, 'reader_progress_bar_select')
         if (this.config().progressBar !== ReaderInfoProgressBar.NONE) {
-          this.selectItem('进度条范围', '进度条表示本章还是全书的阅读进度', ReaderInfoProgressBar.SCOPE_LABELS,
+          this.selectItem('进度条范围', '表示本章或全书的进度', ReaderInfoProgressBar.SCOPE_LABELS,
             Math.max(0, ReaderInfoProgressBar.SCOPE_VALUES.indexOf(this.config().progressScope)),
             (index: number) => {
               const config = this.config();

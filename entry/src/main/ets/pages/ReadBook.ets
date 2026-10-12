@@ -8182,14 +8182,14 @@ struct ReadBookPage {
     Column({ space: AppSpacing.XS }) {
       // 正文排版作为面板首项，统一调整字号、字距、行距、段距及四侧边距。
       this.readerTypographyCombinedSettings()
-      this.readerSelectSettingItem('正文对齐方式', '设置正文段落的水平对齐方式',
+      this.readerSelectSettingItem('正文对齐方式', '正文段落的水平对齐',
         this.readerTextAlignOptions(), this.readerTextAlignSelectedIndex(), (index: number) => {
           this.setReaderTextAlignByIndex(index);
         }, 'reader_text_align_select')
       this.readerHeaderFooterSettingsPanel()
       this.readerFontEntryItem()
 
-      this.readerSwitchSettingItem('正文扩展至状态栏', '开启后隐藏状态栏，正文延伸到屏幕顶部', this.readerExtendToStatusBar,
+      this.readerSwitchSettingItem('正文扩展至状态栏', '隐藏状态栏，正文延伸到屏幕顶部', this.readerExtendToStatusBar,
         (checked: boolean) => {
           this.setReaderExtendToStatusBar(checked);
         })
@@ -8286,7 +8286,7 @@ struct ReadBookPage {
     Column({ space: 14 }) {
       this.readerReplaceRulesEntryItem()
 
-      this.readerSelectSettingItem('翻页方式', '选择上下滑动、横向滑动或滚动阅读',
+      this.readerSelectSettingItem('翻页方式', '上下滑动、横向滑动或滚动阅读',
         this.pageTurnModeOptions(), this.pageTurnModeSelectedIndex(), (index: number) => {
           this.switchPageTurnMode(this.pageTurnModeByIndex(index));
         }, 'reader_page_turn_mode_select')
@@ -8296,38 +8296,38 @@ struct ReadBookPage {
       }
 
       if (this.readerPageTurnMode === 2) {
-        this.readerSelectSettingItem('翻页动画', '选择翻页时使用的页面切换效果',
+        this.readerSelectSettingItem('翻页动画', '翻页时的切换效果',
           this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
             this.setReaderPageTurnAnimationType(index);
           }, 'reader_page_turn_animation_select_horizontal')
       } else if (this.readerPageTurnMode === 0) {
-        this.readerSelectSettingItem('翻页动画', '选择翻页时使用的页面切换效果',
+        this.readerSelectSettingItem('翻页动画', '翻页时的切换效果',
           this.pageTurnAnimationOptions(), this.pageTurnAnimationSelectedIndex(), (index: number) => {
             this.setReaderPageTurnAnimationType(index);
           }, 'reader_page_turn_animation_select_vertical')
       }
 
-      this.readerSwitchSettingItem('使用双翻页', '横屏或折叠屏展开等宽屏状态下同时显示左右两页',
+      this.readerSwitchSettingItem('使用双翻页', '横屏、折叠屏展开等宽屏下并排显示两页',
         this.readerLandscapeDoublePage, (checked: boolean) => {
           this.setReaderLandscapeDoublePage(checked);
         })
 
-      this.readerSelectSettingItem('屏幕方向', '设置正文阅读时使用的屏幕方向',
+      this.readerSelectSettingItem('屏幕方向', '阅读正文时的屏幕方向',
         this.screenOrientationOptions(), this.screenOrientationSelectedIndex(), (index: number) => {
           this.setReaderScreenOrientationByIndex(index);
         }, 'reader_screen_orientation_select')
 
-      this.readerSwitchSettingItem('音量键翻页', '阅读页获得焦点时使用音量上/下键翻页', this.readerVolumeTurnPage,
+      this.readerSwitchSettingItem('音量键翻页', '音量上/下键翻到上一页/下一页', this.readerVolumeTurnPage,
         (checked: boolean) => {
           this.setReaderVolumeTurnPage(checked);
         })
 
-      this.readerSwitchSettingItem('快速添加书签', '正文下拉时快速添加或删除当前页书签', this.readerQuickBookmarkEnabled,
+      this.readerSwitchSettingItem('快速添加书签', '下拉正文添加或删除当前页书签', this.readerQuickBookmarkEnabled,
         (checked: boolean) => {
           this.setReaderQuickBookmarkEnabled(checked);
         })
 
-      this.readerSwitchSettingItem('眼动翻页（beta）', '视线到达正文底部后提示向上看，向上看即翻到下一页；图像仅在设备本地处理',
+      this.readerSwitchSettingItem('眼动翻页（beta）', '看到页底后向上看即翻页；摄像头图像仅在本机处理',
         this.readerEyeTurnEnabled, (checked: boolean) => {
           this.eyeTurn().setEnabled(checked);
         })
@@ -8389,7 +8389,7 @@ struct ReadBookPage {
         Text('阅读字体')
           .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.getTextColor())
-        Text('正文 / 标题 / 正则样式设置')
+        Text('正文、标题、正则样式')
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.getSubTextColor())
           .margin({ top: AppSpacing.XS })
@@ -8415,7 +8415,7 @@ struct ReadBookPage {
         Text('替换净化')
           .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(this.getTextColor())
-        Text('管理正文与章节标题的替换规则')
+        Text('正文与章节标题的替换规则')
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.getSubTextColor())
           .margin({ top: AppSpacing.XS })
@@ -8852,7 +8852,7 @@ struct ReadBookPage {
           Text('预缓存设置')
             .fontSize(AppFontSize.BODY_LARGE)
             .fontColor(this.getTextColor())
-          Text(this.readerPreloadEnabled ? '阅读过程中提前缓存后续章节' : '已关闭自动预缓存')
+          Text('阅读时提前缓存后续章节')
             .fontSize(AppFontSize.CAPTION)
             .fontColor(this.getSubTextColor())
             .margin({ top: AppSpacing.XS })
@@ -8871,7 +8871,7 @@ struct ReadBookPage {
       .alignItems(VerticalAlign.Center)
 
       if (this.readerPreloadEnabled) {
-        this.readerSelectSettingItem('下一章节数', '选择自动预缓存的后续章节数量',
+        this.readerSelectSettingItem('下一章节数', '预缓存的后续章节数',
           this.readerPreloadChapterOptions(), this.readerPreloadChapterCount - 1,
           (index: number) => this.setReaderPreloadChapterCount(index + 1),
           'reader_preload_chapter_count_select')

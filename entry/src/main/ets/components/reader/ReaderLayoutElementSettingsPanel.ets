@@ -76,12 +76,12 @@ export struct ReaderLayoutElementSettingsPanel {
           .width('100%')
           .margin({ bottom: AppSpacing.MD })
 
-        this.toggleRow('使用快速朗读组件', '显示朗读快捷按钮与朗读悬浮胶囊', this.readerUseTtsQuickAction,
+        this.toggleRow('使用快速朗读组件', '显示朗读快捷按钮和悬浮胶囊', this.readerUseTtsQuickAction,
           (enabled: boolean) => {
             this.readerUseTtsQuickAction = enabled;
             this.save();
           })
-        this.toggleRow('使用章节快速跳转组件', '显示章节滑杆与上一章、下一章按钮', this.readerUseChapterQuickJump,
+        this.toggleRow('使用章节快速跳转组件', '显示章节滑杆和上一章、下一章按钮', this.readerUseChapterQuickJump,
           (enabled: boolean) => {
             this.readerUseChapterQuickJump = enabled;
             this.onChapterQuickJumpChanged(enabled);
