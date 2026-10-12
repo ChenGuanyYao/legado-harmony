@@ -1185,6 +1185,7 @@ struct ReaderFontSettingsPage {
     this.appendAccessibleBubbleStyle(options, 'pipi-soft-paw', '皮皮软爪', revision);
     this.appendAccessibleBubbleStyle(options, 'mecha-comm', '通讯频道', revision);
     this.appendAccessibleBubbleStyle(options, 'starwish-ribbon', '星愿丝带', revision);
+    this.appendAccessibleBubbleStyle(options, 'pencil-mark', '铅笔划线', revision);
     return options;
   }
 

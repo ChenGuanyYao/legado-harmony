@@ -36,6 +36,7 @@ export class ThemeAccessPolicy {
     if (normalized === 'pipi-soft-paw') return ThemeIds.CAT_PIPI;
     if (normalized === 'mecha-comm') return ThemeIds.AZURE_MECHA;
     if (normalized === 'starwish-ribbon') return ThemeIds.STARWISH_MAGIC;
+    if (normalized === 'pencil-mark') return ThemeIds.LETTERPRESS_PAGE;
     return '';
   }
 

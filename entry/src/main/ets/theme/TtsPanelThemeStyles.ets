@@ -77,6 +77,10 @@ export class TtsPanelThemeStyles {
         return darkMode ?
           new TtsPanelThemeStyle($r('app.media.tts_panel_cat_pipi_dark'), '#2C2018', '#171310', '#2EE8A06F') :
           new TtsPanelThemeStyle($r('app.media.tts_panel_cat_pipi_light'), '#FFE6C8', '#FFF7ED', '#33C46F45');
+      case ThemeIds.LETTERPRESS_PAGE:
+        return darkMode ?
+          new TtsPanelThemeStyle($r('app.media.tts_panel_letterpress_page_dark'), '#1F2A24', '#141A17', '#33D3B36A') :
+          new TtsPanelThemeStyle($r('app.media.tts_panel_letterpress_page_light'), '#EDE5D2', '#F3EFE6', '#2E2F5D48');
       case ThemeIds.AZURE_MECHA:
         return darkMode ?
           new TtsPanelThemeStyle($r('app.media.tts_panel_azure_mecha_dark'), '#0F2236', '#0B1119', '#333FD3E6') :

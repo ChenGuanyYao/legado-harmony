@@ -55,6 +55,7 @@ export class StartupCoverTextStore {
     if (themeId === ThemeIds.CAT_PIPI) return '皮皮陪你，慢慢翻页';
     if (themeId === ThemeIds.AZURE_MECHA) return '系统就绪，向下一章出击';
     if (themeId === ThemeIds.STARWISH_MAGIC) return '许个愿，翻开下一页';
+    if (themeId === ThemeIds.LETTERPRESS_PAGE) return '翻开这一页，世界安静下来';
     return '';
   }
 

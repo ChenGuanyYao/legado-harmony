@@ -46,7 +46,7 @@ entry/src/main/resources/base/media/
 | --- | --- |
 | `plain-default` | 默认主题，`BuiltinThemeRegistry.DEFAULT_THEME_ID`，也是所有令牌的回退来源。 |
 | `classic-blue`、`warm-paper`、`forest-mist`、`ink-wash`、`neon-night`、`strawberry-cream`、`crimson-archive`、`plum-tea`、`rose-letter`、`moon-crane` | 内置主题。 |
-| `sword-frost`、`qingluan-water`、`cat-pipi`、`azure-mecha`、`starwish-magic` | 带整套位图资源的主题，`theme-framework-check` 会逐个校验其资源文件和尺寸。 |
+| `sword-frost`、`qingluan-water`、`cat-pipi`、`azure-mecha`、`starwish-magic`、`letterpress-page` | 带整套位图资源的主题，`theme-framework-check` 会逐个校验其资源文件和尺寸。 |
 | `custom` | 自定义主题，不是独立的主题包：`BuiltinThemeRegistry.customTheme()` 以某个内置主题为基底克隆，再由 `ThemeComponentSourceIds` 按浅色、深色分别指定各部件来自哪个主题。 |
 
 `BuiltinThemeRegistry.isFree()` 只对 `plain-default` 返回 `true`。
@@ -223,7 +223,7 @@ BuiltinThemeRegistry.register(theme);
 3. 在 `navigationIcon()` 的分支中增加映射。
 4. 把 `ThemePack.navigation.iconPackId` 指向新 ID。
 
-当前可用的图标包 ID：`classic`、`rounded`、`ink`、`strawberry`、`crimson`、`plum`、`rose`、`crane`、`sword-frost`、`qingluan-water`、`cat-pipi`、`azure-mecha`、`starwish-magic`。
+当前可用的图标包 ID：`classic`、`rounded`、`ink`、`strawberry`、`crimson`、`plum`、`rose`、`crane`、`sword-frost`、`qingluan-water`、`cat-pipi`、`azure-mecha`、`starwish-magic`、`letterpress-page`。
 
 桌面应用图标由 `AppIconManager` 独立管理，不随主题切换。
 
@@ -246,7 +246,7 @@ BuiltinThemeRegistry.register(theme);
 气泡样式 ID 定义在 `ThemeBubbleStyles`：
 
 - 通用样式：`qq-soft`、`qq-solid`、`capsule`、`paper`、`neon`。
-- 主题专属样式：`classic-glass`、`warm-scroll`、`forest-dew`、`ink-brush`、`neon-pulse`、`strawberry-ribbon`、`crimson-stamp`、`celadon-slip`、`rose-frame`、`moon-halo`、`sword-talisman`、`qingluan-jade`、`pipi-soft-paw`、`mecha-comm`、`starwish-ribbon`。
+- 主题专属样式：`classic-glass`、`warm-scroll`、`forest-dew`、`ink-brush`、`neon-pulse`、`strawberry-ribbon`、`crimson-stamp`、`celadon-slip`、`rose-frame`、`moon-halo`、`sword-talisman`、`qingluan-jade`、`pipi-soft-paw`、`mecha-comm`、`starwish-ribbon`、`pencil-mark`。
 
 新增主题专属气泡样式时：
 

@@ -27,6 +27,7 @@
    psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/012_qingluan_water_theme.sql
    psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/013_cat_pipi_theme.sql
    psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/014_anime_themes.sql
+   psql -v ON_ERROR_STOP=1 "$DATABASE_URL" -f migrations/015_letterpress_page_theme.sql
    ```
 
 2. 根据 `.env.example` 配置运行环境。所有 Client Secret、IAP 私钥和数据库凭据只能放在服务端密钥管理中，不得写入 HarmonyOS 工程。

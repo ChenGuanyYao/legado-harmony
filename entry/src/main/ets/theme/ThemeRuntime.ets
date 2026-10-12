@@ -744,7 +744,7 @@ export class ThemeRuntime {
       style === ThemeBubbleStyles.ROSE_FRAME || style === ThemeBubbleStyles.MOON_HALO ||
       style === ThemeBubbleStyles.SWORD_TALISMAN || style === ThemeBubbleStyles.QINGLUAN_JADE ||
       style === ThemeBubbleStyles.PIPI_SOFT_PAW || style === ThemeBubbleStyles.MECHA_COMM ||
-      style === ThemeBubbleStyles.STARWISH_RIBBON) {
+      style === ThemeBubbleStyles.STARWISH_RIBBON || style === ThemeBubbleStyles.PENCIL_MARK) {
       return style;
     }
     const fallbackStyle = (fallback || '').trim();
@@ -760,7 +760,8 @@ export class ThemeRuntime {
       fallbackStyle === ThemeBubbleStyles.QINGLUAN_JADE ||
       fallbackStyle === ThemeBubbleStyles.PIPI_SOFT_PAW ||
       fallbackStyle === ThemeBubbleStyles.MECHA_COMM ||
-      fallbackStyle === ThemeBubbleStyles.STARWISH_RIBBON) {
+      fallbackStyle === ThemeBubbleStyles.STARWISH_RIBBON ||
+      fallbackStyle === ThemeBubbleStyles.PENCIL_MARK) {
       return fallbackStyle;
     }
     return ThemeBubbleStyles.QQ_SOFT;

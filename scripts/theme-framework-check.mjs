@@ -77,12 +77,13 @@ const serverIndex = read('server/src/index.ts');
 const serverThemeCatalog = read('server/migrations/011_theme_catalog.sql') + '\n' +
   read('server/migrations/012_qingluan_water_theme.sql') + '\n' +
   read('server/migrations/013_cat_pipi_theme.sql') + '\n' +
-  read('server/migrations/014_anime_themes.sql');
+  read('server/migrations/014_anime_themes.sql') + '\n' +
+  read('server/migrations/015_letterpress_page_theme.sql');
 const pages = JSON.parse(read('entry/src/main/resources/base/profile/main_pages.json'));
 
 const expectedThemes = [
   'classic-blue', 'warm-paper', 'forest-mist', 'ink-wash', 'neon-night', 'sword-frost',
-  'qingluan-water', 'cat-pipi', 'azure-mecha', 'starwish-magic'
+  'qingluan-water', 'cat-pipi', 'azure-mecha', 'starwish-magic', 'letterpress-page'
 ];
 for (const themeId of expectedThemes) {
   assert(models.includes(`'${themeId}'`), `Theme id is missing from ThemeModels: ${themeId}`);
@@ -91,7 +92,7 @@ for (const themeId of expectedThemes) {
 const redeemableThemeIds = [
   'classic-blue', 'warm-paper', 'forest-mist', 'ink-wash', 'neon-night',
   'strawberry-cream', 'crimson-archive', 'plum-tea', 'rose-letter', 'moon-crane', 'sword-frost',
-  'qingluan-water', 'cat-pipi', 'azure-mecha', 'starwish-magic'
+  'qingluan-water', 'cat-pipi', 'azure-mecha', 'starwish-magic', 'letterpress-page'
 ];
 for (const themeId of redeemableThemeIds) {
   assert(serverThemeCatalog.includes(`('${themeId}'`), `Database theme catalog is missing: ${themeId}`);
@@ -107,7 +108,7 @@ const expectedBackgrounds = [
   'ink-light', 'ink-dark', 'neon-light', 'neon-dark',
   'sword-frost-light', 'sword-frost-dark', 'qingluan-water-light', 'qingluan-water-dark',
   'cat-pipi-light', 'cat-pipi-dark', 'azure-mecha-light', 'azure-mecha-dark',
-  'starwish-magic-light', 'starwish-magic-dark'
+  'starwish-magic-light', 'starwish-magic-dark', 'letterpress-page-light', 'letterpress-page-dark'
 ];
 for (const assetId of expectedBackgrounds) {
   assert(assets.includes(`'${assetId}'`), `Background asset id is not mapped: ${assetId}`);
@@ -143,7 +144,7 @@ for (const fileName of readerDecorationFiles) {
 // Reader backgrounds pair the top-left ornament with a dedicated bottom-right drawing, not a mirror.
 const assetRegistrySource = read('entry/src/main/ets/theme/ThemeAssetRegistry.ets');
 for (const name of ['paper', 'forest', 'ink', 'neon', 'strawberry', 'crimson', 'plum_tea', 'rose_letter',
-  'moon_crane', 'sword_frost', 'qingluan_water', 'azure_mecha', 'starwish_magic']) {
+  'moon_crane', 'sword_frost', 'qingluan_water', 'azure_mecha', 'starwish_magic', 'letterpress_page']) {
   for (const mode of ['light', 'dark']) {
     const resourceName = `reader_decor_${name}_trailing_${mode}`;
     assert(fs.existsSync(path.join(mediaRoot, `${resourceName}.svg`)),
@@ -157,7 +158,7 @@ for (const name of ['paper', 'forest', 'ink', 'neon', 'strawberry', 'crimson', '
 const ttsPanelThemeNames = [
   'plain_default', 'classic_blue', 'warm_paper', 'forest_mist', 'ink_wash', 'neon_night', 'strawberry_cream',
   'crimson_archive', 'plum_tea', 'rose_letter', 'moon_crane', 'sword_frost', 'qingluan_water', 'cat_pipi',
-  'azure_mecha', 'starwish_magic'
+  'azure_mecha', 'starwish_magic', 'letterpress_page'
 ];
 const ttsPanelStyles = read('entry/src/main/ets/theme/TtsPanelThemeStyles.ets');
 for (const themeName of ttsPanelThemeNames) {
@@ -279,7 +280,7 @@ for (const fileName of catPipiSvgs) {
 }
 
 const bubbleStyles = ['qq-soft', 'qq-solid', 'capsule', 'paper', 'neon', 'sword-talisman', 'qingluan-jade',
-  'pipi-soft-paw', 'mecha-comm', 'starwish-ribbon'];
+  'pipi-soft-paw', 'mecha-comm', 'starwish-ribbon', 'pencil-mark'];
 for (const styleId of bubbleStyles) {
   assert(models.includes(`'${styleId}'`), `Bubble style is missing from ThemeModels: ${styleId}`);
   assert(regexModel.includes(`'${styleId}'`), `Bubble resolver/codec is missing style: ${styleId}`);

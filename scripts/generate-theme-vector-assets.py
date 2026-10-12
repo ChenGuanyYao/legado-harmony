@@ -1,4 +1,4 @@
-"""Generates the vector assets of the two anime themes, Azure Mecha and Starwish Magic.
+"""Generates the vector assets of Azure Mecha, Starwish Magic and Letterpress Page.
 
 Covers navigation icons, theme logo, shelf frame, emphasis bubble frame and cap, the
 top-left reader ornament and the legacy full-page reader background. Their bottom-right
@@ -168,11 +168,73 @@ FILES['reader_bg_starwish_magic_light'] = magic_legacy('#FBF7FD', '#9A74D6', '#D
 FILES['reader_bg_starwish_magic_dark'] = magic_legacy('#171226', '#C3A2F2', '#E8C76A')
 
 
+# ------------------------------------------------------------ Letterpress Page
+FILES['ic_theme_letterpress_page_bookshelf'] = icon(
+    'M3 4h4v17H3ZM9 7h4v14H9ZM15 3h4v18h-4ZM4 7h2v1.5H4ZM10 10h2v1.5h-2ZM16 6h2v1.5h-2Z')
+FILES['ic_theme_letterpress_page_explore'] = icon(
+    'M5 2h14v20H5ZM7 4v16h10V4ZM12 7l3 5-3 5-3-5Z')
+FILES['ic_theme_letterpress_page_search'] = icon(
+    'M10.5 3a7.5 7.5 0 1 0 4.7 13.4l4.6 4.6 1.4-1.4-4.6-4.6A7.5 7.5 0 0 0 10.5 3Z'
+    'M10.5 5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11Z')
+FILES['ic_theme_letterpress_page_mine'] = icon(
+    'M9 2h6v2c0 2-1 3-1 5h3l2 4v3H5v-3l2-4h3c0-2-1-3-1-5ZM4 18h16v3H4Z')
+
+FILES['theme_logo_letterpress_page'] = svg(64, 64, '\n  '.join([
+    '<rect x="3" y="3" width="58" height="58" rx="6" fill="#F3EFE6" stroke="#2F5D48" stroke-width="2"/>',
+    '<path d="M10 44V18c8-4 15-4 22 0 7-4 14-4 22 0v26c-8-4-15-4-22 0-7-4-14-4-22 0Z" fill="#FBF8F1" stroke="#23211E" stroke-width="2" stroke-linejoin="round"/>',
+    '<path d="M32 18v26" stroke="#23211E" stroke-width="2"/>',
+    '<path d="M15 24c4-1.500 8-1.500 12 0M15 30c4-1.500 8-1.500 12 0M15 36c4-1.500 8-1.500 12 0M37 24c4-1.500 8-1.500 12 0M37 30c4-1.500 8-1.500 12 0" fill="none" stroke="#746D62" stroke-width="1.5" stroke-linecap="round"/>',
+    '<path d="M8 46c9-4 17-4 24 0 7-4 15-4 24 0v5H8Z" fill="#2F5D48"/>',
+    '<path d="M42 34v20l4-4 4 4V36Z" fill="#C9A24A"/>',
+]).replace('1.500', '1.5'))
+
+FILES['theme_frame_letterpress_page'] = svg(300, 440, '\n  '.join([
+    '<rect x="6" y="6" width="288" height="428" rx="4" fill="none" stroke="#C9A24A" stroke-width="2"/>',
+    '<rect x="13" y="13" width="274" height="414" rx="2" fill="none" stroke="#C9A24A" stroke-opacity=".6" stroke-width="1"/>',
+    '<path d="M22 6l8 8-8 8-8-8ZM278 6l8 8-8 8-8-8ZM22 418l8 8-8 8-8-8ZM278 418l8 8-8 8-8-8Z" fill="#C9A24A"/>',
+    '<path d="M120 13h60M120 427h60" stroke="#2F5D48" stroke-width="3"/>',
+]))
+
+FILES['regex_cap_pencil_mark'] = svg(32, 32, '<path d="M8 6h15v4H12v13H8Z" fill="#2F5D48"/>')
+FILES['regex_frame_pencil_mark'] = svg(1000, 260, '\n  '.join([
+    '<path d="M18 70c160-14 320-10 480-6s330 0 484 10l-6 124c-160 12-320 8-480 4s-320-2-472 10Z" fill="#F1DE8A" fill-opacity=".45"/>',
+    '<path d="M30 228c150-10 300-6 460-2s320 0 480-10" fill="none" stroke="#2F5D48" stroke-opacity=".6" stroke-width="5" stroke-linecap="round"/>',
+]))
+
+
+def letterpress_decor(ink, gilt):
+    return svg(480, 480, '\n  '.join([
+        f'<path d="M24 44h30M96 44h250" stroke="{ink}" stroke-opacity=".34" stroke-width="2"/>',
+        f'<path d="M24 52h322" stroke="{ink}" stroke-opacity=".16" stroke-width="1.5"/>',
+        f'<path d="M75 30l10 14-10 14-10-14Z" fill="{gilt}" fill-opacity=".8"/>',
+        f'<path d="M58 44c-12-10-22-10-30 0 8 10 18 10 30 0ZM92 44c12-10 22-10 30 0-8 10-18 10-30 0Z" fill="{ink}" fill-opacity=".3"/>',
+        f'<path d="M24 60V200" stroke="{ink}" stroke-opacity=".14" stroke-width="6"/>',
+        f'<path d="M36 60V160" stroke="{ink}" stroke-opacity=".08" stroke-width="3"/>',
+        f'<path d="M24 92h18v18H24Z" fill="none" stroke="{gilt}" stroke-opacity=".6" stroke-width="2"/>',
+    ]))
+
+
+def letterpress_legacy(background, ink, gilt):
+    return svg(1080, 1920, '\n  '.join([
+        f'<rect width="1080" height="1920" fill="{background}"/>',
+        f'<path d="M70 110h940M70 126h940" stroke="{ink}" stroke-opacity=".14" stroke-width="3"/>',
+        f'<path d="M540 80l22 30-22 30-22-30Z" fill="{gilt}" fill-opacity=".4"/>',
+        f'<path d="M70 1810h940" stroke="{ink}" stroke-opacity=".14" stroke-width="3"/>',
+        f'<path d="M930 1500v330l34-30 34 30v-330Z" fill="{ink}" fill-opacity=".14"/>',
+    ]))
+
+
+FILES['reader_decor_letterpress_page_light'] = letterpress_decor('#2F5D48', '#C9A24A')
+FILES['reader_decor_letterpress_page_dark'] = letterpress_decor('#9DB8A7', '#D3B36A')
+FILES['reader_bg_letterpress_page_light'] = letterpress_legacy('#F7F2E7', '#2F5D48', '#C9A24A')
+FILES['reader_bg_letterpress_page_dark'] = letterpress_legacy('#171D1A', '#9DB8A7', '#D3B36A')
+
+
 def main():
     for name, content in FILES.items():
         with open(os.path.join(OUT, name + '.svg'), 'w', encoding='utf-8', newline='\n') as f:
             f.write(content)
-    print(f'Generated {len(FILES)} anime theme assets.')
+    print(f'Generated {len(FILES)} theme vector assets.')
 
 
 if __name__ == '__main__':

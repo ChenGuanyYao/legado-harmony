@@ -23,6 +23,11 @@ def stroke(shape, color, opacity, width, extra=''):
             f'stroke-linecap="round" stroke-linejoin="round"{extra}/>')
 
 
+def both(shape, fill_color, fill_opacity, stroke_color, stroke_opacity, width):
+    return (f'<{shape} fill="{fill_color}" fill-opacity="{fill_opacity}" stroke="{stroke_color}" '
+            f'stroke-opacity="{stroke_opacity}" stroke-width="{width}" stroke-linejoin="round"/>')
+
+
 def circle(cx, cy, r):
     return f'circle cx="{cx}" cy="{cy}" r="{r}"'
 
@@ -400,6 +405,33 @@ def starwish_magic(p):
     return out
 
 
+def letterpress_page(p):
+    out = [
+        fill(circle(548, 176, 150), p['c'], 0.14),
+        fill(circle(548, 176, 96), p['c'], 0.20),
+        # desk lamp
+        stroke(path('M640 420V250C640 190 600 150 556 140'), p['a'], 0.5, 7),
+        fill(path('M492 176c8-40 46-62 96-52l-22 74Z'), p['a'], 0.5),
+        fill(path('M506 184l56 14-8 12-52-14Z'), p['c'], 0.9),
+        fill(path('M596 420h88v14h-88Z'), p['a'], 0.5),
+        # open book
+        both(path('M150 392c60-30 120-30 170 0v60c-50-26-110-26-170 0Z'), p['b'], 0.8, p['a'], 0.5, 3),
+        both(path('M320 392c50-30 110-30 170 0v60c-60-26-120-26-170 0Z'), p['b'], 0.8, p['a'], 0.5, 3),
+        stroke(path('M174 404c42-16 84-16 124 0M174 420c42-16 84-16 124 0M344 404c40-16 82-16 124 0M344 420c40-16 82-16 124 0'),
+               p['a'], 0.3, 2),
+        fill(path('M420 380h22v96l-11-10-11 10Z'), p['a'], 0.5),
+        # running head
+        stroke(path('M40 70h34M118 70h250'), p['a'], 0.34, 2),
+        stroke(path('M40 80h328'), p['a'], 0.16, 1.5),
+        fill(path('M96 54l11 16-11 16-11-16Z'), p['c'], 0.9),
+    ]
+    for i, (rise, spread) in enumerate(((60, 50), (104, 86), (150, 124))):
+        out.append(stroke(path(f'M{320 - spread} {372 - rise * 0.5:.0f}Q320 {372 - rise} {320 + spread} {372 - rise * 0.5:.0f}'),
+                          p['a'], round(0.34 - i * 0.09, 2), 3))
+    out.append(stroke(path('M0 456H720'), p['a'], 0.24, 3))
+    return out
+
+
 # Palette keys: a = main ink, b = second ink, c = third ink, d / e = small accents.
 THEMES = {
     'plain_default': (plain_default, {'a': '#5B6573'}, {'a': '#AAB2BD'}),
@@ -427,6 +459,8 @@ THEMES = {
                        {'a': '#8AB5AC', 'b': '#C16A7D', 'c': '#DCEBE7'}),
     'cat_pipi': (cat_pipi, {'a': '#C46F45', 'b': '#F6C98F', 'c': '#587E73', 'd': '#E79A8E', 'e': '#5A3A2A'},
                  {'a': '#E8A06F', 'b': '#8A5C36', 'c': '#79A99B', 'd': '#E39A8F', 'e': '#2A1C14'}),
+    'letterpress_page': (letterpress_page, {'a': '#2F5D48', 'b': '#FBF8F1', 'c': '#C9A24A'},
+                         {'a': '#9DB8A7', 'b': '#26302B', 'c': '#D3B36A'}),
     'azure_mecha': (azure_mecha, {'a': '#2F6FB3', 'b': '#2A9DB0', 'c': '#E8731F'},
                     {'a': '#8FB6DE', 'b': '#3FD3E6', 'c': '#F08A3C'}),
     'starwish_magic': (starwish_magic, {'a': '#9A74D6', 'b': '#D9B24C', 'c': '#C9B1EE'},

@@ -16,6 +16,7 @@ export class ThemeIds {
   static readonly CAT_PIPI: string = 'cat-pipi';
   static readonly AZURE_MECHA: string = 'azure-mecha';
   static readonly STARWISH_MAGIC: string = 'starwish-magic';
+  static readonly LETTERPRESS_PAGE: string = 'letterpress-page';
 }
 
 export class ThemeComponentSourceIds {
@@ -63,6 +64,7 @@ export class ThemeBubbleStyles {
   static readonly PIPI_SOFT_PAW: string = 'pipi-soft-paw';
   static readonly MECHA_COMM: string = 'mecha-comm';
   static readonly STARWISH_RIBBON: string = 'starwish-ribbon';
+  static readonly PENCIL_MARK: string = 'pencil-mark';
 }
 
 export class ThemeColorTokens {

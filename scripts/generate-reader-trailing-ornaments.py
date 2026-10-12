@@ -355,6 +355,23 @@ def starwish_magic(p):
     return out
 
 
+def letterpress_page(p):
+    """A ribbon bookmark and the turned corner of the last page."""
+    return [
+        fill(path('M480 344C440 366 396 412 372 480H480Z'), p['b'], 0.16),
+        stroke(path('M480 344C440 366 396 412 372 480'), p['a'], 0.26, 3),
+        both(path('M372 480C398 444 436 424 466 424C464 448 452 468 438 480Z'), p['b'], 0.3, p['a'], 0.24, 2),
+        fill(path('M432 200h30v210l-15-16-15 16Z'), p['a'], 0.26),
+        stroke(path('M439 208v180M455 208v180'), p['c'], 0.4, 1.5),
+        fill(path('M426 192h42v9h-42Z'), p['c'], 0.6),
+        stroke(path('M150 448h70M252 448h70'), p['a'], 0.3, 2),
+        fill(path('M236 438l8 10-8 10-8-10Z'), p['c'], 0.8),
+        stroke(path('M150 458h172'), p['a'], 0.14, 1.5),
+        fill(path('M196 404c-12-10-22-10-30 0 8 10 18 10 30 0ZM276 404c12-10 22-10 30 0-8 10-18 10-30 0Z'), p['a'], 0.22),
+        fill(circle(236, 404, 5), p['c'], 0.7),
+    ]
+
+
 THEMES = {
     'paper': (paper, {'a': '#9B764B', 'b': '#CDAE7C'}, {'a': '#D2A068', 'b': '#D7A96F'}),
     'forest': (forest, {'a': '#557A62', 'b': '#9EB7A3'}, {'a': '#94B49C', 'b': '#9BB9A2'}),
@@ -374,6 +391,8 @@ THEMES = {
     'sword_frost': (sword_frost, {'a': '#476963', 'b': '#9B3B31', 'c': '#F4ECD9'},
                     {'a': '#8AB1A7', 'b': '#C76559', 'c': '#151C19'}),
     'qingluan_water': (qingluan_water, {'a': '#607F79', 'b': '#9C4F62'}, {'a': '#8AB5AC', 'b': '#C16A7D'}),
+    'letterpress_page': (letterpress_page, {'a': '#2F5D48', 'b': '#D9D1C2', 'c': '#C9A24A'},
+                         {'a': '#9DB8A7', 'b': '#35423B', 'c': '#D3B36A'}),
     'azure_mecha': (azure_mecha, {'a': '#2F6FB3', 'b': '#2A9DB0', 'c': '#E8731F'},
                     {'a': '#8FB6DE', 'b': '#3FD3E6', 'c': '#F08A3C'}),
     'starwish_magic': (starwish_magic, {'a': '#9A74D6', 'b': '#E2D0F5', 'c': '#D9B24C'},

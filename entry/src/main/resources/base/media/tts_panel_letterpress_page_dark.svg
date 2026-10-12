@@ -1,0 +1,19 @@
+<svg width="720" height="520" viewBox="0 0 720 520" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="548" cy="176" r="150" fill="#D3B36A" fill-opacity="0.14"/>
+  <circle cx="548" cy="176" r="96" fill="#D3B36A" fill-opacity="0.2"/>
+  <path d="M640 420V250C640 190 600 150 556 140" fill="none" stroke="#9DB8A7" stroke-opacity="0.5" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M492 176c8-40 46-62 96-52l-22 74Z" fill="#9DB8A7" fill-opacity="0.5"/>
+  <path d="M506 184l56 14-8 12-52-14Z" fill="#D3B36A" fill-opacity="0.9"/>
+  <path d="M596 420h88v14h-88Z" fill="#9DB8A7" fill-opacity="0.5"/>
+  <path d="M150 392c60-30 120-30 170 0v60c-50-26-110-26-170 0Z" fill="#26302B" fill-opacity="0.8" stroke="#9DB8A7" stroke-opacity="0.5" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M320 392c50-30 110-30 170 0v60c-60-26-120-26-170 0Z" fill="#26302B" fill-opacity="0.8" stroke="#9DB8A7" stroke-opacity="0.5" stroke-width="3" stroke-linejoin="round"/>
+  <path d="M174 404c42-16 84-16 124 0M174 420c42-16 84-16 124 0M344 404c40-16 82-16 124 0M344 420c40-16 82-16 124 0" fill="none" stroke="#9DB8A7" stroke-opacity="0.3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M420 380h22v96l-11-10-11 10Z" fill="#9DB8A7" fill-opacity="0.5"/>
+  <path d="M40 70h34M118 70h250" fill="none" stroke="#9DB8A7" stroke-opacity="0.34" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M40 80h328" fill="none" stroke="#9DB8A7" stroke-opacity="0.16" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M96 54l11 16-11 16-11-16Z" fill="#D3B36A" fill-opacity="0.9"/>
+  <path d="M270 342Q320 312 370 342" fill="none" stroke="#9DB8A7" stroke-opacity="0.34" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M234 320Q320 268 406 320" fill="none" stroke="#9DB8A7" stroke-opacity="0.25" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M196 297Q320 222 444 297" fill="none" stroke="#9DB8A7" stroke-opacity="0.16" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M0 456H720" fill="none" stroke="#9DB8A7" stroke-opacity="0.24" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

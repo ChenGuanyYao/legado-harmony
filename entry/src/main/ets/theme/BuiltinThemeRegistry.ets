@@ -131,6 +131,7 @@ export class BuiltinThemeRegistry {
     themes.push(BuiltinThemeRegistry.catPipi());
     themes.push(BuiltinThemeRegistry.azureMecha());
     themes.push(BuiltinThemeRegistry.starwishMagic());
+    themes.push(BuiltinThemeRegistry.letterpressPage());
     themes.push(BuiltinThemeRegistry.classicBlue());
     themes.push(BuiltinThemeRegistry.warmPaper());
     themes.push(BuiltinThemeRegistry.forestMist());
@@ -523,6 +524,32 @@ export class BuiltinThemeRegistry {
     theme.radius = BuiltinThemeRegistry.radius(10, 14, 22, 16, 24, 16);
     theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 14, 2, 22, 22, 22, 22);
     theme.glass = BuiltinThemeRegistry.glass(22, 18, 86, 72, 58, 24, 18, 4);
+    return theme;
+  }
+
+  private static letterpressPage(): ThemePack {
+    const theme = BuiltinThemeRegistry.theme(
+      ThemeIds.LETTERPRESS_PAGE,
+      '铅字书页',
+      '象牙书纸、铅字与烫金，像翻开一本布面精装的旧书',
+      'serif',
+      'letterpress-page'
+    );
+    theme.light = BuiltinThemeRegistry.variant(
+      BuiltinThemeRegistry.colors('#F3EFE6', '#FBF8F1', '#E9E3D6', '#23211E', '#746D62', '#D9D1C2',
+        '#2F5D48', '#2F5D48', '#B4433A'),
+      BuiltinThemeRegistry.reader('#F7F2E7', 'letterpress-page-light', '#262320', '#7A7266', 'light'),
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.PENCIL_MARK, '#F1DE8A', '#2B2620')
+    );
+    theme.dark = BuiltinThemeRegistry.variant(
+      BuiltinThemeRegistry.colors('#141A17', '#1B2320', '#26302B', '#EFE7D6', '#A79F8E', '#35423B',
+        '#D3B36A', '#4E8068', '#E0756A'),
+      BuiltinThemeRegistry.reader('#171D1A', 'letterpress-page-dark', '#E6DDCB', '#A39B8B', 'dark'),
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.PENCIL_MARK, '#7A6A2E', '#FFF3CF')
+    );
+    theme.radius = BuiltinThemeRegistry.radius(2, 3, 6, 4, 6, 2);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(21, 14, 2, 24, 24, 24, 24);
+    theme.glass = BuiltinThemeRegistry.glass(18, 6, 88, 74, 50, 24, 14, 3);
     return theme;
   }
 

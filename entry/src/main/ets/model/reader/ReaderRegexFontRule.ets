@@ -155,7 +155,8 @@ export class ReaderRegexFontCodec {
       value === 'forest-dew' || value === 'ink-brush' || value === 'neon-pulse' || value === 'strawberry-ribbon' ||
       value === 'crimson-stamp' || value === 'celadon-slip' || value === 'rose-frame' ||
       value === 'moon-halo' || value === 'sword-talisman' || value === 'qingluan-jade' ||
-      value === 'pipi-soft-paw' || value === 'mecha-comm' || value === 'starwish-ribbon') {
+      value === 'pipi-soft-paw' || value === 'mecha-comm' || value === 'starwish-ribbon' ||
+      value === 'pencil-mark') {
       return value;
     }
     // Compatibility with early theme drafts.
@@ -489,6 +490,15 @@ export class ReaderRegexBubbleStyleResolver {
       ReaderRegexBubbleStyleResolver.addShadow(result, 1.4,
         ReaderRegexBubbleStyleResolver.withAlpha(base, 104), 0.5, 1);
       ReaderRegexBubbleStyleResolver.addShadow(result, 0.5, '#88B4935C', -0.5, 0.5);
+      return;
+    }
+    if (result.bubbleStyleId === 'pencil-mark') {
+      // A highlighter stroke over print: flat colour, square ends, no glow.
+      const paper = context.darkMode ? '#1B2320' : '#FBF8F1';
+      result.backgroundColor = ReaderRegexBubbleStyleResolver.mix(paper, base,
+        context.darkMode ? 0.46 : 0.62);
+      result.textColor = context.darkMode ? '#FFF3CF' : '#2B2620';
+      ReaderRegexBubbleStyleResolver.setUniformRadius(result, 2);
       return;
     }
     if (result.bubbleStyleId === 'mecha-comm') {
