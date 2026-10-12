@@ -180,7 +180,7 @@ footer { font-size: 13.5px; color: var(--muted); border-top: 1px solid var(--lin
     <section id="top">
       <h1>开源轻页使用说明书</h1>
       <p class="lead">一款 HarmonyOS 原生阅读应用：自己导入书源或本地文件，在手机、平板和电脑上看小说、看漫画、听书。</p>
-      <p class="meta"><span>当前版本 <b>3.11.916</b></span><span>系统要求 <b>HarmonyOS 6.0.0 及以上</b></span><span>设备 <b>手机 / 平板 / 2in1 电脑</b></span></p>
+      <p class="meta"><span>当前版本 <b>3.11.917</b></span><span>系统要求 <b>HarmonyOS 6.0.0 及以上</b></span><span>设备 <b>手机 / 平板 / 2in1 电脑</b></span></p>
       <div class="shots">
         <img src="shots/01.jpg" alt="书架界面：网络与本地书籍、阅读进度和分组" width="540" height="960">
         <img src="shots/02.jpg" alt="主题与外观界面：草莓奶霜、赤墨档案、梅影茶烟等内置主题" width="540" height="960">
@@ -1225,15 +1225,15 @@ footer { font-size: 13.5px; color: var(--muted); border-top: 1px solid var(--lin
       <h2>主题与外观</h2>
       <div class="sub">
         <h3>主题页</h3>
-        <p>入口：<span class="p">我的 › 主题</span>。主题会同时改变界面配色、阅读背景、导航图标、强调气泡、书籍封面和启动画面。页面从上到下分四块，右上角显示当前点数，点它进入账号与点数。</p>
+        <p>入口：<span class="p">我的 › 主题</span>。主题会同时改变界面配色、阅读背景、导航图标、强调气泡、书籍封面、启动画面，以及朗读和有声书面板的背景。页面从上到下分四块，右上角显示当前点数，点它进入账号与点数。</p>
         <div class="tw"><table>
           <tr><th>区域</th><th>内容</th></tr>
-          <tr><td>当前使用</td><td>正在用的主题，以启动封面、阅读页、书籍封面三栏预览，下方是强调气泡和导航栏的样子。试用中的主题也显示在这里，可以直接“结束试用”。</td></tr>
+          <tr><td>当前使用</td><td>正在用的主题，以启动封面、阅读页、书籍封面、朗读/有声书面板等几栏预览。试用中的主题也显示在这里，可以直接“结束试用”。</td></tr>
           <tr><td>默认与自定义</td><td>免费的默认主题和你自己建的自定义方案，横向排成一排缩略图，末尾是“新建方案”。</td></tr>
           <tr><td>已购主题</td><td>已经获取、还在有效期内的主题。</td></tr>
           <tr><td>更多主题</td><td>还没获取的主题，缩略图上标着所需点数。</td></tr>
         </table></div>
-        <p>点任意一张缩略图进入“主题详情”，在详情页里应用、试用或获取；左右滑动可以浏览同一组里的其他主题。</p>
+        <p>点任意一张缩略图进入“主题详情”，详情页是撑满整页的大图预览，可以在里面应用、试用或获取。</p>
       </div>
       <div class="sub">
         <h3>内置主题</h3>
@@ -1254,6 +1254,9 @@ footer { font-size: 13.5px; color: var(--muted); border-top: 1px solid var(--lin
           <tr><td>剑影青霜</td><td>冷铁、松烟与朱砂的江湖风。</td></tr>
           <tr><td>青鸾照水</td><td>青鸾与月色的古风主题。</td></tr>
           <tr><td>小猫皮皮</td><td>卷毛小猫与暖阳的可爱风。</td></tr>
+          <tr><td>苍穹机动</td><td>机体白、钢蓝与信号橙的机甲风。</td></tr>
+          <tr><td>星愿魔法</td><td>薰衣草紫、星金与丝带的魔法少女风。</td></tr>
+          <tr><td>铅字书页</td><td>象牙书纸、铅字与烫金，像布面精装旧书的纸质书质感。</td></tr>
         </table></div>
       </div>
       <div class="sub">
@@ -1268,7 +1271,7 @@ footer { font-size: 13.5px; color: var(--muted); border-top: 1px solid var(--lin
         <h3>获取与试用</h3>
         <ul>
           <li>主题商店已经并入主题页，没有单独的入口：没获取的主题都在“更多主题”里。</li>
-          <li>详情页标着价格和有效期（参考：60 点，有效 365 天，以页面标示为准）。点“获取”确认后扣除点数，有效期内可以在所有登录了同一账号的设备上使用。</li>
+          <li>详情页标着价格和有效期，各主题不同，以页面标示为准。价格没加载出来时“获取”按钮不可点，加载失败时按钮变成重新加载。点“获取”确认后扣除点数，有效期内可以在所有登录了同一账号的设备上使用。</li>
           <li><b>试用 5 分钟</b>：没获取的主题可以先试用，5 分钟后自动恢复原主题，也可以在“当前使用”卡片或详情页里提前“结束试用”。</li>
           <li>点数不足时会提示去充值；未登录时提示去登录。</li>
           <li>主题到期后需要重新获取。</li>
@@ -1282,6 +1285,7 @@ footer { font-size: 13.5px; color: var(--muted); border-top: 1px solid var(--lin
           <tr><td>启动封面</td><td>App 冷启动时的主题插画与标识。也可以上传自己的图片。主标题和副标题在主题预览的启动封面上点“编辑启动文案”修改，可以留空，也可以“恢复默认文案”。</td></tr>
           <tr><td>完整配色</td><td>页面、卡片、文字、状态栏图标及基础颜色。</td></tr>
           <tr><td>阅读背景</td><td>阅读背景、正文颜色和背景素材。</td></tr>
+          <tr><td>朗读/有声书面板</td><td>朗读面板和有声书面板的背景插画与底色。</td></tr>
           <tr><td>强调气泡</td><td>正文强调方式、气泡样式和配色。</td></tr>
           <tr><td>导航图标</td><td>书架、发现、搜索和我的底部图标。</td></tr>
           <tr><td>书籍素材</td><td>主题封面、书架边框和文件夹图案。</td></tr>
@@ -1427,7 +1431,7 @@ footer { font-size: 13.5px; color: var(--muted); border-top: 1px solid var(--lin
         <li>应用使用的权限：联网、读取网络状态、后台运行（用于朗读、听书和缓存），以及相机（仅在你开启眼动翻页时才会请求）。</li>
         <li>开源轻页以 GPL-3.0 许可证开源，源码在 <a href="https://github.com/wip3l/legado-harmony">github.com/wip3l/legado-harmony</a>。</li>
       </ul>
-      <footer>本说明书对应开源轻页 3.11.916。界面和设置项仍在迭代，个别名称或位置可能与你手上的版本略有出入。</footer>
+      <footer>本说明书对应开源轻页 3.11.917。界面和设置项仍在迭代，个别名称或位置可能与你手上的版本略有出入。</footer>
     </section>
   </main>
 </div>
