@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="440" viewBox="0 0 300 440">
+  <defs><linearGradient id="g0" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F7C98B"/><stop offset="0.5" stop-color="#F3A568"/><stop offset="1" stop-color="#E5804F"/></linearGradient></defs>
+  <rect width="300" height="440" fill="url(#g0)"/>
+  <circle cx="150" cy="190" r="70" fill="#FFF0C9" fill-opacity="0.95"/>
+  <circle cx="150" cy="190" r="104" fill="#FFF0C9" fill-opacity="0.2"/>
+  <path d="M0 250C70 220 130 236 190 226S260 232 300 214V440H0Z" fill="#B9673A"/>
+  <path d="M0 300C80 274 160 292 300 268V440H0Z" fill="#8E4A28"/>
+  <path d="M30 440Q33.0 365.0 36 290" fill="none" stroke="#F6D48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M36 290q-9-6 -7-18q8 6--7 18ZM36 290q9-6 7-18q-8 6-7 18ZM36 302q-9-6 -7-18q8 6--7 18ZM36 302q9-6 7-18q-8 6-7 18ZM36 314q-9-6 -7-18q8 6--7 18ZM36 314q9-6 7-18q-8 6-7 18ZM36 326q-9-6 -7-18q8 6--7 18ZM36 326q9-6 7-18q-8 6-7 18ZM36 338q-9-6 -7-18q8 6--7 18ZM36 338q9-6 7-18q-8 6-7 18Z" fill="#FFE7A8"/>
+  <path d="M64 440Q60.0 352.0 56 264" fill="none" stroke="#F6D48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M56 264q-9-6 -7-18q8 6--7 18ZM56 264q9-6 7-18q-8 6-7 18ZM56 276q-9-6 -7-18q8 6--7 18ZM56 276q9-6 7-18q-8 6-7 18ZM56 288q-9-6 -7-18q8 6--7 18ZM56 288q9-6 7-18q-8 6-7 18ZM56 300q-9-6 -7-18q8 6--7 18ZM56 300q9-6 7-18q-8 6-7 18ZM56 312q-9-6 -7-18q8 6--7 18ZM56 312q9-6 7-18q-8 6-7 18Z" fill="#FFE7A8"/>
+  <path d="M98 440Q103.0 360.0 108 280" fill="none" stroke="#F6D48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M108 280q-9-6 -7-18q8 6--7 18ZM108 280q9-6 7-18q-8 6-7 18ZM108 292q-9-6 -7-18q8 6--7 18ZM108 292q9-6 7-18q-8 6-7 18ZM108 304q-9-6 -7-18q8 6--7 18ZM108 304q9-6 7-18q-8 6-7 18ZM108 316q-9-6 -7-18q8 6--7 18ZM108 316q9-6 7-18q-8 6-7 18ZM108 328q-9-6 -7-18q8 6--7 18ZM108 328q9-6 7-18q-8 6-7 18Z" fill="#FFE7A8"/>
+  <path d="M134 440Q132.0 345.0 130 250" fill="none" stroke="#F6D48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M130 250q-9-6 -7-18q8 6--7 18ZM130 250q9-6 7-18q-8 6-7 18ZM130 262q-9-6 -7-18q8 6--7 18ZM130 262q9-6 7-18q-8 6-7 18ZM130 274q-9-6 -7-18q8 6--7 18ZM130 274q9-6 7-18q-8 6-7 18ZM130 286q-9-6 -7-18q8 6--7 18ZM130 286q9-6 7-18q-8 6-7 18ZM130 298q-9-6 -7-18q8 6--7 18ZM130 298q9-6 7-18q-8 6-7 18Z" fill="#FFE7A8"/>
+  <path d="M170 440Q174.0 357.0 178 274" fill="none" stroke="#F6D48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M178 274q-9-6 -7-18q8 6--7 18ZM178 274q9-6 7-18q-8 6-7 18ZM178 286q-9-6 -7-18q8 6--7 18ZM178 286q9-6 7-18q-8 6-7 18ZM178 298q-9-6 -7-18q8 6--7 18ZM178 298q9-6 7-18q-8 6-7 18ZM178 310q-9-6 -7-18q8 6--7 18ZM178 310q9-6 7-18q-8 6-7 18ZM178 322q-9-6 -7-18q8 6--7 18ZM178 322q9-6 7-18q-8 6-7 18Z" fill="#FFE7A8"/>
+  <path d="M206 440Q201.0 349.0 196 258" fill="none" stroke="#F6D48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M196 258q-9-6 -7-18q8 6--7 18ZM196 258q9-6 7-18q-8 6-7 18ZM196 270q-9-6 -7-18q8 6--7 18ZM196 270q9-6 7-18q-8 6-7 18ZM196 282q-9-6 -7-18q8 6--7 18ZM196 282q9-6 7-18q-8 6-7 18ZM196 294q-9-6 -7-18q8 6--7 18ZM196 294q9-6 7-18q-8 6-7 18ZM196 306q-9-6 -7-18q8 6--7 18ZM196 306q9-6 7-18q-8 6-7 18Z" fill="#FFE7A8"/>
+  <path d="M240 440Q243.0 362.0 246 284" fill="none" stroke="#F6D48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M246 284q-9-6 -7-18q8 6--7 18ZM246 284q9-6 7-18q-8 6-7 18ZM246 296q-9-6 -7-18q8 6--7 18ZM246 296q9-6 7-18q-8 6-7 18ZM246 308q-9-6 -7-18q8 6--7 18ZM246 308q9-6 7-18q-8 6-7 18ZM246 320q-9-6 -7-18q8 6--7 18ZM246 320q9-6 7-18q-8 6-7 18ZM246 332q-9-6 -7-18q8 6--7 18ZM246 332q9-6 7-18q-8 6-7 18Z" fill="#FFE7A8"/>
+  <path d="M274 440Q271.0 354.0 268 268" fill="none" stroke="#F6D48C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M268 268q-9-6 -7-18q8 6--7 18ZM268 268q9-6 7-18q-8 6-7 18ZM268 280q-9-6 -7-18q8 6--7 18ZM268 280q9-6 7-18q-8 6-7 18ZM268 292q-9-6 -7-18q8 6--7 18ZM268 292q9-6 7-18q-8 6-7 18ZM268 304q-9-6 -7-18q8 6--7 18ZM268 304q9-6 7-18q-8 6-7 18ZM268 316q-9-6 -7-18q8 6--7 18ZM268 316q9-6 7-18q-8 6-7 18Z" fill="#FFE7A8"/>
+  <path d="M70 110q10-10 20 0q10-10 20 0M210 80q8-8 16 0q8-8 16 0" fill="none" stroke="#6E3A20" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="0.7"/>
+</svg>

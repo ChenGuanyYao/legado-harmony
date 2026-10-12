@@ -476,6 +476,7 @@ export class AppThemeSettingsStore {
     sources.startupThemeId = normalized;
     sources.paletteThemeId = normalized;
     sources.readerThemeId = normalized;
+    sources.ttsPanelThemeId = normalized;
     sources.bubbleThemeId = normalized;
     sources.navigationThemeId = normalized;
     sources.bookThemeId = normalized;
@@ -510,6 +511,8 @@ export class AppThemeSettingsStore {
     normalized.startupThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source?.startupThemeId || fallback);
     normalized.paletteThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source?.paletteThemeId || fallback);
     normalized.readerThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source?.readerThemeId || fallback);
+    normalized.ttsPanelThemeId = BuiltinThemeRegistry.normalizeBuiltinId(
+      source?.ttsPanelThemeId || source?.readerThemeId || fallback);
     normalized.bubbleThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source?.bubbleThemeId || fallback);
     normalized.navigationThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source?.navigationThemeId || fallback);
     normalized.bookThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source?.bookThemeId || fallback);

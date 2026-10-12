@@ -1,0 +1,12 @@
+<svg width="720" height="520" viewBox="0 0 720 520" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="560" cy="110" r="180" fill="#4E9BFF" fill-opacity="0.1"/>
+  <circle cx="620" cy="70" r="110" fill="#2A6FD0" fill-opacity="0.16"/>
+  <circle cx="110" cy="310" r="96" fill="#4E9BFF" fill-opacity="0.06"/>
+  <circle cx="250" cy="90" r="22" fill="#2A6FD0" fill-opacity="0.18"/>
+  <circle cx="318" cy="150" r="10" fill="#4E9BFF" fill-opacity="0.2"/>
+  <circle cx="560" cy="110" r="220" fill="none" stroke="#4E9BFF" stroke-opacity="0.18" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="560" cy="110" r="262" fill="none" stroke="#4E9BFF" stroke-opacity="0.13" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="560" cy="110" r="304" fill="none" stroke="#4E9BFF" stroke-opacity="0.08" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M0 372c60-44 120-44 180 0s120 44 180 0 120-44 180 0 120 44 180 0" fill="none" stroke="#4E9BFF" stroke-opacity="0.24" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M0 404c60-30 120-30 180 0s120 30 180 0 120-30 180 0 120 30 180 0" fill="none" stroke="#2A6FD0" stroke-opacity="0.22" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

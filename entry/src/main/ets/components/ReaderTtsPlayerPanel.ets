@@ -1,17 +1,22 @@
+import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import deviceInfo from '@ohos.deviceInfo';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+import { TtsPanelThemeBackground } from './TtsPanelThemeBackground';
 
 @Component
 export struct ReaderTtsPlayerPanel {
   @Prop darkMode: boolean = false;
   @Prop accentColor: ResourceColor = '#5B8F86';
+  @Prop playButtonColor: ResourceColor = '#5B8F86';
   @Prop primaryTextColor: ResourceColor = '#18191C';
   @Prop subTextColor: ResourceColor = '#71747A';
   @Prop panelColor: ResourceColor = '#F7F7F7';
+  // Theme whose panel artwork is drawn behind the controls; empty keeps the plain glass surface.
+  @Prop backgroundThemeId: string = '';
   @Prop topInset: number = 0;
   @Prop bottomInset: number = 0;
   @Prop viewportHeight: number = 720;
@@ -60,29 +65,37 @@ export struct ReaderTtsPlayerPanel {
         .backdropBlur(ThemeRuntime.glassBlur('popover', 10))
         .onClick(() => this.close())
 
-      Column({ space: AppSpacing.LG }) {
-        this.header()
-        this.contentPanel()
-
-        if (this.globalTtsMode === 'audio') {
-          this.audioProgress()
+      Stack({ alignContent: Alignment.TopStart }) {
+        if (this.backgroundThemeId) {
+          TtsPanelThemeBackground({ themeId: this.backgroundThemeId, darkMode: this.darkMode })
         }
 
-        this.playbackControls()
+        Column({ space: AppSpacing.LG }) {
+          this.header()
+          this.contentPanel()
 
-        if (this.optionsPanel === 1) {
-          this.timerOptions()
-        } else if (this.optionsPanel === 2) {
-          this.speedOptions()
+          if (this.globalTtsMode === 'audio') {
+            this.audioProgress()
+          }
+
+          this.playbackControls()
+
+          if (this.optionsPanel === 1) {
+            this.timerOptions()
+          } else if (this.optionsPanel === 2) {
+            this.speedOptions()
+          }
+
+          this.bottomActions()
         }
-
-        this.bottomActions()
+        .width('100%')
+        .height('100%')
+        .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.topInset + 16, bottom: this.bottomInset + 16 })
       }
       .width('100%')
       .height('100%')
-      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.topInset + 16, bottom: this.bottomInset + 16 })
-      .backgroundColor(this.panelColor)
-      .backdropBlur(ThemeRuntime.glassBlur('panel', 24))
+      .backgroundColor(this.backgroundThemeId ? Color.Transparent : this.panelColor)
+      .backdropBlur(this.backgroundThemeId ? 0 : ThemeRuntime.glassBlur('panel', 24))
       .transition(TransitionEffect.translate({ y: 520 })
         .combine(TransitionEffect.opacity(0))
         .animation({ duration: 280, curve: Curve.Friction }))
@@ -199,7 +212,7 @@ export struct ReaderTtsPlayerPanel {
           .width('100%')
           .height(3)
           .color(this.accentColor)
-          .backgroundColor(this.darkMode ? '#34FFFFFF' : '#18000000')
+          .backgroundColor(ThemeRuntime.hairlineColor(this.darkMode))
       }
     }
     .layoutWeight(1)
@@ -207,6 +220,7 @@ export struct ReaderTtsPlayerPanel {
     .padding(AppSpacing.LG)
     .borderRadius(ThemeRuntime.largeRadius())
     .backgroundColor(ThemeRuntime.accentSurfaceColor(this.darkMode))
+    .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.darkMode) })
   }
 
   @Builder
@@ -223,11 +237,22 @@ export struct ReaderTtsPlayerPanel {
             .height('100%')
             .objectFit(ImageFit.Contain)
         }
+      } else if (this.themePlaceholderCover()) {
+        Image(this.themePlaceholderCover())
+          .width('100%')
+          .height('100%')
+          .objectFit(ImageFit.Contain)
+        if (this.themePlaceholderFrame()) {
+          Image(this.themePlaceholderFrame())
+            .width('100%')
+            .height('100%')
+            .objectFit(ImageFit.Contain)
+        }
       } else {
         Column() {
           Text(this.globalTtsBookName ? this.globalTtsBookName.substring(0, 1) : '书')
             .fontSize(42)
-            .fontColor('#FFFFFF')
+            .fontColor(ThemeRuntime.onAccentColor())
         }
         .width('58%')
         .height('88%')
@@ -240,7 +265,7 @@ export struct ReaderTtsPlayerPanel {
     .width('100%')
     .height(this.coverHeight())
     .padding(AppSpacing.MD)
-    .borderRadius(14)
+    .borderRadius(ThemeRuntime.mediumRadius())
     .clip(true)
   }
 
@@ -264,11 +289,11 @@ export struct ReaderTtsPlayerPanel {
   playbackControl() {
     Column({ space: AppSpacing.SM }) {
       Stack({ alignContent: Alignment.Center }) {
-        Circle().width(46).height(46).fill(this.accentColor)
+        Circle().width(46).height(46).fill(this.playButtonColor)
         SymbolGlyph(this.globalTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
           .id(`shared_tts_panel_playback_${this.globalTtsPaused}`)
           .fontSize(23)
-          .fontColor(['#FFFFFF'])
+          .fontColor([ThemeRuntime.onAccentColor()])
       }
       Text(this.globalTtsPaused ? '播放' : '暂停')
         .fontSize(AppFontSize.MICRO)
@@ -345,11 +370,11 @@ export struct ReaderTtsPlayerPanel {
     Text(`${value.toFixed(1)}x`)
       .fontSize(AppFontSize.CAPTION)
       .fontWeight(Math.abs(this.globalTtsSpeed - value) < 0.01 ? FontWeight.Bold : FontWeight.Regular)
-      .fontColor(Math.abs(this.globalTtsSpeed - value) < 0.01 ? '#FFFFFF' : this.primaryTextColor)
+      .fontColor(Math.abs(this.globalTtsSpeed - value) < 0.01 ? ThemeRuntime.onAccentColor() : this.primaryTextColor)
       .textAlign(TextAlign.Center)
       .layoutWeight(1)
       .height(30)
-      .borderRadius(15)
+      .borderRadius(ThemeRuntime.buttonRadius())
       .backgroundColor(Math.abs(this.globalTtsSpeed - value) < 0.01 ? this.accentColor :
         (ThemeRuntime.softFillColor(this.darkMode)))
       .onClick(() => ReaderTtsFloatingSession.setSpeed(value))
@@ -360,11 +385,11 @@ export struct ReaderTtsPlayerPanel {
     Text(label)
       .fontSize(AppFontSize.CAPTION)
       .fontWeight(this.globalTtsTimerMinutes === minutes ? FontWeight.Bold : FontWeight.Regular)
-      .fontColor(this.globalTtsTimerMinutes === minutes ? '#FFFFFF' : this.primaryTextColor)
+      .fontColor(this.globalTtsTimerMinutes === minutes ? ThemeRuntime.onAccentColor() : this.primaryTextColor)
       .textAlign(TextAlign.Center)
       .layoutWeight(1)
       .height(30)
-      .borderRadius(15)
+      .borderRadius(ThemeRuntime.buttonRadius())
       .backgroundColor(this.globalTtsTimerMinutes === minutes ? this.accentColor :
         (ThemeRuntime.softFillColor(this.darkMode)))
       .onClick(() => ReaderTtsFloatingSession.setTimer(minutes))
@@ -401,6 +426,8 @@ export struct ReaderTtsPlayerPanel {
       .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
       .borderRadius(ThemeRuntime.mediumRadius())
       .backgroundColor(ThemeRuntime.softFillColor(this.darkMode))
+      .border({ width: ThemeRuntime.glassBorderWidth('button'),
+        color: ThemeRuntime.glassBorderColor(this.darkMode, 'button') })
     }
   }
 
@@ -420,7 +447,7 @@ export struct ReaderTtsPlayerPanel {
       .height(44)
       .padding({ left: leadingInset, right: 0 })
       .backgroundColor(surfaceColor)
-      .borderRadius(12)
+      .borderRadius(ThemeRuntime.mediumRadius())
       .border({ width: 0 })
       .optionBgColor(Color.Transparent)
       .divider(null)
@@ -501,16 +528,18 @@ export struct ReaderTtsPlayerPanel {
     Row({ space: AppSpacing.XS }) {
       SymbolGlyph(icon)
         .fontSize(16)
-        .fontColor([danger ? '#FFFFFF' : this.primaryTextColor])
+        .fontColor([danger ? ThemeRuntime.onAccentColor() : this.primaryTextColor])
       Text(label)
         .fontSize(AppFontSize.CAPTION)
-        .fontColor(danger ? '#FFFFFF' : this.primaryTextColor)
+        .fontColor(danger ? ThemeRuntime.onAccentColor() : this.primaryTextColor)
         .maxLines(1)
     }
     .height(44)
     .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
     .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(danger ? ThemeRuntime.dangerColor(this.darkMode) : (ThemeRuntime.softFillColor(this.darkMode)))
+    .border({ width: danger ? 0 : ThemeRuntime.glassBorderWidth('button'),
+      color: ThemeRuntime.glassBorderColor(this.darkMode, 'button') })
     .alignItems(VerticalAlign.Center)
     .accessibilityText(accessibility)
     .onClick(action)
@@ -538,6 +567,8 @@ export struct ReaderTtsPlayerPanel {
     .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
     .borderRadius(ThemeRuntime.mediumRadius())
     .backgroundColor(ThemeRuntime.softFillColor(this.darkMode))
+    .border({ width: ThemeRuntime.glassBorderWidth('button'),
+      color: ThemeRuntime.glassBorderColor(this.darkMode, 'button') })
     .alignItems(VerticalAlign.Center)
     .accessibilityText('选择音色')
     .onClick(() => this.onOpenVoice())
@@ -546,6 +577,15 @@ export struct ReaderTtsPlayerPanel {
   close(): void {
     this.optionsPanel = 0;
     this.onClose();
+  }
+
+  /** Theme cover shown when the book has none; empty for themes without cover art. */
+  themePlaceholderCover(): ResourceStr {
+    return ThemeAssetRegistry.themeBookCover(ThemeRuntime.bookTokens().coverAssetId);
+  }
+
+  themePlaceholderFrame(): ResourceStr {
+    return ThemeAssetRegistry.themeShelfFrame(ThemeRuntime.bookTokens().shelfFrameAssetId);
   }
 
   coverHeight(): number {

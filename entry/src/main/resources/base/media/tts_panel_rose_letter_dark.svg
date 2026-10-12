@@ -1,0 +1,26 @@
+<svg width="720" height="520" viewBox="0 0 720 520" xmlns="http://www.w3.org/2000/svg">
+  <path d="M0 0L360 236L720 0Z" fill="#D87983" fill-opacity="0.07"/>
+  <path d="M0 0L360 236L720 0" fill="none" stroke="#D4B37A" stroke-opacity="0.6" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M0 28L360 264L720 28" fill="none" stroke="#D4B37A" stroke-opacity="0.24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="360" cy="236" r="46" fill="#D87983" fill-opacity="0.72"/>
+  <circle cx="360" cy="236" r="34" fill="none" stroke="#D4B37A" stroke-opacity="0.85" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M346 240c-4-14 10-22 18-14s8 20-4 22-12-2-14-8" fill="none" stroke="#D4B37A" stroke-opacity="0.85" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="0" cy="0" r="44" transform="translate(596 330) scale(1.25)" fill="#D87983" fill-opacity="0.26"/>
+  <path d="M-30 6C-34-22-6-40 16-28S40 14 18 30-26 34-30 6Z" transform="translate(596 330) scale(1.25)" fill="#D87983" fill-opacity="0.36"/>
+  <path d="M-14 4C-16-12 0-20 10-12S20 10 6 16-12 16-14 4M-2 2c0-6 8-6 8 0" transform="translate(596 330) scale(1.25)" fill="none" stroke="#D87983" stroke-opacity="0.75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M30 30C52 26 66 40 70 58C50 60 36 50 30 30ZM-34 30C-54 30-66 44-66 60C-48 58-38 48-34 30Z" transform="translate(596 330) scale(1.25)" fill="#8FAE8A" fill-opacity="0.42"/>
+  <circle cx="0" cy="0" r="44" transform="translate(110 320) scale(0.9)" fill="#D87983" fill-opacity="0.26"/>
+  <path d="M-30 6C-34-22-6-40 16-28S40 14 18 30-26 34-30 6Z" transform="translate(110 320) scale(0.9)" fill="#D87983" fill-opacity="0.36"/>
+  <path d="M-14 4C-16-12 0-20 10-12S20 10 6 16-12 16-14 4M-2 2c0-6 8-6 8 0" transform="translate(110 320) scale(0.9)" fill="none" stroke="#D87983" stroke-opacity="0.75" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M30 30C52 26 66 40 70 58C50 60 36 50 30 30ZM-34 30C-54 30-66 44-66 60C-48 58-38 48-34 30Z" transform="translate(110 320) scale(0.9)" fill="#8FAE8A" fill-opacity="0.42"/>
+  <path d="M470 66c18-10 36 10 54 0s36 10 54 0 36 10 54 0" fill="none" stroke="#F4E4E1" stroke-opacity="0.22" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M470 82c18-10 36 10 54 0s36 10 54 0 36 10 54 0" fill="none" stroke="#F4E4E1" stroke-opacity="0.22" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M470 98c18-10 36 10 54 0s36 10 54 0 36 10 54 0" fill="none" stroke="#F4E4E1" stroke-opacity="0.22" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M470 114c18-10 36 10 54 0s36 10 54 0 36 10 54 0" fill="none" stroke="#F4E4E1" stroke-opacity="0.22" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="70" cy="120" r="4" fill="#D4B37A" fill-opacity="0.7"/>
+  <circle cx="150" cy="196" r="3" fill="#D4B37A" fill-opacity="0.7"/>
+  <circle cx="250" cy="300" r="3" fill="#D4B37A" fill-opacity="0.7"/>
+  <circle cx="470" cy="318" r="4" fill="#D4B37A" fill-opacity="0.7"/>
+  <circle cx="664" cy="200" r="3" fill="#D4B37A" fill-opacity="0.7"/>
+  <circle cx="300" cy="60" r="3" fill="#D4B37A" fill-opacity="0.7"/>
+</svg>

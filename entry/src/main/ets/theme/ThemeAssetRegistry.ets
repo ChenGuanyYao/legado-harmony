@@ -153,8 +153,55 @@ export class ThemeAssetRegistry {
     }
   }
 
+  // Every builtin background has its own bottom-right drawing (see
+  // scripts/generate-reader-trailing-ornaments.py); the mirrored fallback is
+  // only for assets registered without one.
   static readerBackgroundTrailingDecoration(assetId: string): ResourceStr {
     switch (ThemeAssetRegistry.normalizeBackgroundAssetId(assetId)) {
+      case ThemeAssetRegistry.BACKGROUND_PAPER_LIGHT:
+        return $r('app.media.reader_decor_paper_trailing_light');
+      case ThemeAssetRegistry.BACKGROUND_PAPER_DARK:
+        return $r('app.media.reader_decor_paper_trailing_dark');
+      case ThemeAssetRegistry.BACKGROUND_FOREST_LIGHT:
+        return $r('app.media.reader_decor_forest_trailing_light');
+      case ThemeAssetRegistry.BACKGROUND_FOREST_DARK:
+        return $r('app.media.reader_decor_forest_trailing_dark');
+      case ThemeAssetRegistry.BACKGROUND_INK_LIGHT:
+        return $r('app.media.reader_decor_ink_trailing_light');
+      case ThemeAssetRegistry.BACKGROUND_INK_DARK:
+        return $r('app.media.reader_decor_ink_trailing_dark');
+      case ThemeAssetRegistry.BACKGROUND_NEON_LIGHT:
+        return $r('app.media.reader_decor_neon_trailing_light');
+      case ThemeAssetRegistry.BACKGROUND_NEON_DARK:
+        return $r('app.media.reader_decor_neon_trailing_dark');
+      case ThemeAssetRegistry.BACKGROUND_STRAWBERRY_LIGHT:
+        return $r('app.media.reader_decor_strawberry_trailing_light');
+      case ThemeAssetRegistry.BACKGROUND_STRAWBERRY_DARK:
+        return $r('app.media.reader_decor_strawberry_trailing_dark');
+      case ThemeAssetRegistry.BACKGROUND_CRIMSON_LIGHT:
+        return $r('app.media.reader_decor_crimson_trailing_light');
+      case ThemeAssetRegistry.BACKGROUND_CRIMSON_DARK:
+        return $r('app.media.reader_decor_crimson_trailing_dark');
+      case ThemeAssetRegistry.BACKGROUND_PLUM_TEA_LIGHT:
+        return $r('app.media.reader_decor_plum_tea_trailing_light');
+      case ThemeAssetRegistry.BACKGROUND_PLUM_TEA_DARK:
+        return $r('app.media.reader_decor_plum_tea_trailing_dark');
+      case ThemeAssetRegistry.BACKGROUND_ROSE_LETTER_LIGHT:
+        return $r('app.media.reader_decor_rose_letter_trailing_light');
+      case ThemeAssetRegistry.BACKGROUND_ROSE_LETTER_DARK:
+        return $r('app.media.reader_decor_rose_letter_trailing_dark');
+      case ThemeAssetRegistry.BACKGROUND_MOON_CRANE_LIGHT:
+        return $r('app.media.reader_decor_moon_crane_trailing_light');
+      case ThemeAssetRegistry.BACKGROUND_MOON_CRANE_DARK:
+        return $r('app.media.reader_decor_moon_crane_trailing_dark');
+      case ThemeAssetRegistry.BACKGROUND_SWORD_FROST_LIGHT:
+        return $r('app.media.reader_decor_sword_frost_trailing_light');
+      case ThemeAssetRegistry.BACKGROUND_SWORD_FROST_DARK:
+        return $r('app.media.reader_decor_sword_frost_trailing_dark');
+      case ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_LIGHT:
+        return $r('app.media.reader_decor_qingluan_water_trailing_light');
+      case ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_DARK:
+        return $r('app.media.reader_decor_qingluan_water_trailing_dark');
       case ThemeAssetRegistry.BACKGROUND_CAT_PIPI_LIGHT:
         return $r('app.media.reader_decor_cat_pipi_trailing_light_v2');
       case ThemeAssetRegistry.BACKGROUND_CAT_PIPI_DARK:
@@ -165,12 +212,8 @@ export class ThemeAssetRegistry {
   }
 
   static readerBackgroundTrailingRotation(assetId: string): number {
-    const normalized = ThemeAssetRegistry.normalizeBackgroundAssetId(assetId);
-    if (normalized === ThemeAssetRegistry.BACKGROUND_CAT_PIPI_LIGHT ||
-      normalized === ThemeAssetRegistry.BACKGROUND_CAT_PIPI_DARK) {
-      return 0;
-    }
-    return 180;
+    const trailing = ThemeAssetRegistry.readerBackgroundTrailingDecoration(assetId);
+    return trailing === ThemeAssetRegistry.readerBackgroundDecoration(assetId) ? 180 : 0;
   }
 
   static readerBackgroundBorderColor(assetId: string): string {
@@ -303,10 +346,22 @@ export class ThemeAssetRegistry {
   static themeBookCovers(assetId: string): ResourceStr[] {
     switch ((assetId || '').trim().toLowerCase()) {
       case '': return [];
-      case ThemeIds.WARM_PAPER: return [$r('app.media.theme_cover_warm_paper')];
-      case ThemeIds.FOREST_MIST: return [$r('app.media.theme_cover_forest_mist')];
-      case ThemeIds.INK_WASH: return [$r('app.media.theme_cover_ink_wash')];
-      case ThemeIds.NEON_NIGHT: return [$r('app.media.theme_cover_neon_night')];
+      case ThemeIds.WARM_PAPER: return [
+        $r('app.media.theme_cover_warm_paper_01'), $r('app.media.theme_cover_warm_paper_02'),
+        $r('app.media.theme_cover_warm_paper_03'), $r('app.media.theme_cover_warm_paper_04')
+      ];
+      case ThemeIds.FOREST_MIST: return [
+        $r('app.media.theme_cover_forest_mist_01'), $r('app.media.theme_cover_forest_mist_02'),
+        $r('app.media.theme_cover_forest_mist_03'), $r('app.media.theme_cover_forest_mist_04')
+      ];
+      case ThemeIds.INK_WASH: return [
+        $r('app.media.theme_cover_ink_wash_01'), $r('app.media.theme_cover_ink_wash_02'),
+        $r('app.media.theme_cover_ink_wash_03'), $r('app.media.theme_cover_ink_wash_04')
+      ];
+      case ThemeIds.NEON_NIGHT: return [
+        $r('app.media.theme_cover_neon_night_01'), $r('app.media.theme_cover_neon_night_02'),
+        $r('app.media.theme_cover_neon_night_03'), $r('app.media.theme_cover_neon_night_04')
+      ];
       case ThemeIds.STRAWBERRY_CREAM: return [
         $r('app.media.theme_cover_strawberry_cream_01'), $r('app.media.theme_cover_strawberry_cream_02'),
         $r('app.media.theme_cover_strawberry_cream_03'), $r('app.media.theme_cover_strawberry_cream_04'),
@@ -347,7 +402,10 @@ export class ThemeAssetRegistry {
         $r('app.media.theme_cover_cat_pipi_v2_03'), $r('app.media.theme_cover_cat_pipi_v2_04'),
         $r('app.media.theme_cover_cat_pipi_v2_05'), $r('app.media.theme_cover_cat_pipi_v2_06')
       ];
-      default: return [$r('app.media.theme_cover_classic_blue')];
+      default: return [
+        $r('app.media.theme_cover_classic_blue_01'), $r('app.media.theme_cover_classic_blue_02'),
+        $r('app.media.theme_cover_classic_blue_03'), $r('app.media.theme_cover_classic_blue_04')
+      ];
     }
   }
 

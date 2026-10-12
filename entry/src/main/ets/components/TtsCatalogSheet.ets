@@ -315,7 +315,7 @@ export struct TtsCatalogSheet {
           .width(this.scrollbarDragging ? 6 : 4)
           .height(this.thumbLength())
           .borderRadius(3)
-          .backgroundColor(this.darkMode ? '#BFD5D8DE' : '#A87A6F63')
+          .backgroundColor(this.subTextColor)
           .margin({ right: AppSpacing.XXS })
           .translate({ y: this.displayedThumbOffset() })
           .hitTestBehavior(HitTestMode.None)

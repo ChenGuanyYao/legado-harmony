@@ -413,9 +413,11 @@ struct Index {
         ReaderTtsPlayerPanel({
           darkMode: this.appDarkMode,
           accentColor: this.tabBarActiveColor(),
+          playButtonColor: ThemeRuntime.buttonColor(this.appDarkMode),
           primaryTextColor: ThemeRuntime.primaryTextColor(this.appDarkMode),
           subTextColor: ThemeRuntime.subTextColor(this.appDarkMode),
           panelColor: ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'),
+          backgroundThemeId: ThemeRuntime.ttsPanelThemeId(this.appDarkMode),
           topInset: this.statusBarHeight,
           bottomInset: this.navBarHeight,
           viewportHeight: this.globalTtsViewportHeight,

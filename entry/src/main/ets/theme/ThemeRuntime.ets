@@ -142,6 +142,14 @@ export class ThemeRuntime {
     return ThemeRuntime.currentPack().startup.styleId;
   }
 
+  /** Theme whose TTS / audiobook panel background applies; a custom theme names its own source. */
+  static ttsPanelThemeId(darkMode: boolean = AppStorage.get<boolean>('appDarkMode') || false): string {
+    if (ThemeRuntime.currentThemeId() === ThemeIds.CUSTOM) {
+      return ThemeRuntime.customSourceTheme('ttsPanel', darkMode).id;
+    }
+    return ThemeRuntime.currentThemeId();
+  }
+
   static themeRevision(): number {
     return AppStorage.get<number>(ThemeRuntime.KEY_THEME_REVISION) ?? 0;
   }
@@ -662,6 +670,7 @@ export class ThemeRuntime {
     if (category === 'startup') themeId = sources.startupThemeId;
     else if (category === 'palette') themeId = sources.paletteThemeId;
     else if (category === 'reader') themeId = sources.readerThemeId;
+    else if (category === 'ttsPanel') themeId = sources.ttsPanelThemeId;
     else if (category === 'bubble') themeId = sources.bubbleThemeId;
     else if (category === 'navigation') themeId = sources.navigationThemeId;
     else if (category === 'book') themeId = sources.bookThemeId;
@@ -688,6 +697,8 @@ export class ThemeRuntime {
     normalized.startupThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.startupThemeId || fallback);
     normalized.paletteThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.paletteThemeId || fallback);
     normalized.readerThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.readerThemeId || fallback);
+    normalized.ttsPanelThemeId = BuiltinThemeRegistry.normalizeBuiltinId(
+      source.ttsPanelThemeId || source.readerThemeId || fallback);
     normalized.bubbleThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.bubbleThemeId || fallback);
     normalized.navigationThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.navigationThemeId || fallback);
     normalized.bookThemeId = BuiltinThemeRegistry.normalizeBuiltinId(source.bookThemeId || fallback);

@@ -138,6 +138,42 @@ for (const fileName of readerDecorationFiles) {
   assert(!/(<script|<image|<use|href=|url\(|<filter)/i.test(source), `Unsafe SVG feature in ${fileName}`);
 }
 
+// Reader backgrounds pair the top-left ornament with a dedicated bottom-right drawing, not a mirror.
+const assetRegistrySource = read('entry/src/main/ets/theme/ThemeAssetRegistry.ets');
+for (const name of ['paper', 'forest', 'ink', 'neon', 'strawberry', 'crimson', 'plum_tea', 'rose_letter',
+  'moon_crane', 'sword_frost', 'qingluan_water']) {
+  for (const mode of ['light', 'dark']) {
+    const resourceName = `reader_decor_${name}_trailing_${mode}`;
+    assert(fs.existsSync(path.join(mediaRoot, `${resourceName}.svg`)),
+      `Reader trailing ornament is missing: ${resourceName}.svg`);
+    assert(assetRegistrySource.includes(`app.media.${resourceName}`),
+      `Reader trailing ornament is not mapped in ThemeAssetRegistry: ${resourceName}`);
+  }
+}
+
+// Every builtin theme ships its own TTS / audiobook panel artwork in both modes.
+const ttsPanelThemeNames = [
+  'plain_default', 'classic_blue', 'warm_paper', 'forest_mist', 'ink_wash', 'neon_night', 'strawberry_cream',
+  'crimson_archive', 'plum_tea', 'rose_letter', 'moon_crane', 'sword_frost', 'qingluan_water', 'cat_pipi'
+];
+const ttsPanelStyles = read('entry/src/main/ets/theme/TtsPanelThemeStyles.ets');
+for (const themeName of ttsPanelThemeNames) {
+  for (const mode of ['light', 'dark']) {
+    const resourceName = `tts_panel_${themeName}_${mode}`;
+    const filePath = path.join(mediaRoot, `${resourceName}.svg`);
+    assert(fs.existsSync(filePath), `TTS panel artwork is missing: ${resourceName}.svg`);
+    const source = fs.readFileSync(filePath, 'utf8');
+    assert(/viewBox="0 0 720 520"/.test(source), `Invalid TTS panel artwork viewBox: ${resourceName}.svg`);
+    assert(!/(<script|<image|<use|href=|url\(|<filter)/i.test(source), `Unsafe SVG feature in ${resourceName}.svg`);
+    assert(ttsPanelStyles.includes(`app.media.${resourceName}`),
+      `TTS panel artwork is not mapped in TtsPanelThemeStyles: ${resourceName}`);
+  }
+}
+assert(read('entry/src/main/ets/components/ReaderTtsPlayerPanel.ets').includes('TtsPanelThemeBackground('),
+  'TTS player panel must draw the themed panel background');
+assert(themePage.includes('this.storeTtsPane(theme, customSchemeId, inPager)'),
+  'Theme previews must include the TTS panel pane');
+
 const themedIconFiles = fs.readdirSync(mediaRoot).filter(fileName => /^ic_theme_.*\.svg$/.test(fileName));
 assert(themedIconFiles.length >= 8, 'Rounded and ink icon packs must each contain four icons');
 for (const fileName of themedIconFiles) {
@@ -451,7 +487,8 @@ for (const iconName of desktopThemeIcons) {
 
 const requiredFiles = [
   'theme/ThemeModels.ets', 'theme/BuiltinThemeRegistry.ets', 'theme/ThemeRuntime.ets',
-  'theme/ThemeAssetRegistry.ets', 'components/ReaderThemeBackground.ets', 'pages/ThemeSettings.ets'
+  'theme/ThemeAssetRegistry.ets', 'theme/TtsPanelThemeStyles.ets', 'components/ReaderThemeBackground.ets',
+  'components/TtsPanelThemeBackground.ets', 'pages/ThemeSettings.ets'
 ];
 for (const relativePath of requiredFiles) {
   assert(fs.existsSync(path.join(etsRoot, relativePath)), `Required theme file is missing: ${relativePath}`);

@@ -1,0 +1,20 @@
+<svg width="480" height="480" viewBox="0 0 480 480" xmlns="http://www.w3.org/2000/svg">
+  <path d="M480 480H232l34-42 46-10 28-52 52-16 30-62 58-14Z" fill="#476963" fill-opacity="0.12"/>
+  <path d="M232 480l34-42 46-10 28-52 52-16 30-62 58-14" fill="none" stroke="#476963" stroke-opacity="0.2" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M416 366C392 332 392 296 362 262M392 314C372 304 350 306 330 318M378 282C390 270 406 266 424 268" fill="none" stroke="#476963" stroke-opacity="0.28" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse cx="352" cy="252" rx="56" ry="10" fill="#476963" fill-opacity="0.2"/>
+  <ellipse cx="318" cy="322" rx="44" ry="9" fill="#476963" fill-opacity="0.2"/>
+  <ellipse cx="430" cy="262" rx="40" ry="8" fill="#476963" fill-opacity="0.2"/>
+  <ellipse cx="368" cy="226" rx="36" ry="7" fill="#476963" fill-opacity="0.2"/>
+  <path d="M206 462L266 420L326 462Z" fill="#476963" fill-opacity="0.1" stroke="#476963" stroke-opacity="0.32" stroke-width="3" stroke-linejoin="round"/>
+  <ellipse cx="266" cy="462" rx="66" ry="9" fill="none" stroke="#476963" stroke-opacity="0.32" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M236 441l60 0M222 452h88" fill="none" stroke="#476963" stroke-opacity="0.18" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="430" y="430" width="34" height="34" rx="4" fill="#9B3B31" fill-opacity="0.5"/>
+  <path d="M439 440h16v14h-16ZM447 440v14" fill="none" stroke="#F4ECD9" stroke-opacity="0.8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="250" cy="300" r="4" fill="#476963" fill-opacity="0.22"/>
+  <circle cx="300" cy="240" r="3" fill="#476963" fill-opacity="0.22"/>
+  <circle cx="190" cy="380" r="3" fill="#476963" fill-opacity="0.22"/>
+  <circle cx="440" cy="180" r="3" fill="#476963" fill-opacity="0.22"/>
+  <circle cx="330" cy="380" r="2" fill="#476963" fill-opacity="0.22"/>
+  <circle cx="220" cy="430" r="2" fill="#476963" fill-opacity="0.22"/>
+</svg>

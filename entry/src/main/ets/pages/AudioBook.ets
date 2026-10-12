@@ -14,6 +14,7 @@ import { RemoteAudioPlayback, RemoteAudioPlaybackListener } from '../utils/Remot
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 import { syncSystemBars } from '../utils/SystemBars';
+import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ReaderTtsPlayerPanel } from '../components/ReaderTtsPlayerPanel';
 import { TtsCatalogSheet, CatalogTitleDataSource } from '../components/TtsCatalogSheet';
@@ -65,6 +66,8 @@ struct AudioBookPage {
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
+  @StorageLink('appThemeBookCoverEnabled') @Watch('onThemeBookCoverChanged')
+  themeBookCoverEnabled: boolean = false;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State book: Book | null = null;
@@ -175,9 +178,11 @@ struct AudioBookPage {
       ReaderTtsPlayerPanel({
         darkMode: this.appDarkMode,
         accentColor: this.accentColor(),
+        playButtonColor: ThemeRuntime.buttonColor(this.appDarkMode),
         primaryTextColor: this.primaryTextColor(),
         subTextColor: this.subTextColor(),
         panelColor: ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'),
+        backgroundThemeId: ThemeRuntime.ttsPanelThemeId(this.appDarkMode),
         topInset: this.statusBarHeight,
         bottomInset: this.navBarHeight,
         viewportHeight: this.viewportHeight,
@@ -1082,7 +1087,8 @@ struct AudioBookPage {
     );
     ReaderTtsFloatingSession.updateDetails(
       this.floatingSessionOwnerId,
-      this.displayIntro(), '', '', '', this.displayCover(), '',
+      this.displayIntro(), '', '', '', this.panelCover(),
+      this.shouldUseThemeBookCover() ? this.activeThemeShelfFrame() : '',
       `${this.chapterIndex + 1}/${Math.max(1, this.chapters.length)}章`,
       this.speed, this.sleepMinutes, this.sleepRemainingSeconds,
       this.chapterIndex > 0, this.chapterIndex < this.chapters.length - 1
@@ -1312,6 +1318,35 @@ struct AudioBookPage {
 
   displayCover(): string {
     return this.book ? CoverUrlNormalizer.normalize(this.book.getDisplayCover()) : '';
+  }
+
+  onThemeBookCoverChanged(): void {
+    this.updateFloatingSession();
+  }
+
+  // Same rule and per-book pick as the bookshelf, so a book keeps one theme cover everywhere.
+  shouldUseThemeBookCover(): boolean {
+    return this.themeBookCoverEnabled &&
+      ThemeAssetRegistry.themeBookCovers(ThemeRuntime.bookTokens(this.appDarkMode).coverAssetId).length > 0;
+  }
+
+  panelCover(): ResourceStr {
+    if (!this.shouldUseThemeBookCover()) return this.displayCover();
+    const covers = ThemeAssetRegistry.themeBookCovers(ThemeRuntime.bookTokens(this.appDarkMode).coverAssetId);
+    return covers[this.themeBookCoverSeed() % covers.length];
+  }
+
+  themeBookCoverSeed(): number {
+    const key = `${this.book?.bookUrl || ''}|${this.book?.name || ''}|${this.book?.author || ''}`;
+    let hash = 17;
+    for (let index = 0; index < key.length; index++) {
+      hash = (hash * 31 + key.charCodeAt(index)) & 0x7FFFFFFF;
+    }
+    return hash;
+  }
+
+  activeThemeShelfFrame(): ResourceStr {
+    return ThemeAssetRegistry.themeShelfFrame(ThemeRuntime.bookTokens(this.appDarkMode).shelfFrameAssetId);
   }
 
   formatDuration(valueMs: number): string {

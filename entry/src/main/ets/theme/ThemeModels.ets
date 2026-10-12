@@ -20,6 +20,8 @@ export class ThemeComponentSourceIds {
   startupThemeId: string = ThemeIds.PLAIN_DEFAULT;
   paletteThemeId: string = ThemeIds.PLAIN_DEFAULT;
   readerThemeId: string = ThemeIds.PLAIN_DEFAULT;
+  // Added after the other sources: empty in schemes saved before it existed, which follow readerThemeId.
+  ttsPanelThemeId: string = '';
   bubbleThemeId: string = ThemeIds.PLAIN_DEFAULT;
   navigationThemeId: string = ThemeIds.PLAIN_DEFAULT;
   bookThemeId: string = ThemeIds.PLAIN_DEFAULT;

@@ -1,0 +1,14 @@
+<svg width="480" height="480" viewBox="0 0 480 480" xmlns="http://www.w3.org/2000/svg">
+  <path d="M480 296A184 184 0 0 0 296 480H480Z" fill="#4B303A" fill-opacity="0.72"/>
+  <path d="M318 480a22 22 0 1 0 .1 0ZM322 444a22 22 0 1 0 .1 0ZM332 410a22 22 0 1 0 .1 0ZM349 378a22 22 0 1 0 .1 0ZM372 350a22 22 0 1 0 .1 0ZM400 327a22 22 0 1 0 .1 0ZM432 310a22 22 0 1 0 .1 0ZM466 300a22 22 0 1 0 .1 0ZM502 296a22 22 0 1 0 .1 0Z" fill="#4B303A" fill-opacity="0.72"/>
+  <path d="M480 334A146 146 0 0 0 334 480" fill="none" stroke="#7397B0" stroke-opacity="0.72" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1 13"/>
+  <path d="M0-30C36-46 58-8 32 26C18 44 6 52 0 58C-6 52-18 44-32 26C-58-8-36-46 0-30Z" transform="translate(402 398) rotate(-14) scale(1.15)" fill="#C95F69" fill-opacity="0.88" stroke="#E68B93" stroke-opacity="0.9" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M-16 -6a2.2 3.4 0 1 0 .1 0ZM14 -8a2.2 3.4 0 1 0 .1 0ZM0 8a2.2 3.4 0 1 0 .1 0ZM-10 24a2.2 3.4 0 1 0 .1 0ZM12 22a2.2 3.4 0 1 0 .1 0ZM0 38a2.2 3.4 0 1 0 .1 0Z" transform="translate(402 398) rotate(-14) scale(1.15)" fill="#4B303A" fill-opacity="0.9"/>
+  <path d="M0-26L-26-44L-8-40L0-58L8-40L26-44Z" transform="translate(402 398) rotate(-14) scale(1.15)" fill="#71866D" fill-opacity="0.95"/>
+  <path d="M0-30C36-46 58-8 32 26C18 44 6 52 0 58C-6 52-18 44-32 26C-58-8-36-46 0-30Z" transform="translate(326 444) rotate(16) scale(0.62)" fill="#C95F69" fill-opacity="0.88" stroke="#E68B93" stroke-opacity="0.9" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M-16 -6a2.2 3.4 0 1 0 .1 0ZM14 -8a2.2 3.4 0 1 0 .1 0ZM0 8a2.2 3.4 0 1 0 .1 0ZM-10 24a2.2 3.4 0 1 0 .1 0ZM12 22a2.2 3.4 0 1 0 .1 0ZM0 38a2.2 3.4 0 1 0 .1 0Z" transform="translate(326 444) rotate(16) scale(0.62)" fill="#4B303A" fill-opacity="0.9"/>
+  <path d="M0-26L-26-44L-8-40L0-58L8-40L26-44Z" transform="translate(326 444) rotate(16) scale(0.62)" fill="#71866D" fill-opacity="0.95"/>
+  <path d="M0-8C10-22 30-6 0 20C-30-6-10-22 0-8Z" transform="translate(250 392) scale(1.0)" fill="#C07D86" fill-opacity="0.7"/>
+  <path d="M0-8C10-22 30-6 0 20C-30-6-10-22 0-8Z" transform="translate(300 330) scale(0.72)" fill="#C07D86" fill-opacity="0.7"/>
+  <path d="M0-8C10-22 30-6 0 20C-30-6-10-22 0-8Z" transform="translate(220 452) scale(0.6)" fill="#C07D86" fill-opacity="0.7"/>
+</svg>

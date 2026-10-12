@@ -3718,14 +3718,23 @@ struct ReadBookPage {
     this.ttsMiniPlayerPositionY = this.clampTtsMiniPlayerPositionY(this.ttsMiniPlayerDragOriginY + offsetY);
   }
 
+  // The panel wears the reader's colours, so the app theme's artwork only fits
+  // while the reader itself is on the "应用主题" scheme.
+  ttsPanelBackgroundThemeId(): string {
+    return this.currentReaderThemeIndex() === ReaderThemeHelper.APP_THEME_INDEX ?
+      ThemeRuntime.ttsPanelThemeId(this.appDarkMode) : '';
+  }
+
   @Builder
   sharedTtsPlayerPanel(localOwner: boolean) {
     ReaderTtsPlayerPanel({
       darkMode: this.isReaderThemeDark(),
       accentColor: this.accentColor(),
+      playButtonColor: this.buttonColor(),
       primaryTextColor: this.getTextColor(),
       subTextColor: this.getSubTextColor(),
       panelColor: this.readerGlassPanelColor(),
+      backgroundThemeId: this.ttsPanelBackgroundThemeId(),
       topInset: this.statusBarSafeHeight,
       bottomInset: this.navBarHeight,
       viewportHeight: this.pageViewHeight > 0 ? this.pageViewHeight : 720,

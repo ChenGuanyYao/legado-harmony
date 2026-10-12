@@ -260,6 +260,7 @@ struct ThemeColorSettingsPage {
     if (category === 'startup') sources.startupThemeId = themeId;
     else if (category === 'palette') sources.paletteThemeId = themeId;
     else if (category === 'reader') sources.readerThemeId = themeId;
+    else if (category === 'ttsPanel') sources.ttsPanelThemeId = themeId;
     else if (category === 'bubble') sources.bubbleThemeId = themeId;
     else if (category === 'navigation') sources.navigationThemeId = themeId;
     else if (category === 'book') sources.bookThemeId = themeId;
@@ -308,6 +309,7 @@ struct ThemeColorSettingsPage {
     if (category === 'startup') return sources.startupThemeId;
     if (category === 'palette') return sources.paletteThemeId;
     if (category === 'reader') return sources.readerThemeId;
+    if (category === 'ttsPanel') return sources.ttsPanelThemeId;
     if (category === 'bubble') return sources.bubbleThemeId;
     if (category === 'navigation') return sources.navigationThemeId;
     if (category === 'book') return sources.bookThemeId;
@@ -443,7 +445,7 @@ struct ThemeColorSettingsPage {
 
   sourceUsesTheme(sources: ThemeComponentSourceIds, themeId: string): boolean {
     return sources.startupThemeId === themeId || sources.paletteThemeId === themeId ||
-      sources.readerThemeId === themeId ||
+      sources.readerThemeId === themeId || sources.ttsPanelThemeId === themeId ||
       sources.bubbleThemeId === themeId || sources.navigationThemeId === themeId ||
       sources.bookThemeId === themeId || sources.typographyThemeId === themeId ||
       sources.layoutThemeId === themeId || sources.radiusThemeId === themeId ||
@@ -547,6 +549,7 @@ struct ThemeColorSettingsPage {
       this.componentSourceRow('启动封面', 'App 冷启动时展示的主题插画与标识', 'startup')
       this.componentSourceRow('完整配色', '页面、卡片、文字、状态栏图标及基础颜色', 'palette')
       this.componentSourceRow('阅读背景', '阅读背景、正文颜色和背景素材', 'reader')
+      this.componentSourceRow('朗读/有声书面板', '朗读面板和有声书面板的背景插画与底色', 'ttsPanel')
       this.componentSourceRow('强调气泡', '正文强调方式、气泡样式及气泡配色', 'bubble')
       this.componentSourceRow('导航图标', '书架、发现、搜索和我的底部图标', 'navigation')
       this.componentSourceRow('书籍素材', '主题封面、书架边框和文件夹图案', 'book')

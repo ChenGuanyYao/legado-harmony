@@ -1,0 +1,16 @@
+<svg width="480" height="480" viewBox="0 0 480 480" xmlns="http://www.w3.org/2000/svg">
+  <path d="M480 480H170c62-42 134-54 206-46 42 4 76-8 104-32Z" fill="#9EB7A3" fill-opacity="0.16"/>
+  <path d="M0 0C66-10 154-6 220 8" transform="translate(452 462) rotate(-128)" fill="none" stroke="#557A62" stroke-opacity="0.22" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M24 -3q20 -36 48 -40q-36 8-48--40ZM24 -3q20 36 48 40q-36 -8-48-40ZM49 -3q18 -32 43 -36q-32 7-43--36ZM49 -3q18 32 43 36q-32 -7-43-36ZM73 -2q16 -29 38 -32q-29 6-38--32ZM73 -2q16 29 38 32q-29 -6-38-32ZM98 -2q14 -25 34 -28q-25 6-34--28ZM98 -2q14 25 34 28q-25 -6-34-28ZM122 -1q12 -22 29 -24q-22 5-29--24ZM122 -1q12 22 29 24q-22 -5-29-24ZM147 -0q10 -18 24 -20q-18 4-24--20ZM147 -0q10 18 24 20q-18 -4-24-20ZM171 0q8 -14 19 -16q-14 3-19--16ZM171 0q8 14 19 16q-14 -3-19-16ZM196 1q6 -11 14 -12q-11 2-14--12ZM196 1q6 11 14 12q-11 -2-14-12Z" transform="translate(452 462) rotate(-128)" fill="#557A62" fill-opacity="0.16"/>
+  <path d="M0 0C57-10 133-6 190 8" transform="translate(448 468) rotate(-104)" fill="none" stroke="#557A62" stroke-opacity="0.19" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M21 -3q17 -31 41 -35q-31 7-41--35ZM21 -3q17 31 41 35q-31 -7-41-35ZM42 -3q16 -28 37 -31q-28 6-37--31ZM42 -3q16 28 37 31q-28 -6-37-31ZM63 -2q14 -25 33 -28q-25 6-33--28ZM63 -2q14 25 33 28q-25 -6-33-28ZM84 -2q12 -22 29 -24q-22 5-29--24ZM84 -2q12 22 29 24q-22 -5-29-24ZM106 -1q10 -19 25 -21q-19 4-25--21ZM106 -1q10 19 25 21q-19 -4-25-21ZM127 -0q9 -16 21 -17q-16 3-21--17ZM127 -0q9 16 21 17q-16 -3-21-17ZM148 0q7 -12 17 -14q-12 3-17--14ZM148 0q7 12 17 14q-12 -3-17-14ZM169 1q5 -9 12 -10q-9 2-12--10ZM169 1q5 9 12 10q-9 -2-12-10Z" transform="translate(448 468) rotate(-104)" fill="#557A62" fill-opacity="0.13"/>
+  <path d="M0 0C60-10 140-6 200 8" transform="translate(440 470) rotate(-156)" fill="none" stroke="#557A62" stroke-opacity="0.18" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M22 -3q18 -33 44 -36q-33 7-44--36ZM22 -3q18 33 44 36q-33 -7-44-36ZM44 -3q16 -29 39 -33q-29 7-39--33ZM44 -3q16 29 39 33q-29 -7-39-33ZM67 -2q15 -26 35 -29q-26 6-35--29ZM67 -2q15 26 35 29q-26 -6-35-29ZM89 -2q13 -23 31 -25q-23 5-31--25ZM89 -2q13 23 31 25q-23 -5-31-25ZM111 -1q11 -20 26 -22q-20 4-26--22ZM111 -1q11 20 26 22q-20 -4-26-22ZM133 -0q9 -16 22 -18q-16 4-22--18ZM133 -0q9 16 22 18q-16 -4-22-18ZM156 0q7 -13 17 -15q-13 3-17--15ZM156 0q7 13 17 15q-13 -3-17-15ZM178 1q5 -10 13 -11q-10 2-13--11ZM178 1q5 10 13 11q-10 -2-13-11Z" transform="translate(440 470) rotate(-156)" fill="#557A62" fill-opacity="0.12"/>
+  <path d="M300 432a40 26 0 0 1 80 0ZM332 432h16v34h-16Z" fill="#557A62" fill-opacity="0.22"/>
+  <path d="M250 452a24 16 0 0 1 48 0ZM269 452h10v20h-10Z" fill="#557A62" fill-opacity="0.17"/>
+  <circle cx="260" cy="330" r="4" fill="#9EB7A3" fill-opacity="0.5"/>
+  <circle cx="330" cy="290" r="3" fill="#9EB7A3" fill-opacity="0.5"/>
+  <circle cx="398" cy="250" r="3" fill="#9EB7A3" fill-opacity="0.5"/>
+  <circle cx="220" cy="400" r="3" fill="#9EB7A3" fill-opacity="0.5"/>
+  <circle cx="300" cy="370" r="2" fill="#9EB7A3" fill-opacity="0.5"/>
+</svg>

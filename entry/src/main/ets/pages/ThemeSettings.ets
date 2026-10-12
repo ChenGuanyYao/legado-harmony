@@ -11,6 +11,7 @@ import { BuiltinThemeRegistry } from '../theme/BuiltinThemeRegistry';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeStartupCover } from '../components/ThemeStartupCover';
 import { ReaderThemeBackground } from '../components/ReaderThemeBackground';
+import { TtsPanelThemeBackground } from '../components/TtsPanelThemeBackground';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ThemeIds, ThemePack, ThemeVariant } from '../theme/ThemeModels';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
@@ -35,10 +36,46 @@ import { PageScaffold } from '../components/common/PageScaffold';
 
 const STORE_COVER_MIN_HEIGHT = 170;
 const STORE_COVER_MAX_HEIGHT = 340;
+// Detail pager: the focused pane leaves its neighbours peeking in on both sides.
+const STORE_PAGER_PANE_WIDTH_RATIO = 0.78;
+const STORE_PAGER_PANE_MAX_WIDTH = 420;
 const STORE_PAGE_FIXED_HEIGHT = 228;
 const STORE_READER_PANE_LINE_HEIGHT = 17;
 const STARTUP_COPY_STRIP_HEIGHT = 40;
 const STORE_BOOK_COVER_RATIO = 46 / 64;
+
+/** One run of the reader preview's sample page; dialogue runs wear the theme's emphasis style. */
+class ReaderPreviewSegment {
+  text: string;
+  emphasis: boolean;
+
+  constructor(text: string, emphasis: boolean = false) {
+    this.text = text;
+    this.emphasis = emphasis;
+  }
+}
+
+// Long enough to fill the tallest preview pane; the pane clips it at a whole line.
+const READER_PREVIEW_SEGMENTS: ReaderPreviewSegment[] = [
+  new ReaderPreviewSegment('\u3000\u3000雨停的时候，檐下还挂着水珠。她把灯芯拨亮了些，翻开那本旧书。' +
+    '\n\u3000\u3000纸页泛黄，墨迹却还清楚。窗外起了风，吹得帘子轻轻晃动，她没有抬头。\n\u3000\u3000'),
+  new ReaderPreviewSegment('“长夜未尽，且慢慢读。”', true),
+  new ReaderPreviewSegment('她轻声念道。\n\u3000\u3000远处传来更鼓，一声，又一声。灯花落了下来，书页翻过去，故事才刚刚开始。' +
+    '\n\u3000\u3000门外有人收了伞，在阶前跺了跺脚上的泥。\n\u3000\u3000'),
+  new ReaderPreviewSegment('“这么晚了，还不歇息？”', true),
+  new ReaderPreviewSegment('\n\u3000\u3000她合上书，指尖还压着方才读到的那一行，笑了笑：'),
+  new ReaderPreviewSegment('“就差最后几页。”', true),
+  new ReaderPreviewSegment('\n\u3000\u3000来人不再劝，只把一盏新茶搁在案角。茶烟细细地升起来，和灯影叠在一处，在墙上晃成一片淡淡的水纹。' +
+    '\n\u3000\u3000夜更深了。巷口卖馄饨的担子早已收走，只剩一两声犬吠，隔着几重院墙传过来，又很快沉下去。\n\u3000\u3000'),
+  new ReaderPreviewSegment('“你看这一句。”', true),
+  new ReaderPreviewSegment('她忽然把书推过去，指给他看。那是一行极小的批注，墨色比正文浅些，像是很多年前，另一个同样不肯睡的人留下的。' +
+    '\n\u3000\u3000他凑近看了许久，低声念出来：'),
+  new ReaderPreviewSegment('“愿此夜长，愿此书不尽。”', true),
+  new ReaderPreviewSegment('\n\u3000\u3000两人都没有再说话。灯芯爆了一声轻响，窗纸上映出第一线微白，天快要亮了。' +
+    '\n\u3000\u3000她把书签夹回原处，将那盏已经凉透的茶端起来，慢慢喝完。新的一天，就从这一页之后开始。' +
+    '\n\u3000\u3000很多年以后，她仍记得那个雨夜：一盏灯，一本书，一个不催她的人。' +
+    '\n\u3000\u3000而那行小小的批注，她后来也照着写了一遍，留给下一个翻开这本书的人。')
+];
 const STORE_GRID_COVER_HEIGHT = 132;
 const MY_THEME_THUMB_WIDTH = 108;
 const MY_THEME_THUMB_COVER_HEIGHT = 76;
@@ -860,64 +897,87 @@ struct ThemeSettingsPage {
   }
 
   /**
-   * Split preview shared by the detail pager and the "当前使用" card:
-   * startup cover | reader page | book cover, all at the book cover's height.
+   * Preview strip shared by the detail pager and the "当前使用" card:
+   * startup cover | reader page | player panel | book cover, all at the book
+   * cover's height. On the "当前使用" card three pane widths fit the strip, so
+   * four panes rest centred with both outer panes peeking in. In the detail
+   * pager the strip is a carousel: one tall pane centred at a time, snapping
+   * from pane to pane and starting on the startup cover.
    */
   @Builder
   themePreviewPanes(theme: ThemePack, customSchemeId: string, inPager: boolean) {
-    Row({ space: AppSpacing.MD }) {
-      Stack({ alignContent: Alignment.TopStart }) {
-        ThemeStartupCover({
-          themeId: theme.startup.styleId,
-          darkMode: this.appDarkMode,
-          // A pane on a phone is a scaled-down screen; the compact text
-          // sizes keep the copy in proportion and inside the pane.
-          compact: this.previewPaneWidth(theme, inPager) < 240,
-          animated: false,
-          customImagePath: this.customPreviewStartupImage(customSchemeId),
-          titleOverride: this.customPreviewStartupTitle(customSchemeId),
-          subtitleOverride: this.customPreviewStartupSubtitle(customSchemeId),
-          explicitText: !!customSchemeId
-        })
-        this.storePaneLabel('启动封面')
-        if (!inPager && theme.id !== ThemeIds.PLAIN_DEFAULT && theme.id !== ThemeIds.CUSTOM) {
-          // The copy itself is the edit target: the hint sits right above it
-          // and the whole strip, hint and copy, is tappable.
-          Column() {
-            Blank()
+    Scroll() {
+      Row({ space: AppSpacing.MD }) {
+        Stack({ alignContent: Alignment.TopStart }) {
+          ThemeStartupCover({
+            themeId: theme.startup.styleId,
+            darkMode: this.appDarkMode,
+            // A pane on a phone is a scaled-down screen; the compact text
+            // sizes keep the copy in proportion and inside the pane.
+            compact: this.previewPaneWidth(theme, inPager) < 240,
+            animated: false,
+            customImagePath: this.customPreviewStartupImage(customSchemeId),
+            titleOverride: this.customPreviewStartupTitle(customSchemeId),
+            subtitleOverride: this.customPreviewStartupSubtitle(customSchemeId),
+            explicitText: !!customSchemeId
+          })
+          this.storePaneLabel('启动封面')
+          if (!inPager && theme.id !== ThemeIds.PLAIN_DEFAULT && theme.id !== ThemeIds.CUSTOM) {
+            // The copy itself is the edit target: the hint sits right above it
+            // and the whole strip, hint and copy, is tappable.
             Column() {
-              Text('编辑启动文案')
-                .fontSize(AppFontSize.MICRO)
-                .fontColor('#F2FFFFFF')
-                .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
-                .borderRadius(8)
-                .backgroundColor('#52000000')
-                .border({ width: 0.5, color: '#55FFFFFF' })
-              // Leaves room for ThemeStartupCover's compact title and subtitle below the hint.
-              Row()
-                .height(STARTUP_COPY_STRIP_HEIGHT)
+              Blank()
+              Column() {
+                Text('编辑启动文案')
+                  .fontSize(AppFontSize.MICRO)
+                  .fontColor('#F2FFFFFF')
+                  .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
+                  .borderRadius(8)
+                  .backgroundColor('#52000000')
+                  .border({ width: 0.5, color: '#55FFFFFF' })
+                // Leaves room for ThemeStartupCover's compact title and subtitle below the hint.
+                Row()
+                  .height(STARTUP_COPY_STRIP_HEIGHT)
+              }
+              .width('100%')
+              .alignItems(HorizontalAlign.Center)
+              .accessibilityText('编辑启动文案')
+              .onClick(() => this.openStartupTextDialog(theme.id))
             }
             .width('100%')
-            .alignItems(HorizontalAlign.Center)
-            .accessibilityText('编辑启动文案')
-            .onClick(() => this.openStartupTextDialog(theme.id))
+            .height('100%')
+            .hitTestBehavior(HitTestMode.Transparent)
           }
-          .width('100%')
-          .height('100%')
-          .hitTestBehavior(HitTestMode.Transparent)
+        }
+        .width(this.previewPaneWidth(theme, inPager))
+        .height(this.previewPaneHeight(inPager))
+        .borderRadius(theme.radius.large)
+        .clip(true)
+
+        this.storeReaderPane(theme, inPager)
+        this.storeTtsPane(theme, customSchemeId, inPager)
+        if (this.themeHasBookCover(theme)) {
+          this.storeBookCoverPane(theme, inPager)
         }
       }
-      .layoutWeight(1)
-      .height(this.previewPaneHeight(inPager))
-      .borderRadius(theme.radius.large)
-      .clip(true)
-
-      this.storeReaderPane(theme, inPager)
-      if (this.themeHasBookCover(theme)) {
-        this.storeBookCoverPane(theme, inPager)
-      }
+      // Side padding lets the first and last pane come to rest in the centre too.
+      .padding({ left: this.previewStripInset(theme, inPager), right: this.previewStripInset(theme, inPager) })
     }
     .width('100%')
+    .height(this.previewPaneHeight(inPager))
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
+    // In the pager the strip rebounds at its ends instead of going quiet, so the
+    // gesture stays with it and never falls through to the theme pager.
+    .edgeEffect(inPager ? EdgeEffect.Spring : EdgeEffect.None, { alwaysEnabled: true })
+    .scrollSnap({
+      snapAlign: inPager ? ScrollSnapAlign.START : ScrollSnapAlign.NONE,
+      snapPagination: this.previewPaneWidth(theme, inPager) + AppSpacing.MD
+    })
+    // Card strip only: half of the one pane (plus gap) that overflows, (width + gap) / 6 of the strip.
+    .initialOffset({ xOffset: !inPager && this.themeHasBookCover(theme) ? '17%' : 0 })
+    // Swipes on the strip only ever move the strip; themes change by swiping anywhere below it.
+    .nestedScroll({ scrollForward: NestedScrollMode.SELF_ONLY, scrollBackward: NestedScrollMode.SELF_ONLY })
     .onAreaChange((_oldValue: Area, newValue: Area) => {
       const width = Number(newValue.width);
       if (Number.isFinite(width) && width > 0) {
@@ -942,7 +1002,7 @@ struct ThemeSettingsPage {
       .hitTestBehavior(HitTestMode.None)
   }
 
-  /** Last pane of the split preview: the theme's book cover with its shelf frame. */
+  /** Last pane of the preview strip: the theme's book cover with its shelf frame. */
   @Builder
   storeBookCoverPane(theme: ThemePack, inPager: boolean) {
     Stack({ alignContent: Alignment.TopStart }) {
@@ -963,6 +1023,8 @@ struct ThemeSettingsPage {
           .interval(2800)
           .indicator(false)
           .loop(true)
+          // Horizontal swipes belong to the preview strip; the covers only auto-play.
+          .disableSwipe(true)
           Image(ThemeAssetRegistry.themeShelfFrame(theme.book.shelfFrameAssetId))
             .width('100%')
             .height('100%')
@@ -970,35 +1032,63 @@ struct ThemeSettingsPage {
             .draggable(false)
             .hitTestBehavior(HitTestMode.None)
         }
-        .width(this.previewPaneHeight(inPager) * STORE_BOOK_COVER_RATIO)
-        .height(this.previewPaneHeight(inPager))
+        .width(this.storeBookCoverWidth(theme, inPager))
+        .height(this.storeBookCoverWidth(theme, inPager) / STORE_BOOK_COVER_RATIO)
       }
       .width('100%')
       .height('100%')
       this.storePaneLabel('书籍封面')
     }
-    .layoutWeight(1)
+    .width(this.previewPaneWidth(theme, inPager))
     .height(this.previewPaneHeight(inPager))
     .borderRadius(theme.radius.large)
     .clip(true)
     .backgroundColor(this.activeVariant(theme).colors.inputColor)
   }
 
-  /** Middle pane of the split preview: a scaled-down reader page on the theme's paper. */
+  /** Second pane of the preview strip: a scaled-down reader page on the theme's paper. */
   @Builder
   storeReaderPane(theme: ThemePack, inPager: boolean) {
     Stack({ alignContent: Alignment.TopStart }) {
       ReaderThemeBackground({
         surfaceColor: this.activeVariant(theme).reader.backgroundColor,
         backgroundAssetId: this.activeVariant(theme).reader.backgroundAssetId,
-        compact: true
+        compact: !inPager
       })
-      Text('\u3000\u3000雨停的时候，檐下还挂着水珠。她把灯芯拨亮了些，翻开那本旧书。' +
-        '\n\u3000\u3000纸页泛黄，墨迹却还清楚。窗外起了风，吹得帘子轻轻晃动，她没有抬头。' +
-        '\n\u3000\u3000“长夜未尽，”她轻声念道，“且慢慢读。”' +
-        '\n\u3000\u3000远处传来更鼓，一声，又一声。灯花落了下来，书页翻过去，故事才刚刚开始。')
-      .fontSize(10)
-      .lineHeight(STORE_READER_PANE_LINE_HEIGHT)
+      Text() {
+        ForEach(READER_PREVIEW_SEGMENTS, (segment: ReaderPreviewSegment) => {
+          if (!segment.emphasis) {
+            Span(segment.text)
+          } else if (this.themeHasRegexBubbleCap(theme)) {
+            ContainerSpan() {
+              ImageSpan(ThemeAssetRegistry.regexBubbleCap(this.activeVariant(theme).regexEmphasis.bubbleStyle))
+                .width(this.storeReaderPaneFontSize(inPager))
+                .height(this.storeReaderPaneFontSize(inPager))
+                .objectFit(ImageFit.Contain)
+                .verticalAlign(ImageSpanAlignment.CENTER)
+              Span(segment.text)
+                .fontColor(this.themeRegexPreview(theme).textColor)
+                .textShadow(this.themeRegexPreviewShadow(theme))
+              ImageSpan(ThemeAssetRegistry.regexBubbleCap(this.activeVariant(theme).regexEmphasis.bubbleStyle))
+                .width(this.storeReaderPaneFontSize(inPager))
+                .height(this.storeReaderPaneFontSize(inPager))
+                .objectFit(ImageFit.Contain)
+                .verticalAlign(ImageSpanAlignment.CENTER)
+                .rotate({ angle: 180 })
+            }
+            .textBackgroundStyle(this.themeRegexPreviewBackground(theme))
+          } else {
+            ContainerSpan() {
+              Span(segment.text)
+                .fontColor(this.themeRegexPreview(theme).textColor)
+                .textShadow(this.themeRegexPreviewShadow(theme))
+            }
+            .textBackgroundStyle(this.themeRegexPreviewBackground(theme))
+          }
+        }, (_segment: ReaderPreviewSegment, index: number) => `reader_preview_${theme.id}_${index}`)
+      }
+      .fontSize(this.storeReaderPaneFontSize(inPager))
+      .lineHeight(this.storeReaderPaneLineHeight(inPager))
       .fontFamily(theme.typography.appFontFamily)
       .fontColor(this.activeVariant(theme).reader.textColor)
       .maxLines(this.storeReaderPaneLines(inPager))
@@ -1008,7 +1098,98 @@ struct ThemeSettingsPage {
       .hitTestBehavior(HitTestMode.None)
       this.storePaneLabel('阅读页')
     }
-    .layoutWeight(1)
+    .width(this.previewPaneWidth(theme, inPager))
+    .height(this.previewPaneHeight(inPager))
+    .borderRadius(theme.radius.large)
+    .clip(true)
+  }
+
+  /** Third pane of the preview strip: a scaled-down TTS / audiobook player on the theme's panel background. */
+  @Builder
+  storeTtsPane(theme: ThemePack, customSchemeId: string, inPager: boolean) {
+    Stack({ alignContent: Alignment.TopStart }) {
+      TtsPanelThemeBackground({
+        themeId: this.previewTtsPanelThemeId(theme, customSchemeId),
+        darkMode: this.appDarkMode
+      })
+      Column({ space: AppSpacing.SM * this.storeTtsPaneScale(inPager) }) {
+        Column({ space: AppSpacing.XS * this.storeTtsPaneScale(inPager) }) {
+          Stack() {
+            if (this.themeHasBookCover(theme)) {
+              Image(ThemeAssetRegistry.themeBookCover(theme.book.coverAssetId))
+                .height('100%')
+                .aspectRatio(STORE_BOOK_COVER_RATIO)
+                .borderRadius(theme.radius.small)
+                .objectFit(ImageFit.Cover)
+                .draggable(false)
+            } else {
+              Column()
+                .height('100%')
+                .aspectRatio(STORE_BOOK_COVER_RATIO)
+                .borderRadius(theme.radius.small)
+                .backgroundColor(this.activeVariant(theme).colors.accentColor)
+            }
+          }
+          .width('100%')
+          .layoutWeight(1)
+          Row()
+            .width('100%')
+            .height(4 * this.storeTtsPaneScale(inPager))
+            .borderRadius(4)
+            .backgroundColor(this.withAlpha(this.activeVariant(theme).colors.primaryTextColor, '40'))
+          Row()
+            .width('70%')
+            .height(4 * this.storeTtsPaneScale(inPager))
+            .borderRadius(4)
+            .backgroundColor(this.withAlpha(this.activeVariant(theme).colors.primaryTextColor, '26'))
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .padding(AppSpacing.SM * this.storeTtsPaneScale(inPager))
+        .alignItems(HorizontalAlign.Start)
+        .borderRadius(theme.radius.medium)
+        .backgroundColor(this.withAlpha(this.activeVariant(theme).colors.accentColor, '1F'))
+
+        Stack({ alignContent: Alignment.Start }) {
+          Row()
+            .width('100%')
+            .height(3 * this.storeTtsPaneScale(inPager))
+            .borderRadius(3)
+            .backgroundColor(this.withAlpha(this.activeVariant(theme).colors.primaryTextColor, '26'))
+          Row()
+            .width('42%')
+            .height(3 * this.storeTtsPaneScale(inPager))
+            .borderRadius(3)
+            .backgroundColor(this.activeVariant(theme).colors.accentColor)
+        }
+        .width('100%')
+
+        Row() {
+          ForEach([0, 1, 2, 3, 4], (slot: number) => {
+            Circle()
+              .width((slot === 2 ? 18 : 11) * this.storeTtsPaneScale(inPager))
+              .height((slot === 2 ? 18 : 11) * this.storeTtsPaneScale(inPager))
+              .fill(slot === 2 ? this.activeVariant(theme).colors.buttonColor :
+                this.withAlpha(this.activeVariant(theme).colors.primaryTextColor, '33'))
+          }, (slot: number) => `tts_pane_control_${slot}`)
+        }
+        .width('100%')
+        .height(18 * this.storeTtsPaneScale(inPager))
+        .justifyContent(FlexAlign.SpaceBetween)
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .height('100%')
+      .padding({
+        left: AppSpacing.MD * this.storeTtsPaneScale(inPager),
+        right: AppSpacing.MD * this.storeTtsPaneScale(inPager),
+        top: 32,
+        bottom: AppSpacing.LG * this.storeTtsPaneScale(inPager)
+      })
+      .hitTestBehavior(HitTestMode.None)
+      this.storePaneLabel('朗读/有声书')
+    }
+    .width(this.previewPaneWidth(theme, inPager))
     .height(this.previewPaneHeight(inPager))
     .borderRadius(theme.radius.large)
     .clip(true)
@@ -2241,11 +2422,10 @@ struct ThemeSettingsPage {
     return entries;
   }
 
-  /** Cover takes whatever the swipe page has left after its fixed detail rows. */
+  /** Panes take whatever the swipe page has left after its fixed detail rows. */
   storeCoverHeight(): number {
     const swiper = this.storeSwiperHeight > 0 ? this.storeSwiperHeight : 630;
-    return Math.max(STORE_COVER_MIN_HEIGHT,
-      Math.min(STORE_COVER_MAX_HEIGHT, swiper - STORE_PAGE_FIXED_HEIGHT));
+    return Math.max(STORE_COVER_MIN_HEIGHT, swiper - STORE_PAGE_FIXED_HEIGHT);
   }
 
   previewRowWidth(inPager: boolean): number {
@@ -2254,25 +2434,66 @@ struct ThemeSettingsPage {
   }
 
   /**
-   * Height shared by all preview panes: exactly the book cover's height when
-   * the cover fills one of three panes edge to edge. Themes without a book
+   * Height shared by all preview panes. On the card it is exactly the book
+   * cover's height when the cover fills one of three panes edge to edge; in
+   * the detail pager the panes grow to fill the page. Themes without a book
    * cover use the same height so the pager does not jump between pages.
    */
   previewPaneHeight(inPager: boolean): number {
+    if (inPager) return this.storeCoverHeight();
     const paneWidth = (this.previewRowWidth(inPager) - 2 * AppSpacing.MD) / 3;
-    const maxHeight = inPager ? this.storeCoverHeight() : STORE_COVER_MAX_HEIGHT;
-    return Math.max(80, Math.min(maxHeight, paneWidth / STORE_BOOK_COVER_RATIO));
+    return Math.max(80, Math.min(STORE_COVER_MAX_HEIGHT, paneWidth / STORE_BOOK_COVER_RATIO));
   }
 
-  previewPaneWidth(theme: ThemePack, inPager: boolean): number {
-    const panes = this.themeHasBookCover(theme) ? 3 : 2;
-    return (this.previewRowWidth(inPager) - (panes - 1) * AppSpacing.MD) / panes;
+  previewPaneWidth(_theme: ThemePack, inPager: boolean): number {
+    if (!inPager) return (this.previewRowWidth(inPager) - 2 * AppSpacing.MD) / 3;
+    return Math.min(this.previewPaneHeight(inPager) * STORE_BOOK_COVER_RATIO,
+      this.previewRowWidth(inPager) * STORE_PAGER_PANE_WIDTH_RATIO, STORE_PAGER_PANE_MAX_WIDTH);
+  }
+
+  previewStripInset(theme: ThemePack, inPager: boolean): number {
+    return inPager ? Math.max(0, (this.previewRowWidth(inPager) - this.previewPaneWidth(theme, inPager)) / 2) : 0;
+  }
+
+  /** The cover keeps its own proportions inside a pane that may be taller than it. */
+  storeBookCoverWidth(theme: ThemePack, inPager: boolean): number {
+    return Math.min(this.previewPaneWidth(theme, inPager), this.previewPaneHeight(inPager) * STORE_BOOK_COVER_RATIO);
+  }
+
+  storeReaderPaneFontSize(inPager: boolean): number {
+    return inPager ? 14 : 10;
+  }
+
+  storeReaderPaneLineHeight(inPager: boolean): number {
+    return inPager ? 24 : STORE_READER_PANE_LINE_HEIGHT;
+  }
+
+  themeHasRegexBubbleCap(theme: ThemePack): boolean {
+    return ThemeAssetRegistry.hasRegexBubbleCap(this.activeVariant(theme).regexEmphasis.bubbleStyle);
+  }
+
+  /** The player mock is drawn for the small card pane and doubled for the pager's large one. */
+  storeTtsPaneScale(inPager: boolean): number {
+    return inPager ? 2 : 1;
+  }
+
+  /** A custom scheme shows the panel background of the theme picked as its panel source. */
+  previewTtsPanelThemeId(theme: ThemePack, customSchemeId: string): string {
+    if (theme.id !== ThemeIds.CUSTOM) return theme.id;
+    const scheme = CustomThemeSchemeStore.find(this.customSchemes, customSchemeId);
+    if (!scheme) return ThemeRuntime.ttsPanelThemeId(this.appDarkMode);
+    const sources = this.appDarkMode ? scheme.settings.customDarkSources : scheme.settings.customLightSources;
+    return sources.ttsPanelThemeId || sources.readerThemeId;
+  }
+
+  withAlpha(color: string, alphaHex: string): string {
+    return /^#[0-9A-Fa-f]{6}$/.test(color) ? `#${alphaHex}${color.substring(1)}` : color;
   }
 
   /** Whole body lines that fit the reader pane below its label, so no line is cut in half. */
   storeReaderPaneLines(inPager: boolean): number {
     return Math.max(3,
-      Math.floor((this.previewPaneHeight(inPager) - 32 - AppSpacing.LG) / STORE_READER_PANE_LINE_HEIGHT));
+      Math.floor((this.previewPaneHeight(inPager) - 32 - AppSpacing.LG) / this.storeReaderPaneLineHeight(inPager)));
   }
 
   /** The theme's own button radius, floored so sharp-cornered themes still read as rounded. */

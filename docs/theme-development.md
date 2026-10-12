@@ -17,15 +17,18 @@ entry/src/main/ets/theme/
 ├── ThemeModels.ets             # ThemeIds、ThemePack、浅深变体和各类令牌模型
 ├── BuiltinThemeRegistry.ets    # 内置主题定义与编译期注册入口
 ├── ThemeRuntime.ets            # 将主题发布为扁平 AppStorage 令牌
-└── ThemeAssetRegistry.ets      # assetId / iconPackId / styleId 到 Resource 的映射
+├── ThemeAssetRegistry.ets      # assetId / iconPackId / styleId 到 Resource 的映射
+└── TtsPanelThemeStyles.ets     # 各主题朗读/有声书面板背景的插画与配色
 
 entry/src/main/ets/utils/AppThemeSettingsStore.ets   # 主题选择与颜色覆盖的持久化
 entry/src/main/ets/account/ThemeAccessPolicy.ets     # 主题与专属气泡样式的归属关系
 entry/src/main/ets/components/ReaderThemeBackground.ets  # 阅读页主题背景组件
+entry/src/main/ets/components/TtsPanelThemeBackground.ets  # 朗读/有声书面板主题背景组件
 
 entry/src/main/resources/base/media/
 ├── reader_decor_*              # 阅读背景角落装饰 SVG（480 × 480）
 ├── reader_bg_*                 # 旧版 9:16 阅读背景 SVG（1080 × 1920，兼容资源）
+├── tts_panel_*                 # 朗读/有声书面板背景插画 SVG（720 × 520）
 ├── theme_cover_*               # 主题书籍封面
 ├── theme_frame_*               # 书架封面装饰边框
 ├── theme_folder_art_*          # 平铺模式分组文件夹插画（450 × 660）
@@ -86,7 +89,7 @@ entry/src/main/resources/base/media/
 
 1. 在 `ThemeModels.ets` 的 `ThemeIds` 中增加 ID 常量。
 2. 在 `BuiltinThemeRegistry.ets` 中新增一个返回 `ThemePack` 的私有方法，并在 `createThemes()` 里 `themes.push(...)`。
-3. 按下文的资源规范添加资源文件，并在 `ThemeAssetRegistry` 中补全映射。
+3. 按下文的资源规范添加资源文件，并在 `ThemeAssetRegistry` 中补全映射；朗读/有声书面板背景见下文“朗读/有声书面板背景”。
 4. 新增一个 `server/migrations/` 迁移，把主题 ID 写入 `theme_catalog`。
 5. 更新 `scripts/theme-framework-check.mjs`：把主题 ID 加入 `redeemableThemeIds`，并把新迁移文件加入 `serverThemeCatalog` 读取的文件。脚本会检查列表中的每个主题都存在于服务端主题目录中，缺失会直接失败。
 6. 运行 `node scripts/theme-framework-check.mjs`。
@@ -159,7 +162,9 @@ BuiltinThemeRegistry.register(theme);
 | 资源 | 命名 | 规格 | 映射方法 |
 | --- | --- | --- | --- |
 | 阅读背景装饰 | `reader_decor_<id>_light.svg` / `_dark.svg` | `viewBox="0 0 480 480"`，透明底 | `readerBackgroundDecoration()` |
-| 主题封面 | `theme_cover_<id>` | 约 300 × 440，JPG/PNG/SVG | `themeBookCovers()` |
+| 阅读背景右下角装饰 | `reader_decor_<id>_trailing_light.svg` / `_dark.svg` | `viewBox="0 0 480 480"`，透明底，图案贴右下角 | `readerBackgroundTrailingDecoration()` |
+| 朗读/有声书面板背景 | `tts_panel_<id>_light.svg` / `_dark.svg` | `viewBox="0 0 720 520"`，透明底 | `TtsPanelThemeStyles.resolve()` |
+| 主题封面 | `theme_cover_<id>_NN` | 约 300 × 440，JPG/PNG/SVG；矢量封面由 `scripts/generate-theme-covers.py` 生成 | `themeBookCovers()` |
 | 书架边框 | `theme_frame_<id>.svg` | 中心透明，只画外框和角花 | `themeShelfFrame()` |
 | 分组文件夹插画 | `theme_folder_art_<id>.jpg` | 450 × 660 | `themeShelfFolder()` |
 | 主题标识 | `theme_logo_<id>.svg` | `viewBox="0 0 64 64"` | `themeLogo()` |
@@ -171,8 +176,8 @@ BuiltinThemeRegistry.register(theme);
 
 内置主题使用“主题底色 + 自适应边框 + 角落装饰”的结构，由 `ReaderThemeBackground` 组件绘制。
 
-1. 添加浅色、深色两个 `reader_decor_*` 装饰资源。图案保持低对比，正文区域不要放置密集细节。
-2. 在 `ThemeAssetRegistry` 中增加背景 `assetId` 常量，并在 `normalizeBackgroundAssetId()` 和 `readerBackgroundDecoration()` 中补上映射。
+1. 添加浅色、深色两个 `reader_decor_*` 左上角装饰资源，以及两个 `reader_decor_*_trailing_*` 右下角装饰资源。图案保持低对比，正文区域不要放置密集细节。右下角是单独绘制的另一幅图，与左上角构成同一场景，不要用左上角图案镜像；在 `scripts/generate-reader-trailing-ornaments.py` 中添加绘制函数和浅深配色后运行脚本生成。
+2. 在 `ThemeAssetRegistry` 中增加背景 `assetId` 常量，并在 `normalizeBackgroundAssetId()`、`readerBackgroundDecoration()` 和 `readerBackgroundTrailingDecoration()` 中补上映射，同时把名称加入 `theme-framework-check.mjs` 的右下角装饰列表。
 3. 分别填写 `theme.light.reader.backgroundAssetId` 和 `theme.dark.reader.backgroundAssetId`。
 4. 必须提供 `backgroundColor`：它是实际铺满任意分辨率、横竖屏和分屏窗口的阅读底色。
 5. 正确填写 `contentTone`，阅读页据此决定系统栏图标和辅助内容的明暗。
@@ -181,9 +186,23 @@ BuiltinThemeRegistry.register(theme);
 
 - `readerBackgroundBorderWidth()`：需要边框的主题返回边框宽度。
 - `readerBackgroundBorderColor()`：返回边框颜色，默认返回空字符串。
-- `readerBackgroundTrailingDecoration()` / `readerBackgroundTrailingRotation()`：右下角默认复用左上角装饰并旋转 180°；需要独立的右下角图案时在这里覆盖。
+- `readerBackgroundTrailingRotation()`：有独立右下角图案时返回 0；只有未登记右下角图案的资源才回退为左上角装饰旋转 180°。
 
 装饰锚定在左上和右下的正方形区域，使用 `ImageFit.Contain`。不要把内置主题改回 `Cover` 全屏壁纸，`theme-framework-check` 会检查这一点。旧版 `reader_bg_*` 仅作为兼容资源保留。
+
+### 朗读/有声书面板背景
+
+朗读面板和有声书面板共用 `ReaderTtsPlayerPanel`，背景由 `TtsPanelThemeBackground` 绘制，与阅读页背景相互独立。结构是“顶部插画 + 天空渐变 + 面板底色 + 播放区柔光”：插画贴顶、按宽度等比缩放，下半部分渐隐到面板底色，控件始终落在干净的底色上。
+
+1. 在 `scripts/generate-tts-panel-backgrounds.py` 中为主题写一个绘制函数，并在 `THEMES` 里登记浅色、深色两套配色，然后运行脚本生成 `tts_panel_<id>_light.svg` 和 `_dark.svg`。同一主题的浅深两张图共用一份图形，只换配色。
+2. 在 `TtsPanelThemeStyles.resolve()` 中增加分支，填写插画资源、`skyColor`（插画背后的天空色）、`surfaceColor`（不透明的面板底色，取接近主题 `pageColor` 的颜色以保证文字对比度）和 `glowColor`（带透明度的强调色）。
+3. 把主题名加入 `theme-framework-check.mjs` 的 `ttsPanelThemeNames`。
+
+生效范围：
+
+- 首页朗读浮层和听书页始终使用当前应用主题的面板背景。
+- 阅读页的朗读面板沿用阅读配色的文字色，只有阅读配色选中“应用主题”时才使用主题面板背景，其余配色保持玻璃面板。
+- 自定义主题通过部件来源 `ThemeComponentSourceIds.ttsPanelThemeId` 选择面板背景来自哪个主题（`ThemeRuntime.ttsPanelThemeId()`）。该字段是后加的，旧方案里为空，读取时回退到 `readerThemeId`。
 
 ### 主题封面与书架边框
 
