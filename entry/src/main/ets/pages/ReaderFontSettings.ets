@@ -1183,6 +1183,8 @@ struct ReaderFontSettingsPage {
     this.appendAccessibleBubbleStyle(options, 'sword-talisman', '剑符', revision);
     this.appendAccessibleBubbleStyle(options, 'qingluan-jade', '青鸾玉令', revision);
     this.appendAccessibleBubbleStyle(options, 'pipi-soft-paw', '皮皮软爪', revision);
+    this.appendAccessibleBubbleStyle(options, 'mecha-comm', '通讯频道', revision);
+    this.appendAccessibleBubbleStyle(options, 'starwish-ribbon', '星愿丝带', revision);
     return options;
   }
 

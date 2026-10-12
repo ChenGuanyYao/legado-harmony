@@ -25,6 +25,10 @@ export class ThemeAssetRegistry {
   static readonly BACKGROUND_QINGLUAN_WATER_DARK: string = 'qingluan-water-dark';
   static readonly BACKGROUND_CAT_PIPI_LIGHT: string = 'cat-pipi-light';
   static readonly BACKGROUND_CAT_PIPI_DARK: string = 'cat-pipi-dark';
+  static readonly BACKGROUND_AZURE_MECHA_LIGHT: string = 'azure-mecha-light';
+  static readonly BACKGROUND_AZURE_MECHA_DARK: string = 'azure-mecha-dark';
+  static readonly BACKGROUND_STARWISH_MAGIC_LIGHT: string = 'starwish-magic-light';
+  static readonly BACKGROUND_STARWISH_MAGIC_DARK: string = 'starwish-magic-dark';
 
   static readonly ICON_PACK_CLASSIC: string = 'classic';
   static readonly ICON_PACK_ROUNDED: string = 'rounded';
@@ -37,6 +41,8 @@ export class ThemeAssetRegistry {
   static readonly ICON_PACK_SWORD_FROST: string = 'sword-frost';
   static readonly ICON_PACK_QINGLUAN_WATER: string = 'qingluan-water';
   static readonly ICON_PACK_CAT_PIPI: string = 'cat-pipi';
+  static readonly ICON_PACK_AZURE_MECHA: string = 'azure-mecha';
+  static readonly ICON_PACK_STARWISH_MAGIC: string = 'starwish-magic';
 
   static readonly TAB_BOOKSHELF: string = 'bookshelf';
   static readonly TAB_EXPLORE: string = 'explore';
@@ -93,6 +99,14 @@ export class ThemeAssetRegistry {
         return $r('app.media.reader_bg_cat_pipi_light');
       case ThemeAssetRegistry.BACKGROUND_CAT_PIPI_DARK:
         return $r('app.media.reader_bg_cat_pipi_dark');
+      case ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_LIGHT:
+        return $r('app.media.reader_bg_azure_mecha_light');
+      case ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_DARK:
+        return $r('app.media.reader_bg_azure_mecha_dark');
+      case ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_LIGHT:
+        return $r('app.media.reader_bg_starwish_magic_light');
+      case ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_DARK:
+        return $r('app.media.reader_bg_starwish_magic_dark');
       default:
         return '';
     }
@@ -148,6 +162,14 @@ export class ThemeAssetRegistry {
         return $r('app.media.reader_decor_cat_pipi_light_v2');
       case ThemeAssetRegistry.BACKGROUND_CAT_PIPI_DARK:
         return $r('app.media.reader_decor_cat_pipi_dark_v2');
+      case ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_LIGHT:
+        return $r('app.media.reader_decor_azure_mecha_light');
+      case ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_DARK:
+        return $r('app.media.reader_decor_azure_mecha_dark');
+      case ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_LIGHT:
+        return $r('app.media.reader_decor_starwish_magic_light');
+      case ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_DARK:
+        return $r('app.media.reader_decor_starwish_magic_dark');
       default:
         return '';
     }
@@ -206,6 +228,14 @@ export class ThemeAssetRegistry {
         return $r('app.media.reader_decor_cat_pipi_trailing_light_v2');
       case ThemeAssetRegistry.BACKGROUND_CAT_PIPI_DARK:
         return $r('app.media.reader_decor_cat_pipi_trailing_dark_v2');
+      case ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_LIGHT:
+        return $r('app.media.reader_decor_azure_mecha_trailing_light');
+      case ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_DARK:
+        return $r('app.media.reader_decor_azure_mecha_trailing_dark');
+      case ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_LIGHT:
+        return $r('app.media.reader_decor_starwish_magic_trailing_light');
+      case ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_DARK:
+        return $r('app.media.reader_decor_starwish_magic_trailing_dark');
       default:
         return ThemeAssetRegistry.readerBackgroundDecoration(assetId);
     }
@@ -242,6 +272,10 @@ export class ThemeAssetRegistry {
       case ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_DARK: return '#568AB5AC';
       case ThemeAssetRegistry.BACKGROUND_CAT_PIPI_LIGHT: return '#55C46F45';
       case ThemeAssetRegistry.BACKGROUND_CAT_PIPI_DARK: return '#52E8A06F';
+      case ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_LIGHT: return '#4D2F6FB3';
+      case ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_DARK: return '#4D3FD3E6';
+      case ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_LIGHT: return '#4D9A74D6';
+      case ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_DARK: return '#4DC3A2F2';
       default: return '';
     }
   }
@@ -257,7 +291,11 @@ export class ThemeAssetRegistry {
       normalized === ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_LIGHT ||
       normalized === ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_DARK ||
       normalized === ThemeAssetRegistry.BACKGROUND_CAT_PIPI_LIGHT ||
-      normalized === ThemeAssetRegistry.BACKGROUND_CAT_PIPI_DARK) {
+      normalized === ThemeAssetRegistry.BACKGROUND_CAT_PIPI_DARK ||
+      normalized === ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_LIGHT ||
+      normalized === ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_DARK ||
+      normalized === ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_LIGHT ||
+      normalized === ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_DARK) {
       return 1.5;
     }
     return 1;
@@ -279,7 +317,9 @@ export class ThemeAssetRegistry {
       normalizedPackId === ThemeAssetRegistry.ICON_PACK_CRANE ||
       normalizedPackId === ThemeAssetRegistry.ICON_PACK_SWORD_FROST ||
       normalizedPackId === ThemeAssetRegistry.ICON_PACK_QINGLUAN_WATER ||
-      normalizedPackId === ThemeAssetRegistry.ICON_PACK_CAT_PIPI) {
+      normalizedPackId === ThemeAssetRegistry.ICON_PACK_CAT_PIPI ||
+      normalizedPackId === ThemeAssetRegistry.ICON_PACK_AZURE_MECHA ||
+      normalizedPackId === ThemeAssetRegistry.ICON_PACK_STARWISH_MAGIC) {
       return ThemeAssetRegistry.themedNavigationIcon(normalizedPackId, normalizedTabId);
     }
     return ThemeAssetRegistry.classicNavigationIcon(normalizedTabId);
@@ -315,6 +355,10 @@ export class ThemeAssetRegistry {
         return $r('app.media.theme_logo_qingluan_water');
       case ThemeIds.CAT_PIPI:
         return $r('app.media.theme_logo_cat_pipi');
+      case ThemeIds.AZURE_MECHA:
+        return $r('app.media.theme_logo_azure_mecha');
+      case ThemeIds.STARWISH_MAGIC:
+        return $r('app.media.theme_logo_starwish_magic');
       default:
         return $r('app.media.theme_logo_classic_blue');
     }
@@ -334,6 +378,8 @@ export class ThemeAssetRegistry {
       case ThemeIds.SWORD_FROST: return $r('app.media.theme_startup_sword_frost');
       case ThemeIds.QINGLUAN_WATER: return $r('app.media.theme_startup_qingluan_water');
       case ThemeIds.CAT_PIPI: return $r('app.media.theme_startup_cat_pipi_v2');
+      case ThemeIds.AZURE_MECHA: return $r('app.media.theme_startup_azure_mecha');
+      case ThemeIds.STARWISH_MAGIC: return $r('app.media.theme_startup_starwish_magic');
       default: return $r('app.media.theme_startup_classic_blue');
     }
   }
@@ -402,6 +448,16 @@ export class ThemeAssetRegistry {
         $r('app.media.theme_cover_cat_pipi_v2_03'), $r('app.media.theme_cover_cat_pipi_v2_04'),
         $r('app.media.theme_cover_cat_pipi_v2_05'), $r('app.media.theme_cover_cat_pipi_v2_06')
       ];
+      case ThemeIds.AZURE_MECHA: return [
+        $r('app.media.theme_cover_azure_mecha_01'), $r('app.media.theme_cover_azure_mecha_02'),
+        $r('app.media.theme_cover_azure_mecha_03'), $r('app.media.theme_cover_azure_mecha_04'),
+        $r('app.media.theme_cover_azure_mecha_05'), $r('app.media.theme_cover_azure_mecha_06')
+      ];
+      case ThemeIds.STARWISH_MAGIC: return [
+        $r('app.media.theme_cover_starwish_magic_01'), $r('app.media.theme_cover_starwish_magic_02'),
+        $r('app.media.theme_cover_starwish_magic_03'), $r('app.media.theme_cover_starwish_magic_04'),
+        $r('app.media.theme_cover_starwish_magic_05'), $r('app.media.theme_cover_starwish_magic_06')
+      ];
       default: return [
         $r('app.media.theme_cover_classic_blue_01'), $r('app.media.theme_cover_classic_blue_02'),
         $r('app.media.theme_cover_classic_blue_03'), $r('app.media.theme_cover_classic_blue_04')
@@ -424,6 +480,8 @@ export class ThemeAssetRegistry {
       case ThemeIds.SWORD_FROST: return $r('app.media.theme_frame_sword_frost');
       case ThemeIds.QINGLUAN_WATER: return $r('app.media.theme_frame_qingluan_water');
       case ThemeIds.CAT_PIPI: return $r('app.media.theme_frame_cat_pipi');
+      case ThemeIds.AZURE_MECHA: return $r('app.media.theme_frame_azure_mecha');
+      case ThemeIds.STARWISH_MAGIC: return $r('app.media.theme_frame_starwish_magic');
       default: return $r('app.media.theme_frame_classic_blue');
     }
   }
@@ -443,6 +501,8 @@ export class ThemeAssetRegistry {
       case ThemeIds.SWORD_FROST: return $r('app.media.theme_folder_art_sword_frost');
       case ThemeIds.QINGLUAN_WATER: return $r('app.media.theme_folder_art_qingluan_water');
       case ThemeIds.CAT_PIPI: return $r('app.media.theme_folder_art_cat_pipi');
+      case ThemeIds.AZURE_MECHA: return $r('app.media.theme_folder_art_azure_mecha');
+      case ThemeIds.STARWISH_MAGIC: return $r('app.media.theme_folder_art_starwish_magic');
       default: return $r('app.media.theme_folder_art_classic_blue');
     }
   }
@@ -462,6 +522,8 @@ export class ThemeAssetRegistry {
       case 'sword-talisman': return $r('app.media.regex_frame_sword_talisman');
       case 'qingluan-jade': return $r('app.media.regex_frame_qingluan_jade');
       case 'pipi-soft-paw': return $r('app.media.regex_frame_pipi_soft_paw');
+      case 'mecha-comm': return $r('app.media.regex_frame_mecha_comm');
+      case 'starwish-ribbon': return $r('app.media.regex_frame_starwish_ribbon');
       default: return '';
     }
   }
@@ -485,6 +547,8 @@ export class ThemeAssetRegistry {
       case 'sword-talisman': return $r('app.media.regex_cap_sword_talisman');
       case 'qingluan-jade': return $r('app.media.regex_cap_qingluan_jade');
       case 'pipi-soft-paw': return $r('app.media.regex_cap_pipi_soft_paw');
+      case 'mecha-comm': return $r('app.media.regex_cap_mecha_comm');
+      case 'starwish-ribbon': return $r('app.media.regex_cap_starwish_ribbon');
       default: return '';
     }
   }
@@ -520,6 +584,10 @@ export class ThemeAssetRegistry {
       case ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_DARK:
       case ThemeAssetRegistry.BACKGROUND_CAT_PIPI_LIGHT:
       case ThemeAssetRegistry.BACKGROUND_CAT_PIPI_DARK:
+      case ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_LIGHT:
+      case ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_DARK:
+      case ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_LIGHT:
+      case ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_DARK:
         return normalized;
       default:
         return '';
@@ -537,7 +605,9 @@ export class ThemeAssetRegistry {
       normalized === ThemeAssetRegistry.ICON_PACK_CRANE ||
       normalized === ThemeAssetRegistry.ICON_PACK_SWORD_FROST ||
       normalized === ThemeAssetRegistry.ICON_PACK_QINGLUAN_WATER ||
-      normalized === ThemeAssetRegistry.ICON_PACK_CAT_PIPI) {
+      normalized === ThemeAssetRegistry.ICON_PACK_CAT_PIPI ||
+      normalized === ThemeAssetRegistry.ICON_PACK_AZURE_MECHA ||
+      normalized === ThemeAssetRegistry.ICON_PACK_STARWISH_MAGIC) {
       return normalized;
     }
     return ThemeAssetRegistry.ICON_PACK_CLASSIC;
@@ -647,6 +717,22 @@ export class ThemeAssetRegistry {
         case ThemeAssetRegistry.TAB_SEARCH: return $r('app.media.ic_theme_cat_pipi_search');
         case ThemeAssetRegistry.TAB_MINE: return $r('app.media.ic_theme_cat_pipi_mine');
         default: return $r('app.media.ic_theme_cat_pipi_bookshelf');
+      }
+    }
+    if (iconPackId === ThemeAssetRegistry.ICON_PACK_AZURE_MECHA) {
+      switch (tabId) {
+        case ThemeAssetRegistry.TAB_EXPLORE: return $r('app.media.ic_theme_azure_mecha_explore');
+        case ThemeAssetRegistry.TAB_SEARCH: return $r('app.media.ic_theme_azure_mecha_search');
+        case ThemeAssetRegistry.TAB_MINE: return $r('app.media.ic_theme_azure_mecha_mine');
+        default: return $r('app.media.ic_theme_azure_mecha_bookshelf');
+      }
+    }
+    if (iconPackId === ThemeAssetRegistry.ICON_PACK_STARWISH_MAGIC) {
+      switch (tabId) {
+        case ThemeAssetRegistry.TAB_EXPLORE: return $r('app.media.ic_theme_starwish_magic_explore');
+        case ThemeAssetRegistry.TAB_SEARCH: return $r('app.media.ic_theme_starwish_magic_search');
+        case ThemeAssetRegistry.TAB_MINE: return $r('app.media.ic_theme_starwish_magic_mine');
+        default: return $r('app.media.ic_theme_starwish_magic_bookshelf');
       }
     }
     switch (tabId) {

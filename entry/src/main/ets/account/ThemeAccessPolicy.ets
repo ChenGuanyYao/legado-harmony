@@ -34,6 +34,8 @@ export class ThemeAccessPolicy {
     if (normalized === 'sword-talisman') return ThemeIds.SWORD_FROST;
     if (normalized === 'qingluan-jade') return ThemeIds.QINGLUAN_WATER;
     if (normalized === 'pipi-soft-paw') return ThemeIds.CAT_PIPI;
+    if (normalized === 'mecha-comm') return ThemeIds.AZURE_MECHA;
+    if (normalized === 'starwish-ribbon') return ThemeIds.STARWISH_MAGIC;
     return '';
   }
 

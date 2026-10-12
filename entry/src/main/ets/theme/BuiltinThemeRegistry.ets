@@ -129,6 +129,8 @@ export class BuiltinThemeRegistry {
     themes.push(BuiltinThemeRegistry.swordFrost());
     themes.push(BuiltinThemeRegistry.qingluanWater());
     themes.push(BuiltinThemeRegistry.catPipi());
+    themes.push(BuiltinThemeRegistry.azureMecha());
+    themes.push(BuiltinThemeRegistry.starwishMagic());
     themes.push(BuiltinThemeRegistry.classicBlue());
     themes.push(BuiltinThemeRegistry.warmPaper());
     themes.push(BuiltinThemeRegistry.forestMist());
@@ -469,6 +471,58 @@ export class BuiltinThemeRegistry {
     theme.radius = BuiltinThemeRegistry.radius(7, 11, 18, 12, 20, 12);
     theme.readerLayout = BuiltinThemeRegistry.readerLayout(21, 14, 4, 23, 23, 23, 23);
     theme.glass = BuiltinThemeRegistry.glass(18, 14, 86, 72, 54, 24, 16, 4);
+    return theme;
+  }
+
+  private static azureMecha(): ThemePack {
+    const theme = BuiltinThemeRegistry.theme(
+      ThemeIds.AZURE_MECHA,
+      '苍穹机动',
+      '机体白、钢蓝与信号橙，在驾驶舱里读完下一章',
+      'sans-serif',
+      'azure-mecha'
+    );
+    theme.light = BuiltinThemeRegistry.variant(
+      BuiltinThemeRegistry.colors('#EEF2F6', '#F9FBFD', '#E1E8F0', '#1C2836', '#627488', '#CBD6E2',
+        '#2F6FB3', '#E8731F', '#D2453A'),
+      BuiltinThemeRegistry.reader('#F1F4F7', 'azure-mecha-light', '#222E3C', '#66788C', 'light'),
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.MECHA_COMM, '#9CC4EC', '#17324F')
+    );
+    theme.dark = BuiltinThemeRegistry.variant(
+      BuiltinThemeRegistry.colors('#0B1119', '#121A25', '#1B2634', '#E6EEF7', '#8FA2B8', '#273548',
+        '#3FD3E6', '#F08A3C', '#F26B5E'),
+      BuiltinThemeRegistry.reader('#0D141D', 'azure-mecha-dark', '#D5E0EC', '#8497AD', 'dark'),
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.MECHA_COMM, '#2E7F95', '#E4F8FC')
+    );
+    theme.radius = BuiltinThemeRegistry.radius(2, 4, 8, 6, 8, 3);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 13, 1, 20, 20, 20, 20);
+    theme.glass = BuiltinThemeRegistry.glass(20, 8, 84, 70, 52, 26, 16, 4);
+    return theme;
+  }
+
+  private static starwishMagic(): ThemePack {
+    const theme = BuiltinThemeRegistry.theme(
+      ThemeIds.STARWISH_MAGIC,
+      '星愿魔法',
+      '薰衣草紫、星金与丝带，把每一页读成一句咒语',
+      'serif',
+      'starwish-magic'
+    );
+    theme.light = BuiltinThemeRegistry.variant(
+      BuiltinThemeRegistry.colors('#F8F4FC', '#FFFCFF', '#EFE6F7', '#3E3252', '#857799', '#E2D5EE',
+        '#9A74D6', '#7A58B8', '#D0577C'),
+      BuiltinThemeRegistry.reader('#FBF7FD', 'starwish-magic-light', '#40334F', '#8A7B9C', 'light'),
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.STARWISH_RIBBON, '#D9C6F2', '#4A3570')
+    );
+    theme.dark = BuiltinThemeRegistry.variant(
+      BuiltinThemeRegistry.colors('#151022', '#1E1730', '#2A2140', '#F1E9FB', '#A999C4', '#3A2E55',
+        '#C3A2F2', '#9B78DB', '#F07FA3'),
+      BuiltinThemeRegistry.reader('#171226', 'starwish-magic-dark', '#E9DFF5', '#A595BF', 'dark'),
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.STARWISH_RIBBON, '#6D52A8', '#F6EEFF')
+    );
+    theme.radius = BuiltinThemeRegistry.radius(10, 14, 22, 16, 24, 16);
+    theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 14, 2, 22, 22, 22, 22);
+    theme.glass = BuiltinThemeRegistry.glass(22, 18, 86, 72, 58, 24, 18, 4);
     return theme;
   }
 

@@ -14,6 +14,8 @@ export class ThemeIds {
   static readonly SWORD_FROST: string = 'sword-frost';
   static readonly QINGLUAN_WATER: string = 'qingluan-water';
   static readonly CAT_PIPI: string = 'cat-pipi';
+  static readonly AZURE_MECHA: string = 'azure-mecha';
+  static readonly STARWISH_MAGIC: string = 'starwish-magic';
 }
 
 export class ThemeComponentSourceIds {
@@ -59,6 +61,8 @@ export class ThemeBubbleStyles {
   static readonly SWORD_TALISMAN: string = 'sword-talisman';
   static readonly QINGLUAN_JADE: string = 'qingluan-jade';
   static readonly PIPI_SOFT_PAW: string = 'pipi-soft-paw';
+  static readonly MECHA_COMM: string = 'mecha-comm';
+  static readonly STARWISH_RIBBON: string = 'starwish-ribbon';
 }
 
 export class ThemeColorTokens {

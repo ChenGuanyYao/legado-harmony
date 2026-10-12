@@ -155,7 +155,7 @@ export class ReaderRegexFontCodec {
       value === 'forest-dew' || value === 'ink-brush' || value === 'neon-pulse' || value === 'strawberry-ribbon' ||
       value === 'crimson-stamp' || value === 'celadon-slip' || value === 'rose-frame' ||
       value === 'moon-halo' || value === 'sword-talisman' || value === 'qingluan-jade' ||
-      value === 'pipi-soft-paw') {
+      value === 'pipi-soft-paw' || value === 'mecha-comm' || value === 'starwish-ribbon') {
       return value;
     }
     // Compatibility with early theme drafts.
@@ -489,6 +489,31 @@ export class ReaderRegexBubbleStyleResolver {
       ReaderRegexBubbleStyleResolver.addShadow(result, 1.4,
         ReaderRegexBubbleStyleResolver.withAlpha(base, 104), 0.5, 1);
       ReaderRegexBubbleStyleResolver.addShadow(result, 0.5, '#88B4935C', -0.5, 0.5);
+      return;
+    }
+    if (result.bubbleStyleId === 'mecha-comm') {
+      const plate = context.darkMode ? '#132231' : '#EAF2FA';
+      result.backgroundColor = ReaderRegexBubbleStyleResolver.mix(plate, base,
+        context.darkMode ? 0.30 : 0.22);
+      result.textColor = context.darkMode ? '#E4F8FC' : '#17324F';
+      ReaderRegexBubbleStyleResolver.setUniformRadius(result, 3);
+      ReaderRegexBubbleStyleResolver.addShadow(result, 0.5,
+        context.darkMode ? '#663FD3E6' : '#A8FFFFFF', 0, -0.5);
+      ReaderRegexBubbleStyleResolver.addShadow(result, 1.2,
+        ReaderRegexBubbleStyleResolver.withAlpha(base, 110), 0.5, 1);
+      return;
+    }
+    if (result.bubbleStyleId === 'starwish-ribbon') {
+      const veil = context.darkMode ? '#2A2140' : '#FBF5FF';
+      result.backgroundColor = ReaderRegexBubbleStyleResolver.mix(veil, base,
+        context.darkMode ? 0.30 : 0.24);
+      result.textColor = context.darkMode ? '#F6EEFF' : '#4A3570';
+      ReaderRegexBubbleStyleResolver.setUniformRadius(result, 16);
+      ReaderRegexBubbleStyleResolver.addShadow(result, 0.6,
+        context.darkMode ? '#665A4290' : '#B8FFFFFF', 0, -0.5);
+      ReaderRegexBubbleStyleResolver.addShadow(result, 1.6,
+        ReaderRegexBubbleStyleResolver.withAlpha(base, 96), 0.5, 1.2);
+      ReaderRegexBubbleStyleResolver.addShadow(result, 0.5, '#88D9B24C', -0.5, 0.5);
       return;
     }
     if (result.bubbleStyleId === 'pipi-soft-paw') {

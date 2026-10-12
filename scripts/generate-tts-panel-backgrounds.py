@@ -341,6 +341,65 @@ def cat_pipi(p):
     return out
 
 
+def star4(cx, cy, r):
+    """Four-point sparkle."""
+    inner = round(r * 0.3, 1)
+    outer = round(r - inner, 1)
+    return (f'M{cx} {cy - r}l{inner} {outer} {outer} {inner}-{outer} {inner}-{inner} {outer}'
+            f'-{inner}-{outer}-{outer}-{inner} {outer}-{inner}Z')
+
+
+def azure_mecha(p):
+    hexes = ''
+    for row in range(4):
+        for col in range(5):
+            cx, cy = 430 + col * 66 + (33 if row % 2 else 0), 40 + row * 57
+            hexes += f'M{cx - 33} {cy}l16.5-28.5h33l16.5 28.5-16.5 28.5h-33Z'
+    out = [
+        stroke(path(hexes), p['a'], 0.14, 2),
+        fill(path('M529 97l16.5-28.5h33l16.5 28.5-16.5 28.5h-33ZM628 154l16.5-28.5h33l16.5 28.5-16.5 28.5h-33Z'),
+             p['a'], 0.10),
+        stroke(circle(560, 190, 96), p['b'], 0.5, 6, ' stroke-dasharray="230 60 90 60"'),
+        stroke(circle(560, 190, 74), p['b'], 0.3, 2),
+        stroke(circle(560, 190, 120), p['a'], 0.2, 2, ' stroke-dasharray="6 12"'),
+        fill(path('M560 190V116A74 74 0 0 1 624 153Z'), p['b'], 0.18),
+        fill(circle(560, 190, 7), p['c'], 0.9),
+        stroke(path('M24 150V44l22-22h170'), p['a'], 0.4, 3),
+        stroke(path('M24 96V44l22-22h60'), p['a'], 0.6, 7),
+        stroke(path('M130 22h44'), p['c'], 0.8, 7),
+        stroke(path('M48 58h96M48 76h62M48 94h78'), p['a'], 0.22, 6),
+    ]
+    wave = 'M0 372'
+    for i, height in enumerate((8, 20, 46, 14, 70, 30, 96, 22, 56, 110, 40, 74, 18, 50, 28, 12, 36, 8)):
+        x = 20 + i * 40
+        wave += f'L{x} {372 - height}L{x + 20} {372 + height}'
+    out.append(stroke(path(wave + 'L720 372'), p['b'], 0.5, 3))
+    out.append(stroke(path('M0 372H720'), p['a'], 0.2, 2))
+    ticks = ''.join(f'M{20 + i * 20} 440v{14 if i % 5 == 0 else 7}' for i in range(35))
+    out.append(stroke(path(ticks), p['a'], 0.3, 2))
+    return out
+
+
+def starwish_magic(p):
+    out = [
+        fill(circle(548, 150, 150), p['b'], 0.10),
+        fill(path('M560 30a122 122 0 1 0 82 204a98 98 0 1 1-82-204Z'), p['b'], 0.85),
+    ]
+    for i in range(5):
+        y = 300 + i * 16
+        out.append(stroke(path(f'M-10 {y}C120 {y - 70} 240 {y + 40} 370 {y - 20}S600 {y - 80} 730 {y - 30}'), p['a'],
+                          0.26, 2))
+    notes = ((70, 282, 16), (170, 300, 12), (262, 332, 18), (360, 300, 13), (450, 286, 16), (560, 268, 12),
+             (660, 290, 15))
+    out.append(fill(path(''.join(star4(x, y, r) for x, y, r in notes)), p['b'], 0.9))
+    out.append(stroke(path('M0 60C80 20 150 80 230 50S380 10 430 60'), p['c'], 0.6, 8))
+    out.append(stroke(path('M40 120C110 90 170 130 240 110'), p['c'], 0.4, 5))
+    sparks = ((60, 180, 9), (150, 150, 7), (250, 196, 8), (330, 130, 6), (410, 200, 7), (690, 60, 8), (680, 380, 7),
+              (120, 420, 6), (300, 440, 7), (520, 420, 6), (440, 100, 5))
+    out.append(fill(path(''.join(star4(x, y, r) for x, y, r in sparks)), p['a'], 0.6))
+    return out
+
+
 # Palette keys: a = main ink, b = second ink, c = third ink, d / e = small accents.
 THEMES = {
     'plain_default': (plain_default, {'a': '#5B6573'}, {'a': '#AAB2BD'}),
@@ -368,6 +427,10 @@ THEMES = {
                        {'a': '#8AB5AC', 'b': '#C16A7D', 'c': '#DCEBE7'}),
     'cat_pipi': (cat_pipi, {'a': '#C46F45', 'b': '#F6C98F', 'c': '#587E73', 'd': '#E79A8E', 'e': '#5A3A2A'},
                  {'a': '#E8A06F', 'b': '#8A5C36', 'c': '#79A99B', 'd': '#E39A8F', 'e': '#2A1C14'}),
+    'azure_mecha': (azure_mecha, {'a': '#2F6FB3', 'b': '#2A9DB0', 'c': '#E8731F'},
+                    {'a': '#8FB6DE', 'b': '#3FD3E6', 'c': '#F08A3C'}),
+    'starwish_magic': (starwish_magic, {'a': '#9A74D6', 'b': '#D9B24C', 'c': '#C9B1EE'},
+                       {'a': '#C3A2F2', 'b': '#E8C76A', 'c': '#6D52A8'}),
 }
 
 

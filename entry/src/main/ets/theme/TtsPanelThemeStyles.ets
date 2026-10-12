@@ -77,6 +77,14 @@ export class TtsPanelThemeStyles {
         return darkMode ?
           new TtsPanelThemeStyle($r('app.media.tts_panel_cat_pipi_dark'), '#2C2018', '#171310', '#2EE8A06F') :
           new TtsPanelThemeStyle($r('app.media.tts_panel_cat_pipi_light'), '#FFE6C8', '#FFF7ED', '#33C46F45');
+      case ThemeIds.AZURE_MECHA:
+        return darkMode ?
+          new TtsPanelThemeStyle($r('app.media.tts_panel_azure_mecha_dark'), '#0F2236', '#0B1119', '#333FD3E6') :
+          new TtsPanelThemeStyle($r('app.media.tts_panel_azure_mecha_light'), '#DCE7F3', '#EEF2F6', '#2E2F6FB3');
+      case ThemeIds.STARWISH_MAGIC:
+        return darkMode ?
+          new TtsPanelThemeStyle($r('app.media.tts_panel_starwish_magic_dark'), '#2A1D4A', '#151022', '#33C3A2F2') :
+          new TtsPanelThemeStyle($r('app.media.tts_panel_starwish_magic_light'), '#EADDF8', '#F8F4FC', '#339A74D6');
       default:
         return darkMode ?
           new TtsPanelThemeStyle($r('app.media.tts_panel_plain_default_dark'), '#1B1D20', '#111111', '#1FAAB2BD') :

@@ -53,6 +53,8 @@ export class StartupCoverTextStore {
     if (themeId === ThemeIds.SWORD_FROST) return '一页入江湖，万卷见天地';
     if (themeId === ThemeIds.QINGLUAN_WATER) return '心有清光，自可照见江湖';
     if (themeId === ThemeIds.CAT_PIPI) return '皮皮陪你，慢慢翻页';
+    if (themeId === ThemeIds.AZURE_MECHA) return '系统就绪，向下一章出击';
+    if (themeId === ThemeIds.STARWISH_MAGIC) return '许个愿，翻开下一页';
     return '';
   }
 

@@ -164,6 +164,8 @@ struct ThemeSettingsPage {
   private pendingApplyChoice: ((choice: ThemeApplyChoice | null) => void) | null = null;
   @State themeCatalog: ThemeCatalogItem[] = [];
   @State themeCatalogLoaded: boolean = false;
+  // The last catalog request failed; prices stay hidden and the acquire buttons offer a retry.
+  @State themeCatalogFailed: boolean = false;
   @State showThemeStore: boolean = false;
   @State storePageIndex: number = 0;
   /** Snapshot taken when the pager opens, so a purchase inside it does not reshuffle pages. */
@@ -321,15 +323,20 @@ struct ThemeSettingsPage {
   }
 
   async refreshThemeCatalog(): Promise<void> {
-    if (!AccountCommerceConfig.isServerConfigured()) return;
+    if (!AccountCommerceConfig.isServerConfigured()) {
+      this.themeCatalogFailed = true;
+      return;
+    }
+    this.themeCatalogFailed = false;
     try {
       const response: ThemeCatalogResponse = await AccountCommerceApi.fetchThemeCatalog();
       this.themeCatalog = response.themes || [];
       this.themeCatalogLoaded = true;
     } catch (e) {
-      // Keep the bundled 60-point/365-day offer when the device is offline or
-      // is temporarily talking to an older server during a rolling upgrade.
-      console.warn('同步主题目录失败，使用内置价格:', e);
+      // Prices differ per theme, so nothing is shown or sold until the catalog
+      // arrives; a previously loaded catalog stays in use.
+      this.themeCatalogFailed = !this.themeCatalogLoaded;
+      console.warn('同步主题目录失败:', e);
     }
   }
 
@@ -494,12 +501,17 @@ struct ThemeSettingsPage {
       return true;
     }
     const offer = this.themeOffer(themeId);
-    if (this.themeCatalogLoaded && !offer) {
-      HdsFeedback.showToast('该主题暂未上架');
+    if (!offer) {
+      if (this.themeCatalogLoaded) {
+        HdsFeedback.showToast('该主题暂未上架');
+      } else {
+        HdsFeedback.showToast('主题价格尚未加载，请稍后重试');
+        this.refreshThemeCatalog();
+      }
       return false;
     }
-    const pricePoints = offer?.pricePoints || AccountCommerceConfig.THEME_PRICE_POINTS;
-    const validDays = offer?.validDays || AccountCommerceConfig.THEME_VALID_DAYS;
+    const pricePoints = offer.pricePoints;
+    const validDays = offer.validDays;
     if (!this.accountLoggedIn) {
       const loginDialog = await promptAction.showDialog({
         title: '登录后获取主题',
@@ -1337,18 +1349,15 @@ struct ThemeSettingsPage {
 
   @Builder
   storeAcquireButton(theme: ThemePack) {
-    Button(this.themeCatalogLoaded && !this.themeOffer(theme.id) ? '暂未上架' :
-      `获取 · ${this.storeThemePricePoints(theme.id)}点`, { type: ButtonType.Normal })
+    Button(this.acquireButtonLabel(theme.id, '获取'), { type: ButtonType.Normal })
       .borderRadius(this.storeButtonRadius(theme))
       .height(40)
       .fontSize(AppFontSize.BODY)
       .fontColor(ThemeRuntime.onAccentColor())
       .backgroundColor(this.activeVariant(theme).colors.buttonColor)
       .layoutWeight(1)
-      .enabled(!this.themeCatalogLoaded || !!this.themeOffer(theme.id))
-      .onClick(() => {
-        this.acquireTheme(theme.id);
-      })
+      .enabled(this.acquireButtonEnabled(theme.id))
+      .onClick(() => this.onAcquireButtonTap(theme.id))
   }
 
   @Builder
@@ -1380,7 +1389,7 @@ struct ThemeSettingsPage {
         .borderRadius(10)
         .backgroundColor(this.activeVariant(theme).colors.inputColor)
     } else {
-      Text(`${this.storeThemePricePoints(theme.id)}点`)
+      Text(this.storeThemePriceLabel(theme.id))
         .fontSize(AppFontSize.MICRO)
         .fontColor(this.activeVariant(theme).colors.subTextColor)
         .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
@@ -2248,17 +2257,14 @@ struct ThemeSettingsPage {
                 this.startThemeTrial(theme);
               }
             })
-          Button(this.themeCatalogLoaded && !this.themeOffer(theme.id) ? '暂未上架' :
-            `获取主题 · ${this.themeOffer(theme.id)?.pricePoints || AccountCommerceConfig.THEME_PRICE_POINTS}点`)
+          Button(this.acquireButtonLabel(theme.id, '获取主题'))
             .height(34)
             .fontSize(AppFontSize.CAPTION)
             .fontColor(ThemeRuntime.onAccentColor())
             .backgroundColor(this.activeVariant(theme).colors.buttonColor)
             .layoutWeight(1)
-            .enabled(!this.themeCatalogLoaded || !!this.themeOffer(theme.id))
-            .onClick(() => {
-              this.acquireTheme(theme.id);
-            })
+            .enabled(this.acquireButtonEnabled(theme.id))
+            .onClick(() => this.onAcquireButtonTap(theme.id))
         }
         .width('100%')
       }
@@ -2501,12 +2507,32 @@ struct ThemeSettingsPage {
     return Math.max(8, theme.radius.button);
   }
 
-  storeThemePricePoints(themeId: string): number {
-    return this.themeOffer(themeId)?.pricePoints || AccountCommerceConfig.THEME_PRICE_POINTS;
+  /** Price text for a paid theme; never a guessed price while the catalog is missing. */
+  storeThemePriceLabel(themeId: string): string {
+    const offer = this.themeOffer(themeId);
+    if (offer) return `${offer.pricePoints}点`;
+    if (this.themeCatalogLoaded) return '暂未上架';
+    return this.themeCatalogFailed ? '价格加载失败' : '价格加载中';
   }
 
-  storeThemeValidDays(themeId: string): number {
-    return this.themeOffer(themeId)?.validDays || AccountCommerceConfig.THEME_VALID_DAYS;
+  acquireButtonLabel(themeId: string, action: string): string {
+    const offer = this.themeOffer(themeId);
+    if (offer) return `${action} · ${offer.pricePoints}点`;
+    if (this.themeCatalogLoaded) return '暂未上架';
+    return this.themeCatalogFailed ? '重新加载价格' : '价格加载中…';
+  }
+
+  /** Greyed out until the price is known; after a failed load the button becomes the retry. */
+  acquireButtonEnabled(themeId: string): boolean {
+    return this.themeCatalogLoaded ? !!this.themeOffer(themeId) : this.themeCatalogFailed;
+  }
+
+  onAcquireButtonTap(themeId: string): void {
+    if (this.themeCatalogLoaded) {
+      this.acquireTheme(themeId);
+    } else {
+      this.refreshThemeCatalog();
+    }
   }
 
   storeThemeCaption(theme: ThemePack): string {
@@ -2520,10 +2546,11 @@ struct ThemeSettingsPage {
     if (entitlement && entitlement.expiresAt > Date.now()) {
       return `有效至 ${this.formatDate(entitlement.expiresAt)}`;
     }
-    if (this.themeCatalogLoaded && !this.themeOffer(theme.id)) {
-      return '暂未上架';
+    const offer = this.themeOffer(theme.id);
+    if (!offer) {
+      return this.storeThemePriceLabel(theme.id);
     }
-    return `${this.storeThemePricePoints(theme.id)}点 · 有效期${this.storeThemeValidDays(theme.id)}天`;
+    return `${offer.pricePoints}点 · 有效期${offer.validDays}天`;
   }
 
   themeHasBookCover(theme: ThemePack): boolean {
@@ -2538,7 +2565,8 @@ struct ThemeSettingsPage {
     if (entitlement && entitlement.expiresAt > Date.now()) {
       return `有效至 ${this.formatDate(entitlement.expiresAt)}`;
     }
-    return `${AccountCommerceConfig.THEME_PRICE_POINTS}点 / 1年`;
+    return this.themeOffer(themeId) ? `${this.themeOffer(themeId)?.pricePoints}点 / 1年` :
+      this.storeThemePriceLabel(themeId);
   }
 
   formatDate(timestamp: number): string {

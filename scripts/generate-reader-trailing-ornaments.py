@@ -307,6 +307,54 @@ def qingluan_water(p):
     return out
 
 
+def star4(cx, cy, r):
+    """Four-point sparkle."""
+    inner = round(r * 0.3, 1)
+    outer = round(r - inner, 1)
+    return (f'M{cx} {cy - r}l{inner} {outer} {outer} {inner}-{outer} {inner}-{inner} {outer}'
+            f'-{inner}-{outer}-{outer}-{inner} {outer}-{inner}Z')
+
+
+def azure_mecha(p):
+    """The hangar's radar console set into the page corner."""
+    out = [
+        stroke(path('M468 290V440l-28 28H240'), p['a'], 0.34, 3),
+        stroke(path('M468 384v56l-28 28h-70'), p['a'], 0.5, 7),
+        stroke(path('M300 468h46'), p['c'], 0.7, 7),
+        fill(path('M352 352V270A82 82 0 0 1 424 312Z'), p['b'], 0.14),
+    ]
+    for r, opacity in ((30, 0.34), (56, 0.24), (82, 0.16)):
+        out.append(stroke(circle(352, 352, r), p['b'], opacity, 3))
+    out.append(stroke(path('M352 258v188M258 352h188'), p['b'], 0.16, 2))
+    out.append(fill(circle(352, 352, 5), p['c'], 0.7))
+    for x, y in ((384, 318), (322, 388), (398, 372)):
+        out.append(fill(circle(x, y, 4), p['b'], 0.6))
+    ticks = ''.join(f'M{462 - (8 if i % 5 else 16)} {300 + i * 14}h{8 if i % 5 else 16}' for i in range(6))
+    out.append(stroke(path(ticks), p['a'], 0.3, 2))
+    out.append(stroke(path('M196 430h70M214 446h52'), p['a'], 0.2, 5))
+    hexes = ''.join(f'M{cx - 22} {cy}l11-19h22l11 19-11 19h-22Z' for cx, cy in ((250, 372), (212, 394), (250, 328)))
+    out.append(stroke(path(hexes), p['a'], 0.16, 2))
+    return out
+
+
+def starwish_magic(p):
+    """An open spell book letting its stars drift up the page."""
+    out = [
+        fill(path('M480 480H210c50-36 110-50 170-44 40 4 72-8 100-30Z'), p['b'], 0.34),
+        both(path('M236 420c44-24 88-24 122 0v46c-34-20-78-20-122 0Z'), p['b'], 0.8, p['a'], 0.5, 3),
+        both(path('M358 420c34-24 78-24 122 0v46c-44-20-88-20-122 0Z'), p['b'], 0.8, p['a'], 0.5, 3),
+        stroke(path('M256 432c28-12 56-12 84 0M256 446c28-12 56-12 84 0M378 432c28-12 56-12 84 0M378 446c28-12 56-12 84 0'),
+               p['a'], 0.28, 2),
+        stroke(path('M358 420v46'), p['a'], 0.5, 3),
+        stroke(path('M358 404C330 350 392 320 372 268S410 210 440 196'), p['a'], 0.26, 3, ' stroke-dasharray="2 10"'),
+        fill(path(star4(372, 268, 22) + star4(440, 196, 16) + star4(330, 352, 13)), p['c'], 0.85),
+        fill(path(star4(300, 300, 8) + star4(412, 300, 7) + star4(246, 370, 7) + star4(458, 256, 6) + star4(388, 226, 5)),
+             p['a'], 0.5),
+        fill(path('M286 232a36 36 0 1 0 24 56a29 29 0 1 1-24-56Z'), p['c'], 0.45),
+    ]
+    return out
+
+
 THEMES = {
     'paper': (paper, {'a': '#9B764B', 'b': '#CDAE7C'}, {'a': '#D2A068', 'b': '#D7A96F'}),
     'forest': (forest, {'a': '#557A62', 'b': '#9EB7A3'}, {'a': '#94B49C', 'b': '#9BB9A2'}),
@@ -326,6 +374,10 @@ THEMES = {
     'sword_frost': (sword_frost, {'a': '#476963', 'b': '#9B3B31', 'c': '#F4ECD9'},
                     {'a': '#8AB1A7', 'b': '#C76559', 'c': '#151C19'}),
     'qingluan_water': (qingluan_water, {'a': '#607F79', 'b': '#9C4F62'}, {'a': '#8AB5AC', 'b': '#C16A7D'}),
+    'azure_mecha': (azure_mecha, {'a': '#2F6FB3', 'b': '#2A9DB0', 'c': '#E8731F'},
+                    {'a': '#8FB6DE', 'b': '#3FD3E6', 'c': '#F08A3C'}),
+    'starwish_magic': (starwish_magic, {'a': '#9A74D6', 'b': '#E2D0F5', 'c': '#D9B24C'},
+                       {'a': '#C3A2F2', 'b': '#4A3878', 'c': '#E8C76A'}),
 }
 
 
