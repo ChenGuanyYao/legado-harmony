@@ -348,6 +348,7 @@ export struct SearchBookResultList {
     const category = BookTypeSupport.mediaCategoryOf(book);
     if (category === BookTypeSupport.CATEGORY_COMIC) return '漫画';
     if (category === BookTypeSupport.CATEGORY_AUDIO) return '有声';
+    if (category === BookTypeSupport.CATEGORY_VIDEO) return '视频';
     return '';
   }
 

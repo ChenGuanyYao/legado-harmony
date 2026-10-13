@@ -18,7 +18,7 @@ import { AppFontSize } from '../../theme/AppFontSize';
 import { AppSpacing } from '../../theme/AppSpacing';
 
 const SEARCH_CATEGORY_ALL = 'all';
-// 小说、漫画、有声各自的结果上限，互不挤占。
+// 小说、漫画、有声、视频各自的结果上限，互不挤占。
 const SEARCH_RESULTS_PER_CATEGORY = 150;
 
 class SearchCategoryChip {
@@ -36,8 +36,8 @@ export struct SearchPage {
   @State keyword: string = '';
   @State searchResults: SearchBook[] = [];
   @State displayedSearchResults: SearchBook[] = [];
-  // 与 BookTypeSupport.MEDIA_CATEGORIES 同序：小说、漫画、有声。
-  @State searchCategoryCounts: number[] = [0, 0, 0];
+  // 与 BookTypeSupport.MEDIA_CATEGORIES 同序：小说、漫画、有声、视频。
+  @State searchCategoryCounts: number[] = [0, 0, 0, 0];
   @State shelfBookKeys: string[] = [];
   @State addingShelfBookKeys: string[] = [];
   @State isSearching: boolean = false;
@@ -175,7 +175,7 @@ export struct SearchPage {
   }
 
   searchCategoryChips(): SearchCategoryChip[] {
-    const labels: string[] = ['小说', '漫画', '有声'];
+    const labels: string[] = ['小说', '漫画', '有声', '视频'];
     const effective = this.effectiveSearchCategory();
     const chips: SearchCategoryChip[] = [];
     BookTypeSupport.MEDIA_CATEGORIES.forEach((category: string, index: number): void => {
@@ -454,7 +454,7 @@ export struct SearchPage {
     this.isSearching = false;
     this.searchResults = [];
     this.displayedSearchResults = [];
-    this.searchCategoryCounts = [0, 0, 0];
+    this.searchCategoryCounts = [0, 0, 0, 0];
     this.searchResultKeySet.clear();
     this.showResult = false;
     this.statusMessage = '';
@@ -684,6 +684,8 @@ export struct SearchPage {
 
   @Builder
   searchCategoryBar() {
+    // 五个分段在窄屏上放不下，横向可滑动。
+    Scroll() {
     Row({ space: AppSpacing.MD }) {
       ForEach(this.searchCategoryChips(), (chip: SearchCategoryChip) => {
         Text(`${chip.label} ${chip.count}`)
@@ -700,10 +702,15 @@ export struct SearchPage {
       }, (chip: SearchCategoryChip) =>
         `${chip.key}:${chip.count}:${chip.key === this.effectiveSearchCategory() ? 1 : 0}`)
     }
-    .width('100%')
     .height(40)
     .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
     .alignItems(VerticalAlign.Center)
+    }
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Off)
+    .align(Alignment.Start)
+    .width('100%')
+    .height(40)
   }
 
   @Builder
@@ -1080,7 +1087,7 @@ export struct SearchPage {
     this.singleSourceSearchName = '';
     this.searchResults = [];
     this.displayedSearchResults = [];
-    this.searchCategoryCounts = [0, 0, 0];
+    this.searchCategoryCounts = [0, 0, 0, 0];
     this.searchResultKeySet.clear();
     this.showResult = false;
     this.statusMessage = '';
@@ -1126,7 +1133,7 @@ export struct SearchPage {
       this.showResult = true;
       this.searchResults = [];
       this.displayedSearchResults = [];
-      this.searchCategoryCounts = [0, 0, 0];
+      this.searchCategoryCounts = [0, 0, 0, 0];
       this.searchResultKeySet.clear();
       this.statusMessage = targetSources.length === 1 ?
         `正在通过 ${this.singleSourceSearchName || targetSources[0].bookSourceName} 搜索...` :

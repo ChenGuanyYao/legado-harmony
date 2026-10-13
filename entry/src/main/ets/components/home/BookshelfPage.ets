@@ -3967,12 +3967,14 @@ export struct BookshelfPage {
   }
 
   bookTypeBadgeText(book: Book): string {
+    if (BookTypeSupport.isVideo(book)) return '视';
     if (BookTypeSupport.isAudio(book)) return '声';
     if (BookTypeSupport.isImage(book)) return '漫';
     return '书';
   }
 
   bookTypeBadgeColor(book: Book): string {
+    if (BookTypeSupport.isVideo(book)) return '#D64560';
     if (BookTypeSupport.isAudio(book)) return '#D9822B';
     if (BookTypeSupport.isImage(book)) return '#8B5CF6';
     return '#3978C5';
@@ -6471,7 +6473,8 @@ export struct BookshelfPage {
     if (this.bookshelfLastReadLeafMode === 'bookInfo' || this.bookshelfLastReadLeafMode === 'contentPreview') {
       return this.bookshelfLastReadLeafMode;
     }
-    if (BookTypeSupport.isAudio(book)) {
+    // 有声与视频没有可预览的正文。
+    if (BookTypeSupport.isAudio(book) || BookTypeSupport.isVideo(book)) {
       return 'bookInfo';
     }
     if (this.isShelfComicBook(book) && this.getLastReadPageImage(book)) {
