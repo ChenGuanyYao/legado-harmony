@@ -582,6 +582,7 @@ struct BookSourceEditPage {
     this.appendSnapshotPart(parts, this.source.contentRule.content);
     this.appendSnapshotPart(parts, this.source.contentRule.title);
     this.appendSnapshotPart(parts, this.source.contentRule.images);
+    this.appendSnapshotPart(parts, this.source.contentRule.audioUrl || '');
     this.appendSnapshotPart(parts, this.source.contentRule.nextContentUrl);
     this.appendSnapshotPart(parts, this.source.contentRule.replaceRegex);
     this.appendSnapshotPart(parts, this.source.contentRule.imageDecode);
@@ -1068,6 +1069,11 @@ struct BookSourceEditPage {
 
       this.inputItemBuilder('图片', this.source.contentRule.images, (value: string) => {
         this.source.contentRule.images = value;
+      })
+
+      // Sources saved before this field existed have no such key in their stored rule object.
+      this.inputItemBuilder('音频地址', this.source.contentRule.audioUrl || '', (value: string) => {
+        this.source.contentRule.audioUrl = value;
       })
 
       this.inputItemBuilder('正文下一页', this.source.contentRule.nextContentUrl, (value: string) => {

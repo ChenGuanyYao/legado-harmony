@@ -9,6 +9,7 @@ import { WebBookService } from '../core/book/WebBookService';
 import { BookSourceDataUrlSupport } from '../core/book/BookSourceDataUrlSupport';
 import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { BookUrlResolver } from '../core/book/BookUrlResolver';
+import { AudioRuleSupport } from '../core/book/AudioRuleSupport';
 import { VerificationSupport } from '../core/http/VerificationSupport';
 import { RemoteAudioPlayback, RemoteAudioPlaybackListener } from '../utils/RemoteAudioPlayback';
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
@@ -749,7 +750,7 @@ struct AudioBookPage {
       if (serial !== this.loadingSerial) return;
       const url = this.resolveAudioUrl(content, chapter.url || book.bookUrl || this.source?.bookSourceUrl || '');
       if (!url) throw new Error(this.invalidAudioAddressMessage(content));
-      const headers = this.audioHeaders(url, this.source);
+      const headers = this.audioHeaders(url, this.source, content);
       await this.playback.play(book.bookUrl, this.chapterIndex, url, headers, startPositionMs, this.speed);
       if (serial !== this.loadingSerial) return;
       this.statusText = '正在播放';
@@ -1272,7 +1273,23 @@ struct AudioBookPage {
     return /^https?:\/\//i.test(resolved) ? resolved : '';
   }
 
-  audioHeaders(url: string, source: BookSource | null): Record<string, string> {
+  /**
+   * Source headers follow the stream only within the source's own site; headers the rule attached
+   * to the address itself (`url,{"headers":{...}}`) are the author's explicit choice and win.
+   */
+  audioHeaders(url: string, source: BookSource | null, ruleValue: string = ''): Record<string, string> {
+    const explicit = AudioRuleSupport.splitRequestOptions(this.decodeAudioRuleValue(ruleValue)).headers;
+    let headers = this.sourceAudioHeaders(source);
+    if (source) {
+      headers = AudioRuleSupport.scopeHeadersToMediaHost(headers, source.bookSourceUrl, url);
+      // The cookie jar is already scoped to the media address, so it applies on any host.
+      const cookie = VerificationSupport.sourceCookieHeader(source, url);
+      if (cookie) headers = AudioRuleSupport.mergeHeaders(headers, { 'Cookie': cookie });
+    }
+    return AudioRuleSupport.mergeHeaders(headers, explicit);
+  }
+
+  private sourceAudioHeaders(source: BookSource | null): Record<string, string> {
     const headers: Record<string, string> = {
       'User-Agent': 'Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36'
     };
@@ -1293,8 +1310,6 @@ struct AudioBookPage {
         if (key && value && !value.includes('java.')) headers[key] = value;
       }
     }
-    const cookie = VerificationSupport.sourceCookieHeader(source, url);
-    if (cookie) headers['Cookie'] = cookie;
     return headers;
   }
 

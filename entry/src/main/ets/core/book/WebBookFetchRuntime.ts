@@ -8,6 +8,12 @@ export interface WebBookFetchRequest {
   headers: Record<string, string>;
   body?: string;
   webJs?: string;
+  /**
+   * When set, `webJs` is re-run until its result matches this pattern or `webJsMaxAttempts` is
+   * reached. Players often assign their stream address some time after the DOM has settled.
+   */
+  webJsAcceptPattern?: string;
+  webJsMaxAttempts?: number;
   timeoutMs?: number;
   maxResponseBytes?: number;
 }
@@ -29,6 +35,7 @@ class WebBookFetchTask {
   stableCount: number = 0;
   lastSignature: string = '';
   pageEnded: boolean = false;
+  webJsAttempts: number = 0;
 }
 
 /**
@@ -40,6 +47,7 @@ export class WebBookFetchRuntime {
   private static instance: WebBookFetchRuntime | null = null;
   private controller: webview.WebviewController | null = null;
   private ready: boolean = false;
+  private static readonly WEB_JS_RETRY_INTERVAL_MS: number = 500;
   private active: WebBookFetchTask | null = null;
   private queue: WebBookFetchTask[] = [];
 
@@ -254,12 +262,30 @@ export class WebBookFetchRuntime {
     controller.runJavaScript(webJs).then((raw: string): void => {
       if (this.active !== task) return;
       const value = this.unwrapJavaScriptResult(raw);
+      task.webJsAttempts++;
+      if (this.shouldRetryWebJs(task, value)) {
+        // The overall request timeout still bounds the polling.
+        task.inspectId = setTimeout((): void => this.resolveBody(task, finalUrl, html),
+          WebBookFetchRuntime.WEB_JS_RETRY_INTERVAL_MS);
+        return;
+      }
       this.finishActive(this.success(finalUrl, value && value !== 'undefined' && value !== 'null' ? value : html));
     }).catch((error: Error): void => {
       if (this.active === task) {
         this.finishActive(this.failure(finalUrl, `webJs 执行失败: ${this.errorMessage(error)}`));
       }
     });
+  }
+
+  private shouldRetryWebJs(task: WebBookFetchTask, value: string): boolean {
+    const pattern = String(task.request.webJsAcceptPattern || '');
+    const maxAttempts = Math.max(1, Math.min(20, Math.floor(task.request.webJsMaxAttempts || 1)));
+    if (!pattern || task.webJsAttempts >= maxAttempts) return false;
+    try {
+      return !new RegExp(pattern, 'i').test(value);
+    } catch (_) {
+      return false;
+    }
   }
 
   private finishActive(response: WebBookFetchResponse): void {

@@ -1,4 +1,5 @@
 import { webview } from '@kit.ArkWeb';
+import { AudioRuleSupport } from './AudioRuleSupport';
 
 class AudioWebResolveTask {
   url: string = '';
@@ -139,15 +140,7 @@ export class BookSourceAudioWebRuntime {
   private matches(url: string, rawRegex: string): boolean {
     const value = this.cleanUrl(url);
     if (!value) return false;
-    const pattern = (rawRegex || '').trim();
-    if (!pattern) return /\.(?:aac|flac|m3u8|m4a|mp3|mp4|ogg|opus|wav)(?:[?#]|$)/i.test(value);
-    try {
-      const literal = pattern.match(/^\/([\s\S]+)\/([dgimsuvy]*)$/);
-      const regex = literal ? new RegExp(literal[1], literal[2]) : new RegExp(pattern, 'i');
-      return regex.test(value);
-    } catch (_) {
-      return /\.(?:aac|flac|m3u8|m4a|mp3|mp4|ogg|opus|wav)(?:[?#]|$)/i.test(value);
-    }
+    return AudioRuleSupport.matchesSourceRegex(value, rawRegex);
   }
 
   private cleanUrl(url: string): string {

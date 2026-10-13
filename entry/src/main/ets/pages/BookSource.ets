@@ -7090,6 +7090,7 @@ struct BookSourcePage {
     rule.title = fields['title'] || '';
     rule.images = fields['images'] || '';
     rule.sourceRegex = fields['sourceRegex'] || fields['sourceregex'] || '';
+    rule.audioUrl = fields['audioUrl'] || fields['audiourl'] || '';
     rule.nextContentUrl = fields['nextContentUrl'] || fields['nextcontenturl'] || '';
     rule.replaceRegex = fields['replaceRegex'] || fields['replaceregex'] || '';
     rule.imageDecode = fields['imageDecode'] || fields['imagedecode'] || '';

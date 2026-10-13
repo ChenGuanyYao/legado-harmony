@@ -392,6 +392,8 @@ export class ContentRule {
   images: string = '';
   /** Network URL matched by WebView-backed audio sources (for example `.*\\.(mp3|m4a).*`). */
   sourceRegex: string = '';
+  /** Dedicated media-address rule of an audio source; preferred over `content` when present. */
+  audioUrl: string = '';
   nextContentUrl: string = '';
   replaceRegex: string = '';
   imageDecode: string = '';

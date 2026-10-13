@@ -19,6 +19,9 @@ export interface HttpRequest {
   maxResponseBytes?: number;
   useWebView?: boolean;
   webJs?: string;
+  /** See WebBookFetchRequest: re-run `webJs` until the result matches, up to the attempt limit. */
+  webJsAcceptPattern?: string;
+  webJsMaxAttempts?: number;
   debugContext?: BookSourceDebugContext;
   // Script-bridge requests run inside a serial runtime: a hung request stalls every queued
   // task, so the doubled-timeout idempotent retry is skipped for them (caller re-runs instead).
@@ -100,6 +103,8 @@ export class HttpClient {
         headers: { ...this.defaultHeaders, ...req.headers },
         body: req.body,
         webJs: req.webJs,
+        webJsAcceptPattern: req.webJsAcceptPattern,
+        webJsMaxAttempts: req.webJsMaxAttempts,
         timeoutMs: Math.max(req.connectTimeout || 0, req.readTimeout || 0, this.timeout),
         maxResponseBytes: req.maxResponseBytes
       });

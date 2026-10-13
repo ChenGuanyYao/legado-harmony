@@ -1,4 +1,4 @@
-import { Book, BookChapter, BookSource } from '../../model/data/Book';
+import { Book, BookChapter, BookSource, ContentRule } from '../../model/data/Book';
 import { HttpClient, HttpResponse } from '../http/HttpClient';
 import { AnalyzeUrl } from '../rule/AnalyzeUrl';
 import { AnalyzeRule } from '../rule/AnalyzeRule';
@@ -24,6 +24,7 @@ import { RuleExecutionService } from '../rule/RuleExecutionService';
 import { RuleBatchExecutionRequest, RuleFieldRequest } from '../rule/RuleExecutionModels';
 import { CooperativeScheduler } from '../concurrency/CooperativeScheduler';
 import { BookSourceAudioWebRuntime } from './BookSourceAudioWebRuntime';
+import { AudioRuleSupport } from './AudioRuleSupport';
 import { BookSourceMetadataSupport } from './BookSourceMetadataSupport';
 import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
 import { BookSourceDebugContext } from './BookSourceDebugModels';
@@ -587,6 +588,35 @@ export class WebBookService {
   async getContent(source: BookSource, book: Book, chapter: BookChapter,
     shouldCancel: (() => boolean) | null = null,
     debugContext: BookSourceDebugContext | null = null): Promise<string> {
+    // `ruleContent.audioUrl` is the dedicated media-address rule of an audio source. It takes
+    // precedence over `content`, which remains the fallback when it yields nothing.
+    const audioUrlRule = this.isAudioContent(source, book) ? (source.contentRule.audioUrl || '').trim() : '';
+    if (audioUrlRule) {
+      const preferred = await this.getContentWithRules(this.sourceWithContentRule(source, audioUrlRule),
+        book, chapter, shouldCancel, debugContext);
+      if (preferred || this.contentRequestCanceled(shouldCancel) ||
+        !(source.contentRule.content || '').trim()) {
+        return preferred;
+      }
+    }
+    return await this.getContentWithRules(source, book, chapter, shouldCancel, debugContext);
+  }
+
+  private isAudioContent(source: BookSource, book: Book): boolean {
+    return source.bookSourceType === 1 || (Number(book.type) & 32) !== 0;
+  }
+
+  private sourceWithContentRule(source: BookSource, contentRule: string): BookSource {
+    const copy = Object.assign(new BookSource(), source);
+    copy.contentRule = Object.assign(new ContentRule(), source.contentRule);
+    copy.contentRule.content = contentRule;
+    copy.contentRule.audioUrl = '';
+    return copy;
+  }
+
+  private async getContentWithRules(source: BookSource, book: Book, chapter: BookChapter,
+    shouldCancel: (() => boolean) | null = null,
+    debugContext: BookSourceDebugContext | null = null): Promise<string> {
     if (this.contentRequestCanceled(shouldCancel)) return '';
     // Validation and reader diagnostics must describe the current content request, not a
     // stale error left by a previous catalog/script stage.
@@ -613,11 +643,15 @@ export class WebBookService {
     if (isAudioContent) {
       const audioRule = (source.contentRule.content || '').trim();
       const directAudioUrl = this.resolvedAudioChapterUrl(source, book, chapter);
+      const directRule = !audioRule || this.isPureAudioBaseUrlRule(audioRule);
+      const webJs = AudioRuleSupport.webJsCode(audioRule);
+      if (webJs) return await this.resolveAudioWebJsUrl(source, chapter, webJs);
+      const webViewAudioUrl = await this.tryResolveAudioWebViewUrl(source, chapter,
+        AudioRuleSupport.splitRequestOptions(directAudioUrl).url, directRule);
+      if (webViewAudioUrl) return webViewAudioUrl;
       // In Legado an empty audio content rule means that the catalog's chapterUrl is already
       // the playable address. It does not need a filename extension (signed streams commonly do not).
-      if (!audioRule || this.isPureAudioBaseUrlRule(audioRule)) return directAudioUrl;
-      const webViewAudioUrl = await this.tryResolveAudioWebViewUrl(source, chapter, directAudioUrl);
-      if (webViewAudioUrl) return webViewAudioUrl;
+      if (directRule) return directAudioUrl;
     }
     const stageContent = await this.tryGetStageContent(source, book, chapter, debugContext);
     if (this.contentRequestCanceled(shouldCancel)) return '';
@@ -683,6 +717,12 @@ export class WebBookService {
       const pageData = await this.parseContentPage(source, book, chapter, currentResp.body, baseUrl, ctx,
         shouldCancel, debugContext);
       if (this.contentRequestCanceled(shouldCancel)) return '';
+      if (!pageData.content && isAudioContent) {
+        // The content rule found nothing; `sourceRegex` may still select the stream from the
+        // final response address or from the page itself.
+        pageData.content = this.extractAudioSourceRegexUrl(contentRule.sourceRegex || '',
+          currentResp.url || currentUrl, currentResp.body, baseUrl);
+      }
       if (pageData.content) {
         totalLength += pageData.content.length;
         if (totalLength > 8 * 1024 * 1024) break;
@@ -1924,7 +1964,11 @@ export class WebBookService {
     const analyzer = new AnalyzeUrl(source, this.http);
     const config = analyzer.parse(chapter.url || '');
     const value = config.url || chapter.url || '';
-    return BookUrlResolver.resolve(value, book.bookUrl || source.bookSourceUrl);
+    // Headers the catalog rule attached to the address (`url,{"headers":{...}}`) belong to the
+    // media request, so they stay part of the returned value for the player.
+    return AudioRuleSupport.joinRequestOptions(
+      BookUrlResolver.resolve(value, book.bookUrl || source.bookSourceUrl),
+      AudioRuleSupport.splitRequestOptions(chapter.url || '').headers);
   }
 
   private isPureAudioBaseUrlRule(rawRule: string): boolean {
@@ -1936,10 +1980,44 @@ export class WebBookService {
     return normalized === 'baseUrl' || normalized === 'String(baseUrl)';
   }
 
+  /**
+   * `@webjs:` audio rule: the script runs inside the rendered chapter page and returns the stream
+   * address. The page is loaded by the same isolated WebView transport as `webView: true` requests.
+   */
+  private async resolveAudioWebJsUrl(source: BookSource, chapter: BookChapter, webJs: string): Promise<string> {
+    const analyzer = new AnalyzeUrl(source, this.http);
+    analyzer.parse(chapter.url || '');
+    const request = analyzer.buildRequest();
+    if (!/^https?:\/\//i.test(request.url || '')) {
+      AppStorage.setOrCreate('bookSourceStageLastError', '网页音频规则需要 HTTP(S) 章节地址');
+      return '';
+    }
+    const response = await this.http.execute({
+      ...request,
+      useWebView: true,
+      webJs: webJs,
+      webJsAcceptPattern: '^https?://\\S',
+      webJsMaxAttempts: 10
+    });
+    let value = (response.body || '').trim();
+    if (value.startsWith('"') && value.endsWith('"')) {
+      try { value = String(JSON.parse(value)).trim(); } catch (_) {}
+    }
+    // Without a script result the transport returns the page DOM, which is not an address.
+    if (response.success && /^https?:\/\/[^\s<>]+$/i.test(AudioRuleSupport.splitRequestOptions(value).url)) {
+      return value;
+    }
+    AppStorage.setOrCreate('bookSourceStageLastError', response.success ?
+      '网页音频规则未返回 HTTP(S) 音频地址' : `网页音频规则执行失败：${response.error || '网页加载失败'}`);
+    return '';
+  }
+
   private async tryResolveAudioWebViewUrl(source: BookSource, chapter: BookChapter,
-    resolvedChapterUrl: string): Promise<string> {
+    resolvedChapterUrl: string, directRule: boolean): Promise<string> {
     const sourceRegex = source.contentRule.sourceRegex || '';
-    if (!sourceRegex || !this.audioChapterRuleUsesWebView(source)) return '';
+    // Without `sourceRegex` the sniffer accepts known media extensions only. That is the whole
+    // resolution for a rule-less chapter; with a content rule the rule itself reads the page.
+    if (!this.audioChapterUsesWebView(source, chapter) || (!sourceRegex && !directRule)) return '';
     const runtime = BookSourceAudioWebRuntime.get();
     if (!await runtime.waitUntilAvailable()) return '';
     try {
@@ -1952,9 +2030,10 @@ export class WebBookService {
     }
   }
 
-  private audioChapterRuleUsesWebView(source: BookSource): boolean {
-    const raw = source.tocRule.chapterUrl || '';
-    return /["'“”]?webView["'“”]?\s*:\s*["'“”]?true["'“”]?/i.test(raw);
+  /** The option may be literal in the catalog rule or computed into the chapter address by a script. */
+  private audioChapterUsesWebView(source: BookSource, chapter: BookChapter): boolean {
+    const declared = /["'“”]?webView["'“”]?\s*:\s*["'“”]?true["'“”]?/i;
+    return declared.test(source.tocRule.chapterUrl || '') || declared.test(chapter.url || '');
   }
 
   private audioSourceUserAgent(source: BookSource): string {
@@ -1975,15 +2054,7 @@ export class WebBookService {
     body: string, baseUrl: string): string {
     const pattern = (rawRegex || '').trim();
     if (!pattern) return '';
-    const matches = (candidate: string): boolean => {
-      try {
-        const literal = pattern.match(/^\/([\s\S]+)\/([dgimsuvy]*)$/);
-        const regex = literal ? new RegExp(literal[1], literal[2]) : new RegExp(pattern, 'i');
-        return regex.test(candidate);
-      } catch (_) {
-        return /\.(?:aac|flac|m3u8|m4a|mp3|mp4|ogg|opus|wav)(?:[?#]|$)/i.test(candidate);
-      }
-    };
+    const matches = (candidate: string): boolean => AudioRuleSupport.matchesSourceRegex(candidate, pattern);
     const candidates: string[] = [];
     const append = (value: string): void => {
       const decoded = String(value || '').replace(/&amp;/gi, '&').replace(/\\\//g, '/').trim();
@@ -2004,6 +2075,13 @@ export class WebBookService {
     }
     for (const candidate of candidates) {
       if (matches(candidate)) return candidate;
+    }
+    // A pattern written against the page text (`"play":"(.*?)"`) selects the address itself.
+    for (const captured of AudioRuleSupport.captureFromBody(body || '', pattern)) {
+      const decoded = captured.replace(/&amp;/gi, '&').replace(/\\\//g, '/').trim();
+      if (!decoded || /[\s<>"']/.test(decoded)) continue;
+      const resolved = BookUrlResolver.resolve(decoded, baseUrl);
+      if (/^https?:\/\//i.test(resolved)) return resolved;
     }
     return '';
   }
