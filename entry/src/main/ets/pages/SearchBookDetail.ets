@@ -1,5 +1,5 @@
 import { router } from '@kit.ArkUI';
-import { Book } from '../model/data/Book';
+import { Book, BookChapter } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { WebBookService } from '../core/book/WebBookService';
 import { syncSystemBars } from '../utils/SystemBars';
@@ -15,10 +15,12 @@ import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { SearchBookShelfHelper } from '../utils/SearchBookShelfHelper';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
 import { BookChangeSourceDialog } from '../components/BookChangeSourceDialog';
+import { BookCatalogSheet } from '../components/BookCatalogSheet';
 import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
 import { BookUrlResolver } from '../core/book/BookUrlResolver';
 import { LocalBookService } from '../core/book/LocalBookService';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { VideoBookPlayer } from '../utils/VideoBookPlayer';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
@@ -76,6 +78,8 @@ struct SearchBookDetailPage {
   private addToShelfOnBackDialogSession: SystemDialogSession = new SystemDialogSession();
   @State showChangeSourcePanel: boolean = false;
   @State changeSourceTarget: Book | null = null;
+  @State showCatalogSheet: boolean = false;
+  private openingCatalogChapter: boolean = false;
   private authorSearchDialogBuilder: CustomBuilder | undefined = undefined;
   private authorSearchDialogId: number = -1;
   private changeSourceDialogBuilder: CustomBuilder | undefined = undefined;
@@ -251,14 +255,15 @@ struct SearchBookDetailPage {
             // visible even when the source returned no latest-chapter title.
             Column() {
               Row() {
-                Text('目录')
+                Text(BookTypeSupport.isVideo(this.detailTypeProbe()) ? '选集' : '目录')
                   .fontSize(AppFontSize.BODY_LARGE)
                   .fontWeight(FontWeight.Bold)
                   .fontColor(this.primaryTextColor())
                   .layoutWeight(1)
 
                 if (this.totalChapterNum > 0) {
-                  Text(`共 ${this.totalChapterNum} 章`)
+                  Text(`共 ${this.totalChapterNum} ${BookTypeSupport.isVideo(this.detailTypeProbe()) ||
+                    BookTypeSupport.isAudio(this.detailTypeProbe()) ? '集' : '章'}`)
                     .fontSize(AppFontSize.BODY)
                     .fontColor(this.subTextColor())
                 }
@@ -314,6 +319,8 @@ struct SearchBookDetailPage {
           .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: 72 + this.statusBarHeight, bottom: 96 })
         }
         .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        // 内容不足一屏时贴顶，Scroll 默认会把它竖直居中。
+        .align(Alignment.Top)
         .width('100%')
         .layoutWeight(1)
         .backgroundColor(this.pageColor())
@@ -330,7 +337,7 @@ struct SearchBookDetailPage {
               this.addToShelf();
             })
 
-          Button('目录')
+          Button(BookTypeSupport.isVideo(this.detailTypeProbe()) ? '选集' : '目录')
             .height(44)
             .fontSize(AppFontSize.BODY_LARGE)
             .layoutWeight(1)
@@ -340,7 +347,8 @@ struct SearchBookDetailPage {
               this.openChapterList();
             })
 
-          Button(BookTypeSupport.isAudio(this.detailTypeProbe()) ? '开始听书' : '开始阅读')
+          Button(BookTypeSupport.isVideo(this.detailTypeProbe()) ? '开始观看' :
+            (BookTypeSupport.isAudio(this.detailTypeProbe()) ? '开始听书' : '开始阅读'))
             .height(44)
             .fontSize(AppFontSize.BODY_LARGE)
             .layoutWeight(1)
@@ -379,6 +387,33 @@ struct SearchBookDetailPage {
     .width('100%')
     .height('100%')
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .bindSheet($$this.showCatalogSheet, this.catalogSheet(), {
+      detents: ['67%', SheetSize.LARGE],
+      dragBar: true,
+      showClose: false,
+      scrollSizeMode: ScrollSizeMode.CONTINUOUS,
+      blurStyle: BlurStyle.COMPONENT_THICK,
+      backgroundColor: ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'),
+      onDisappear: () => {
+        this.showCatalogSheet = false;
+      }
+    })
+  }
+
+  @Builder
+  catalogSheet() {
+    BookCatalogSheet({
+      book: this.buildCurrentBook(),
+      onChapterSelected: (chapter: BookChapter): void => {
+        this.openChapterFromCatalog(chapter);
+      },
+      onLoaded: (count: number): void => {
+        this.totalChapterNum = count;
+      },
+      onClose: (): void => {
+        this.showCatalogSheet = false;
+      }
+    })
   }
 
   @Builder
@@ -387,7 +422,7 @@ struct SearchBookDetailPage {
       ImmersiveBackButton({ iconColor: this.primaryTextColor(), darkMode: this.appDarkMode,
         onBack: () => this.handleBack() })
 
-      Text('书籍详情')
+      Text(BookTypeSupport.isVideo(this.detailTypeProbe()) ? '剧集详情' : '书籍详情')
         .fontSize(AppFontSize.TITLE)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.primaryTextColor())
@@ -1179,38 +1214,74 @@ struct SearchBookDetailPage {
       HdsFeedback.showToast('书籍信息不完整，暂时无法查看目录');
       return;
     }
-    router.pushUrl({
-      url: 'pages/BookChapterList',
-      params: {
-        bookUrl: this.bookUrl,
-        tocUrl: this.tocUrl,
-        origin: this.origin,
-        originName: this.originName,
-        name: this.name,
-        author: this.author,
-        kind: this.kind,
-        status: this.status,
-        coverUrl: this.coverUrl,
-        intro: this.intro,
-        latestChapterTitle: this.latestChapterTitle,
-        wordCount: this.wordCount,
-        updateTime: this.updateTime,
-        type: `${this.bookType}`,
-        // Directory rules that carry an init script write back into book.variable; without it the
-        // catalog comes back empty for those sources.
-        variable: this.bookVariable
+    this.showCatalogSheet = true;
+  }
+
+  /**
+   * 目录面板里点中某一章。先走与"开始阅读"相同的入库流程（未上架时写临时阅读书并保留
+   * 返回时的加入书架提示），再把进度指到该章。
+   */
+  async openChapterFromCatalog(chapter: BookChapter): Promise<void> {
+    if (this.openingCatalogChapter || chapter.index < 0) return;
+    this.openingCatalogChapter = true;
+    try {
+      const ok = await this.prepareBookForReading();
+      if (!ok) return;
+      const db = AppDatabase.getInstance();
+      const book = await db.getBook(this.bookUrl);
+      if (!book) {
+        HdsFeedback.showToast('打开章节失败');
+        return;
       }
-    });
+      // The reader derives its opening chapter from durChapterIndex alone (see
+      // ReadBookEngine.openBookFresh / applyLatestReadingProgress). durChapterPos must be reset
+      // too: savedReaderProgressOffset only matches on chapter, so a stale page would land
+      // somewhere inside the target chapter.
+      book.durChapterIndex = chapter.index;
+      book.durChapterPos = 0;
+      book.durChapterTitle = chapter.title;
+      await db.updateBook(book, true, 'open_chapter_from_catalog_sheet');
+      this.showCatalogSheet = false;
+      if (BookTypeSupport.isVideo(book)) {
+        // 视频类书籍没有阅读形态，点哪一集就直接播放哪一集。
+        await VideoBookPlayer.open(book.bookUrl, chapter.index);
+        return;
+      }
+      await router.pushUrl({
+        url: 'pages/ReadBook',
+        params: { bookUrl: book.bookUrl }
+      });
+    } catch (e) {
+      console.error('打开章节失败:', e);
+      HdsFeedback.showToast('打开章节失败');
+    } finally {
+      this.openingCatalogChapter = false;
+    }
   }
 
   async startRead() {
     const ok = await this.prepareBookForReading();
     if (!ok) return;
 
+    if (BookTypeSupport.isVideo(this.detailTypeProbe())) {
+      await this.startWatch();
+      return;
+    }
+
     router.pushUrl({
       url: 'pages/ReadBook',
       params: { bookUrl: this.bookUrl }
     });
+  }
+
+  /** 视频类书籍：进入播放页，接着上次看到的那一集；选集由播放页自己加载。 */
+  async startWatch(): Promise<void> {
+    try {
+      await VideoBookPlayer.open(this.bookUrl);
+    } catch (e) {
+      console.warn('打开播放页失败:', e);
+      HdsFeedback.showToast('打开播放页失败');
+    }
   }
 
   triggerAutoStartRead(): void {

@@ -9,7 +9,8 @@ export class BookTypeSupport {
   static readonly CATEGORY_NOVEL: string = 'novel';
   static readonly CATEGORY_COMIC: string = 'comic';
   static readonly CATEGORY_AUDIO: string = 'audio';
-  static readonly MEDIA_CATEGORIES: string[] = ['novel', 'comic', 'audio'];
+  static readonly CATEGORY_VIDEO: string = 'video';
+  static readonly MEDIA_CATEGORIES: string[] = ['novel', 'comic', 'audio', 'video'];
 
   static typeFromSource(source: BookSource | null): number {
     if (!source) return 0;
@@ -67,9 +68,21 @@ export class BookTypeSupport {
       this.typeFromIdentity(book.originName, book.kind) === this.IMAGE;
   }
 
-  /** Media bucket a book is listed under. Anything that is neither audio nor comic reads as a novel. */
+  /** 视频类书籍（短剧等）：没有阅读形态，由书源在书籍变量里声明 tab=video。 */
+  static isVideo(book: Book | SearchBook | null): boolean {
+    if (!book || book.origin === 'local' || !book.variable || book.variable.indexOf('video') < 0) return false;
+    try {
+      const record = JSON.parse(book.variable) as Record<string, Object>;
+      return String(record['tab'] || '') === 'video';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /** Media bucket a book is listed under. Anything that is not video, audio or comic reads as a novel. */
   static mediaCategoryOf(book: Book | SearchBook | null): string {
     if (book instanceof SearchBook && book.mediaCategory) return book.mediaCategory;
+    if (this.isVideo(book)) return this.CATEGORY_VIDEO;
     if (this.isAudio(book)) return this.CATEGORY_AUDIO;
     if (this.isImage(book)) return this.CATEGORY_COMIC;
     return this.CATEGORY_NOVEL;

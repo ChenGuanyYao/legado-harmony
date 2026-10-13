@@ -1135,6 +1135,15 @@ struct ReadBookPage {
         null;
       await this.prepareReaderWebFetchRuntime(sourceForType);
       BookTypeSupport.applyBookType(this.book, sourceForType);
+      if (BookTypeSupport.isVideo(this.book)) {
+        // 视频类书籍没有阅读形态：从书架等入口进来时直接转到播放页。
+        ReaderOpenTrace.finish(this.bookUrl, 'redirect-video-player');
+        await router.replaceUrl({
+          url: 'pages/VideoPlayer',
+          params: { bookUrl: this.book.bookUrl, chapterIndex: '' }
+        });
+        return;
+      }
       if (BookTypeSupport.isAudio(this.book)) {
         await db.updateBook(this.book, false);
         ReaderOpenTrace.finish(this.bookUrl, 'redirect-audio-reader');

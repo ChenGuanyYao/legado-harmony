@@ -15,6 +15,7 @@ import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { BookSourceStageRuntimeHost } from '../components/BookSourceStageRuntimeHost';
 import { WebBookFetchRuntimeHost } from '../components/WebBookFetchRuntimeHost';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { VideoBookPlayer } from '../utils/VideoBookPlayer';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
 
@@ -275,6 +276,17 @@ struct BookChapterListPage {
       List({ scroller: this.scroller }) {
         LazyForEach(this.dataSource, (chapter: BookChapter) => {
           ListItem() {
+            Column() {
+            if (BookChapter.volumeTitleOf(chapter)) {
+              Text(BookChapter.volumeTitleOf(chapter))
+                .fontSize(AppFontSize.BODY)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.subTextColor())
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .width('100%')
+                .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.SM })
+            }
             Row({ space: AppSpacing.MD }) {
               Text(`${chapter.index + 1}`)
                 .fontSize(AppFontSize.CAPTION)
@@ -306,6 +318,7 @@ struct BookChapterListPage {
             .onClick((): void => {
               this.openChapter(chapter);
             })
+            }
           }
         }, (chapter: BookChapter): string => `${chapter.index}_${chapter.url || chapter.title}`)
       }
@@ -457,6 +470,12 @@ struct BookChapterListPage {
       book.durChapterPos = 0;
       book.durChapterTitle = chapter.title;
       await db.updateBook(book, true, 'open_chapter_from_chapter_list');
+      if (BookTypeSupport.isVideo(book)) {
+        // 视频类书籍没有阅读形态，点哪一集就直接播放哪一集。
+        this.currentIndex = chapter.index;
+        await VideoBookPlayer.open(book.bookUrl, chapter.index);
+        return;
+      }
       await router.pushUrl({
         url: 'pages/ReadBook',
         params: { bookUrl: book.bookUrl }

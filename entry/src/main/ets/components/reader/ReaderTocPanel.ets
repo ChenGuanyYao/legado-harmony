@@ -988,6 +988,17 @@ export struct ReaderTocPanel {
         }
         ForEach(this.visibleChapters, (chapter: BookChapter, localIndex: number) => {
           ListItem() {
+            Column() {
+            if (BookChapter.volumeTitleOf(chapter)) {
+              Text(BookChapter.volumeTitleOf(chapter))
+                .fontSize(AppFontSize.BODY)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(this.subTextColor)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .width('100%')
+                .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.SM })
+            }
             Row({ space: AppSpacing.MD }) {
               Text(this.globalIndex(localIndex) === this.currentChapterIndex ? '•' : '·')
                 .fontSize(this.globalIndex(localIndex) === this.currentChapterIndex ? 22 : 18)
@@ -1020,6 +1031,7 @@ export struct ReaderTocPanel {
               this.selectedColor : Color.Transparent)
             .border({ width: { bottom: 0.5 }, color: ThemeRuntime.softFillColor(this.dark) })
             .onClick(() => this.onJumpToChapter(this.globalIndex(localIndex)))
+            }
           }
         }, (chapter: BookChapter, localIndex: number) =>
           `${this.orderRevision}_${this.globalIndex(localIndex)}_${chapter.url || chapter.title}`)

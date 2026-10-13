@@ -4,6 +4,7 @@
     "pages/Index",
     "pages/ReadBook",
     "pages/AudioBook",
+    "pages/VideoPlayer",
     "pages/SearchBookDetail",
     "pages/BookChapterList",
     "pages/SearchResultGroup",
