@@ -10,6 +10,7 @@ import { VerificationSupport } from '../http/VerificationSupport';
 import { EncodedSourceUrl } from './EncodedSourceUrl';
 import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
 import { BookUrlResolver } from './BookUrlResolver';
+import { PageCandidateUrl } from '../rule/PageCandidateUrl';
 import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
 import { BookSourceMetadataSupport } from './BookSourceMetadataSupport';
 import { BookTypeSupport } from './BookTypeSupport';
@@ -341,6 +342,8 @@ export class SearchCoordinator {
       if (!urlTemplate) {
         return this.sourceResult([], BookSource.VALIDATION_FAILED, '搜索地址无法解析');
       }
+      // Search requests the first page, so `<first,following>` resolves to its first candidate.
+      urlTemplate = PageCandidateUrl.apply(urlTemplate, 1);
       if (ENABLE_SEARCH_DEBUG_LOG) {
         console.log('[SC] search source:', source.bookSourceName);
       }

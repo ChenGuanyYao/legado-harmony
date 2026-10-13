@@ -9,6 +9,7 @@ import { VerificationSupport } from '../http/VerificationSupport';
 import { EncodedSourceUrl } from './EncodedSourceUrl';
 import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
 import { BookUrlResolver } from './BookUrlResolver';
+import { PageCandidateUrl } from '../rule/PageCandidateUrl';
 import { BookSourceScriptRunner } from './BookSourceScriptRunner';
 import { BookSourceMetadataSupport } from './BookSourceMetadataSupport';
 import { BookTypeSupport } from './BookTypeSupport';
@@ -976,10 +977,12 @@ export class ExploreCoordinator {
 
   private async buildUrl(source: BookSource, url: string, page: number,
     debugContext: BookSourceDebugContext | null = null): Promise<string> {
-    url = this.applyLegacyPageAlternative(url, page);
+    const isFullJsUrl = /^\s*@?js:/i.test(url || '') || /^\s*<js>[\s\S]*<\/js>\s*$/i.test(url || '');
+    // Script source is only rewritten where a group names the page template; the evaluated
+    // address below gets the complete shorthand.
+    url = PageCandidateUrl.apply(url, page, isFullJsUrl);
     const decision = BookSourceRuntimeRouter.decide(SourceRuntimeStage.URL,
       `${source.jsLib || ''}\n${url || ''}`);
-    const isFullJsUrl = /^\s*@?js:/i.test(url || '') || /^\s*<js>[\s\S]*<\/js>\s*$/i.test(url || '');
     const requiresStageRuntime = isFullJsUrl || (url.includes('{{') && decision.runtime === 'arkweb');
     const runtime = BookSourceStageWebRuntime.get();
     if (requiresStageRuntime && !runtime.isAvailable()) await runtime.waitUntilAvailable(8000);
@@ -1002,7 +1005,7 @@ export class ExploreCoordinator {
       try {
         const result = await runtime.execute(request);
         if (result.value) {
-          const evaluated = this.applyLegacyPageAlternative(result.value, page);
+          const evaluated = PageCandidateUrl.apply(result.value, page);
           // Stage scripts commonly return the same root-relative address that an ordinary
           // Legado template would produce. Resolve it before the caller applies its absolute-URL
           // safety check; otherwise a successfully evaluated `/api/...` request is rejected as
@@ -1033,15 +1036,6 @@ export class ExploreCoordinator {
     const fallback = js.evalTemplate(this.applySourceTemplate(url, source))
       .replace(/\{\{[^}]+\}\}/g, String(page));
     return BookUrlResolver.resolve(fallback, source.bookSourceUrl) || fallback;
-  }
-
-  /** Legado page-one shorthand: `<first-page,following-pages>`. */
-  private applyLegacyPageAlternative(url: string, page: number): string {
-    return (url || '').replace(/<([^<>]*),([^<>]*)>/g,
-      (match: string, firstPage: string, followingPages: string): string => {
-        if (match.includes('(') || !/\{\{\s*page(?:Index)?\b/i.test(match)) return match;
-        return page <= 1 ? firstPage : followingPages;
-      });
   }
 
   private async executeResponseBodyScript(source: BookSource, code: string, body: string,
