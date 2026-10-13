@@ -1,4 +1,6 @@
-import { router, promptAction } from '@kit.ArkUI';
+import { NativeSourceService } from '../core/nativesource/NativeSourceService';
+import { NativeSourceSpec } from '../core/nativesource/NativeSourceSpec';
+import { router, promptAction, uiMaterial } from '@kit.ArkUI';
 import { BookSource, SearchBook, BookListRule, SearchRule, ExploreRule, BookInfoRule, TocRule, ContentRule } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { HttpClient, HttpResponse } from '../core/http/HttpClient';
@@ -90,6 +92,10 @@ class BookSourceCheckUiUpdate {
   detail: string = '';
 }
 
+// 头部里类型分段和兼容书源提示条的高度，列表顶部避让按它们计算。
+const SOURCE_FORMAT_BAR_HEIGHT: number = 36;
+const COMPAT_SOURCE_NOTICE_HEIGHT: number = 44;
+
 @Entry
 @Component
 struct BookSourcePage {
@@ -127,6 +133,8 @@ struct BookSourcePage {
   private sourceGroupManagerDialogSession: SystemDialogSession = new SystemDialogSession();
   private deleteSelectedSourceGroupsDialogSession: SystemDialogSession = new SystemDialogSession();
   @State @Watch('onSystemDialogFlagChanged') showSourceFilterDialog: boolean = false;
+  @State sourceFormatFilter: string = 'all';
+  @StorageLink('compatSourceNoticeDismissed') compatSourceNoticeDismissed: boolean = false;
   @State sourceEnabledFilter: string = 'all';
   @State sourceExplorePageFilter: string = 'all';
   @State sourceExploreEnabledFilter: string = 'all';
@@ -371,6 +379,10 @@ struct BookSourcePage {
           .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.MD })
 
           if (!this.selectionMode) {
+            this.sourceFormatBar()
+            if (this.showCompatSourceNotice()) {
+              this.compatSourceNoticeBar()
+            }
             this.sourceGroupBar()
           }
 
@@ -490,6 +502,7 @@ struct BookSourcePage {
                         .textOverflow({ overflow: TextOverflow.Ellipsis })
                         .layoutWeight(1)
 
+                      this.sourceFormatBadge(source)
                       if (source.isPinned) {
                         this.sourceStatusIcon($r('sys.symbol.pin'), this.accentColor(), '已置顶')
                       }
@@ -1367,7 +1380,14 @@ struct BookSourcePage {
         })
 
       Column() {
-        this.popupActionItem($r('sys.symbol.plus'), '新建书源', this.primaryTextColor(), () => {
+        this.popupActionItem($r('sys.symbol.plus'), '新建原生书源', this.primaryTextColor(), () => {
+          this.showAddDialog = false;
+          router.pushUrl({
+            url: 'pages/NativeSourceEdit',
+            params: { bookSourceUrl: '' }
+          });
+        }, true, '推荐')
+        this.popupActionItem($r('sys.symbol.plus'), '新建兼容书源', this.primaryTextColor(), () => {
           this.showAddDialog = false;
           router.pushUrl({
             url: 'pages/BookSourceEdit',
@@ -1383,7 +1403,7 @@ struct BookSourcePage {
           this.importFromFile();
         }, false)
       }
-      .width(188)
+      .width(208)
       .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.SM, bottom: AppSpacing.SM })
       .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
       .borderRadius(ThemeRuntime.glassCornerRadius(16, 'panel'))
@@ -1460,7 +1480,7 @@ struct BookSourcePage {
 
   @Builder
   popupActionItem(icon: Resource, label: string, color: string, action: () => void,
-    showDivider: boolean = true) {
+    showDivider: boolean = true, badge: string = '') {
     Column() {
       Row({ space: AppSpacing.MD }) {
         SymbolGlyph(icon)
@@ -1471,6 +1491,14 @@ struct BookSourcePage {
           .fontSize(AppFontSize.BODY_LARGE)
           .fontColor(color)
           .layoutWeight(1)
+        if (badge) {
+          Text(badge)
+            .fontSize(AppFontSize.MICRO)
+            .fontColor(this.accentColor())
+            .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
+            .backgroundColor(this.inputColor())
+            .borderRadius(ThemeRuntime.smallRadius())
+        }
       }
       .width('100%')
       .height(44)
@@ -1780,7 +1808,11 @@ struct BookSourcePage {
       Column() {
         this.contextActionItem($r('sys.symbol.magnifyingglass'), '搜索', this.primaryTextColor(),
           () => this.openActionSourceSearch())
-        if (this.actionSourceNeedsLogin()) {
+        if (this.actionSourceIsNative()) {
+          this.contextActionItem($r('sys.symbol.gearshape'), '书源设置', this.primaryTextColor(),
+            () => this.openActionSourceSettings())
+        }
+        if (this.actionSourceNeedsLogin() && !this.actionSourceIsNative()) {
           this.contextActionItem($r('sys.symbol.arrow_right_up_and_square'),
             this.actionSourceLoggedIn() ? '重新登录' : '登录',
             this.primaryTextColor(), () => this.openActionSourceLogin())
@@ -2144,6 +2176,7 @@ struct BookSourcePage {
             .fontColor(this.primaryTextColor())
             .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
             .layoutWeight(1)
+          this.sourceFormatBadge(source)
           if (source.isPinned) this.sourceStatusIcon($r('sys.symbol.pin'), this.accentColor(), '已置顶')
           if (source.isLocked) this.sourceStatusIcon($r('sys.symbol.lock'), this.accentColor(), '已锁定')
           if (source.bookSourceGroup) {
@@ -2432,7 +2465,13 @@ struct BookSourcePage {
   }
 
   sourceListTopInset(): number {
-    return 56 + this.statusBarHeight + 98;
+    // 头部在搜索框和分组栏之外，非多选时还有类型分段，「兼容」分段下可能再多一行提示条。
+    let extra = 0;
+    if (!this.selectionMode) {
+      extra += SOURCE_FORMAT_BAR_HEIGHT + AppSpacing.MD;
+      if (this.showCompatSourceNotice()) extra += COMPAT_SOURCE_NOTICE_HEIGHT + AppSpacing.MD;
+    }
+    return 56 + this.statusBarHeight + 98 + extra;
   }
 
   // 列表底部避让：右下角悬浮新增按钮（52 高，底边距 navBarHeight+22）必须完整让出，
@@ -2554,6 +2593,123 @@ struct BookSourcePage {
     .padding(AppSpacing.XXL)
   }
 
+
+  @Builder
+  sourceFormatBar() {
+    Row() {
+      ForEach(['all', 'native', 'compat'], (format: string) => {
+        Stack() {
+          if (this.sourceFormatFilter === format) {
+            // systemMaterial 仅 API 26 起存在，低版本构建时调用会失败，因此分支处理。
+            if (ImmersiveMaterialRuntime.supportsHds()) {
+              Row()
+                .width('100%')
+                .height('100%')
+                .borderRadius(15)
+                .border({ width: 1.5, color: this.accentColor() })
+                .systemMaterial(this.sourceFormatSelectedMaterial())
+            } else {
+              Row()
+                .width('100%')
+                .height('100%')
+                .borderRadius(15)
+                .border({ width: 1.5, color: this.accentColor() })
+                .backgroundColor(this.sourceFormatSelectedFill())
+            }
+          }
+
+          Text(format === 'all' ? '全部' : (format === 'native' ? '原生' : '兼容'))
+            .fontSize(AppFontSize.BODY)
+            .fontWeight(this.sourceFormatFilter === format ? FontWeight.Medium : FontWeight.Normal)
+            .fontColor(this.sourceFormatFilter === format ? this.accentColor() : this.secondaryTextColor())
+            .textAlign(TextAlign.Center)
+        }
+        .layoutWeight(1)
+        .height(30)
+        .accessibilityGroup(true)
+        .accessibilityText(format === 'all' ? '全部书源' : (format === 'native' ? '原生书源' : '兼容书源'))
+        .accessibilitySelected(this.sourceFormatFilter === format)
+        .onClick(() => {
+          if (this.sourceFormatFilter === format) return;
+          this.sourceFormatFilter = format;
+          this.applySourceFilters();
+        })
+      }, (format: string) => format)
+    }
+    .height(SOURCE_FORMAT_BAR_HEIGHT)
+    .padding(3)
+    .borderRadius(18)
+    .backgroundColor(this.glassInputColor())
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
+  }
+
+  /** 选中分段的底色：主题强调色的浅色调。 */
+  sourceFormatSelectedFill(): string {
+    const accent = this.accentColor();
+    if (!/^#[0-9a-fA-F]{6}$/.test(accent)) return this.glassCardColor();
+    return `#${this.appDarkMode ? '33' : '1F'}${accent.substring(1)}`;
+  }
+
+  private sourceFormatSelectedMaterial(): uiMaterial.ImmersiveMaterial {
+    return new uiMaterial.ImmersiveMaterial({
+      style: ImmersiveMaterialRuntime.materialStyle(),
+      materialColor: this.sourceFormatSelectedFill(),
+      applyShadow: true,
+      interactive: ImmersiveMaterialRuntime.configuredLightLevel() !== 'weak',
+      lightEffect: ImmersiveMaterialRuntime.lightEffect()
+    });
+  }
+
+  /** 只在「兼容」分段下提示，用户关掉后不再出现。 */
+  showCompatSourceNotice(): boolean {
+    return this.sourceFormatFilter === 'compat' && !this.compatSourceNoticeDismissed;
+  }
+
+  @Builder
+  compatSourceNoticeBar() {
+    Row({ space: AppSpacing.MD }) {
+      Text('兼容书源格式已过时，仍可正常使用。新书源建议使用原生格式。')
+        .fontSize(AppFontSize.CAPTION)
+        .fontColor(this.secondaryTextColor())
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+      Text('了解区别')
+        .fontSize(AppFontSize.CAPTION)
+        .fontColor(this.accentColor())
+        .height(40)
+        .textAlign(TextAlign.Center)
+        .onClick(() => {
+          router.pushUrl({ url: 'pages/Help', params: { anchor: 'sourcekinds' } });
+        })
+      SymbolGlyph($r('sys.symbol.xmark'))
+        .fontSize(16)
+        .fontColor([this.subTextColor()])
+        .width(28)
+        .height(40)
+        .accessibilityText('关闭提示')
+        .onClick(() => {
+          this.compatSourceNoticeDismissed = true;
+        })
+    }
+    .height(COMPAT_SOURCE_NOTICE_HEIGHT)
+    .padding({ left: AppSpacing.LG, right: AppSpacing.SM })
+    .borderRadius(ThemeRuntime.smallRadius())
+    .backgroundColor(this.glassInputColor())
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
+  }
+
+  @Builder
+  sourceFormatBadge(source: BookSource) {
+    Text(source.sourceFormat === 'native' ? '原生' : '兼容')
+      .fontSize(AppFontSize.CAPTION)
+      .fontColor(source.sourceFormat === 'native' ? this.accentColor() : this.subTextColor())
+      .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
+      .backgroundColor(this.inputColor())
+      .borderRadius(ThemeRuntime.smallRadius())
+      .margin({ left: AppSpacing.SM })
+      .accessibilityText(source.sourceFormat === 'native' ? '原生书源' : '兼容书源')
+  }
 
   @Builder
   sourceGroupBar() {
@@ -3683,6 +3839,10 @@ struct BookSourcePage {
       filtered = filtered.filter((source: BookSource) =>
         (source.bookSourceGroup || '').trim() === this.activeSourceGroup);
     }
+    if (this.sourceFormatFilter !== 'all') {
+      const expectNative = this.sourceFormatFilter === 'native';
+      filtered = filtered.filter((source: BookSource) => (source.sourceFormat === 'native') === expectNative);
+    }
     if (this.sourceEnabledFilter !== 'all') {
       const expected = this.sourceEnabledFilter === 'yes';
       filtered = filtered.filter((source: BookSource) => source.enabled === expected);
@@ -3786,6 +3946,8 @@ struct BookSourcePage {
   }
 
   sourceNeedsLogin(source: BookSource): boolean {
+    // 原生书源是否需要登录只看定义里的 login，不从规则文本里猜。
+    if (source.sourceFormat === 'native') return !!String(source.loginUrl || '').trim();
     const loginUrl = String(source.loginUrl || '').trim();
     const loginUi = String(source.loginUi || '').trim();
     const loginCheckJs = String(source.loginCheckJs || '').trim();
@@ -5053,7 +5215,22 @@ struct BookSourcePage {
     }
     this.closeSourceActions();
     router.pushUrl({
-      url: 'pages/BookSourceEdit',
+      url: source.sourceFormat === 'native' ? 'pages/NativeSourceEdit' : 'pages/BookSourceEdit',
+      params: { bookSourceUrl: source.bookSourceUrl }
+    });
+  }
+
+  actionSourceIsNative(): boolean {
+    const source = this.actionSource();
+    return !!source && source.sourceFormat === 'native';
+  }
+
+  openActionSourceSettings(): void {
+    const source = this.actionSource();
+    if (!source) return;
+    this.closeSourceActions();
+    router.pushUrl({
+      url: 'pages/NativeSourceSettings',
       params: { bookSourceUrl: source.bookSourceUrl }
     });
   }
@@ -5160,7 +5337,7 @@ struct BookSourcePage {
   sourceListItemKey(source: BookSource): string {
     const loginStatus = this.sourceNeedsLogin(source) ? (this.sourceLoggedIn(source) ? 'logged' : 'unlogged') : 'none';
     const positionStatus = `${source.isPinned ? 'pinned' : 'normal'}_${this.isSourceAtBottom(source) ? 'bottom' : 'middle'}`;
-    return `${source.bookSourceUrl}_${source.bookSourceGroup || ''}_${source.enabled ? '1' : '0'}_${source.enabledExplore ? '1' : '0'}_${source.isLocked ? 'locked' : 'unlocked'}_${source.validationStatus}_${source.bookSourceName || ''}_${loginStatus}_${positionStatus}_${this.selectionMode ? 'select' : 'normal'}`;
+    return `${source.bookSourceUrl}_${source.sourceFormat}_${source.bookSourceGroup || ''}_${source.enabled ? '1' : '0'}_${source.enabledExplore ? '1' : '0'}_${source.isLocked ? 'locked' : 'unlocked'}_${source.validationStatus}_${source.bookSourceName || ''}_${loginStatus}_${positionStatus}_${this.selectionMode ? 'select' : 'normal'}`;
   }
 
   isSourceSelected(bookSourceUrl: string): boolean {
@@ -6253,6 +6430,7 @@ struct BookSourcePage {
   }
 
   bookSourceExportObject(source: BookSource): Object {
+    if (NativeSourceService.isNative(source)) return NativeSourceService.exportObject(source);
     let result: Record<string, Object> = {};
     try {
       const parsed = JSON.parse(source.rawSourceJson || '{}') as Object;
@@ -6691,18 +6869,32 @@ struct BookSourcePage {
         const obj = parsed as Record<string, Object>;
         if (Array.isArray(obj['value'])) {
           items = obj['value'] as Record<string, Object>[];
-        } else if (obj['bookSourceUrl']) {
+        } else if (obj['bookSourceUrl'] || NativeSourceSpec.isDefinitionObject(obj)) {
           items = [obj];
         }
       }
 
       console.log('待解析书源数量:', items.length);
 
+      let nativeProblem = '';
       for (const item of items) {
+        if (NativeSourceSpec.isDefinitionObject(item)) {
+          // 原生书源在导入时就完成整份校验，写法有误的直接给出原因，不留到使用时才失败。
+          try {
+            sources.push(NativeSourceService.importObject(item));
+          } catch (e) {
+            nativeProblem = `${String(item['name'] || '原生书源')}：${(e as Error).message || '定义不合法'}`;
+          }
+          continue;
+        }
         const source = this.parseBookSource(item);
         if (source.bookSourceUrl) {
           sources.push(source);
         }
+      }
+      if (nativeProblem) {
+        HdsFeedback.showToast(`原生书源未导入，${nativeProblem}`);
+        if (sources.length === 0) return;
       }
 
       console.log('解析到书源数量:', sources.length);
@@ -6929,6 +7121,14 @@ struct BookSourcePage {
   async verifyImportedBookSource(db: AppDatabase, expected: BookSource): Promise<boolean> {
     const actual = await db.getBookSource(expected.bookSourceUrl);
     if (!actual) return false;
+    // 原生书源的定义整体在 jsLib 里；规则对象不参与执行，读库时还会补上占位标记，逐项比较必然不一致。
+    if (NativeSourceService.isNative(expected)) {
+      return actual.jsLib === expected.jsLib &&
+        actual.loginUrl === expected.loginUrl &&
+        actual.header === expected.header &&
+        actual.searchUrl === expected.searchUrl &&
+        actual.exploreUrl === expected.exploreUrl;
+    }
     return actual.rawSourceJson === expected.rawSourceJson &&
       actual.jsLib === expected.jsLib &&
       actual.loginUrl === expected.loginUrl &&

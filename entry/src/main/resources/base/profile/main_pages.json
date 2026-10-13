@@ -9,6 +9,8 @@
     "pages/SearchResultGroup",
     "pages/BookSource",
     "pages/BookSourceEdit",
+    "pages/NativeSourceEdit",
+    "pages/NativeSourceSettings",
     "pages/BookSourceDebug",
     "pages/Settings",
     "pages/CustomFontManager",

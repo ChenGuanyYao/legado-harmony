@@ -1,3 +1,4 @@
+import { NativeSourceService } from '../nativesource/NativeSourceService';
 import { BookSource, ExploreRule, SearchBook } from '../../model/data/Book';
 import { appDb } from '../../model/data/AppDatabase';
 import { HttpClient } from '../http/HttpClient';
@@ -115,6 +116,17 @@ export class ExploreCoordinator {
     const options: ExploreSourceOption[] = [];
     for (const source of sources) {
       if (!source.enabledExplore || !source.exploreUrl) continue;
+      if (NativeSourceService.isNative(source)) {
+        // 同一地址以前可能是兼容书源，清掉它留下的平台选择器，免得发现页显示成旧的切换项。
+        delete this.platformSelectors[source.bookSourceUrl];
+        options.push({
+          sourceName: source.bookSourceName,
+          sourceUrl: source.bookSourceUrl,
+          sourceGroup: (source.bookSourceGroup || '').trim(),
+          platforms: []
+        });
+        continue;
+      }
       let platforms: string[] = [];
       const loginSelector = this.parseLoginPlatformSelector(source);
       if (!this.usesNativeExploreFilters(source) && loginSelector.labels.length > 0) {
@@ -141,6 +153,10 @@ export class ExploreCoordinator {
     for (const source of sources) {
       if (!source.enabledExplore || !source.exploreUrl) continue;
       if (sourceUrl && source.bookSourceUrl !== sourceUrl) continue;
+      if (NativeSourceService.isNative(source)) {
+        entries.push(...await this.nativeEntries(source));
+        continue;
+      }
       if (!source.variable && this.requiresSourceVariable(source)) {
         const hint = (source.variableComment || '').trim();
         this.noticeMessage = hint ? `请先在书源编辑中填写书源变量：${hint}` :
@@ -163,6 +179,7 @@ export class ExploreCoordinator {
     this.noticeMessage = '';
     const source = await appDb.getBookSource(entry.sourceUrl);
     if (!source) return [];
+    if (NativeSourceService.isNative(source)) return await this.exploreNative(source, entry, page, maxItems);
     try {
       VerificationSupport.clearVerification();
       const au = new AnalyzeUrl(source, this.http);
@@ -543,7 +560,76 @@ export class ExploreCoordinator {
     const selectors = this.filterSelectors[sourceUrl] || [];
     const selector = selectors.find((item: ExplorePlatformSelector): boolean => item.parameter === title);
     if (!selector || !selection || selector.currentLabel === selection) return !!selector;
+    if (NativeSourceService.isNative(source)) {
+      const variable = NativeSourceService.variableAfterSelect(source, title, selection);
+      console.info('[ExploreCoordinator] native filter:', source.bookSourceName, `${title}=${selection}`,
+        variable ? 'saved' : 'unchanged-or-invalid');
+      if (!variable) return false;
+      await appDb.updateBookSourceVariable(sourceUrl, variable);
+      selector.currentLabel = selection;
+      this.clearExploreMenuCache();
+      return true;
+    }
     return await this.executeExploreSelector(source, selector, selection);
+  }
+
+  /** 原生书源的发现分类：筛选项来自定义里的变量，分类列表不经过脚本引擎。 */
+  private async nativeEntries(source: BookSource): Promise<ExploreEntry[]> {
+    this.filterSelectors[source.bookSourceUrl] = NativeSourceService.filters(source).map((group) => {
+      const selector = new ExplorePlatformSelector();
+      selector.parameter = group.title;
+      selector.labels = group.options.slice();
+      selector.values = group.options.slice();
+      selector.currentLabel = group.selected;
+      selector.mode = 'native';
+      return selector;
+    });
+    const menuKey = this.menuCacheKey(source, 'native');
+    const cached = this.menuCache[menuKey];
+    console.info('[ExploreCoordinator] native menus:', source.bookSourceName,
+      this.filterSelectors[source.bookSourceUrl].map((item: ExplorePlatformSelector): string =>
+        `${item.parameter}=${item.currentLabel}`).join(' '), cached ? 'cached' : 'fetch');
+    if (cached && Date.now() - cached.cachedAt < 5 * 60 * 1000) return cached.entries.slice();
+    const entries: ExploreEntry[] = [];
+    try {
+      let groupTitle = '';
+      for (const menu of await NativeSourceService.exploreMenus(source, this.http)) {
+        if (!menu.target) {
+          groupTitle = menu.title;
+          continue;
+        }
+        entries.push({
+          title: menu.title,
+          url: menu.target,
+          sourceUrl: source.bookSourceUrl,
+          sourceName: source.bookSourceName,
+          groupTitle: groupTitle
+        });
+      }
+      if (entries.length > 0) this.storeMenuCache(menuKey, entries);
+    } catch (e) {
+      this.noticeMessage = e instanceof Error ? e.message : '发现分类加载失败';
+      console.warn('[ExploreCoordinator] native menus failed:', source.bookSourceName, this.noticeMessage);
+    }
+    return entries;
+  }
+
+  private async exploreNative(source: BookSource, entry: ExploreEntry, page: number,
+    maxItems: number): Promise<SearchBook[]> {
+    try {
+      const found = await NativeSourceService.explore(source, this.http, entry.url, page);
+      const books: SearchBook[] = [];
+      for (const book of maxItems > 0 ? found.slice(0, Math.max(1, maxItems)) : found) {
+        this.sanitizeExploreBook(book);
+        if (!books.some((item: SearchBook): boolean => item.bookUrl === book.bookUrl)) books.push(book);
+      }
+      if (books.length === 0) this.noticeMessage = '发现接口已有响应，但列表规则未匹配到内容';
+      return books;
+    } catch (e) {
+      this.noticeMessage = e instanceof Error ? e.message : '发现解析异常';
+      console.warn('[ExploreCoordinator] native explore failed:', source.bookSourceName, this.noticeMessage);
+      return [];
+    }
   }
 
   private async parseExploreUrl(source: BookSource, platform: string = '',

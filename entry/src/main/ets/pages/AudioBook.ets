@@ -1,3 +1,4 @@
+import { NativeSourceService, NativeVoiceOption } from '../core/nativesource/NativeSourceService';
 import { router } from '@kit.ArkUI';
 import { common, WantAgent, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
@@ -92,6 +93,7 @@ struct AudioBookPage {
   @State viewportHeight: number = 720;
   private bookUrl: string = '';
   private source: BookSource | null = null;
+  private voiceListMode: boolean = false;
   private openedWithShelfAnimation: boolean = false;
   private openedFromShortcut: boolean = false;
   private shortcutReplacedPreviousPage: boolean = false;
@@ -376,9 +378,13 @@ struct AudioBookPage {
 
   openVoiceCodeDialog(): void {
     this.showVoiceDialog = true;
-    this.voiceDialogSession.open(this.getUIContext(), (): void => {
+    // 先定好用哪一个弹窗内容，构建函数里不再做分支。
+    const content: CustomBuilder = this.voiceListMode ? (): void => {
+      this.voiceListDialogContent();
+    } : (): void => {
       this.voiceCodeDialogContent();
-    }, {
+    };
+    this.voiceDialogSession.open(this.getUIContext(), content, {
       autoCancel: true,
       maskColor: ThemeRuntime.scrimColor(this.appDarkMode),
       warnTag: '显示音色代码弹窗失败:'
@@ -402,6 +408,55 @@ struct AudioBookPage {
         .onClick(() => this.openChapterList())
     }
     .width('100%')
+  }
+
+  /** 书源声明了音色列表时用列表选择，不需要用户记数字代码。 */
+  @Builder
+  voiceListDialogContent() {
+    Column({ space: AppSpacing.LG }) {
+      Text('听书音色')
+        .fontSize(AppFontSize.SUBTITLE)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(this.primaryTextColor())
+      Text('选择后从本章开头重新加载')
+        .fontSize(AppFontSize.BODY)
+        .fontColor(this.subTextColor())
+      List() {
+        ForEach(this.voiceChoices(), (voice: NativeVoiceOption) => {
+          ListItem() {
+            Row() {
+              Text(voice.name)
+                .fontSize(AppFontSize.BODY_LARGE)
+                .fontColor(voice.id === this.voiceCodeInput ? this.accentColor() : this.primaryTextColor())
+                .layoutWeight(1)
+              if (voice.id === this.voiceCodeInput) {
+                Text('当前')
+                  .fontSize(AppFontSize.CAPTION)
+                  .fontColor(this.accentColor())
+              }
+            }
+            .width('100%')
+            .height(46)
+            .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
+            .onClick(() => {
+              this.voiceCodeInput = voice.id;
+              this.saveVoiceCode();
+            })
+          }
+        }, (voice: NativeVoiceOption): string => voice.id || '__default__')
+      }
+      .width('100%')
+      .height(Math.min(368, this.voiceChoices().length * 46))
+      .scrollBar(BarState.Auto)
+      Button('取消')
+        .width('100%')
+        .backgroundColor(this.inputColor())
+        .fontColor(this.primaryTextColor())
+        .onClick(() => {
+          this.showVoiceDialog = false;
+        })
+    }
+    .padding(AppSpacing.XXL)
   }
 
   @Builder
@@ -1014,13 +1069,36 @@ struct AudioBookPage {
     this.statusText = '已停止听书';
   }
 
-  openVoiceDialog(): void {
+  async openVoiceDialog(): Promise<void> {
     this.voiceCodeInput = this.book?.getVariable('custom') || '';
+    // 听书会话可能在书源更新之前就已经打开（后台一直在播），这里重新读一次书源，
+    // 否则拿到的还是旧定义，看不到新声明的音色列表。
+    try {
+      const origin = this.book?.origin || '';
+      const latest = origin ? await AppDatabase.getInstance().getBookSource(origin) : null;
+      if (latest) this.source = latest;
+    } catch (e) {
+      console.warn('刷新书源失败:', e);
+    }
+    this.voiceListMode = this.sourceVoices().length > 0;
     this.openVoiceCodeDialog();
   }
 
+  sourceVoices(): NativeVoiceOption[] {
+    return NativeSourceService.voices(this.source);
+  }
+
+  /** 音色列表，最前面加一项「默认」（不指定音色）。 */
+  voiceChoices(): NativeVoiceOption[] {
+    const choices: NativeVoiceOption[] = [{ id: '', name: '默认' }];
+    return choices.concat(this.sourceVoices());
+  }
+
   currentVoiceCode(): string {
-    return this.book?.getVariable('custom') || '默认';
+    const code = this.book?.getVariable('custom') || '';
+    if (!code) return '默认';
+    const voice = this.sourceVoices().find((item: NativeVoiceOption): boolean => item.id === code);
+    return voice ? voice.name : code;
   }
 
   displayIntro(): string {

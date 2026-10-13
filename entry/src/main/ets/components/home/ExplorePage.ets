@@ -1422,9 +1422,14 @@ export struct ExplorePage {
     this.status = `正在切换${title}到 ${selection}...`;
     this.books = [];
     this.isLoading = true;
+    // 先把选中状态切过去，分类和内容随后刷新；失败时再还原。
+    const previousFilters = this.exploreFilters;
+    this.exploreFilters = previousFilters.map((filter: ExploreFilterGroup): ExploreFilterGroup =>
+      filter.title === title ? { title: filter.title, options: filter.options, selected: selection } : filter);
     const applied = await this.coordinator.applyExploreFilter(this.selectedSourceUrl, title, selection);
     this.isLoading = false;
     if (!applied) {
+      this.exploreFilters = previousFilters;
       this.status = `${title}切换失败`;
       return;
     }

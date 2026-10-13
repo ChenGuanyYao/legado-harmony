@@ -230,6 +230,21 @@ export class BookChapter {
   variable: string = '';
   cacheDate: number = 0;
 
+  /**
+   * 该章是某一卷的第一章时返回卷名，否则返回空串。
+   * 卷名记在 variable 里而不单独占一个章节位置，章节序号和阅读进度不受分卷影响。
+   */
+  static volumeTitleOf(chapter: BookChapter): string {
+    const variable = chapter ? chapter.variable : '';
+    if (!variable || variable.indexOf('"volume"') < 0) return '';
+    try {
+      const parsed = JSON.parse(variable) as Record<string, Object>;
+      return String(parsed['volume'] || '').trim();
+    } catch (e) {
+      return '';
+    }
+  }
+
   getDisplayTitle(replaceRules: ReplaceRule[], useReplace: boolean): string {
     if (!useReplace || !replaceRules || replaceRules.length === 0) {
       return this.title;
@@ -275,6 +290,8 @@ export class BookSource {
   searchUrl: string = '';
   exploreUrl: string = '';
   jsLib: string = '';
+  /** 规则格式：'native' 为原生书源，空串为兼容书源。由 jsLib 内容推导，不单独落库。 */
+  sourceFormat: string = '';
   header: string = '';
   bookListRule: BookListRule = new BookListRule();
   searchRule: SearchRule = new SearchRule();

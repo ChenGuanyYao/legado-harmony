@@ -59,6 +59,10 @@ export class ReadStatsBookMeta {
   coverUrl: string = '';
 }
 
+// 原生书源把定义存在 jsLib 里，并以这个键开头（见 NativeSourceSpec.pack）。
+const NATIVE_SOURCE_JSLIB_HEAD: string = '{"nativeSource":';
+const NATIVE_SOURCE_RULE_MARKER: string = 'native';
+
 export class AppDatabase {
   private static readonly BATCH_INSERT_CHUNK_SIZE: number = 400;
   private static instance: AppDatabase | null = null;
@@ -1392,11 +1396,14 @@ export class AppDatabase {
           bucket['isPinned'] = this.getLongColumn(resultSet, 'isPinned');
           source.isPinned = bucket['isPinned'] === 1;
           // 登录信息、脚本设置和运行时缓存属于用户状态，更新书源定义时不能被覆盖。
-          bucket['variable'] = this.getStringColumn(resultSet, 'variable');
+          // 同一地址的书源在原生与兼容格式之间替换时除外：两种格式的状态互不通用，沿用会带入对方的残留值。
+          const sameFormat = this.getStringColumn(resultSet, 'jsLib').startsWith(NATIVE_SOURCE_JSLIB_HEAD) ===
+            (source.jsLib || '').startsWith(NATIVE_SOURCE_JSLIB_HEAD);
+          bucket['variable'] = sameFormat ? this.getStringColumn(resultSet, 'variable') : '';
           source.variable = bucket['variable'] as string;
-          bucket['loginHeader'] = this.getStringColumn(resultSet, 'loginHeader');
+          bucket['loginHeader'] = sameFormat ? this.getStringColumn(resultSet, 'loginHeader') : '';
           source.loginHeader = bucket['loginHeader'] as string;
-          bucket['loginInfo'] = this.getStringColumn(resultSet, 'loginInfo');
+          bucket['loginInfo'] = sameFormat ? this.getStringColumn(resultSet, 'loginInfo') : '';
           source.loginInfo = bucket['loginInfo'] as string;
         }
       } finally {
@@ -1608,19 +1615,20 @@ export class AppDatabase {
   /** 列表只读取轻量字段；规则详情在实际使用时再按主键加载。 */
   async getBookSourceSummaries(): Promise<BookSource[]> {
     if (!this.store) return [];
-    const predicates = new relationalStore.RdbPredicates('book_sources');
-    predicates.orderByDesc('isPinned');
-    predicates.orderByAsc('customOrder');
     const columns = [
       'bookSourceUrl', 'bookSourceName', 'bookSourceGroup', 'loginUrl', 'loginUi',
       'loginCheckJs', 'loginHeader', 'exploreUrl', 'lastUpdateTime', 'customOrder', 'isPinned', 'enabled', 'enabledExplore', 'isLocked',
       'validationStatus'
     ];
-    const resultSet = await this.store.query(predicates, columns);
+    // 列表不加载完整 jsLib，只取开头一小段判断是否为原生书源。
+    const resultSet = await this.store.querySql(
+      `SELECT ${columns.join(', ')}, substr(jsLib, 1, ${NATIVE_SOURCE_JSLIB_HEAD.length}) AS jsLibHead ` +
+        'FROM book_sources ORDER BY isPinned DESC, customOrder ASC');
     const sources: BookSource[] = [];
     try {
       while (resultSet.goToNextRow()) {
         const source = new BookSource();
+        source.sourceFormat = this.getStringColumn(resultSet, 'jsLibHead') === NATIVE_SOURCE_JSLIB_HEAD ? 'native' : '';
         source.bookSourceUrl = resultSet.getString(resultSet.getColumnIndex('bookSourceUrl'));
         source.bookSourceName = resultSet.getString(resultSet.getColumnIndex('bookSourceName'));
         source.bookSourceGroup = resultSet.getString(resultSet.getColumnIndex('bookSourceGroup'));
@@ -1834,6 +1842,7 @@ export class AppDatabase {
     source.searchUrl = this.getStringColumn(resultSet, 'searchUrl');
     source.exploreUrl = this.getStringColumn(resultSet, 'exploreUrl');
     source.jsLib = this.getStringColumn(resultSet, 'jsLib');
+    source.sourceFormat = source.jsLib.startsWith(NATIVE_SOURCE_JSLIB_HEAD) ? 'native' : '';
     source.header = this.getStringColumn(resultSet, 'header');
     if (ruleScope === 'all') {
       try {
@@ -1867,6 +1876,18 @@ export class AppDatabase {
         source.contentRule.nextContentUrl = source.contentRule.nextContentUrl || '';
         source.contentRule.imageDecode = source.contentRule.imageDecode || '';
       } catch (e) {}
+    }
+    if (source.sourceFormat === 'native') {
+      if (source.searchUrl) {
+        source.searchRule.bookList = source.searchRule.bookList || NATIVE_SOURCE_RULE_MARKER;
+        source.searchRule.name = source.searchRule.name || NATIVE_SOURCE_RULE_MARKER;
+        source.searchRule.bookUrl = source.searchRule.bookUrl || NATIVE_SOURCE_RULE_MARKER;
+      }
+      if (source.exploreUrl) {
+        source.exploreRule.bookList = source.exploreRule.bookList || NATIVE_SOURCE_RULE_MARKER;
+        source.exploreRule.name = source.exploreRule.name || NATIVE_SOURCE_RULE_MARKER;
+        source.exploreRule.bookUrl = source.exploreRule.bookUrl || NATIVE_SOURCE_RULE_MARKER;
+      }
     }
     source.variableComment = this.getStringColumn(resultSet, 'variableComment');
     source.variable = this.getStringColumn(resultSet, 'variable');

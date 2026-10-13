@@ -1,3 +1,4 @@
+import { NativeSourceService } from '../nativesource/NativeSourceService';
 import { BookSource, SearchBook } from '../../model/data/Book';
 import { appDb } from '../../model/data/AppDatabase';
 import { HttpClient, HttpResponse } from '../http/HttpClient';
@@ -85,7 +86,7 @@ export interface SearchOptions {
   maxResultsPerSource?: number;
   maxTotalResults?: number;
   /**
-   * Caps novels, comics and audiobooks separately instead of sharing maxTotalResults, so the many
+   * Caps each media type (novel, comic, audio, video) separately instead of sharing maxTotalResults, so the many
    * fast novel sources cannot use up the budget before a comic or audio source answers.
    * stopAfterResults is ignored in this mode: the search ends early only once every type is full.
    */
@@ -317,7 +318,7 @@ export class SearchCoordinator {
       if (stopped()) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
       }
-      if (options.validationOnly === true) {
+      if (options.validationOnly === true && !NativeSourceService.isNative(source)) {
         const compatibilityIssue = this.validationCompatibilityIssue(source);
         if (compatibilityIssue) {
           AppStorage.setOrCreate('searchLastSourceError',
@@ -332,6 +333,12 @@ export class SearchCoordinator {
         MAX_RESULTS_PER_SOURCE, 1, MAX_RESULTS_PER_SOURCE);
       if (stopped()) {
         return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
+      }
+      if (NativeSourceService.isNative(source)) {
+        const nativeResult = await this.searchNative(source, keyword, options, responseLimit, resultLimit, stopped);
+        debugPassed = nativeResult.books.length > 0;
+        debugError = debugPassed ? '' : nativeResult.reason;
+        return nativeResult;
       }
       if (!source.searchUrl || !source.searchRule?.bookList || !source.searchRule?.name || !source.searchRule?.bookUrl) {
         if (ENABLE_SEARCH_DEBUG_LOG) {
@@ -612,6 +619,39 @@ export class SearchCoordinator {
     } finally {
       if (debugContext) debugContext.finishStep(debugPassed ? 'passed' : 'failed', debugError);
     }
+  }
+
+  /** 原生书源的搜索：不经过脚本引擎，结果仍走统一的精确匹配、去重与字段清洗。 */
+  private async searchNative(source: BookSource, keyword: string, options: SearchOptions,
+    responseLimit: number, resultLimit: number, stopped: () => boolean): Promise<SearchSourceResult> {
+    if (!source.searchUrl) return this.sourceResult([], BookSource.VALIDATION_FAILED, '该书源没有配置搜索');
+    let found: SearchBook[] = [];
+    try {
+      found = await NativeSourceService.search(source, this.http, keyword, stopped, responseLimit);
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      return this.sourceResult([], /请求失败|空响应|已取消/.test(reason) ?
+        BookSource.VALIDATION_TEMPORARY_ERROR : BookSource.VALIDATION_FAILED, reason || '搜索过程中发生异常');
+    }
+    if (stopped()) return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, '校验已取消');
+    const normalizedKeyword = this.normalizeSearchText(keyword);
+    const books: SearchBook[] = [];
+    const seen = new Set<string>();
+    for (const book of found) {
+      if (options.exactMatch && !this.matchesExactSearch(this.normalizeSearchText(book.name),
+        this.normalizeSearchText(book.author), normalizedKeyword, options)) {
+        continue;
+      }
+      if (seen.has(book.bookUrl)) continue;
+      seen.add(book.bookUrl);
+      if (options.leanResult) this.stripLeanFieldValues(book);
+      this.sanitizeSearchBook(book);
+      book.mediaCategory = BookTypeSupport.mediaCategoryOf(book);
+      books.push(book);
+      if (books.length >= resultLimit) break;
+    }
+    return books.length > 0 ? this.sourceResult(books, BookSource.VALIDATION_PASSED, '') :
+      this.sourceResult([], BookSource.VALIDATION_NO_RESULTS, '未搜索到结果');
   }
 
   private sourceResult(books: SearchBook[], validationStatus: number, reason: string): SearchSourceResult {

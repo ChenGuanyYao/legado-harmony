@@ -29,6 +29,7 @@ import { BookSourceMetadataSupport } from './BookSourceMetadataSupport';
 import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
 import { BookSourceDebugContext } from './BookSourceDebugModels';
 import { LogText } from '../../utils/LogText';
+import { NativeSourceService } from '../nativesource/NativeSourceService';
 
 class ContentPageData {
   content: string = '';
@@ -57,6 +58,16 @@ export class WebBookService {
 
   async getBookInfo(source: BookSource, book: Book,
     debugContext: BookSourceDebugContext | null = null): Promise<Book> {
+    if (NativeSourceService.isNative(source)) {
+      // 原生书源不经过脚本引擎，也不套用兼容书源的各类兜底修补。
+      try {
+        return await NativeSourceService.getBookInfo(source, this.http, book);
+      } catch (e) {
+        console.warn('[WS] native book info failed:', source.bookSourceName, (e as Error).message);
+        AppStorage.setOrCreate('bookSourceStageLastError', (e as Error).message || '详情解析失败');
+        return book;
+      }
+    }
     // Imported rules may build the virtual detail URL while the field batch is still executing.
     // Preserve its request data and bridge the SearchBook identity that is already known.
     book.bookUrl = EncodedSourceUrl.repairBookName(book.bookUrl, book.name, 'details');
@@ -275,6 +286,20 @@ export class WebBookService {
     allowGenericFallback: boolean = true,
     debugContext: BookSourceDebugContext | null = null): Promise<BookChapter[]> {
     AppStorage.setOrCreate('bookSourceStageLastError', '');
+    if (NativeSourceService.isNative(source)) {
+      try {
+        const nativeChapters = await NativeSourceService.getChapterList(source, this.http, book,
+          maxChapters > 0 ? Math.max(1, Math.round(maxChapters)) : 0);
+        if (nativeChapters.length === 0) {
+          AppStorage.setOrCreate('bookSourceStageLastError', '目录规则没有匹配到章节');
+        }
+        return nativeChapters;
+      } catch (e) {
+        console.warn('[WS] native chapter list failed:', source.bookSourceName, (e as Error).message);
+        AppStorage.setOrCreate('bookSourceStageLastError', (e as Error).message || '目录解析失败');
+        return [];
+      }
+    }
     BookSourceMetadataSupport.applyBook(source, book, [book.bookUrl, book.tocUrl]);
     const chapterLimit = maxChapters > 0 ? Math.max(1, Math.round(maxChapters)) : 0;
     if (BookSourceDataUrlSupport.isEncodedSource(book.tocUrl) || BookSourceDataUrlSupport.isEncodedSource(book.bookUrl)) {
@@ -588,6 +613,9 @@ export class WebBookService {
   async getContent(source: BookSource, book: Book, chapter: BookChapter,
     shouldCancel: (() => boolean) | null = null,
     debugContext: BookSourceDebugContext | null = null): Promise<string> {
+    if (NativeSourceService.isNative(source)) {
+      return await this.getNativeContent(source, book, chapter, shouldCancel);
+    }
     // `ruleContent.audioUrl` is the dedicated media-address rule of an audio source. It takes
     // precedence over `content`, which remains the fallback when it yields nothing.
     const audioUrlRule = this.isAudioContent(source, book) ? (source.contentRule.audioUrl || '').trim() : '';
@@ -600,6 +628,27 @@ export class WebBookService {
       }
     }
     return await this.getContentWithRules(source, book, chapter, shouldCancel, debugContext);
+  }
+
+  private async getNativeContent(source: BookSource, book: Book, chapter: BookChapter,
+    shouldCancel: (() => boolean) | null): Promise<string> {
+    AppStorage.setOrCreate('bookSourceStageLastError', '');
+    try {
+      const result = await NativeSourceService.getContent(source, this.http, book, chapter,
+        (): boolean => this.contentRequestCanceled(shouldCancel));
+      if (this.contentRequestCanceled(shouldCancel)) return '';
+      if (result.kind === 'audio' || result.kind === 'video') return result.text.trim();
+      if (!result.text.trim()) {
+        AppStorage.setOrCreate('bookSourceStageLastError', '正文规则没有取到内容');
+        return '';
+      }
+      return await this.normalizeReaderContent(source, result.text,
+        result.baseUrl || chapter.url || book.bookUrl || source.bookSourceUrl);
+    } catch (e) {
+      console.warn('[WS] native content failed:', source.bookSourceName, (e as Error).message);
+      AppStorage.setOrCreate('bookSourceStageLastError', (e as Error).message || '正文解析失败');
+      return '';
+    }
   }
 
   private isAudioContent(source: BookSource, book: Book): boolean {

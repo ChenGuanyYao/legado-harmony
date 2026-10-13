@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { router } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
@@ -11,9 +12,14 @@ struct HelpPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
   private webController: webview.WebviewController = new webview.WebviewController();
+  /** 打开后要滚动到的小节 id，由调用方通过 anchor 参数传入。 */
+  private anchor: string = '';
 
   aboutToAppear(): void {
     this.syncBars();
+    const params = router.getParams() as Record<string, string> | undefined;
+    const anchor = params && typeof params['anchor'] === 'string' ? params['anchor'] : '';
+    this.anchor = /^[A-Za-z0-9_-]+$/.test(anchor) ? anchor : '';
   }
 
   onPageShow(): void {
@@ -43,6 +49,14 @@ struct HelpPage {
       .darkMode(this.appDarkMode ? WebDarkMode.On : WebDarkMode.Off)
       .forceDarkAccess(false)
       .backgroundColor(this.pageColor())
+      .onPageEnd(() => {
+        if (!this.anchor) return;
+        this.webController.runJavaScript(
+          `(function(){var e=document.getElementById('${this.anchor}');if(e){e.scrollIntoView();}})()`)
+          .catch((error: Error) => {
+            console.warn('定位说明书小节失败:', error.message);
+          });
+      })
       .onLoadIntercept((event) => {
         const url = event?.data?.getRequestUrl() || '';
         if (url.startsWith('http://') || url.startsWith('https://')) {
