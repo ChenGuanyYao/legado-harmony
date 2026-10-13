@@ -6,6 +6,10 @@ export class BookTypeSupport {
   static readonly AUDIO: number = 32;
   static readonly IMAGE: number = 64;
   static readonly WEB_FILE: number = 128;
+  static readonly CATEGORY_NOVEL: string = 'novel';
+  static readonly CATEGORY_COMIC: string = 'comic';
+  static readonly CATEGORY_AUDIO: string = 'audio';
+  static readonly MEDIA_CATEGORIES: string[] = ['novel', 'comic', 'audio'];
 
   static typeFromSource(source: BookSource | null): number {
     if (!source) return 0;
@@ -61,6 +65,14 @@ export class BookTypeSupport {
     if ((Number(book.type) & this.IMAGE) !== 0) return true;
     return this.typeFromVariable(book.variable) === this.IMAGE ||
       this.typeFromIdentity(book.originName, book.kind) === this.IMAGE;
+  }
+
+  /** Media bucket a book is listed under. Anything that is neither audio nor comic reads as a novel. */
+  static mediaCategoryOf(book: Book | SearchBook | null): string {
+    if (book instanceof SearchBook && book.mediaCategory) return book.mediaCategory;
+    if (this.isAudio(book)) return this.CATEGORY_AUDIO;
+    if (this.isImage(book)) return this.CATEGORY_COMIC;
+    return this.CATEGORY_NOVEL;
   }
 
   static typeFromVariable(variable: string): number {

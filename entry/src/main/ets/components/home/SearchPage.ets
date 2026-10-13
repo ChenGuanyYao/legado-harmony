@@ -10,11 +10,22 @@ import { HdsFeedback } from '../../utils/HdsFeedback';
 import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
 import { SearchExploreSettings, SearchExploreSettingsStore } from '../../utils/SearchExploreSettingsStore';
 import { SearchResultAggregationStore } from '../../utils/SearchResultAggregationStore';
+import { BookTypeSupport } from '../../core/book/BookTypeSupport';
 import { AppThemeSettingsStore } from '../../utils/AppThemeSettingsStore';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { AdaptiveSwitch } from '../AdaptiveSwitch';
 import { AppFontSize } from '../../theme/AppFontSize';
 import { AppSpacing } from '../../theme/AppSpacing';
+
+const SEARCH_CATEGORY_ALL = 'all';
+// 小说、漫画、有声各自的结果上限，互不挤占。
+const SEARCH_RESULTS_PER_CATEGORY = 150;
+
+class SearchCategoryChip {
+  key: string = '';
+  label: string = '';
+  count: number = 0;
+}
 
 /** 首页"搜索"页签：搜索输入、历史、多源搜索进度与结果。 */
 @Component
@@ -25,6 +36,8 @@ export struct SearchPage {
   @State keyword: string = '';
   @State searchResults: SearchBook[] = [];
   @State displayedSearchResults: SearchBook[] = [];
+  // 与 BookTypeSupport.MEDIA_CATEGORIES 同序：小说、漫画、有声。
+  @State searchCategoryCounts: number[] = [0, 0, 0];
   @State shelfBookKeys: string[] = [];
   @State addingShelfBookKeys: string[] = [];
   @State isSearching: boolean = false;
@@ -52,6 +65,7 @@ export struct SearchPage {
   @StorageLink('searchExploreShowResultTags') searchExploreShowResultTags: boolean = true;
   @StorageLink('searchExploreAggregateResults') @Watch('onSearchAggregationChanged')
   searchExploreAggregateResults: boolean = true;
+  @StorageLink('searchResultCategory') searchResultCategory: string = SEARCH_CATEGORY_ALL;
   @StorageLink('searchExplorePromptAddToShelfOnBack') searchExplorePromptAddToShelfOnBack: boolean = true;
   @StorageLink('searchExploreExactSearch') exactSearch: boolean = false;
   @StorageLink('searchExploreExactSearchMatchAuthor') exactSearchMatchAuthor: boolean = true;
@@ -139,8 +153,59 @@ export struct SearchPage {
 
   applySearchResultsSnapshot(books: SearchBook[]): void {
     this.searchResults = books;
+    const counts = SearchResultAggregationStore.countByCategory(books);
+    this.searchCategoryCounts = BookTypeSupport.MEDIA_CATEGORIES.map((category: string): number =>
+      counts.get(category) || 0);
+    const visible = SearchResultAggregationStore.filterByCategory(books, this.effectiveSearchCategory());
     this.displayedSearchResults = this.searchExploreAggregateResults ?
-      SearchResultAggregationStore.aggregate(books) : books.slice();
+      SearchResultAggregationStore.aggregate(visible) : visible.slice();
+  }
+
+  searchCategoryCount(category: string): number {
+    const index = BookTypeSupport.MEDIA_CATEGORIES.indexOf(category);
+    return index >= 0 ? (this.searchCategoryCounts[index] || 0) : this.searchResults.length;
+  }
+
+  // 记住的分段在本次搜索里没有结果时，搜索结束后按"全部"展示，但不改写用户的选择。
+  effectiveSearchCategory(): string {
+    const selected = this.searchResultCategory;
+    if (!BookTypeSupport.MEDIA_CATEGORIES.includes(selected)) return SEARCH_CATEGORY_ALL;
+    if (!this.isSearching && this.searchCategoryCount(selected) === 0) return SEARCH_CATEGORY_ALL;
+    return selected;
+  }
+
+  searchCategoryChips(): SearchCategoryChip[] {
+    const labels: string[] = ['小说', '漫画', '有声'];
+    const effective = this.effectiveSearchCategory();
+    const chips: SearchCategoryChip[] = [];
+    BookTypeSupport.MEDIA_CATEGORIES.forEach((category: string, index: number): void => {
+      const count = this.searchCategoryCount(category);
+      if (count === 0 && category !== effective) return;
+      const chip = new SearchCategoryChip();
+      chip.key = category;
+      chip.label = labels[index];
+      chip.count = count;
+      chips.push(chip);
+    });
+    // 只有一种类型且未筛选时，分段栏没有可切换的内容。
+    if (chips.length < 2 && effective === SEARCH_CATEGORY_ALL) return [];
+    const all = new SearchCategoryChip();
+    all.key = SEARCH_CATEGORY_ALL;
+    all.label = '全部';
+    all.count = this.searchResults.length;
+    chips.unshift(all);
+    return chips;
+  }
+
+  showSearchCategoryBar(): boolean {
+    return this.showResult && this.searchResults.length > 0 && this.searchCategoryChips().length > 0;
+  }
+
+  selectSearchCategory(category: string): void {
+    if (category === this.effectiveSearchCategory()) return;
+    this.searchResultCategory = category;
+    this.applySearchResultsSnapshot(this.searchResults);
+    this.searchResultScroller.scrollToIndex(0);
   }
 
   openSearchBookOrGroup(book: SearchBook): void {
@@ -389,6 +454,7 @@ export struct SearchPage {
     this.isSearching = false;
     this.searchResults = [];
     this.displayedSearchResults = [];
+    this.searchCategoryCounts = [0, 0, 0];
     this.searchResultKeySet.clear();
     this.showResult = false;
     this.statusMessage = '';
@@ -442,6 +508,7 @@ export struct SearchPage {
                 this.coordinator?.cancel();
                 this.coordinator = null;
                 this.isSearching = false;
+                this.applySearchResultsSnapshot(this.searchResults);
                 this.statusMessage = '搜索已停止';
               } else {
                 this.showSearchHistoryDropdown = false;
@@ -508,6 +575,10 @@ export struct SearchPage {
           .backgroundColor(this.statusMessageColor())
           .alignItems(VerticalAlign.Center)
         }
+
+        if (this.showSearchCategoryBar()) {
+          this.searchCategoryBar()
+        }
         }
         .width('100%')
         .position({ x: 0, y: 0 })
@@ -561,7 +632,7 @@ export struct SearchPage {
           .justifyContent(FlexAlign.Center)
         } else if (this.showResult && this.displayedSearchResults.length === 0) {
           Column() {
-            Text('未找到相关书籍')
+            Text(this.searchResults.length > 0 ? '该类型下没有结果' : '未找到相关书籍')
               .fontSize(AppFontSize.BODY_LARGE)
               .fontColor(this.subTextColor())
           }
@@ -609,6 +680,30 @@ export struct SearchPage {
       }
     })
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  searchCategoryBar() {
+    Row({ space: AppSpacing.MD }) {
+      ForEach(this.searchCategoryChips(), (chip: SearchCategoryChip) => {
+        Text(`${chip.label} ${chip.count}`)
+          .fontSize(AppFontSize.BODY)
+          .fontColor(chip.key === this.effectiveSearchCategory() ?
+            ThemeRuntime.onAccentColor() : this.secondaryTextColor())
+          .height(30)
+          .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
+          .borderRadius(15)
+          .backgroundColor(chip.key === this.effectiveSearchCategory() ?
+            this.buttonColor() : this.buttonBackgroundColor())
+          .textAlign(TextAlign.Center)
+          .onClick(() => this.selectSearchCategory(chip.key))
+      }, (chip: SearchCategoryChip) =>
+        `${chip.key}:${chip.count}:${chip.key === this.effectiveSearchCategory() ? 1 : 0}`)
+    }
+    .width('100%')
+    .height(40)
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
+    .alignItems(VerticalAlign.Center)
   }
 
   @Builder
@@ -985,6 +1080,7 @@ export struct SearchPage {
     this.singleSourceSearchName = '';
     this.searchResults = [];
     this.displayedSearchResults = [];
+    this.searchCategoryCounts = [0, 0, 0];
     this.searchResultKeySet.clear();
     this.showResult = false;
     this.statusMessage = '';
@@ -1030,6 +1126,7 @@ export struct SearchPage {
       this.showResult = true;
       this.searchResults = [];
       this.displayedSearchResults = [];
+      this.searchCategoryCounts = [0, 0, 0];
       this.searchResultKeySet.clear();
       this.statusMessage = targetSources.length === 1 ?
         `正在通过 ${this.singleSourceSearchName || targetSources[0].bookSourceName} 搜索...` :
@@ -1067,13 +1164,16 @@ export struct SearchPage {
         }
         if (p.finished) {
           this.isSearching = false;
+          // 结束后分段的回退规则生效，按最终状态重排一次。
+          this.applySearchResultsSnapshot(this.searchResults);
         }
       };
 
       const allBooks = await coordinator.search(keyword, callback, {
         exactMatch: this.exactSearch,
         exactMatchAuthor: this.exactSearchMatchAuthor,
-        targetSources: targetSources
+        targetSources: targetSources,
+        maxResultsPerCategory: SEARCH_RESULTS_PER_CATEGORY
       });
       if (sessionId !== this.searchSessionId || this.coordinator !== coordinator) {
         return;
@@ -1081,9 +1181,11 @@ export struct SearchPage {
       const verifyUrl = this.verificationUrl || AppStorage.get<string>('pendingVerificationUrl') || '';
       if (!this.showSearchProgress || !this.isSearching) {
         const failureReason = coordinator.getLastFailureReason();
+        const groupCount = this.searchExploreAggregateResults ?
+          SearchResultAggregationStore.aggregate(allBooks).length : allBooks.length;
         const resultText = allBooks.length > 0 ?
-          (this.searchExploreAggregateResults && this.displayedSearchResults.length < allBooks.length ?
-            `搜索完成，共找到 ${allBooks.length} 个结果，聚合为 ${this.displayedSearchResults.length} 组` :
+          (groupCount < allBooks.length ?
+            `搜索完成，共找到 ${allBooks.length} 个结果，聚合为 ${groupCount} 组` :
             `搜索完成，共找到 ${allBooks.length} 本书`) :
           (failureReason ? `搜索完成：${failureReason}` : '搜索完成，未找到相关书籍');
         this.statusMessage = verifyUrl ? `${resultText}；有书源需要网页验证` : resultText;
@@ -1524,6 +1626,9 @@ export struct SearchPage {
   searchTopOverlayHeight(): number {
     let height = this.statusBarHeight + 98;
     if (this.statusMessage) {
+      height += 40;
+    }
+    if (this.showSearchCategoryBar()) {
       height += 40;
     }
     return height;

@@ -3,6 +3,7 @@ import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { BookDisplayHelper } from '../../utils/BookDisplayHelper';
 import { CoverGallerySettings } from '../../utils/CoverGallerySettings';
 import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
+import { BookTypeSupport } from '../../core/book/BookTypeSupport';
 import deviceInfo from '@ohos.deviceInfo';
 import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
@@ -175,12 +176,26 @@ export struct SearchBookResultList {
       }
 
       Column() {
-        Text(this.safeText(book.name, '未知书名'))
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor)
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Row({ space: AppSpacing.SM }) {
+          Text(this.safeText(book.name, '未知书名'))
+            .fontSize(AppFontSize.BODY_LARGE)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.primaryTextColor)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .flexShrink(1)
+
+          if (this.mediaBadge(book)) {
+            Text(this.mediaBadge(book))
+              .fontSize(AppFontSize.CAPTION)
+              .fontColor(this.accentColor())
+              .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: 1, bottom: 1 })
+              .border({ width: 1, color: this.accentColor() })
+              .borderRadius(ThemeRuntime.mediumRadius())
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
 
         Text(this.safeText(book.author, '作者未知'))
           .fontSize(AppFontSize.BODY)
@@ -327,6 +342,14 @@ export struct SearchBookResultList {
     .justifyContent(FlexAlign.Center)
   }
 
+
+  // 小说是默认类型，不加角标。
+  mediaBadge(book: SearchBook): string {
+    const category = BookTypeSupport.mediaCategoryOf(book);
+    if (category === BookTypeSupport.CATEGORY_COMIC) return '漫画';
+    if (category === BookTypeSupport.CATEGORY_AUDIO) return '有声';
+    return '';
+  }
 
   sourceLine(book: SearchBook): string {
     if (book.aggregationCount > 1) {

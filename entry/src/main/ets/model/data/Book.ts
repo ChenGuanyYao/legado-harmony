@@ -463,6 +463,8 @@ export class SearchBook {
   /** Transient search-list metadata; never participates in source rule execution or persistence. */
   aggregationKey: string = '';
   aggregationCount: number = 1;
+  /** novel / comic / audio, resolved once when the result is parsed; empty until then. */
+  mediaCategory: string = '';
 }
 
 export class SearchKeyword {

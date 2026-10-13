@@ -84,6 +84,12 @@ export interface SearchOptions {
   excludeSourceUrls?: string[];
   maxResultsPerSource?: number;
   maxTotalResults?: number;
+  /**
+   * Caps novels, comics and audiobooks separately instead of sharing maxTotalResults, so the many
+   * fast novel sources cannot use up the budget before a comic or audio source answers.
+   * stopAfterResults is ignored in this mode: the search ends early only once every type is full.
+   */
+  maxResultsPerCategory?: number;
   stopAfterResults?: number;
   maxCandidatesPerSource?: number;
   debugContext?: BookSourceDebugContext;
@@ -178,6 +184,17 @@ export class SearchCoordinator {
       MAX_TOTAL_SEARCH_RESULTS, 1, MAX_TOTAL_SEARCH_RESULTS);
     const stopAfterResults = validationOnly ? 0 : this.normalizedLimit(options.stopAfterResults,
       totalResultLimit, 1, totalResultLimit);
+    const categoryLimit = validationOnly || options.maxResultsPerCategory === undefined ? 0 :
+      this.normalizedLimit(options.maxResultsPerCategory, MAX_TOTAL_SEARCH_RESULTS, 1, MAX_TOTAL_SEARCH_RESULTS);
+    const categoryCounts = new Map<string, number>();
+    const resultBudgetSpent = (): boolean => {
+      if (validationOnly) return false;
+      if (categoryLimit > 0) {
+        return BookTypeSupport.MEDIA_CATEGORIES.every((category: string): boolean =>
+          (categoryCounts.get(category) || 0) >= categoryLimit);
+      }
+      return stopAfterResults > 0 && all.length >= stopAfterResults;
+    };
     const effectiveConcurrency = validationOnly ? Math.min(this.concurrency, MAX_VALIDATION_CONCURRENCY) : this.concurrency;
     const workerCount = Math.min(effectiveConcurrency, sources.length);
 
@@ -210,7 +227,7 @@ export class SearchCoordinator {
 
     const runWorker = async (): Promise<void> => {
       while (!this.cancelled) {
-        if (!validationOnly && stopAfterResults > 0 && all.length >= stopAfterResults) break;
+        if (resultBudgetSpent()) break;
         const sourceIndex = nextIndex;
         nextIndex++;
         if (sourceIndex >= sources.length) break;
@@ -232,8 +249,10 @@ export class SearchCoordinator {
           }
         }
         const remainingCapacity = Math.max(0, totalResultLimit - all.length);
-        const displayBooks = validationOnly ? [] :
-          this.filterSearchResults(books, keyword, options).slice(0, remainingCapacity);
+        const matchedBooks = validationOnly ? [] : this.filterSearchResults(books, keyword, options);
+        const displayBooks = categoryLimit > 0 ?
+          this.takeWithinCategoryLimit(matchedBooks, categoryLimit, categoryCounts) :
+          matchedBooks.slice(0, remainingCapacity);
 
         done++;
         if (!validationOnly) {
@@ -552,6 +571,7 @@ export class SearchCoordinator {
 
         if (options.leanResult) this.stripLeanFieldValues(book);
         this.sanitizeSearchBook(book);
+        book.mediaCategory = BookTypeSupport.mediaCategoryOf(book);
         const bookKey = `${book.origin || ''}::${book.bookUrl || ''}`;
         if (book.name && book.bookUrl && !seenBookKeys.has(bookKey)) {
           seenBookKeys.add(bookKey);
@@ -732,6 +752,19 @@ export class SearchCoordinator {
     book.wordCount = '';
     book.updateTime = '';
     book.bookSourceComment = '';
+  }
+
+  /** Keeps the books whose media type still has room and counts them against that type. */
+  private takeWithinCategoryLimit(books: SearchBook[], limit: number, counts: Map<string, number>): SearchBook[] {
+    const kept: SearchBook[] = [];
+    for (const book of books) {
+      const category = BookTypeSupport.mediaCategoryOf(book);
+      const count = counts.get(category) || 0;
+      if (count >= limit) continue;
+      counts.set(category, count + 1);
+      kept.push(book);
+    }
+    return kept;
   }
 
   private normalizedLimit(value: number | undefined, fallback: number, minimum: number, maximum: number): number {

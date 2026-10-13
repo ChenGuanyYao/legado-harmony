@@ -1,4 +1,5 @@
 import { SearchBook } from '../model/data/Book';
+import { BookTypeSupport } from '../core/book/BookTypeSupport';
 
 export class SearchResultGroupSnapshot {
   token: string = '';
@@ -68,8 +69,25 @@ export class SearchResultAggregationStore {
 
   static keyOf(book: SearchBook): string {
     const title = SearchResultAggregationStore.normalizeTitle(book.name);
-    if (title) return `title:${title}`;
+    // A novel, its comic and its audiobook share a title but are different things to open, so
+    // they never fold into one group.
+    if (title) return `title:${BookTypeSupport.mediaCategoryOf(book)}:${title}`;
     return `item:${book.origin || ''}::${book.bookUrl || ''}`;
+  }
+
+  /** `category` is one of BookTypeSupport.MEDIA_CATEGORIES; anything else keeps every result. */
+  static filterByCategory(books: SearchBook[], category: string): SearchBook[] {
+    if (!BookTypeSupport.MEDIA_CATEGORIES.includes(category)) return books;
+    return books.filter((book: SearchBook): boolean => BookTypeSupport.mediaCategoryOf(book) === category);
+  }
+
+  static countByCategory(books: SearchBook[]): Map<string, number> {
+    const counts: Map<string, number> = new Map();
+    for (const book of books) {
+      const category = BookTypeSupport.mediaCategoryOf(book);
+      counts.set(category, (counts.get(category) || 0) + 1);
+    }
+    return counts;
   }
 
   private static normalizeTitle(value: string): string {
@@ -101,6 +119,7 @@ export class SearchResultAggregationStore {
     target.weight = source.weight || 0;
     target.aggregationKey = source.aggregationKey || '';
     target.aggregationCount = Math.max(1, source.aggregationCount || 1);
+    target.mediaCategory = source.mediaCategory || '';
     return target;
   }
 }
