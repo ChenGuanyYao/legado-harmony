@@ -12,12 +12,504 @@
 > [!IMPORTANT]
 > 示例只使用 `example.com`、本地测试服务和虚构数据。请勿向公共仓库提交真实站点的私有接口、账号、Cookie、Token、设备标识或未获授权的内容规则。
 
+## 两种书源格式
+
+应用同时支持两种书源，一条书源只能是其中一种：
+
+| | 原生书源 | 兼容书源 |
+| --- | --- | --- |
+| 状态 | **推荐**，新书源请用这种格式 | **已过时**，仅为存量书源保留 |
+| 来历 | 开源轻页自己定义 | Android「阅读」（Legado）的书源格式 |
+| 规则语言 | 声明式规则、自定表达式语言与函数库 | 选择器规则加 JavaScript |
+| 执行方式 | ArkTS 原生执行，不经过任何脚本引擎 | 轻量解释器、ArkWeb、QuickJS 分层执行 |
+| 识别方式 | JSON 里带 `"sourceFormat": "native"` | 其余情况 |
+| 文档位置 | [第一部分](#第一部分原生书源) | [第二部分](#第二部分兼容书源已过时) |
+
+两种书源在搜索、发现、书架、阅读里混用，用户不需要区分；书源管理页可以按类型筛选。
+
 ## 阅读路线
 
-- **第一次编写书源**：从[快速入门](#快速入门)开始，再阅读[数据格式与请求](#数据格式与请求)、[规则语法](#规则语法)和[各阶段规则](#各阶段规则)。
-- **迁移 Android 阅读书源**：重点阅读 [JavaScript 兼容层](#javascript-兼容层)、[登录与网页验证](#登录cookie-与网页验证)和[兼容性与迁移](#兼容性与迁移)。
-- **定位运行问题**：直接查看[开发与验证](#开发与验证)中的验收清单、故障表和批量校验状态。
-- **扩展应用能力**：从[实现索引](#实现索引)进入对应 ArkTS 模块。
+- **新写一个书源**：读[第一部分](#第一部分原生书源)，从[最小示例](#最小示例)开始，再看[值的三种写法](#值的三种写法)、[表达式语言](#表达式语言)和[各阶段](#各阶段)。
+- **把现有的 JavaScript 书源改写成原生书源**：先看[与兼容书源的差异](#与兼容书源的差异)，确认用到的能力都有对应写法；自定义算法看[函数库](#函数库-lib)。
+- **维护存量的兼容书源**：读[第二部分](#第二部分兼容书源已过时)，从[快速入门](#快速入门)开始；迁移 Android 阅读书源重点看 [JavaScript 兼容层](#javascript-兼容层)、[登录与网页验证](#登录cookie-与网页验证)和[兼容性与迁移](#兼容性与迁移)。
+- **定位运行问题**：兼容书源看[开发与验证](#开发与验证)中的验收清单、故障表和批量校验状态；原生书源看[已知限制](#已知限制)和[实现与验证](#实现与验证)。
+- **扩展应用能力**：原生书源从[实现与验证](#实现与验证)、兼容书源从[实现索引](#实现索引)进入对应 ArkTS 模块。
+
+---
+
+# 第一部分：原生书源
+
+原生书源是开源轻页自己定义的书源格式，**不执行 JavaScript**。请求地址、字段整理、条件判断都用声明式规则和一门自定的表达式语言完成；签名、解密这类算法可以用同一套语法写成函数库。全部由 ArkTS 原生执行，不经过轻量解释器、ArkWeb 阶段运行时或 QuickJS。
+
+## 在应用里的位置
+
+- **书源管理**：顶部可按「全部 / 原生 / 兼容」筛选，列表里每条书源带类型角标。搜索范围、发现页、校验对两种书源一视同仁。
+- **导入**：自动识别。JSON 里带 `"sourceFormat": "native"` 的按原生书源处理，其余按兼容书源处理。原生书源在导入时做整份校验，表达式写错、混入 `@js:` 或 `<js>` 都会当场报出原因。
+- **新建与修改**：新建菜单里选「新建原生书源」。编辑页直接编辑定义的 JSON，带「校验」按钮，保存前必须通过校验。
+- **书源设置**：书源操作菜单里的「书源设置」，集中放书源变量和账号登录。
+- **导出**：导出的就是带 `sourceFormat` 的定义本身，可以直接再导入。
+
+## 媒体类型
+
+书源顶层的 `type` 给出默认类型，搜索、发现、详情的 `fields.type` 可以逐本覆盖。
+
+| 类型 | 用于 | 打开后进入 | 正文阶段取的规则 |
+|---|---|---|---|
+| `text` | 小说等文字内容 | 阅读器 | `content.text` |
+| `audio` | 有声书 | 听书页 | `content.audio` |
+| `comic` | 漫画 | 阅读器的漫画形态 | `content.images` |
+| `video` | 短剧等视频 | 应用自带的播放页 | `content.video` |
+
+视频类型没有阅读形态：详情页显示为「剧集详情 / 选集 / 开始观看」，点「开始观看」或从书架打开都直接进入播放页。播放页全屏播放，可在页内选集、上一集和下一集、连播、调倍速、拖动进度，并记住看到第几集第几秒。
+
+## 最小示例
+
+```json
+{
+  "sourceFormat": "native",
+  "version": 1,
+  "name": "示例书源",
+  "url": "https://api.example.com",
+  "search": {
+    "url": "{{source.url}}/search?q={{urlencode(key)}}&page={{page}}",
+    "list": "$.data.list[*]",
+    "fields": {
+      "name": "$.name",
+      "author": "$.author",
+      "bookUrl": "{{source.url}}/book/{{$.id}}"
+    }
+  },
+  "detail": {
+    "fields": {
+      "intro": "$.data.intro",
+      "tocUrl": "{{source.url}}/book/{{$.data.id}}/chapters"
+    }
+  },
+  "toc": {
+    "list": "$.data[*]",
+    "fields": { "title": "$.title", "url": "{{source.url}}/chapter/{{$.id}}" }
+  },
+  "content": { "text": "$.data.content" }
+}
+```
+
+## 值的三种写法
+
+规则里的每个字符串值按开头判断写法：
+
+| 写法 | 判断方式 | 例子 |
+|---|---|---|
+| 表达式 | 以 `=` 开头 | `= $.score > 0 ? $.score + '分' : ''` |
+| 模板 | 含有 `{{ }}` | `{{server}}/book/{{urlencode($.id)}}` |
+| 选择器规则 | 其余情况 | `$.data.name`、`.title@text`、`//a/@href` |
+
+选择器规则沿用应用已有的 JSONPath、CSS、XPath、`##正则##替换` 和 `||` 备选写法，在“当前元素”上取值。请求地址、请求头、分类标题这些位置没有当前元素，只接受表达式或模板。
+
+要写一个固定文本，用表达式：`= '固定文本'`。唯一的例外是 `fields.type`，可以直接写 `text`、`audio`、`comic` 或 `video`。
+
+## 表达式语言
+
+表达式只能读数据、做运算、调用函数，没有 `java`、`source` 这类宿主对象。箭头函数只能作为 `map`、`flatMap`、`filter`、`find`、`replace` 的参数出现。需要循环和中间变量时，把逻辑写进[函数库](#函数库-lib)。计算量、调用深度和数据大小都有上限，超出时中止并报错。
+
+### 取值
+
+- `$.path`：在当前元素上执行 JSONPath。路径确定时返回单个值，带 `*`、`..`、过滤条件时返回列表，取不到时为 `null`。键名里有特殊字符时写 `$['a-b']`。
+- `名称.字段`、`名称[下标]`：访问对象和列表，下标可为负数。在 `null` 上取字段仍是 `null`，不会报错。
+- 字面量：数字、`'字符串'` 或 `"字符串"`、`true`、`false`、`null`、`[1, 2]`、`{键: 值}`。
+- 字符串里只转义 `\n`、`\t`、`\r`、`\\`、`\'`、`\"`，其他反斜杠原样保留。所以正则可以直接写 `'\d+'`；放进 JSON 时按 JSON 规则再转义一次，即 `"'\\d+'"`。
+
+### 运算
+
+`+ - * / %`、`== != < > <= >=`、`&& || !`、`条件 ? 甲 : 乙`、`??`（左侧为 `null` 时取右侧），以及位运算 `& | ^ ~ << >> >>>`（按 32 位整数计算）。数字可以写成十六进制，如 `0xff`。
+
+- `+` 两侧都是数字时相加，否则按文本拼接，`null` 当作空串。
+- `==` 把数字和数字字符串视为相等（接口里 `"3"` 和 `3` 混用很常见）。
+- `null`、`false`、`0`、空串、空列表为假，其余为真。
+
+### 可用的名称
+
+| 名称 | 含义 | 可用阶段 |
+|---|---|---|
+| `vars` | 书源变量的当前值，如 `vars.mode` | 全部 |
+| `source` | `source.url`、`source.name` | 全部 |
+| `key`、`page` | 搜索关键词（未编码）、页码（从 1 开始） | 搜索；发现只有 `page` |
+| `book` | `bookUrl`、`tocUrl`、`name`、`author`、`kind`、`type`、`vars` | 详情、目录、正文 |
+| `chapter` | `url`、`title`、`index` | 正文 |
+| `body`、`data` | 响应原文、响应解析出的 JSON（不是 JSON 时为 `null`） | 请求之后 |
+| `item`、`index` | 当前元素及其序号 | 列表字段 |
+| `baseUrl` | 当前响应地址 | 请求之后 |
+
+`let` 里定义的名称也可以直接使用。
+
+### 内置函数
+
+| 分类 | 函数 |
+|---|---|
+| 类型 | `str` `num` `int(文本, 默认值)` `bool` `typeOf` `len` |
+| 文本 | `trim` `lower` `upper` `split(文本, 分隔符)` `lines` `substring` `slice` `padStart` `contains` `startsWith` `endsWith` `indexOf` `replaceText(文本, 原文, 新文)` |
+| 正则 | `replace(文本, 正则, 替换或箭头函数, 标志)` `match(文本, 正则, 分组序号)` `matchAll(文本, 正则, 分组序号)` `test(文本, 正则, 标志)` |
+| 列表 | `join(列表, 分隔符)` `compact` `unique` `first` `last` `slice` `reverse` `concat` `map(列表, x => …)` `flatMap` `filter` `find` `range(n)` `list(长度, 初值)` `push(列表, 值…)` `sum` `min` `max` |
+| 对象 | `get(对象, 键, 默认值)`（别名 `lookup`） `keys` `values` `entries` |
+| 取默认值 | `default(a, b, …)`：返回第一个为真的参数 |
+| 数字 | `abs` `round(数, 小数位)` `floor` `ceil` `pow` `u32(数)`（转无符号 32 位） `imul(a, b)`（32 位乘法） `toHex(数, 位数)` `parseHex(文本)` |
+| 编码 | `urlencode` `urldecode` `base64` `unbase64` `hex` `unhex` `json`（解析） `tojson` |
+| 字节 | `bytes(文本)` `fromBytes(字节)` `hexBytes(十六进制)` `bytesHex(字节)` `base64Bytes(文本)` `bytesBase64(字节)` `charCode(文本, 位置)` `fromCharCode(码点…)` |
+| 摘要 | `md5` `sha1` `sha256` `sha512`（返回十六进制文本）；`hash(算法, 数据)` `hmac(算法, 密钥, 数据)`（返回字节） |
+| 加解密 | `encrypt(算法, 数据, 密钥, IV)` `decrypt(算法, 数据, 密钥, IV)` `rsaEncrypt(数据, 公钥 PEM, 'PKCS1' 或 'OAEP')` |
+| 登录 | `cookie(地址, 名称)`：读取该站点已保存的 Cookie 值 |
+| 网页 | `stripHtml` `htmlDecode` `absUrl(地址, 基准地址)` `sel(规则)` `selAll(规则)` |
+| 时间 | `now()` `formatDate(时间戳或日期文本, 'yyyy-MM-dd HH:mm')` |
+
+`replace` 的替换参数是箭头函数时，参数是分组列表，`m[0]` 为整段匹配：
+
+```text
+= replace(d.content, '\[\[IMG:(\d+)\]\]', m => '<img src="' + get(d.images, int(m[1])).url + '">')
+```
+
+字节用 0–255 的数字列表表示。`encrypt`、`decrypt`、`hash`、`hmac` 的数据、密钥、IV 可以传文本（按 UTF-8）或字节，返回字节。算法写法与常见接口文档一致，支持 AES 和 3DES（`DESede`）的 ECB、CBC、CTR、OFB、CFB 模式：
+
+```text
+= fromBytes(decrypt('AES/CBC/PKCS5Padding', base64Bytes($.data), key, iv))
+= bytesHex(hmac('SHA256', secret, path + ts))
+```
+
+查表用对象字面量配合 `lookup`：
+
+```text
+= lookup({'小说': '3', '听书': '2', '漫画': '8'}, vars.mode, '3')
+```
+
+## 函数库 `lib`
+
+内置函数拼不出来的算法（站点自定义的签名、混淆、解密），写成函数放在顶层的 `lib` 里，之后任何表达式和模板都能调用：
+
+```text
+fn sign(path, ts) {
+  let h = 0
+  for b in bytes(path + ts + 'salt') {
+    h = (imul(h, 31) + b) >>> 0
+  }
+  return toHex(h, 8)
+}
+```
+
+```json
+"search": { "url": "{{server}}/search?q={{urlencode(key)}}&sign={{sign('/search' + key, now())}}" }
+```
+
+语法：
+
+| 语句 | 写法 |
+|---|---|
+| 定义函数 | `fn 名称(参数, …) { … }` |
+| 声明变量 | `let 名称 = 表达式` |
+| 赋值 | `名称 = 表达式`、`列表[下标] = 表达式`、`对象.字段 = 表达式`（没有 `+=`） |
+| 条件 | `if 条件 { … } else if 条件 { … } else { … }` |
+| 遍历 | `for 项 in 列表 { … }`、`for 项, 序号 in 列表 { … }`；遍历对象时依次得到键和值 |
+| 循环 | `while 条件 { … }`，可用 `break`、`continue` |
+| 返回 | `return 表达式`；没有 `return` 时结果为 `null` |
+| 注释 | `// 单行`、`/* 多行 */` |
+
+语句之间用换行或 `;` 分隔。
+
+限制：
+
+- 函数只能做纯计算，只看得到自己的参数，读不到 `vars`、`data` 等书源数据，需要的值由调用方传入。
+- 函数没有网络、Cookie、文件能力；请求只能由各阶段的声明式字段发出。
+- 函数名不能与内置函数重名，可以相互调用和递归，调用深度上限为 64 层。
+- 一次求值的计算量有上限，死循环会被中止并报“表达式计算量超出上限”。
+
+## 原生书源的顶层字段
+
+| 字段 | 说明 |
+|---|---|
+| `sourceFormat` | 固定为 `"native"` |
+| `version` | 格式版本，目前为 `1` |
+| `name`、`url` | 书源名称与地址。`url` 是书源的唯一标识，必须以 `http://` 或 `https://` 开头 |
+| `group`、`comment` | 分组与说明 |
+| `type` | 默认媒体类型：`text`（默认）、`audio`、`comic`、`video`，见[媒体类型](#媒体类型) |
+| `rate` | 并发限制，写法与兼容书源的 `concurrentRate` 相同 |
+| `headers` | 每个请求都带的请求头 |
+| `vars` | 书源变量，见下 |
+| `lib` | 函数库，见上 |
+| `login` | 账号登录，见下 |
+| `voices` | 听书音色列表，见下 |
+| `let` | 全局派生值，按书写顺序求值，每个阶段开始时计算一次 |
+| `search`、`explore`、`detail`、`toc`、`content` | 五个阶段。`search` 和 `explore` 至少要有一个 |
+
+### 书源变量 `vars`
+
+```json
+"vars": [
+  { "key": "mode", "label": "模式", "options": ["小说", "听书", "漫画"], "default": "小说", "filter": true },
+  { "key": "server", "label": "服务器", "default": "https://api.example.com" }
+]
+```
+
+- 带 `options` 且 `filter` 为 `true` 的变量会显示成发现页顶部的筛选项，用户切换后立即生效。
+- 所有变量都能在「书源设置」里修改（书源管理页打开该书源的操作菜单）：有 `options` 的是下拉，其余是输入框。
+- 变量的值按书源保存。同一地址的书源在原生与兼容格式之间替换时，旧的变量和登录状态不会沿用。
+- 已保存的值不在 `options` 里时回退到默认值。
+
+### 听书音色 `voices`
+
+```json
+"voices": [
+  { "id": "1", "name": "甜美少女" },
+  { "id": "4", "name": "成熟大叔" }
+]
+```
+
+声明后，听书页的「音色」按钮会弹出这个列表（最前面自动加一项「默认」）。用户选中的 `id` 按书保存，规则里通过 `book.vars.custom` 读取，没选时为空：
+
+```json
+"content": {
+  "let": { "d": "= data.data ?? {}" },
+  "fetch": {
+    "toned": { "when": "= book.vars.custom", "url": "{{server}}/audio?id={{d.id}}&tone={{book.vars.custom}}" }
+  },
+  "audio": "= default(toned.data.url, d.url)"
+}
+```
+
+切换音色后应用会从本章开头重新取音频。没有声明 `voices` 的书源，「音色」按钮仍是手动填写代码，填写的值同样在 `book.vars.custom` 里。
+
+音色是否生效取决于接口：有的接口只对合成朗读的内容区分音色，真人录制的有声书换音色返回的是同一个音频。
+
+### 账号登录 `login`
+
+```json
+"login": {
+  "url": "https://example.com/login",
+  "cookies": ["sessionid"],
+  "check": {
+    "url": "{{server}}/api/user",
+    "headers": { "Cookie": "sessionid={{cookie('https://example.com/', 'sessionid')}}" },
+    "ok": "= data.code == 0",
+    "name": "= data.data.name"
+  }
+}
+```
+
+- 用户在「书源设置」里点登录，应用用内置浏览器打开 `url`，登录完成后保存该站点的 Cookie。
+- `cookies` 列出登录后应当存在的 Cookie 名，用来判断登录状态；不写时只要该站点有 Cookie 就算已登录。
+- `check` 可选，对应设置页的「检查登录」：`ok` 为真表示登录有效，`name` 是显示的账号名。
+- 之后对同一站点的请求自动带上 Cookie。要把登录凭据发给另一个域名时，用 `cookie(地址, 名称)` 取值，写进那个请求的 `headers`。
+- 需要支持手动填令牌时，加一个普通变量，规则里写 `default(cookie(…), vars.token)`。
+
+## 各阶段
+
+每个阶段都可以带这些通用字段：
+
+| 字段 | 说明 |
+|---|---|
+| `url` | 请求地址（表达式或模板）。求值结果为空时不发请求 |
+| `method`、`headers`、`body` | 请求方法、附加请求头、请求体。`body` 是对象时按 JSON 发送，其中的字符串按模板渲染；有 `body` 时默认用 POST。值为空的请求头不发送 |
+| `webView` | 为 `true` 时用内置浏览器加载页面，取执行完网页自身脚本后的内容，再套用规则。只用于必须渲染才有数据的站点，比普通请求慢得多 |
+| `let` | 本阶段的派生值，在拿到响应之后求值 |
+| `fail` | 求值结果非空时视为接口报错，文本即展示给用户的错误信息 |
+
+`detail`、`toc`、`content` 的 `url` 可以省略，分别默认使用书籍详情地址、目录地址、章节地址。
+
+### 搜索 `search`
+
+`list` 取出书籍元素，`fields` 在每个元素上取字段。`list` 也可以是返回列表的表达式，配合空地址能直接构造结果（例如按书号直达）。
+
+可用字段：`name`、`author`、`kind`、`intro`、`coverUrl`、`wordCount`、`lastChapter`、`updateTime`、`status`、`bookUrl`、`tocUrl`、`type`。`name` 和 `bookUrl` 必填，缺少任一个的条目会被丢弃。字段求值结果是列表时用逗号连接。地址类字段会按响应地址补全为绝对地址。
+
+`type` 用来逐本声明媒体类型（`text`、`audio`、`comic`、`video`），留空时沿用书源的 `type`。各类型打开后的去向见[媒体类型](#媒体类型)。
+
+### 发现 `explore`
+
+分类有两种来源，可以同时使用：
+
+```json
+"explore": {
+  "menus": [
+    { "title": "排行榜" },
+    { "title": "总榜", "url": "{{server}}/rank?page={{page}}" },
+    { "title": "听书榜", "url": "{{server}}/rank/audio?page={{page}}", "when": "= vars.mode == '听书'" }
+  ],
+  "dynamicMenus": {
+    "url": "{{server}}/nav",
+    "list": "$.data[*]",
+    "title": "$.title",
+    "target": "= $.url ? replaceText(absUrl($.url, server + '/'), '{{page}}', str(page)) : ''"
+  },
+  "list": "$.data.books[*]",
+  "fields": { "name": "$.name", "bookUrl": "{{server}}/book/{{$.id}}" }
+}
+```
+
+- `menus` 是固定分类。没有 `url` 的条目是分组标题，`when` 为假时该条目隐藏。条目可以带 `headers`，只在打开这个分类时附加，适合个人书架这类需要登录凭据的分类。
+- `dynamicMenus` 从接口取分类。`target` 在打开分类时才求值，所以里面可以用 `page`；求值为空的条目作为分组标题。
+- `list` 和 `fields` 与搜索相同。
+
+### 详情 `detail`
+
+`fields` 与搜索相同，在整个响应上取值。另有 `keep`，用来把值存进书籍，后续阶段通过 `book.vars.名称` 读取：
+
+```json
+"detail": {
+  "let": { "d": "= data.data ?? data" },
+  "fields": { "name": "= d.name", "tocUrl": "{{server}}/book/{{d.id}}/chapters" },
+  "keep": { "bookId": "= d.id" }
+}
+```
+
+没有给出 `tocUrl` 时，目录阶段请求详情地址。
+
+### 目录 `toc`
+
+| 字段 | 说明 |
+|---|---|
+| `list` | 章节元素 |
+| `fields.title`、`fields.url` | 章节名与章节地址，必填 |
+| `fields.isVip`、`fields.isPay` | 布尔标记 |
+| `fields.isVolume` | 为真时该元素是分卷标题，不需要 `url`。它不占章节位置，目录会把卷名显示在它后面第一章的上方 |
+| `fields.tag` | 章节附加信息，一般放更新时间 |
+| `nextUrl` | 下一页目录地址，为空或重复时停止，最多 100 页 |
+| `reverse` | 为 `true` 时倒序 |
+
+### 正文 `content`
+
+按书籍类型取对应的规则：听书取 `audio`，漫画取 `images`，视频取 `video`，其余取 `text`。
+
+| 字段 | 说明 |
+|---|---|
+| `text` | 正文文本。可以包含 `<img src="…">`，阅读器会显示为插图 |
+| `images` | 图片地址列表（漫画） |
+| `audio` | 音频地址（听书） |
+| `video` | 这一集的视频流地址（如 mp4、m3u8），由应用自带的播放页播放。每次切集都会重新请求，地址带时效也没关系 |
+| `fetch` | 附加请求，见下 |
+| `nextUrl` | 正文下一页地址，最多 30 页 |
+| `replace` | 净化规则列表：`{ "pattern": "正则", "with": "替换文本", "flags": "g" }` |
+
+接口把章节嵌在分卷里时，用 `flatMap` 把卷名和章节摊平成一个列表：
+
+```json
+"toc": {
+  "list": "= flatMap(data.volumes, v => concat([{volume: v.title}], v.chapters))",
+  "fields": {
+    "title": "= default($.volume, $.title)",
+    "url": "= $.id ? server + '/chapter/' + $.id : ''",
+    "isVolume": "= $.volume != null"
+  }
+}
+```
+
+### 正文的附加请求与评论
+
+`fetch` 在主请求之后依次执行，结果以名称绑定为变量。响应是 JSON 时为解析后的对象，否则为文本；请求失败或 `when` 为假时为 `null`，由规则自行降级：
+
+```json
+"content": {
+  "let": { "d": "= data.data ?? {}" },
+  "fetch": {
+    "toned": { "when": "= vars.tone", "url": "{{server}}/audio?id={{d.id}}&tone={{urlencode(vars.tone)}}" }
+  },
+  "audio": "= default(toned.data.url, d.url)"
+}
+```
+
+`links` 在正文末尾加链接按钮，点击后在应用内打开网页。适合没有阅读形态的内容，例如视频：
+
+```json
+"content": {
+  "text": "= d.type == 'video' ? '本章是视频内容，点下方按钮播放。' : d.content",
+  "links": [
+    { "label": "▶ 打开播放器", "when": "= d.type == 'video'", "url": "{{server}}/player?id={{d.id}}" }
+  ]
+}
+```
+
+`label` 和 `url` 是模板，`when` 为假时不显示；地址必须是 http(s)。按钮只对文本正文生效。
+
+`comments` 声明段评和章末评论入口。书源只提供数据和地址，气泡与入口由应用绘制，点开后在应用内显示评论页：
+
+```json
+"comments": {
+  "when": "= vars.bubbles != '关'",
+  "stats": { "url": "{{server}}/api/para/stats?chapter={{d.id}}" },
+  "counts": "= stats.data.paras",
+  "paragraphUrl": "{{server}}/comment?chapter={{d.id}}&para={{para.index}}",
+  "chapterUrl": "{{server}}/comment?chapter={{d.id}}",
+  "max": 60
+}
+```
+
+| 字段 | 说明 |
+|---|---|
+| `when` | 为假时整个评论功能不生效，也不发统计请求 |
+| `stats` | 统计接口，结果绑定为 `stats` |
+| `counts` | 每段评论数：对象的键（或列表下标）是正文行号，值是条数。行号按 `text` 结果的换行切分，从 0 开始 |
+| `paragraphUrl` | 段评页地址，可用 `para.index`、`para.count`、`para.text`（该段前 90 个字） |
+| `chapterUrl` | 整章评论页地址，可用 `total`（各段条数之和）。有值时章末显示「本章说」入口 |
+| `max` | 一章最多显示多少个气泡，默认 60，上限 300 |
+
+统计接口失败时正文照常显示，只是没有气泡。评论只对文本正文生效。
+
+## 与兼容书源的差异
+
+| 能力 | 原生书源 | 兼容书源 |
+|---|---|---|
+| JavaScript（`@js:`、`<js>`、`jsLib`） | 不支持，导入时拒绝 | 支持 |
+| 选择器（JSONPath、CSS、XPath、正则） | 支持 | 支持 |
+| 条件、拼接、查表、字段整理 | 表达式 | 脚本 |
+| 自定义签名、解密算法 | 内置加解密函数，或在 `lib` 里用自定语法实现 | 脚本 |
+| 追加请求 | `content.fetch`、`comments.stats` | `java.ajax` |
+| 发现页筛选与变量设置 | `vars` 声明，界面由应用生成 | 脚本生成 |
+| 账号登录 | `login` 声明，内置浏览器登录 | 登录面板脚本 |
+| 段评、章末评论入口 | `comments` 声明，应用绘制 | 脚本生成 |
+| 网页渲染抓取 | 请求上加 `webView: true` | 支持，另可注入 `webJs` |
+| 分卷标题 | `fields.isVolume` | 暂不支持 |
+| 视频内容（短剧等） | `type: video` 加 `content.video`，应用自带播放页 | 只能在正文里放链接，跳到网页播放 |
+| 听书音色 | `voices` 声明列表，听书页点选 | 手动填写音色代码 |
+| 正文里打开网页（如视频播放页） | `content.links` | 脚本生成卡片 |
+| 脚本主动弹出界面、按钮面板 | 不支持 | 支持 |
+
+一条书源只能是一种格式，原生书源里不能夹带 JavaScript。函数库只能做纯计算，这是有意的边界：请求、登录、界面都必须由声明式字段触发，书源的行为才能在导入时看清楚。
+
+## 已知限制
+
+- 编辑页是 JSON 文本编辑，没有按字段拆开的表单。
+- 书源管理里的「调试」页记录的是兼容书源各阶段的执行明细，原生书源的请求和规则求值不会出现在里面。排查原生书源时，以导入校验的报错和各页面上的失败提示为准。
+- `webView` 只能取渲染后的页面，不能指定等待某个元素，也不能注入脚本。
+- 段评和正文链接按钮只对文本正文生效。
+- 播放页播放的是书源给出的视频流地址，没有弹幕、清晰度切换和手势调节亮度音量。
+- 函数库只能做纯计算。需要脚本主动发请求、弹界面的书源仍然只能写成兼容书源。
+
+## 实现与验证
+
+- 表达式引擎：`entry/src/main/ets/core/nativesource/NativeExpr.ts`
+- 定义的解析、校验与存储：`NativeSourceSpec.ts`
+- 阶段执行器：`NativeSourceRunner.ts`
+- 接入请求层与数据模型：`NativeSourceService.ts`
+- 加解密的系统实现：`NativeSourceCrypto.ts`
+- 编辑页与设置页：`entry/src/main/ets/pages/NativeSourceEdit.ets`、`NativeSourceSettings.ets`
+- 视频播放页：`entry/src/main/ets/pages/VideoPlayer.ets`，入口封装在 `utils/VideoBookPlayer.ets`
+- 分流点：`core/book/WebBookService.ts`（详情、目录、正文）、`SearchCoordinator.ts`（搜索）、`ExploreCoordinator.ts`（发现分类、列表、筛选）。原生书源在这些入口处被分流，不进入兼容书源的任何脚本引擎
+
+原生书源不新增数据库列：完整定义以 JSON 存在书源记录的 `jsLib` 字段里，并以 `"nativeSource"` 键开头作为标记，因此备份、云同步和导入导出沿用现有通道。应用里有些地方按兼容书源的规则字段判断“能否搜索、有没有发现”，读取原生书源时会给这些字段补上占位值 `native`，它们不会被当成规则执行。
+
+分卷同样不改数据库：卷名记在该卷第一章的附加信息里，不占章节位置，章节序号和阅读进度不受影响。
+
+回归脚本（不需要设备）：
+
+```bash
+node --experimental-strip-types scripts/native-source-check.mjs
+```
+
+---
+
+# 第二部分：兼容书源（已过时）
+
+> [!WARNING]
+> 兼容书源格式已过时。应用仍然可以导入和运行这类书源，现有书源不受影响；但新书源请按[第一部分](#第一部分原生书源)写成原生书源。
+> 视频播放页、听书音色列表、分卷标题等能力目前只有原生书源支持，见[与兼容书源的差异](#与兼容书源的差异)。
+> 本部分作为存量书源的维护参考保留，描述的仍是当前代码的实际行为。
+
+兼容书源沿用 Android「阅读」（Legado）的书源 JSON 格式，规则里可以使用 JavaScript。
 
 文档中的能力状态按以下口径描述：
 
@@ -1445,7 +1937,7 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 | 登录 | 请求后的 `loginCheckJs` 响应检查 | 依赖它在日常请求中续期会话或修正响应的书源，登录过期后不会自动恢复。 |
 | 搜索 | `bookUrlPattern` 的详情页分派、`checkKeyWord` | 搜索直接跳到详情页的站点不会按详情解析；校验使用应用固定的测试关键词。 |
 | 目录 | `ruleToc.preUpdateJs`、`ruleToc.formatJs` | 更新目录前的动态地址刷新和汇总后的标题格式化不会执行。 |
-| 目录 | `isVolume` 分卷条目 | 普通目录规则不读取该字段；脚本直接返回章节数组时，标记为分卷的条目会被丢弃。 |
+| 目录 | `isVolume` 分卷条目 | 普通目录规则不读取该字段；脚本直接返回章节数组时，标记为分卷的条目会被丢弃。原生书源支持分卷，见第一部分的[目录](#目录-toc)。 |
 | 图片与文件 | `coverDecodeJs`、`downloadUrls` | 封面解码脚本和在线文件书源的下载地址不生效。 |
 | 脚本接口 | `java.queryTTF`、`java.replaceFont`、压缩包读取与文件类接口、`java.ajaxTestAll`、`java.webViewGetSource`、`java.webViewGetOverrideUrl` | 字体反混淆源和压缩内容源无法解析；调用这些接口的脚本得不到结果，其中字体、文件和压缩类接口会直接被判为不支持。 |
 | 请求选项 | `js`、`webViewDelayTime`、`dnsIp` | 写了不会报错，也不会生效；网页等待使用应用自己的稳定判定。 |
@@ -1453,6 +1945,18 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 ### 通用兜底边界
 
 当前项目只保留与站点无关的容错和显式能力，例如清理模板残留、解析标准相对 URL、从通用字段回退详情地址、提取可读 HTML、处理明确的编码数据，以及由书源声明的 `session` 会话规则。应用不会根据站点名称或私有接口提供自动修复；书源应完整声明请求和解析规则。
+
+### 改写为原生书源
+
+兼容书源不会自动转换成原生书源，需要按[第一部分](#第一部分原生书源)重写。对照关系见[与兼容书源的差异](#与兼容书源的差异)，大致是：
+
+- 选择器规则（JSONPath、CSS、XPath、`##` 正则）可以原样搬过去；
+- 拼地址、条件判断、字段整理的脚本改成 `=` 表达式或 `{{ }}` 模板；
+- 签名、解密这类算法用内置加解密函数，或写进 `lib` 函数库；
+- `java.ajax` 追加请求改成 `content.fetch`；
+- 登录面板、发现页筛选、段评卡片这些由脚本生成界面的部分，改成 `login`、`vars`、`comments` 声明，界面由应用生成。
+
+同一个书源地址只能存一条书源。在原地址上导入原生版本会替换掉兼容版本，旧的书源变量和登录状态不会沿用。
 
 ### 与 Android 阅读书源互导
 

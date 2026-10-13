@@ -120,7 +120,9 @@
 | 登录 | 动态登录面板、`startBrowserAwait`、登录页脚本、验证码跳转和跨地址 Cookie 同步。 |
 | 内容类型 | 普通文本、漫画、有声书识别；正文中的显式网页操作、图片和媒体标记；`data:` / Base64 地址。 |
 
-完整字段、请求格式、解析语法、调试方法和迁移建议见 [书源开发文档](docs/book-source-development.md)。
+以上是兼容书源（Android 阅读格式）的能力，这种格式已过时，仅为存量书源保留。新书源请使用开源轻页自己的原生书源格式：不执行 JavaScript，用声明式规则和自定表达式语言编写，并支持视频播放页、听书音色列表和分卷。
+
+两种格式的完整字段、请求格式、解析语法、调试方法和迁移建议见 [书源开发文档](docs/book-source-development.md)：第一部分是原生书源，第二部分是兼容书源。
 
 ## 项目结构
 
@@ -311,7 +313,7 @@ node --experimental-strip-types scripts/reader-info-bar-check.mjs
 ## 文档
 
 - [使用说明书](docs/manual/index.html)：面向用户的功能说明，纯静态页面，可直接部署；应用内「我的 → 帮助」加载的是同一份内容（`entry/src/main/resources/rawfile/manual`），修改时两处需同步。
-- [书源开发文档](docs/book-source-development.md)
+- [书源开发文档](docs/book-source-development.md)：第一部分原生书源（推荐），第二部分兼容书源（已过时）
 - [主题开发指南](docs/theme-development.md)
 
 ## 合规与免责声明
