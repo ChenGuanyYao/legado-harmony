@@ -32,7 +32,7 @@
 | 原生选择器与规则解析器 | 正式执行 | JSONPath、CSS、基础 XPath、模板、正则、URL 和字段提取。 |
 | 轻量 JavaScript 兼容引擎 | 正式执行且结果有效 | 常见表达式、Android/Java 别名及已映射的 `java/source/book/cache/cookie` 主机函数。 |
 | 分阶段 ArkWeb | 按能力路由正式执行 | 搜索、发现、详情、目录、正文和登录中的复杂 ECMAScript，以及受控异步主机桥。 |
-| 隐藏 ArkWeb 请求传输 | 仅在 URL 显式配置时执行 | `webView: true` 的 HTTP(S) GET/POST 页面加载、DOM 返回及 `webJs`。 |
+| 隐藏 ArkWeb 请求传输 | 仅在 URL 显式配置时执行 | `webView: true` 的 HTTP(S) GET/POST 页面加载、DOM 返回及 `webJs`（含返回 Promise 的异步脚本）。 |
 | 原生 QuickJS | 默认 `SHADOW`，支持灰度 | 启动自检后持久化比对无副作用短纯表达式；合格指纹可灰度接管，异常自动回退和熔断。 |
 
 因此，“已经接入 QuickJS”不表示所有书源 JavaScript 都由 QuickJS 执行，也不表示选择器或 WebView 规则需要改写成 JavaScript。网络、Cookie、持久化、DOM 和应用对象仍必须经过对应的受控主机桥。
@@ -366,7 +366,7 @@
 | `retry` | 响应不可用时的额外重试次数。 |
 | `type` | 声明负载类型。章节地址为 `data:` 且尾部选项声明了 `type` 时，正文阶段会把解码后的字节以十六进制文本提供给规则脚本，对齐 Android 阅读的字节串约定（脚本内通常用 `java.hexDecodeToString` 还原）。 |
 | `webView` | 为 `true` 时，HTTP(S) GET/POST 请求交给隐藏 ArkWeb，沿用书源 URL、Cookie 与 UA（GET 也传入可用的额外 Header），等待页面脚本渲染稳定后返回 DOM。 |
-| `webJs` | 与 `webView: true` 配合，在已加载页面上下文执行；有效返回值作为响应正文，否则使用页面 DOM。 |
+| `webJs` | 与 `webView: true` 配合，在已加载页面上下文执行；有效返回值作为响应正文，否则使用页面 DOM。脚本的结果是 Promise 时会等待其兑现，见下文。 |
 | `rawBody` | 为 `true` 时请求体不做表单编码，按 `charset` 原样转成字节发送；用于书源已自行编码或拼好的请求体。 |
 | `bodyJs` | 对本次响应正文做转换的脚本，输入是响应文本，返回值替换响应正文后再进入列表规则。目前只有发现列表请求会执行；搜索、详情、目录和正文请求中写了不会生效。 |
 | `session` | 可选的通用会话规则；仅操作当前请求目标的 Cookie，并可在未声明 Referer 时按规则补充。详见下文。 |
@@ -380,6 +380,20 @@
 页面宿主切换时，尚未完成的请求会迁移到新宿主继续执行，并忽略新宿主首次 `about:blank` 回调；请求超时后仍需按普通失败流程重试。
 
 该选项只负责执行书源明确给出的页面请求，不会自动点击验证码、替用户选择不受信任证书、伪造浏览器指纹或保证通过所有反自动化挑战。需要用户交互的登录/验证仍应使用验证页或 `startBrowserAwait`，并遵守目标服务的授权与访问规则。
+
+##### `webJs` 返回 Promise
+
+`webJs` 最后一个表达式的值如果是 Promise（`async` 函数调用、`fetch(...).then(...)` 链等），应用会等它兑现，再把兑现值作为响应正文。页面自己已经带好 Cookie、请求头或请求参数的接口，可以直接在页面上下文里请求，书源不必重新实现这些参数的生成逻辑：
+
+```text
+/book/{{$.id}}, {"webView":true,"webJs":"fetch('/api/chapter'+location.search,{credentials:'include'}).then(function(r){return r.text()})"}
+```
+
+- 脚本在已加载页面内运行，网络请求受浏览器同源策略和目标站点 CORS 约束；跨域接口需要目标站点允许，或把 `webView` 请求的地址直接指向接口所在站点的页面。
+- 兑现值建议是字符串；对象请先 `JSON.stringify`。兑现为空值、`undefined` 或 `null` 时回退为页面 DOM。
+- Promise 被拒绝时本次请求失败，错误提示为“webJs 执行失败: 原因”。一直不兑现的 Promise 由 `webView` 请求的整体超时（默认约 20 秒）结束。
+- 等待期间页面发生跳转时，脚本会在新页面稳定后重新执行一次。
+- 同步的 `webJs` 行为不变。页面的内容安全策略禁止 `eval` 时，脚本按原样执行且不等待 Promise，这类页面只能使用同步脚本。
 
 ##### POST 简写
 
@@ -424,6 +438,8 @@ URL 内还支持：
 
 - 脚本可以读取书源变量、登录状态并调用 `jsLib` 函数。
 - 结果按“书源地址 + 书源变量”缓存约 5 分钟，变量变化后自动重算。
+- 返回对象里可以带保留项 `"@cache"` 调整缓存：`false` 或 `0` 表示不缓存，每次请求前重新执行脚本；正数表示缓存秒数，最长仍为 5 分钟。该项只是指令，不会作为请求头发出。时间戳、随机串这类每次请求都要变化的值需要关闭缓存，例如 `"@js:JSON.stringify({\"X-Time\": String(Date.now()), \"@cache\": false})"`。
+- 关闭缓存后，每个请求都会多执行一次分阶段脚本，只在确实需要时使用。脚本拿不到本次请求的地址和请求体；依赖具体地址或请求体计算的值，应在生成该地址的规则里计算，并写进 URL 选项的 `headers`。
 - 动态结果与登录密钥一样只在书源自己的主机（`bookSourceUrl`、`loginUrl` 及同主机地址）上发送，不会附加到第三方图片或内容主机。
 - URL 选项中的显式 `headers` 仍覆盖同名项；运行时不可用时回退为静态字面量解析。
 
@@ -783,17 +799,33 @@ $.data<js>result.items</js>$.books[*]
 
 #### 引擎分层与路由
 
-这类组合规则会先做能力判断。普通表达式继续在每个列表元素自己的 `AnalyzeRule` 上下文中执行，以保留既有的当前元素、变量读写和尾部处理顺序；只有使用箭头函数、模板字符串插值、`try`、数组高阶函数、`Set/Map`、解构或超大脚本等完整 JavaScript 语义时，才会批量路由到分阶段 ArkWeb。不要因为规则中出现 `<js>` 就假定它一定由 ArkWeb 执行。
+这类组合规则会先做能力判断。普通表达式继续在每个列表元素自己的 `AnalyzeRule` 上下文中执行，以保留既有的当前元素、变量读写和尾部处理顺序；只有使用箭头函数、模板字符串插值、`try`、数组高阶函数、`Set/Map`、解构、位运算、类型化数组或超大脚本等完整 JavaScript 语义时，才会批量路由到分阶段 ArkWeb。不要因为规则中出现 `<js>` 就假定它一定由 ArkWeb 执行。
 
 复杂组合规则在 ArkWeb 执行失败时，如果能力分析确认脚本没有网络请求、Cookie 修改或持久化写入等可观察副作用，会回退到逐元素兼容解析，不会把该字段直接当成空值。包含副作用的脚本不会再交给第二个引擎重试，以免重复请求或重复修改状态。此外，`<js>处理</js>` 内嵌后处理脚本如果调用了 `source.put/get`、`cookie.*` 或 `cache.*` 这类对象状态方法，也会直接路由到 ArkWeb，避免在轻量解释器上静默失效；`<js>` 块可以单独作为开头（没有前置基础规则），此时脚本中的 `result` 是原始元素本身，与 Android 阅读的按类型分发写法一致。
 
 当前不是“所有代码统一交给一个 JavaScript 引擎”，而是按职责分层：
 
 1. **轻量规则/JavaScript 兼容引擎**：正式处理模板、简单表达式和常见 Android/Java 别名，当前返回值直接参与书源执行；
-2. **分阶段 ArkWeb 引擎**：能力路由器发现箭头函数、模板字符串、`try`、数组高阶函数、`Set/Map`、解构或较大脚本时，仅将相应阶段交给 ArkWeb 的真实 JavaScript 引擎；
+2. **分阶段 ArkWeb 引擎**：能力路由器发现箭头函数、模板字符串、`try`、数组高阶函数、`Set/Map`、解构、位运算、类型化数组或较大脚本时，仅将相应阶段交给 ArkWeb 的真实 JavaScript 引擎；
 3. **QuickJS 迁移运行时**：应用启动后先做原生自检，再在 TaskPool 中执行可证明无主机副作用的短纯表达式。默认 `SHADOW` 只比较结果；`CANARY` 仅接管累计至少 4 次一致且零差异、零失败的表达式指纹；`PREFER_QUICKJS` 对候选表达式优先使用 QuickJS。正式模式均保留原执行路径作为失败回退，连续 3 次路由失败会熔断 5 分钟。
 
 搜索、发现、详情、目录和正文分别路由，启用某一阶段的 ArkWeb 不会把所有书源或所有阶段一起改道。无副作用的失败可以回退轻量引擎；含网络、Cookie 或持久化写入的动作会避免双重执行。`jsLib` 中声明的顶层函数会暴露给当前阶段规则，并在下一书源执行前清理，防止跨源污染。
+
+轻量引擎没有位运算和二进制数据类型。脚本（含 `jsLib`）中出现 `&`、`|`、`^`、`<<`、`>>`、`>>>` 及其赋值形式，或 `Uint8Array` 等类型化数组、`ArrayBuffer`、`DataView`、`TextEncoder/TextDecoder`、`Math.imul`、`Math.clz32`、`WebAssembly` 时，该阶段会路由到 ArkWeb，哈希、校验和与自行实现的编解码可以按标准 JavaScript 书写。字符串、注释和正则字面量里的这些符号不参与判断，逻辑运算 `&&`、`||` 也不会触发路由。
+
+`WebAssembly` 已在真机的隐藏 ArkWeb 页面中实测可用（2026-10-13，ArkWeb 7.0.0.107，Chromium 144）：模块校验、同步与异步编译实例化、导出函数调用和 `WebAssembly.Memory` 均正常。该测试直接在页面内执行，未经过书源规则的完整链路；书源自带 `.wasm` 字节并在规则中加载的写法仍需逐源实机验证，其他内核版本的表现也可能不同。
+
+#### 随请求变化的参数
+
+请求需要携带时间戳、随机串或由它们计算出的摘要时，按参数的来源选择写法：
+
+| 场景 | 写法 |
+| --- | --- |
+| 值依赖本次请求的地址或请求体 | 在生成该地址的 `@js:`/`<js>` 规则里计算，并写进 URL 选项的 `headers` 或查询参数；规则每次请求都会重新求值。 |
+| 值与具体请求无关，但每次都要变化 | 用书源 `header` 的动态 `@js:` 规则计算，并返回 `"@cache": false`，见[动态 `@js:` 请求头](#动态-js-请求头)。 |
+| 参数只能由目标页面自己的脚本生成 | 用 `webView: true` 加载该页面，在 `webJs` 中由页面发起请求并返回 Promise，见[`webJs` 返回 Promise](#webjs-返回-promise)。 |
+
+摘要可使用已覆盖的 `java.md5Encode`、SHA 系列、Base64/Hex 和 AES 等主机函数，也可以用位运算自行实现。算法、密钥和设备标识始终属于书源自身，应用不提供按站点命名的签名接口，也不保证通过目标服务的反自动化校验；请只对已获授权访问的接口使用。
 
 #### QuickJS 迁移与回归测试
 
@@ -1325,6 +1357,9 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 | 正文是空字符串 | 请求失败、被验证拦截、提取规则为空，或提取结果被净化正则全部删除。若错误提示是服务端原文（如“仅支持网页端访问”“Token验证失败”），说明阶段脚本的 `java.ajax` 已被调用但接口拒绝了本次请求，应检查该接口要求的 UA、`Referer`、`X-Requested-With` 等请求头是否由书源写全。 |
 | `java.getString`/`getStringList` 一直返回空 | 确认规则语法正确（选择器 + `@text`/`@html`，`@@` 取全部）；`$.` 开头的 JSON 路径会直接取值。规则由原生引擎在阶段重放中求值，规则过多或依赖 DOM 渲染的站点仍需检查。 |
 | `@js:` 动态请求头没有生效 | 确认脚本返回 JSON 对象或 JSON 字符串；动态头只发送到书源自己的主机，第三方图片/内容域不会收到；URL 选项的 `headers` 覆盖同名项，运行时不可用时回退静态解析。 |
+| 动态请求头里的时间戳几分钟内不变 | 结果默认缓存约 5 分钟；让脚本在返回对象中加入 `"@cache": false`（或缓存秒数）。 |
+| 哈希、校验和脚本算出的值不对 | 位运算和类型化数组只在分阶段 ArkWeb 中可用；当前版本遇到这些语法会自动路由。若符号只出现在 `eval` 的字符串里，路由判断看不到，请把代码直接写在规则或 `jsLib` 中。 |
+| `webJs` 里的 `fetch` 没有返回内容 | 确认脚本最后一个表达式就是该 Promise（不要漏掉 `return` 或把它赋给变量后结束）；兑现值应为字符串；跨域请求受 CORS 限制；错误提示“webJs 执行失败”后面是 Promise 的拒绝原因。 |
 | 正文脚本拿到的是 JSON 明文且解码失败 | 章节地址为 `data:` 且尾部选项声明了 `type` 时，脚本输入是十六进制字节串，需要先 `java.hexDecodeToString(result)`；未声明 `type` 时依靠规则内调用 `java.hexDecodeToString(result)` 等字节串函数识别。 |
 | `text.下一页@href` 没有继续翻页 | 检查链接的“下一页”是否为 `<a>` 自身直接文本；若文字包在子元素中，改用稳定 CSS 或 `:contains()`。还要确认下一页不是 JavaScript 点击事件。 |
 | 书源脚本提示“网络请求次数过多” | 同一请求规格的重复次数与不同请求总数分开限额：重复请求同一地址按阶段预算（最多 12 次）拦截，不同地址上限至少 16 次；若在多分类/多分页场景出现，检查脚本是否在循环里重复请求同一地址且没有命中响应缓存。 |
@@ -1548,10 +1583,10 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 - 带时间预算的净化替换：`entry/src/main/ets/core/rule/BudgetedRegexReplace.ts`、`entry/src/main/ets/core/concurrency/ReaderContentPreprocessor.ets`
 - JS 兼容层：`entry/src/main/ets/core/rule/JsRuntime.ts`
 - QuickJS 迁移运行时：`entry/src/main/ets/core/script/QuickJsScriptRuntime.ts`、`QuickJsAsyncRouter.ts`、`QuickJsMigrationStore.ts`、`QuickJsRuntimeStatus.ts`、`QuickJsShadowExecutor.ets`
-- 分阶段运行路由：`entry/src/main/ets/core/book/BookSourceRuntimeRouter.ts`
+- 分阶段运行路由：`entry/src/main/ets/core/book/BookSourceRuntimeRouter.ts`，回归脚本 `scripts/source-script-runtime-check.mjs`
 - 动态 `@js:` 请求头：`entry/src/main/ets/core/book/BookSourceHeaderRuntime.ts`
 - 搜索/发现/详情/目录/正文 ArkWeb：`entry/src/main/ets/core/book/BookSourceStageWebRuntime.ts`
-- 显式 `webView` 请求：`entry/src/main/ets/core/book/WebBookFetchRuntime.ts`
+- 显式 `webView` 请求：`entry/src/main/ets/core/book/WebBookFetchRuntime.ts`；`webJs` 的 Promise 等待脚本：`entry/src/main/ets/core/book/WebJsAwaitScript.ts`
 - 阶段规则识别：`entry/src/main/ets/core/book/BookSourceStageRuleSupport.ts`
 - 登录面板 ArkWeb：`entry/src/main/ets/core/book/BookSourceLoginWebRuntime.ts`
 - 搜索流程：`entry/src/main/ets/core/book/SearchCoordinator.ts`

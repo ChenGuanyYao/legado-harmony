@@ -1,6 +1,7 @@
 import { webview } from '@kit.ArkWeb';
 import { util } from '@kit.ArkTS';
 import { CookieStore } from '../http/CookieStore';
+import { WebJsAwaitScript } from './WebJsAwaitScript';
 
 export interface WebBookFetchRequest {
   url: string;
@@ -36,6 +37,8 @@ class WebBookFetchTask {
   lastSignature: string = '';
   pageEnded: boolean = false;
   webJsAttempts: number = 0;
+  /** Bumped per webJs run so callbacks of a superseded run (page navigated, retry) are ignored. */
+  webJsRun: number = 0;
 }
 
 /**
@@ -48,6 +51,8 @@ export class WebBookFetchRuntime {
   private controller: webview.WebviewController | null = null;
   private ready: boolean = false;
   private static readonly WEB_JS_RETRY_INTERVAL_MS: number = 500;
+  private static readonly WEB_JS_AWAIT_POLL_MS: number = 100;
+  private webJsSlotSequence: number = 0;
   private active: WebBookFetchTask | null = null;
   private queue: WebBookFetchTask[] = [];
 
@@ -73,6 +78,7 @@ export class WebBookFetchRuntime {
       migratingTask.pageEnded = false;
       migratingTask.stableCount = 0;
       migratingTask.lastSignature = '';
+      migratingTask.webJsRun++;
       this.active = null;
       this.queue.unshift(migratingTask);
     }
@@ -259,22 +265,65 @@ export class WebBookFetchRuntime {
       this.finishActive(this.success(finalUrl, html));
       return;
     }
-    controller.runJavaScript(webJs).then((raw: string): void => {
-      if (this.active !== task) return;
+    const run = ++task.webJsRun;
+    const slot = `__legadoWebJs${++this.webJsSlotSequence}`;
+    controller.runJavaScript(WebJsAwaitScript.start(webJs, slot)).then((raw: string): void => {
+      if (this.active !== task || task.webJsRun !== run) return;
       const value = this.unwrapJavaScriptResult(raw);
-      task.webJsAttempts++;
-      if (this.shouldRetryWebJs(task, value)) {
-        // The overall request timeout still bounds the polling.
-        task.inspectId = setTimeout((): void => this.resolveBody(task, finalUrl, html),
-          WebBookFetchRuntime.WEB_JS_RETRY_INTERVAL_MS);
+      if (value === WebJsAwaitScript.BLOCKED) {
+        // The page's CSP forbids eval; nothing has run yet, so execute the script as written.
+        controller.runJavaScript(webJs).then((plain: string): void => {
+          if (this.active !== task || task.webJsRun !== run) return;
+          this.acceptWebJsValue(task, finalUrl, html, this.unwrapJavaScriptResult(plain));
+        }).catch((error: Error): void => this.failWebJs(task, run, finalUrl, this.errorMessage(error)));
         return;
       }
-      this.finishActive(this.success(finalUrl, value && value !== 'undefined' && value !== 'null' ? value : html));
-    }).catch((error: Error): void => {
-      if (this.active === task) {
-        this.finishActive(this.failure(finalUrl, `webJs 执行失败: ${this.errorMessage(error)}`));
+      if (value === WebJsAwaitScript.PENDING) {
+        this.scheduleWebJsPoll(task, run, slot, finalUrl, html);
+        return;
       }
-    });
+      this.acceptWebJsValue(task, finalUrl, html, value);
+    }).catch((error: Error): void => this.failWebJs(task, run, finalUrl, this.errorMessage(error)));
+  }
+
+  /** Waits for a Promise returned by webJs; the overall request timeout bounds the polling. */
+  private scheduleWebJsPoll(task: WebBookFetchTask, run: number, slot: string, finalUrl: string, html: string): void {
+    task.inspectId = setTimeout((): void => {
+      const controller = this.controller;
+      // While the page navigates, inspect() restarts webJs once the new document has settled.
+      if (this.active !== task || task.webJsRun !== run || !controller || !task.pageEnded) return;
+      controller.runJavaScript(WebJsAwaitScript.poll(slot)).then((raw: string): void => {
+        if (this.active !== task || task.webJsRun !== run) return;
+        const value = this.unwrapJavaScriptResult(raw);
+        if (value === WebJsAwaitScript.PENDING) {
+          this.scheduleWebJsPoll(task, run, slot, finalUrl, html);
+        } else if (value === WebJsAwaitScript.LOST) {
+          // The document that owned the Promise was replaced; start over on the current one.
+          task.webJsRun++;
+          this.scheduleInspect(task, 400);
+        } else if (value.startsWith(WebJsAwaitScript.FAILED_PREFIX)) {
+          this.failWebJs(task, run, finalUrl, value.substring(WebJsAwaitScript.FAILED_PREFIX.length));
+        } else {
+          this.acceptWebJsValue(task, finalUrl, html, value);
+        }
+      }).catch((error: Error): void => this.failWebJs(task, run, finalUrl, this.errorMessage(error)));
+    }, WebBookFetchRuntime.WEB_JS_AWAIT_POLL_MS);
+  }
+
+  private acceptWebJsValue(task: WebBookFetchTask, finalUrl: string, html: string, value: string): void {
+    task.webJsAttempts++;
+    if (this.shouldRetryWebJs(task, value)) {
+      // The overall request timeout still bounds the polling.
+      task.inspectId = setTimeout((): void => this.resolveBody(task, finalUrl, html),
+        WebBookFetchRuntime.WEB_JS_RETRY_INTERVAL_MS);
+      return;
+    }
+    this.finishActive(this.success(finalUrl, value && value !== 'undefined' && value !== 'null' ? value : html));
+  }
+
+  private failWebJs(task: WebBookFetchTask, run: number, finalUrl: string, message: string): void {
+    if (this.active !== task || task.webJsRun !== run) return;
+    this.finishActive(this.failure(finalUrl, `webJs 执行失败: ${message}`));
   }
 
   private shouldRetryWebJs(task: WebBookFetchTask, value: string): boolean {

@@ -135,7 +135,7 @@ export class BookSourceRuntimeRouter {
     // source helper functions and must not be classified as unmanaged browser networking.
     report.usesUnmanagedNetwork = /\bfetch\s*\(|\bXMLHttpRequest\b|\bWebSocket\b/.test(executable);
     report.requiresFullJs = /=>|\bnew\s+(?:Set|Map)\s*\(|\.(?:map|find|filter|reduce|forEach)\s*\(|`[^`]*\$\{|\btry\s*\{|\b(?:const|let|var)\s*\{/.test(executable) ||
-      executable.length > 24 * 1024;
+      this.usesBinaryData(executable) || executable.length > 24 * 1024;
     for (const method of report.requiredJavaMethods) {
       if (this.EMULATED_JAVA_METHODS.includes(method)) {
         this.pushUnique(report.emulatedMethods, `java.${method}`);
@@ -150,6 +150,20 @@ export class BookSourceRuntimeRouter {
     if (report.usesPackages) this.pushUnique(report.emulatedMethods, 'Packages');
     if (report.usesUnmanagedNetwork) this.pushUnique(report.missingMethods, '浏览器直连网络');
     return report;
+  }
+
+  /**
+   * Bitwise arithmetic and typed arrays (hashes, checksums, hand-written ciphers) have no
+   * counterpart in the lightweight engine, which would silently compute wrong values. [executable]
+   * already has strings, comments and regex literals blanked, so `&`/`|`/`^` in those cannot match.
+   */
+  private static usesBinaryData(executable: string): boolean {
+    if (/\b(?:(?:Ui|I)nt(?:8|16|32)Array|Uint8ClampedArray|Float(?:32|64)Array|Big(?:Ui|I)nt64Array|ArrayBuffer|DataView|WebAssembly|TextEncoder|TextDecoder)\b|\bMath\s*\.\s*(?:imul|clz32)\b/.test(executable)) {
+      return true;
+    }
+    if (/>>>|<<|>>/.test(executable)) return true;
+    // A lone & | ^ between two operands (also as &= |= ^=); the logical && and || never match.
+    return /[\w$)\]]\s*(?:\^|&(?!&)|\|(?!\|))=?\s*[\w$(~+-]/.test(executable);
   }
 
   static isDirectUrlAction(action: string): boolean {

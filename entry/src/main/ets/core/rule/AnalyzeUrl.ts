@@ -287,7 +287,8 @@ export class AnalyzeUrl {
       let found = false;
       while ((match = property.exec(text)) !== null) {
         const name = (match[1] || '').trim();
-        if (!name) continue;
+        // `@`-prefixed entries (such as "@cache") are directives for the header runtime.
+        if (!name || name.startsWith('@')) continue;
         let value = match[3] || '';
         if (!match[2]) {
           value = 'Mozilla/5.0 (Linux; HarmonyOS) AppleWebKit/537.36 Mobile Safari/537.36';
