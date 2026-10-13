@@ -6,6 +6,7 @@ import { VerificationSupport } from '../core/http/VerificationSupport';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
+import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { ExploreResultCache } from '../utils/ExploreResultCache';
 import { AppFontSize } from '../theme/AppFontSize';
@@ -318,6 +319,14 @@ struct NativeSourceSettingsPage {
                     .value(item.value)
                     .font({ size: AppFontSize.BODY })
                     .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
+                    .divider(null)
+                    .optionBgColor(Color.Transparent)
+                    .optionFontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
+                    .selectedOptionFontColor(ThemeRuntime.accentColor(this.appDarkMode))
+                    .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.appDarkMode))
+                    .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode))
+                    .menuBackgroundBlurStyle(BlurStyle.NONE)
+                    .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
                     .layoutWeight(1)
                     .onSelect((_selected: number, text: string) => {
                       this.setValue(index, text);
@@ -431,6 +440,7 @@ struct NativeSourceSettingsPage {
         .padding({ bottom: this.navBarHeight + AppSpacing.XL })
       }
       .layoutWeight(1)
+      .align(Alignment.Top)
       .scrollBar(BarState.Off)
     }
     .width('100%')
