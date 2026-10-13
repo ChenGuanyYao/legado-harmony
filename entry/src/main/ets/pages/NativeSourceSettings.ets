@@ -1,4 +1,4 @@
-import { router } from '@kit.ArkUI';
+import { LengthMetrics, router } from '@kit.ArkUI';
 import { BookSource } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { HttpClient } from '../core/http/HttpClient';
@@ -11,12 +11,14 @@ import { ExploreResultCache } from '../utils/ExploreResultCache';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
 import { NativeSourceService, NativeVarItem } from '../core/nativesource/NativeSourceService';
+import { NativeActionEntry } from '../core/nativesource/NativeSourceRunner';
+import { NativeLoginFieldSpec } from '../core/nativesource/NativeSourceSpec';
 
 interface NativeSourceSettingsParams {
   bookSourceUrl?: string;
 }
 
-/** 原生书源的设置页：书源变量与账号登录。 */
+/** 原生书源的设置页：书源变量、账号登录和动作按钮。 */
 @Entry
 @Component
 struct NativeSourceSettingsPage {
@@ -27,14 +29,21 @@ struct NativeSourceSettingsPage {
   @State sourceName: string = '';
   @State items: NativeVarItem[] = [];
   @State hasLogin: boolean = false;
+  @State hasWebLogin: boolean = false;
+  @State formFields: NativeLoginFieldSpec[] = [];
+  @State hasSendCode: boolean = false;
+  @State sendCodeLabel: string = '发送验证码';
   @State loggedIn: boolean = false;
   @State loginStatus: string = '';
   @State canCheckLogin: boolean = false;
-  @State isChecking: boolean = false;
+  @State actions: NativeActionEntry[] = [];
+  @State busy: boolean = false;
   @State dirty: boolean = false;
   private bookSourceUrl: string = '';
   private source: BookSource | null = null;
   private http: HttpClient = new HttpClient(10000);
+  // 表单里填写的值只留在本页内存里，不落库。
+  private formValues: Record<string, string> = {};
 
   aboutToAppear(): void {
     syncSystemBars(getContext(this), this.appDarkMode, ThemeRuntime.pageColor(this.appDarkMode));
@@ -63,18 +72,35 @@ struct NativeSourceSettingsPage {
       this.items = NativeSourceService.varItems(source);
       const login = NativeSourceService.loginSpec(source);
       this.hasLogin = !!login;
+      this.hasWebLogin = !!login && !!login.url;
+      this.formFields = NativeSourceService.loginForm(source);
+      this.hasSendCode = !!login && !!login.sendCode && this.formFields.length > 0;
+      this.sendCodeLabel = login && login.sendCode && login.sendCode.label ? login.sendCode.label : '发送验证码';
       this.canCheckLogin = !!login && !!login.check;
       this.refreshLoginState();
+      this.loadActions();
     } catch (e) {
       console.error('加载书源设置失败:', e);
       HdsFeedback.showToast('加载书源失败');
     }
   }
 
+  /** 动作按钮可能依赖登录状态和变量，登录、保存之后都要重新取。 */
+  async loadActions(): Promise<void> {
+    if (!this.source) return;
+    try {
+      this.actions = await NativeSourceService.actions(this.source, this.http);
+    } catch (e) {
+      console.warn('加载书源动作失败:', (e as Error).message);
+      this.actions = [];
+    }
+  }
+
   refreshLoginState(): void {
     if (!this.source || !this.hasLogin) return;
     this.loggedIn = NativeSourceService.hasLoginCookies(this.source);
-    this.loginStatus = this.loggedIn ? '已登录' : '未登录';
+    const user = NativeSourceService.credential(this.source).user;
+    this.loginStatus = this.loggedIn ? (user ? `已登录：${user}` : '已登录') : '未登录';
   }
 
   setValue(index: number, value: string): void {
@@ -95,6 +121,7 @@ struct NativeSourceSettingsPage {
       await ExploreResultCache.invalidateSources(getContext(this), [this.source.bookSourceUrl]);
       this.dirty = false;
       HdsFeedback.showToast('已保存');
+      this.loadActions();
     } catch (e) {
       console.error('保存书源设置失败:', e);
       HdsFeedback.showToast('保存失败');
@@ -104,7 +131,7 @@ struct NativeSourceSettingsPage {
   openLogin(): void {
     if (!this.source) return;
     const login = NativeSourceService.loginSpec(this.source);
-    if (!login) return;
+    if (!login || !login.url) return;
     const title = `${this.sourceName || '书源'} 登录`;
     VerificationSupport.requestVerification(login.url, title, this.source);
     router.pushUrl({
@@ -120,9 +147,53 @@ struct NativeSourceSettingsPage {
     });
   }
 
+  /** 保存或清除表单登录换来的凭据。只存凭据，不存用户填的密码。 */
+  async saveCredential(token: string, user: string): Promise<void> {
+    if (!this.source) return;
+    const loginInfo = NativeSourceService.loginInfoWith(this.source, token, user);
+    await AppDatabase.getInstance().updateBookSourceLoginRuntime(this.source.bookSourceUrl,
+      this.source.variable, this.source.loginHeader, loginInfo);
+    this.source.loginInfo = loginInfo;
+    await ExploreResultCache.invalidateSources(getContext(this), [this.source.bookSourceUrl]);
+  }
+
+  async submitForm(): Promise<void> {
+    if (!this.source || this.busy) return;
+    this.busy = true;
+    this.loginStatus = '正在登录…';
+    try {
+      const result = await NativeSourceService.submitLogin(this.source, this.http, this.formValues);
+      if (result.ok) {
+        // 没有单独声明凭据的接口（靠 Cookie 维持登录）也记一个标记，用来显示已登录。
+        await this.saveCredential(result.token || 'ok', result.user);
+        HdsFeedback.showToast(result.message || '登录成功');
+      } else {
+        HdsFeedback.showToast(result.message || '登录失败');
+      }
+    } catch (e) {
+      HdsFeedback.showToast(`登录失败：${(e as Error).message || '未知错误'}`);
+    } finally {
+      this.busy = false;
+      this.refreshLoginState();
+      this.loadActions();
+    }
+  }
+
+  async sendCode(): Promise<void> {
+    if (!this.source || this.busy) return;
+    this.busy = true;
+    try {
+      HdsFeedback.showToast(await NativeSourceService.sendLoginCode(this.source, this.http, this.formValues));
+    } catch (e) {
+      HdsFeedback.showToast(`操作失败：${(e as Error).message || '未知错误'}`);
+    } finally {
+      this.busy = false;
+    }
+  }
+
   async checkLogin(): Promise<void> {
-    if (!this.source || this.isChecking) return;
-    this.isChecking = true;
+    if (!this.source || this.busy) return;
+    this.busy = true;
     this.loginStatus = '正在检查…';
     try {
       const state = await NativeSourceService.checkLogin(this.source, this.http);
@@ -131,15 +202,41 @@ struct NativeSourceSettingsPage {
     } catch (e) {
       this.loginStatus = `检查失败：${(e as Error).message || '未知错误'}`;
     } finally {
-      this.isChecking = false;
+      this.busy = false;
     }
   }
 
-  logout(): void {
+  async logout(): Promise<void> {
     if (!this.source) return;
     NativeSourceService.logout(this.source);
+    try {
+      await this.saveCredential('', '');
+    } catch (e) {
+      console.warn('清除登录凭据失败:', e);
+    }
     this.refreshLoginState();
+    this.loadActions();
     HdsFeedback.showToast('已退出登录');
+  }
+
+  async runAction(action: NativeActionEntry): Promise<void> {
+    if (!this.source || this.busy) return;
+    if (action.open) {
+      VerificationSupport.requestVerification(action.open, action.label, this.source);
+      router.pushUrl({
+        url: 'pages/VerifyWeb',
+        params: { url: action.open, title: action.label, requireLoginCookie: 'false', readerCommentMode: 'false' }
+      });
+      return;
+    }
+    this.busy = true;
+    try {
+      HdsFeedback.showToast(await NativeSourceService.runAction(this.source, this.http, action.index));
+    } catch (e) {
+      HdsFeedback.showToast(`操作失败：${(e as Error).message || '未知错误'}`);
+    } finally {
+      this.busy = false;
+    }
   }
 
   @Builder
@@ -159,6 +256,7 @@ struct NativeSourceSettingsPage {
       .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.MD, bottom: AppSpacing.MD })
       .borderRadius(ThemeRuntime.smallRadius())
       .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
+      .opacity(this.busy ? 0.5 : 1)
       .onClick(() => action())
   }
 
@@ -250,23 +348,77 @@ struct NativeSourceSettingsPage {
                 ThemeRuntime.subTextColor(this.appDarkMode))
               .width('100%')
               .padding({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
-            Row({ space: AppSpacing.MD }) {
-              this.actionButton(this.loggedIn ? '重新登录' : '登录', ThemeRuntime.accentColor(this.appDarkMode),
-                () => this.openLogin())
+
+            ForEach(this.formFields, (field: NativeLoginFieldSpec) => {
+              Row() {
+                Text(field.label || field.key)
+                  .fontSize(AppFontSize.BODY)
+                  .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
+                  .width(96)
+                  .maxLines(2)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                TextInput({ placeholder: '请输入' })
+                  .type(field.secret === true ? InputType.Password : InputType.Normal)
+                  .fontSize(AppFontSize.BODY)
+                  .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))
+                  .backgroundColor(ThemeRuntime.inputColor(this.appDarkMode))
+                  .borderRadius(ThemeRuntime.smallRadius())
+                  .layoutWeight(1)
+                  .onChange((value: string) => {
+                    this.formValues[field.key] = value;
+                  })
+              }
+              .width('100%')
+              .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.SM, bottom: AppSpacing.SM })
+              .alignItems(VerticalAlign.Center)
+            }, (field: NativeLoginFieldSpec) => field.key)
+
+            Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(AppSpacing.MD),
+              cross: LengthMetrics.vp(AppSpacing.MD) } }) {
+              if (this.formFields.length > 0) {
+                this.actionButton('登录', ThemeRuntime.accentColor(this.appDarkMode), () => {
+                  this.submitForm();
+                })
+                if (this.hasSendCode) {
+                  this.actionButton(this.sendCodeLabel, ThemeRuntime.primaryTextColor(this.appDarkMode), () => {
+                    this.sendCode();
+                  })
+                }
+              }
+              if (this.hasWebLogin) {
+                this.actionButton(this.formFields.length > 0 ? '网页登录' : (this.loggedIn ? '重新登录' : '登录'),
+                  ThemeRuntime.accentColor(this.appDarkMode), () => this.openLogin())
+              }
               if (this.canCheckLogin) {
                 this.actionButton('检查登录', ThemeRuntime.primaryTextColor(this.appDarkMode), () => {
                   this.checkLogin();
                 })
               }
               if (this.loggedIn) {
-                this.actionButton('退出登录', ThemeRuntime.dangerColor(this.appDarkMode), () => this.logout())
+                this.actionButton('退出登录', ThemeRuntime.dangerColor(this.appDarkMode), () => {
+                  this.logout();
+                })
               }
+            }
+            .width('100%')
+            .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.SM })
+          }
+
+          if (this.actions.length > 0) {
+            this.sectionTitle('操作')
+            Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(AppSpacing.MD),
+              cross: LengthMetrics.vp(AppSpacing.MD) } }) {
+              ForEach(this.actions, (action: NativeActionEntry) => {
+                this.actionButton(action.label, ThemeRuntime.primaryTextColor(this.appDarkMode), () => {
+                  this.runAction(action);
+                })
+              }, (action: NativeActionEntry) => `${action.index}_${action.label}`)
             }
             .width('100%')
             .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
           }
 
-          if (this.items.length === 0 && !this.hasLogin) {
+          if (this.items.length === 0 && !this.hasLogin && this.actions.length === 0) {
             Text('该书源没有可设置的项目')
               .fontSize(AppFontSize.BODY)
               .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))

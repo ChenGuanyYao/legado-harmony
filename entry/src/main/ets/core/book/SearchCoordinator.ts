@@ -627,9 +627,13 @@ export class SearchCoordinator {
     if (!source.searchUrl) return this.sourceResult([], BookSource.VALIDATION_FAILED, '该书源没有配置搜索');
     let found: SearchBook[] = [];
     try {
-      found = await NativeSourceService.search(source, this.http, keyword, stopped, responseLimit);
+      found = await NativeSourceService.search(source, this.http, keyword, stopped, responseLimit,
+        options.debugContext || null);
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e);
+      if (reason.indexOf(NativeSourceService.VERIFICATION_REASON) >= 0) {
+        return this.sourceResult([], BookSource.VALIDATION_NEEDS_VERIFICATION, NativeSourceService.VERIFICATION_REASON);
+      }
       return this.sourceResult([], /请求失败|空响应|已取消/.test(reason) ?
         BookSource.VALIDATION_TEMPORARY_ERROR : BookSource.VALIDATION_FAILED, reason || '搜索过程中发生异常');
     }

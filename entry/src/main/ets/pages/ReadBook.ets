@@ -1,3 +1,5 @@
+import { NativeSourceService } from '../core/nativesource/NativeSourceService';
+import { HttpClient } from '../core/http/HttpClient';
 import { router, window, promptAction } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
@@ -11952,6 +11954,16 @@ struct ReadBookPage {
     const source = this.currentReaderSource();
     if (action && source) {
       action.url = ReaderInteractionProviderRegistry.expandAction(source, action.url);
+    }
+    if (action && source && NativeSourceService.isReaderAction(action.url)) {
+      // 原生书源正文里的请求按钮：发出书源声明的请求，把结果提示出来。
+      this.readerSourceActionOpenedAt = now;
+      NativeSourceService.runReaderAction(source, new HttpClient(10000), action.url).then((message: string): void => {
+        HdsFeedback.showToast(message);
+      }).catch((error: Error): void => {
+        HdsFeedback.showToast(`操作失败：${error.message || '未知错误'}`);
+      });
+      return;
     }
     if (action && source && ReaderActionMarker.sourceScript(action.url)) {
       this.openReaderSourceScriptAction(source, action, marker);

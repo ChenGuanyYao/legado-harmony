@@ -61,7 +61,7 @@ export class WebBookService {
     if (NativeSourceService.isNative(source)) {
       // 原生书源不经过脚本引擎，也不套用兼容书源的各类兜底修补。
       try {
-        return await NativeSourceService.getBookInfo(source, this.http, book);
+        return await NativeSourceService.getBookInfo(source, this.http, book, debugContext);
       } catch (e) {
         console.warn('[WS] native book info failed:', source.bookSourceName, (e as Error).message);
         AppStorage.setOrCreate('bookSourceStageLastError', (e as Error).message || '详情解析失败');
@@ -289,7 +289,7 @@ export class WebBookService {
     if (NativeSourceService.isNative(source)) {
       try {
         const nativeChapters = await NativeSourceService.getChapterList(source, this.http, book,
-          maxChapters > 0 ? Math.max(1, Math.round(maxChapters)) : 0);
+          maxChapters > 0 ? Math.max(1, Math.round(maxChapters)) : 0, debugContext);
         if (nativeChapters.length === 0) {
           AppStorage.setOrCreate('bookSourceStageLastError', '目录规则没有匹配到章节');
         }
@@ -614,7 +614,7 @@ export class WebBookService {
     shouldCancel: (() => boolean) | null = null,
     debugContext: BookSourceDebugContext | null = null): Promise<string> {
     if (NativeSourceService.isNative(source)) {
-      return await this.getNativeContent(source, book, chapter, shouldCancel);
+      return await this.getNativeContent(source, book, chapter, shouldCancel, debugContext);
     }
     // `ruleContent.audioUrl` is the dedicated media-address rule of an audio source. It takes
     // precedence over `content`, which remains the fallback when it yields nothing.
@@ -631,13 +631,18 @@ export class WebBookService {
   }
 
   private async getNativeContent(source: BookSource, book: Book, chapter: BookChapter,
-    shouldCancel: (() => boolean) | null): Promise<string> {
+    shouldCancel: (() => boolean) | null, debugContext: BookSourceDebugContext | null = null): Promise<string> {
     AppStorage.setOrCreate('bookSourceStageLastError', '');
     try {
       const result = await NativeSourceService.getContent(source, this.http, book, chapter,
-        (): boolean => this.contentRequestCanceled(shouldCancel));
+        (): boolean => this.contentRequestCanceled(shouldCancel), debugContext);
       if (this.contentRequestCanceled(shouldCancel)) return '';
       if (result.kind === 'audio' || result.kind === 'video') return result.text.trim();
+      if (result.kind === 'images' && result.images.length > 0) {
+        // 漫画图片按显式图片列表处理，地址后附带的请求头选项会在取图时生效。
+        return await this.normalizeReaderContent(source, '',
+          result.baseUrl || chapter.url || book.bookUrl || source.bookSourceUrl, result.images);
+      }
       if (!result.text.trim()) {
         AppStorage.setOrCreate('bookSourceStageLastError', '正文规则没有取到内容');
         return '';

@@ -508,9 +508,151 @@ try {
   ];
   const linkedContent = await new NativeSourceRunner(NativeSourceSpec.fromObject(linked), runHost, {})
     .content(book, { url: 'https://api.example.com/content?item_id=c1', title: '', index: 0 });
-  equal(linkedContent.links, [{ label: '▶ 播放c1', url: 'https://api.example.com/player?item=c1' }],
+  equal(linkedContent.links, [{ label: '▶ 播放c1', url: 'https://api.example.com/player?item=c1', request: null, message: '' }],
     '链接按钮：模板、when、相对地址补全，非 http 地址被丢弃');
   invalid((s) => { s.content.links = [{ label: '缺地址' }]; }, '链接缺少地址');
+
+  // ---------- 字符集、重试、媒体请求头、声明式缓存 ----------
+  const extended = JSON.parse(JSON.stringify(sample));
+  extended.search.charset = 'gbk';
+  extended.search.retry = 9;
+  extended.cache = {
+    token: { url: '{{vars.server}}/token', value: '= data.token', ttl: 60 }
+  };
+  extended.let.auth = "= token ? 'Bearer ' + token : ''";
+  extended.detail.headers = { Authorization: '{{auth}}' };
+  extended.content.mediaHeaders = { Referer: '{{server}}/', Empty: '' };
+  responses['/token'] = { token: 'T1' };
+  responses['/detail'] = { code: 0, data: { book_id: '11', name: '斗破' } };
+  responses['/search'] = { data: { list: [{ book_id: '1', name: '书' }] } };
+  const extendedHost = createTestHost(JsonPathEvaluator, respond);
+  const extendedRunner = new NativeSourceRunner(NativeSourceSpec.fromObject(extended), extendedHost, {});
+  await extendedRunner.search('书', 1);
+  const searchRequest = extendedHost.requests.find((request) => request.url.includes('/search?'));
+  equal([searchRequest.charset, searchRequest.retry, searchRequest.primary], ['gbk', 3, true],
+    '字符集、重试上限，主请求带验证标记');
+  await extendedRunner.detail(book);
+  equal(extendedHost.requests[extendedHost.requests.length - 1].headers, { Authorization: 'Bearer T1' },
+    '缓存值可用于后续请求');
+  const tokenRequests = extendedHost.requests.filter((request) => request.url.includes('/token'));
+  equal([tokenRequests.length, tokenRequests[0].primary], [1, false], '有效期内只取一次，取值请求不触发验证');
+  extendedHost.clearCache();
+  delete responses['/token'];
+  await extendedRunner.detail(book);
+  equal(extendedHost.requests[extendedHost.requests.length - 1].headers, {}, '取值失败时为 null，值为空的请求头不发送');
+  const comicWithHeaders = await extendedRunner.content({ ...book, type: 'comic' },
+    { url: 'https://api.example.com/content?item_id=m1', title: '', index: 0 });
+  equal(comicWithHeaders.images.length, 2, '漫画返回图片地址列表');
+  equal(comicWithHeaders.mediaHeaders, { Referer: 'https://api.example.com/' }, '媒体请求头按模板渲染');
+  invalid((s) => { s.cache = { token: { url: 'x' } }; }, '缓存缺少取值规则');
+  invalid((s) => { s.cache = { 'bad-name': { url: 'x', value: '= 1' } }; }, '缓存名称不合法');
+
+  // 状态码正常但被判为失败时（例如验证页），提示里用给出的原因
+  const blockedHost = createTestHost(JsonPathEvaluator, respond);
+  blockedHost.fetch = async (request) => ({ ok: false, status: 200, body: '', url: request.url, error: '需要登录或网页验证' });
+  let blocked = '';
+  try {
+    await new NativeSourceRunner(definition, blockedHost, {}).search('x', 1);
+  } catch (e) {
+    blocked = e.message;
+  }
+  equal(blocked, '搜索请求失败：需要登录或网页验证', '验证拦截的提示');
+
+  // ---------- 调试记录与出错定位 ----------
+  const tracedHost = createTestHost(JsonPathEvaluator, respond);
+  responses['/search'] = { data: { list: [{ book_id: '1', name: '甲', author: 'A' }, { book_id: '2', name: '乙', author: 'B' }] } };
+  await new NativeSourceRunner(definition, tracedHost, {}).search('甲', 1);
+  const listTrace = tracedHost.traces.find((t) => t.field === 'search.list');
+  equal([listTrace.count, listTrace.type], [2, 'expression'], '调试记录列表规则与匹配数量');
+  const nameTraces = tracedHost.traces.filter((t) => t.field === 'search.fields.name');
+  equal([nameTraces.length, nameTraces[0].preview, nameTraces[0].type], [1, '甲', 'selector'], '字段只记第一个元素');
+  equal(tracedHost.traces.find((t) => t.field === 'search.fields.bookUrl').type, 'template', '模板规则的类型');
+  equal(tracedHost.traces.some((t) => t.field === 'let.server'), true, '派生值也有记录');
+
+  const broken = JSON.parse(JSON.stringify(sample));
+  broken.search.fields.kind = '= $.category + missingName';
+  const brokenHost = createTestHost(JsonPathEvaluator, respond);
+  let located = '';
+  try {
+    await new NativeSourceRunner(NativeSourceSpec.fromObject(broken), brokenHost, {}).search('甲', 1);
+  } catch (e) {
+    located = e.message;
+  }
+  equal(located, '规则 search.fields.kind 出错：未定义的名称 “missingName”', '运行时出错指明是哪条规则');
+  equal(brokenHost.traces.find((t) => t.field === 'search.fields.kind').error, '未定义的名称 “missingName”', '错误也记入调试信息');
+
+  // ---------- 表单登录、动作按钮、正文请求按钮 ----------
+  const interactive = JSON.parse(JSON.stringify(sample));
+  interactive.login = {
+    form: [{ key: 'user', label: '账号' }, { key: 'pass', label: '密码', secret: true }],
+    submit: {
+      url: '{{vars.server}}/login', body: { username: '{{form.user}}', password: '{{md5(form.pass)}}' },
+      ok: '= data.code == 0', token: '= data.token', user: '= data.name', message: '= data.msg'
+    },
+    sendCode: { label: '发送验证码', url: '{{vars.server}}/code?phone={{form.user}}', message: '= data.msg' }
+  };
+  interactive.let.auth = "= login.token ? 'Bearer ' + login.token : ''";
+  interactive.actions = [
+    { label: '签到', url: '{{server}}/checkin', headers: { Authorization: '{{auth}}' }, message: "= '签到结果：' + data.msg", when: '= login.token' },
+    { label: '个人中心', open: '/user' },
+    { label: '隐藏', url: '{{server}}/x', when: '= false' }
+  ];
+  interactive.content.links = [
+    { label: '点赞', request: { url: '{{server}}/like?item={{d.item_id}}', method: 'POST', headers: { Authorization: '{{auth}}' } }, message: '= data.msg' }
+  ];
+  interactive.detail.webView = { waitFor: '.book-info', timeout: 500 };
+  responses['/login'] = { code: 0, token: 'TK', name: '读者乙', msg: '欢迎' };
+  responses['/code'] = { msg: '验证码已发送' };
+  responses['/checkin'] = { msg: '获得 5 积分' };
+  responses['/like'] = { msg: '已点赞' };
+  responses['/detail'] = { code: 0, data: { book_id: '11', name: '斗破' } };
+  const interactiveDefinition = NativeSourceSpec.fromObject(interactive);
+  const interactiveHost = createTestHost(JsonPathEvaluator, respond);
+  const anonymous = new NativeSourceRunner(interactiveDefinition, interactiveHost, {});
+
+  const loginResult = await anonymous.submitLogin({ user: 'u1', pass: 'secret' });
+  equal(loginResult, { ok: true, token: 'TK', user: '读者乙', message: '欢迎' }, '表单登录成功，取到凭据');
+  const loginRequest = interactiveHost.requests[interactiveHost.requests.length - 1];
+  equal([loginRequest.method, loginRequest.body],
+    ['POST', '{"username":"u1","password":"5ebe2294ecd0e0f08eab7690d2a6ee69"}'], '表单值进入请求体，密码可先做摘要');
+  equal(await anonymous.sendLoginCode({ user: '138' }), '验证码已发送', '辅助请求返回提示文字');
+  responses['/login'] = { code: 1, msg: '密码错误' };
+  equal(await anonymous.submitLogin({ user: 'u1', pass: 'x' }), { ok: false, token: '', user: '', message: '密码错误' },
+    '登录失败给出接口的提示');
+  equal((await anonymous.actions()).map((x) => x.label), ['个人中心'], '未登录时依赖凭据的按钮不显示');
+
+  const signedIn = new NativeSourceRunner(interactiveDefinition, interactiveHost, {}).setCredential({ token: 'TK', user: '读者乙' });
+  const actionEntries = await signedIn.actions();
+  equal(actionEntries, [
+    { index: 0, label: '签到', open: '' },
+    { index: 1, label: '个人中心', open: 'https://api.example.com/user' }
+  ], '动作按钮：when 生效，open 补全为绝对地址');
+  equal(await signedIn.runAction(0), '签到结果：获得 5 积分', '执行动作并返回提示');
+  equal(interactiveHost.requests[interactiveHost.requests.length - 1].headers, { Authorization: 'Bearer TK' },
+    '动作请求带上登录凭据');
+
+  const withButton = await signedIn.content(book, { url: 'https://api.example.com/content?item_id=c1', title: '', index: 0 });
+  equal([withButton.links[0].label, withButton.links[0].url, withButton.links[0].request.url, withButton.links[0].request.method],
+    ['点赞', '', 'https://api.example.com/like?item=c1', 'POST'], '正文请求按钮：请求在取正文时渲染好');
+  equal(await signedIn.runLinkAction(withButton.links[0].request, withButton.links[0].message), '已点赞', '点击后执行并提示');
+
+  await signedIn.detail(book);
+  const waited = interactiveHost.requests[interactiveHost.requests.length - 1];
+  equal([waited.webView, waited.webWaitFor, waited.webTimeout], [true, '.book-info', 60], '网页渲染等待指定元素，超时有上限');
+
+  // ---------- 图片解密参数 ----------
+  const encrypted = JSON.parse(JSON.stringify(sample));
+  encrypted.content.imageDecode = { algorithm: 'AES/CBC/PKCS5Padding', key: "= hexBytes('00ff10')", iv: "= 'ab'" };
+  const encryptedComic = await new NativeSourceRunner(NativeSourceSpec.fromObject(encrypted), runHost, {})
+    .content({ ...book, type: 'comic' }, { url: 'https://api.example.com/content?item_id=m1', title: '', index: 0 });
+  equal(encryptedComic.imageDecode, { algorithm: 'AES/CBC/PKCS5Padding', key: '00ff10', iv: '6162' },
+    '解密参数：字节和文本都转成十六进制');
+
+  invalid((s) => { s.login = { form: [{ key: 'user' }] }; }, '登录既没有网页地址也没有提交请求');
+  invalid((s) => { s.login = { submit: { url: 'x', ok: '= true' } }; }, '表单登录缺少表单项');
+  invalid((s) => { s.actions = [{ label: '缺地址' }]; }, '动作缺少地址');
+  invalid((s) => { s.content.imageDecode = { algorithm: 'RC4', key: '= 1' }; }, '不支持的图片解密算法');
+  invalid((s) => { s.content.links = [{ label: '缺目标' }]; }, '链接既没有地址也没有请求');
 
   // ---------- 听书音色 ----------
   const voiced = JSON.parse(JSON.stringify(sample));

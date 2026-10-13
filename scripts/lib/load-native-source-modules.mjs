@@ -43,6 +43,8 @@ export async function loadNativeSourceModules() {
 /** 测试宿主：选择器只支持 JSONPath，请求由 respond(request) 给出响应体（返回 null 表示失败）。 */
 export function createTestHost(JsonPathEvaluator, respond) {
   const requests = [];
+  const traces = [];
+  const cache = new Map();
   const jsonPath = (rootValue, rule) => JsonPathEvaluator.evaluate(rootValue, rule);
   const selectAll = (content, rule) => {
     let parsed = null;
@@ -55,6 +57,8 @@ export function createTestHost(JsonPathEvaluator, respond) {
   };
   return {
     requests,
+    traces,
+    trace: (entry) => { traces.push(entry); },
     jsonPath,
     select: (content, rule, baseUrl, list) => {
       const found = selectAll(content, rule).map((item) => typeof item === 'string' ? item : JSON.stringify(item));
@@ -80,6 +84,9 @@ export function createTestHost(JsonPathEvaluator, respond) {
       }
       throw new Error(`test host: unsupported ${name}`);
     },
+    cacheGet: (key) => cache.get(key),
+    cachePut: (key, value) => { cache.set(key, value); },
+    clearCache: () => cache.clear(),
     cookie: (url, name) => (name === 'sessionid' && url.includes('example.com') ? 'abc123' : ''),
     fetch: async (request) => {
       requests.push(request);
