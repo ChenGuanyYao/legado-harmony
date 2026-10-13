@@ -111,6 +111,10 @@ export class RemoteAudioPlayback {
       };
       await player.prepare();
       if (generation !== this.generation) return;
+      // 与 setMediaSource 同理：prepare() 返回不保证已经进入 prepared。网络流缓冲较慢时直接 play() 会报
+      // "The current state is initialized. Play operation only supports prepared/paused/completed"。
+      await this.waitForPrepared(player, generation);
+      if (generation !== this.generation) return;
       this.durationMs = Math.max(0, player.duration || this.durationMs);
       this.applySpeed(player, this.speed);
       if (this.positionMs > 0 && (this.durationMs <= 0 || this.positionMs < this.durationMs - 1000)) {
@@ -296,6 +300,29 @@ export class RemoteAudioPlayback {
     try {
       await player.release();
     } catch (_) {}
+  }
+
+  private waitForPrepared(player: media.AVPlayer, generation: number): Promise<void> {
+    const ready = (state: string): boolean => state === 'prepared' || state === 'playing' || state === 'paused' ||
+      state === 'completed';
+    if (generation !== this.generation || ready(player.state || '')) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      const startedAt = Date.now();
+      // 和 waitForInitialized 一样用轮询，不另外注册 stateChange 回调。
+      const pollId = setInterval((): void => {
+        const state = player.state || '';
+        if (generation !== this.generation || player !== this.player || ready(state)) {
+          clearInterval(pollId);
+          resolve();
+        } else if (state === 'released' || state === 'error') {
+          clearInterval(pollId);
+          reject(new Error('音频加载失败'));
+        } else if (Date.now() - startedAt > 20000) {
+          clearInterval(pollId);
+          reject(new Error('音频加载超时'));
+        }
+      }, 50);
+    });
   }
 
   private waitForInitialized(player: media.AVPlayer, generation: number): Promise<void> {
