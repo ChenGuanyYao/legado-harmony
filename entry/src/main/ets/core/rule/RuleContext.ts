@@ -1,5 +1,7 @@
 export class RuleContext {
-  private vars: Record<string, string> = {};
+  // Keys come from source rules. A prototype-free table keeps names such as `constructor` or
+  // `__proto__` ordinary variables instead of resolving to members of Object.prototype.
+  private vars: Record<string, string> = Object.create(null) as Record<string, string>;
 
   put(key: string, value: string): void {
     this.vars[key] = value;
@@ -16,7 +18,8 @@ export class RuleContext {
   loadFromJson(json: string): void {
     try {
       const obj = JSON.parse(json) as Record<string, string>;
-      Object.assign(this.vars, obj);
+      // Only an object is a variable table; a bare string or array would be spread into index keys.
+      if (obj && typeof obj === 'object' && !Array.isArray(obj)) Object.assign(this.vars, obj);
     } catch (_) {}
   }
 

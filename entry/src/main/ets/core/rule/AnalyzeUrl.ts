@@ -109,8 +109,11 @@ export class AnalyzeUrl {
   }
 
   private parseOption(optStr: string): void {
+    // parseLooseObject reports failure with null rather than an exception; an options object that
+    // is not parseable as (loose) JSON still gets its plain scalar options from the patterns below.
+    const opt = this.parseLooseObject(optStr);
     try {
-      const opt = this.parseLooseObject(optStr) || {};
+      if (!opt) throw new Error('unparseable request options');
       if (opt['method']) this.config.method = String(opt['method']).toUpperCase();
       if (opt['body'] !== undefined && opt['body'] !== null) {
         this.config.body = typeof opt['body'] === 'string' ? String(opt['body']) : JSON.stringify(opt['body']);
@@ -142,6 +145,8 @@ export class AnalyzeUrl {
       if (bodyJs) this.config.bodyJs = bodyJs[2];
       const rawBody = optStr.match(/['"]?rawBody['"]?\s*:\s*(true|false)/i);
       if (rawBody) this.config.rawBody = rawBody[1].toLowerCase() === 'true';
+      if (/['"]?webView['"]?\s*:\s*['"]?true\b/i.test(optStr)) this.config.useWebView = true;
+      console.warn('[AnalyzeUrl] request options are not valid JSON; only scalar options were read');
     }
   }
 

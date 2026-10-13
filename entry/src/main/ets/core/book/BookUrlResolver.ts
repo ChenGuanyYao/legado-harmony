@@ -34,7 +34,7 @@ export class BookUrlResolver {
 
   static resolve(url: string, base: string): string {
     const value = (url || '').trim();
-    if (!value || value.startsWith('http://') || value.startsWith('https://') || value.startsWith('data:')) return value;
+    if (!value || /^https?:\/\//i.test(value) || value.startsWith('data:')) return value;
     if (/^\/\/[A-Za-z0-9.-]+(?::\d+)?(?:[/?#]|$)/.test(value)) return 'https:' + value;
 
     const cleanBase = this.cleanBaseUrl(base);
@@ -62,15 +62,39 @@ export class BookUrlResolver {
       return withoutFragment + value;
     }
 
+    const origin = cleanBase.match(/^(https?:\/\/[^/?#]+)/i);
     if (value.startsWith('/')) {
-      const m = cleanBase.match(/^(https?:\/\/[^/]+)/);
-      return m ? m[0] + value : cleanBase + value;
+      return origin ? this.normalizeDotSegments(origin[0] + value) : cleanBase + value;
     }
 
-    const queryIndex = cleanBase.indexOf('?');
-    const withoutQuery = queryIndex >= 0 ? cleanBase.substring(0, queryIndex) : cleanBase;
-    const baseDir = withoutQuery.endsWith('/') ? withoutQuery : withoutQuery.replace(/\/[^/]*$/, '/');
-    return baseDir + value;
+    const pathEnd = cleanBase.search(/[?#]/);
+    const withoutQuery = pathEnd >= 0 ? cleanBase.substring(0, pathEnd) : cleanBase;
+    // `https://example.com` has no path at all: its directory is the site root, and the host name
+    // must not be mistaken for the last path segment.
+    const baseDir = origin && withoutQuery.length === origin[0].length ? `${withoutQuery}/` :
+      (withoutQuery.endsWith('/') ? withoutQuery : withoutQuery.replace(/\/[^/]*$/, '/'));
+    return this.normalizeDotSegments(baseDir + value);
+  }
+
+  /** Collapses `.` and `..` in the path of an absolute HTTP(S) address; query and fragment stay as written. */
+  private static normalizeDotSegments(url: string): string {
+    const match = url.match(/^(https?:\/\/[^/?#]+)(\/[^?#]*)?([?#][\s\S]*)?$/i);
+    if (!match || !match[2] || !/(?:^|\/)\.\.?(?:\/|$)/.test(match[2])) return url;
+    const segments: string[] = [];
+    const parts = match[2].split('/');
+    for (let index = 1; index < parts.length; index++) {
+      const part = parts[index];
+      const last = index === parts.length - 1;
+      if (part === '.') {
+        if (last) segments.push('');
+      } else if (part === '..') {
+        if (segments.length > 0) segments.pop();
+        if (last) segments.push('');
+      } else {
+        segments.push(part);
+      }
+    }
+    return `${match[1]}/${segments.join('/')}${match[3] || ''}`;
   }
 
   static setVariableJson(raw: string, key: string, value: string): string {

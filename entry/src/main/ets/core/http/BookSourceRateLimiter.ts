@@ -14,7 +14,8 @@ export enum RateLimitAcquireResult {
 }
 
 export class BookSourceRateLimiter {
-  private static states: Record<string, BookSourceRateState> = {};
+  // A Map, not an object: the key is source-supplied text and must never reach a prototype member.
+  private static states: Map<string, BookSourceRateState> = new Map<string, BookSourceRateState>();
   // Sleep in slices so a cancelled caller is released promptly instead of after the whole window.
   private static readonly WAIT_SLICE_MS: number = 500;
 
@@ -32,10 +33,10 @@ export class BookSourceRateLimiter {
     const key = source.bookSourceUrl || source.bookSourceName;
     if (!key) return RateLimitAcquireResult.Acquired;
     const deadline = maxWaitMs > 0 ? Date.now() + maxWaitMs : 0;
-    let state = this.states[key];
+    let state = this.states.get(key);
     if (!state) {
       state = new BookSourceRateState();
-      this.states[key] = state;
+      this.states.set(key, state);
     }
     while (true) {
       if (isCancelled && isCancelled()) return RateLimitAcquireResult.Cancelled;
@@ -54,8 +55,19 @@ export class BookSourceRateLimiter {
     }
   }
 
-  private static parse(value: string): { limit: number, windowMs: number } | null {
-    const match = (value || '').match(/^\s*(\d+)\s*\/\s*(\d+)\s*$/);
+  /**
+   * `count/windowMs` allows `count` requests per window. A bare number is Legado's interval form:
+   * `1000` leaves at least 1000 ms between two requests, i.e. one request per window. `0` and
+   * anything unrecognised mean no source-level limit.
+   */
+  static parse(value: string): { limit: number, windowMs: number } | null {
+    const text = (value || '').trim();
+    const interval = text.match(/^(\d+)$/);
+    if (interval) {
+      const intervalMs = parseInt(interval[1]);
+      return intervalMs > 0 ? { limit: 1, windowMs: Math.min(60 * 60 * 1000, intervalMs) } : null;
+    }
+    const match = text.match(/^(\d+)\s*\/\s*(\d+)$/);
     if (!match) return null;
     const limit = Math.min(1000, Math.max(1, parseInt(match[1])));
     const windowMs = Math.min(60 * 60 * 1000, Math.max(100, parseInt(match[2])));
