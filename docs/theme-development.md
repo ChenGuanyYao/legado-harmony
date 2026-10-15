@@ -164,11 +164,11 @@ BuiltinThemeRegistry.register(theme);
 | 阅读背景装饰 | `reader_decor_<id>_light.svg` / `_dark.svg` | `viewBox="0 0 480 480"`，透明底 | `readerBackgroundDecoration()` |
 | 阅读背景右下角装饰 | `reader_decor_<id>_trailing_light.svg` / `_dark.svg` | `viewBox="0 0 480 480"`，透明底，图案贴右下角 | `readerBackgroundTrailingDecoration()` |
 | 朗读/有声书面板背景 | `tts_panel_<id>_light.svg` / `_dark.svg` | `viewBox="0 0 720 520"`，透明底 | `TtsPanelThemeStyles.resolve()` |
-| 主题封面 | `theme_cover_<id>_NN` | 约 300 × 440，JPG/PNG/SVG；矢量封面由 `scripts/generate-theme-covers.py` 生成 | `themeBookCovers()` |
+| 主题封面 | `theme_cover_<id>_NN` | 450 × 660 JPG；内置主题封面均为即梦位图，`scripts/generate-theme-covers.py` 生成的旧矢量封面已弃用，再运行会与同名 JPG 冲突 | `themeBookCovers()` |
 | 书架边框 | `theme_frame_<id>.svg` | 中心透明，只画外框和角花 | `themeShelfFrame()` |
 | 分组文件夹插画 | `theme_folder_art_<id>.jpg` | 450 × 660 | `themeShelfFolder()` |
 | 主题标识 | `theme_logo_<id>.svg` | `viewBox="0 0 64 64"` | `themeLogo()` |
-| 启动封面 | `theme_startup_<id>` | 竖屏插画 | `startupBackground()` |
+| 启动封面 | `theme_startup_<id>` | 841 × 1870 JPG 竖屏插画；底部约 1/5 叠加文案，不放主体 | `startupBackground()` |
 | 导航图标包 | `ic_theme_<pack>_<tab>.svg` | `viewBox="0 0 24 24"`，单色纯黑填充 | `navigationIcon()` |
 | 正则气泡边框 / 端饰 | `regex_frame_<style>.svg` / `regex_cap_<style>.svg` | — | `regexBubbleFrame()` / `regexBubbleCap()` |
 
