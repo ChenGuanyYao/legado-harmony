@@ -92,23 +92,6 @@ export struct ReaderThemeBackground {
       .padding(this.decorationInset())
       .hitTestBehavior(HitTestMode.None)
     }
-
-    if (ThemeAssetRegistry.readerBackgroundBorderColor(this.backgroundAssetId)) {
-      Column() {
-        Blank()
-          .width('100%')
-          .height('100%')
-          .border({
-            width: this.compact ? 1 : ThemeAssetRegistry.readerBackgroundBorderWidth(this.backgroundAssetId),
-            color: ThemeAssetRegistry.readerBackgroundBorderColor(this.backgroundAssetId)
-          })
-          .borderRadius(this.compact ? 3 : 7)
-      }
-      .width('100%')
-      .height('100%')
-      .padding(this.frameInset())
-      .hitTestBehavior(HitTestMode.None)
-    }
   }
 
   decorationSize(): number {
@@ -125,11 +108,6 @@ export struct ReaderThemeBackground {
 
   decorationInset(): Padding {
     const inset = this.compact ? 2 : Math.max(8, Math.min(22, this.shortEdge() * 0.025));
-    return { left: inset, right: inset, top: inset, bottom: inset };
-  }
-
-  frameInset(): Padding {
-    const inset = this.compact ? 3 : Math.max(12, Math.min(28, this.shortEdge() * 0.035));
     return { left: inset, right: inset, top: inset, bottom: inset };
   }
 

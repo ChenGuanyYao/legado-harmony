@@ -304,8 +304,8 @@ assert(readerBackgroundComponent.includes('ThemeAssetRegistry.readerBackgroundDe
 assert(reader.includes('ReaderThemeBackground({') && reader.includes('customImageFit: this.getBackgroundImageFit()'),
   'Reader root surface does not draw the responsive theme background');
 assert(readerBackgroundComponent.includes('.objectFit(ImageFit.Contain)') &&
-  readerBackgroundComponent.includes('readerBackgroundBorderColor'),
-  'Builtin reader backgrounds must preserve ornament proportions and draw a responsive native border');
+  !readerBackgroundComponent.includes('.border('),
+  'Builtin reader backgrounds must preserve ornament proportions and draw no frame border');
 assert(indexPage.includes('ThemeRuntime.iconPackId()'), 'Floating tab bar does not resolve the active icon pack');
 for (const tabId of ['bookshelf', 'explore', 'search', 'mine']) {
   assert(indexPage.includes(`this.navigationIcon('${tabId}')`), `Floating tab icon is not themed: ${tabId}`);

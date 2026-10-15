@@ -261,65 +261,6 @@ export class ThemeAssetRegistry {
     return trailing === ThemeAssetRegistry.readerBackgroundDecoration(assetId) ? 180 : 0;
   }
 
-  static readerBackgroundBorderColor(assetId: string): string {
-    switch (ThemeAssetRegistry.normalizeBackgroundAssetId(assetId)) {
-      case ThemeAssetRegistry.BACKGROUND_PAPER_LIGHT: return '#269B764B';
-      case ThemeAssetRegistry.BACKGROUND_PAPER_DARK: return '#24D2A068';
-      case ThemeAssetRegistry.BACKGROUND_FOREST_LIGHT: return '#28567B63';
-      case ThemeAssetRegistry.BACKGROUND_FOREST_DARK: return '#24A4C0AA';
-      case ThemeAssetRegistry.BACKGROUND_INK_LIGHT: return '#26343D3B';
-      case ThemeAssetRegistry.BACKGROUND_INK_DARK: return '#22D4DAD6';
-      case ThemeAssetRegistry.BACKGROUND_NEON_LIGHT: return '#3025AFC6';
-      case ThemeAssetRegistry.BACKGROUND_NEON_DARK: return '#4031E5F4';
-      case ThemeAssetRegistry.BACKGROUND_STRAWBERRY_LIGHT: return '#52E9A8AB';
-      case ThemeAssetRegistry.BACKGROUND_STRAWBERRY_DARK: return '#38C07D86';
-      case ThemeAssetRegistry.BACKGROUND_CRIMSON_LIGHT: return '#668D211C';
-      case ThemeAssetRegistry.BACKGROUND_CRIMSON_DARK: return '#55C84F47';
-      case ThemeAssetRegistry.BACKGROUND_PLUM_TEA_LIGHT: return '#576F7D70';
-      case ThemeAssetRegistry.BACKGROUND_PLUM_TEA_DARK: return '#4794AA9A';
-      case ThemeAssetRegistry.BACKGROUND_ROSE_LETTER_LIGHT: return '#6B8F9B8D';
-      case ThemeAssetRegistry.BACKGROUND_ROSE_LETTER_DARK: return '#4D849183';
-      case ThemeAssetRegistry.BACKGROUND_MOON_CRANE_LIGHT: return '#3D7890AD';
-      case ThemeAssetRegistry.BACKGROUND_MOON_CRANE_DARK: return '#478BBEFF';
-      case ThemeAssetRegistry.BACKGROUND_SWORD_FROST_LIGHT: return '#59476963';
-      case ThemeAssetRegistry.BACKGROUND_SWORD_FROST_DARK: return '#528AB1A7';
-      case ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_LIGHT: return '#4E607F79';
-      case ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_DARK: return '#568AB5AC';
-      case ThemeAssetRegistry.BACKGROUND_CAT_PIPI_LIGHT: return '#55C46F45';
-      case ThemeAssetRegistry.BACKGROUND_CAT_PIPI_DARK: return '#52E8A06F';
-      case ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_LIGHT: return '#4D2F6FB3';
-      case ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_DARK: return '#4D3FD3E6';
-      case ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_LIGHT: return '#4D9A74D6';
-      case ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_DARK: return '#4DC3A2F2';
-      case ThemeAssetRegistry.BACKGROUND_LETTERPRESS_PAGE_LIGHT: return '#402F5D48';
-      case ThemeAssetRegistry.BACKGROUND_LETTERPRESS_PAGE_DARK: return '#40D3B36A';
-      default: return '';
-    }
-  }
-
-  static readerBackgroundBorderWidth(assetId: string): number {
-    const normalized = ThemeAssetRegistry.normalizeBackgroundAssetId(assetId);
-    if (normalized === ThemeAssetRegistry.BACKGROUND_PLUM_TEA_LIGHT ||
-      normalized === ThemeAssetRegistry.BACKGROUND_PLUM_TEA_DARK ||
-      normalized === ThemeAssetRegistry.BACKGROUND_ROSE_LETTER_LIGHT ||
-      normalized === ThemeAssetRegistry.BACKGROUND_ROSE_LETTER_DARK ||
-      normalized === ThemeAssetRegistry.BACKGROUND_SWORD_FROST_LIGHT ||
-      normalized === ThemeAssetRegistry.BACKGROUND_SWORD_FROST_DARK ||
-      normalized === ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_LIGHT ||
-      normalized === ThemeAssetRegistry.BACKGROUND_QINGLUAN_WATER_DARK ||
-      normalized === ThemeAssetRegistry.BACKGROUND_CAT_PIPI_LIGHT ||
-      normalized === ThemeAssetRegistry.BACKGROUND_CAT_PIPI_DARK ||
-      normalized === ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_LIGHT ||
-      normalized === ThemeAssetRegistry.BACKGROUND_AZURE_MECHA_DARK ||
-      normalized === ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_LIGHT ||
-      normalized === ThemeAssetRegistry.BACKGROUND_STARWISH_MAGIC_DARK ||
-      normalized === ThemeAssetRegistry.BACKGROUND_LETTERPRESS_PAGE_LIGHT ||
-      normalized === ThemeAssetRegistry.BACKGROUND_LETTERPRESS_PAGE_DARK) {
-      return 1.5;
-    }
-    return 1;
-  }
-
   static navigationIcon(iconPackId: string, tabId: string): Resource {
     const normalizedPackId = ThemeAssetRegistry.normalizeIconPackId(iconPackId);
     const normalizedTabId = ThemeAssetRegistry.normalizeTabId(tabId);

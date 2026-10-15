@@ -184,8 +184,6 @@ BuiltinThemeRegistry.register(theme);
 
 可选的调整点：
 
-- `readerBackgroundBorderWidth()`：需要边框的主题返回边框宽度。
-- `readerBackgroundBorderColor()`：返回边框颜色，默认返回空字符串。
 - `readerBackgroundTrailingRotation()`：有独立右下角图案时返回 0；只有未登记右下角图案的资源才回退为左上角装饰旋转 180°。
 
 装饰锚定在左上和右下的正方形区域，使用 `ImageFit.Contain`。不要把内置主题改回 `Cover` 全屏壁纸，`theme-framework-check` 会检查这一点。旧版 `reader_bg_*` 仅作为兼容资源保留。
