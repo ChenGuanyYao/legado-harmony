@@ -38,6 +38,8 @@ export class ReaderTtsFloatingSession {
     AppStorage.setOrCreate('globalTtsChapterTitle', chapterTitle || '');
     AppStorage.setOrCreate('globalTtsMode', 'tts');
     AppStorage.setOrCreate('globalTtsVoiceCode', '');
+    AppStorage.setOrCreate('globalTtsStatusText', '');
+    AppStorage.setOrCreate('globalTtsBusy', false);
     ReaderTtsFloatingSession.notifyChanged();
   }
 
@@ -132,6 +134,17 @@ export class ReaderTtsFloatingSession {
     }
     if (AppStorage.get<number>('globalTtsAudioDurationMs') !== nextDuration) {
       AppStorage.setOrCreate('globalTtsAudioDurationMs', nextDuration);
+    }
+  }
+
+  /** 听书取地址、缓冲或失败时的提示；busy 表示正在加载，面板和胶囊据此显示加载状态。 */
+  static updateStatus(ownerId: string, text: string, busy: boolean): void {
+    if (!ReaderTtsFloatingSession.isOwner(ownerId)) return;
+    if (AppStorage.get<string>('globalTtsStatusText') !== text) {
+      AppStorage.setOrCreate('globalTtsStatusText', text);
+    }
+    if (AppStorage.get<boolean>('globalTtsBusy') !== busy) {
+      AppStorage.setOrCreate('globalTtsBusy', busy);
     }
   }
 
@@ -412,6 +425,8 @@ export class ReaderTtsFloatingSession {
     AppStorage.setOrCreate('globalTtsVoiceCode', '');
     AppStorage.setOrCreate('globalTtsAudioPositionMs', 0);
     AppStorage.setOrCreate('globalTtsAudioDurationMs', 0);
+    AppStorage.setOrCreate('globalTtsStatusText', '');
+    AppStorage.setOrCreate('globalTtsBusy', false);
     AppStorage.setOrCreate<ResourceStr>('globalTtsCover', '');
     AppStorage.setOrCreate<ResourceStr>('globalTtsCoverFrame', '');
     AppStorage.setOrCreate('globalTtsContent', '');

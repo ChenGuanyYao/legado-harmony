@@ -78,7 +78,9 @@ struct AudioBookPage {
   @State durationMs: number = 0;
   @State playbackState: string = 'idle';
   @State speed: number = 1;
-  @State statusText: string = '正在加载听书信息...';
+  @State statusText: string = '正在加载听书信息…';
+  // 打开页面后读书籍、目录这段时间也算加载中，播放面板据此显示加载状态。
+  @State openingBook: boolean = true;
   @State showChapterList: boolean = false;
   @StorageLink('globalTtsAudioCatalogReverseOrder') @Watch('onChapterOrderChanged')
   chapterReverseOrder: boolean = false;
@@ -141,6 +143,11 @@ struct AudioBookPage {
     this.openedFromShortcut = params?.['shortcutEntry'] === 'true';
     this.shortcutReplacedPreviousPage = params?.['shortcutReplace'] === 'true';
     this.playback.attach(this.playbackListener);
+    if (this.bookUrl && this.playback.bookUrl === this.bookUrl && this.playback.mediaUrl) {
+      // 从书架胶囊回到正在播放的这本书：沿用播放器状态，不显示加载中。
+      this.playbackState = this.playback.state;
+      this.openingBook = false;
+    }
     this.loadBook();
   }
 
@@ -194,9 +201,20 @@ struct AudioBookPage {
         topInset: this.statusBarHeight,
         bottomInset: this.navBarHeight,
         viewportHeight: this.viewportHeight,
+        hostAudioPage: true,
+        hostBookName: this.book?.name || '',
+        hostChapterTitle: this.currentChapter()?.title || '',
+        hostIntro: this.book ? this.displayIntro() : '',
+        hostCover: this.book ? this.panelCover() : '',
+        hostPlaying: this.isPlaying(),
+        hostStatusText: this.panelStatusText(),
+        hostBusy: this.isPanelBusy(),
         onClose: () => this.closePage(),
         onOpenVoice: () => this.openVoiceDialog(),
-        onOpenCatalog: () => this.openChapterList()
+        onOpenCatalog: () => this.openChapterList(),
+        onTogglePlayback: () => {
+          this.togglePlayback();
+        }
       })
 
       if (this.showChapterList) {
@@ -707,6 +725,8 @@ struct AudioBookPage {
   async loadBook(): Promise<void> {
     const serial = ++this.loadingSerial;
     if (!this.bookUrl) {
+      this.openingBook = false;
+      this.playbackState = 'error';
       this.statusText = '书籍地址为空';
       return;
     }
@@ -715,7 +735,10 @@ struct AudioBookPage {
       await db.initWithContext(getContext(this));
       let storedBook = await db.getBook(this.bookUrl);
       if (!storedBook || serial !== this.loadingSerial) {
-        if (!storedBook) this.statusText = '书籍不存在，请重新从搜索结果打开';
+        if (!storedBook) {
+          this.playbackState = 'error';
+          this.statusText = '书籍不存在，请重新从搜索结果打开';
+        }
         return;
       }
       this.source = storedBook.origin ? await db.getBookSource(storedBook.origin) : null;
@@ -744,6 +767,7 @@ struct AudioBookPage {
       this.chapterIndex = this.clampChapterIndex(this.book.durChapterIndex);
       await db.updateBook(this.book, false);
       if (this.chapters.length === 0) {
+        this.playbackState = 'error';
         this.statusText = '未获取到听书目录';
         return;
       }
@@ -761,8 +785,11 @@ struct AudioBookPage {
       }
       this.applyPendingPanelAction();
     } catch (error) {
+      this.playbackState = 'error';
       this.statusText = `打开听书失败：${this.errorMessage(error)}`;
       console.error('打开听书失败:', error);
+    } finally {
+      this.openingBook = false;
     }
   }
 
@@ -804,8 +831,9 @@ struct AudioBookPage {
       this.durationMs = 0;
     }
     this.playbackRetryCount = forceRefresh ? this.playbackRetryCount : 0;
-    this.statusText = forceRefresh ? '正在刷新音频地址...' : '正在获取音频地址...';
+    this.statusText = forceRefresh ? '正在刷新音频地址…' : '正在获取音频地址…';
     this.playbackState = 'loading';
+    this.syncFloatingStatus();
     try {
       // 上一章若还在缓冲，立即作废，免得它在新章节地址就绪前先响起来。
       await this.playback.abortPendingLoad();
@@ -951,6 +979,7 @@ struct AudioBookPage {
   onPlaybackStateChanged(state: string): void {
     this.playbackState = state;
     this.statusText = this.stateLabel(state);
+    this.syncFloatingStatus();
     if (state === 'playing') {
       this.publishFloatingSession();
       this.startAudioBackground().catch((error: Error) => {
@@ -1013,6 +1042,7 @@ struct AudioBookPage {
     }
     this.playbackState = 'error';
     this.statusText = `播放失败：${message}`;
+    this.syncFloatingStatus();
     HdsFeedback.showToast(this.statusText);
   }
 
@@ -1212,6 +1242,23 @@ struct AudioBookPage {
     ReaderTtsFloatingSession.updateAudioProgress(
       this.floatingSessionOwnerId, this.latestPositionMs, this.latestDurationMs);
     ReaderTtsFloatingSession.updateCatalogIndex(this.floatingSessionOwnerId, this.chapterIndex);
+    this.syncFloatingStatus();
+  }
+
+  /** 读书籍目录、取音频地址、播放器缓冲都算加载中。 */
+  isPanelBusy(): boolean {
+    return this.openingBook || this.playbackState === 'loading' || this.playbackState === 'initialized' ||
+      this.playbackState === 'prepared';
+  }
+
+  /** 播放面板上的提示：加载中显示进行到哪一步，失败时显示原因，正常播放或暂停时不显示。 */
+  panelStatusText(): string {
+    return this.isPanelBusy() || this.playbackState === 'error' ? this.statusText : '';
+  }
+
+  /** 共享会话已发布时（如切章缓冲），书架上的播放面板和胶囊也显示同样的加载状态。 */
+  syncFloatingStatus(): void {
+    ReaderTtsFloatingSession.updateStatus(this.floatingSessionOwnerId, this.panelStatusText(), this.isPanelBusy());
   }
 
   openFloatingPanel(action: string): void {
@@ -1492,7 +1539,7 @@ struct AudioBookPage {
   stateLabel(state: string): string {
     if (state === 'playing') return '正在播放';
     if (state === 'paused' || state === 'stopped') return '已暂停';
-    if (state === 'loading' || state === 'initialized' || state === 'prepared') return '正在加载音频...';
+    if (state === 'loading' || state === 'initialized' || state === 'prepared') return '正在缓冲音频…';
     if (state === 'completed') return '本章播放完成';
     if (state === 'error') return '播放失败，可点击播放重试';
     return '准备播放';

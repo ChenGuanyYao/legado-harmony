@@ -64,6 +64,7 @@ struct Index {
   @StorageLink('globalTtsChapterTitle') globalTtsChapterTitle: string = '';
   @StorageLink('globalTtsMode') globalTtsMode: string = '';
   @StorageLink('globalTtsChapterProgress') globalTtsChapterProgress: string = '';
+  @StorageLink('globalTtsBusy') globalTtsBusy: boolean = false;
   @State showGlobalTtsPanel: boolean = false;
   @State showGlobalTtsCatalog: boolean = false;
   @StorageLink('globalTtsAudioCatalogReverseOrder') @Watch('onGlobalTtsCatalogOrderChanged')
@@ -468,7 +469,8 @@ struct Index {
             .fontColor(['#FFFFFF'])
         }
         Column({ space: 1 }) {
-          Text(this.globalTtsPaused ? '已暂停' : (this.globalTtsMode === 'audio' ? '听书中' : '朗读中'))
+          Text(this.globalTtsBusy ? '加载中' :
+            (this.globalTtsPaused ? '已暂停' : (this.globalTtsMode === 'audio' ? '听书中' : '朗读中')))
             .fontSize(AppFontSize.CAPTION)
             .fontWeight(FontWeight.Medium)
             .fontColor(ThemeRuntime.primaryTextColor(this.appDarkMode))

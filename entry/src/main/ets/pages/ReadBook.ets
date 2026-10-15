@@ -2377,7 +2377,9 @@ struct ReadBookPage {
             .onlineImageAccess(true)
             .imageAccess(true)
             .darkMode(this.appDarkMode ? WebDarkMode.On : WebDarkMode.Off)
-            .forceDarkAccess(this.appDarkMode)
+            // 强制深色在部分 ArkWeb 版本上不生效，生效时又会和下面的注入样式叠加反色；
+            // 没有深色样式的评论页统一由 syncReaderCommentPanelWebTheme 注入反色样式。
+            .forceDarkAccess(false)
             .onControllerAttached(() => {
               this.readerCommentPanelHtmlLoaded = false;
               setTimeout(() => this.loadReaderCommentPanelHtmlIfNeeded(), 0);
@@ -12215,18 +12217,38 @@ struct ReadBookPage {
     if (!this.showReaderCommentPanel || !this.readerCommentPanelUrl) return;
     const scheme = this.appDarkMode ? 'dark' : 'light';
     const dark = this.appDarkMode ? 'true' : 'false';
+    // 评论页多半是书源服务器的网页，未必写了深色样式。应用为深色而页面底色仍是浅色时，
+    // 注入整页反色（图片再反回来）；切回浅色或页面自己支持深色时移除。
     const script = `(function(){var scheme='${scheme}',dark=${dark};` +
       `var root=document.documentElement;if(root){root.style.colorScheme=scheme;` +
       `root.setAttribute('data-legado-color-scheme',scheme);}` +
       `var body=document.body,themeToggle=document.getElementById('themeToggle');` +
-      `if(body&&themeToggle&&typeof window.toggleCmtTheme==='function'){` +
+      `var ownToggle=!!(body&&themeToggle&&typeof window.toggleCmtTheme==='function');` +
+      `if(ownToggle){` +
       `var pageDark=body.classList.contains('dark');` +
       `if(pageDark!==dark){window.toggleCmtTheme();}` +
       `try{window.localStorage.setItem('cmt-theme',scheme);}catch(_){}` +
       `body.classList.toggle('dark',dark);}` +
       `window.__LEGADO_COLOR_SCHEME__=scheme;window.__LEGADO_DARK_MODE__=dark;` +
       `window.dispatchEvent(new CustomEvent('legado-color-scheme-change',` +
-      `{detail:{colorScheme:scheme,dark:dark}}));return scheme;})()`;
+      `{detail:{colorScheme:scheme,dark:dark}}));` +
+      `var fallbackId='legado-dark-fallback',fallback=document.getElementById(fallbackId);` +
+      `if(fallback&&fallback.parentNode){fallback.parentNode.removeChild(fallback);}` +
+      `if(dark&&!ownToggle&&root){` +
+      `var rgb=function(value){var m=/rgba?\\(([^)]+)\\)/.exec(value||'');if(!m)return null;` +
+      `var p=m[1].split(',').map(function(v){return parseFloat(v);});` +
+      `if(p.length>3&&p[3]<0.5)return null;return (0.2126*p[0]+0.7152*p[1]+0.0722*p[2])/255;};` +
+      `var bodyStyle=body?getComputedStyle(body):null,rootStyle=getComputedStyle(root);` +
+      `var bg=bodyStyle?rgb(bodyStyle.backgroundColor):null;if(bg===null)bg=rgb(rootStyle.backgroundColor);` +
+      `var light=bg!==null?bg>0.6:((rgb((bodyStyle||rootStyle).color)||0)<0.4);` +
+      `if(light){root.style.colorScheme='light';` +
+      `var css='html{filter:invert(.92) hue-rotate(180deg)!important;}' +` +
+      `'img,video,picture,canvas,iframe,embed,object,[style*="background-image"]' +` +
+      `'{filter:invert(1) hue-rotate(180deg)!important;}';` +
+      `if(rgb(rootStyle.backgroundColor)===null)css+='html{background-color:#fff!important;}';` +
+      `fallback=document.createElement('style');fallback.id=fallbackId;fallback.textContent=css;` +
+      `(document.head||root).appendChild(fallback);}}` +
+      `return scheme;})()`;
     try {
       await this.readerCommentPanelController.runJavaScript(script);
     } catch (error) {

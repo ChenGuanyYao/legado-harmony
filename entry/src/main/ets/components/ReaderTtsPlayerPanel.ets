@@ -23,6 +23,19 @@ export struct ReaderTtsPlayerPanel {
   onClose: () => void = () => {};
   onOpenCatalog: () => void = () => {};
   onOpenVoice: () => void = () => ReaderTtsFloatingSession.openVoice();
+  onTogglePlayback: () => void = () => {
+    ReaderTtsFloatingSession.toggle();
+  };
+  // 听书页自己的书籍信息与播放状态。共享会话要等第一章音频地址取到后才发布，失败时又会被清掉，
+  // 这段时间面板仍显示这本书和加载/失败提示，而不是朗读模式的占位文字。
+  @Prop hostAudioPage: boolean = false;
+  @Prop hostBookName: string = '';
+  @Prop hostChapterTitle: string = '';
+  @Prop hostIntro: string = '';
+  @Prop hostCover: ResourceStr = '';
+  @Prop hostPlaying: boolean = false;
+  @Prop hostStatusText: string = '';
+  @Prop hostBusy: boolean = false;
 
   @StorageLink('globalTtsPaused') globalTtsPaused: boolean = false;
   @StorageLink('globalTtsBookName') globalTtsBookName: string = '';
@@ -45,6 +58,8 @@ export struct ReaderTtsPlayerPanel {
   @StorageLink('globalTtsAudioPositionMs') globalTtsAudioPositionMs: number = 0;
   @StorageLink('globalTtsAudioDurationMs') globalTtsAudioDurationMs: number = 0;
   @StorageLink('globalTtsVoiceRevision') globalTtsVoiceRevision: number = 0;
+  @StorageLink('globalTtsStatusText') globalTtsStatusText: string = '';
+  @StorageLink('globalTtsBusy') globalTtsBusy: boolean = false;
   @State optionsPanel: number = 0;
   private textScroller: ListScroller = new ListScroller();
 
@@ -74,7 +89,7 @@ export struct ReaderTtsPlayerPanel {
           this.header()
           this.contentPanel()
 
-          if (this.globalTtsMode === 'audio') {
+          if (this.isAudio()) {
             this.audioProgress()
           }
 
@@ -114,13 +129,13 @@ export struct ReaderTtsPlayerPanel {
           .fontColor([this.accentColor])
       }
       Column({ space: AppSpacing.XXS }) {
-        Text(this.globalTtsBookName || '快速朗读')
+        Text(this.hostBookName || this.globalTtsBookName || '快速朗读')
           .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(this.globalTtsChapterTitle || this.globalTtsChapterProgress)
+        Text(this.hostChapterTitle || this.globalTtsChapterTitle || this.globalTtsChapterProgress)
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor)
           .maxLines(1)
@@ -143,9 +158,12 @@ export struct ReaderTtsPlayerPanel {
   contentPanel() {
     Column({ space: AppSpacing.MD }) {
       this.bookCover()
-      if (this.globalTtsMode === 'audio') {
+      if (this.statusText()) {
+        this.statusLine()
+      }
+      if (this.isAudio()) {
         Scroll() {
-          Text(this.globalTtsContent || '暂无书籍简介')
+          Text(this.globalTtsContent || this.hostIntro || '暂无书籍简介')
             .fontSize(AppFontSize.BODY_LARGE)
             .lineHeight(25)
             .fontColor(this.primaryTextColor)
@@ -193,7 +211,7 @@ export struct ReaderTtsPlayerPanel {
         .scrollBar(BarState.Auto)
       }
       Row() {
-        Text(this.globalTtsChapterProgress || (this.globalTtsMode === 'audio' ? '后台听书' : '正在朗读'))
+        Text(this.globalTtsChapterProgress || (this.isAudio() ? '后台听书' : '正在朗读'))
           .fontSize(AppFontSize.MICRO)
           .fontColor(this.subTextColor)
           .layoutWeight(1)
@@ -207,7 +225,7 @@ export struct ReaderTtsPlayerPanel {
         }
       }
       .width('100%')
-      if (this.globalTtsMode !== 'audio' && this.globalTtsProgress > 0) {
+      if (!this.isAudio() && this.globalTtsProgress > 0) {
         Progress({ value: this.globalTtsProgress, total: 100, type: ProgressType.Linear })
           .width('100%')
           .height(3)
@@ -226,8 +244,8 @@ export struct ReaderTtsPlayerPanel {
   @Builder
   bookCover() {
     Stack({ alignContent: Alignment.Center }) {
-      if (this.globalTtsCover) {
-        Image(this.globalTtsCover)
+      if (this.coverSource()) {
+        Image(this.coverSource())
           .width('100%')
           .height('100%')
           .objectFit(ImageFit.Contain)
@@ -270,6 +288,30 @@ export struct ReaderTtsPlayerPanel {
   }
 
   @Builder
+  statusLine() {
+    Row({ space: AppSpacing.SM }) {
+      if (this.isBusy()) {
+        LoadingProgress()
+          .width(18)
+          .height(18)
+          .color(this.accentColor)
+      }
+      Text(this.statusText())
+        .fontSize(AppFontSize.CAPTION)
+        .fontColor(this.isBusy() ? this.primaryTextColor : ThemeRuntime.dangerColor(this.darkMode))
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+    }
+    .width('100%')
+    .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.SM, bottom: AppSpacing.SM })
+    .borderRadius(ThemeRuntime.mediumRadius())
+    .backgroundColor(ThemeRuntime.hairlineColor(this.darkMode))
+    .alignItems(VerticalAlign.Center)
+    .accessibilityText(this.statusText())
+  }
+
+  @Builder
   playbackControls() {
     Row() {
       this.control($r('sys.symbol.timer'), this.globalTtsTimerMinutes > 0 ?
@@ -290,19 +332,29 @@ export struct ReaderTtsPlayerPanel {
     Column({ space: AppSpacing.SM }) {
       Stack({ alignContent: Alignment.Center }) {
         Circle().width(46).height(46).fill(this.playButtonColor)
-        SymbolGlyph(this.globalTtsPaused ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
-          .id(`shared_tts_panel_playback_${this.globalTtsPaused}`)
-          .fontSize(23)
-          .fontColor([ThemeRuntime.onAccentColor()])
+        if (this.isBusy()) {
+          LoadingProgress()
+            .width(28)
+            .height(28)
+            .color(ThemeRuntime.onAccentColor())
+        } else {
+          SymbolGlyph(this.isPaused() ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
+            .id(`shared_tts_panel_playback_${this.isPaused()}`)
+            .fontSize(23)
+            .fontColor([ThemeRuntime.onAccentColor()])
+        }
       }
-      Text(this.globalTtsPaused ? '播放' : '暂停')
+      Text(this.isBusy() ? '加载中' : (this.isPaused() ? '播放' : '暂停'))
         .fontSize(AppFontSize.MICRO)
         .fontColor(this.subTextColor)
     }
     .layoutWeight(1)
     .height(68)
     .justifyContent(FlexAlign.Center)
-    .onClick(() => ReaderTtsFloatingSession.toggle())
+    .accessibilityText(this.isBusy() ? '正在加载' : (this.isPaused() ? '播放' : '暂停'))
+    .onClick(() => {
+      if (!this.isBusy()) this.onTogglePlayback();
+    })
   }
 
   @Builder
@@ -504,7 +556,7 @@ export struct ReaderTtsPlayerPanel {
   @Builder
   bottomActions() {
     Row({ space: AppSpacing.MD }) {
-      if (this.globalTtsMode === 'audio') {
+      if (this.isAudio()) {
         this.voiceButton()
       } else if (ReaderTtsFloatingSession.ttsVoiceTitles().length > 0) {
         this.ttsVoiceSelect()
@@ -512,7 +564,7 @@ export struct ReaderTtsPlayerPanel {
       this.bottomAction($r('sys.symbol.list_bullet'), '目录', '目录跳转', false,
         () => this.onOpenCatalog())
       this.bottomAction($r('sys.symbol.stop_circle_fill'), '停止',
-        this.globalTtsMode === 'audio' ? '停止听书' : '停止朗读', true, () => {
+        this.isAudio() ? '停止听书' : '停止朗读', true, () => {
           this.close();
           ReaderTtsFloatingSession.stop();
         })
@@ -579,6 +631,26 @@ export struct ReaderTtsPlayerPanel {
     this.onClose();
   }
 
+  isAudio(): boolean {
+    return this.hostAudioPage || this.globalTtsMode === 'audio';
+  }
+
+  isPaused(): boolean {
+    return this.hostAudioPage ? !this.hostPlaying : this.globalTtsPaused;
+  }
+
+  isBusy(): boolean {
+    return this.hostAudioPage ? this.hostBusy : this.globalTtsBusy;
+  }
+
+  statusText(): string {
+    return this.hostAudioPage ? this.hostStatusText : this.globalTtsStatusText;
+  }
+
+  coverSource(): ResourceStr {
+    return this.globalTtsCover || this.hostCover;
+  }
+
   /** Theme cover shown when the book has none; empty for themes without cover art. */
   themePlaceholderCover(): ResourceStr {
     return ThemeAssetRegistry.themeBookCover(ThemeRuntime.bookTokens().coverAssetId);
@@ -595,7 +667,7 @@ export struct ReaderTtsPlayerPanel {
 
   scrollToCurrentSentence(smooth: boolean): void {
     setTimeout(() => {
-      if (this.globalTtsMode === 'audio') return;
+      if (this.isAudio()) return;
       try {
         this.textScroller.scrollToIndex(1, smooth, ScrollAlign.CENTER);
       } catch (_) {}
