@@ -33,6 +33,8 @@ tmp/
 # HarmonyOS
 /node_modules
 /oh_modules
+# ohpm 为本地 HAR 依赖生成的链接目录
+/entry/oh_modules/@legado/
 /.hvigor
 /.appanalyzer
 server/node_modules/
