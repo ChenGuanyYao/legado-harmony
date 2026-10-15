@@ -77,7 +77,8 @@ export class WebBookService {
       let initResult = await this.runStageRule(source, book, infoRule.init, content, stageBaseUrl,
         SourceRuntimeStage.BOOK_INFO, null, {}, debugContext);
       if (!initResult && !this.stageRuleCode(infoRule.init)) {
-        const ir = new AnalyzeRule(content, baseUrl, ctx);
+        const ir = new AnalyzeRule(content, baseUrl, ctx)
+          .setNoticeScope(SourceRuntimeStage.BOOK_INFO, source.bookSourceName);
         this.seedSourceVariables(ctx, source);
         initResult = ir.getString(infoRule.init);
       }
@@ -497,7 +498,7 @@ export class WebBookService {
     // A complete list script has already been attempted through ArkWeb by getChapterList. Never
     // retry it synchronously when it returned no usable chapters.
     if (this.stageRuleCode(tocRule.chapterList || '')) return [];
-    const rule = new AnalyzeRule(body, baseUrl, ctx);
+    const rule = new AnalyzeRule(body, baseUrl, ctx).setNoticeScope(SourceRuntimeStage.TOC, source.bookSourceName);
     const matchedValues = rule.execute(tocRule.chapterList || '', RuleExecutionTarget.ELEMENTS);
     const itemValues = maxItems > 0 ? matchedValues.slice(0, maxItems) : matchedValues;
     const items = itemValues.map((item: RuleValue): string => item.asString());
@@ -870,7 +871,8 @@ export class WebBookService {
     const plan = AjaxRuleCompat.directResultPlan(contentRule);
     if (!plan) return '';
 
-    const urlAnalyze = new AnalyzeRule(body, baseUrl, ctx);
+    const urlAnalyze = new AnalyzeRule(body, baseUrl, ctx)
+      .setNoticeScope(SourceRuntimeStage.CONTENT, source.bookSourceName);
     const requestUrl = urlAnalyze.getString(plan.urlRule, true);
     if (!requestUrl || !/^https?:\/\//.test(requestUrl)) return '';
 

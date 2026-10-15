@@ -674,7 +674,7 @@ export class BookSourceStageWebRuntime {
     const content = request.contextContent && request.contextContent !== request.content ?
       request.contextContent : request.content;
     const analyzer = new AnalyzeRule(content || '', request.baseUrl || '',
-      this.buildStringRuleContext(request));
+      this.buildStringRuleContext(request)).setNoticeScope(request.stage, request.source.bookSourceName);
     for (const item of items) {
       if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
       const record = item as Record<string, Object>;

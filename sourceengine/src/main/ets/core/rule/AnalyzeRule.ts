@@ -8,6 +8,7 @@ import { ScriptEngine, ScriptEngineContext } from './ScriptEngine';
 import { BookUrlResolver } from '../book/BookUrlResolver';
 import { QuickJsObservationContext } from '../script/QuickJsRuntimeStatus';
 import { RuleExecutionTarget, RuleValue, RuleValueKind } from './RuleValue';
+import { SourceScriptNotice } from '../book/SourceScriptNotice';
 
 const MAX_HTML_PARSE_LENGTH = 4 * 1024 * 1024;
 
@@ -21,6 +22,9 @@ export class AnalyzeRule {
   private ctx: RuleContext;
   private js: JsRuntime;
   private scriptEngine: ScriptEngine;
+  // 阅读阶段（详情/目录/正文）由调用方设置，脚本里的 java.toast 才会转给 SourceScriptNotice 显示。
+  private noticeStage: string = '';
+  private noticeSourceName: string = '';
 
   constructor(content: string = '', baseUrl: string = '', ctx?: RuleContext) {
     this.content = content;
@@ -40,9 +44,21 @@ export class AnalyzeRule {
   setContext(ctx: RuleContext): AnalyzeRule { this.ctx = ctx; return this; }
   getContext(): RuleContext { return this.ctx; }
   setJsVar(k: string, v: string): AnalyzeRule { this.js.setVar(k, v); return this; }
+  setNoticeScope(stage: string, sourceName: string): AnalyzeRule {
+    this.noticeStage = stage || '';
+    this.noticeSourceName = sourceName || '';
+    return this;
+  }
+
   setQuickJsObservation(observation: QuickJsObservationContext | null): AnalyzeRule {
     this.js.setQuickJsObservation(observation);
     return this;
+  }
+
+  private reportScriptToast(env: ScriptEngineContext): void {
+    if (this.noticeStage && env.toastMessage) {
+      SourceScriptNotice.emit(this.noticeStage, this.noticeSourceName, env.toastMessage);
+    }
   }
 
   private scriptEnv(): ScriptEngineContext {
@@ -1127,7 +1143,9 @@ export class AnalyzeRule {
 
   private evalJsBlockSideEffects(code: string): string {
     if (!code) return '';
-    const engineValue = this.scriptEngine.evalBlock(code, this.scriptEnv());
+    const env = this.scriptEnv();
+    const engineValue = this.scriptEngine.evalBlock(code, env);
+    this.reportScriptToast(env);
     if (engineValue.handled && engineValue.value) return engineValue.value;
     const knownValue = this.evalKnownJsLibBlock(code);
     if (knownValue) return knownValue;
@@ -2181,7 +2199,9 @@ export class AnalyzeRule {
 
   private evalResultJs(jsCode: string, value: string): string {
     if (!jsCode) return value;
-    const engineValue = this.scriptEngine.evalResultJs(jsCode, value, this.scriptEnv());
+    const env = this.scriptEnv();
+    const engineValue = this.scriptEngine.evalResultJs(jsCode, value, env);
+    this.reportScriptToast(env);
     if (engineValue.handled) return engineValue.value;
     const knownValue = this.evalKnownResultJs(jsCode, value);
     if (knownValue !== null) return knownValue;
@@ -2551,7 +2571,9 @@ export class AnalyzeRule {
       // java.put(key, java.timeFormatUTC(java.getString(path), format, zone)) both return the
       // formatted value and update the shared RuleContext for a following @get rule.
       if (rule.includes('java.')) {
-        const engineValue = this.scriptEngine.evalBlock(rule, this.scriptEnv());
+        const env = this.scriptEnv();
+        const engineValue = this.scriptEngine.evalBlock(rule, env);
+        this.reportScriptToast(env);
         if (engineValue.handled) return engineValue.value;
       }
       if (this.indexOfTopLevel(rule, '?') >= 0 || /java\.(?:getString|getElement)\s*\(/.test(rule)) {
