@@ -43,6 +43,12 @@ export class ReaderV2RegexBubbleSegment {
   shadowOffsetYPx: number = 0;
 }
 
+/** Theme comment icon painted over the transparent ◌ placeholder of a paragraph-comment / 本章说 pill. */
+export class ReaderV2CommentIconSegment {
+  styleId: string = '';
+  rect: ReaderV2Rect = new ReaderV2Rect();
+}
+
 export class ReaderV2PageFragment {
   blockId: string = '';
   blockIndex: number = 0;
@@ -64,6 +70,7 @@ export class ReaderV2PageFragment {
   imageSource: string = '';
   imageRect: ReaderV2Rect = new ReaderV2Rect();
   regexBubbleSegments: ReaderV2RegexBubbleSegment[] = [];
+  commentIconSegments: ReaderV2CommentIconSegment[] = [];
 }
 
 export class ReaderV2ActionHitArea {

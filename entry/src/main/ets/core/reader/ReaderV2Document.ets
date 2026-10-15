@@ -20,6 +20,7 @@ export class ReaderV2OffsetSegment {
 }
 
 export class ReaderV2InlineAction {
+  static readonly ICON_PLACEHOLDER: string = '◌';
   id: string = '';
   marker: string = '';
   label: string = '';
@@ -29,12 +30,16 @@ export class ReaderV2InlineAction {
   displayEnd: number = 0;
   sourceStart: number = 0;
   sourceEnd: number = 0;
+  /** Display offset of the ◌ placeholder the theme comment icon is painted over; -1 when the label has none. */
+  iconOffset: number = -1;
 
   constructor(id: string, marker: string, label: string, data: ReaderActionData,
     displayStart: number, displayEnd: number, sourceStart: number, sourceEnd: number) {
     this.id = id;
     this.marker = marker;
     this.label = label;
+    const iconIndex = label.indexOf(ReaderV2InlineAction.ICON_PLACEHOLDER);
+    this.iconOffset = iconIndex >= 0 ? displayStart + iconIndex : -1;
     this.title = data.title || '';
     this.url = data.url || '';
     this.displayStart = displayStart;

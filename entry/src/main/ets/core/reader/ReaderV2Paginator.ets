@@ -7,6 +7,7 @@ import {
   ReaderV2PageFragment,
   ReaderV2PageLayout,
   ReaderV2PageSet,
+  ReaderV2CommentIconSegment,
   ReaderV2RegexBubbleSegment,
   ReaderV2SelectionRun
 } from './ReaderV2PageLayout';
@@ -262,7 +263,7 @@ export class ReaderV2Paginator {
           session.snapshot, session.currentBlockStyles(), session.width);
         fragmentActionStarts.push(page.actions.length);
         page.fragments.push(fragment);
-        ReaderV2Paginator.appendActionAreas(page, fragment, session.document.actions);
+        ReaderV2Paginator.appendActionAreas(page, fragment, session.document.actions, session.snapshot);
         if (!hasContent) page.displayStart = fragment.displayStart;
         page.displayEnd = fragment.displayEnd;
         hasContent = true;
@@ -323,6 +324,10 @@ export class ReaderV2Paginator {
       for (const segment of fragment.regexBubbleSegments) {
         segment.rect.top += shiftPx;
         segment.rect.bottom += shiftPx;
+      }
+      for (const icon of fragment.commentIconSegments) {
+        icon.rect.top += shiftPx;
+        icon.rect.bottom += shiftPx;
       }
       const actionEnd = index + 1 < fragmentActionStarts.length ? fragmentActionStarts[index + 1] :
         page.actions.length;
@@ -426,6 +431,12 @@ export class ReaderV2Paginator {
       if (actionEnd <= sliceStart || actionStart >= sliceEnd) continue;
       boundaries.push(Math.max(sliceStart, actionStart));
       boundaries.push(Math.min(sliceEnd, actionEnd));
+      // The ◌ placeholder is its own run so it alone can be made transparent under the theme icon.
+      const iconStart = action.iconOffset - block.displayStart;
+      if (action.iconOffset >= 0 && iconStart >= sliceStart && iconStart < sliceEnd) {
+        boundaries.push(iconStart);
+        boundaries.push(Math.min(sliceEnd, iconStart + 1));
+      }
     }
     for (const style of regexStyles) {
       const styleStart = style.start - block.displayStart;
@@ -467,7 +478,8 @@ export class ReaderV2Paginator {
       const action = document.actions[actionIndex];
       if (absoluteOffset >= action.displayStart && absoluteOffset < action.displayEnd) {
       base.fontSize = snapshot.commentFontSizePx;
-      base.color = ReaderV2Paginator.graphicsColor(snapshot.commentTextColor);
+      base.color = ReaderV2Paginator.graphicsColor(
+        absoluteOffset === action.iconOffset && snapshot.commentIconStyleId ? 0x00000000 : snapshot.commentTextColor);
       base.backgroundRect = {
         color: ReaderV2Paginator.graphicsColor(snapshot.commentBackgroundColor),
         leftTopRadius: snapshot.commentRadiusPx,
@@ -703,7 +715,7 @@ export class ReaderV2Paginator {
   }
 
   private static appendActionAreas(page: ReaderV2PageLayout, fragment: ReaderV2PageFragment,
-    actions: ReaderV2InlineAction[]): void {
+    actions: ReaderV2InlineAction[], snapshot: ReaderV2LayoutSnapshot): void {
     if (!fragment.paragraph) return;
     const firstAction = ReaderV2Paginator.firstActionWhoseEndExceeds(actions, fragment.displayStart);
     for (let index = firstAction; index < actions.length; index++) {
@@ -727,7 +739,28 @@ export class ReaderV2Paginator {
         hit.rect = new ReaderV2Rect(left, top, right, bottom);
         page.actions.push(hit);
       }
+      ReaderV2Paginator.appendCommentIcon(fragment, action, snapshot);
     }
+  }
+
+  /** Square icon centred on the ◌ glyph; the glyph keeps the pill's width and tap area unchanged. */
+  private static appendCommentIcon(fragment: ReaderV2PageFragment, action: ReaderV2InlineAction,
+    snapshot: ReaderV2LayoutSnapshot): void {
+    if (!fragment.paragraph || !snapshot.commentIconStyleId || action.iconOffset < fragment.displayStart ||
+      action.iconOffset >= fragment.displayEnd) return;
+    const local = action.iconOffset - fragment.displayStart;
+    const boxes = fragment.paragraph.getRectsForRange({ start: local, end: local + 1 },
+      graphicsText.RectWidthStyle.TIGHT, graphicsText.RectHeightStyle.TIGHT);
+    if (boxes.length === 0) return;
+    const box = boxes[0].rect;
+    if (box.right <= box.left) return;
+    const size = snapshot.commentFontSizePx * 1.05;
+    const centerX = fragment.paragraphX + (box.left + box.right) / 2;
+    const centerY = fragment.paragraphY + (box.top + box.bottom) / 2;
+    const segment = new ReaderV2CommentIconSegment();
+    segment.styleId = snapshot.commentIconStyleId;
+    segment.rect = new ReaderV2Rect(centerX - size / 2, centerY - size / 2, centerX + size / 2, centerY + size / 2);
+    fragment.commentIconSegments.push(segment);
   }
 
   private static firstActionWhoseEndExceeds(actions: ReaderV2InlineAction[], offset: number): number {

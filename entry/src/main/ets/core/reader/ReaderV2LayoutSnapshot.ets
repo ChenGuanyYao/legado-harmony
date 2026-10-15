@@ -50,6 +50,8 @@ export class ReaderV2LayoutInput {
   commentTextColor: number = 0xFF2A6FCC;
   commentBackgroundColor: number = 0x142A6FCC;
   commentRadiusPx: number = 12;
+  /** Theme bubble style whose comment icon replaces the ◌ placeholder; empty keeps the glyph. */
+  commentIconStyleId: string = '';
   commentFontSizePx: number = 30;
   commentHitSlopXPx: number = 16;
   commentHitSlopYPx: number = 12;
@@ -79,6 +81,8 @@ export class ReaderV2LayoutSnapshot {
   commentTextColor: number = 0xFF2A6FCC;
   commentBackgroundColor: number = 0x142A6FCC;
   commentRadiusPx: number = 12;
+  /** Theme bubble style whose comment icon replaces the ◌ placeholder; empty keeps the glyph. */
+  commentIconStyleId: string = '';
   commentFontSizePx: number = 30;
   commentHitSlopXPx: number = 16;
   commentHitSlopYPx: number = 12;
@@ -125,6 +129,7 @@ export class ReaderV2LayoutSnapshot {
     snapshot.commentTextColor = input.commentTextColor;
     snapshot.commentBackgroundColor = input.commentBackgroundColor;
     snapshot.commentRadiusPx = Math.max(0, input.commentRadiusPx);
+    snapshot.commentIconStyleId = input.commentIconStyleId;
     snapshot.commentFontSizePx = Math.max(1, input.commentFontSizePx);
     snapshot.commentHitSlopXPx = Math.max(0, input.commentHitSlopXPx);
     snapshot.commentHitSlopYPx = Math.max(0, input.commentHitSlopYPx);
@@ -142,7 +147,8 @@ export class ReaderV2LayoutSnapshot {
       snapshot.contentRect.right, snapshot.contentRect.bottom, snapshot.columnRects.length,
       snapshot.fontSizePx, snapshot.titleFontSizePx, snapshot.lineSpacingPx, snapshot.paragraphSpacingPx,
       snapshot.letterSpacingPx, snapshot.textAlign, snapshot.commentFontSizePx, snapshot.commentRadiusPx,
-      snapshot.commentsEnabled ? 1 : 0, snapshot.regexEnabled ? 1 : 0
+      snapshot.commentsEnabled ? 1 : 0, snapshot.regexEnabled ? 1 : 0, snapshot.commentTextColor,
+      snapshot.commentBackgroundColor, snapshot.commentIconStyleId
     ];
     const rounded = values.map((value: string | number): string =>
       typeof value === 'number' ? `${Math.round(value * 100) / 100}` : value).join('_');

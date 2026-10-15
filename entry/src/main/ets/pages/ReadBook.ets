@@ -62,6 +62,7 @@ import {
   ReaderResolvedRegexEmphasis
 } from '../model/reader/ReaderRegexFontRule';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { ThemeRegexEmphasisModes } from '../theme/ThemeModels';
 import { ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ReaderContentPreprocessor } from '../core/concurrency/ReaderContentPreprocessor';
@@ -72,7 +73,13 @@ import {
   ReaderV2SpeechText
 } from '../core/reader/ReaderV2Document';
 import { ReaderV2LayoutInput, ReaderV2LayoutSnapshot } from '../core/reader/ReaderV2LayoutSnapshot';
-import { ReaderV2PageFragment, ReaderV2PageLayout, ReaderV2PageSet, ReaderV2RegexBubbleSegment } from '../core/reader/ReaderV2PageLayout';
+import {
+  ReaderV2CommentIconSegment,
+  ReaderV2PageFragment,
+  ReaderV2PageLayout,
+  ReaderV2PageSet,
+  ReaderV2RegexBubbleSegment
+} from '../core/reader/ReaderV2PageLayout';
 import { ReaderV2PaginationSession, ReaderV2Paginator } from '../core/reader/ReaderV2Paginator';
 import { ReaderV2Color, ReaderV2SpanStyleRange } from '../core/reader/ReaderV2Style';
 import { ReaderV2PageNodeController } from '../core/reader/ReaderV2RenderNode';
@@ -12424,6 +12431,20 @@ struct ReadBookPage {
     return ReaderRegexBubbleStyleResolver.resolve(rule, this.readerRegexEmphasisContext());
   }
 
+  /** The theme's emphasis bubble, always in bubble form even when the theme emphasises dialogue another way. */
+  readerCommentBubbleTheme(): ReaderResolvedRegexEmphasis {
+    const context = this.readerRegexEmphasisContext();
+    context.inheritedMode = ThemeRegexEmphasisModes.BUBBLE;
+    return ReaderRegexBubbleStyleResolver.resolve(null, context);
+  }
+
+  /** Bubble fill at 60% of its opacity, so a pill reads one step quieter than a dialogue bubble beside it. */
+  readerCommentThemeFill(theme: ReaderResolvedRegexEmphasis): number {
+    const fill = ReaderV2Color.parse(theme.backgroundColor, this.isReaderThemeDark() ? 0xFF263A50 : 0xFFD9ECFF);
+    const alpha = Math.round(((fill >>> 24) & 0xFF) * 0.6);
+    return ((alpha << 24) | (fill & 0x00FFFFFF)) >>> 0;
+  }
+
   getRegexTextSlices(text: string): ReadTextSlice[] {
     const displayText = text || '';
     const rules = this.getRegexRules();
@@ -12696,12 +12717,16 @@ struct ReadBookPage {
     input.bodyFontFamily = this.getBodyReaderFontFamily();
     input.titleFontFamily = this.getTitleReaderFontFamily();
     input.textColor = ReaderV2Color.parse(this.getTextColor(), 0xFF202124);
-    input.commentTextColor = ReaderV2Color.parse(
-      this.readerSourceColorSetting('段评字体颜色', this.isReaderThemeDark() ? '#B8D6FF' : '#2A6FCC'),
+    // Comment / 本章说 pills follow the theme's emphasis bubble; colours the source sets explicitly still win.
+    const commentTheme = this.readerCommentBubbleTheme();
+    const sourceCommentTextColor = this.readerSourceColorSetting('段评字体颜色', '');
+    const sourceCommentFillColor = this.readerSourceColorSetting('段评填充颜色', '');
+    input.commentTextColor = ReaderV2Color.parse(sourceCommentTextColor || commentTheme.textColor,
       this.isReaderThemeDark() ? 0xFFB8D6FF : 0xFF2A6FCC);
-    input.commentBackgroundColor = ReaderV2Color.parse(
-      this.readerSourceColorSetting('段评填充颜色', this.isReaderThemeDark() ? '#263A5066' : '#142A6FCC'),
-      this.isReaderThemeDark() ? 0x66263A50 : 0x142A6FCC);
+    input.commentBackgroundColor = sourceCommentFillColor ?
+      ReaderV2Color.parse(sourceCommentFillColor, this.isReaderThemeDark() ? 0x66263A50 : 0x142A6FCC) :
+      this.readerCommentThemeFill(commentTheme);
+    input.commentIconStyleId = commentTheme.bubbleStyleId;
     const commentLarge = this.readerSourceSettingEnabled('气泡增大');
     input.commentFontSizePx = this.toMeasureFontPx(commentLarge ?
       Math.max(12, this.readerFontSize - 2) : Math.max(10, this.readerFontSize - 5));
@@ -12718,7 +12743,8 @@ struct ReadBookPage {
   }
 
   readerV2CommentRadius(): number {
-    const style = this.readerSourceSettingValue('段评样式') || '0';
+    const style = this.readerSourceSettingValue('段评样式');
+    if (!style) return ThemeRuntime.bubbleRadius();
     if (style === '3' || style === '4') return 3;
     if (style === '0' || style === '2') return 6;
     return 9;
@@ -13145,6 +13171,10 @@ struct ReadBookPage {
           }, (segment: ReaderV2RegexBubbleSegment) =>
             `reader_v2_bubble_caps_${segment.styleId}_${segment.rect.left}_${segment.rect.top}_` +
             `${segment.rect.right}_${segment.rect.bottom}_${segment.leading ? 'l' : ''}${segment.trailing ? 'r' : ''}`)
+          ForEach(fragment.commentIconSegments, (icon: ReaderV2CommentIconSegment) => {
+            this.readerV2CommentIcon(icon)
+          }, (icon: ReaderV2CommentIconSegment) =>
+            `reader_v2_comment_icon_${icon.styleId}_${icon.rect.left}_${icon.rect.top}`)
         }, (fragment: ReaderV2PageFragment) => `reader_v2_bubble_fragment_${fragment.blockId}_` +
           `${fragment.displayStart}_${fragment.displayEnd}`)
     }
@@ -13152,6 +13182,16 @@ struct ReadBookPage {
     .height('100%')
     .zIndex(1)
     .hitTestBehavior(HitTestMode.None)
+  }
+
+  @Builder
+  readerV2CommentIcon(icon: ReaderV2CommentIconSegment) {
+    Image(ThemeAssetRegistry.commentBubbleIcon(icon.styleId))
+      .width(px2vp(icon.rect.width()))
+      .height(px2vp(icon.rect.height()))
+      .objectFit(ImageFit.Contain)
+      .position({ x: px2vp(icon.rect.left), y: px2vp(icon.rect.top) })
+      .hitTestBehavior(HitTestMode.None)
   }
 
   @Builder
@@ -13976,7 +14016,8 @@ struct ReadBookPage {
     if (!layout) return READER_V2_NO_FRAGMENTS;
     let result: ReaderV2PageFragment[] = READER_V2_NO_FRAGMENTS;
     for (const fragment of layout.fragments) {
-      if (imagesOnly ? !fragment.imageSource : fragment.regexBubbleSegments.length === 0) continue;
+      if (imagesOnly ? !fragment.imageSource :
+        fragment.regexBubbleSegments.length === 0 && fragment.commentIconSegments.length === 0) continue;
       if (result === READER_V2_NO_FRAGMENTS) result = [];
       result.push(fragment);
     }
@@ -14118,6 +14159,10 @@ struct ReadBookPage {
         }, (segment: ReaderV2RegexBubbleSegment) =>
           `reader_continuous_v2_caps_${segment.styleId}_${segment.rect.left}_${segment.rect.top}_` +
           `${segment.rect.right}_${segment.rect.bottom}_${segment.leading ? 'l' : ''}${segment.trailing ? 'r' : ''}`)
+        ForEach(fragment.commentIconSegments, (icon: ReaderV2CommentIconSegment) => {
+          this.readerV2CommentIcon(icon)
+        }, (icon: ReaderV2CommentIconSegment) =>
+          `reader_continuous_v2_comment_icon_${icon.styleId}_${icon.rect.left}_${icon.rect.top}`)
       }, (fragment: ReaderV2PageFragment) => `reader_continuous_v2_bubble_${fragment.blockId}_` +
         `${fragment.displayStart}_${fragment.displayEnd}`)
       ForEach(this.readerContinuousV2TtsRects(index, text, this.readerV2TtsPaintVersion),
@@ -14273,7 +14318,7 @@ struct ReadBookPage {
     const regexIdentity = `${this.readerRegexFontEnabled}_${this.readerRegexFontRulesRaw}_` +
       `${this.readerRegexFontPattern}_${this.readerRegexFontMode}_${this.readerRegexFontFamily}_` +
       `${this.readerRegexFontSize}_${this.readerRegexShadowColor}_${this.themeRevision}_` +
-      `${this.themeRegexEmphasisMode()}_${this.themeRegexBubbleStyleId()}_reader_action_layout_v5`;
+      `${this.themeRegexEmphasisMode()}_${this.themeRegexBubbleStyleId()}_reader_action_layout_v6`;
     return `${this.readerFontSize}_${this.readerLetterSpacing}_${this.readerTextAlign}_${this.readerLineHeight}_${this.readerParagraphSpacing}_` +
       `${this.keepParagraphIndent}_` +
       `${this.readerMarginLeft}_${this.readerMarginRight}_${this.readerMarginTop}_${this.readerMarginBottom}_` +

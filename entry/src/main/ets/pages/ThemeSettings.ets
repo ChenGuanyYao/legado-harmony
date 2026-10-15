@@ -13,7 +13,7 @@ import { ThemeStartupCover } from '../components/ThemeStartupCover';
 import { ReaderThemeBackground } from '../components/ReaderThemeBackground';
 import { TtsPanelThemeBackground } from '../components/TtsPanelThemeBackground';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
-import { ThemeIds, ThemePack, ThemeVariant } from '../theme/ThemeModels';
+import { ThemeIds, ThemePack, ThemeRegexEmphasisModes, ThemeVariant } from '../theme/ThemeModels';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { AccountCommerceConfig } from '../account/AccountCommerceConfig';
 import { AccountApiError, ThemeCatalogItem, ThemeCatalogResponse,
@@ -44,24 +44,31 @@ const STORE_READER_PANE_LINE_HEIGHT = 17;
 const STARTUP_COPY_STRIP_HEIGHT = 40;
 const STORE_BOOK_COVER_RATIO = 46 / 64;
 
-/** One run of the reader preview's sample page; dialogue runs wear the theme's emphasis style. */
+/**
+ * One run of the reader preview's sample page; dialogue runs wear the theme's emphasis style and
+ * comment runs are drawn as the theme's paragraph-comment pill.
+ */
 class ReaderPreviewSegment {
   text: string;
   emphasis: boolean;
+  comment: boolean;
 
-  constructor(text: string, emphasis: boolean = false) {
+  constructor(text: string, emphasis: boolean = false, comment: boolean = false) {
     this.text = text;
     this.emphasis = emphasis;
+    this.comment = comment;
   }
 }
 
 // Long enough to fill the tallest preview pane; the pane clips it at a whole line.
 const READER_PREVIEW_SEGMENTS: ReaderPreviewSegment[] = [
-  new ReaderPreviewSegment('\u3000\u3000雨停的时候，檐下还挂着水珠。她把灯芯拨亮了些，翻开那本旧书。' +
-    '\n\u3000\u3000纸页泛黄，墨迹却还清楚。窗外起了风，吹得帘子轻轻晃动，她没有抬头。\n\u3000\u3000'),
+  new ReaderPreviewSegment('\u3000\u3000雨停的时候，檐下还挂着水珠。她把灯芯拨亮了些，翻开那本旧书。'),
+  new ReaderPreviewSegment('12', false, true),
+  new ReaderPreviewSegment('\n\u3000\u3000纸页泛黄，墨迹却还清楚。窗外起了风，吹得帘子轻轻晃动，她没有抬头。\n\u3000\u3000'),
   new ReaderPreviewSegment('“长夜未尽，且慢慢读。”', true),
-  new ReaderPreviewSegment('她轻声念道。\n\u3000\u3000远处传来更鼓，一声，又一声。灯花落了下来，书页翻过去，故事才刚刚开始。' +
-    '\n\u3000\u3000门外有人收了伞，在阶前跺了跺脚上的泥。\n\u3000\u3000'),
+  new ReaderPreviewSegment('她轻声念道。\n\u3000\u3000远处传来更鼓，一声，又一声。灯花落了下来，书页翻过去，故事才刚刚开始。'),
+  new ReaderPreviewSegment('8', false, true),
+  new ReaderPreviewSegment('\n\u3000\u3000门外有人收了伞，在阶前跺了跺脚上的泥。\n\u3000\u3000'),
   new ReaderPreviewSegment('“这么晚了，还不歇息？”', true),
   new ReaderPreviewSegment('\n\u3000\u3000她合上书，指尖还压着方才读到的那一行，笑了笑：'),
   new ReaderPreviewSegment('“就差最后几页。”', true),
@@ -1069,7 +1076,21 @@ struct ThemeSettingsPage {
       })
       Text() {
         ForEach(READER_PREVIEW_SEGMENTS, (segment: ReaderPreviewSegment) => {
-          if (!segment.emphasis) {
+          if (segment.comment) {
+            ContainerSpan() {
+              Span('\u00A0')
+                .fontSize(this.storeReaderPaneFontSize(inPager) * 0.85)
+              ImageSpan(ThemeAssetRegistry.commentBubbleIcon(this.themeCommentPreview(theme).bubbleStyleId))
+                .width(this.storeReaderPaneFontSize(inPager))
+                .height(this.storeReaderPaneFontSize(inPager))
+                .objectFit(ImageFit.Contain)
+                .verticalAlign(ImageSpanAlignment.CENTER)
+              Span(`\u00A0${segment.text}\u00A0\u00A0`)
+                .fontSize(this.storeReaderPaneFontSize(inPager) * 0.85)
+                .fontColor(this.themeCommentPreview(theme).textColor)
+            }
+            .textBackgroundStyle(this.themeCommentPreviewBackground(theme, this.storeReaderPaneFontSize(inPager)))
+          } else if (!segment.emphasis) {
             Span(segment.text)
           } else if (this.themeHasRegexBubbleCap(theme)) {
             ContainerSpan() {
@@ -1231,6 +1252,23 @@ struct ThemeSettingsPage {
               .rotate({ angle: 180 })
           }
           .textBackgroundStyle(this.themeRegexPreviewBackground(theme))
+        }
+        .maxLines(1)
+
+        Text() {
+          ContainerSpan() {
+            Span('\u00A0')
+              .fontSize(AppFontSize.CAPTION)
+            ImageSpan(ThemeAssetRegistry.commentBubbleIcon(this.themeCommentPreview(theme).bubbleStyleId))
+              .width(15)
+              .height(15)
+              .objectFit(ImageFit.Contain)
+              .verticalAlign(ImageSpanAlignment.CENTER)
+            Span('\u00A0段评\u00A0\u00A0')
+              .fontSize(AppFontSize.CAPTION)
+              .fontColor(this.themeCommentPreview(theme).textColor)
+          }
+          .textBackgroundStyle(this.themeCommentPreviewBackground(theme, AppFontSize.BODY))
         }
         .maxLines(1)
 
@@ -2603,10 +2641,32 @@ struct ThemeSettingsPage {
       scheme.settings.customLightStartupSubtitle;
   }
 
-  themeRegexPreview(theme: ThemePack): ReaderResolvedRegexEmphasis {
+  /** The theme's emphasis bubble in bubble form, as the reader paints paragraph-comment / 本章说 pills. */
+  themeCommentPreview(theme: ThemePack): ReaderResolvedRegexEmphasis {
+    return ReaderRegexBubbleStyleResolver.resolve(null,
+      this.themeEmphasisContext(theme, ThemeRegexEmphasisModes.BUBBLE), false);
+  }
+
+  /** Same fill as the reader's pill: the bubble colour at 60% of its opacity, with the theme's bubble radius. */
+  themeCommentPreviewBackground(theme: ThemePack, fontSize: number): TextBackgroundStyle {
+    return {
+      color: this.scaleAlpha(this.themeCommentPreview(theme).backgroundColor, 0.6),
+      radius: Math.min(theme.radius.bubble, fontSize * 0.6)
+    };
+  }
+
+  scaleAlpha(color: string, factor: number): string {
+    const hex = (color || '').trim().replace('#', '');
+    const argb = hex.length === 6 ? `FF${hex}` : hex;
+    if (!/^[0-9A-Fa-f]{8}$/.test(argb)) return color;
+    const alpha = Math.round(Number.parseInt(argb.substring(0, 2), 16) * factor);
+    return `#${alpha.toString(16).padStart(2, '0').toUpperCase()}${argb.substring(2)}`;
+  }
+
+  themeEmphasisContext(theme: ThemePack, mode: string): ReaderRegexEmphasisContext {
     const variant = this.activeVariant(theme);
     const context = new ReaderRegexEmphasisContext();
-    context.inheritedMode = variant.regexEmphasis.emphasisMode;
+    context.inheritedMode = mode;
     context.inheritedBubbleStyleId = variant.regexEmphasis.bubbleStyle;
     context.inheritedColor = variant.regexEmphasis.emphasisColor;
     context.inheritedTextColor = variant.regexEmphasis.emphasisTextColor;
@@ -2614,10 +2674,15 @@ struct ThemeSettingsPage {
     context.surfaceColor = variant.reader.backgroundColor;
     context.normalTextColor = variant.reader.textColor;
     context.darkMode = variant.reader.contentTone === 'dark';
+    return context;
+  }
+
+  themeRegexPreview(theme: ThemePack): ReaderResolvedRegexEmphasis {
     // Theme cards must preview the theme itself even before it is purchased.
     // Runtime entitlement checks are still enforced in the reader and the
     // regex-font settings page.
-    return ReaderRegexBubbleStyleResolver.resolve(null, context, false);
+    return ReaderRegexBubbleStyleResolver.resolve(null,
+      this.themeEmphasisContext(theme, this.activeVariant(theme).regexEmphasis.emphasisMode), false);
   }
 
   themeCoverSet(theme: ThemePack): ResourceStr[] {
