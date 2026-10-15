@@ -23,7 +23,8 @@ import { CloudSyncSettingsStore } from '../account/CloudSyncSettingsStore';
 import { CloudSyncCoordinator } from '../account/CloudSyncCoordinator';
 import { CloudSyncChangeTracker } from '../account/CloudSyncChangeTracker';
 import { StartupCoverTextStore } from '../utils/StartupCoverTextStore';
-import { BookSourceRuntimeStore, TlsTrustStore } from '@legado/sourceengine';
+import { BookSourceRuntimeStore, SourceScriptNotice, TlsTrustStore } from '@legado/sourceengine';
+import { HdsFeedback } from '../utils/HdsFeedback';
 import { QuickJsDiagnostics } from '@legado/sourceengine/Diagnostics';
 import { AppDatabase } from '../model/data/AppDatabase';
 import fs from '@ohos.file.fs';
@@ -66,6 +67,9 @@ export default class EntryAbility extends UIAbility {
     CloudSyncChangeTracker.initializeStorage();
     readStatsTracker.init(this.context);
     BookSourceRuntimeStore.install(AppDatabase.getInstance());
+    SourceScriptNotice.setHandler((sourceName: string, message: string): void => {
+      HdsFeedback.showToast(sourceName ? `${sourceName}：${message}` : message);
+    });
     TlsTrustStore.load(this.context).catch((e: Error) => {
       hilog.warn(0x0000, 'testTag', 'Load TLS trust settings failed: %{public}s', JSON.stringify(e));
     });

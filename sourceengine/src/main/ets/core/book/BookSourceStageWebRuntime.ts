@@ -11,6 +11,7 @@ import { SourceRuntimeStage } from './BookSourceRuntimeRouter';
 import { BookSourceLoginCrypto } from './BookSourceLoginCrypto';
 import { BookSourceExecutionJournal, BookSourceHostActionKind } from './BookSourceExecutionJournal';
 import { BookSourceDebugContext } from './BookSourceDebugModels';
+import { SourceScriptNotice } from './SourceScriptNotice';
 
 export class StageWebRuntimeRequest {
   source: BookSource = new BookSource();
@@ -415,6 +416,7 @@ export class BookSourceStageWebRuntime {
     this.activeTask = task;
     this.executeTask(task.request)
       .then((value: StageWebRuntimeResult): void => {
+        SourceScriptNotice.emit(task.request.stage, task.request.source.bookSourceName, value.toastMessage);
         if (task.resolve) task.resolve(value);
       })
       .catch((error: Error): void => {

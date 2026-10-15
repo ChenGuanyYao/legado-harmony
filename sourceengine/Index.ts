@@ -42,6 +42,9 @@ export {
   BookSourceStageWebRuntime
 } from './src/main/ets/core/book/BookSourceStageWebRuntime';
 export {
+  SourceScriptNotice
+} from './src/main/ets/core/book/SourceScriptNotice';
+export {
   BookTypeSupport
 } from './src/main/ets/core/book/BookTypeSupport';
 export {
