@@ -1813,9 +1813,8 @@ struct BookSourcePage {
             () => this.openActionSourceSettings())
         }
         if (this.actionSourceNeedsLogin() && !this.actionSourceIsNative()) {
-          this.contextActionItem($r('sys.symbol.arrow_right_up_and_square'),
-            this.actionSourceLoggedIn() ? '重新登录' : '登录',
-            this.primaryTextColor(), () => this.openActionSourceLogin())
+          this.contextActionItem($r('sys.symbol.gearshape'), '书源设置', this.primaryTextColor(),
+            () => this.openActionSourceLogin())
         }
         this.contextActionItem($r('sys.symbol.checkmark_shield'), '校验', this.primaryTextColor(),
           () => this.checkActionSource())
@@ -4090,10 +4089,11 @@ struct BookSourcePage {
   sourceActionMenuHeight(): number {
     const trustHeight = this.actionSourceTlsTrusted() ? 44 : 0;
     const debugHeight = 44;
+    const hasSettingsItem = this.actionSourceIsNative() || this.actionSourceNeedsLogin();
     if (this.actionSourceLocked()) {
-      return (this.actionSourceNeedsLogin() ? 320 : 276) + trustHeight + debugHeight;
+      return (hasSettingsItem ? 320 : 276) + trustHeight + debugHeight;
     }
-    return (this.actionSourceNeedsLogin() ? 496 : 452) + trustHeight + debugHeight;
+    return (hasSettingsItem ? 496 : 452) + trustHeight + debugHeight;
   }
 
   async revokeActionSourceTlsTrust(): Promise<void> {
