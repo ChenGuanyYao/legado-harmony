@@ -281,6 +281,37 @@ try {
   equal(chapters[0].tag.length > 0, true, '更新时间');
   equal((await runner.toc(book, 1)).length, 1, '目录条数上限');
 
+  // nextUrl 一次给出多个地址：剩余目录页每批 4 页并发、按列出顺序解析，不跟随这些页自己的 nextUrl。
+  const paged = JSON.parse(JSON.stringify(sample));
+  paged.toc = {
+    url: '{{server}}/pages?p=1',
+    list: '$.data.chapters[*]',
+    fields: { title: '$.title', url: '= server + "/content?item_id=" + $.id' },
+    nextUrl: "= data.data.total ? map(range(data.data.total), i => '/pages?p=' + (i + 1)) : data.data.next"
+  };
+  let inFlight = 0;
+  let peak = 0;
+  const pagedHost = createTestHost(JsonPathEvaluator, async (request) => {
+    const p = Number(/[?&]p=(\d+)/.exec(request.url)[1]);
+    inFlight++;
+    peak = Math.max(peak, inFlight);
+    // 页码越小返回越慢，验证结果仍按列出顺序拼接。
+    await new Promise((resolve) => setTimeout(resolve, (12 - p) * 3));
+    inFlight--;
+    return { data: { total: p === 1 ? 10 : 0, next: p === 1 ? '' : '/pages?p=99',
+      chapters: [{ title: `第${p}页`, id: `p${p}` }] } };
+  });
+  const pagedChapters = await new NativeSourceRunner(NativeSourceSpec.fromObject(paged), pagedHost,
+    { server: 'https://api.example.com' }).toc({ ...book, tocUrl: '' });
+  equal(pagedChapters.map((c) => c.title), Array.from({ length: 10 }, (_, i) => `第${i + 1}页`),
+    '目录分页列表按列出顺序拼接');
+  equal(pagedHost.requests.length, 10, '列出的页不再跟随各自的 nextUrl');
+  equal(peak, 4, '剩余目录页每批 4 页并发');
+  paged.toc.nextUrl = "= data.data.total ? join(map(range(3), i => '/pages?p=' + (i + 1)), '\\n') : ''";
+  const linesChapters = await new NativeSourceRunner(NativeSourceSpec.fromObject(paged), pagedHost,
+    { server: 'https://api.example.com' }).toc({ ...book, tocUrl: '' });
+  equal(linesChapters.map((c) => c.title), ['第1页', '第2页', '第3页'], '多行文本同样视为分页列表');
+
   const text = await runner.content(book, { url: chapters[0].url, title: '第一章', index: 0 });
   equal(text.kind, 'text', '文本正文');
   equal(text.text, '第一页<img src="https://img.example.com/1.jpg">\n第二页',

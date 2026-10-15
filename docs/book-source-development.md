@@ -229,7 +229,7 @@ fn sign(path, ts) {
 | `name`、`url` | 书源名称与地址。`url` 是书源的唯一标识，必须以 `http://` 或 `https://` 开头 |
 | `group`、`comment` | 分组与说明 |
 | `type` | 默认媒体类型：`text`（默认）、`audio`、`comic`、`video`，见[媒体类型](#媒体类型) |
-| `rate` | 并发限制，写法与兼容书源的 `concurrentRate` 相同 |
+| `rate` | 并发限制，写法与兼容书源的 `concurrentRate` 相同。对整个书源的所有请求生效，并发抓目录页也要排队；纯数字间隔会让 N 页目录至少耗时 N × 间隔，站点不限流时不要写 |
 | `headers` | 每个请求都带的请求头 |
 | `vars` | 书源变量，见下 |
 | `lib` | 函数库，见上 |
@@ -454,7 +454,7 @@ fn sign(path, ts) {
 | `fields.isVip`、`fields.isPay` | 布尔标记 |
 | `fields.isVolume` | 为真时该元素是分卷标题，不需要 `url`。它不占章节位置，目录会把卷名显示在它后面第一章的上方 |
 | `fields.tag` | 章节附加信息，一般放更新时间 |
-| `nextUrl` | 下一页目录地址，为空或重复时停止，最多 100 页 |
+| `nextUrl` | 目录分页地址。返回一个地址表示“下一页”，逐页请求，为空或重复时停止；返回列表（或多行文本）表示“剩余全部目录页”，按列出顺序每批 4 页并发请求，不再跟随这些页自己的 `nextUrl`，已请求过的地址自动跳过。合计最多 1000 页。已知总页数时优先用列表写法，例如 `= map(range(int(data.pages)), i => '/toc?page=' + (i + 1))` |
 | `reverse` | 为 `true` 时倒序 |
 
 ### 正文 `content`
