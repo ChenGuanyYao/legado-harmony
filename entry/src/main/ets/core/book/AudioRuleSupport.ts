@@ -1,4 +1,4 @@
-import { JavaRegexCompat } from '../rule/JavaRegexCompat';
+import { JavaRegexCompat } from '@legado/sourceengine';
 
 /** The address part and the explicit request headers of a `url,{"headers":{...}}` rule value. */
 export class AudioRequestOptions {

@@ -99,6 +99,19 @@
       ]
     },
     {
+      "name": "sourceengine",
+      "srcPath": "./sourceengine",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default",
+            "release"
+          ]
+        }
+      ]
+    },
+    {
       "name": "quickjs",
       "srcPath": "./quickjs",
       "targets": [

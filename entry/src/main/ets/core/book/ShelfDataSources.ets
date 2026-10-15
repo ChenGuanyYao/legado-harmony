@@ -1,4 +1,4 @@
-import { Book, BookGroup, SearchBook } from '../../model/data/Book';
+import { Book, BookGroup, SearchBook } from '@legado/sourceengine';
 import { ExploreSourceOption } from './ExploreCoordinator';
 
 export class ShelfTileSortEntry {

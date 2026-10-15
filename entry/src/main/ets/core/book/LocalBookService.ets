@@ -7,7 +7,7 @@ import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import zlib from '@ohos.zlib';
 import xml from '@ohos.xml';
 import { appDb } from '../../model/data/AppDatabase';
-import { Book, BookChapter } from '../../model/data/Book';
+import { Book, BookChapter } from '@legado/sourceengine';
 import { ReaderImageMarker } from './ReaderImageMarker';
 import { LocalChapterContentLoader } from './LocalChapterContentLoader';
 import { EpubChapterPlanner, EpubPlannedChapter, EpubTocEntry } from './EpubChapterPlanner';

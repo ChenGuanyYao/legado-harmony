@@ -1,7 +1,7 @@
 import { router } from '@kit.ArkUI';
 import { Context } from '@kit.AbilityKit';
 import { AppDatabase } from '../model/data/AppDatabase';
-import { Book } from '../model/data/Book';
+import { Book } from '@legado/sourceengine';
 import { BookshelfSortHelper } from './BookshelfSortHelper';
 import { SearchExplorePendingBook } from './SearchExplorePendingBook';
 import { PrivateShelfStore } from './PrivateShelfStore';

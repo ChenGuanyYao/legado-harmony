@@ -1,6 +1,6 @@
 import { router } from '@kit.ArkUI';
 import deviceInfo from '@ohos.deviceInfo';
-import { Book, BookSource, SearchBook } from '../../model/data/Book';
+import { Book, BookSource, SearchBook, BookFieldSanitizer } from '@legado/sourceengine';
 import { AppDatabase } from '../../model/data/AppDatabase';
 import {
   ExploreCoordinator,
@@ -16,7 +16,6 @@ import { SearchExploreSettingsStore } from '../../utils/SearchExploreSettingsSto
 import { ExploreCacheHit, ExploreResultCache } from '../../utils/ExploreResultCache';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { WebBookService } from '../../core/book/WebBookService';
-import { BookFieldSanitizer } from '../../utils/BookFieldSanitizer';
 import { SystemDialogSession } from '../../utils/SystemDialogSession';
 import { CoverUrlNormalizer } from '../../utils/CoverUrlNormalizer';
 import { ExploreSourceOptionDataSource, ExploreMetadataTask } from '../../core/book/ShelfDataSources';

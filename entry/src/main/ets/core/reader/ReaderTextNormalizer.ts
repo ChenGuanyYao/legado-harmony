@@ -1,4 +1,4 @@
-import { ReaderActionMarker } from '../book/ReaderActionMarker';
+import { ReaderActionMarker } from '@legado/sourceengine';
 import { ReaderImageMarker } from '../book/ReaderImageMarker';
 
 /**

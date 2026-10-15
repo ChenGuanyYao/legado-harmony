@@ -1,6 +1,6 @@
 import { webview } from '@kit.ArkWeb';
 import { WebRuntimeAvailability } from '../utils/WebRuntimeAvailability';
-import { WebBookFetchRuntime } from '../core/book/WebBookFetchRuntime';
+import { WebBookFetchRuntime } from '@legado/sourceengine';
 
 /** Invisible ArkWeb transport for source rules that explicitly opt into `webView: true`. */
 @Component

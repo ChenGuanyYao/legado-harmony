@@ -1,9 +1,7 @@
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
-import { BookSource } from '../../model/data/Book';
-import { HttpClient } from '../http/HttpClient';
-import { NativeSourceCrypto } from '../nativesource/NativeSourceCrypto';
+import { BookSource, HttpClient, NativeSourceCrypto } from '@legado/sourceengine';
 
 export class ComicImageSpec {
   url: string = '';

@@ -1,4 +1,4 @@
-import { HttpTTS } from '../model/data/Book';
+import { HttpTTS } from '@legado/sourceengine';
 import { TtsVoiceInfo } from '../account/AccountCommerceModels';
 import { TtsVoiceOption } from './SystemTtsReader';
 

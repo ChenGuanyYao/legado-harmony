@@ -1,5 +1,5 @@
 import { router, promptAction } from '@kit.ArkUI';
-import { Book } from '../model/data/Book';
+import { Book } from '@legado/sourceengine';
 import { appDb } from '../model/data/AppDatabase';
 import { LocalBookService } from '../core/book/LocalBookService';
 import { OpdsBookService } from '../opds/OpdsBookService';

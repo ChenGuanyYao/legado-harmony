@@ -1,7 +1,5 @@
 import taskpool from '@ohos.taskpool';
-import { Book } from '../../model/data/Book';
-import { BudgetedRegexReplace } from '../rule/BudgetedRegexReplace';
-import { JavaRegexCompat } from '../rule/JavaRegexCompat';
+import { Book, BudgetedRegexReplace, JavaRegexCompat } from '@legado/sourceengine';
 import { ReaderReplaceRule } from '../../utils/ReaderReplaceRuleStore';
 
 /**

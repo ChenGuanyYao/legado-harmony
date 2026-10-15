@@ -2,13 +2,10 @@ import { router } from '@kit.ArkUI';
 import { util } from '@kit.ArkTS';
 import http from '@ohos.net.http';
 import fs from '@ohos.file.fs';
-import { HttpTTS } from '../model/data/Book';
-import { CookieStore } from '../core/http/CookieStore';
-import { JsRuntime } from '../core/rule/JsRuntime';
+import { HttpTTS, CookieStore, JsRuntime, sleepMs } from '@legado/sourceengine';
 import { TtsAvAudioPlayer } from './TtsAvAudioPlayer';
 import { PcmPlaybackCue, TtsPcmAudioPlayer } from './TtsPcmAudioPlayer';
 import { HdsFeedback } from './HdsFeedback';
-import { sleepMs } from './Sleep';
 
 class TtsRequestRule {
   url: string = '';

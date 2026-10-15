@@ -1,7 +1,7 @@
 import { audio } from '@kit.AudioKit';
 import deviceInfo from '@ohos.deviceInfo';
 import { TtsAudioSession } from './TtsAudioSession';
-import { sleepMs } from './Sleep';
+import { sleepMs } from '@legado/sourceengine';
 
 interface PcmPlaybackMark {
   frame: number;

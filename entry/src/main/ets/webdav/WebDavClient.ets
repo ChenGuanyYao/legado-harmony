@@ -13,8 +13,7 @@ import {
 } from './WebDavModels';
 import { WebDavSettingsStore } from './WebDavSettingsStore';
 import { WebDavError } from './WebDavError';
-import { digestHashHex } from '../core/http/DigestHash';
-import { HttpDigestChallenge, HttpAuth } from '../core/http/HttpAuth';
+import { digestHashHex, HttpDigestChallenge, HttpAuth } from '@legado/sourceengine';
 
 class WebDavHttpResponse {
   statusCode: number = 0;

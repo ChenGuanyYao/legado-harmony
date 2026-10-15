@@ -1,15 +1,13 @@
 import { Context } from '@kit.AbilityKit';
-import { Book, SearchBook } from '../model/data/Book';
+import { Book, SearchBook, BookFieldSanitizer, BookTypeSupport } from '@legado/sourceengine';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { WebBookService } from '../core/book/WebBookService';
 import { BookCoverCache } from './BookCoverCache';
 import { BookDisplayHelper } from './BookDisplayHelper';
 import { BookIdentity } from './BookIdentity';
 import { CoverUrlNormalizer } from './CoverUrlNormalizer';
-import { BookFieldSanitizer } from './BookFieldSanitizer';
 import { SearchExplorePendingBook } from './SearchExplorePendingBook';
 import { AppThemeSettingsStore } from './AppThemeSettingsStore';
-import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { HdsFeedback } from './HdsFeedback';
 
 export class SearchBookShelfChange {

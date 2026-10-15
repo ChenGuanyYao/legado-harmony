@@ -1,9 +1,6 @@
 import { router } from '@kit.ArkUI';
 import { Context } from '@kit.AbilityKit';
-import { QuickJsFingerprintStats, QuickJsMigrationSnapshot,
-  QuickJsMigrationStore } from '../core/script/QuickJsMigrationStore';
-import { QuickJsRuntimeMode } from '../core/script/QuickJsRuntimeStatus';
-import { QuickJsValidationStore } from '../core/script/QuickJsValidationStore';
+import { QuickJsFingerprintStats, QuickJsMigrationSnapshot, QuickJsMigrationStore, QuickJsRuntimeMode, QuickJsValidationStore } from '@legado/sourceengine';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { AppFontSize } from '../theme/AppFontSize';

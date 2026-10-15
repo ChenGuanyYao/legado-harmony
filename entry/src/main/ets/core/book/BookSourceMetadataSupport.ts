@@ -1,7 +1,4 @@
-import { Book, BookSource, SearchBook } from '../../model/data/Book';
-import { BookTypeSupport } from './BookTypeSupport';
-import { BookUrlResolver } from './BookUrlResolver';
-import { EncodedSourceUrl } from './EncodedSourceUrl';
+import { Book, BookSource, SearchBook, BookTypeSupport, BookUrlResolver, EncodedSourceUrl } from '@legado/sourceengine';
 
 /**
  * Bridges source-owned metadata carried by virtual book/catalog URLs into the normal book model.

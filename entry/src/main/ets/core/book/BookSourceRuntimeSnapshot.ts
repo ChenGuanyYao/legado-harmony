@@ -1,4 +1,4 @@
-import { BookSource } from '../../model/data/Book';
+import { BookSource } from '@legado/sourceengine';
 
 /**
  * Parsed, read-only view of the small pieces of BookSource runtime state used by native features.

@@ -5,10 +5,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const etsDir = path.join(root, 'entry', 'src', 'main', 'ets');
+import { pathToFileURL } from 'node:url';
+import { ETS_ROOTS, readEtsModule, toNodeModuleSource } from './ets-module-staging.mjs';
 
 const MODULES = [
   'core/book/ReaderImageMarker.ts',
@@ -30,13 +28,10 @@ export async function loadReaderModules() {
   try {
     const exported = {};
     for (const relative of MODULES) {
-      const sourcePath = path.join(etsDir, relative);
-      if (!fs.existsSync(sourcePath)) continue;
+      if (!ETS_ROOTS.some((root) => fs.existsSync(path.join(root, relative)))) continue;
       const target = path.join(stagingDir, relative);
       fs.mkdirSync(path.dirname(target), { recursive: true });
-      const text = fs.readFileSync(sourcePath, 'utf8')
-        .replace(/(from\s+['"])(\.{1,2}\/[^'"]+?)(['"])/g, (all, head, specifier, tail) =>
-          /\.[a-z]+$/i.test(specifier) ? all : `${head}${specifier}.ts${tail}`);
+      const text = toNodeModuleSource(readEtsModule(relative), relative);
       fs.writeFileSync(target, text);
     }
     for (const relative of MODULES) {

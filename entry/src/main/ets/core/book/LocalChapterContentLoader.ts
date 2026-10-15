@@ -1,7 +1,7 @@
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
 import { image } from '@kit.ImageKit';
-import { Book, BookChapter } from '../../model/data/Book';
+import { Book, BookChapter } from '@legado/sourceengine';
 import { EpubChapterPlanner, EpubChapterSegment } from './EpubChapterPlanner';
 import { EpubConvertResult, EpubHtmlConverter, EpubImageRef } from './EpubHtmlConverter';
 import { ReaderImageMarker } from './ReaderImageMarker';

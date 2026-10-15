@@ -1,5 +1,4 @@
-import { SearchBook } from '../model/data/Book';
-import { BookTypeSupport } from '../core/book/BookTypeSupport';
+import { SearchBook, BookTypeSupport } from '@legado/sourceengine';
 
 export class SearchResultGroupSnapshot {
   token: string = '';

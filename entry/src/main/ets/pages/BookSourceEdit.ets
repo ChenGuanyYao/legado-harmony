@@ -1,6 +1,6 @@
 import { router, window } from '@kit.ArkUI';
 import { KeyboardAvoidMode } from '@ohos.arkui.UIContext';
-import { BookSource } from '../model/data/Book';
+import { BookSource } from '@legado/sourceengine';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';

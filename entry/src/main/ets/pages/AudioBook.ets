@@ -1,17 +1,13 @@
-import { NativeSourceService, NativeVoiceOption } from '../core/nativesource/NativeSourceService';
+import { NativeSourceService, NativeVoiceOption, Book, BookChapter, BookSource, BookTypeSupport, BookUrlResolver, VerificationSupport } from '@legado/sourceengine';
 import { router } from '@kit.ArkUI';
 import { common, WantAgent, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { avSession } from '@kit.AVSessionKit';
-import { Book, BookChapter, BookSource } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { ReadBookEngine } from '../core/book/ReadBookEngine';
 import { WebBookService } from '../core/book/WebBookService';
 import { BookSourceDataUrlSupport } from '../core/book/BookSourceDataUrlSupport';
-import { BookTypeSupport } from '../core/book/BookTypeSupport';
-import { BookUrlResolver } from '../core/book/BookUrlResolver';
 import { AudioRuleSupport } from '../core/book/AudioRuleSupport';
-import { VerificationSupport } from '../core/http/VerificationSupport';
 import { RemoteAudioPlayback, RemoteAudioPlaybackListener } from '../utils/RemoteAudioPlayback';
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';

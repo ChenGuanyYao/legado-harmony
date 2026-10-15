@@ -1,6 +1,6 @@
 // 页码候选写法 `<第一页,第二页,...>` 的回归：第 N 页取第 N 个候选，超出后沿用最后一个。
 
-import { PageCandidateUrl } from '../entry/src/main/ets/core/rule/PageCandidateUrl.ts';
+import { PageCandidateUrl } from '../sourceengine/src/main/ets/core/rule/PageCandidateUrl.ts';
 
 let assertions = 0;
 

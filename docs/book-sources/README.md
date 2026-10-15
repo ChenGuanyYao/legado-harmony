@@ -38,7 +38,7 @@
 
 ## 修改规则引擎时
 
-改动 `core/book`、`core/http`、`core/rule` 等规则执行代码后，运行中立性检查：
+改动 `sourceengine` 模块（书源解析内核）或 `entry` 下 `core/book` 等规则执行代码后，运行中立性检查：
 
 ```powershell
 node scripts/neutral-source-engine-check.mjs

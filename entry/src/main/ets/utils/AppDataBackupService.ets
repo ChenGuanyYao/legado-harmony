@@ -6,21 +6,7 @@ import preferences from '@ohos.data.preferences';
 import { Context } from '@kit.AbilityKit';
 import { statfs } from '@kit.CoreFileKit';
 import { AppDatabase } from '../model/data/AppDatabase';
-import {
-  Book,
-  BookGroup,
-  Bookmark,
-  BookSource,
-  BookListRule,
-  SearchRule,
-  ExploreRule,
-  BookInfoRule,
-  TocRule,
-  ContentRule,
-  HttpTTS,
-  ReadConfig,
-  SearchKeyword
-} from '../model/data/Book';
+import { Book, BookGroup, Bookmark, BookSource, BookListRule, SearchRule, ExploreRule, BookInfoRule, TocRule, ContentRule, HttpTTS, ReadConfig, SearchKeyword } from '@legado/sourceengine';
 import { LocalBookService } from '../core/book/LocalBookService';
 import { BackupCrypto } from './BackupCrypto';
 import { BookSourceGroupStore } from './BookSourceGroupStore';

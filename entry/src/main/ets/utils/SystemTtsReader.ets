@@ -1,7 +1,7 @@
 import { textToSpeech } from '@kit.CoreSpeechKit';
 import { connection } from '@kit.NetworkKit';
 import { CloudTtsAudio, CloudTtsClient, CloudTtsTiming } from '../account/CloudTtsClient';
-import { HttpTTS } from '../model/data/Book';
+import { HttpTTS } from '@legado/sourceengine';
 import { HttpTtsAudio, HttpTtsReader } from './HttpTtsReader';
 import { TtsAudioSession } from './TtsAudioSession';
 import { PcmPlaybackCue, TtsPcmAudioPlayer } from './TtsPcmAudioPlayer';

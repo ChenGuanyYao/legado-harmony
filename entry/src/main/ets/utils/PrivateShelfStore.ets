@@ -1,6 +1,6 @@
 import { Context } from '@kit.AbilityKit';
 import preferences from '@ohos.data.preferences';
-import { Book } from '../model/data/Book';
+import { Book } from '@legado/sourceengine';
 import { HuksSecretStore } from './HuksSecretStore';
 
 /**

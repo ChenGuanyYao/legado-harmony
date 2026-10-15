@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { JavaRegexCompat } from '../entry/src/main/ets/core/rule/JavaRegexCompat.ts';
+import { JavaRegexCompat } from '../sourceengine/src/main/ets/core/rule/JavaRegexCompat.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -189,7 +189,7 @@ assert(replaceStore.includes('JavaRegexCompat.unsupportedHint'),
   'ReaderReplaceRuleStore 未在编译失败时给出可读原因');
 assert(read('entry/src/main/ets/pages/ReaderReplaceRules.ets').includes('JavaRegexCompat.compile'),
   'ReaderReplaceRules 保存校验未使用兼容层');
-assert(read('entry/src/main/ets/core/rule/AnalyzeRule.ts').includes('JavaRegexCompat.compile'),
+assert(read('sourceengine/src/main/ets/core/rule/AnalyzeRule.ts').includes('JavaRegexCompat.compile'),
   'AnalyzeRule 未使用兼容层');
 assert(read('entry/src/main/ets/core/book/WebBookService.ts').includes('JavaRegexCompat.compile'),
   'WebBookService 正文净化未使用兼容层');

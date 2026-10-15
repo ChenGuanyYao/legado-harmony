@@ -1,7 +1,6 @@
-import { Book, BookChapter } from '../model/data/Book';
+import { Book, BookChapter, BookTypeSupport } from '@legado/sourceengine';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { WebBookService } from '../core/book/WebBookService';
-import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { ImmersiveBackButton } from './ImmersiveBackButton';
 import { AppFontSize } from '../theme/AppFontSize';

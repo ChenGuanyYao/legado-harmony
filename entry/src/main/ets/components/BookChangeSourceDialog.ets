@@ -1,11 +1,10 @@
-import { Book, SearchBook } from '../model/data/Book';
+import { Book, SearchBook, BookFieldSanitizer } from '@legado/sourceengine';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { SearchCoordinator, SearchProgress } from '../core/book/SearchCoordinator';
 import { WebBookService } from '../core/book/WebBookService';
 import { ChangeSourceResultCache } from '../utils/ChangeSourceResultCache';
 import { SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
 import { SearchBookShelfHelper } from '../utils/SearchBookShelfHelper';
-import { BookFieldSanitizer } from '../utils/BookFieldSanitizer';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { ThemeRuntime } from '../theme/ThemeRuntime';

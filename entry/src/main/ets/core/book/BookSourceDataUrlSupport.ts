@@ -1,6 +1,4 @@
-import { Book, BookChapter, BookSource, SearchBook } from '../../model/data/Book';
-import { HttpClient } from '../http/HttpClient';
-import { BookUrlResolver } from './BookUrlResolver';
+import { Book, BookChapter, BookSource, SearchBook, HttpClient, BookUrlResolver } from '@legado/sourceengine';
 import { CoverUrlNormalizer } from '../../utils/CoverUrlNormalizer';
 
 /**

@@ -57,7 +57,7 @@ const readerBackgroundComponent = read('entry/src/main/ets/components/ReaderThem
 const indexPage = read('entry/src/main/ets/pages/Index.ets') + '\n' +
   ['HomeTabShells', 'BookshelfPage', 'ExplorePage', 'SearchPage', 'SettingsTabPage']
     .map((name) => read(`entry/src/main/ets/components/home/${name}.ets`)).join('\n');
-const bookModel = read('entry/src/main/ets/model/data/Book.ts');
+const bookModel = read('sourceengine/src/main/ets/model/data/Book.ts');
 const themePage = read('entry/src/main/ets/pages/ThemeSettings.ets');
 const readerSettingsPage = read('entry/src/main/ets/pages/Settings.ets');
 const ttsSettingsPage = read('entry/src/main/ets/pages/TtsSettings.ets');

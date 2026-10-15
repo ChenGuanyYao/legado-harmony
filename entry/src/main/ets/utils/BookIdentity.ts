@@ -1,5 +1,4 @@
-import { Book, SearchBook } from '../model/data/Book';
-import { EncodedSourceUrl } from '../core/book/EncodedSourceUrl';
+import { Book, SearchBook, EncodedSourceUrl } from '@legado/sourceengine';
 
 export class BookIdentity {
   private static queryValue(url: string, names: string[]): string {

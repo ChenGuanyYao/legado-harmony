@@ -1,7 +1,7 @@
 import deviceInfo from '@ohos.deviceInfo';
 import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
-import { Book, BookChapter, Bookmark } from '../../model/data/Book';
+import { Book, BookChapter, Bookmark } from '@legado/sourceengine';
 import { AppDatabase } from '../../model/data/AppDatabase';
 import { HdsFeedback } from '../../utils/HdsFeedback';
 import { VirtualListScrollbar } from '../../utils/VirtualListScrollbar';

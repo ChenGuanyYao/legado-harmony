@@ -1,4 +1,4 @@
-import { Book } from '../model/data/Book';
+import { Book } from '@legado/sourceengine';
 
 export class BookshelfSortHelper {
   static sortByRecentRead(books: Book[]): Book[] {

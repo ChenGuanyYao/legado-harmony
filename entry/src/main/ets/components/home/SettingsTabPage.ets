@@ -1,5 +1,5 @@
 import { router } from '@kit.ArkUI';
-import { BookSource } from '../../model/data/Book';
+import { BookSource } from '@legado/sourceengine';
 import { SearchExploreSettings } from '../../utils/SearchExploreSettingsStore';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { CloudSyncSettingsStore } from '../../account/CloudSyncSettingsStore';

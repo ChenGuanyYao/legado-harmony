@@ -5,7 +5,7 @@ import { AccountCommerceConfig } from './AccountCommerceConfig';
 import { AccountApiError } from './AccountCommerceModels';
 import { AccountSessionStore } from './AccountSessionStore';
 import { HttpTtsAudio } from '../utils/HttpTtsReader';
-import { sleepMs } from '../utils/Sleep';
+import { sleepMs } from '@legado/sourceengine';
 
 class CloudTtsErrorBody {
   code: string = '';

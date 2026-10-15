@@ -1,5 +1,5 @@
 import { router, window } from '@kit.ArkUI';
-import { Book, BookChapter, BookSource } from '../model/data/Book';
+import { Book, BookChapter, BookSource } from '@legado/sourceengine';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { ReadBookEngine } from '../core/book/ReadBookEngine';
 import { WebBookService } from '../core/book/WebBookService';

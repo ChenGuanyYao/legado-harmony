@@ -1,5 +1,5 @@
 import { router } from '@kit.ArkUI';
-import { SearchBook } from '../model/data/Book';
+import { SearchBook } from '@legado/sourceengine';
 import { SearchBookResultList } from '../components/book/SearchBookResultList';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { SearchResultAggregationStore, SearchResultGroupSnapshot } from '../utils/SearchResultAggregationStore';

@@ -140,12 +140,9 @@ legado-harmony/
 │       │   └── reader/               # 阅读页面板：目录、缓存、排版、配色、朗读控制、眼动校准
 │       ├── core/
 │       │   ├── book/                 # 搜索、发现、详情、目录和正文协调
-│       │   ├── concurrency/          # 协作式调度与耗时保护
-│       │   ├── http/                 # HTTP、Cookie、TLS 与验证支持
+│       │   ├── concurrency/          # 正文预处理等耗时任务
 │       │   ├── lan/                  # 局域网浏览器阅读服务
 │       │   ├── reader/               # 阅读器排版引擎与阅读页控制器
-│       │   ├── rule/                 # URL、选择器、正则和 JS 规则解析
-│       │   ├── script/               # 通用脚本运行支持
 │       │   └── stats/                # 阅读统计
 │       ├── entryability/             # 应用入口 Ability
 │       ├── entryformability/         # 桌面服务卡片 Ability
@@ -156,6 +153,18 @@ legado-harmony/
 │       ├── utils/                    # 设置、缓存、字体、TTS 与音频工具
 │       ├── webdav/                   # WebDAV 书籍浏览与下载
 │       └── widgets/                  # 桌面服务卡片界面
+├── sourceengine/                     # 书源解析内核（HAR，包名 @legado/sourceengine）
+│   ├── Index.ts                      # 公开接口；QuickJS 诊断另由 Diagnostics.ets 导出
+│   └── src/main/ets/
+│       ├── core/
+│       │   ├── book/                 # 阶段脚本运行时、网页抓取、书源地址与调试记录
+│       │   ├── concurrency/          # 协作式调度与耗时保护
+│       │   ├── http/                 # HTTP、Cookie、TLS 与验证支持
+│       │   ├── nativesource/         # 原生书源格式、表达式语言与执行器
+│       │   ├── rule/                 # URL、选择器、正则和 JS 规则解析
+│       │   └── script/               # QuickJS 脚本运行与诊断
+│       ├── model/data/Book.ts        # 书籍、章节、书源等数据模型
+│       └── utils/                    # 内核用到的小工具
 ├── quickjs/                          # QuickJS 原生模块
 ├── docs/                             # 开发文档与使用说明书网站（docs/manual）
 └── scripts/                          # 构建前与架构回归检查

@@ -1,5 +1,5 @@
 import { router } from '@kit.ArkUI';
-import { BookSource } from '../model/data/Book';
+import { BookSource, NativeSourceService } from '@legado/sourceengine';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
@@ -8,7 +8,6 @@ import { HdsFeedback } from '../utils/HdsFeedback';
 import { ExploreResultCache } from '../utils/ExploreResultCache';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
-import { NativeSourceService } from '../core/nativesource/NativeSourceService';
 
 const NATIVE_SOURCE_TEMPLATE: string = `{
   "sourceFormat": "native",

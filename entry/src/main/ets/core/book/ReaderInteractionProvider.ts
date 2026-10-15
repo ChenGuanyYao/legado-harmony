@@ -1,4 +1,4 @@
-import { BookSource } from '../../model/data/Book';
+import { BookSource } from '@legado/sourceengine';
 import { BookSourceRuntimeSnapshotStore } from './BookSourceRuntimeSnapshot';
 
 export class ReaderParagraphInteraction {

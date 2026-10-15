@@ -1,4 +1,4 @@
-import { Book } from '../model/data/Book';
+import { Book } from '@legado/sourceengine';
 import { BookDisplayHelper } from './BookDisplayHelper';
 
 export class CoverAlbum {

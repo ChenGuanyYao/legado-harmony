@@ -4,15 +4,11 @@ import { util } from '@kit.ArkTS';
 import picker from '@ohos.file.picker';
 import fs from '@ohos.file.fs';
 import pasteboard from '@ohos.pasteboard';
-import { Book, BookChapter, BookSource, SearchBook } from '../model/data/Book';
+import { Book, BookChapter, BookSource, SearchBook, SourceRuntimeStage, BookSourceDebugContext, BookSourceDebugSession, BookSourceDebugStep, BookSourceDebugNetworkTrace, BookSourceDebugRuleTrace, BookSourceDebugLog, BookSourceDebugRedactor } from '@legado/sourceengine';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { SearchCoordinator } from '../core/book/SearchCoordinator';
 import { ExploreCoordinator, ExploreEntry } from '../core/book/ExploreCoordinator';
 import { WebBookService } from '../core/book/WebBookService';
-import { SourceRuntimeStage } from '../core/book/BookSourceRuntimeRouter';
-import { BookSourceDebugContext, BookSourceDebugSession, BookSourceDebugStep,
-  BookSourceDebugNetworkTrace, BookSourceDebugRuleTrace, BookSourceDebugLog,
-  BookSourceDebugRedactor } from '../core/book/BookSourceDebugModels';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
 import { HdsFeedback } from '../utils/HdsFeedback';

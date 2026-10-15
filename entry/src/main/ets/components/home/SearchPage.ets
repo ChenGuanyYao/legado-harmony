@@ -1,6 +1,6 @@
 import { router, uiMaterial } from '@kit.ArkUI';
 import deviceInfo from '@ohos.deviceInfo';
-import { BookSource, SearchBook, SearchKeyword } from '../../model/data/Book';
+import { BookSource, SearchBook, SearchKeyword, BookTypeSupport } from '@legado/sourceengine';
 import { AppDatabase } from '../../model/data/AppDatabase';
 import { SearchCoordinator, SearchCallback, SearchProgress } from '../../core/book/SearchCoordinator';
 import { SearchBookResultList } from '../../components/book/SearchBookResultList';
@@ -10,7 +10,6 @@ import { HdsFeedback } from '../../utils/HdsFeedback';
 import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
 import { SearchExploreSettings, SearchExploreSettingsStore } from '../../utils/SearchExploreSettingsStore';
 import { SearchResultAggregationStore } from '../../utils/SearchResultAggregationStore';
-import { BookTypeSupport } from '../../core/book/BookTypeSupport';
 import { AppThemeSettingsStore } from '../../utils/AppThemeSettingsStore';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { AdaptiveSwitch } from '../AdaptiveSwitch';

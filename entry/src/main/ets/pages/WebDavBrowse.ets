@@ -2,7 +2,7 @@ import { router, promptAction } from '@kit.ArkUI';
 import picker from '@ohos.file.picker';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
-import { Book } from '../model/data/Book';
+import { Book } from '@legado/sourceengine';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { LocalBookService } from '../core/book/LocalBookService';
 import { WebDavBookService } from '../webdav/WebDavBookService';

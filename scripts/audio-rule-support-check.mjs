@@ -5,10 +5,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
+import { readEtsModule, toNodeModuleSource } from './lib/ets-module-staging.mjs';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const etsDir = path.join(root, 'entry', 'src', 'main', 'ets');
 const MODULES = ['core/rule/JavaRegexCompat.ts', 'core/book/AudioRuleSupport.ts'];
 
 const stagingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'audio-rule-check-'));
@@ -28,9 +27,7 @@ try {
   for (const relative of MODULES) {
     const target = path.join(stagingDir, relative);
     fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, fs.readFileSync(path.join(etsDir, relative), 'utf8')
-      .replace(/(from\s+['"])(\.{1,2}\/[^'"]+?)(['"])/g, (all, head, specifier, tail) =>
-        /\.[a-z]+$/i.test(specifier) ? all : `${head}${specifier}.ts${tail}`));
+    fs.writeFileSync(target, toNodeModuleSource(readEtsModule(relative), relative));
   }
   const { AudioRuleSupport } = await import(pathToFileURL(path.join(stagingDir, MODULES[1])).href);
 

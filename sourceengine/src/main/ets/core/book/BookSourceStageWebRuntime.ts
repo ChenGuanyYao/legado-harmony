@@ -1,7 +1,7 @@
 import { util } from '@kit.ArkTS';
 import { webview } from '@kit.ArkWeb';
 import { Book, BookChapter, BookSource } from '../../model/data/Book';
-import { AppDatabase } from '../../model/data/AppDatabase';
+import { BookSourceRuntimeStore } from './BookSourceRuntimeStore';
 import { CookieStore } from '../http/CookieStore';
 import { HttpClient, HttpResponse } from '../http/HttpClient';
 import { AnalyzeUrl } from '../rule/AnalyzeUrl';
@@ -435,7 +435,7 @@ export class BookSourceStageWebRuntime {
     // Coordinators may hold a source snapshot while the login/editor page saves a new token.
     // Refresh missing runtime fields before executing so a stale empty snapshot cannot issue an
     // unauthenticated request or overwrite the newly saved state when the stage completes.
-    const persistedAtStart = await AppDatabase.getInstance().getBookSource(request.source.bookSourceUrl);
+    const persistedAtStart = await BookSourceRuntimeStore.getBookSource(request.source.bookSourceUrl);
     if (persistedAtStart) {
       // Persisted state is authoritative: the login panel (tone/type/explore switches) and the
       // editor write runtime state through the database, while coordinators may still hold a
@@ -615,7 +615,7 @@ export class BookSourceStageWebRuntime {
       // script cache/runtime state only after a pass finishes, otherwise a placeholder can poison
       // the next evaluation (for example, caching an empty paragraph-comment summary).
       cacheState = this.storeCache(sourceKey, nextCacheState);
-      const persistedBeforeSave = await AppDatabase.getInstance().getBookSource(request.source.bookSourceUrl);
+      const persistedBeforeSave = await BookSourceRuntimeStore.getBookSource(request.source.bookSourceUrl);
       if (persistedBeforeSave) {
         // Empty state from a non-login task is never an explicit logout. Preserve a token/header
         // that another page saved while this asynchronous task was running.
@@ -625,7 +625,7 @@ export class BookSourceStageWebRuntime {
           persistedBeforeSave.loginInfo || request.source.loginInfo || '',
           step.javaState, step.sourceState);
       }
-      await AppDatabase.getInstance().updateBookSourceLoginRuntime(request.source.bookSourceUrl,
+      await BookSourceRuntimeStore.updateLoginRuntime(request.source.bookSourceUrl,
         request.source.variable || '', request.source.loginHeader || '', request.source.loginInfo || '');
       return step;
     }

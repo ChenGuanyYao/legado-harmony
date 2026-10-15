@@ -1,6 +1,6 @@
 import { Context } from '@kit.AbilityKit';
 import fs from '@ohos.file.fs';
-import { Book } from '../model/data/Book';
+import { Book } from '@legado/sourceengine';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { BookDisplayHelper } from './BookDisplayHelper';
 import { BookCoverCache } from './BookCoverCache';

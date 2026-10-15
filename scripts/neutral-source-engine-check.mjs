@@ -4,8 +4,10 @@ import path from 'node:path';
 const projectRoot = path.resolve(import.meta.dirname, '..');
 const scanRoots = [
   'entry/src/main/ets/core/book',
-  'entry/src/main/ets/core/http',
-  'entry/src/main/ets/core/rule',
+  'sourceengine/src/main/ets/core/book',
+  'sourceengine/src/main/ets/core/http',
+  'sourceengine/src/main/ets/core/nativesource',
+  'sourceengine/src/main/ets/core/rule',
   'entry/src/main/ets/pages/BookSource.ets',
   'entry/src/main/ets/pages/ReadBook.ets',
   'entry/src/main/ets/pages/VerifyWeb.ets',

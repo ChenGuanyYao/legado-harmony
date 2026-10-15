@@ -1,4 +1,4 @@
-import { Book, BookChapter, BookSource } from '../../model/data/Book';
+import { Book, BookChapter, BookSource } from '@legado/sourceengine';
 import { BookSourceRuntimeSnapshotStore } from './BookSourceRuntimeSnapshot';
 
 const INTERACTION_SETTING_KEYS: string[] = ['段评开关', '章评开关', '章名段评', '本章讨论',

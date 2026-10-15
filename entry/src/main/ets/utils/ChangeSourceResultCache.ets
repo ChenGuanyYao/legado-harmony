@@ -1,6 +1,6 @@
 import { Context } from '@kit.AbilityKit';
 import preferences from '@ohos.data.preferences';
-import { SearchBook } from '../model/data/Book';
+import { SearchBook } from '@legado/sourceengine';
 
 class ChangeSourceCacheEntry {
   schemaVersion: number = 0;

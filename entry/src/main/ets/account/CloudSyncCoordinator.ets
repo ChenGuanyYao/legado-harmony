@@ -23,19 +23,7 @@ import {
   CloudSyncStateStore
 } from './CloudSyncStateStore';
 import { AppDatabase } from '../model/data/AppDatabase';
-import {
-  Book,
-  BookGroup,
-  BookInfoRule,
-  BookListRule,
-  BookSource,
-  Bookmark,
-  ContentRule,
-  ExploreRule,
-  ReadConfig,
-  SearchRule,
-  TocRule
-} from '../model/data/Book';
+import { Book, BookGroup, BookInfoRule, BookListRule, BookSource, Bookmark, ContentRule, ExploreRule, ReadConfig, SearchRule, TocRule } from '@legado/sourceengine';
 import { ReaderSettings, ReaderSettingsStore } from '../utils/ReaderSettingsStore';
 import {
   ReaderReplaceRule,

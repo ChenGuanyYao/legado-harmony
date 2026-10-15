@@ -1,4 +1,4 @@
-import { Book, BookChapter } from '../../model/data/Book';
+import { Book, BookChapter } from '@legado/sourceengine';
 import { AppDatabase } from '../../model/data/AppDatabase';
 import { ReadBookEngine } from '../../core/book/ReadBookEngine';
 import { ReaderChapterRange } from '../../core/reader/ReaderChapterRange';

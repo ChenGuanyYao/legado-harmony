@@ -1,13 +1,11 @@
-import { Book, BookChapter, BookSource, SearchBook } from '../../model/data/Book';
+import { Book, BookChapter, BookSource, SearchBook, ReaderActionMarker, BookUrlResolver } from '@legado/sourceengine';
 import { appDb } from '../../model/data/AppDatabase';
 import { WebBookService } from './WebBookService';
 import { SearchCoordinator } from './SearchCoordinator';
 import { CoverUrlNormalizer } from '../../utils/CoverUrlNormalizer';
 import { LocalChapterContentLoader } from './LocalChapterContentLoader';
-import { ReaderActionMarker } from './ReaderActionMarker';
 import { BookSourceInteractionPostProcessor } from './BookSourceInteractionPostProcessor';
 import { ReaderOpenTrace } from '../../utils/ReaderOpenTrace';
-import { BookUrlResolver } from './BookUrlResolver';
 
 export class ReadBookEngine {
   private static inst: ReadBookEngine | null = null;

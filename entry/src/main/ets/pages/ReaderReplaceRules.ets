@@ -1,7 +1,7 @@
 import { promptAction, router } from '@kit.ArkUI';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
-import { Book } from '../model/data/Book';
+import { Book, HttpClient, JavaRegexCompat, ReplaceRuleImport } from '@legado/sourceengine';
 import { ReaderReplaceRule, ReaderReplaceRuleCheck, ReaderReplaceRuleStore } from '../utils/ReaderReplaceRuleStore';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ResponsiveManagerListLayout } from '../utils/ResponsiveManagerListLayout';
@@ -12,9 +12,6 @@ import { SymbolGlyphModifier } from '@kit.ArkUI';
 import picker from '@ohos.file.picker';
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
-import { HttpClient } from '../core/http/HttpClient';
-import { JavaRegexCompat } from '../core/rule/JavaRegexCompat';
-import { ReplaceRuleImport } from '../core/rule/ReplaceRuleImport';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AppFontSize } from '../theme/AppFontSize';

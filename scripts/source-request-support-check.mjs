@@ -5,10 +5,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
+import { readEtsModule } from './lib/ets-module-staging.mjs';
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const etsDir = path.join(root, 'entry', 'src', 'main', 'ets');
 const stagingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'source-request-check-'));
 
 let assertions = 0;
@@ -23,7 +22,7 @@ function equal(actual, expected, message) {
 async function load(relative, rewrite = (text) => text) {
   const target = path.join(stagingDir, relative);
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, rewrite(fs.readFileSync(path.join(etsDir, relative), 'utf8')));
+  fs.writeFileSync(target, rewrite(readEtsModule(relative)));
   return await import(pathToFileURL(target).href);
 }
 

@@ -1,10 +1,6 @@
-import { NativeSourceService } from '../core/nativesource/NativeSourceService';
-import { NativeSourceSpec } from '../core/nativesource/NativeSourceSpec';
+import { NativeSourceService, NativeSourceSpec, BookSource, SearchBook, BookListRule, SearchRule, ExploreRule, BookInfoRule, TocRule, ContentRule, HttpClient, HttpResponse, RawHttpTextClient, VerificationSupport, CookieStore, TlsTrustStore, BookSourceLoginItem, BookSourceScriptRunner, BookSourceLoginCrypto, BookSourceExecutionJournal, BookSourceRuntimeRouter, SourceRuntimeDecision, SourceRuntimeStage, AnalyzeUrl } from '@legado/sourceengine';
 import { router, promptAction, uiMaterial } from '@kit.ArkUI';
-import { BookSource, SearchBook, BookListRule, SearchRule, ExploreRule, BookInfoRule, TocRule, ContentRule } from '../model/data/Book';
 import { AppDatabase } from '../model/data/AppDatabase';
-import { HttpClient, HttpResponse } from '../core/http/HttpClient';
-import { RawHttpTextClient } from '../core/http/RawHttpTextClient';
 import { SearchCoordinator, SearchProgress, SearchSourceResult } from '../core/book/SearchCoordinator';
 import { syncSystemBars } from '../utils/SystemBars';
 import { SearchExploreSettingsStore } from '../utils/SearchExploreSettingsStore';
@@ -15,9 +11,6 @@ import picker from '@ohos.file.picker';
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
-import { VerificationSupport } from '../core/http/VerificationSupport';
-import { CookieStore } from '../core/http/CookieStore';
-import { TlsTrustStore } from '../core/http/TlsTrustStore';
 import { BookSourceGroupStore } from '../utils/BookSourceGroupStore';
 import { ResponsiveManagerListLayout } from '../utils/ResponsiveManagerListLayout';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
@@ -32,16 +25,7 @@ import { webview } from '@kit.ArkWeb';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { notificationManager } from '@kit.NotificationKit';
 import commonEventManager from '@ohos.commonEventManager';
-import { BookSourceLoginItem, BookSourceScriptRunner } from '../core/book/BookSourceScriptRunner';
 import { BookSourceLoginWebRuntime, LoginCookieOperation, LoginRuntimeStep } from '../core/book/BookSourceLoginWebRuntime';
-import { BookSourceLoginCrypto } from '../core/book/BookSourceLoginCrypto';
-import { BookSourceExecutionJournal } from '../core/book/BookSourceExecutionJournal';
-import {
-  BookSourceRuntimeRouter,
-  SourceRuntimeDecision,
-  SourceRuntimeStage
-} from '../core/book/BookSourceRuntimeRouter';
-import { AnalyzeUrl } from '../core/rule/AnalyzeUrl';
 import { ExploreResultCache } from '../utils/ExploreResultCache';
 import {
   ExploreReadingValidationProgress,

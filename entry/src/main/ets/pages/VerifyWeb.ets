@@ -1,9 +1,7 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
-import { CookieStore } from '../core/http/CookieStore';
-import { VerificationSupport } from '../core/http/VerificationSupport';
+import { CookieStore, VerificationSupport, BookSource } from '@legado/sourceengine';
 import { AppDatabase } from '../model/data/AppDatabase';
-import { BookSource } from '../model/data/Book';
 import { ReadBookEngine } from '../core/book/ReadBookEngine';
 import { BookSourceRuntimeSnapshotStore } from '../core/book/BookSourceRuntimeSnapshot';
 import { syncSystemBars } from '../utils/SystemBars';

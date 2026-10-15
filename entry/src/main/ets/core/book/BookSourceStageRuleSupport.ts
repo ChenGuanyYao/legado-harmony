@@ -1,8 +1,4 @@
-import { BookSource } from '../../model/data/Book';
-import { AnalyzeRule } from '../rule/AnalyzeRule';
-import { BookSourceRuntimeRouter, SourceRuntimeStage } from './BookSourceRuntimeRouter';
-import { BookSourceStageWebRuntime, StageWebRuntimeRequest } from './BookSourceStageWebRuntime';
-import { RuleExecutionTarget, RuleValue } from '../rule/RuleValue';
+import { BookSource, AnalyzeRule, BookSourceRuntimeRouter, SourceRuntimeStage, BookSourceStageWebRuntime, StageWebRuntimeRequest, RuleExecutionTarget, RuleValue } from '@legado/sourceengine';
 
 class EmbeddedStageRule {
   baseRule: string = '';

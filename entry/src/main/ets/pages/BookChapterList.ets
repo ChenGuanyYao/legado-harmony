@@ -1,12 +1,9 @@
 import { router } from '@kit.ArkUI';
-import { Book, BookChapter } from '../model/data/Book';
+import { Book, BookChapter, BookUrlResolver, BookTypeSupport, BookFieldSanitizer } from '@legado/sourceengine';
 import { AppDatabase } from '../model/data/AppDatabase';
 import { WebBookService } from '../core/book/WebBookService';
-import { BookUrlResolver } from '../core/book/BookUrlResolver';
-import { BookTypeSupport } from '../core/book/BookTypeSupport';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 import { syncSystemBars } from '../utils/SystemBars';
-import { BookFieldSanitizer } from '../utils/BookFieldSanitizer';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 import { BookIdentity } from '../utils/BookIdentity';
 import { SearchBookShelfHelper } from '../utils/SearchBookShelfHelper';

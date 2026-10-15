@@ -8,6 +8,7 @@
   "repository": "https://github.com/wip3l/legado-harmony.git",
   "license": "GPL-3.0",
   "dependencies": {
-    "@devzeng/quickjs": "file:../quickjs"
+    "@devzeng/quickjs": "file:../quickjs",
+    "@legado/sourceengine": "file:../sourceengine"
   }
 }

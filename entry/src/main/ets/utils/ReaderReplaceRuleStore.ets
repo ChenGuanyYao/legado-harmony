@@ -1,9 +1,7 @@
 import { Context } from '@kit.AbilityKit';
 import preferences from '@ohos.data.preferences';
-import { Book } from '../model/data/Book';
+import { Book, JavaRegexCompat, ImportedReplaceRule } from '@legado/sourceengine';
 import { CloudSyncChangeTracker } from '../account/CloudSyncChangeTracker';
-import { JavaRegexCompat } from '../core/rule/JavaRegexCompat';
-import { ImportedReplaceRule } from '../core/rule/ReplaceRuleImport';
 
 export class ReaderReplaceRule {
   id: number = 0;

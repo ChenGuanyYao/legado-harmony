@@ -11,8 +11,7 @@ import {
   TtsVoiceInfo,
   TtsWalletSnapshot
 } from '../account/AccountCommerceModels';
-import { HttpTTS } from '../model/data/Book';
-import { HttpClient } from '../core/http/HttpClient';
+import { HttpTTS, HttpClient } from '@legado/sourceengine';
 import { syncSystemBars } from '../utils/SystemBars';
 import { SystemTtsReader, TtsVoiceOption } from '../utils/SystemTtsReader';
 import { TtsVoiceCatalog } from '../utils/TtsVoiceCatalog';

@@ -1,12 +1,11 @@
 import { common, WantAgent, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { notificationManager } from '@kit.NotificationKit';
-import { BookChapter } from '../../model/data/Book';
+import { BookChapter, sleepMs } from '@legado/sourceengine';
 import { AppDatabase } from '../../model/data/AppDatabase';
 import { ReadBookEngine } from '../book/ReadBookEngine';
 import { HdsFeedback } from '../../utils/HdsFeedback';
 import { FullTextCacheCancelCoordinator, FullTextCacheCancelSignal } from '../../utils/FullTextCacheCancelCoordinator';
-import { sleepMs } from '../../utils/Sleep';
 
 const NOTIFICATION_INTERVAL_MS = 5000;
 const NOTIFICATION_ID = 2601;

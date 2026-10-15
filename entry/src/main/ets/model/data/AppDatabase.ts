@@ -1,5 +1,6 @@
 import relationalStore from '@ohos.data.relationalStore';
-import { Book, BookChapter, BookSource, BookGroup, Bookmark, SearchKeyword, ExploreRule, TocRule, ContentRule } from './Book';
+import { Book, BookChapter, BookSource, BookGroup, Bookmark, SearchKeyword, ExploreRule, TocRule, ContentRule,
+  BookSourceRuntimePersistence } from '@legado/sourceengine';
 import { Context } from '@kit.AbilityKit';
 import { CloudSyncChangeTracker } from '../../account/CloudSyncChangeTracker';
 import { BookIdentity } from '../../utils/BookIdentity';
@@ -63,7 +64,7 @@ export class ReadStatsBookMeta {
 const NATIVE_SOURCE_JSLIB_HEAD: string = '{"nativeSource":';
 const NATIVE_SOURCE_RULE_MARKER: string = 'native';
 
-export class AppDatabase {
+export class AppDatabase implements BookSourceRuntimePersistence {
   private static readonly BATCH_INSERT_CHUNK_SIZE: number = 400;
   private static instance: AppDatabase | null = null;
   private store: relationalStore.RdbStore | null = null;

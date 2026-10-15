@@ -1,8 +1,7 @@
-import { Book, BookChapter, BookSource, SearchBook } from '../../model/data/Book';
+import { Book, BookChapter, BookSource, SearchBook, BookTypeSupport } from '@legado/sourceengine';
 import { appDb } from '../../model/data/AppDatabase';
 import { ExploreCoordinator, ExploreEntry } from './ExploreCoordinator';
 import { WebBookService } from './WebBookService';
-import { BookTypeSupport } from './BookTypeSupport';
 import { ReaderImageMarker } from './ReaderImageMarker';
 
 export class ExploreReadingValidationResult {

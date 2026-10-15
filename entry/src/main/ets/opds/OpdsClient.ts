@@ -1,10 +1,7 @@
 import http from '@ohos.net.http';
 import fs from '@ohos.file.fs';
 import { util } from '@kit.ArkTS';
-import { HttpClient, HttpRequest } from '../core/http/HttpClient';
-import { CookieStore } from '../core/http/CookieStore';
-import { digestHashHex } from '../core/http/DigestHash';
-import { TlsTrustStore } from '../core/http/TlsTrustStore';
+import { HttpClient, HttpRequest, CookieStore, digestHashHex, TlsTrustStore, HttpDigestChallenge, HttpAuth } from '@legado/sourceengine';
 import {
   OpdsEntry,
   OpdsFeed,
@@ -15,7 +12,6 @@ import {
 import { OpdsXmlParser } from './OpdsXmlParser';
 import { OpdsError } from './OpdsError';
 import { OpdsKavita } from './OpdsKavita';
-import { HttpDigestChallenge, HttpAuth } from '../core/http/HttpAuth';
 
 export interface OpdsDownloadHandle {
   promise: Promise<void>;

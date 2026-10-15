@@ -4,7 +4,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const moduleUrl = pathToFileURL(
-  path.join(root, 'entry', 'src', 'main', 'ets', 'core', 'http', 'HttpAuth.ts')).href;
+  path.join(root, 'sourceengine', 'src', 'main', 'ets', 'core', 'http', 'HttpAuth.ts')).href;
 const { HttpAuth } = await import(moduleUrl);
 
 let assertions = 0;

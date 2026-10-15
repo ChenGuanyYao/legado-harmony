@@ -1,7 +1,7 @@
 import { Context } from '@kit.AbilityKit';
 import fs from '@ohos.file.fs';
 import { appDb } from '../model/data/AppDatabase';
-import { Book } from '../model/data/Book';
+import { Book } from '@legado/sourceengine';
 import { LocalBookService } from '../core/book/LocalBookService';
 import { OpdsLink, OpdsServerConfig, opdsFormatOfType } from './OpdsModels';
 import { OpdsClient, OpdsDownloadHandle } from './OpdsClient';

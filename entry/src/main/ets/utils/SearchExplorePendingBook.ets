@@ -1,4 +1,4 @@
-import { Book } from '../model/data/Book';
+import { Book } from '@legado/sourceengine';
 
 export class SearchExplorePendingBook {
   private static readonly KEY_PENDING_ADD_TO_SHELF: string = 'searchExplorePendingAddToShelf';

@@ -1,9 +1,8 @@
-import { Book, SearchBook } from '../../model/data/Book';
+import { Book, SearchBook, BookTypeSupport } from '@legado/sourceengine';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { BookDisplayHelper } from '../../utils/BookDisplayHelper';
 import { CoverGallerySettings } from '../../utils/CoverGallerySettings';
 import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
-import { BookTypeSupport } from '../../core/book/BookTypeSupport';
 import deviceInfo from '@ohos.deviceInfo';
 import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';

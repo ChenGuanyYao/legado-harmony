@@ -56,7 +56,7 @@ function literal(name, value) {
 const [wordRanges, nonWordRanges] = build(/[\p{Alphabetic}\p{M}\p{Nd}\p{Pc}\u200c\u200d]/u);
 const [digitRanges, nonDigitRanges] = build(/\p{Nd}/u);
 
-const target = path.join(root, 'entry/src/main/ets/core/rule/JavaRegexCompat.ts');
+const target = path.join(root, 'sourceengine/src/main/ets/core/rule/JavaRegexCompat.ts');
 const source = fs.readFileSync(target, 'utf8');
 const eol = source.includes('\r\n') ? '\r\n' : '\n';
 const open = '  // <generated:word-class>';

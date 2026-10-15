@@ -1,4 +1,4 @@
-import { BookSource } from '../../model/data/Book';
+import { BookSource } from '@legado/sourceengine';
 import { util } from '@kit.ArkTS';
 
 export class LoginRuntimeStep {
