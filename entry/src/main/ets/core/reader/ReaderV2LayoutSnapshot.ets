@@ -1,3 +1,5 @@
+import { ReaderCommentBubbleStyle } from './ReaderCommentBubble';
+
 export class ReaderV2Rect {
   left: number = 0;
   top: number = 0;
@@ -47,11 +49,7 @@ export class ReaderV2LayoutInput {
   bodyFontFamily: string = '';
   titleFontFamily: string = '';
   textColor: number = 0xFF202124;
-  commentTextColor: number = 0xFF2A6FCC;
-  commentBackgroundColor: number = 0x142A6FCC;
-  commentRadiusPx: number = 12;
-  /** Theme bubble style whose comment icon replaces the ◌ placeholder; empty keeps the glyph. */
-  commentIconStyleId: string = '';
+  commentBubble: ReaderCommentBubbleStyle = new ReaderCommentBubbleStyle();
   commentFontSizePx: number = 30;
   commentHitSlopXPx: number = 16;
   commentHitSlopYPx: number = 12;
@@ -78,11 +76,7 @@ export class ReaderV2LayoutSnapshot {
   bodyFontFamily: string = '';
   titleFontFamily: string = '';
   textColor: number = 0xFF202124;
-  commentTextColor: number = 0xFF2A6FCC;
-  commentBackgroundColor: number = 0x142A6FCC;
-  commentRadiusPx: number = 12;
-  /** Theme bubble style whose comment icon replaces the ◌ placeholder; empty keeps the glyph. */
-  commentIconStyleId: string = '';
+  commentBubble: ReaderCommentBubbleStyle = new ReaderCommentBubbleStyle();
   commentFontSizePx: number = 30;
   commentHitSlopXPx: number = 16;
   commentHitSlopYPx: number = 12;
@@ -126,10 +120,7 @@ export class ReaderV2LayoutSnapshot {
     snapshot.bodyFontFamily = input.bodyFontFamily;
     snapshot.titleFontFamily = input.titleFontFamily || input.bodyFontFamily;
     snapshot.textColor = input.textColor;
-    snapshot.commentTextColor = input.commentTextColor;
-    snapshot.commentBackgroundColor = input.commentBackgroundColor;
-    snapshot.commentRadiusPx = Math.max(0, input.commentRadiusPx);
-    snapshot.commentIconStyleId = input.commentIconStyleId;
+    snapshot.commentBubble = input.commentBubble;
     snapshot.commentFontSizePx = Math.max(1, input.commentFontSizePx);
     snapshot.commentHitSlopXPx = Math.max(0, input.commentHitSlopXPx);
     snapshot.commentHitSlopYPx = Math.max(0, input.commentHitSlopYPx);
@@ -146,9 +137,8 @@ export class ReaderV2LayoutSnapshot {
       snapshot.viewport.width(), snapshot.viewport.height(), snapshot.contentRect.left, snapshot.contentRect.top,
       snapshot.contentRect.right, snapshot.contentRect.bottom, snapshot.columnRects.length,
       snapshot.fontSizePx, snapshot.titleFontSizePx, snapshot.lineSpacingPx, snapshot.paragraphSpacingPx,
-      snapshot.letterSpacingPx, snapshot.textAlign, snapshot.commentFontSizePx, snapshot.commentRadiusPx,
-      snapshot.commentsEnabled ? 1 : 0, snapshot.regexEnabled ? 1 : 0, snapshot.commentTextColor,
-      snapshot.commentBackgroundColor, snapshot.commentIconStyleId
+      snapshot.letterSpacingPx, snapshot.textAlign, snapshot.commentFontSizePx, snapshot.commentBubble.identity(),
+      snapshot.commentsEnabled ? 1 : 0, snapshot.regexEnabled ? 1 : 0
     ];
     const rounded = values.map((value: string | number): string =>
       typeof value === 'number' ? `${Math.round(value * 100) / 100}` : value).join('_');

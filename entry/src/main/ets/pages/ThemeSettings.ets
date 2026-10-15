@@ -27,6 +27,11 @@ import {
   ReaderResolvedRegexEmphasis
 } from '../model/reader/ReaderRegexFontRule';
 import fs from '@ohos.file.fs';
+import {
+  ReaderCommentBubbleImage,
+  ReaderCommentBubbleStyles,
+  ReaderCommentBubblePainter
+} from '../core/reader/ReaderCommentBubble';
 import { StartupCoverTextStore } from '../utils/StartupCoverTextStore';
 import { HdsFeedback } from '../utils/HdsFeedback';
 import { AdaptiveSwitch } from '../components/AdaptiveSwitch';
@@ -183,6 +188,8 @@ struct ThemeSettingsPage {
   /** Same measurement for the "当前使用" card on the main list. */
   @State cardRowWidth: number = 0;
   private customSchemeRefreshSerial: number = 0;
+  private commentBubbleImages: Map<string, ReaderCommentBubbleImage | null> =
+    new Map<string, ReaderCommentBubbleImage | null>();
 
   aboutToAppear(): void {
     this.loadThemeSettings();
@@ -1077,19 +1084,9 @@ struct ThemeSettingsPage {
       Text() {
         ForEach(READER_PREVIEW_SEGMENTS, (segment: ReaderPreviewSegment) => {
           if (segment.comment) {
-            ContainerSpan() {
-              Span('\u00A0')
-                .fontSize(this.storeReaderPaneFontSize(inPager) * 0.85)
-              ImageSpan(ThemeAssetRegistry.commentBubbleIcon(this.themeCommentPreview(theme).bubbleStyleId))
-                .width(this.storeReaderPaneFontSize(inPager))
-                .height(this.storeReaderPaneFontSize(inPager))
-                .objectFit(ImageFit.Contain)
-                .verticalAlign(ImageSpanAlignment.CENTER)
-              Span(`\u00A0${segment.text}\u00A0\u00A0`)
-                .fontSize(this.storeReaderPaneFontSize(inPager) * 0.85)
-                .fontColor(this.themeCommentPreview(theme).textColor)
-            }
-            .textBackgroundStyle(this.themeCommentPreviewBackground(theme, this.storeReaderPaneFontSize(inPager)))
+            Span('\u00A0')
+            this.commentBubbleSpan(theme, segment.text, this.storeReaderPaneFontSize(inPager) * 0.85,
+              this.activeVariant(theme).reader.contentTone === 'dark')
           } else if (!segment.emphasis) {
             Span(segment.text)
           } else if (this.themeHasRegexBubbleCap(theme)) {
@@ -1256,19 +1253,7 @@ struct ThemeSettingsPage {
         .maxLines(1)
 
         Text() {
-          ContainerSpan() {
-            Span('\u00A0')
-              .fontSize(AppFontSize.CAPTION)
-            ImageSpan(ThemeAssetRegistry.commentBubbleIcon(this.themeCommentPreview(theme).bubbleStyleId))
-              .width(15)
-              .height(15)
-              .objectFit(ImageFit.Contain)
-              .verticalAlign(ImageSpanAlignment.CENTER)
-            Span('\u00A0段评\u00A0\u00A0')
-              .fontSize(AppFontSize.CAPTION)
-              .fontColor(this.themeCommentPreview(theme).textColor)
-          }
-          .textBackgroundStyle(this.themeCommentPreviewBackground(theme, AppFontSize.BODY))
+          this.commentBubbleSpan(theme, '段评', AppFontSize.CAPTION, this.appDarkMode)
         }
         .maxLines(1)
 
@@ -2647,20 +2632,35 @@ struct ThemeSettingsPage {
       this.themeEmphasisContext(theme, ThemeRegexEmphasisModes.BUBBLE), false);
   }
 
-  /** Same fill as the reader's pill: the bubble colour at 60% of its opacity, with the theme's bubble radius. */
-  themeCommentPreviewBackground(theme: ThemePack, fontSize: number): TextBackgroundStyle {
-    return {
-      color: this.scaleAlpha(this.themeCommentPreview(theme).backgroundColor, 0.6),
-      radius: Math.min(theme.radius.bubble, fontSize * 0.6)
-    };
+  /** The reader's comment bubble with its label baked in, cached per look, label and size. */
+  commentBubbleImage(theme: ThemePack, label: string, fontSizeVp: number, dark: boolean): ReaderCommentBubbleImage | null {
+    const style = ReaderCommentBubbleStyles.resolve(this.themeCommentPreview(theme).bubbleStyleId, dark);
+    const pxPerVp = this.getUIContext().vp2px(1);
+    const key = `${style.identity()}_${label}_${fontSizeVp}_${pxPerVp}`;
+    const cached = this.commentBubbleImages.get(key);
+    if (cached !== undefined) return cached;
+    const rendered = ReaderCommentBubblePainter.renderLabel(style, label, fontSizeVp * pxPerVp);
+    this.commentBubbleImages.set(key, rendered);
+    return rendered;
   }
 
-  scaleAlpha(color: string, factor: number): string {
-    const hex = (color || '').trim().replace('#', '');
-    const argb = hex.length === 6 ? `FF${hex}` : hex;
-    if (!/^[0-9A-Fa-f]{8}$/.test(argb)) return color;
-    const alpha = Math.round(Number.parseInt(argb.substring(0, 2), 16) * factor);
-    return `#${alpha.toString(16).padStart(2, '0').toUpperCase()}${argb.substring(2)}`;
+  commentBubbleImageWidth(image: ReaderCommentBubbleImage | null): number {
+    return image ? this.getUIContext().px2vp(image.width) : 0;
+  }
+
+  commentBubbleImageHeight(image: ReaderCommentBubbleImage | null): number {
+    return image ? this.getUIContext().px2vp(image.height) : 0;
+  }
+
+  @Builder
+  commentBubbleSpan(theme: ThemePack, label: string, fontSizeVp: number, dark: boolean) {
+    if (this.commentBubbleImage(theme, label, fontSizeVp, dark)) {
+      ImageSpan((this.commentBubbleImage(theme, label, fontSizeVp, dark) as ReaderCommentBubbleImage).pixelMap)
+        .width(this.commentBubbleImageWidth(this.commentBubbleImage(theme, label, fontSizeVp, dark)))
+        .height(this.commentBubbleImageHeight(this.commentBubbleImage(theme, label, fontSizeVp, dark)))
+        .objectFit(ImageFit.Contain)
+        .verticalAlign(ImageSpanAlignment.CENTER)
+    }
   }
 
   themeEmphasisContext(theme: ThemePack, mode: string): ReaderRegexEmphasisContext {

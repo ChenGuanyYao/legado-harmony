@@ -20,7 +20,10 @@ export class ReaderV2OffsetSegment {
 }
 
 export class ReaderV2InlineAction {
-  static readonly ICON_PLACEHOLDER: string = '◌';
+  /** Word joiner plus the gap that separates the bubble from the preceding text; it is not part of the bubble. */
+  static readonly LABEL_GAP: string = '\u2060\u00A0\u00A0';
+  /** Inner padding on each side of the bubble text. */
+  static readonly LABEL_PAD: string = '\u00A0';
   id: string = '';
   marker: string = '';
   label: string = '';
@@ -30,16 +33,16 @@ export class ReaderV2InlineAction {
   displayEnd: number = 0;
   sourceStart: number = 0;
   sourceEnd: number = 0;
-  /** Display offset of the ◌ placeholder the theme comment icon is painted over; -1 when the label has none. */
-  iconOffset: number = -1;
+  /** Display offset where the drawn bubble starts, after the leading gap. */
+  bubbleStart: number = 0;
 
   constructor(id: string, marker: string, label: string, data: ReaderActionData,
     displayStart: number, displayEnd: number, sourceStart: number, sourceEnd: number) {
     this.id = id;
     this.marker = marker;
     this.label = label;
-    const iconIndex = label.indexOf(ReaderV2InlineAction.ICON_PLACEHOLDER);
-    this.iconOffset = iconIndex >= 0 ? displayStart + iconIndex : -1;
+    this.bubbleStart = label.startsWith(ReaderV2InlineAction.LABEL_GAP) ?
+      displayStart + ReaderV2InlineAction.LABEL_GAP.length : displayStart;
     this.title = data.title || '';
     this.url = data.url || '';
     this.displayStart = displayStart;
@@ -379,11 +382,16 @@ export class ReaderV2DocumentParser {
       const raw = count[1];
       const value = raw === '99+' ? 100 : Number.parseInt(raw, 10);
       const displayCount = !Number.isFinite(value) || value <= 0 ? '0' : (value > 99 ? '99+' : `${value}`);
-      return `\u2060  ◌ ${displayCount}  `;
+      return ReaderV2DocumentParser.bubbleLabel(displayCount);
     }
-    if (/本章说/.test(configured)) return '\u2060  ◌ 本章说  ';
-    if (/段评|评论|神评论/.test(configured)) return '\u2060  ◌ 段评  ';
-    return `\u2060  ${configured || '打开'}  `;
+    if (/本章说/.test(configured)) return ReaderV2DocumentParser.bubbleLabel('本章说');
+    if (/段评|评论|神评论/.test(configured)) return ReaderV2DocumentParser.bubbleLabel('段评');
+    return ReaderV2DocumentParser.bubbleLabel(configured || '打开');
+  }
+
+  // Non-breaking padding keeps the gap and the bubble with the sentence instead of wrapping on their own.
+  private static bubbleLabel(text: string): string {
+    return `${ReaderV2InlineAction.LABEL_GAP}${ReaderV2InlineAction.LABEL_PAD}${text}${ReaderV2InlineAction.LABEL_PAD}`;
   }
 
   /** Source range of the image marker containing `sourceOffset`, or an empty array. */

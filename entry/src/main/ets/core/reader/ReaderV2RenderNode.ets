@@ -9,6 +9,7 @@ import {
   Position
 } from '@ohos.arkui.node';
 import graphicsText from '@ohos.graphics.text';
+import { ReaderCommentBubblePainter } from './ReaderCommentBubble';
 import {
   ReaderV2PageFragment,
   ReaderV2PageLayout,
@@ -65,6 +66,10 @@ class ReaderV2PageFrameNode extends FrameNode {
     for (const fragment of this.page.fragments) {
       for (const segment of fragment.regexBubbleSegments) {
         this.drawRegexBubble(canvas, segment);
+      }
+      for (const bubble of fragment.commentBubbleSegments) {
+        ReaderCommentBubblePainter.paint(canvas, bubble.rect.left, bubble.rect.top, bubble.rect.right,
+          bubble.rect.bottom, bubble.style, bubble.tail);
       }
     }
     for (const fragment of this.page.fragments) {

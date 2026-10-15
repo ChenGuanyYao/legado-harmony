@@ -1,5 +1,6 @@
 import graphicsText from '@ohos.graphics.text';
 import { ReaderV2Rect } from './ReaderV2LayoutSnapshot';
+import { ReaderCommentBubbleStyle } from './ReaderCommentBubble';
 
 /** Minimal native Text span metadata used by the transparent system-selection layer. */
 export class ReaderV2SelectionRun {
@@ -43,10 +44,11 @@ export class ReaderV2RegexBubbleSegment {
   shadowOffsetYPx: number = 0;
 }
 
-/** Theme comment icon painted over the transparent ◌ placeholder of a paragraph-comment / 本章说 pill. */
-export class ReaderV2CommentIconSegment {
-  styleId: string = '';
+/** One line's piece of a paragraph-comment / 本章说 bubble; only the last piece carries the tail. */
+export class ReaderV2CommentBubbleSegment {
   rect: ReaderV2Rect = new ReaderV2Rect();
+  tail: boolean = true;
+  style: ReaderCommentBubbleStyle = new ReaderCommentBubbleStyle();
 }
 
 export class ReaderV2PageFragment {
@@ -70,7 +72,7 @@ export class ReaderV2PageFragment {
   imageSource: string = '';
   imageRect: ReaderV2Rect = new ReaderV2Rect();
   regexBubbleSegments: ReaderV2RegexBubbleSegment[] = [];
-  commentIconSegments: ReaderV2CommentIconSegment[] = [];
+  commentBubbleSegments: ReaderV2CommentBubbleSegment[] = [];
 }
 
 export class ReaderV2ActionHitArea {

@@ -589,29 +589,6 @@ export class ThemeAssetRegistry {
     return !!ThemeAssetRegistry.regexBubbleCap(styleId);
   }
 
-  /** Icon drawn at the head of a paragraph-comment / 本章说 pill; styles without their own art use the plain one. */
-  static commentBubbleIcon(styleId: string): Resource {
-    switch ((styleId || '').trim().toLowerCase()) {
-      case 'classic-glass': return $r('app.media.comment_icon_classic_glass');
-      case 'warm-scroll': return $r('app.media.comment_icon_warm_scroll');
-      case 'forest-dew': return $r('app.media.comment_icon_forest_dew');
-      case 'ink-brush': return $r('app.media.comment_icon_ink_brush');
-      case 'neon-pulse': return $r('app.media.comment_icon_neon_pulse');
-      case 'strawberry-ribbon': return $r('app.media.comment_icon_strawberry_ribbon');
-      case 'crimson-stamp': return $r('app.media.comment_icon_crimson_stamp');
-      case 'celadon-slip': return $r('app.media.comment_icon_celadon_slip');
-      case 'rose-frame': return $r('app.media.comment_icon_rose_frame');
-      case 'moon-halo': return $r('app.media.comment_icon_moon_halo');
-      case 'sword-talisman': return $r('app.media.comment_icon_sword_talisman');
-      case 'qingluan-jade': return $r('app.media.comment_icon_qingluan_jade');
-      case 'pipi-soft-paw': return $r('app.media.comment_icon_pipi_soft_paw');
-      case 'mecha-comm': return $r('app.media.comment_icon_mecha_comm');
-      case 'starwish-ribbon': return $r('app.media.comment_icon_starwish_ribbon');
-      case 'pencil-mark': return $r('app.media.comment_icon_pencil_mark');
-      default: return $r('app.media.comment_icon_capsule');
-    }
-  }
-
   static normalizeBackgroundAssetId(assetId: string): string {
     const normalized = (assetId || '').trim().toLowerCase();
     switch (normalized) {
