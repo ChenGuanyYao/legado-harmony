@@ -43,6 +43,7 @@ export struct ExplorePage {
   @State showExploreSourcePicker: boolean = false;
   @State showExploreSourceActionMenu: boolean = false;
   @State actionExploreSourceUrl: string = '';
+  @State actionExploreSourceNative: boolean = false;
   private exploreSourceVariableDialogSession: SystemDialogSession = new SystemDialogSession();
   @State showExploreSourceVariableDialog: boolean = false;
   @State exploreSourceVariableUrl: string = '';
@@ -889,6 +890,23 @@ export struct ExplorePage {
         .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
         .onClick(() => this.openExploreSourceVariableEditor())
 
+        if (this.actionExploreSourceNative) {
+          Row() {
+            SymbolGlyph($r('sys.symbol.gearshape'))
+              .fontSize(19)
+              .fontColor([this.primaryTextColor()])
+              .width(34)
+            Text('书源设置')
+              .fontSize(AppFontSize.BODY_LARGE)
+              .fontColor(this.primaryTextColor())
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .height(44)
+          .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
+          .onClick(() => this.openExploreSourceSettings())
+        }
+
         Row() {
           SymbolGlyph($r('sys.symbol.square_and_pencil'))
             .fontSize(19)
@@ -929,7 +947,8 @@ export struct ExplorePage {
       .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'),
         color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'),
         offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-      .position({ x: this.exploreContextMenuLeft(132), y: this.exploreContextMenuTop(188) })
+      .position({ x: this.exploreContextMenuLeft(132),
+        y: this.exploreContextMenuTop(this.actionExploreSourceNative ? 236 : 192) })
     }
     .width('100%')
     .height('100%')
@@ -1190,12 +1209,24 @@ export struct ExplorePage {
       this.exploreContextMenuY = finger.globalY;
     }
     this.actionExploreSourceUrl = option.sourceUrl;
+    this.actionExploreSourceNative = option.isNative === true;
     this.showExploreSourceActionMenu = true;
   }
 
   closeExploreSourceActions(): void {
     this.showExploreSourceActionMenu = false;
     this.actionExploreSourceUrl = '';
+    this.actionExploreSourceNative = false;
+  }
+
+  openExploreSourceSettings(): void {
+    const sourceUrl = this.actionExploreSourceUrl;
+    if (!sourceUrl) return;
+    this.closeExploreSourceActions();
+    router.pushUrl({
+      url: 'pages/NativeSourceSettings',
+      params: { bookSourceUrl: sourceUrl }
+    });
   }
 
   async openExploreSourceVariableEditor(): Promise<void> {
@@ -1256,9 +1287,10 @@ export struct ExplorePage {
   editActionExploreSource(): void {
     const sourceUrl = this.actionExploreSourceUrl;
     if (!sourceUrl) return;
+    const isNative = this.actionExploreSourceNative;
     this.closeExploreSourceActions();
     router.pushUrl({
-      url: 'pages/BookSourceEdit',
+      url: isNative ? 'pages/NativeSourceEdit' : 'pages/BookSourceEdit',
       params: { bookSourceUrl: sourceUrl }
     });
   }

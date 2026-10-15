@@ -17,6 +17,7 @@ export interface ExploreSourceOption {
   sourceUrl: string;
   sourceGroup: string;
   platforms: string[];
+  isNative?: boolean;
 }
 
 export interface ExploreFilterGroup {
@@ -101,7 +102,8 @@ export class ExploreCoordinator {
           sourceName: source.bookSourceName,
           sourceUrl: source.bookSourceUrl,
           sourceGroup: (source.bookSourceGroup || '').trim(),
-          platforms: []
+          platforms: [],
+          isNative: true
         });
         continue;
       }
