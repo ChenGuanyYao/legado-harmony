@@ -5021,6 +5021,9 @@ struct ReadBookPage {
     }
     this.pageViewWidth = width;
     this.pageViewHeight = height;
+    // 旧视口下还在排的相邻章节会话作废，下面按新视口重新预排。
+    this.adjacentPaginationPreloadSerial++;
+    this.previousPaginationPreloadSerial++;
     this.eyeTurn().refreshForViewport();
     AppStorage.setOrCreate<number>('readerLastPageViewWidth', width);
     AppStorage.setOrCreate<number>('readerLastPageViewHeight', height);
@@ -10955,16 +10958,18 @@ struct ReadBookPage {
   }
 
   private resumeReaderPaginationWorkAfterPageShow(): void {
-    if (!this.pagedContentText || !this.hasPagedReaderArea()) {
-      this.preloadReaderContentLater();
-      return;
-    }
+    this.resumeCurrentReaderPaginationCompletion();
+    this.preloadReaderContentLater();
+  }
+
+  // 本章分页会话的后台补排链在页面不可见、被别的会话顶掉序号时会静默退出，这里按当前键重新挂上。
+  resumeCurrentReaderPaginationCompletion(): void {
+    if (!this.pagedContentText || !this.hasPagedReaderArea()) return;
     const key = this.buildReaderPaginationCacheKey(this.currentChapterIndex, this.pagedContentText);
     const result = this.readerPaginationCache.get(key);
     if (result && !result.complete) {
       this.scheduleReaderPaginationCompletion(this.currentChapterIndex, key, result);
     }
-    this.preloadReaderContentLater();
   }
 
   @Builder
@@ -14326,6 +14331,12 @@ struct ReadBookPage {
       `${source.length}_${this.hashText(source)}`;
   }
 
+  // 预排版去重键用的视口部分。完成的预排版会一直占着去重标记，键里不带视口的话，进出小窗/分屏后
+  // 相邻章节永远不会按新视口重新预排，跨章时只能现排，页数从 1/1 开始一路跳。
+  readerPaginationViewportIdentity(): string {
+    return `${this.pageViewWidth}_${this.getReaderPaginationViewportHeight()}_${this.isLandscapeDoublePageActive()}`;
+  }
+
   readerTypographyCacheIdentity(): string {
     const regexIdentity = `${this.readerRegexFontEnabled}_${this.readerRegexFontRulesRaw}_` +
       `${this.readerRegexFontPattern}_${this.readerRegexFontMode}_${this.readerRegexFontFamily}_` +
@@ -14476,6 +14487,10 @@ struct ReadBookPage {
           this.publishCurrentReaderPagination(result);
           this.persistReaderPagination(chapterIndex, key, result);
           this.updateReaderComicPaginationProgress(chapterIndex, result);
+          if (!this.isPageTurning && this.pageTurnQueue.hasPendingForward()) {
+            // 章末等排版的那次向后翻页（见 runPageTurnAnimation）。
+            setTimeout(() => this.runQueuedPageTurnLater(), 0);
+          }
           return;
         }
         this.updateReaderComicPaginationProgress(chapterIndex, result);
@@ -14584,7 +14599,9 @@ struct ReadBookPage {
   isReaderPaginationInteractionBusy(): boolean {
     const deferredPreviousTurn = this.pageTurnQueue.hasPendingBackward() &&
       this.currentPageIndex <= 0 && !this.isPreviousChapterTurnReady();
-    const queuedTurnBusy = !deferredPreviousTurn && this.pendingRestorePageIndex < 0 &&
+    // 章末等本章排完的向后翻页同理：排队中的翻页正是在等这条补排链，不能反过来把它卡住。
+    const deferredNextTurn = this.pageTurnQueue.hasPendingForward() && this.isForwardChapterTurnWaitingForPagination();
+    const queuedTurnBusy = !deferredPreviousTurn && !deferredNextTurn && this.pendingRestorePageIndex < 0 &&
       this.pageTurnQueue.hasPending();
     return this.showReaderCommentPanel || this.isPageTurning || this.readerPanActive || this.readerTouchActive ||
       this.readerComicPanMoved || this.readerComicBoundaryDirection !== 0 || this.readerComicChapterSwitching ||
@@ -14681,6 +14698,7 @@ struct ReadBookPage {
     const targetChapterIndex = sourceChapterIndex + 1;
     const sessionBookUrl = this.book?.bookUrl || this.bookUrl;
     const activeKey = `${sessionBookUrl}_${sourceChapterIndex}_${targetChapterIndex}_` +
+      `${this.readerPaginationViewportIdentity()}_` +
       `${this.readerTypographyCacheIdentity()}_${this.readerParagraphCommentPaginationIdentity()}`;
     if (this.adjacentPaginationPreloadActiveSerial === this.adjacentPaginationPreloadSerial &&
       this.adjacentPaginationPreloadActiveKey === activeKey) return;
@@ -14789,6 +14807,7 @@ struct ReadBookPage {
     if (!this.readerPreloadEnabled && !this.readerEngine().hasCachedContent(targetChapterIndex)) return;
     const sessionBookUrl = this.book?.bookUrl || this.bookUrl;
     const activeKey = `${sessionBookUrl}_${sourceChapterIndex}_${targetChapterIndex}_` +
+      `${this.readerPaginationViewportIdentity()}_` +
       `${this.readerTypographyCacheIdentity()}_${this.readerParagraphCommentPaginationIdentity()}`;
     // Page 2/3 hooks can request the same previous chapter repeatedly. Restarting the retained V2 session on
     // every local turn prevented it from ever reaching the real last page before the user swiped backwards.
@@ -15102,6 +15121,13 @@ struct ReadBookPage {
     return true;
   }
 
+  // 已在本章已知的最后一页，下一章存在，但本章分页还没排完（进出小窗、分屏等视口变化后要整章重排）。
+  // 只读状态，不像 canTurnPage 那样顺手补排。
+  isForwardChapterTurnWaitingForPagination(): boolean {
+    return this.currentPageIndex + this.getReaderPageTurnStep() >= this.contentPages.length &&
+      this.currentChapterIndex < this.chapters.length - 1 && !this.isCurrentReaderPaginationComplete();
+  }
+
   isPreviousChapterTurnReady(): boolean {
     if (!this.hasPagedReaderArea() || this.currentChapterIndex <= 0) return true;
     if (!this.isCurrentReaderEngineBook()) return false;
@@ -15165,8 +15191,15 @@ struct ReadBookPage {
 
   ensureCurrentReaderPaginationAhead(requiredPageCount: number): void {
     if (!this.pagedContentText) return;
-    const result = this.currentReaderPaginationResult();
-    if (!result) return;
+    let result = this.currentReaderPaginationResult();
+    if (!result) {
+      if (!this.hasPagedReaderArea()) return;
+      // 当前键下没有本章的分页会话（被相邻章节挤出缓存，或分页键在页面不可见时变了却没重排）。
+      // 不补建的话本章永远不算排完，章末向后翻页会被一直静默拒绝。新会话在后台排完后才替换可见页面。
+      console.warn(`[ReaderPagination] 本章分页会话缺失，重建 chapter=${this.currentChapterIndex} ` +
+        `page=${this.currentPageIndex}/${this.contentPages.length}`);
+      result = this.getOrCreateReaderPagination(this.currentChapterIndex, this.pagedContentText);
+    }
     if (!result.complete && result.pages.length < requiredPageCount) {
       // Normally the idle worker stays well ahead. This is only a boundary fallback for exceptionally fast input.
       this.appendReaderPaginationBatch(result, this.currentChapterIndex,
@@ -15358,6 +15391,14 @@ struct ReadBookPage {
       return;
     }
     if (!this.canTurnPage(direction)) {
+      if (direction > 0 && this.isForwardChapterTurnWaitingForPagination()) {
+        // 章末向后翻页要等本章排完才知道是不是真的最后一页。先记下这次翻页，确保后台补排链在跑，
+        // 排完时 scheduleReaderPaginationCompletion 会接着执行；以前这里直接丢弃，章末怎么点都没反应。
+        this.resetSlidePageEffect();
+        this.enqueueReaderPageTurn(direction, style, releaseVelocity);
+        this.resumeCurrentReaderPaginationCompletion();
+        return;
+      }
       this.pageTurnQueue.reset();
       this.resetSlidePageEffect();
       if (direction > 0 && this.chapters.length > 0 &&
@@ -15366,6 +15407,10 @@ struct ReadBookPage {
         HdsFeedback.showToast('本书已阅读完成');
       }
       return;
+    }
+    if (direction < 0 && this.pageTurnQueue.hasPendingForward()) {
+      // 用户已经往回翻了，章末那次等排版的向后翻页作废，免得排完后突然自己翻一页。
+      this.pageTurnQueue.reset();
     }
     const turnRequestStartedAt = Date.now();
     const resumeMirroredTtsAfterTurn = this.isMirroringActiveTtsForCurrentBook();

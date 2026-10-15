@@ -40,6 +40,10 @@ export class ReaderPageTurnQueue {
     return this.direction < 0 && this.count > 0;
   }
 
+  hasPendingForward(): boolean {
+    return this.direction > 0 && this.count > 0;
+  }
+
   pendingCount(): number {
     return this.count;
   }
