@@ -765,6 +765,8 @@ struct ReadBookPage {
     this.applyReaderScreenOrientation();
     this.applyReaderScreenTimeout();
     this.shortcutRoutingActive = true;
+    // onNewWant 先于 onPageShow 写入快捷项，那时 @Watch 因页面隐藏而忽略，这里补一次。
+    this.openPendingShortcut();
     const returningFromReplaceRules = this.returningFromReaderReplaceRules;
     this.returningFromReaderReplaceRules = false;
     if (!this.readerEntryInitializing && !returningFromBackground) {

@@ -91,6 +91,9 @@ struct Index {
 
   onPageShow(): void {
     this.shortcutRoutingActive = true;
+    // 从后台被桌面卡片/快捷方式唤起时，onNewWant 先于 onPageShow 写入 launchShortcutNonce，
+    // 那时页面仍处于隐藏状态，@Watch 会把请求忽略掉，所以页面重新可见时要再检查一次。
+    this.openPendingShortcut();
     hilog.info(0x0000, 'testTag', 'StartupTrace Index onPageShow %{public}d', Date.now());
     this.syncHomeSystemBars();
     // ReadBook is pushed over the retained Index route. Its final progress notification can arrive while the
