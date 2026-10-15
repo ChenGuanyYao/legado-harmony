@@ -12184,9 +12184,18 @@ struct ReadBookPage {
       this.readerCommentPanelReadyTimerId = -1;
       if (!this.showReaderCommentPanel || serial !== this.readerCommentPanelLoadSerial) return;
       this.syncReaderCommentPanelWebTheme().finally(() => {
-        if (this.showReaderCommentPanel && serial === this.readerCommentPanelLoadSerial) {
+        if (!this.showReaderCommentPanel || serial !== this.readerCommentPanelLoadSerial) return;
+        // runJavaScript 返回时反色样式刚插入，网页还要两三帧才画出深色；立刻撤掉加载层会闪出原来的白底。
+        if (!this.appDarkMode) {
           this.readerCommentPanelLoading = false;
+          return;
         }
+        this.readerCommentPanelReadyTimerId = setTimeout(() => {
+          this.readerCommentPanelReadyTimerId = -1;
+          if (this.showReaderCommentPanel && serial === this.readerCommentPanelLoadSerial) {
+            this.readerCommentPanelLoading = false;
+          }
+        }, 160);
       });
     }, Math.max(0, delayMs));
   }
