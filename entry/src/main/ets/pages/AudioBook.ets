@@ -8,7 +8,7 @@ import { ReadBookEngine } from '../core/book/ReadBookEngine';
 import { WebBookService } from '../core/book/WebBookService';
 import { BookSourceDataUrlSupport } from '../core/book/BookSourceDataUrlSupport';
 import { AudioRuleSupport } from '../core/book/AudioRuleSupport';
-import { RemoteAudioPlayback, RemoteAudioPlaybackListener } from '../utils/RemoteAudioPlayback';
+import { AudioStartTiming, RemoteAudioPlayback, RemoteAudioPlaybackListener } from '../utils/RemoteAudioPlayback';
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 import { syncSystemBars } from '../utils/SystemBars';
@@ -23,6 +23,9 @@ import { HdsFeedback } from '../utils/HdsFeedback';
 import { SystemDialogSession } from '../utils/SystemDialogSession';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
+
+/** 书源解析出音频地址的总时限。WebView 嗅探本身最多 15 秒，失败后还会回退 HTTP 规则。 */
+const AUDIO_URL_RESOLVE_TIMEOUT_MS = 30000;
 
 class AudioBookPlaybackListener implements RemoteAudioPlaybackListener {
   private readonly stateCallback: (state: string) => void;
@@ -85,7 +88,6 @@ struct AudioBookPage {
   @State sleepMinutes: number = 0;
   @State sleepRemainingSeconds: number = 0;
   @State audioOptionsPanel: number = 0;
-  @State chapterSwitching: boolean = false;
   @State viewportHeight: number = 720;
   private bookUrl: string = '';
   private source: BookSource | null = null;
@@ -96,9 +98,16 @@ struct AudioBookPage {
   private playback: RemoteAudioPlayback = RemoteAudioPlayback.get();
   private playbackListener: RemoteAudioPlaybackListener = new AudioBookPlaybackListener(
     (state: string): void => this.onPlaybackStateChanged(state),
-    (positionMs: number, durationMs: number): void => this.onPlaybackPositionChanged(positionMs, durationMs),
-    (): void => this.onPlaybackCompleted(),
-    (message: string): void => this.onPlaybackError(message));
+    // 切章后新章节地址就绪前，上一章仍在播放；它的进度、播完和报错不能记到新章节头上。
+    (positionMs: number, durationMs: number): void => {
+      if (this.isPlaybackOnCurrentChapter()) this.onPlaybackPositionChanged(positionMs, durationMs);
+    },
+    (): void => {
+      if (this.isPlaybackOnCurrentChapter()) this.onPlaybackCompleted();
+    },
+    (message: string): void => {
+      if (this.isPlaybackOnCurrentChapter()) this.onPlaybackError(message);
+    });
   private progressSaveTimerId: number = -1;
   private progressSaveQueue: Promise<void> = Promise.resolve();
   private sleepTimerId: number = -1;
@@ -330,19 +339,17 @@ struct AudioBookPage {
         Circle().width(38).height(38).fill(ThemeRuntime.hairlineColor(this.appDarkMode))
         SymbolGlyph(icon)
           .fontSize(19)
-          .fontColor([(offset < 0 ? this.chapterIndex > 0 : this.chapterIndex < this.chapters.length - 1) &&
-            !this.chapterSwitching ? this.primaryTextColor() : this.subTextColor()])
+          .fontColor([(offset < 0 ? this.chapterIndex > 0 : this.chapterIndex < this.chapters.length - 1) ?
+            this.primaryTextColor() : this.subTextColor()])
       }
       Text(label).fontSize(AppFontSize.MICRO).fontColor(this.subTextColor())
     }
     .layoutWeight(1)
     .height(68)
     .justifyContent(FlexAlign.Center)
-    .opacity((offset < 0 ? this.chapterIndex > 0 : this.chapterIndex < this.chapters.length - 1) &&
-      !this.chapterSwitching ? 1 : 0.45)
+    .opacity((offset < 0 ? this.chapterIndex > 0 : this.chapterIndex < this.chapters.length - 1) ? 1 : 0.45)
     .onClick(() => {
-      const enabled = (offset < 0 ? this.chapterIndex > 0 : this.chapterIndex < this.chapters.length - 1) &&
-        !this.chapterSwitching;
+      const enabled = offset < 0 ? this.chapterIndex > 0 : this.chapterIndex < this.chapters.length - 1;
       if (enabled) this.changeChapter(offset);
     })
   }
@@ -586,7 +593,7 @@ struct AudioBookPage {
       Button('上一章')
         .height(44)
         .fontSize(AppFontSize.BODY)
-        .enabled(this.chapterIndex > 0 && !this.chapterSwitching)
+        .enabled(this.chapterIndex > 0)
         .backgroundColor(this.inputColor())
         .fontColor(this.primaryTextColor())
         .onClick(() => this.changeChapter(-1))
@@ -601,7 +608,7 @@ struct AudioBookPage {
       Button('下一章')
         .height(44)
         .fontSize(AppFontSize.BODY)
-        .enabled(this.chapterIndex < this.chapters.length - 1 && !this.chapterSwitching)
+        .enabled(this.chapterIndex < this.chapters.length - 1)
         .backgroundColor(this.inputColor())
         .fontColor(this.primaryTextColor())
         .onClick(() => this.changeChapter(1))
@@ -785,6 +792,11 @@ struct AudioBookPage {
     const chapter = this.currentChapter();
     if (!book || !chapter) return;
     const serial = ++this.loadingSerial;
+    const chapterIndex = this.chapterIndex;
+    const timing = new AudioStartTiming(chapterIndex);
+    let timedOut = false;
+    // 被新的选章取代或超时后，书源请求在取消检查点停下，不再占着书源的请求频率额度。
+    const cancelled = (): boolean => timedOut || serial !== this.loadingSerial;
     this.latestPositionMs = Math.max(0, startPositionMs);
     this.latestDurationMs = 0;
     if (this.pageVisible) {
@@ -795,22 +807,54 @@ struct AudioBookPage {
     this.statusText = forceRefresh ? '正在刷新音频地址...' : '正在获取音频地址...';
     this.playbackState = 'loading';
     try {
+      // 上一章若还在缓冲，立即作废，免得它在新章节地址就绪前先响起来。
+      await this.playback.abortPendingLoad();
       await ReaderTtsFloatingSession.stopOther(this.floatingSessionOwnerId);
+      if (serial !== this.loadingSerial) return;
       const engine = ReadBookEngine.get();
-      const content = forceRefresh ? await engine.reloadContent(this.chapterIndex) : await engine.loadContent(this.chapterIndex);
+      const content = await this.withAudioResolveTimeout(
+        forceRefresh ? engine.reloadContent(chapterIndex, cancelled) : engine.loadContent(chapterIndex, cancelled),
+        (): void => {
+          timedOut = true;
+        });
+      timing.mark('resolve-url');
       if (serial !== this.loadingSerial) return;
       const url = this.resolveAudioUrl(content, chapter.url || book.bookUrl || this.source?.bookSourceUrl || '');
       if (!url) throw new Error(this.invalidAudioAddressMessage(content));
       const headers = this.audioHeaders(url, this.source, content);
-      await this.playback.play(book.bookUrl, this.chapterIndex, url, headers, startPositionMs, this.speed);
+      await this.playback.play(book.bookUrl, chapterIndex, url, headers, startPositionMs, this.speed, timing);
       if (serial !== this.loadingSerial) return;
       this.statusText = '正在播放';
       this.publishFloatingSession();
       this.saveProgressNow();
     } catch (error) {
       if (serial !== this.loadingSerial) return;
+      // 超时再自动刷新重试一遍通常还是超时，让用户看到原因后自己点播放重试。
+      if (timedOut) this.playbackRetryCount = Math.max(this.playbackRetryCount, 1);
       this.onPlaybackError(this.errorMessage(error));
     }
+  }
+
+  private async withAudioResolveTimeout(task: Promise<string>, onTimeout: () => void): Promise<string> {
+    let timerId: number = -1;
+    const timeout = new Promise<string>((_resolve, reject): void => {
+      timerId = setTimeout((): void => {
+        timerId = -1;
+        onTimeout();
+        reject(new Error(`获取音频地址超时（超过 ${AUDIO_URL_RESOLVE_TIMEOUT_MS / 1000} 秒），可点播放重试`));
+      }, AUDIO_URL_RESOLVE_TIMEOUT_MS);
+    });
+    try {
+      return await Promise.race([task, timeout]);
+    } finally {
+      if (timerId >= 0) clearTimeout(timerId);
+    }
+  }
+
+  /** 播放器里装的是否就是页面当前选中的章节。切章后新地址就绪前，播放器里还是上一章。 */
+  private isPlaybackOnCurrentChapter(): boolean {
+    return !!this.book && this.playback.bookUrl === this.book.bookUrl &&
+      this.playback.chapterIndex === this.chapterIndex;
   }
 
   async togglePlayback(): Promise<void> {
@@ -882,25 +926,22 @@ struct AudioBookPage {
       this.closeChapterList();
       return;
     }
-    if (this.chapterSwitching) return;
-    this.chapterSwitching = true;
-    try {
-      await this.saveProgressNow(true);
-      this.chapterIndex = index;
-      this.positionMs = 0;
-      this.durationMs = 0;
-      this.latestPositionMs = 0;
-      this.latestDurationMs = 0;
-      this.closeChapterList();
-      await this.playCurrentChapter(0);
-    } finally {
-      this.chapterSwitching = false;
-    }
+    // 上一章还在取地址或缓冲时也允许直接改选：playCurrentChapter 让旧加载失效并取消它的书源请求。
+    // 以前这里会锁住切章，慢书源上点了没反应，只能等它加载完或超时。
+    // saveProgressNow 在第一个 await 之前就记下了当前章节和进度，所以可以先发出再改 chapterIndex。
+    const savePrevious = this.saveProgressNow(true);
+    this.chapterIndex = index;
+    this.positionMs = 0;
+    this.durationMs = 0;
+    this.latestPositionMs = 0;
+    this.latestDurationMs = 0;
+    this.closeChapterList();
+    await Promise.all([savePrevious, this.playCurrentChapter(0)]);
   }
 
   handleMediaChapterCommand(offset: number): void {
     const now = Date.now();
-    if (this.chapterSwitching || now - this.lastMediaChapterCommandAt < 1000) return;
+    if (now - this.lastMediaChapterCommandAt < 1000) return;
     this.lastMediaChapterCommandAt = now;
     this.changeChapter(offset).catch((error: Error) => {
       console.warn('处理锁屏切章命令失败:', error);
