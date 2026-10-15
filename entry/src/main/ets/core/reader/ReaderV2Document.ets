@@ -411,6 +411,9 @@ export class ReaderV2DocumentParser {
     }
     let cursor = 0;
     let blockIndex = 0;
+    // The chapter title is normally block 0. A volume heading and its cover images (both recognised from the
+    // heading hints / image placeholders) may precede it; any other block ends the search.
+    let titleOpen = !!document.chapterTitle;
     const separator = /\n+/g;
     let match = separator.exec(text);
     while (match) {
@@ -422,10 +425,11 @@ export class ReaderV2DocumentParser {
       if (blockText.length > 0) {
         const sourceStart = document.sourceOffsetForDisplay(cursor);
         const sourceEnd = document.sourceOffsetForDisplay(end);
-        const title = blockIndex === 0 && !!document.chapterTitle && blockText.startsWith(document.chapterTitle);
+        const title = titleOpen && blockText.startsWith(document.chapterTitle);
         const block = new ReaderV2Block(`block_${document.chapterIndex}_${blockIndex++}`, blockText,
           cursor, end, sourceStart, sourceEnd, title);
         ReaderV2DocumentParser.decorateBlock(block, images, headingLevels);
+        titleOpen = titleOpen && !title && (!!block.image || block.headingLevel > 0);
         document.blocks.push(block);
       }
       cursor = match.index + match[0].length;
@@ -435,7 +439,7 @@ export class ReaderV2DocumentParser {
       const blockText = text.substring(cursor);
       const sourceStart = document.sourceOffsetForDisplay(cursor);
       const sourceEnd = document.sourceOffsetForDisplay(text.length);
-      const title = blockIndex === 0 && !!document.chapterTitle && blockText.startsWith(document.chapterTitle);
+      const title = titleOpen && blockText.startsWith(document.chapterTitle);
       const block = new ReaderV2Block(`block_${document.chapterIndex}_${blockIndex}`, blockText,
         cursor, text.length, sourceStart, sourceEnd, title);
       ReaderV2DocumentParser.decorateBlock(block, images, headingLevels);

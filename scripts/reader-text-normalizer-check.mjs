@@ -52,6 +52,22 @@ try {
   equal(N.stripDuplicatedTitle('　　第一章 开端\n\n　　正文。', '第一章 开端'), '正文。', '首行与标题相同则剥离');
   equal(N.stripDuplicatedTitle('第一章 开端了\n正文。', '第一章 开端'), '第一章 开端了\n正文。', '首行只是以标题开头则保留');
   equal(N.stripDuplicatedTitle('正文。', ''), '正文。', '无标题时原样返回');
+  const zwsp = String.fromCharCode(0x200b);
+  const comment = ReaderActionMarker.create('段评 99+', 'https://example.invalid/p0', '段评');
+  equal(N.stripDuplicatedTitle(`第1章${zwsp}戏鬼回家${comment}\n“我……是谁？”`, '第1章 戏鬼回家'), '“我……是谁？”',
+    '零宽空格代替空格、标题行挂段评时仍剥离');
+  const cover = ReaderImageMarker.create('https://example.invalid/cover.png');
+  equal(N.stripDuplicatedTitle(`${cover}\n\n第1章${zwsp}戏鬼回家${comment}\n“我……是谁？”`, '第1章 戏鬼回家'),
+    `${cover}\n\n“我……是谁？”`, '标题行前的卷首插图保留，只剥离标题行');
+  equal(N.stripDuplicatedTitle(`${cover}\n正文第一段。`, '第1章 戏鬼回家'), `${cover}\n正文第一段。`,
+    '插图后不是标题时原样返回');
+  equal(N.stripDuplicatedTitle('第一章开端了\n正文。', '第一章 开端'), '第一章开端了\n正文。', '忽略空白后仍不同则保留');
+  equal(N.splitLeadingImages(`${cover}\n\n　　正文。`), [cover, '　　正文。'], '拆出开头的卷首插图');
+  equal(N.splitLeadingImages(`\n${cover}\n\n${inlineImage}\n　　正文。`), [`${cover}\n\n${inlineImage}`, '　　正文。'],
+    '连续多张插图一起拆出');
+  equal(N.splitLeadingImages('　　正文。'), ['', '　　正文。'], '开头不是图片时不拆');
+  equal(N.sameTitle('第一卷：戏中人', `第一卷：${zwsp}戏中人 `), true, '标题比较忽略空白与零宽字符');
+  equal(N.sameTitle('第一卷：戏中人', '第1章 戏鬼回家'), false, '不同标题');
 
   // ---- 分页起止裁剪 ----
   const source = '\n　　甲乙丙\n\n　　丁戊';

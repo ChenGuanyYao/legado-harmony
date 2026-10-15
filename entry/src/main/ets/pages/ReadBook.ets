@@ -138,6 +138,7 @@ const READER_PAGE_3D_SNAPSHOT_SCALE = 0.75;
 const READER_CURL_REGION_UNSET = -1;
 const READER_PROGRESS_OFFSET_KEY = 'readProgressCharOffsetV2';
 const READER_V2_NO_FRAGMENTS: ReaderV2PageFragment[] = [];
+const READER_V2_IMAGE_LOADING_SIZE = 32;
 const READER_V2_CONTINUOUS_ROLE = 'continuous';
 const READER_CONTINUOUS_LIST_ID = 'reader_continuous_list';
 const READER_CONTINUOUS_TTS_FOLLOW_GRACE_MS = 2500;
@@ -245,6 +246,8 @@ struct ReadBookPage {
   @State ttsHighlightRenderVersion: number = 0;
   @State readerV2TtsPaintVersion: number = 0;
   @State readerV2BrokenImageSources: string[] = [];
+  // 已加载完成的图片：未完成时在图片位置显示加载动画，完成后图片淡入。
+  @State readerV2LoadedImageSources: string[] = [];
   @State readerV2SelectionPaintVersion: number = 0;
   @State ttsSleepTimerMinutes: number = 0;
   @State ttsSleepTimerRemainingSeconds: number = 0;
@@ -10274,7 +10277,16 @@ struct ReadBookPage {
     if (!title) {
       return body;
     }
-    return titleAction ? `${title}${titleAction}\n\n${body}` : `${title}\n\n${body}`;
+    const heading = titleAction ? `${title}${titleAction}` : title;
+    const volumeTitle = this.readerVolumeTitle(chapterIndex);
+    if (!volumeTitle) {
+      return `${heading}\n\n${body}`;
+    }
+    // A volume's first chapter: the volume name becomes a heading, and cover images the source puts at the start
+    // of the chapter move under it. Unsized covers fill the rest of that page, so the chapter title starts a new one.
+    const parts = ReaderTextNormalizer.splitLeadingImages(body);
+    return parts[0] ? `${volumeTitle}\n\n${parts[0]}\n\n${heading}\n\n${parts[1]}` :
+      `${volumeTitle}\n\n${heading}\n\n${body}`;
   }
 
   normalizeChapterBody(text: string): string {
@@ -12632,14 +12644,27 @@ struct ReadBookPage {
     return !!source && !this.isReaderContinuousScrollSurfaceActive() && !this.isReaderComicModeActive();
   }
 
-  // In-chapter headings recorded when the EPUB was imported. V2 styles the matching paragraphs as headings.
+  // In-chapter headings recorded when the EPUB was imported, plus the volume heading that buildPagedSourceText
+  // puts before a volume's first chapter. V2 styles the matching paragraphs as headings.
   readerV2HeadingHints(chapterIndex: number): ReaderV2HeadingHint[] {
-    if (!this.book || this.book.origin !== LocalBookService.ORIGIN || this.book.type !== LocalBookService.TYPE_EPUB ||
-      chapterIndex < 0 || chapterIndex >= this.chapters.length) {
+    if (!this.book || chapterIndex < 0 || chapterIndex >= this.chapters.length) {
       return [];
     }
-    return EpubChapterPlanner.decodeHeadings(this.chapters[chapterIndex].variable)
-      .map((heading: EpubHeading): ReaderV2HeadingHint => new ReaderV2HeadingHint(heading.level, heading.text));
+    const volumeTitle = this.readerVolumeTitle(chapterIndex);
+    const volumeHints = volumeTitle ? [new ReaderV2HeadingHint(1, volumeTitle)] : [];
+    if (this.book.origin !== LocalBookService.ORIGIN || this.book.type !== LocalBookService.TYPE_EPUB) {
+      return volumeHints;
+    }
+    return volumeHints.concat(EpubChapterPlanner.decodeHeadings(this.chapters[chapterIndex].variable)
+      .map((heading: EpubHeading): ReaderV2HeadingHint => new ReaderV2HeadingHint(heading.level, heading.text)));
+  }
+
+  /** 该章是某一卷第一章时的卷名（与章节名相同时不重复显示）。 */
+  readerVolumeTitle(chapterIndex: number): string {
+    if (chapterIndex < 0 || chapterIndex >= this.chapters.length) return '';
+    const volumeTitle = BookChapter.volumeTitleOf(this.chapters[chapterIndex]);
+    return volumeTitle && !ReaderTextNormalizer.sameTitle(volumeTitle, this.getChapterTitle(chapterIndex)) ?
+      volumeTitle : '';
   }
 
   // continuous: one unbounded column for scrolling. The list supplies the vertical margins as padding, and
@@ -13094,27 +13119,7 @@ struct ReadBookPage {
       // Image blocks are laid out by the V2 paginator but painted by ArkUI Image, which owns decoding,
       // caching and downsampling. Their rects use the same page-local pixel coordinates as the glyphs.
       ForEach(this.readerV2ImageFragments(chapterIndex, pageIndex, source), (fragment: ReaderV2PageFragment) => {
-        Image(this.readerImageUriForSource(fragment.imageSource))
-          .width(px2vp(fragment.imageRect.width()))
-          .height(px2vp(fragment.imageRect.height()))
-          .position({ x: px2vp(fragment.imageRect.left), y: px2vp(fragment.imageRect.top) })
-          .objectFit(ImageFit.Contain)
-          .draggable(false)
-          .hitTestBehavior(HitTestMode.None)
-          .onError((error: ImageError) => {
-            console.error(`[Reader] EPUB 图片加载失败 path=${fragment.imageSource} message=${error?.message || ''}`);
-            this.markReaderV2ImageBroken(fragment.imageSource);
-          })
-        if (this.readerV2BrokenImageSources.includes(fragment.imageSource)) {
-          Text('图片加载失败')
-            .fontSize(AppFontSize.BODY)
-            .fontColor(this.getSubTextColor())
-            .textAlign(TextAlign.Center)
-            .width(px2vp(fragment.imageRect.width()))
-            .height(px2vp(fragment.imageRect.height()))
-            .position({ x: px2vp(fragment.imageRect.left), y: px2vp(fragment.imageRect.top) })
-            .hitTestBehavior(HitTestMode.None)
-        }
+        this.readerV2ImageFragmentView(fragment)
       }, (fragment: ReaderV2PageFragment) => `reader_v2_image_${fragment.blockId}_` +
         `${Math.round(fragment.imageRect.left)}_${Math.round(fragment.imageRect.top)}_` +
         `${Math.round(fragment.imageRect.right)}_${Math.round(fragment.imageRect.bottom)}`)
@@ -13330,6 +13335,53 @@ struct ReadBookPage {
   readerV2PageFragments(chapterIndex: number, pageIndex: number, source: string): ReaderV2PageFragment[] {
     const page = this.readerV2Page(chapterIndex, pageIndex, source);
     return page ? page.fragments : [];
+  }
+
+  @Builder
+  readerV2ImageFragmentView(fragment: ReaderV2PageFragment) {
+    // Only opacity is animated: the implicit animation covers attributes declared before it, so page relayouts
+    // (size/position) still apply instantly.
+    Image(this.readerImageUriForSource(fragment.imageSource))
+      .opacity(this.readerV2LoadedImageSources.includes(fragment.imageSource) ? 1 : 0)
+      .animation({ duration: 220, curve: Curve.EaseOut })
+      .width(px2vp(fragment.imageRect.width()))
+      .height(px2vp(fragment.imageRect.height()))
+      .position({ x: px2vp(fragment.imageRect.left), y: px2vp(fragment.imageRect.top) })
+      .objectFit(ImageFit.Contain)
+      .draggable(false)
+      .hitTestBehavior(HitTestMode.None)
+      .onComplete(() => {
+        this.markReaderV2ImageLoaded(fragment.imageSource);
+      })
+      .onError((error: ImageError) => {
+        console.error(`[Reader] 图片加载失败 path=${fragment.imageSource} message=${error?.message || ''}`);
+        this.markReaderV2ImageBroken(fragment.imageSource);
+      })
+    if (this.readerV2BrokenImageSources.includes(fragment.imageSource)) {
+      Text('图片加载失败')
+        .fontSize(AppFontSize.BODY)
+        .fontColor(this.getSubTextColor())
+        .textAlign(TextAlign.Center)
+        .width(px2vp(fragment.imageRect.width()))
+        .height(px2vp(fragment.imageRect.height()))
+        .position({ x: px2vp(fragment.imageRect.left), y: px2vp(fragment.imageRect.top) })
+        .hitTestBehavior(HitTestMode.None)
+    } else if (!this.readerV2LoadedImageSources.includes(fragment.imageSource)) {
+      LoadingProgress()
+        .color(this.getSubTextColor())
+        .width(READER_V2_IMAGE_LOADING_SIZE)
+        .height(READER_V2_IMAGE_LOADING_SIZE)
+        .position({
+          x: px2vp(fragment.imageRect.left + fragment.imageRect.width() / 2) - READER_V2_IMAGE_LOADING_SIZE / 2,
+          y: px2vp(fragment.imageRect.top + fragment.imageRect.height() / 2) - READER_V2_IMAGE_LOADING_SIZE / 2
+        })
+        .hitTestBehavior(HitTestMode.None)
+    }
+  }
+
+  markReaderV2ImageLoaded(imageSource: string): void {
+    if (!imageSource || this.readerV2LoadedImageSources.includes(imageSource)) return;
+    this.readerV2LoadedImageSources = [...this.readerV2LoadedImageSources.slice(-127), imageSource];
   }
 
   markReaderV2ImageBroken(imageSource: string): void {
@@ -14056,27 +14108,7 @@ struct ReadBookPage {
         .hitTestBehavior(HitTestMode.None)
       ForEach(this.readerContinuousV2Fragments(index, text, true, renderVersion),
         (fragment: ReaderV2PageFragment) => {
-        Image(this.readerImageUriForSource(fragment.imageSource))
-          .width(px2vp(fragment.imageRect.width()))
-          .height(px2vp(fragment.imageRect.height()))
-          .position({ x: px2vp(fragment.imageRect.left), y: px2vp(fragment.imageRect.top) })
-          .objectFit(ImageFit.Contain)
-          .draggable(false)
-          .hitTestBehavior(HitTestMode.None)
-          .onError((error: ImageError) => {
-            console.error(`[Reader] 图片加载失败 path=${fragment.imageSource} message=${error?.message || ''}`);
-            this.markReaderV2ImageBroken(fragment.imageSource);
-          })
-        if (this.readerV2BrokenImageSources.includes(fragment.imageSource)) {
-          Text('图片加载失败')
-            .fontSize(AppFontSize.BODY)
-            .fontColor(this.getSubTextColor())
-            .textAlign(TextAlign.Center)
-            .width(px2vp(fragment.imageRect.width()))
-            .height(px2vp(fragment.imageRect.height()))
-            .position({ x: px2vp(fragment.imageRect.left), y: px2vp(fragment.imageRect.top) })
-            .hitTestBehavior(HitTestMode.None)
-        }
+        this.readerV2ImageFragmentView(fragment)
       }, (fragment: ReaderV2PageFragment) => `reader_continuous_v2_image_${fragment.blockId}_` +
         `${Math.round(fragment.imageRect.top)}_${Math.round(fragment.imageRect.bottom)}`)
       ForEach(this.readerContinuousV2Fragments(index, text, false, renderVersion),

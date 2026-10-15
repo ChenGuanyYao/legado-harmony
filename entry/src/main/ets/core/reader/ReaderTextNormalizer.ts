@@ -145,16 +145,70 @@ export class ReaderTextNormalizer {
     return `${ReaderTextNormalizer.PARAGRAPH_INDENT}${line.replace(/^[　\s]+/g, '')}`;
   }
 
+  /**
+   * 正文开头重复章节名时剥离那一行。比较时忽略空白、零宽字符和行内交互标记：有的书源用零宽空格代替
+   * 章节名里的空格，或者在标题行上挂段评。标题行前面的图片行（如卷首插图）和空行会被跳过并保留。
+   */
   static stripDuplicatedTitle(body: string, title: string): string {
     if (!body || !title) {
       return body;
     }
-    const lines = body.split('\n');
-    const firstLine = (lines[0] || '').replace(/^[　\s]+/g, '').trim();
-    if (firstLine !== title) {
+    const wanted = ReaderTextNormalizer.titleKey(title);
+    if (!wanted) {
       return body;
     }
-    return ReaderTextNormalizer.trim(lines.slice(1).join('\n').replace(/^\n+/, ''));
+    const lines = body.split('\n');
+    let index = 0;
+    while (index < lines.length && (!lines[index].trim() || ReaderImageMarker.isMarker(lines[index].trim()))) {
+      index++;
+    }
+    if (index >= lines.length || ReaderTextNormalizer.titleKey(lines[index]) !== wanted) {
+      return body;
+    }
+    const rest = lines.slice(index + 1).join('\n').replace(/^\n+/, '');
+    if (index === 0) {
+      return ReaderTextNormalizer.trim(rest);
+    }
+    return ReaderTextNormalizer.trim(`${lines.slice(0, index).join('\n')}\n${rest}`);
+  }
+
+  /**
+   * 把正文开头连续的图片行（中间可夹空行）拆出来：返回 [图片行, 其余正文]。开头不是图片时第一项为空串。
+   */
+  static splitLeadingImages(body: string): string[] {
+    const lines = (body || '').split('\n');
+    let index = 0;
+    let lastImage = -1;
+    while (index < lines.length && (!lines[index].trim() || ReaderImageMarker.isMarker(lines[index].trim()))) {
+      if (lines[index].trim()) lastImage = index;
+      index++;
+    }
+    if (lastImage < 0) {
+      return ['', body || ''];
+    }
+    const images = lines.slice(0, lastImage + 1).map((line: string): string => line.trim())
+      .filter((line: string): boolean => line.length > 0);
+    // 只去掉开头的换行：正文已经缩进过，段首的全角空格要保留。
+    return [images.join('\n\n'), lines.slice(lastImage + 1).join('\n').replace(/^\n+/, '')];
+  }
+
+  /** 两个标题去掉空白、零宽字符和交互标记后是否相同。 */
+  static sameTitle(a: string, b: string): boolean {
+    const key = ReaderTextNormalizer.titleKey(a);
+    return key.length > 0 && key === ReaderTextNormalizer.titleKey(b);
+  }
+
+  /** 标题比较用的键：去掉交互标记和所有空白、零宽字符。 */
+  private static titleKey(text: string): string {
+    const plain = ReaderActionMarker.strip(text || '');
+    let key = '';
+    for (let index = 0; index < plain.length; index++) {
+      const char = plain.charAt(index);
+      if (!ReaderTextNormalizer.isTrimChar(char)) {
+        key += char;
+      }
+    }
+    return key;
   }
 
   /**
