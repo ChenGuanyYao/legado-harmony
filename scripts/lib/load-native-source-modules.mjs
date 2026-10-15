@@ -70,12 +70,14 @@ export function createTestHost(JsonPathEvaluator, respond) {
         return [...crypto.createHmac(String(args[0]).toLowerCase(), buffer(args[1])).update(buffer(args[2])).digest()];
       }
       if (name === 'encrypt' || name === 'decrypt') {
-        const [family, mode] = String(args[0]).toLowerCase().split('/');
+        const [family, mode, padding] = String(args[0]).toLowerCase().split('/');
         const key = buffer(args[2]);
         const algorithm = family === 'aes' ? `aes-${key.length * 8}-${mode}` : `des-ede3-${mode}`;
         const iv = mode === 'ecb' ? null : buffer(args[3]);
         const cipher = name === 'encrypt' ? crypto.createCipheriv(algorithm, key, iv) :
           crypto.createDecipheriv(algorithm, key, iv);
+        // 与 NativeSourceCrypto 一致：NoPadding 不补位（Node 默认会自动补 PKCS7）。
+        if (padding === 'nopadding') cipher.setAutoPadding(false);
         return [...Buffer.concat([cipher.update(buffer(args[1])), cipher.final()])];
       }
       throw new Error(`test host: unsupported ${name}`);

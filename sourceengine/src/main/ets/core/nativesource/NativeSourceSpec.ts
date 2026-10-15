@@ -194,6 +194,8 @@ export interface NativeContentSpec extends NativeStageSpec {
   audio?: string;
   /** 视频类书籍这一集的视频流地址，由应用自带的播放页播放。 */
   video?: string;
+  /** audio / video 为空时给用户看的原因，可读取附加请求的结果；不写时从接口返回的 code/message 归纳。 */
+  mediaError?: string;
   /** 取图片、音频时附带的请求头，例如 Referer。 */
   mediaHeaders?: Record<string, string>;
   imageDecode?: NativeImageDecodeSpec;

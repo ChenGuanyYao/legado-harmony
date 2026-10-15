@@ -476,6 +476,7 @@ export class NativeSourceRunner {
       if (kind === 'audio' || kind === 'video') {
         const audio = NativeExpr.toText(this.first(this.value(kind === 'audio' ? stage.audio : stage.video,
           loaded.scope, false, `content.${kind}`))).trim();
+        if (!audio) throw new NativeSourceError(this.mediaFailure(stage, loaded, kind));
         return {
           kind: kind, text: NativeExpr.resolveUrl(audio, loaded.baseUrl), baseUrl: loaded.baseUrl,
           paragraphComments: [], chapterCommentUrl: '', links: [], images: [],
@@ -778,6 +779,43 @@ export class NativeSourceRunner {
       }
       loaded.scope.set(name, result);
     }
+  }
+
+  /** 音频/视频地址为空时的原因：书源写的 mediaError 优先，否则取附加请求、主请求里第一个报错的 code/message。 */
+  private mediaFailure(stage: NativeContentSpec, loaded: StagePage, kind: string): string {
+    const label = kind === 'audio' ? '音频' : '视频';
+    if (stage.mediaError) {
+      const custom = NativeExpr.toText(this.value(stage.mediaError, loaded.scope, false, 'content.mediaError')).trim();
+      if (custom) return custom;
+    }
+    const responses: NativeValue[] = Object.keys(stage.fetch || {})
+      .map((name: string): NativeValue => loaded.scope.get(name));
+    responses.push(loaded.scope.get('data'));
+    for (const response of responses) {
+      const reason = NativeSourceRunner.apiFailure(response);
+      if (reason) return `${label}接口返回失败：${reason}`;
+    }
+    return `正文规则没有返回${label}地址`;
+  }
+
+  private static apiFailure(value: NativeValue): string {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return '';
+    const record = value as Record<string, NativeValue>;
+    let code: NativeValue = null;
+    for (const key of ['code', 'status_code', 'err_no']) {
+      if (record[key] !== undefined && record[key] !== null) {
+        code = record[key];
+        break;
+      }
+    }
+    if (code === null || code === 0 || code === '0' || code === 200) return '';
+    let message = '';
+    for (const key of ['message', 'msg', 'error', 'err_tips']) {
+      message = NativeExpr.toText(record[key] === undefined ? null : record[key]).trim();
+      if (message) break;
+    }
+    const codeText = NativeExpr.toText(code);
+    return message ? `${message}（code=${codeText}）` : `code=${codeText}`;
   }
 
   private readBooks(stage: NativeStageSpec, loaded: StagePage, prefix: string): NativeBookRecord[] {

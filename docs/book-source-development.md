@@ -467,6 +467,7 @@ fn sign(path, ts) {
 | `images` | 图片地址列表（漫画） |
 | `audio` | 音频地址（听书） |
 | `video` | 这一集的视频流地址（如 mp4、m3u8），由应用自带的播放页播放。每次切集都会重新请求，地址带时效也没关系 |
+| `mediaError` | 可选。`audio` / `video` 求值为空时显示给用户的原因，可以读取附加请求的结果（例如「这本书没有真人录音版」）。不写或求值为空时，应用从附加请求和主请求里第一个 `code` 不为 0 的响应归纳原因（如「音频接口返回失败：ILLEGAL_ACCESS（code=110）」） |
 | `mediaHeaders` | 取漫画图片和音频时附带的请求头，例如 `{ "Referer": "{{server}}/" }`。只接受 Referer、Origin、User-Agent、Accept、Accept-Language、Authorization、Cookie、Range。对正文文字里夹带的插图和视频不生效 |
 | `imageDecode` | 漫画图片解密，见下 |
 | `fetch` | 附加请求，见下 |

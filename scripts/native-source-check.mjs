@@ -670,6 +670,30 @@ try {
     'https://api.example.com/tone?item_id=a1&voice=4', '音色 id 来自书籍变量');
   invalid((s) => { s.voices = [{ id: '1' }]; }, '音色缺少名称');
 
+  // 音频地址为空：书源说明优先，否则归纳接口报错，都没有时给通用原因。
+  const contentFailure = async (runnerToUse, vars) => {
+    try {
+      await runnerToUse.content({ ...book, type: 'audio', vars: vars }, audioChapter);
+    } catch (e) {
+      return e.message;
+    }
+    return '';
+  };
+  const savedAudio = responses['/content?item_id=a1'];
+  const savedTone = responses['/tone'];
+  responses['/content?item_id=a1'] = { data: { item_id: 'a1', content_type: 'audio', content: '' } };
+  responses['/tone'] = { code: 110, message: 'ILLEGAL_ACCESS', data: null };
+  equal(await contentFailure(voicedRunner, { custom: '4' }), '音频接口返回失败：ILLEGAL_ACCESS（code=110）',
+    '音频为空时归纳附加请求的报错');
+  responses['/tone'] = { code: 0, message: 'SUCCESS', data: {} };
+  equal(await contentFailure(voicedRunner, { custom: '4' }), '正文规则没有返回音频地址', '接口没报错时给通用原因');
+  const explained = JSON.parse(JSON.stringify(voiced));
+  explained.content.mediaError = "= book.vars.custom == '4' ? '这本书没有成熟大叔音色' : ''";
+  equal(await contentFailure(new NativeSourceRunner(NativeSourceSpec.fromObject(explained), runHost, {}),
+    { custom: '4' }), '这本书没有成熟大叔音色', 'mediaError 由书源说明原因');
+  responses['/content?item_id=a1'] = savedAudio;
+  responses['/tone'] = savedTone;
+
   // ---------- 视频类型 ----------
   const video = JSON.parse(JSON.stringify(sample));
   video.search.fields.type = 'video';
