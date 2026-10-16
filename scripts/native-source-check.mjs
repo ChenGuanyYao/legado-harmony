@@ -4,7 +4,7 @@
 import { createTestHost, loadNativeSourceModules } from './lib/load-native-source-modules.mjs';
 
 const mods = await loadNativeSourceModules();
-const { NativeExpr, NativeScope, NativeSourceSpec, NativeSourceRunner, JsonPathEvaluator, NativeNetworkError } = mods;
+const { NativeExpr, NativeScope, NativeSourceSpec, NativeSourceRunner, JsonPathEvaluator, NetworkErrorText } = mods;
 
 let assertions = 0;
 function equal(actual, expected, message) {
@@ -760,17 +760,17 @@ try {
 
   // ---------- 网络错误不当成需要登录 ----------
   const api = 'https://fq.example.org:8443/content?item_id=1,{"headers":{"a":"b"}}';
-  equal(NativeNetworkError.describe('Failed to resolve the host name (2300006)', api),
+  equal(NetworkErrorText.describe('Failed to resolve the host name (2300006)', api),
     '无法解析域名 fq.example.org，请检查网络或代理', 'DNS 失败给出域名');
-  equal(NativeNetworkError.describe('Timeout was reached (2300028)', api), '连接 fq.example.org 超时，请检查网络', '超时');
-  equal(NativeNetworkError.describe("Couldn't connect to server (2300007)", api),
+  equal(NetworkErrorText.describe('Timeout was reached (2300028)', api), '连接 fq.example.org 超时，请检查网络', '超时');
+  equal(NetworkErrorText.describe("Couldn't connect to server (2300007)", api),
     '无法连接 fq.example.org，请检查网络或代理', '连不上');
-  equal(NativeNetworkError.describe('SSL connect error (2300035)', api), '与 fq.example.org 建立安全连接失败', 'TLS');
-  equal(NativeNetworkError.describe('Server returned nothing (2300052)', api),
+  equal(NetworkErrorText.describe('SSL connect error (2300035)', api), '与 fq.example.org 建立安全连接失败', 'TLS');
+  equal(NetworkErrorText.describe('Server returned nothing (2300052)', api),
     'fq.example.org 没有返回数据，请稍后重试', '空响应');
-  equal(NativeNetworkError.describe('', api), '', '没有错误信息时交回原有判定');
-  equal(NativeNetworkError.describe('request failed', api), '', '认不出的错误交回原有判定');
-  equal(NativeNetworkError.hostOf('http://user:pw@h.example.com:80/x'), 'h.example.com', '去掉账号与端口');
+  equal(NetworkErrorText.describe('', api), '', '没有错误信息时交回原有判定');
+  equal(NetworkErrorText.describe('request failed', api), '', '认不出的错误交回原有判定');
+  equal(NetworkErrorText.hostOf('http://user:pw@h.example.com:80/x'), 'h.example.com', '去掉账号与端口');
 
   console.log(`Native source check passed: ${assertions} assertions.`);
 } finally {

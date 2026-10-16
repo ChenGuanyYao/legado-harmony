@@ -1,13 +1,13 @@
 /**
- * 把请求层的网络错误翻成给读者看的原因。只识别明确属于网络层的失败（域名解析、超时、连不上、
+ * 把请求层的网络错误翻成给读者看的原因（原生与兼容书源共用）。只识别明确属于网络层的失败（域名解析、超时、连不上、
  * 安全连接、空响应）：这些情况与登录无关，不能再交给“需要登录或网页验证”的判定。
  * 认不出的错误返回空串，由调用方按原有逻辑处理。
  */
-export class NativeNetworkError {
+export class NetworkErrorText {
   static describe(error: string, url: string): string {
     const text = error || '';
     if (!text) return '';
-    const host = NativeNetworkError.hostOf(url);
+    const host = NetworkErrorText.hostOf(url);
     const target = host || '服务器';
     if (/2300006|resolve\s+(the\s+)?host|could\s*n['o]?t\s+resolve|name\s+does\s+not\s+resolve/i.test(text)) {
       return `无法解析域名 ${target}，请检查网络或代理`;

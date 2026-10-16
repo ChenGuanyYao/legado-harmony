@@ -113,6 +113,9 @@ export {
   VerificationSupport
 } from './src/main/ets/core/http/VerificationSupport';
 export {
+  NetworkErrorText
+} from './src/main/ets/core/http/NetworkErrorText';
+export {
   NativeValue,
   NativeExprHost,
   NativeExprError,

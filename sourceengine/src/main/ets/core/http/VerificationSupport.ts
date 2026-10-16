@@ -1,6 +1,7 @@
 import { BookSource } from '../../model/data/Book';
 import { BookSourceScriptRunner } from '../book/BookSourceScriptRunner';
 import { CookieStore } from './CookieStore';
+import { NetworkErrorText } from './NetworkErrorText';
 
 export class VerificationSupport {
   static isChallengeResponse(body: string): boolean {
@@ -24,7 +25,12 @@ export class VerificationSupport {
       rule.includes('验证码') || rule.includes('cookie.setCookie') || rule.includes('cookie.getCookie'));
   }
 
-  static shouldRequestBrowserVerification(source: BookSource, body: string, statusCode: number, rule?: string): boolean {
+  static shouldRequestBrowserVerification(source: BookSource, body: string, statusCode: number, rule?: string,
+    error?: string): boolean {
+    // 没拿到响应且请求层报的是明确的网络错误（域名解析、超时、连不上等）：与登录无关，打开验证页也修不好。
+    if (statusCode === 0 && NetworkErrorText.describe(error || '', '')) {
+      return false;
+    }
     // A JSON API authentication error is not an HTML browser challenge. Opening ArkWeb for
     // responses such as {"message":"...","status":"10003"} hides the real credential
     // problem and cannot repair it. Likewise Cloudflare 521 means its origin is unavailable,

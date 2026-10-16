@@ -13,7 +13,7 @@ const MODULES = [
   'core/nativesource/NativeExpr.ts',
   'core/nativesource/NativeSourceSpec.ts',
   'core/nativesource/NativeSourceRunner.ts',
-  'core/nativesource/NativeNetworkError.ts',
+  'core/http/NetworkErrorText.ts',
 ];
 
 export async function loadNativeSourceModules() {

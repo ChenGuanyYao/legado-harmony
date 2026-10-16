@@ -1,4 +1,4 @@
-import { Book, BookChapter, BookSource, ContentRule, HttpClient, HttpResponse, AnalyzeUrl, AnalyzeRule, RuleContext, VerificationSupport, EncodedSourceUrl, BookUrlResolver, BookFieldSanitizer, AjaxRuleCompat, JavaRegexCompat, JsRuntime, ScriptEngine, ScriptEngineContext, BookSourceRuntimeRouter, SourceRuntimeStage, BookSourceStageWebRuntime, StageWebRuntimeRequest, ReaderActionMarker, CookieStore, RuleExecutionService, RuleBatchExecutionRequest, RuleFieldRequest, CooperativeScheduler, RuleExecutionTarget, RuleValue, BookSourceDebugContext, LogText, NativeSourceService } from '@legado/sourceengine';
+import { Book, BookChapter, BookSource, ContentRule, HttpClient, HttpResponse, AnalyzeUrl, AnalyzeRule, RuleContext, VerificationSupport, EncodedSourceUrl, BookUrlResolver, BookFieldSanitizer, AjaxRuleCompat, JavaRegexCompat, JsRuntime, ScriptEngine, ScriptEngineContext, BookSourceRuntimeRouter, SourceRuntimeStage, BookSourceStageWebRuntime, StageWebRuntimeRequest, ReaderActionMarker, CookieStore, RuleExecutionService, RuleBatchExecutionRequest, RuleFieldRequest, CooperativeScheduler, RuleExecutionTarget, RuleValue, BookSourceDebugContext, LogText, NativeSourceService, NetworkErrorText } from '@legado/sourceengine';
 import { util } from '@kit.ArkTS';
 import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
 import { ReaderImageMarker } from './ReaderImageMarker';
@@ -57,7 +57,8 @@ export class WebBookService {
     const resp = EncodedSourceUrl.canHandle(book.bookUrl) ?
       await this.fetchEncodedDataUrl(book.bookUrl, source) : await au.fetch(book.bookUrl, undefined, debugContext);
     console.log('[WS] getBookInfo resp:', resp.success, 'len:', resp.body.length);
-    if (this.requestVerificationIfNeeded(source, book.bookUrl, resp.body, resp.statusCode, source.bookInfoRule.init)) {
+    if (this.requestVerificationIfNeeded(source, book.bookUrl, resp.body, resp.statusCode, source.bookInfoRule.init,
+      resp.error || '')) {
       return book;
     }
     if (!resp.success || !resp.body) return book;
@@ -335,7 +336,8 @@ export class WebBookService {
     // Chapters of one catalog page. The chapterList rule runs on every page, scripts included, as Legado's
     // BookChapterList does; null means the source asked for browser verification and paging must stop.
     const parsePage = async (pageResp: HttpResponse, pageUrl: string, first: boolean): Promise<BookChapter[] | null> => {
-      if (this.requestVerificationIfNeeded(source, pageUrl, pageResp.body, pageResp.statusCode, tocRule.chapterList)) {
+      if (this.requestVerificationIfNeeded(source, pageUrl, pageResp.body, pageResp.statusCode, tocRule.chapterList,
+        pageResp.error || '')) {
         return null;
       }
       const baseUrl = BookUrlResolver.effectiveBase(pageResp, pageUrl, book.bookUrl || source.bookSourceUrl);
@@ -740,7 +742,8 @@ export class WebBookService {
       const pageKey = this.urlWithoutFragment(currentResp.url || currentUrl);
       if (seenPageUrls.has(pageKey)) break;
       seenPageUrls.add(pageKey);
-      if (this.requestVerificationIfNeeded(source, currentUrl, currentResp.body, currentResp.statusCode, contentRule.content)) {
+      if (this.requestVerificationIfNeeded(source, currentUrl, currentResp.body, currentResp.statusCode, contentRule.content,
+        currentResp.error || '')) {
         break;
       }
       const baseUrl = BookUrlResolver.effectiveBase(currentResp,
@@ -890,8 +893,13 @@ export class WebBookService {
     return { url: url, statusCode: 200, headers: {}, body: JSON.stringify(root), success: true };
   }
 
-  private requestVerificationIfNeeded(source: BookSource, requestUrl: string, body: string, statusCode: number, rule: string): boolean {
-    if (!VerificationSupport.shouldRequestBrowserVerification(source, body, statusCode, rule)) {
+  private requestVerificationIfNeeded(source: BookSource, requestUrl: string, body: string, statusCode: number, rule: string,
+    error: string = ''): boolean {
+    if (!VerificationSupport.shouldRequestBrowserVerification(source, body, statusCode, rule, error)) {
+      if (statusCode === 0 && error) {
+        const reason = NetworkErrorText.describe(error, requestUrl);
+        if (reason) console.warn('[WS] network request failed:', source.bookSourceName, reason);
+      }
       return false;
     }
     const verifyUrl = VerificationSupport.pickVerificationUrl(source, requestUrl, rule);

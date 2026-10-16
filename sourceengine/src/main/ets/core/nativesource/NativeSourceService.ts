@@ -30,7 +30,7 @@ import type {
   NativeActionEntry, NativeLoginCredential, NativeLoginResult, NativeLoginState, NativeRuleTrace
 } from './NativeSourceRunner';
 import type { NativeLoginFieldSpec } from './NativeSourceSpec';
-import { NativeNetworkError } from './NativeNetworkError';
+import { NetworkErrorText } from '../http/NetworkErrorText';
 
 export interface NativeFilterGroup {
   title: string;
@@ -115,7 +115,7 @@ class NativeHost implements NativeRunnerHost {
     // 没拿到响应且请求层报的是明确的网络错误（域名解析、超时、连不上等）：与登录无关，直接给出真实原因。
     // 否则配置了登录入口的书源会把断网也报成“需要登录或网页验证”，还会拉起验证流程。
     if (response.statusCode === 0 && !response.success) {
-      const networkReason = NativeNetworkError.describe(response.error || '', request.url);
+      const networkReason = NetworkErrorText.describe(response.error || '', request.url);
       if (networkReason) {
         console.warn(`[NativeSource] 网络请求失败 source=${this.source.bookSourceName} error=${response.error || ''}`);
         return { ok: false, status: 0, body: '', url: request.url, error: networkReason };

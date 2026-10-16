@@ -1,4 +1,4 @@
-import { NativeSourceService, BookSource, SearchBook, HttpClient, HttpResponse, AnalyzeUrl, AnalyzeRule, RuleContext, ScriptCompatibility, JsRuntime, VerificationSupport, EncodedSourceUrl, BookUrlResolver, PageCandidateUrl, BookFieldSanitizer, BookTypeSupport, BookSourceRuntimeRouter, SourceRuntimeStage, BookSourceStageWebRuntime, StageWebRuntimeRequest, RuleExecutionService, RuleBatchExecutionRequest, RuleFieldRequest, CooperativeScheduler, QuickJsObservationContext, RuleExecutionTarget, RuleValue, BookSourceDebugContext, LogText } from '@legado/sourceengine';
+import { NativeSourceService, BookSource, SearchBook, HttpClient, HttpResponse, AnalyzeUrl, AnalyzeRule, RuleContext, ScriptCompatibility, JsRuntime, VerificationSupport, EncodedSourceUrl, BookUrlResolver, PageCandidateUrl, BookFieldSanitizer, BookTypeSupport, BookSourceRuntimeRouter, SourceRuntimeStage, BookSourceStageWebRuntime, StageWebRuntimeRequest, RuleExecutionService, RuleBatchExecutionRequest, RuleFieldRequest, CooperativeScheduler, QuickJsObservationContext, RuleExecutionTarget, RuleValue, BookSourceDebugContext, LogText, NetworkErrorText } from '@legado/sourceengine';
 import { appDb } from '../../model/data/AppDatabase';
 import { BookSourceDataUrlSupport } from './BookSourceDataUrlSupport';
 import { BookSourceMetadataSupport } from './BookSourceMetadataSupport';
@@ -362,7 +362,8 @@ export class SearchCoordinator {
       if (ENABLE_SEARCH_DEBUG_LOG) {
         console.log('[SC] response:', source.bookSourceName, resp.statusCode, 'len:', resp.body?.length || 0);
       }
-      if (VerificationSupport.shouldRequestBrowserVerification(source, resp.body, resp.statusCode, source.searchUrl)) {
+      if (VerificationSupport.shouldRequestBrowserVerification(source, resp.body, resp.statusCode, source.searchUrl,
+        resp.error)) {
         const verifyUrl = VerificationSupport.pickVerificationUrl(source, urlTemplate, source.searchUrl);
         VerificationSupport.requestVerification(verifyUrl, `${source.bookSourceName} 验证`, source);
         if (ENABLE_SEARCH_DEBUG_LOG) {
@@ -653,7 +654,7 @@ export class SearchCoordinator {
     if (statusCode === 408 || statusCode === 425 || statusCode === 429 || statusCode >= 500 ||
       statusCode === 0 || (response.error || '').includes('response too large')) {
       const reason = statusCode > 0 ? `服务器暂时异常（HTTP ${statusCode}）` :
-        (response.error || '网络请求失败');
+        (NetworkErrorText.describe(response.error || '', response.url || '') || response.error || '网络请求失败');
       return this.sourceResult([], BookSource.VALIDATION_TEMPORARY_ERROR, reason);
     }
     if ((statusCode >= 300 && statusCode < 400) || (statusCode >= 400 && statusCode < 500)) {
