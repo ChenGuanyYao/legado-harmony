@@ -240,6 +240,11 @@ struct ReadBookPage {
   @State readerComicSettings: ReaderComicSettings = new ReaderComicSettings();
   /** 本书单独选的漫画阅读方式（书籍变量 readerComicReadingMode）；空串跟随全局默认。 */
   @State readerComicBookMode: string = '';
+  /** 翻页模式预先切好的相邻章节分页，翻过本话首尾时直接显示；章节号为 -1 表示没有。 */
+  @State readerComicPagedPrevPages: string[] = [];
+  @State readerComicPagedNextPages: string[] = [];
+  private readerComicPagedPrevChapter: number = -1;
+  private readerComicPagedNextChapter: number = -1;
   @State comicPageSliderActive: boolean = false;
   @State comicPageSliderPreview: number = 0;
   @State comicPageTooltipVisible: boolean = false;
@@ -1406,6 +1411,10 @@ struct ReadBookPage {
     this.readerContinuousLastListEnd = 0;
     this.readerContinuousNeighborLoading.clear();
     this.readerContinuousNeighborFailedAt.clear();
+    this.readerComicPagedPrevPages = [];
+    this.readerComicPagedNextPages = [];
+    this.readerComicPagedPrevChapter = -1;
+    this.readerComicPagedNextChapter = -1;
     this.readerComicDeniedChapters.clear();
     this.readerComicDeniedRefreshed.clear();
     this.pendingRestorePageIndex = -1;
@@ -2107,6 +2116,16 @@ struct ReadBookPage {
         prevChapterTitle: this.currentChapterIndex > 0 ? this.getChapterTitle(this.currentChapterIndex - 1) : '',
         nextChapterTitle: this.currentChapterIndex < this.chapters.length - 1 ?
           this.getChapterTitle(this.currentChapterIndex + 1) : '',
+        prevChapterPages: this.readerComicPagedPrevChapter === this.currentChapterIndex - 1 ?
+          this.readerComicPagedPrevPages : [],
+        nextChapterPages: this.readerComicPagedNextChapter === this.currentChapterIndex + 1 ?
+          this.readerComicPagedNextPages : [],
+        onCrossChapter: (direction: number): void => {
+          this.commitReaderComicPagedChapter(direction).catch((error: Error) => {
+            console.warn('翻页模式跨章失败:', error);
+            this.readerComicPagedController.cancelCross();
+          });
+        },
         infoVisible: this.shouldShowReaderComicInfoBadge(),
         infoChapter: this.getChapterTitle(),
         infoPage: this.readerComicPageText(),
@@ -2169,6 +2188,7 @@ struct ReadBookPage {
     }
     if (target <= 3) this.preloadPreviousChapterPaginationLater(0);
     this.scheduleReaderComicProgressSave();
+    this.ensureReaderComicPagedNeighbors();
   }
 
   /** 本书改用另一种漫画阅读方式；当前页码不变。 */
@@ -5293,28 +5313,13 @@ struct ReadBookPage {
     this.readerContinuousNeighborLoading.add(chapterIndex);
     if (forward) window.setTrailingState(true, false);
     try {
-      const body = await this.readerEngine().peekContent(chapterIndex);
+      const segment = await this.prepareReaderNeighborSegment(chapterIndex);
       if (!this.isReaderContinuousNeighborWanted(chapterIndex, generation, bookUrl, comicMode)) return;
-      if (!body) {
+      if (!segment) {
         this.readerContinuousNeighborFailedAt.set(chapterIndex, Date.now());
         if (forward) window.setTrailingState(false, true);
         return;
       }
-      const processed = await this.prepareReaderContentRules(body, chapterIndex);
-      if (!this.isReaderContinuousNeighborWanted(chapterIndex, generation, bookUrl, comicMode)) return;
-      const source = this.buildPagedSourceText(chapterIndex, processed);
-      // 不走分页缓存：缓存只留三项，挤掉当前章的分页会让章末判断失去依据。
-      const result = this.createChunkReaderPagination(source);
-      if (result.pages.length === 0) {
-        if (forward) window.setTrailingState(false, true);
-        return;
-      }
-      const segment = new ReaderScrollSegment();
-      segment.chapterIndex = chapterIndex;
-      segment.pages = result.pages;
-      segment.starts = result.starts;
-      segment.ends = result.ends;
-      segment.source = result.source;
       if (forward) {
         window.append(segment, chapterIndex < this.chapters.length - 1 ? chapterIndex + 1 : -1);
       } else {
@@ -5329,6 +5334,117 @@ struct ReadBookPage {
     } finally {
       this.readerContinuousNeighborLoading.delete(chapterIndex);
     }
+  }
+
+  /**
+   * 取相邻章节正文并按当前模式切块。切块方式与正式加载这一章完全相同，所以它成为当前章时分页一致。
+   * 不走分页缓存：缓存只留三项，挤掉当前章的分页会让章末判断失去依据。正文为空或没切出页时返回 null。
+   */
+  async prepareReaderNeighborSegment(chapterIndex: number): Promise<ReaderScrollSegment | null> {
+    const body = await this.readerEngine().peekContent(chapterIndex);
+    if (!body) return null;
+    const processed = await this.prepareReaderContentRules(body, chapterIndex);
+    const source = this.buildPagedSourceText(chapterIndex, processed);
+    const result = this.createChunkReaderPagination(source);
+    if (result.pages.length === 0) return null;
+    const segment = new ReaderScrollSegment();
+    segment.chapterIndex = chapterIndex;
+    segment.pages = result.pages;
+    segment.starts = result.starts;
+    segment.ends = result.ends;
+    segment.source = result.source;
+    return segment;
+  }
+
+  /** 漫画翻页模式：读到本话首尾附近时预先切好相邻章节，翻过去不必等待；不再相邻的旧结果丢掉。 */
+  ensureReaderComicPagedNeighbors(): void {
+    if (!this.isReaderComicPagedMode()) return;
+    const current = this.currentChapterIndex;
+    if (this.readerComicPagedPrevChapter !== current - 1 && this.readerComicPagedPrevChapter >= 0) {
+      this.readerComicPagedPrevChapter = -1;
+      this.readerComicPagedPrevPages = [];
+    }
+    if (this.readerComicPagedNextChapter !== current + 1 && this.readerComicPagedNextChapter >= 0) {
+      this.readerComicPagedNextChapter = -1;
+      this.readerComicPagedNextPages = [];
+    }
+    if (this.contentPages.length === 0 || !this.isCurrentReaderPaginationComplete()) return;
+    const spread = this.isReaderComicDualPageActive() ? 2 : 1;
+    if (this.readerComicPagedNextChapter < 0 && current < this.chapters.length - 1 &&
+      this.contentPages.length - this.currentPageIndex <= 4 + spread) {
+      this.loadReaderComicPagedNeighbor(current + 1);
+    }
+    if (this.readerComicPagedPrevChapter < 0 && current > 0 && this.currentPageIndex <= 3) {
+      this.loadReaderComicPagedNeighbor(current - 1);
+    }
+  }
+
+  async loadReaderComicPagedNeighbor(chapterIndex: number): Promise<void> {
+    if (chapterIndex < 0 || chapterIndex >= this.chapters.length ||
+      this.readerContinuousNeighborLoading.has(chapterIndex)) {
+      return;
+    }
+    const failedAt = this.readerContinuousNeighborFailedAt.get(chapterIndex) || 0;
+    if (Date.now() - failedAt < 30000) return;
+    const bookUrl = this.book?.bookUrl || this.bookUrl;
+    this.readerContinuousNeighborLoading.add(chapterIndex);
+    try {
+      const segment = await this.prepareReaderNeighborSegment(chapterIndex);
+      if (!this.readerPageVisible || !this.isReaderComicPagedMode() || !this.isCurrentReaderEngineBook(bookUrl) ||
+        Math.abs(chapterIndex - this.currentChapterIndex) !== 1) {
+        return;
+      }
+      if (!segment) {
+        this.readerContinuousNeighborFailedAt.set(chapterIndex, Date.now());
+        return;
+      }
+      if (chapterIndex > this.currentChapterIndex) {
+        this.readerComicPagedNextChapter = chapterIndex;
+        this.readerComicPagedNextPages = segment.pages;
+      } else {
+        this.readerComicPagedPrevChapter = chapterIndex;
+        this.readerComicPagedPrevPages = segment.pages;
+      }
+    } catch (error) {
+      console.warn(`[ReaderComicPaged] 相邻章节预切失败 chapter=${chapterIndex}:`, error);
+      this.readerContinuousNeighborFailedAt.set(chapterIndex, Date.now());
+    } finally {
+      this.readerContinuousNeighborLoading.delete(chapterIndex);
+    }
+  }
+
+  /**
+   * 翻页视图已翻进预先切好的相邻章节并停在那里：把它设为当前章（下一话停在第一页，上一话停在最后一页）。
+   * 刚离开的这一话正好成了反方向的相邻章节，直接留用。失败时让视图退回本话。
+   */
+  async commitReaderComicPagedChapter(direction: number): Promise<void> {
+    const sourceChapterIndex = this.currentChapterIndex;
+    const targetChapterIndex = sourceChapterIndex + direction;
+    if (direction === 0 || targetChapterIndex < 0 || targetChapterIndex >= this.chapters.length) {
+      this.readerComicPagedController.cancelCross();
+      return;
+    }
+    const leavingPages = this.contentPages;
+    this.pendingRestorePageIndex = direction > 0 ? 0 : Number.MAX_SAFE_INTEGER;
+    try {
+      await this.loadContent(true, targetChapterIndex);
+    } catch (error) {
+      console.warn('翻页模式跨章失败:', error);
+    }
+    if (this.currentChapterIndex !== targetChapterIndex) {
+      if (this.pendingRestorePageIndex >= 0) this.pendingRestorePageIndex = -1;
+      this.readerComicPagedController.cancelCross();
+      return;
+    }
+    if (direction > 0) {
+      this.readerComicPagedPrevChapter = sourceChapterIndex;
+      this.readerComicPagedPrevPages = leavingPages;
+    } else {
+      this.readerComicPagedNextChapter = sourceChapterIndex;
+      this.readerComicPagedNextPages = leavingPages;
+    }
+    this.scheduleReaderComicProgressSave();
+    this.ensureReaderComicPagedNeighbors();
   }
 
   commitReaderContinuousChapter(chapterIndex: number, pageIndex: number): void {
@@ -5454,6 +5570,7 @@ struct ReadBookPage {
       this.readerComicScrollRestoring = false;
       this.readerContinuousReachedEnd = this.contentPages.length > 0 &&
         this.currentPageIndex >= this.contentPages.length - 1;
+      this.ensureReaderComicPagedNeighbors();
       return;
     }
     if (this.readerContinuousCommitChapter >= 0 && this.readerContinuousCommitChapter === this.currentChapterIndex) {

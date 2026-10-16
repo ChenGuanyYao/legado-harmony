@@ -7,11 +7,16 @@ import { ReaderComicImageItem, ReaderComicImageSizes, ReaderComicInfoBadge, Read
 /** 阅读页向翻页视图发出的指令（点击翻页、音量键）；视图挂载时填入实现。 */
 export class ReaderComicPagedController {
   turn: (direction: number) => void = () => {};
+  /** 跨章切换没有成功：从停住的相邻章节退回本话。 */
+  cancelCross: () => void = () => {};
 }
 
 /**
  * 漫画单页翻页视图。宽屏时两页并排为一个跨页；右→左模式下“下一页”在左边。
- * 只渲染当前跨页和左右各一个：越过本章首尾时那一格显示章节提示卡，松手后由阅读页切章。
+ * 只渲染当前跨页和左右各一个。越过本章首尾时：阅读页已预先切好相邻章节的页，那一格直接显示
+ * 下一话第一个跨页或上一话最后一个跨页，翻过去后停在那里等阅读页把它设为当前章（onCrossChapter）；
+ * 相邻章节还没准备好时那一格显示章节提示卡，松手后由阅读页正常切章（onBoundary）。
+ * 相邻格与切换后的当前格使用同一个键，切换前后图片组件原样保留，不会重新加载。
  * 当前页码以阅读页的 pageIndex 为准，视图翻完一页后通过 onPageChanged 回报跨页首页。
  */
 @Component
@@ -34,6 +39,9 @@ export struct ReaderComicPagedView {
   /** 相邻章节标题；空串表示该方向没有章节。 */
   @Prop prevChapterTitle: string = '';
   @Prop nextChapterTitle: string = '';
+  /** 阅读页预先切好的相邻章节分页；空数组表示还没准备好。 */
+  @Prop prevChapterPages: string[] = [];
+  @Prop nextChapterPages: string[] = [];
   @Prop infoVisible: boolean = false;
   @Prop infoChapter: string = '';
   @Prop infoPage: string = '';
@@ -45,8 +53,10 @@ export struct ReaderComicPagedView {
   onImageLongPress: (source: string, reload: () => void, snapshotId: string) => void = () => {};
   onImageDenied: (chapterIndex: number) => void = () => {};
   onPageChanged: (pageIndex: number) => void = () => {};
-  /** 越过本章首尾：1 为下一话，-1 为上一话。 */
+  /** 越过本章首尾且相邻章节没准备好：1 为下一话，-1 为上一话，由阅读页正常切章。 */
   onBoundary: (direction: number) => void = () => {};
+  /** 已翻到预先装好的相邻章节并停在那里：阅读页把它设为当前章。 */
+  onCrossChapter: (direction: number) => void = () => {};
   /** 坐标相对视图左上角。 */
   onTap: (x: number, y: number, width: number, height: number) => void = () => {};
   static readonly MAX_ZOOM: number = 4;
@@ -73,13 +83,20 @@ export struct ReaderComicPagedView {
   aboutToAppear(): void {
     this.spreadIndex = this.spreadOf(this.pageIndex);
     this.controller.turn = (direction: number): void => this.turn(direction);
+    this.controller.cancelCross = (): void => {
+      this.animating = false;
+      this.settleBack();
+    };
   }
 
   aboutToDisappear(): void {
     this.controller.turn = () => {};
+    this.controller.cancelCross = () => {};
   }
 
   onLayoutChanged(): void {
+    // 章节或分页变了（包括跨章停住后阅读页发布了新章）：停住的位移归零，按新页码重新定位。
+    this.animating = false;
     this.dragOffset = 0;
     this.applyZoom(1, 0, 0);
     this.spreadIndex = this.spreadOf(this.pageIndex);
@@ -118,6 +135,36 @@ export struct ReaderComicPagedView {
     return this.rightToLeft ? result.reverse() : result;
   }
 
+  /** 越出本章的那一格能否直接显示相邻章节。 */
+  private hasNeighbor(direction: number): boolean {
+    return direction > 0 ? this.hasChapter(1) && this.nextChapterPages.length > 0 :
+      this.hasChapter(-1) && this.prevChapterPages.length > 0;
+  }
+
+  /** 相邻章节在这一格显示的跨页序号：下一话第一个，上一话最后一个。 */
+  private neighborSpread(direction: number): number {
+    if (direction > 0) return 0;
+    return Math.max(0, Math.ceil(this.prevChapterPages.length / this.spreadSize()) - 1);
+  }
+
+  private neighborSpreadPages(direction: number): number[] {
+    const pages = direction > 0 ? this.nextChapterPages : this.prevChapterPages;
+    const result: number[] = [];
+    const first = this.neighborSpread(direction) * this.spreadSize();
+    for (let page = first; page < Math.min(pages.length, first + this.spreadSize()); page++) result.push(page);
+    return this.rightToLeft ? result.reverse() : result;
+  }
+
+  /** 格子的键：相邻章节格与它成为当前章后的格子同键，切换时组件得以保留。 */
+  private slotKey(spread: number): string {
+    if (spread >= 0 && spread < this.spreadCount()) return `${this.chapterIndex}_${this.spreadSize()}_${spread}`;
+    const direction = spread < 0 ? -1 : 1;
+    if (this.hasNeighbor(direction)) {
+      return `${this.chapterIndex + direction}_${this.spreadSize()}_${this.neighborSpread(direction)}`;
+    }
+    return `card_${this.chapterIndex}_${direction}`;
+  }
+
   private viewW(): number {
     return Math.max(1, this.viewWidth);
   }
@@ -152,11 +199,28 @@ export struct ReaderComicPagedView {
     if (this.animating || this.pages.length === 0 || direction === 0) return;
     const target = this.spreadIndex + direction;
     if (target < 0 || target >= this.spreadCount()) {
-      this.onBoundary(direction);
+      if (this.hasNeighbor(direction)) {
+        this.applyZoom(1, 0, 0);
+        this.animateCross(direction);
+      } else {
+        this.onBoundary(direction);
+      }
       return;
     }
     this.applyZoom(1, 0, 0);
     this.animateTurn(direction);
+  }
+
+  /** 翻进预先装好的相邻章节后停住，等阅读页发布新章（onLayoutChanged）或取消（cancelCross）。 */
+  private animateCross(direction: number): void {
+    this.animating = true;
+    animateTo({
+      duration: 240,
+      curve: Curve.Friction,
+      onFinish: () => this.onCrossChapter(direction)
+    }, () => {
+      this.dragOffset = this.turnOffset(direction);
+    });
   }
 
   private animateTurn(direction: number): void {
@@ -250,8 +314,12 @@ export struct ReaderComicPagedView {
   private prefetchSources(): string[] {
     const result: string[] = [];
     const first = (this.spreadIndex + 2) * this.spreadSize();
-    for (let page = first; page < Math.min(this.pages.length, first + this.preloadCount); page++) {
-      const text = (this.pages[page] || '').trim();
+    // 本话剩下的页不够时接着预取下一话（第一个跨页已在相邻格里显示，从它之后开始）。
+    const nextStart = this.spreadSize();
+    const total = this.pages.length + Math.max(0, this.nextChapterPages.length - nextStart);
+    for (let page = first; page < Math.min(total, first + this.preloadCount); page++) {
+      const text = (page < this.pages.length ? this.pages[page] :
+        this.nextChapterPages[nextStart + page - this.pages.length] || '').trim();
       if (!LocalBookService.isEpubImageMarker(text)) continue;
       const source = ReaderImageMarker.parse(text).source;
       if (ReaderComicImageSizes.isRemote(source)) result.push(source);
@@ -373,6 +441,10 @@ export struct ReaderComicPagedView {
       this.animateTurn(direction);
       return;
     }
+    if (this.hasNeighbor(direction)) {
+      this.animateCross(direction);
+      return;
+    }
     this.settleBack();
     if (this.hasChapter(direction)) this.onBoundary(direction);
   }
@@ -384,22 +456,22 @@ export struct ReaderComicPagedView {
   }
 
   @Builder
-  pageView(pageIndex: number, boxWidth: number) {
-    if (LocalBookService.isEpubImageMarker((this.pages[pageIndex] || '').trim())) {
+  pageView(pages: string[], chapterIndex: number, pageIndex: number, boxWidth: number) {
+    if (LocalBookService.isEpubImageMarker((pages[pageIndex] || '').trim())) {
       ReaderComicImageItem({
-        marker: (this.pages[pageIndex] || '').trim(),
+        marker: (pages[pageIndex] || '').trim(),
         viewWidth: boxWidth,
         viewHeight: this.viewH(),
         boxWidth: boxWidth,
         boxHeight: this.viewH(),
         pageLabel: `${pageIndex + 1}`,
         hintColor: this.hintColor,
-        retryKey: this.retryKey(pageIndex),
+        retryKey: `${chapterIndex}_${pageIndex}`,
         retryRegistry: this.retryRegistry,
-        onDenied: (): void => this.onImageDenied(this.chapterIndex)
+        onDenied: (): void => this.onImageDenied(chapterIndex)
       })
     } else {
-      Text(LocalBookService.stripEpubImageMarkers(this.pages[pageIndex] || '').trim())
+      Text(LocalBookService.stripEpubImageMarkers(pages[pageIndex] || '').trim())
         .fontSize(AppFontSize.BODY_LARGE)
         .lineHeight(AppFontSize.BODY_LARGE * 1.7)
         .fontColor(this.textColor)
@@ -442,17 +514,28 @@ export struct ReaderComicPagedView {
   @Builder
   slot(spread: number) {
     Stack() {
-      if (spread < 0 || spread >= this.spreadCount()) {
-        this.boundaryCard(spread < 0 ? -1 : 1)
-      } else {
+      if (spread >= 0 && spread < this.spreadCount()) {
         Row() {
           ForEach(this.spreadPages(spread), (pageIndex: number) => {
-            this.pageView(pageIndex, this.viewW() / this.spreadPages(spread).length)
+            this.pageView(this.pages, this.chapterIndex, pageIndex, this.viewW() / this.spreadPages(spread).length)
           }, (pageIndex: number) => `${pageIndex}_${this.spreadPages(spread).length}`)
         }
         .width('100%')
         .height('100%')
         .justifyContent(FlexAlign.Center)
+      } else if (this.hasNeighbor(spread < 0 ? -1 : 1)) {
+        Row() {
+          ForEach(this.neighborSpreadPages(spread < 0 ? -1 : 1), (pageIndex: number) => {
+            this.pageView(spread < 0 ? this.prevChapterPages : this.nextChapterPages,
+              this.chapterIndex + (spread < 0 ? -1 : 1), pageIndex,
+              this.viewW() / this.neighborSpreadPages(spread < 0 ? -1 : 1).length)
+          }, (pageIndex: number) => `${pageIndex}_${this.neighborSpreadPages(spread < 0 ? -1 : 1).length}`)
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+      } else {
+        this.boundaryCard(spread < 0 ? -1 : 1)
       }
     }
     .width(this.viewW())
@@ -524,7 +607,7 @@ export struct ReaderComicPagedView {
       Stack() {
         ForEach([this.spreadIndex - 1, this.spreadIndex, this.spreadIndex + 1], (spread: number) => {
           this.slot(spread)
-        }, (spread: number) => `${this.chapterIndex}_${this.spreadSize()}_${spread}`)
+        }, (spread: number) => this.slotKey(spread))
       }
       .width('100%')
       .height('100%')
