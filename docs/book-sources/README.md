@@ -2,7 +2,7 @@
 
 本仓库不提供、维护、推荐或分发任何指向真实第三方内容站点的书源，也不提供可直接导入的书源订阅地址。本目录不存放书源文件，只说明测试书源时的约定。
 
-书源的字段、请求格式和解析规则见 [书源开发文档](../book-source-development.md)。
+书源的字段、请求格式和解析规则见 [书源开发文档](https://github.com/wip3l/harmony-book-source-engine/blob/feat/source-cover-decode/docs/book-source-development.md)。
 
 ## 测试数据要求
 
@@ -21,9 +21,9 @@
 | --- | --- | --- |
 | 单书源调试 | 书源管理 → 操作菜单 → 调试，或书源编辑页 | 按搜索、发现、详情、目录、正文或全链路单独运行，查看每一步的请求、规则匹配数、输出预览和错误。 |
 | 批量校验 | 书源管理 → 校验 | “搜索能力”模式快速检查搜索；“发现/阅读链路”模式走完发现、详情、目录和正文抽样。 |
-| 应用内验收 | 搜索、发现、阅读页 | 按书源开发文档的[应用内验收清单](../book-source-development.md#应用内验收清单)逐项确认。 |
+| 应用内验收 | 搜索、发现、阅读页 | 按书源开发文档的[应用内验收清单](https://github.com/wip3l/harmony-book-source-engine/blob/feat/source-cover-decode/docs/book-source-development.md#应用内验收清单)逐项确认。 |
 
-调试和校验的细节见书源开发文档的[单书源调试](../book-source-development.md#单书源调试)和[批量书源校验状态](../book-source-development.md#批量书源校验状态)。
+调试和校验的细节见书源开发文档的[单书源调试](https://github.com/wip3l/harmony-book-source-engine/blob/feat/source-cover-decode/docs/book-source-development.md#单书源调试)和[批量书源校验状态](https://github.com/wip3l/harmony-book-source-engine/blob/feat/source-cover-decode/docs/book-source-development.md#批量书源校验状态)。
 
 两点容易忽略：
 

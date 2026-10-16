@@ -124,7 +124,7 @@
 
 以上是兼容书源（Android 阅读格式）的能力，这种格式已过时，仅为存量书源保留。新书源请使用开源轻页自己的原生书源格式：不执行 JavaScript，用声明式规则和自定表达式语言编写，并支持视频播放页、听书音色列表和分卷。
 
-两种格式的完整字段、请求格式、解析语法、调试方法和迁移建议见 [书源开发文档](docs/book-source-development.md)：第一部分是原生书源，第二部分是兼容书源。
+两种格式的完整字段、请求格式、解析语法、调试方法和迁移建议见 [书源开发文档](https://github.com/wip3l/harmony-book-source-engine/blob/feat/source-cover-decode/docs/book-source-development.md)：第一部分是原生书源，第二部分是兼容书源。
 
 ## 项目结构
 
@@ -302,7 +302,7 @@ for f in harmony-book-source-engine/scripts/*-check.mjs; do node --experimental-
 
 ## 调试
 
-书源管理中的“调试”可针对单个书源运行指定阶段或全链路，执行明细会显示网络请求、响应摘要、规则类型、匹配数量、耗时和错误，并可导出脱敏 JSON 报告。详见书源开发文档的[单书源调试](docs/book-source-development.md#单书源调试)。
+书源管理中的“调试”可针对单个书源运行指定阶段或全链路，执行明细会显示网络请求、响应摘要、规则类型、匹配数量、耗时和错误，并可导出脱敏 JSON 报告。详见书源开发文档的[单书源调试](https://github.com/wip3l/harmony-book-source-engine/blob/feat/source-cover-decode/docs/book-source-development.md#单书源调试)。
 
 关键日志标签：
 
@@ -336,7 +336,7 @@ for f in harmony-book-source-engine/scripts/*-check.mjs; do node --experimental-
 ## 文档
 
 - [使用说明书](docs/manual/index.html)：面向用户的功能说明，纯静态页面，可直接部署；应用内「我的 → 帮助」加载的是同一份内容（`entry/src/main/resources/rawfile/manual`），修改时两处需同步。
-- [书源开发文档](docs/book-source-development.md)：第一部分原生书源（推荐），第二部分兼容书源（已过时）
+- [书源开发文档](https://github.com/wip3l/harmony-book-source-engine/blob/feat/source-cover-decode/docs/book-source-development.md)：第一部分原生书源（推荐），第二部分兼容书源（已过时）
 - [主题开发指南](docs/theme-development.md)
 
 ## 合规与免责声明
