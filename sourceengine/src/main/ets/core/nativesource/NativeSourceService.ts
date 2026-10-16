@@ -30,6 +30,7 @@ import type {
   NativeActionEntry, NativeLoginCredential, NativeLoginResult, NativeLoginState, NativeRuleTrace
 } from './NativeSourceRunner';
 import type { NativeLoginFieldSpec } from './NativeSourceSpec';
+import { NativeNetworkError } from './NativeNetworkError';
 
 export interface NativeFilterGroup {
   title: string;
@@ -111,9 +112,21 @@ class NativeHost implements NativeRunnerHost {
     const response = request.webView && request.webWaitFor ?
       await this.fetchWaitingFor(analyzeUrl, url, request) :
       await analyzeUrl.fetch(url, this.maxResponseBytes > 0 ? this.maxResponseBytes : undefined, this.debugContext);
+    // 没拿到响应且请求层报的是明确的网络错误（域名解析、超时、连不上等）：与登录无关，直接给出真实原因。
+    // 否则配置了登录入口的书源会把断网也报成“需要登录或网页验证”，还会拉起验证流程。
+    if (response.statusCode === 0 && !response.success) {
+      const networkReason = NativeNetworkError.describe(response.error || '', request.url);
+      if (networkReason) {
+        console.warn(`[NativeSource] 网络请求失败 source=${this.source.bookSourceName} error=${response.error || ''}`);
+        return { ok: false, status: 0, body: '', url: request.url, error: networkReason };
+      }
+    }
     // 主请求拿到的是人机验证或登录拦截页时，沿用应用现有的「去验证」流程，而不是当成没有结果。
     if (request.primary && VerificationSupport.shouldRequestBrowserVerification(this.source, response.body || '',
       response.statusCode, '')) {
+      // 状态码 0（超时、连不上）在配置了登录入口的书源上也会落到这里，记下真实原因便于区分。
+      console.warn(`[NativeSource] 主请求判定为需要验证 source=${this.source.bookSourceName} ` +
+        `status=${response.statusCode} error=${response.error || ''} bodyLength=${(response.body || '').length}`);
       VerificationSupport.requestVerification(
         VerificationSupport.pickVerificationUrl(this.source, request.url, ''),
         `${this.source.bookSourceName} 验证`, this.source);
