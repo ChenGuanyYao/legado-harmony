@@ -21,7 +21,7 @@
 | 项目 | 信息 |
 | --- | --- |
 | 应用包名 | `io.legado.read` |
-| 当前版本 | `4.0.919`（以 `AppScope/app.json5` 为准） |
+| 当前版本 | `4.0.921`（以 `AppScope/app.json5` 为准） |
 | 支持设备 | `phone`、`tablet`、`2in1` |
 | 最低 / 目标 API | HarmonyOS 6.0.0（API 20）/ API 26 |
 | 开源协议 | GPL-3.0 |
@@ -48,7 +48,8 @@
 - 平铺、紧凑、宽松三种布局，可显示封面、简介、标签、阅读进度、最新章节和更新时间。
 - 「我的 → 书籍导入」统一提供本地导入、OPDS 书库和 WebDAV 服务三个入口；本地导入可一次多选 TXT/EPUB，使用应用自身的文件访问能力，不扫描公共目录。
 - 指定章节范围缓存或全文后台缓存，以可取消的后台通知任务执行。
-- 后台静默检查连载更新并在封面显示“新”角标；支持最近阅读、阅读统计、桌面快捷项和服务卡片。
+- 后台静默检查连载更新并在封面显示“新”角标；支持最近阅读、阅读统计和桌面快捷项。
+- “最近阅读”服务卡片提供 2×2、2×4、4×4 尺寸：主推最近一本，附最近阅读列表、阅读进度和具体阅读时间。
 
 ### 搜索与发现
 
@@ -59,12 +60,13 @@
 
 ### 书源管理
 
-- 从 URL、剪贴板、本地 JSON/文本文件或系统“打开方式”导入；多书源文件先选择再写入。
+- 从 URL、剪贴板、本地 JSON/文本文件或系统“打开方式”导入；可一次选择多个文件，合并后统一勾选写入，读取失败的文件单独跳过并提示文件名。
 - 导入保留标准字段、原始 JSON 和未知字段，导出时合并，尽量保持与 Android 阅读的往返完整性。
-- 编辑、分组、锁定、导出、删除，以及批量启用/禁用搜索与发现；列表可按全部、原生、兼容筛选。
+- 编辑、分组、锁定、导出、删除，以及批量启用/禁用搜索与发现；列表可按全部、原生、兼容筛选。原生书源有独立的编辑页和“书源设置”页（变量、音色、账号登录、动作按钮），书源管理和发现页的长按菜单都能进入。
 - 两种校验模式（搜索能力、发现/阅读链路），结果区分“通过、失败、无结果、需要验证、暂时异常”，只有明确失败项可批量禁用或删除。
 - 单书源调试页可按搜索、发现、详情、目录、正文或全链路运行，查看请求、规则匹配、输出和错误，并导出脱敏报告。
 - 支持动态 `loginUi`、登录检测 JS、网页验证、同站点 Cookie 同步和登录状态持久化；证书错误可由用户按精确主机选择信任。
+- 请求遇到域名解析失败、超时等网络错误时直接显示真实原因，不误报“需要登录或验证”；书源脚本在详情、目录、正文阶段弹出的提示在应用内显示。
 
 ### 阅读
 
@@ -73,15 +75,18 @@
 - 页眉页脚按槽位自定义：书名、作者、章节、页码、剩余页数、进度百分比、时间和电量，可加本章或全书进度条，并可调节页眉下移、页脚上移的距离。
 - 字号、行距、段距、边距、对齐方式、自定义字体、背景、深色模式、沉浸式布局和段首缩进。
 - 书签、章节评论/段评、替换净化（可直接导入 Android 阅读与 YueDu 导出的规则，Java 正则自动转换；每条规则带超时保护，超时跳过并保留原文）。
-- EPUB 图文混排：随文图片与整页插图分别排版。
-- 漫画连续全宽阅读，支持携带书源请求头、Cookie 或解码规则的远程图片。
+- EPUB 图文混排：随文图片与整页插图分别排版；图片加载时原位显示加载动画，本地插图解码后保留在内存，翻页与跨章不再闪白。
+- 分卷第一章在章节名前显示卷名小标题和卷首插图；正文首行与章节名重复时自动去掉。
+- 滚动阅读与漫画条漫的列表接上相邻章节，滚过章节边界自动切换当前章，无需上滑加载。
+- 漫画专用阅读界面：条漫或单页翻页（从左往右、从右往左，宽屏自动双页），阅读方式按书保存；画面设置可调背景、页间距、适应宽度/屏幕、信息条和预加载张数；双击与双指缩放；长按图片保存、分享或重新加载，图片地址过期时自动重新获取本话。支持携带书源请求头、Cookie 或解密规则的远程图片。
+- 段评与本章说显示为跟随主题的数字气泡；深色模式下的评论网页自动反色。
 - 可选的本地眼动翻页：注视底部后向上看即可翻页，相机画面仅在设备内处理，不上传、不保存。
 
 ### 朗读与有声书
 
 - 系统 TTS 与自定义 HTTP TTS，支持语速、定时停止、章节切换、后台朗读和系统媒体控制；翻页和滚动阅读都显示当前句高亮，滚动模式自动跟随朗读位置。
 - 可导入原版 `HttpTTS` JSON，也可在应用内新建、编辑和排序自定义音色。
-- 有声书使用独立远程播放器，支持进度、倍速、目录跳转、定时停止和音色代码。
+- 有声书使用独立远程播放器，支持进度、倍速、目录跳转、定时停止和音色代码；切章时按钮不锁定，获取音频地址超过 30 秒报超时，取不到地址时显示书源给出的原因。
 - 朗读与听书可在返回书架或进入后台后继续，通过全局播放胶囊与 AVSession 控制。
 - 视频类书籍（如短剧）使用独立播放页，详情页提供选集。
 
@@ -95,7 +100,7 @@
 
 - 应用数据本地备份/恢复（可选加密）和账号云同步；本地书籍通过内容指纹跨设备匹配，只同步进度，不上传正文；可查看、改名和移除同步设备。
 - 华为账号登录后自动带入昵称和头像（不覆盖应用内改过的资料），点数与主题权益跨设备同步。
-- 浅色/深色模式、按钮色、强调色、自定义字体、阅读背景、封面图库和应用图标；主题页集中展示当前使用、默认与自定义方案、已购主题和更多主题，可在详情页预览、试用或获取。
+- 浅色/深色模式、按钮色、强调色、自定义字体、阅读背景、封面图库和应用图标；主题页集中展示当前使用、默认与自定义方案、已购主题和更多主题，可在详情页预览、试用或获取。主题自带书籍封面、启动封面、书架文件夹插画、朗读/有声书面板背景和段评气泡样式。
 - 「我的 → 帮助」可离线查看随应用打包的使用说明书。
 
 ## 快速开始
@@ -118,13 +123,15 @@
 | 网页抓取 | URL 选项 `webView: true` 改走隐藏 ArkWeb 并返回渲染后的 DOM，`webJs` 可在页面上下文生成最终响应。 |
 | 解析 | JSONPath、CSS、基础 XPath、旧式链式规则、属性提取、`&&` / `\|\|` / `%%` 组合、模板拼接、`##` 正则后处理（兼容 Java 正则方言）、`@put` / `@get`。 |
 | JavaScript | `<js>` / `@js:` 混合规则与 `jsLib`；轻量兼容引擎处理常用表达式，复杂脚本按搜索、发现、详情、目录、正文阶段路由到受控 ArkWeb；原生 QuickJS 以影子比对和灰度方式逐步接管纯表达式。 |
-| 主机函数 | 常见 `java.*`、`source.*`、`book.*`、`cache.*`、`cookie.*`，以及 Base64、Hex、摘要、URL/HTML 编解码和 AES/DES/3DES。 |
+| 主机函数 | 常见 `java.*`、`source.*`、`book.*`、`cache.*`、`cookie.*`，以及 Base64、Hex、摘要、URL/HTML 编解码和 AES/DES/3DES；`java.toast` 在阅读阶段显示为应用内提示。 |
 | 登录 | 动态登录面板、`startBrowserAwait`、登录页脚本、验证码跳转和跨地址 Cookie 同步。 |
 | 内容类型 | 普通文本、漫画、有声书识别；正文中的显式网页操作、图片和媒体标记；`data:` / Base64 地址。 |
 
-以上是兼容书源（Android 阅读格式）的能力，这种格式已过时，仅为存量书源保留。新书源请使用开源轻页自己的原生书源格式：不执行 JavaScript，用声明式规则和自定表达式语言编写，并支持视频播放页、听书音色列表和分卷。
+以上是兼容书源（Android 阅读格式）的能力，这种格式已过时，仅为存量书源保留。新书源请使用开源轻页自己的原生书源格式：不执行 JavaScript，用声明式规则和自定表达式语言编写，支持视频播放页、听书音色列表、分卷、详情与正文的附加请求、账号密码登录（可发验证码）、书源设置页动作按钮、漫画图片解密和加密封面解密（`coverDecode`）。
 
-两种格式的完整字段、请求格式、解析语法、调试方法和迁移建议见 [书源开发文档](https://github.com/wip3l/harmony-book-source-engine/blob/feat/source-cover-decode/docs/book-source-development.md)：第一部分是原生书源，第二部分是兼容书源。
+书源规则由书源解析内核 [harmony-book-source-engine](https://github.com/wip3l/harmony-book-source-engine) 实现，开源轻页与简听共用同一份规则定义。
+
+两种格式的完整字段、请求格式、解析语法、调试方法和迁移建议见 [书源开发文档](https://github.com/wip3l/harmony-book-source-engine/blob/main/docs/book-source-development.md)：第一部分是原生书源，第二部分是兼容书源。
 
 ## 项目结构
 
@@ -186,7 +193,9 @@ legado-harmony/
 | `WebRuntimeAvailability` | 挂载隐藏 ArkWeb 宿主前探测 Web 能力，缺失时不挂载。 |
 | `LanReaderServer` | 局域网浏览器阅读服务：会话令牌、登录失败锁定、Host/Origin 校验和图片代理的内网地址过滤。 |
 | `ReaderOpenTrace` | 从书架点击到阅读首屏的阶段耗时记录。 |
-| `AppDatabase` | 书源、书籍、章节、搜索历史、分页缓存和本地配置。 |
+| `BookCoverCache` | 封面下载、缓存与并发限制；带 `SourceCoverUrl` 标记的加密封面经内核 `SourceCoverLoader` 解密后落盘，界面在解密完成前显示占位，局域网阅读转发的也是解密后的图片。 |
+| `AppDatabase` | 书源、书籍、章节、搜索历史、分页缓存和本地配置；启动时通过 `BookSourceRuntimeStore.install` 注入内核，内核本身不访问数据库。 |
+| `NativeSourceRunner` / `NativeSourceService`（内核） | 原生书源各阶段执行与请求层接入；轻页不安装内核的可选宿主端口 `SourceEngineHost`。 |
 
 ## 开发与构建
 
@@ -199,8 +208,8 @@ legado-harmony/
 | 配置 | 值 |
 | --- | --- |
 | 主模块 / 入口 Ability | `entry` / `EntryAbility` |
-| `versionName` | `4.0.919` |
-| `versionCode` / `buildVersion` | `4000919` |
+| `versionName` | `4.0.921` |
+| `versionCode` / `buildVersion` | `4000921` |
 | `minAPIVersion` / `targetAPIVersion` | `20` / `26` |
 | 权限 | `INTERNET`、`GET_NETWORK_INFO`、`KEEP_BACKGROUND_RUNNING`、`CAMERA`（仅在用户启用眼动翻页时请求） |
 
@@ -273,6 +282,7 @@ node --experimental-strip-types scripts/reader-chunk-pagination-check.mjs
 node --experimental-strip-types scripts/epub-converter-check.mjs
 node --experimental-strip-types scripts/epub-mixed-layout-check.mjs
 node --experimental-strip-types scripts/reader-info-bar-check.mjs
+node --experimental-strip-types scripts/audio-rule-support-check.mjs
 ```
 
 书源解析内核的回归检查在子模块里（HTTP 认证、页码候选、原生书源、请求支撑、脚本运行时、宿主端口等），用法见 [harmony-book-source-engine/README.md](harmony-book-source-engine/README.md)：
@@ -297,12 +307,13 @@ for f in harmony-book-source-engine/scripts/*-check.mjs; do node --experimental-
 | `epub-converter-check` | EPUB XHTML 到阅读器正文的转换、目录切章与图片标记。 |
 | `epub-mixed-layout-check` | 图文混排的图片尺寸判定：随文排版还是整页插图。 |
 | `reader-info-bar-check` | 页眉页脚槽位配置：旧设置迁移、损坏配置回退、槽位文字与进度计算。 |
+| `audio-rule-support-check` | 有声书规则辅助：`sourceRegex`（Java 方言、字面量、响应体捕获组）、地址携带的请求头、跨站请求头收敛、`@webjs:` 识别。 |
 
 这些脚本用于代码回归，不能替代授权审查、安全审计或法律意见。
 
 ## 调试
 
-书源管理中的“调试”可针对单个书源运行指定阶段或全链路，执行明细会显示网络请求、响应摘要、规则类型、匹配数量、耗时和错误，并可导出脱敏 JSON 报告。详见书源开发文档的[单书源调试](https://github.com/wip3l/harmony-book-source-engine/blob/feat/source-cover-decode/docs/book-source-development.md#单书源调试)。
+书源管理中的“调试”可针对单个书源运行指定阶段或全链路，执行明细会显示网络请求、响应摘要、规则类型、匹配数量、耗时和错误，并可导出脱敏 JSON 报告。详见书源开发文档的[单书源调试](https://github.com/wip3l/harmony-book-source-engine/blob/main/docs/book-source-development.md#单书源调试)。
 
 关键日志标签：
 
@@ -336,7 +347,8 @@ for f in harmony-book-source-engine/scripts/*-check.mjs; do node --experimental-
 ## 文档
 
 - [使用说明书](docs/manual/index.html)：面向用户的功能说明，纯静态页面，可直接部署；应用内「我的 → 帮助」加载的是同一份内容（`entry/src/main/resources/rawfile/manual`），修改时两处需同步。
-- [书源开发文档](https://github.com/wip3l/harmony-book-source-engine/blob/feat/source-cover-decode/docs/book-source-development.md)：第一部分原生书源（推荐），第二部分兼容书源（已过时）
+- [书源开发文档](https://github.com/wip3l/harmony-book-source-engine/blob/main/docs/book-source-development.md)：第一部分原生书源（推荐），第二部分兼容书源（已过时）。在内核仓库统一维护，本仓库 [docs/book-source-development.md](docs/book-source-development.md) 只保留入口与轻页的宿主说明
+- [书源内核接入说明](https://github.com/wip3l/harmony-book-source-engine/blob/main/sourceengine/README.md)：HAR 入口、宿主必须接入的部分与可选宿主端口
 - [主题开发指南](docs/theme-development.md)
 
 ## 合规与免责声明
