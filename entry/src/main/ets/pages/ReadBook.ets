@@ -132,6 +132,7 @@ import {
 } from '../core/reader/ReaderPageModels';
 import { ReaderTextNormalizer } from '../core/reader/ReaderTextNormalizer';
 import { ReaderImageSizeResolver } from '../core/reader/ReaderImageSizeResolver';
+import { ReaderImageBitmapCache } from '../core/reader/ReaderImageBitmapCache';
 import { ReaderChunkPagination, ReaderChunkResult } from '../core/reader/ReaderChunkPagination';
 import { ReaderPageOffsets } from '../core/reader/ReaderPageOffsets';
 import { ReaderPageTurnQueue } from '../core/reader/ReaderPageTurnQueue';
@@ -165,6 +166,8 @@ const READER_CURL_REGION_UNSET = -1;
 const READER_PROGRESS_OFFSET_KEY = 'readProgressCharOffsetV2';
 const READER_V2_NO_FRAGMENTS: ReaderV2PageFragment[] = [];
 const READER_V2_IMAGE_LOADING_SIZE = 32;
+// 当前页前后各提前解码几页的插图。
+const READER_V2_IMAGE_PREWARM_PAGES = 2;
 const READER_V2_CONTINUOUS_ROLE = 'continuous';
 const READER_CONTINUOUS_LIST_ID = 'reader_continuous_list';
 const READER_CONTINUOUS_TTS_FOLLOW_GRACE_MS = 2500;
@@ -282,6 +285,8 @@ struct ReadBookPage {
   @State readerV2BrokenImageSources: string[] = [];
   // 已加载完成的图片：未完成时在图片位置显示加载动画，完成后图片淡入。
   @State readerV2LoadedImageSources: string[] = [];
+  // 本地插图解码进缓存后加一，让已挂着文件地址的 Image 换成 PixelMap。
+  @State readerV2ImageBitmapVersion: number = 0;
   @State readerV2SelectionPaintVersion: number = 0;
   @State ttsSleepTimerMinutes: number = 0;
   @State ttsSleepTimerRemainingSeconds: number = 0;
@@ -390,6 +395,7 @@ struct ReadBookPage {
     new Map<string, ReaderV2PageNodeController>();
   private readerV2SelectionExtraGaps: Map<string, number> = new Map<string, number>();
   private readerV2SelectionShownHostVersion: number = -1;
+  private readerV2ImageBitmaps: ReaderImageBitmapCache = new ReaderImageBitmapCache();
   private readerV2Controllers: Map<string, ReaderV2PageNodeController> =
     new Map<string, ReaderV2PageNodeController>();
   private readerV2SelectionStyledTextCache: Map<string, MutableStyledString> =
@@ -14134,8 +14140,11 @@ struct ReadBookPage {
   readerV2ImageFragmentView(fragment: ReaderV2PageFragment) {
     // Only opacity is animated: the implicit animation covers attributes declared before it, so page relayouts
     // (size/position) still apply instantly.
-    Image(this.readerImageUriForSource(fragment.imageSource))
-      .opacity(this.readerV2LoadedImageSources.includes(fragment.imageSource) ? 1 : 0)
+    // 已解码的本地插图直接用 PixelMap 绘制：翻页和跨章会新建 Image 节点，用文件地址时新节点要重新异步解码，
+    // 解码完成前插图位置是空的。
+    Image(this.readerV2ImageContent(fragment, this.readerV2ImageBitmapVersion))
+      .syncLoad(this.readerV2ImageBitmapReady(fragment, this.readerV2ImageBitmapVersion))
+      .opacity(this.isReaderV2ImageShown(fragment, this.readerV2ImageBitmapVersion) ? 1 : 0)
       .animation({ duration: 220, curve: Curve.EaseOut })
       .width(px2vp(fragment.imageRect.width()))
       .height(px2vp(fragment.imageRect.height()))
@@ -14159,7 +14168,7 @@ struct ReadBookPage {
         .height(px2vp(fragment.imageRect.height()))
         .position({ x: px2vp(fragment.imageRect.left), y: px2vp(fragment.imageRect.top) })
         .hitTestBehavior(HitTestMode.None)
-    } else if (!this.readerV2LoadedImageSources.includes(fragment.imageSource)) {
+    } else if (!this.isReaderV2ImageShown(fragment, this.readerV2ImageBitmapVersion)) {
       LoadingProgress()
         .color(this.getSubTextColor())
         .width(READER_V2_IMAGE_LOADING_SIZE)
@@ -14169,6 +14178,45 @@ struct ReadBookPage {
           y: px2vp(fragment.imageRect.top + fragment.imageRect.height() / 2) - READER_V2_IMAGE_LOADING_SIZE / 2
         })
         .hitTestBehavior(HitTestMode.None)
+    }
+  }
+
+  readerV2ImageContent(fragment: ReaderV2PageFragment, _bitmapVersion: number): string | image.PixelMap {
+    const bitmap = this.readerV2ImageBitmaps.get(fragment.imageSource, fragment.imageRect.width(),
+      fragment.imageRect.height());
+    if (bitmap) return bitmap;
+    this.prepareReaderV2ImageBitmap(fragment);
+    return this.readerImageUriForSource(fragment.imageSource);
+  }
+
+  readerV2ImageBitmapReady(fragment: ReaderV2PageFragment, _bitmapVersion: number): boolean {
+    return !!this.readerV2ImageBitmaps.get(fragment.imageSource, fragment.imageRect.width(),
+      fragment.imageRect.height());
+  }
+
+  isReaderV2ImageShown(fragment: ReaderV2PageFragment, bitmapVersion: number): boolean {
+    return this.readerV2LoadedImageSources.includes(fragment.imageSource) ||
+      this.readerV2ImageBitmapReady(fragment, bitmapVersion);
+  }
+
+  prepareReaderV2ImageBitmap(fragment: ReaderV2PageFragment): void {
+    if (!fragment.imageSource) return;
+    this.readerV2ImageBitmaps.prepare(fragment.imageSource, fragment.imageRect.width(),
+      fragment.imageRect.height(), () => {
+        this.readerV2ImageBitmapVersion++;
+      });
+  }
+
+  /** 提前解码当前页前后几页的插图，翻到时新建的 Image 已能直接用缓存。 */
+  prewarmReaderV2ImageBitmaps(chapterIndex: number, pageIndex: number, source: string): void {
+    const pageSet = this.readerV2PageSet(chapterIndex, source);
+    if (!pageSet) return;
+    const first = Math.max(0, pageIndex - READER_V2_IMAGE_PREWARM_PAGES);
+    const last = Math.min(pageSet.pages.length - 1, pageIndex + READER_V2_IMAGE_PREWARM_PAGES);
+    for (let index = first; index <= last; index++) {
+      for (const fragment of pageSet.pages[index].fragments) {
+        if (fragment.imageSource) this.prepareReaderV2ImageBitmap(fragment);
+      }
     }
   }
 
@@ -14185,6 +14233,7 @@ struct ReadBookPage {
   readerV2ImageFragments(chapterIndex: number, pageIndex: number, source: string): ReaderV2PageFragment[] {
     const page = this.readerV2Page(chapterIndex, pageIndex, source);
     if (!page) return READER_V2_NO_FRAGMENTS;
+    this.prewarmReaderV2ImageBitmaps(chapterIndex, pageIndex, source);
     let result: ReaderV2PageFragment[] = READER_V2_NO_FRAGMENTS;
     for (const fragment of page.fragments) {
       if (!fragment.imageSource) continue;
