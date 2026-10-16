@@ -101,12 +101,20 @@ import { ReaderTocPanel, ReaderTocPanelController } from '../components/reader/R
 import { ReaderContinuousDataSource, ReaderScrollItem, ReaderScrollSegment } from '../core/reader/ReaderDataSources';
 import { ReaderComicImageItem, ReaderComicView } from '../components/reader/ReaderComicView';
 import { ReaderComicPagedController, ReaderComicPagedView } from '../components/reader/ReaderComicPagedView';
-import { ReaderComicImageExport, ReaderComicSnapshotProvider } from '../core/reader/ReaderComicImageExport';
+import { ReaderComicImageActions } from '../core/reader/ReaderComicImageActions';
+import { ReaderComicStyle } from '../core/reader/ReaderComicStyle';
+import { ReaderNeighborChapterLoader } from '../core/reader/ReaderNeighborChapterLoader';
+import {
+  READER_COMIC_TEXT_MODE,
+  ReaderComicDisplaySettingsPanel,
+  ReaderComicModeSettingsPanel,
+  ReaderComicPanelColors
+} from '../components/reader/ReaderComicSettingsPanels';
+import { ReaderSettingActionRow, ReaderSettingSelectRow, ReaderSettingSwitchRow } from '../components/reader/ReaderSettingRows';
 import {
   ReaderComicBackground,
   ReaderComicFit,
   ReaderComicMode,
-  ReaderComicOption,
   ReaderComicSettings,
   ReaderComicSettingsStore
 } from '../core/reader/ReaderComicSettings';
@@ -307,13 +315,8 @@ struct ReadBookPage {
   /** 最近一次列表可见区（列表序号，含相邻章节与分隔项）。 */
   private readerContinuousLastListStart: number = 0;
   private readerContinuousLastListEnd: number = 0;
-  private readerContinuousNeighborLoading: Set<number> = new Set();
-  /** 相邻章节自动装入失败的时间；冷却期内滚动不再重试，免得对拒绝访问的书源反复请求。 */
-  private readerContinuousNeighborFailedAt: Map<number, number> = new Map();
-  /** 图片被服务器拒绝、待成为当前章时自动重新抓取的章节。 */
-  private readerComicDeniedChapters: Set<number> = new Set();
-  /** 本次打开已因图片地址过期自动刷新过的章节，每章只自动刷新一次。 */
-  private readerComicDeniedRefreshed: Set<number> = new Set();
+  private readerNeighborLoaderInstance: ReaderNeighborChapterLoader | null = null;
+  private readerComicImageActionsInstance: ReaderComicImageActions | null = null;
   private readerComicScrollRestoreSerial: number = 0;
   private readerComicScrollRestoring: boolean = false;
   private readerComicReanchorSerial: number = 0;
@@ -1409,14 +1412,12 @@ struct ReadBookPage {
     this.readerContinuousCommitChapter = -1;
     this.readerContinuousLastListStart = 0;
     this.readerContinuousLastListEnd = 0;
-    this.readerContinuousNeighborLoading.clear();
-    this.readerContinuousNeighborFailedAt.clear();
+    this.neighborLoader().reset();
+    this.comicImageActions().reset();
     this.readerComicPagedPrevPages = [];
     this.readerComicPagedNextPages = [];
     this.readerComicPagedPrevChapter = -1;
     this.readerComicPagedNextChapter = -1;
-    this.readerComicDeniedChapters.clear();
-    this.readerComicDeniedRefreshed.clear();
     this.pendingRestorePageIndex = -1;
     this.readerProgressAnchorChapterIndex = -1;
     this.readerProgressAnchorPageIndex = 0;
@@ -2206,97 +2207,14 @@ struct ReadBookPage {
     this.scheduleReaderComicScrollRestore();
   }
 
-  @Builder
-  readerComicDefaultModeItem() {
-    Row() {
-      Column() {
-        Text('设为默认方式')
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.getTextColor())
-        Text(`没单独设置过的漫画使用默认方式，当前默认：${ReaderComicMode.label(this.readerComicSettings.defaultMode)}`)
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.getSubTextColor())
-          .margin({ top: AppSpacing.XS })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      Text(this.readerComicSettings.defaultMode === this.readerComicEffectiveMode() ? '已是默认' : '设为默认')
-        .fontSize(AppFontSize.BODY)
-        .fontColor(this.readerComicSettings.defaultMode === this.readerComicEffectiveMode() ?
-          this.getSubTextColor() : this.accentColor())
-        .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.SM, bottom: AppSpacing.SM })
-        .borderRadius(16)
-        .backgroundColor(this.readerComicSettings.defaultMode === this.readerComicEffectiveMode() ?
-          Color.Transparent : ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
-        .enabled(this.readerComicSettings.defaultMode !== this.readerComicEffectiveMode())
-        .onClick(() => {
-          const mode = this.readerComicEffectiveMode();
-          this.updateReaderComicSettings((settings: ReaderComicSettings): void => {
-            settings.defaultMode = mode;
-          });
-          HdsFeedback.showToast(`默认阅读方式已设为${ReaderComicMode.label(mode)}`);
-        })
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
-    .alignItems(VerticalAlign.Center)
-  }
-
-  async handleReaderComicImageLongPress(source: string, reload: () => void, snapshotId: string): Promise<void> {
-    if (!source) return;
-    const snapshot: ReaderComicSnapshotProvider | null = snapshotId ?
-      (): Promise<image.PixelMap> => this.getUIContext().getComponentSnapshot().get(snapshotId) : null;
-    let index = -1;
-    try {
-      const result = await this.getUIContext().getPromptAction().showActionMenu({
-        title: '图片',
-        buttons: [
-          { text: '保存到相册', color: this.accentColor() },
-          { text: '分享', color: this.accentColor() },
-          { text: '重新加载', color: this.accentColor() }
-        ]
-      });
-      index = result.index;
-    } catch (_) {
-      // 点空白处取消。
-      return;
-    }
-    if (index === 2) {
-      reload();
-      return;
-    }
-    try {
-      if (index === 0) {
-        const saved = await ReaderComicImageExport.saveToAlbum(getContext(this), source, snapshot);
-        if (saved) HdsFeedback.showToast('已保存到相册');
-      } else if (index === 1) {
-        await ReaderComicImageExport.share(getContext(this) as common.UIAbilityContext, source, snapshot);
-      }
-    } catch (error) {
-      console.warn('漫画图片保存/分享失败:', error);
-      HdsFeedback.showToast(index === 0 ? '保存失败，图片可能还没加载成功' : '分享失败，图片可能还没加载成功');
-    }
-  }
-
-  /**
-   * 图片被服务器拒绝（401/403）多是正文缓存里的签名地址过期：重新抓取本章换新地址，停在当前页。
-   * 每章只自动刷新一次，免得书源本身拒绝时反复刷新；相邻章节等它成为当前章再刷新。
-   */
-  handleReaderComicImageDenied(chapterIndex: number): void {
-    if (!this.book || LocalBookService.isLocalBook(this.book) || this.readerComicDeniedRefreshed.has(chapterIndex)) {
-      return;
-    }
-    if (chapterIndex !== this.currentChapterIndex || this.isLoading || this.readerContinuousCommitChapter >= 0) {
-      this.readerComicDeniedChapters.add(chapterIndex);
-      return;
-    }
-    this.readerComicDeniedChapters.delete(chapterIndex);
-    this.readerComicDeniedRefreshed.add(chapterIndex);
-    HdsFeedback.showToast('图片地址已过期，正在重新获取本话');
-    this.refreshCurrentChapter(this.currentPageIndex, true).catch((error: Error) => {
-      console.warn('图片地址过期后刷新本章失败:', error);
+  handleReaderComicImageLongPress(source: string, reload: () => void, snapshotId: string): void {
+    this.comicImageActions().showMenu(source, reload, snapshotId).catch((error: Error) => {
+      console.warn('漫画图片菜单失败:', error);
     });
+  }
+
+  handleReaderComicImageDenied(chapterIndex: number): void {
+    this.comicImageActions().onImageDenied(chapterIndex);
   }
 
   isReaderComicInteractionEnabled(): boolean {
@@ -2477,34 +2395,25 @@ struct ReadBookPage {
     .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: this.readerGlassBorderColor() })
   }
 
-  /** 跟随主题时透明，露出下面的阅读主题底色与背景图。 */
   readerComicSurfaceColor(): string {
-    const background = this.readerComicSettings.background;
-    if (background === ReaderComicBackground.WHITE) return '#FFFFFF';
-    if (background === ReaderComicBackground.THEME) return '#00000000';
-    return '#000000';
+    return ReaderComicStyle.surfaceColor(this.readerComicSettings.background);
   }
 
   readerComicWindowColor(): string {
-    return this.readerComicSettings.background === ReaderComicBackground.THEME ? this.getBackgroundColor() :
-      this.readerComicSurfaceColor();
+    return ReaderComicStyle.windowColor(this.readerComicSettings.background, this.getBackgroundColor());
   }
 
   isReaderComicSurfaceDark(): boolean {
-    const background = this.readerComicSettings.background;
-    if (background === ReaderComicBackground.WHITE) return false;
-    if (background === ReaderComicBackground.THEME) return this.isReaderThemeDark();
-    return true;
+    return ReaderComicStyle.isDark(this.readerComicSettings.background, this.isReaderThemeDark());
   }
 
   readerComicSurfaceTextColor(): string {
-    if (this.readerComicSettings.background === ReaderComicBackground.THEME) return this.getTextColor();
-    return this.isReaderComicSurfaceDark() ? '#E0E0E0' : '#333333';
+    return ReaderComicStyle.textColor(this.readerComicSettings.background, this.getTextColor(), this.isReaderThemeDark());
   }
 
   readerComicSurfaceHintColor(): string {
-    if (this.readerComicSettings.background === ReaderComicBackground.THEME) return this.getSubTextColor();
-    return this.isReaderComicSurfaceDark() ? '#99FFFFFF' : '#8C000000';
+    return ReaderComicStyle.hintColor(this.readerComicSettings.background, this.getSubTextColor(),
+      this.isReaderThemeDark());
   }
 
   readerLoadingSurfaceColor(): string {
@@ -2539,177 +2448,100 @@ struct ReadBookPage {
 
   @Builder
   readerComicModeSettingsPanel() {
-    Column({ space: 14 }) {
-      this.readerComicOptionGroup('本书阅读方式', 'mode')
-
-      this.readerComicDefaultModeItem()
-
-      if (this.isReaderComicPagedMode()) {
-        this.readerSwitchSettingItem('横屏双页', '横屏、折叠屏展开等宽屏下两页并排',
-          this.readerComicSettings.dualPage, (checked: boolean) => {
-            this.updateReaderComicSettings((settings: ReaderComicSettings): void => {
-              settings.dualPage = checked;
-            });
-          })
+    ReaderComicModeSettingsPanel({
+      mode: this.readerComicEffectiveMode(),
+      defaultMode: this.readerComicSettings.defaultMode,
+      tapTurn: this.readerComicSettings.tapTurn,
+      dualPage: this.readerComicSettings.dualPage,
+      volumeTurnPage: this.readerVolumeTurnPage,
+      tapZoneSummary: this.tapZoneSummaryText(),
+      orientationOptions: this.screenOrientationOptions(),
+      orientationSelected: this.screenOrientationSelectedIndex(),
+      colors: this.readerComicPanelColors(),
+      onSelectMode: (mode: string): void => {
+        if (mode === READER_COMIC_TEXT_MODE) {
+          if (this.isReaderComicModeActive()) this.toggleReaderComicReadingMode();
+        } else {
+          this.setReaderComicBookMode(mode);
+        }
+      },
+      onSetDefaultMode: (): void => {
+        const mode = this.readerComicEffectiveMode();
+        this.updateReaderComicSettings((settings: ReaderComicSettings): void => {
+          settings.defaultMode = mode;
+        });
+        HdsFeedback.showToast(`默认阅读方式已设为${ReaderComicMode.label(mode)}`);
+      },
+      onTapTurnChange: (checked: boolean): void => {
+        this.updateReaderComicSettings((settings: ReaderComicSettings): void => {
+          settings.tapTurn = checked;
+        });
+      },
+      onConfigureTapZones: (): void => this.presentTapZoneSettings(),
+      onVolumeTurnChange: (checked: boolean): void => this.setReaderVolumeTurnPage(checked),
+      onOrientationChange: (index: number): void => this.setReaderScreenOrientationByIndex(index),
+      onDualPageChange: (checked: boolean): void => {
+        this.updateReaderComicSettings((settings: ReaderComicSettings): void => {
+          settings.dualPage = checked;
+        });
       }
-
-      this.readerSwitchSettingItem('点击翻页', this.isReaderComicPagedMode() ?
-        '点击屏幕两侧翻到上一页/下一页，中间呼出菜单' : '点击屏幕两侧向上/向下翻一屏，中间呼出菜单',
-        this.readerComicSettings.tapTurn, (checked: boolean) => {
-          this.updateReaderComicSettings((settings: ReaderComicSettings): void => {
-            settings.tapTurn = checked;
-          });
-        })
-
-      if (this.readerComicSettings.tapTurn) {
-        this.readerTapZoneSettingItem()
-      }
-
-      this.readerSwitchSettingItem('音量键翻页', this.isReaderComicPagedMode() ? '音量上/下键翻到上一页/下一页' :
-        '音量上/下键向上/向下翻一屏', this.readerVolumeTurnPage,
-        (checked: boolean) => {
-          this.setReaderVolumeTurnPage(checked);
-        })
-
-      this.readerSelectSettingItem('屏幕方向', '阅读时的屏幕方向',
-        this.screenOrientationOptions(), this.screenOrientationSelectedIndex(), (index: number) => {
-          this.setReaderScreenOrientationByIndex(index);
-        }, 'reader_comic_screen_orientation_select')
-    }
-    .width('100%')
+    })
   }
 
   @Builder
   readerComicDisplaySettingsPanel() {
-    Column({ space: 18 }) {
-      this.readerComicOptionGroup('背景', 'background')
-      this.readerComicOptionGroup('页间距', 'gap')
-      this.readerComicOptionGroup('图片缩放', 'fit')
-      this.readerComicOptionGroup('网络图片预加载', 'preload')
-
-      this.readerSwitchSettingItem('双击缩放', '双击放大到 2 倍，再双击还原；关闭后单击响应更快，双指缩放不受影响',
-        this.readerComicSettings.doubleTapZoom, (checked: boolean) => {
-          this.updateReaderComicSettings((settings: ReaderComicSettings): void => {
-            settings.doubleTapZoom = checked;
-          });
-        })
-
-      this.readerSwitchSettingItem('信息条', '在右下角显示话名、页码、时间与电量',
-        this.readerComicSettings.infoBar, (checked: boolean) => {
-          this.updateReaderComicSettings((settings: ReaderComicSettings): void => {
-            settings.infoBar = checked;
-          });
-        })
-    }
-    .width('100%')
-  }
-
-  /** 一组并排的选项块。选中状态在构建函数内部读取页面状态，按值传入的参数不会触发刷新。 */
-  @Builder
-  readerComicOptionGroup(title: string, kind: string) {
-    Column({ space: AppSpacing.MD }) {
-      Text(title)
-        .fontSize(AppFontSize.BODY_LARGE)
-        .fontColor(this.getTextColor())
-      Row({ space: AppSpacing.MD }) {
-        ForEach(this.readerComicOptions(kind), (option: ReaderComicOption) => {
-          Row({ space: AppSpacing.SM }) {
-            if (option.swatch) {
-              Row()
-                .width(14)
-                .height(14)
-                .borderRadius(7)
-                .backgroundColor(option.swatch)
-                .border({ width: 1, color: this.isReaderThemeDark() ? '#55FFFFFF' : '#33000000' })
-            }
-            Text(option.label)
-              .fontSize(AppFontSize.BODY)
-              .fontColor(this.readerComicOptionValue(kind) === option.value ? this.accentColor() :
-                this.getTextColor())
-              .maxLines(1)
-          }
-          .layoutWeight(1)
-          .height(40)
-          .justifyContent(FlexAlign.Center)
-          .borderRadius(20)
-          .backgroundColor(this.readerComicOptionValue(kind) === option.value ?
-            ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()) :
-            (this.isReaderThemeDark() ? '#14FFFFFF' : '#0D000000'))
-          .border({
-            width: this.readerComicOptionValue(kind) === option.value ? 1.5 : 0,
-            color: this.accentColor()
-          })
-          .onClick(() => this.selectReaderComicOption(kind, option.value))
-        }, (option: ReaderComicOption) =>
-          `${kind}_${option.value}_${this.readerComicOptionValue(kind) === option.value ? 1 : 0}`)
+    ReaderComicDisplaySettingsPanel({
+      surface: this.readerComicSettings.background,
+      pageGap: this.readerComicSettings.pageGap,
+      fit: this.readerComicSettings.fit,
+      preloadCount: this.readerComicSettings.preloadCount,
+      infoBar: this.readerComicSettings.infoBar,
+      doubleTapZoom: this.readerComicSettings.doubleTapZoom,
+      themeBackground: this.getBackgroundColor(),
+      colors: this.readerComicPanelColors(),
+      onBackgroundChange: (value: string): void => {
+        this.updateReaderComicSettings((settings: ReaderComicSettings): void => {
+          settings.background = ReaderComicBackground.normalize(value);
+        });
+      },
+      onPageGapChange: (value: number): void => {
+        this.updateReaderComicSettings((settings: ReaderComicSettings): void => {
+          settings.pageGap = value;
+        });
+      },
+      onFitChange: (value: string): void => {
+        this.updateReaderComicSettings((settings: ReaderComicSettings): void => {
+          settings.fit = ReaderComicFit.normalize(value);
+        });
+      },
+      onPreloadCountChange: (value: number): void => {
+        this.updateReaderComicSettings((settings: ReaderComicSettings): void => {
+          settings.preloadCount = value;
+        });
+      },
+      onInfoBarChange: (checked: boolean): void => {
+        this.updateReaderComicSettings((settings: ReaderComicSettings): void => {
+          settings.infoBar = checked;
+        });
+      },
+      onDoubleTapZoomChange: (checked: boolean): void => {
+        this.updateReaderComicSettings((settings: ReaderComicSettings): void => {
+          settings.doubleTapZoom = checked;
+        });
       }
-      .width('100%')
-    }
-    .width('100%')
-    .alignItems(HorizontalAlign.Start)
+    })
   }
 
-  readerComicOptions(kind: string): ReaderComicOption[] {
-    if (kind === 'mode') {
-      return [
-        new ReaderComicOption(ReaderComicMode.WEBTOON, '条漫'),
-        new ReaderComicOption(ReaderComicMode.LTR, '从左往右'),
-        new ReaderComicOption(ReaderComicMode.RTL, '从右往左'),
-        new ReaderComicOption('text', '文字阅读')
-      ];
-    }
-    if (kind === 'background') {
-      return [
-        new ReaderComicOption(ReaderComicBackground.BLACK, '黑色', '#000000'),
-        new ReaderComicOption(ReaderComicBackground.WHITE, '白色', '#FFFFFF'),
-        new ReaderComicOption(ReaderComicBackground.THEME, '跟随主题', this.getBackgroundColor())
-      ];
-    }
-    if (kind === 'gap') {
-      return [new ReaderComicOption('0', '无'), new ReaderComicOption('6', '小'), new ReaderComicOption('16', '大')];
-    }
-    if (kind === 'preload') {
-      return [
-        new ReaderComicOption('0', '关闭'),
-        new ReaderComicOption('3', '3 张'),
-        new ReaderComicOption('5', '5 张'),
-        new ReaderComicOption('10', '10 张')
-      ];
-    }
-    return [
-      new ReaderComicOption(ReaderComicFit.WIDTH, '适应宽度'),
-      new ReaderComicOption(ReaderComicFit.SCREEN, '适应屏幕')
-    ];
-  }
-
-  readerComicOptionValue(kind: string): string {
-    if (kind === 'mode') return this.isReaderComicModeActive() ? this.readerComicEffectiveMode() : 'text';
-    if (kind === 'background') return this.readerComicSettings.background;
-    if (kind === 'gap') return `${this.readerComicSettings.pageGap}`;
-    if (kind === 'preload') return `${this.readerComicSettings.preloadCount}`;
-    return this.readerComicSettings.fit;
-  }
-
-  selectReaderComicOption(kind: string, value: string): void {
-    if (kind === 'mode') {
-      if (value === 'text') {
-        if (this.isReaderComicModeActive()) this.toggleReaderComicReadingMode();
-      } else {
-        this.setReaderComicBookMode(value);
-      }
-      return;
-    }
-    this.updateReaderComicSettings((settings: ReaderComicSettings): void => {
-      if (kind === 'background') {
-        settings.background = ReaderComicBackground.normalize(value);
-      } else if (kind === 'gap') {
-        settings.pageGap = Number(value) || 0;
-      } else if (kind === 'preload') {
-        settings.preloadCount = Number(value) || 0;
-      } else {
-        settings.fit = ReaderComicFit.normalize(value);
-      }
-    });
+  readerComicPanelColors(): ReaderComicPanelColors {
+    const colors = new ReaderComicPanelColors();
+    colors.textColor = this.getTextColor();
+    colors.subTextColor = this.getSubTextColor();
+    colors.accentColor = this.accentColor();
+    colors.dark = this.isReaderThemeDark();
+    colors.menuColor = ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor());
+    colors.buttonColor = this.buttonColor();
+    colors.buttonTextColor = ThemeRuntime.onAccentColor();
+    return colors;
   }
 
   pageTransition() {
@@ -5268,72 +5100,55 @@ struct ReadBookPage {
 
   /** 读到本章末尾附近接上下一章，开头附近接上上一章；列表里最多保留当前章前后各一章。 */
   ensureReaderContinuousNeighbors(listStart: number, listEnd: number): void {
-    if (!this.isReaderContinuousScrollSurfaceActive() || this.isReaderComicPagedMode() ||
-      this.readerContinuousCommitChapter >= 0) {
-      return;
-    }
-    const window = this.readerComicPageDataSource;
-    const current = this.currentChapterIndex;
-    const offset = window.offsetOf(current);
-    if (offset < 0) return;
-    if (window.lastChapter() === current && listEnd >= offset + this.contentPages.length - 3) {
-      this.loadReaderContinuousNeighbor(current + 1);
-    }
-    if (window.firstChapter() === current && listStart <= offset + 2) {
-      this.loadReaderContinuousNeighbor(current - 1);
-    }
+    if (this.readerContinuousCommitChapter >= 0) return;
+    this.neighborLoader().ensureScrollNeighbors(listStart, listEnd, this.contentPages.length);
   }
 
-  isReaderContinuousNeighborWanted(chapterIndex: number, generation: number, bookUrl: string,
-    comicMode: boolean): boolean {
-    const window = this.readerComicPageDataSource;
-    return this.readerPageVisible && window.generation() === generation &&
-      this.isCurrentReaderEngineBook(bookUrl) && comicMode === this.isReaderComicModeActive() &&
-      this.isReaderContinuousScrollSurfaceActive() && !this.isReaderComicPagedMode() && !window.segment(chapterIndex) &&
-      (chapterIndex === window.lastChapter() + 1 || chapterIndex === window.firstChapter() - 1);
+  neighborLoader(): ReaderNeighborChapterLoader {
+    if (!this.readerNeighborLoaderInstance) {
+      this.readerNeighborLoaderInstance = new ReaderNeighborChapterLoader({
+        visible: (): boolean => this.readerPageVisible,
+        bookUrl: (): string => this.book?.bookUrl || this.bookUrl,
+        isCurrentBook: (bookUrl: string): boolean => this.isCurrentReaderEngineBook(bookUrl),
+        currentChapter: (): number => this.currentChapterIndex,
+        chapterCount: (): number => this.chapters.length,
+        isComic: (): boolean => this.isReaderComicModeActive(),
+        isScrollList: (): boolean => this.isReaderContinuousScrollSurfaceActive(),
+        isPagedComic: (): boolean => this.isReaderComicPagedMode(),
+        scrollWindow: (): ReaderContinuousDataSource => this.readerComicPageDataSource,
+        prepare: (chapterIndex: number): Promise<ReaderScrollSegment | null> =>
+          this.prepareReaderNeighborSegment(chapterIndex),
+        publishPagedNeighbor: (chapterIndex: number, pages: string[]): void => {
+          if (chapterIndex > this.currentChapterIndex) {
+            this.readerComicPagedNextChapter = chapterIndex;
+            this.readerComicPagedNextPages = pages;
+          } else {
+            this.readerComicPagedPrevChapter = chapterIndex;
+            this.readerComicPagedPrevPages = pages;
+          }
+        }
+      });
+    }
+    return this.readerNeighborLoaderInstance;
   }
 
-  /**
-   * 取相邻章节正文并按当前模式切块后接到列表首尾。切块方式与正式加载这一章完全相同，
-   * 所以它滚进视口成为当前章时分块一致，列表无需任何改动。
-   */
-  async loadReaderContinuousNeighbor(chapterIndex: number): Promise<void> {
-    if (chapterIndex < 0 || chapterIndex >= this.chapters.length ||
-      this.readerContinuousNeighborLoading.has(chapterIndex)) {
-      return;
+  comicImageActions(): ReaderComicImageActions {
+    if (!this.readerComicImageActionsInstance) {
+      this.readerComicImageActionsInstance = new ReaderComicImageActions({
+        uiContext: (): UIContext => this.getUIContext(),
+        abilityContext: (): common.UIAbilityContext => getContext(this) as common.UIAbilityContext,
+        accentColor: (): string => this.accentColor(),
+        isLocalBook: (): boolean => !this.book || LocalBookService.isLocalBook(this.book),
+        currentChapter: (): number => this.currentChapterIndex,
+        busy: (): boolean => this.isLoading || this.readerContinuousCommitChapter >= 0,
+        refreshCurrentChapter: (): void => {
+          this.refreshCurrentChapter(this.currentPageIndex, true).catch((error: Error) => {
+            console.warn('图片地址过期后刷新本章失败:', error);
+          });
+        }
+      });
     }
-    const window = this.readerComicPageDataSource;
-    if (window.segment(chapterIndex)) return;
-    const failedAt = this.readerContinuousNeighborFailedAt.get(chapterIndex) || 0;
-    if (Date.now() - failedAt < 30000) return;
-    const generation = window.generation();
-    const bookUrl = this.book?.bookUrl || this.bookUrl;
-    const comicMode = this.isReaderComicModeActive();
-    const forward = chapterIndex > window.lastChapter();
-    this.readerContinuousNeighborLoading.add(chapterIndex);
-    if (forward) window.setTrailingState(true, false);
-    try {
-      const segment = await this.prepareReaderNeighborSegment(chapterIndex);
-      if (!this.isReaderContinuousNeighborWanted(chapterIndex, generation, bookUrl, comicMode)) return;
-      if (!segment) {
-        this.readerContinuousNeighborFailedAt.set(chapterIndex, Date.now());
-        if (forward) window.setTrailingState(false, true);
-        return;
-      }
-      if (forward) {
-        window.append(segment, chapterIndex < this.chapters.length - 1 ? chapterIndex + 1 : -1);
-      } else {
-        window.prepend(segment);
-      }
-    } catch (error) {
-      console.warn(`[ReaderContinuous] 相邻章节装入失败 chapter=${chapterIndex}:`, error);
-      this.readerContinuousNeighborFailedAt.set(chapterIndex, Date.now());
-      if (forward && this.isReaderContinuousNeighborWanted(chapterIndex, generation, bookUrl, comicMode)) {
-        window.setTrailingState(false, true);
-      }
-    } finally {
-      this.readerContinuousNeighborLoading.delete(chapterIndex);
-    }
+    return this.readerComicImageActionsInstance;
   }
 
   /**
@@ -5372,44 +5187,10 @@ struct ReadBookPage {
     const spread = this.isReaderComicDualPageActive() ? 2 : 1;
     if (this.readerComicPagedNextChapter < 0 && current < this.chapters.length - 1 &&
       this.contentPages.length - this.currentPageIndex <= 4 + spread) {
-      this.loadReaderComicPagedNeighbor(current + 1);
+      this.neighborLoader().loadPagedNeighbor(current + 1);
     }
     if (this.readerComicPagedPrevChapter < 0 && current > 0 && this.currentPageIndex <= 3) {
-      this.loadReaderComicPagedNeighbor(current - 1);
-    }
-  }
-
-  async loadReaderComicPagedNeighbor(chapterIndex: number): Promise<void> {
-    if (chapterIndex < 0 || chapterIndex >= this.chapters.length ||
-      this.readerContinuousNeighborLoading.has(chapterIndex)) {
-      return;
-    }
-    const failedAt = this.readerContinuousNeighborFailedAt.get(chapterIndex) || 0;
-    if (Date.now() - failedAt < 30000) return;
-    const bookUrl = this.book?.bookUrl || this.bookUrl;
-    this.readerContinuousNeighborLoading.add(chapterIndex);
-    try {
-      const segment = await this.prepareReaderNeighborSegment(chapterIndex);
-      if (!this.readerPageVisible || !this.isReaderComicPagedMode() || !this.isCurrentReaderEngineBook(bookUrl) ||
-        Math.abs(chapterIndex - this.currentChapterIndex) !== 1) {
-        return;
-      }
-      if (!segment) {
-        this.readerContinuousNeighborFailedAt.set(chapterIndex, Date.now());
-        return;
-      }
-      if (chapterIndex > this.currentChapterIndex) {
-        this.readerComicPagedNextChapter = chapterIndex;
-        this.readerComicPagedNextPages = segment.pages;
-      } else {
-        this.readerComicPagedPrevChapter = chapterIndex;
-        this.readerComicPagedPrevPages = segment.pages;
-      }
-    } catch (error) {
-      console.warn(`[ReaderComicPaged] 相邻章节预切失败 chapter=${chapterIndex}:`, error);
-      this.readerContinuousNeighborFailedAt.set(chapterIndex, Date.now());
-    } finally {
-      this.readerContinuousNeighborLoading.delete(chapterIndex);
+      this.neighborLoader().loadPagedNeighbor(current - 1);
     }
   }
 
@@ -5483,7 +5264,7 @@ struct ReadBookPage {
     if (!this.readerPageVisible || this.currentChapterIndex !== chapterIndex) return;
     console.info(`[ReaderContinuous] chapter ${sourceChapterIndex} -> ${chapterIndex} switched=${switched}`);
     this.scheduleReaderComicProgressSave();
-    if (this.readerComicDeniedChapters.has(chapterIndex)) this.handleReaderComicImageDenied(chapterIndex);
+    this.comicImageActions().onChapterBecameCurrent(chapterIndex);
     const top = this.readerComicPageDataSource.itemAt(this.readerContinuousLastListStart);
     if (top && top.isPage() && top.chapterIndex !== chapterIndex) {
       // 提交期间读者又滚进了另一章，按最新可见区继续切换。
@@ -9700,84 +9481,34 @@ struct ReadBookPage {
 
   @Builder
   readerTapZoneSettingItem() {
-    Row() {
-      Column() {
-        Text('点击区域动作')
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.getTextColor())
-        Text(this.tapZoneSummaryText())
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.getSubTextColor())
-          .margin({ top: AppSpacing.XS })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      Button('配置')
-        .height(34)
-        .fontSize(AppFontSize.BODY)
-        .backgroundColor(this.buttonColor())
-        .fontColor(ThemeRuntime.onAccentColor())
-        .margin({ left: AppSpacing.LG })
-        .onClick(() => {
-          this.presentTapZoneSettings();
-        })
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
-    .alignItems(VerticalAlign.Center)
+    ReaderSettingActionRow({
+      title: '点击区域动作',
+      description: this.tapZoneSummaryText(),
+      actionText: '配置',
+      textColor: this.getTextColor(),
+      subTextColor: this.getSubTextColor(),
+      buttonColor: this.buttonColor(),
+      buttonTextColor: ThemeRuntime.onAccentColor(),
+      onAction: (): void => this.presentTapZoneSettings()
+    })
   }
 
   @Builder
   readerSelectSettingItem(title: string, description: string, options: SelectOption[], selected: number,
     onSelect: (index: number) => void, controlId: string) {
-    Row() {
-      Column() {
-        Text(title)
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.getTextColor())
-        Text(description)
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.getSubTextColor())
-          .margin({ top: AppSpacing.XS })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      Select(options)
-        .id(controlId)
-        .selected(selected)
-        .value(this.readerSelectOptionValue(options, selected))
-        .font({ size: AppFontSize.BODY })
-        .fontColor(this.getSubTextColor())
-        .backgroundColor(Color.Transparent)
-        .arrowPosition(ArrowPosition.END)
-        .padding({ left: 0, right: 0 })
-        // Keep the hit area rectangular, but soften its corners to match the rounded settings cards.
-        .borderRadius(16)
-        .border({ width: 0 })
-        .optionBgColor(Color.Transparent)
-        .divider(null)
-        .optionFontColor(this.getTextColor())
-        .selectedOptionFontColor(this.accentColor())
-        .selectedOptionBgColor(ThemeRuntime.accentSurfaceColor(this.isReaderThemeDark()))
-        .menuBackgroundColor(ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()))
-        .menuBackgroundBlurStyle(BlurStyle.NONE)
-        .attributeModifier(ImmersiveMaterialRuntime.selectMenuModifier())
-        .onSelect((index: number) => {
-          onSelect(index);
-        })
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
-    .alignItems(VerticalAlign.Center)
-  }
-
-  readerSelectOptionValue(options: SelectOption[], index: number): ResourceStr {
-    if (index >= 0 && index < options.length) {
-      return options[index].value;
-    }
-    return options.length > 0 ? options[0].value : '';
+    ReaderSettingSelectRow({
+      title: title,
+      description: description,
+      options: options,
+      selected: selected,
+      controlId: controlId,
+      textColor: this.getTextColor(),
+      subTextColor: this.getSubTextColor(),
+      accentColor: this.accentColor(),
+      dark: this.isReaderThemeDark(),
+      menuColor: ThemeRuntime.dropdownPanelColor(this.isReaderThemeDark(), this.getBackgroundColor()),
+      onSelect: onSelect
+    })
   }
 
   readerPreloadChapterOptions(): SelectOption[] {
@@ -9790,29 +9521,14 @@ struct ReadBookPage {
 
   @Builder
   readerSwitchSettingItem(title: string, description: string, checked: boolean, onChange: (checked: boolean) => void) {
-    Row() {
-      Column() {
-        Text(title)
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontColor(this.getTextColor())
-        Text(description)
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.getSubTextColor())
-          .margin({ top: AppSpacing.XS })
-      }
-      .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-
-      AdaptiveSwitch({
-        isOn: checked,
-        onChange: (value: boolean) => {
-          onChange(value);
-        }
-      })
-    }
-    .width('100%')
-    .constraintSize({ minHeight: 56 })
-    .alignItems(VerticalAlign.Center)
+    ReaderSettingSwitchRow({
+      title: title,
+      description: description,
+      checked: checked,
+      textColor: this.getTextColor(),
+      subTextColor: this.getSubTextColor(),
+      onChange: onChange
+    })
   }
 
   @Builder

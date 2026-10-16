@@ -1,0 +1,94 @@
+import { common } from '@kit.AbilityKit';
+import image from '@ohos.multimedia.image';
+import { HdsFeedback } from '../../utils/HdsFeedback';
+import { ReaderComicImageExport, ReaderComicSnapshotProvider } from './ReaderComicImageExport';
+
+/** 阅读页为漫画图片操作提供的环境。 */
+export interface ReaderComicImageActionsHost {
+  uiContext: () => UIContext;
+  abilityContext: () => common.UIAbilityContext;
+  accentColor: () => string;
+  /** 本地导入的书：图片不会过期，不自动刷新。 */
+  isLocalBook: () => boolean;
+  currentChapter: () => number;
+  /** 正在加载或正在切章，此时不刷新，等这一章成为当前章再处理。 */
+  busy: () => boolean;
+  /** 重新抓取当前章并停在当前页，不弹“本章已刷新”。 */
+  refreshCurrentChapter: () => void;
+}
+
+/**
+ * 漫画图片操作：长按菜单（保存到相册、分享、重新加载）与图片地址过期后的自动刷新。
+ * 图片被服务器拒绝（401/403）多是正文缓存里的签名地址过期：重新抓取本章换新地址。
+ * 每章只自动刷新一次，免得书源本身拒绝时反复刷新；相邻章节等它成为当前章再刷新。
+ */
+export class ReaderComicImageActions {
+  private readonly host: ReaderComicImageActionsHost;
+  /** 图片被拒、等成为当前章时再刷新的章节。 */
+  private deniedChapters: Set<number> = new Set();
+  /** 本次打开已自动刷新过的章节。 */
+  private refreshedChapters: Set<number> = new Set();
+
+  constructor(host: ReaderComicImageActionsHost) {
+    this.host = host;
+  }
+
+  reset(): void {
+    this.deniedChapters.clear();
+    this.refreshedChapters.clear();
+  }
+
+  async showMenu(source: string, reload: () => void, snapshotId: string): Promise<void> {
+    if (!source) return;
+    const snapshot: ReaderComicSnapshotProvider | null = snapshotId ?
+      (): Promise<image.PixelMap> => this.host.uiContext().getComponentSnapshot().get(snapshotId) : null;
+    let index = -1;
+    try {
+      const color = this.host.accentColor();
+      const result = await this.host.uiContext().getPromptAction().showActionMenu({
+        title: '图片',
+        buttons: [
+          { text: '保存到相册', color: color },
+          { text: '分享', color: color },
+          { text: '重新加载', color: color }
+        ]
+      });
+      index = result.index;
+    } catch (_) {
+      // 点空白处取消。
+      return;
+    }
+    if (index === 2) {
+      reload();
+      return;
+    }
+    try {
+      if (index === 0) {
+        const saved = await ReaderComicImageExport.saveToAlbum(this.host.abilityContext(), source, snapshot);
+        if (saved) HdsFeedback.showToast('已保存到相册');
+      } else if (index === 1) {
+        await ReaderComicImageExport.share(this.host.abilityContext(), source, snapshot);
+      }
+    } catch (error) {
+      console.warn('漫画图片保存/分享失败:', error);
+      HdsFeedback.showToast(index === 0 ? '保存失败，图片可能还没加载成功' : '分享失败，图片可能还没加载成功');
+    }
+  }
+
+  onImageDenied(chapterIndex: number): void {
+    if (this.host.isLocalBook() || this.refreshedChapters.has(chapterIndex)) return;
+    if (chapterIndex !== this.host.currentChapter() || this.host.busy()) {
+      this.deniedChapters.add(chapterIndex);
+      return;
+    }
+    this.deniedChapters.delete(chapterIndex);
+    this.refreshedChapters.add(chapterIndex);
+    HdsFeedback.showToast('图片地址已过期，正在重新获取本话');
+    this.host.refreshCurrentChapter();
+  }
+
+  /** 这一章刚成为当前章：它在相邻位置时被拒的图片现在处理。 */
+  onChapterBecameCurrent(chapterIndex: number): void {
+    if (this.deniedChapters.has(chapterIndex)) this.onImageDenied(chapterIndex);
+  }
+}
