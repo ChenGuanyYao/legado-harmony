@@ -30,14 +30,15 @@ export class RequestSessionSupport {
     return config;
   }
 
-  static apply(requestUrl: string, headers: Record<string, string>, config: RequestSessionConfig): void {
+  static apply(requestUrl: string, headers: Record<string, string>, config: RequestSessionConfig,
+    sourceUrl: string = ''): void {
     const cleanUrl = (requestUrl || '').trim();
     if (!/^https?:\/\//i.test(cleanUrl) || !config) return;
     if (Object.keys(config.queryCookies || {}).length === 0 &&
       Object.keys(config.generatedCookies || {}).length === 0 && !config.referer) return;
 
     const cookieHeaderName = this.headerName(headers, 'cookie');
-    let cookies = CookieStore.getCookie(cleanUrl);
+    let cookies = CookieStore.forSource(sourceUrl).getCookie(cleanUrl);
     if (cookieHeaderName) {
       // Explicit source headers have priority over values already stored for this destination.
       cookies = this.mergeCookies(cookies, String(headers[cookieHeaderName] || ''));
@@ -50,7 +51,7 @@ export class RequestSessionSupport {
       const value = this.queryValue(cleanUrl, queryName);
       if (!value) continue;
       cookies = this.mergeCookies(cookies, `${cookieName}=${value}`);
-      CookieStore.setCookies(cleanUrl, `${cookieName}=${value}; Path=/`);
+      CookieStore.forSource(sourceUrl).setCookies(cleanUrl, `${cookieName}=${value}; Path=/`);
       cookieStoreChanged = true;
     }
 
@@ -59,7 +60,7 @@ export class RequestSessionSupport {
       const value = this.generatedValue(config.generatedCookies[cookieName], cleanUrl);
       if (!value) continue;
       cookies = this.mergeCookies(cookies, `${cookieName}=${value}`);
-      CookieStore.setCookies(cleanUrl, `${cookieName}=${value}; Max-Age=31536000; Path=/`);
+      CookieStore.forSource(sourceUrl).setCookies(cleanUrl, `${cookieName}=${value}; Max-Age=31536000; Path=/`);
       cookieStoreChanged = true;
     }
 
@@ -68,7 +69,7 @@ export class RequestSessionSupport {
       const referer = this.resolveReferer(config.referer, cleanUrl);
       if (referer) headers['Referer'] = referer;
     }
-    if (cookieStoreChanged) CookieStore.saveAsync();
+    if (cookieStoreChanged) CookieStore.forSource(sourceUrl).saveAsync();
   }
 
   private static parseQueryCookies(value: Object | undefined): Record<string, string> {

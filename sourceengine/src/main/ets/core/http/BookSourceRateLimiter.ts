@@ -1,5 +1,5 @@
 import { BookSource } from '../../model/data/Book';
-import { sleepMs } from '../../utils/Sleep';
+import { SourceEngineHost } from '../host/SourceEngineHost';
 
 class BookSourceRateState {
   timestamps: number[] = [];
@@ -27,6 +27,9 @@ export class BookSourceRateLimiter {
    */
   static async acquire(source: BookSource | null, isCancelled?: () => boolean,
     maxWaitMs: number = 0): Promise<RateLimitAcquireResult> {
+    if (SourceEngineHost.isCancelled(source) || (isCancelled && isCancelled())) {
+      return RateLimitAcquireResult.Cancelled;
+    }
     if (!source || !source.concurrentRate) return RateLimitAcquireResult.Acquired;
     const config = this.parse(source.concurrentRate);
     if (!config) return RateLimitAcquireResult.Acquired;
@@ -38,20 +41,34 @@ export class BookSourceRateLimiter {
       state = new BookSourceRateState();
       this.states.set(key, state);
     }
-    while (true) {
-      if (isCancelled && isCancelled()) return RateLimitAcquireResult.Cancelled;
-      const now = Date.now();
-      state.timestamps = state.timestamps.filter(timestamp => now - timestamp < config.windowMs);
-      if (state.timestamps.length < config.limit) {
-        state.timestamps.push(now);
-        return RateLimitAcquireResult.Acquired;
+    // Without a host scheduler the waiter only sleeps and `first` is always true, so the loop below behaves
+    // exactly like the plain window wait. A host scheduler can make a waiter yield a free slot to a
+    // higher-priority one; the window itself is still enforced here.
+    const waiter = SourceEngineHost.enqueue(key, source, isCancelled);
+    try {
+      while (true) {
+        if (waiter.isCancelled()) return RateLimitAcquireResult.Cancelled;
+        const now = Date.now();
+        state.timestamps = state.timestamps.filter(timestamp => now - timestamp < config.windowMs);
+        if (state.timestamps.length < config.limit) {
+          if (!SourceEngineHost.first(key, waiter)) {
+            if (deadline > 0 && now >= deadline) return RateLimitAcquireResult.RateLimited;
+            const slice = BookSourceRateLimiter.WAIT_SLICE_MS;
+            await waiter.wait(deadline > 0 ? Math.min(slice, Math.max(1, deadline - now)) : slice);
+            continue;
+          }
+          state.timestamps.push(now);
+          return RateLimitAcquireResult.Acquired;
+        }
+        let waitMs = Math.max(1, state.timestamps[0] + config.windowMs - now);
+        if (deadline > 0) {
+          if (now >= deadline) return RateLimitAcquireResult.RateLimited;
+          waitMs = Math.min(waitMs, deadline - now);
+        }
+        await waiter.wait(Math.min(waitMs, BookSourceRateLimiter.WAIT_SLICE_MS));
       }
-      let waitMs = Math.max(1, state.timestamps[0] + config.windowMs - now);
-      if (deadline > 0) {
-        if (now >= deadline) return RateLimitAcquireResult.RateLimited;
-        waitMs = Math.min(waitMs, deadline - now);
-      }
-      await sleepMs(Math.min(waitMs, BookSourceRateLimiter.WAIT_SLICE_MS));
+    } finally {
+      SourceEngineHost.remove(key, waiter);
     }
   }
 

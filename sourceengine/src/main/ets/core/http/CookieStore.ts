@@ -2,8 +2,14 @@ import { webview } from '@kit.ArkWeb';
 import { util } from '@kit.ArkTS';
 import { LogText } from '../../utils/LogText';
 import { SetCookieParser } from './SetCookieParser';
+import { SourceEngineHost, SourceCookieJar } from '../host/SourceEngineHost';
 
 export class CookieStore {
+  /** Legacy unscoped callers keep the ArkWeb jar; source execution always supplies its identity. */
+  static forSource(sourceUrl: string = ''): SourceCookieJar {
+    return SourceEngineHost.cookies(sourceUrl) || CookieStore;
+  }
+
   private static readonly TOMBSTONE_VALUE = '__removed__';
 
   static getCookie(url: string): string {

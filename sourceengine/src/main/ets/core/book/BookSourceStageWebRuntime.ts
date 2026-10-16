@@ -12,6 +12,7 @@ import { BookSourceLoginCrypto } from './BookSourceLoginCrypto';
 import { BookSourceExecutionJournal, BookSourceHostActionKind } from './BookSourceExecutionJournal';
 import { BookSourceDebugContext } from './BookSourceDebugModels';
 import { SourceScriptNotice } from './SourceScriptNotice';
+import { SourceEngineHost } from '../host/SourceEngineHost';
 
 export class StageWebRuntimeRequest {
   source: BookSource = new BookSource();
@@ -146,6 +147,7 @@ export class BookSourceStageWebRuntime {
   private queuedBytes: number = 0;
   private running: boolean = false;
   private activeTask: StageWebRuntimeTask | null = null;
+  private workers = new Map<StageWebRuntimeTask, BookSourceStageWebRuntime>();
   private activeHttpClient: HttpClient | null = null;
   private cancelledOwners: Set<string> = new Set<string>();
   private caches: Record<string, Record<string, string>> = {};
@@ -198,6 +200,7 @@ export class BookSourceStageWebRuntime {
   }
 
   async waitUntilAvailable(timeoutMs: number = 5000): Promise<boolean> {
+    if (SourceEngineHost.scriptExecutor()) return true;
     if (this.isAvailable()) return true;
     const startedAt = Date.now();
     let deadline = startedAt + Math.max(100, timeoutMs);
@@ -229,12 +232,14 @@ export class BookSourceStageWebRuntime {
   }
 
   isAvailable(): boolean {
+    if (SourceEngineHost.scriptExecutor()) return true;
     return this.findReadyController() !== null;
   }
 
   execute(request: StageWebRuntimeRequest): Promise<StageWebRuntimeResult> {
     return new Promise<StageWebRuntimeResult>((resolve, reject) => {
-      if (request.ownerId && this.cancelledOwners.has(request.ownerId)) {
+      if (SourceEngineHost.isCancelled(request.source) ||
+        (request.ownerId && this.cancelledOwners.has(request.ownerId))) {
         reject(new Error('书源脚本任务已取消'));
         return;
       }
@@ -245,7 +250,7 @@ export class BookSourceStageWebRuntime {
         reject(new Error(`书源脚本输入过大(${Math.ceil(estimatedBytes / 1024)} KiB)`));
         return;
       }
-      if (this.tasks.length >= BookSourceStageWebRuntime.MAX_QUEUED_TASKS ||
+      if (this.tasks.length + this.workers.size >= BookSourceStageWebRuntime.MAX_QUEUED_TASKS ||
         this.queuedBytes + estimatedBytes > BookSourceStageWebRuntime.MAX_QUEUED_BYTES) {
         reject(new Error('书源脚本队列繁忙，请稍后重试'));
         return;
@@ -255,6 +260,25 @@ export class BookSourceStageWebRuntime {
       task.estimatedBytes = estimatedBytes;
       task.resolve = resolve;
       task.reject = reject;
+      const executor = SourceEngineHost.scriptExecutor();
+      if (executor && executor.concurrent) {
+        // A host executor that runs every script in its own bounded context can take tasks in parallel. Each task
+        // gets a throwaway runtime sharing the cancellation set and script caches; the ArkWeb path stays serial.
+        const worker = new BookSourceStageWebRuntime();
+        worker.cancelledOwners = this.cancelledOwners;
+        worker.caches = this.caches;
+        worker.cacheTouchedAt = this.cacheTouchedAt;
+        worker.activeTask = task;
+        this.workers.set(task, worker);
+        this.queuedBytes += estimatedBytes;
+        worker.executeTask(request).then(resolve, reject).finally((): void => {
+          this.workers.delete(task);
+          this.queuedBytes = Math.max(0, this.queuedBytes - estimatedBytes);
+          worker.activeTask = null;
+          worker.activeHttpClient = null;
+        });
+        return;
+      }
       this.tasks.push(task);
       this.queuedBytes += estimatedBytes;
       this.startNext();
@@ -264,6 +288,7 @@ export class BookSourceStageWebRuntime {
   cancelOwner(ownerId: string): void {
     if (!ownerId) return;
     this.cancelledOwners.add(ownerId);
+    for (const worker of this.workers.values()) worker.cancelOwner(ownerId);
     const remaining: StageWebRuntimeTask[] = [];
     for (const task of this.tasks) {
       if (task.request.ownerId === ownerId) {
@@ -402,7 +427,7 @@ export class BookSourceStageWebRuntime {
 
   private startNext(): void {
     if (this.running) return;
-    if (!this.findReadyController()) {
+    if (!this.isAvailable()) {
       // Queued tasks with no usable controller would otherwise wait forever: nothing calls
       // setReady() once lifecycle callbacks have been missed. Nudge the recovery path.
       if (this.tasks.length > 0) this.scheduleIdleRecovery();
@@ -437,7 +462,8 @@ export class BookSourceStageWebRuntime {
     // Coordinators may hold a source snapshot while the login/editor page saves a new token.
     // Refresh missing runtime fields before executing so a stale empty snapshot cannot issue an
     // unauthenticated request or overwrite the newly saved state when the stage completes.
-    const persistedAtStart = await BookSourceRuntimeStore.getBookSource(request.source.bookSourceUrl);
+    const persistence = BookSourceRuntimeStore.forSource(request.source);
+    const persistedAtStart = persistence ? await persistence.getBookSource(request.source.bookSourceUrl) : null;
     if (persistedAtStart) {
       // Persisted state is authoritative: the login panel (tone/type/explore switches) and the
       // editor write runtime state through the database, while coordinators may still hold a
@@ -468,9 +494,12 @@ export class BookSourceStageWebRuntime {
     const issuedSpecs: Record<string, number> = {};
     for (let stepIndex = 0; stepIndex < 20; stepIndex++) {
       this.ensureNotCancelled(request);
+      const timingId = SourceEngineHost.id(request.source);
+      const buildStartedAt = Date.now();
       const script = this.buildScript(request, responses, stringResults, cookies, cacheState,
         fixedNow, randomSeed, journal.responseHeaders);
-      const raw = await this.runJavaScript(script);
+      if (timingId > 0) SourceEngineHost.end(timingId, 'stage-script-build', buildStartedAt, `replay=${stepIndex}`);
+      const raw = await this.runJavaScript(script, request.source.bookSourceUrl, timingId);
       this.ensureNotCancelled(request);
       const step = this.parseStep(raw);
       if (request.debugContext && step.logs) {
@@ -516,9 +545,10 @@ export class BookSourceStageWebRuntime {
       } catch (_) {
         nextCacheState = {};
       }
-      this.applyCookieOperations(step.cookieOperations, journal);
+      this.applyCookieOperations(step.cookieOperations, journal, request.source.bookSourceUrl);
       if (step.pendingCookie) {
-        cookies[step.pendingCookie] = CookieStore.getCookie(step.pendingCookie);
+        cookies[step.pendingCookie] =
+          CookieStore.forSource(request.source.bookSourceUrl).getCookie(step.pendingCookie);
         continue;
       }
       if (step.pendingCrypto) {
@@ -593,7 +623,8 @@ export class BookSourceStageWebRuntime {
         }
         journal.recordResponse(step.pendingAjax, responseBody);
         journal.recordResponseHeaders(step.pendingAjax, response.headers);
-        this.captureResponseCookies(cookies, step.pendingAjax, response.url || '', response.headers);
+        this.captureResponseCookies(cookies, step.pendingAjax, response.url || '', response.headers,
+          request.source.bookSourceUrl);
         continue;
       }
       if (step.pendingStringRules && step.pendingStringRules !== '[]') {
@@ -616,8 +647,8 @@ export class BookSourceStageWebRuntime {
       // placeholder and the complete script is evaluated again after the result arrives. Commit
       // script cache/runtime state only after a pass finishes, otherwise a placeholder can poison
       // the next evaluation (for example, caching an empty paragraph-comment summary).
-      cacheState = this.storeCache(sourceKey, nextCacheState);
-      const persistedBeforeSave = await BookSourceRuntimeStore.getBookSource(request.source.bookSourceUrl);
+      cacheState = this.storeCache(sourceKey, nextCacheState, cacheState);
+      const persistedBeforeSave = persistence ? await persistence.getBookSource(request.source.bookSourceUrl) : null;
       if (persistedBeforeSave) {
         // Empty state from a non-login task is never an explicit logout. Preserve a token/header
         // that another page saved while this asynchronous task was running.
@@ -627,8 +658,10 @@ export class BookSourceStageWebRuntime {
           persistedBeforeSave.loginInfo || request.source.loginInfo || '',
           step.javaState, step.sourceState);
       }
-      await BookSourceRuntimeStore.updateLoginRuntime(request.source.bookSourceUrl,
-        request.source.variable || '', request.source.loginHeader || '', request.source.loginInfo || '');
+      if (persistence) {
+        await persistence.updateBookSourceLoginRuntime(request.source.bookSourceUrl,
+          request.source.variable || '', request.source.loginHeader || '', request.source.loginInfo || '');
+      }
       return step;
     }
     throw new Error('书源脚本执行步骤过多');
@@ -766,7 +799,7 @@ export class BookSourceStageWebRuntime {
   }
 
   private captureResponseCookies(target: Record<string, string>, requestSpec: string,
-    responseUrl: string, responseHeaders: Record<string, string>): void {
+    responseUrl: string, responseHeaders: Record<string, string>, sourceUrl: string): void {
     const urls: string[] = [];
     const requestUrl = this.requestUrlFromSpec(requestSpec);
     for (const value of [requestUrl, responseUrl]) {
@@ -783,7 +816,7 @@ export class BookSourceStageWebRuntime {
         break;
       }
     }
-    for (const url of urls) target[url] = setCookie || CookieStore.getCookie(url);
+    for (const url of urls) target[url] = setCookie || CookieStore.forSource(sourceUrl).getCookie(url);
   }
 
   private requestUrlFromSpec(spec: string): string {
@@ -798,7 +831,8 @@ export class BookSourceStageWebRuntime {
     }
   }
 
-  private async runJavaScript(script: string): Promise<string> {
+  private async runJavaScript(script: string, sourceUrl: string, timingId: number): Promise<string> {
+    if (SourceEngineHost.scriptExecutor()) return SourceEngineHost.evaluate(script, sourceUrl, timingId);
     let controller = this.findReadyController();
     // A routed detail page can mount its hidden Web host while the Index host is still alive.
     // During onControllerAttached -> onPageBegin -> onPageEnd, `this.controller` temporarily
@@ -907,7 +941,22 @@ export class BookSourceStageWebRuntime {
     return (value || '').length * 2;
   }
 
-  private storeCache(sourceKey: string, rawState: Record<string, string>): Record<string, string> {
+  /**
+   * Commits only what this pass changed relative to `before` onto the latest stored cache. Serially this equals
+   * storing `rawState`; with parallel host workers it keeps another task's writes to unrelated keys.
+   */
+  private storeCache(sourceKey: string, rawState: Record<string, string>,
+    before: Record<string, string>): Record<string, string> {
+    const merged: Record<string, string> = { ...(this.caches[sourceKey] || {}) };
+    for (const key of new Set<string>([...Object.keys(before), ...Object.keys(rawState)])) {
+      if (before[key] === rawState[key]) continue;
+      if (Object.prototype.hasOwnProperty.call(rawState, key)) {
+        merged[key] = rawState[key];
+      } else {
+        delete merged[key];
+      }
+    }
+    rawState = merged;
     const state: Record<string, string> = {};
     const keys = Object.keys(rawState || {});
     const selectedKeys: string[] = [];
@@ -1349,7 +1398,8 @@ export class BookSourceStageWebRuntime {
         (_match: string, prefix: string, parameter: string): string => `${prefix}(${parameter}) =>`);
   }
 
-  private applyCookieOperations(raw: string, journal: BookSourceExecutionJournal): void {
+  private applyCookieOperations(raw: string, journal: BookSourceExecutionJournal, sourceUrl: string): void {
+    const jar = CookieStore.forSource(sourceUrl);
     let records: Object[] = [];
     try {
       const value = JSON.parse(raw || '[]') as Object;
@@ -1365,11 +1415,11 @@ export class BookSourceStageWebRuntime {
       operation.name = String(record['name'] || '');
       const key = `${operation.operation}\n${operation.url}\n${operation.name}\n${operation.value}`;
       if (!operation.url || !journal.markOperationApplied(BookSourceHostActionKind.COOKIE_MUTATION, key)) continue;
-      if (operation.operation === 'set') CookieStore.setCookies(operation.url, operation.value);
-      if (operation.operation === 'replace') CookieStore.replaceCookies(operation.url, operation.value);
-      if (operation.operation === 'remove') CookieStore.removeCookie(operation.url, operation.name || undefined);
+      if (operation.operation === 'set') jar.setCookies(operation.url, operation.value);
+      if (operation.operation === 'replace') jar.replaceCookies(operation.url, operation.value);
+      if (operation.operation === 'remove') jar.removeCookie(operation.url, operation.name || undefined);
     }
-    if (records.length > 0) CookieStore.saveAsync();
+    if (records.length > 0) jar.saveAsync();
   }
 
   private parseRecord(raw: string): Record<string, string> {
@@ -1430,6 +1480,11 @@ export class BookSourceStageWebRuntime {
         runtime = parsedRuntime as Record<string, Object>;
       }
     } catch (_) {}
+    // Nothing to record and nothing recorded before: keep loginInfo untouched instead of adding an empty wrapper.
+    if (!existingRuntime && Object.keys(this.parseObjectState(javaStateRaw)).length === 0 &&
+      Object.keys(this.parseObjectState(sourceStateRaw)).length === 0) {
+      return raw;
+    }
     runtime['java'] = this.parseObjectState(javaStateRaw);
     runtime['source'] = this.parseObjectState(sourceStateRaw);
     // Script cache is a bounded in-memory acceleration structure. Persisting it inside loginInfo

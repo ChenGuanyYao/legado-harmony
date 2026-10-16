@@ -4,6 +4,7 @@ import { CookieStore } from './CookieStore';
 import { TlsTrustStore } from './TlsTrustStore';
 import { WebBookFetchRuntime } from '../book/WebBookFetchRuntime';
 import { BookSourceDebugContext, BookSourceDebugNetworkTrace } from '../book/BookSourceDebugModels';
+import { SourceEngineHost } from '../host/SourceEngineHost';
 
 export interface HttpRequest {
   url: string;
@@ -26,6 +27,12 @@ export interface HttpRequest {
   // Script-bridge requests run inside a serial runtime: a hung request stalls every queued
   // task, so the doubled-timeout idempotent retry is skipped for them (caller re-runs instead).
   noTimeoutRetry?: boolean;
+  /** 返回 true 时不再发出请求（发出前、等 WebView 就绪后各检查一次），直接得到「书源请求已取消」。 */
+  cancelCheck?: () => boolean;
+  /** 宿主诊断端口分配的计时编号；0 或缺省表示不记录分段耗时。 */
+  timingId?: number;
+  /** 请求所属书源的地址，用来向宿主取该书源的 Cookie 存储；缺省用全局 CookieStore。 */
+  cookieSource?: string;
 }
 
 export interface HttpResponse {
@@ -60,6 +67,30 @@ export class HttpClient {
     this.timeout = timeout;
   }
 
+  static readonly CANCELLED_ERROR: string = '书源请求已取消';
+
+  private cancelledResponse(req: HttpRequest): HttpResponse {
+    return { url: req.url, statusCode: 0, headers: {}, body: '', success: false, error: HttpClient.CANCELLED_ERROR };
+  }
+
+  /** 宿主装了诊断端口（请求带 timingId）时才记录分段耗时；明细由回调生成，没装时不拼字符串。 */
+  private endTiming(req: HttpRequest, stage: string, startedAt: number, details?: () => string): void {
+    if (!req.timingId) return;
+    SourceEngineHost.end(req.timingId, stage, startedAt, details ? details() : '');
+  }
+
+  private endTransportTiming(req: HttpRequest, startedAt: number, forceHttp1: boolean,
+    resp: http.HttpResponse): void {
+    this.endTiming(req, 'http-transport', startedAt, (): string => {
+      const timing = resp.performanceTiming;
+      const sdk = timing ? ` dnsEndMs=${timing.dnsTiming} tcpEndMs=${timing.tcpTiming}` +
+        ` tlsEndMs=${timing.tlsTiming} sendStartMs=${timing.firstSendTiming}` +
+        ` firstByteMs=${timing.firstReceiveTiming} finishMs=${timing.totalFinishTiming}` +
+        ` redirectEndMs=${timing.redirectTiming} sdkTotalMs=${timing.totalTiming}` : ' sdkTiming=unavailable';
+      return `http1=${forceHttp1} status=${resp.responseCode}${sdk}`;
+    });
+  }
+
   async execute(req: HttpRequest): Promise<HttpResponse> {
     const startedAt = Date.now();
     let response: HttpResponse;
@@ -69,6 +100,8 @@ export class HttpClient {
       response = { url: req.url || '', statusCode: 0, headers: {}, body: '', success: false,
         error: error instanceof Error ? error.message : String(error || 'network error') };
     }
+    this.endTiming(req, 'http-total', startedAt,
+      (): string => `status=${response.statusCode} success=${response.success} web=${!!req.useWebView}`);
     if (req.debugContext) {
       const trace = new BookSourceDebugNetworkTrace();
       trace.method = req.method || 'GET';
@@ -85,28 +118,33 @@ export class HttpClient {
   }
 
   private async executeInternal(req: HttpRequest): Promise<HttpResponse> {
+    if (req.cancelCheck && req.cancelCheck()) return this.cancelledResponse(req);
     if (!req.url || req.url.trim() === '') {
       return { url: '', statusCode: 0, headers: {}, body: '', success: false, error: 'empty url' };
     }
     if (req.useWebView) {
-      const runtime = WebBookFetchRuntime.get();
-      // Only wait for the hidden ArkWeb host to attach. A busy host is healthy: fetch() queues
-      // subsequent requests and runs them in order instead of misreporting it as "not ready".
-      const attached = await runtime.waitUntilAttached(8000);
-      if (!attached) {
-        return { url: req.url, statusCode: 0, headers: {}, body: '', success: false,
-          error: 'WebView 抓取环境未挂载，请重新进入当前页面' };
-      }
-      return await runtime.fetch({
-        url: req.url,
-        method: req.method,
-        headers: { ...this.defaultHeaders, ...req.headers },
-        body: req.body,
-        webJs: req.webJs,
-        webJsAcceptPattern: req.webJsAcceptPattern,
-        webJsMaxAttempts: req.webJsMaxAttempts,
-        timeoutMs: Math.max(req.connectTimeout || 0, req.readTimeout || 0, this.timeout),
-        maxResponseBytes: req.maxResponseBytes
+      return await SourceEngineHost.withWeb(req.cookieSource || '', async () => {
+        const runtime = WebBookFetchRuntime.get();
+        // Only wait for the hidden ArkWeb host to attach. A busy host is healthy: fetch() queues
+        // subsequent requests and runs them in order instead of misreporting it as "not ready".
+        const attached = await runtime.waitUntilAttached(8000);
+        if (!attached) {
+          return { url: req.url, statusCode: 0, headers: {}, body: '', success: false,
+            error: 'WebView 抓取环境未挂载，请重新进入当前页面' };
+        }
+        if (req.cancelCheck && req.cancelCheck()) return this.cancelledResponse(req);
+        return await runtime.fetch({
+          url: req.url,
+          cookieSource: req.cookieSource,
+          method: req.method,
+          headers: { ...this.defaultHeaders, ...req.headers },
+          body: req.body,
+          webJs: req.webJs,
+          webJsAcceptPattern: req.webJsAcceptPattern,
+          webJsMaxAttempts: req.webJsMaxAttempts,
+          timeoutMs: Math.max(req.connectTimeout || 0, req.readTimeout || 0, this.timeout),
+          maxResponseBytes: req.maxResponseBytes
+        });
       });
     }
     const response = await this.executeWithProtocol(req, false);
@@ -127,6 +165,7 @@ export class HttpClient {
   }
 
   private async executeWithProtocol(req: HttpRequest, forceHttp1: boolean): Promise<HttpResponse> {
+    if (req.cancelCheck && req.cancelCheck()) return this.cancelledResponse(req);
     const client = http.createHttp();
     this.activeClients.add(client);
     let responseTooLarge = false;
@@ -134,7 +173,7 @@ export class HttpClient {
       const method = this.resolveMethod(req.method);
       const headers: Record<string, string> = { ...this.defaultHeaders, ...req.headers };
       const requestData = this.requestData(req);
-      const cookie = req.useCookieJar === false ? '' : CookieStore.getCookie(req.url);
+      const cookie = req.useCookieJar === false ? '' : CookieStore.forSource(req.cookieSource).getCookie(req.url);
       if (cookie && !headers['Cookie']) {
         headers['Cookie'] = cookie;
       }
@@ -142,8 +181,15 @@ export class HttpClient {
       if (maxResponseBytes > 0) {
         const chunks: ArrayBuffer[] = [];
         let receivedBytes = 0;
+        let streamSentAt = 0;
+        let headersTimed = false;
+        let dataTimed = false;
         let streamedHeaders: Record<string, string> = {};
         const onHeadersReceive = (value: Object): void => {
+          if (!headersTimed && streamSentAt > 0) {
+            headersTimed = true;
+            this.endTiming(req, 'http-stream-first-headers', streamSentAt);
+          }
           streamedHeaders = (value || {}) as Record<string, string>;
           const contentLength = Number(this.findHeader(streamedHeaders, 'content-length') || '0');
           if (contentLength > maxResponseBytes) {
@@ -153,6 +199,10 @@ export class HttpClient {
         };
         const onDataReceive = (chunk: ArrayBuffer): void => {
           if (responseTooLarge) return;
+          if (!dataTimed && streamSentAt > 0) {
+            dataTimed = true;
+            this.endTiming(req, 'http-stream-first-data', streamSentAt);
+          }
           receivedBytes += chunk.byteLength;
           if (receivedBytes > maxResponseBytes) {
             responseTooLarge = true;
@@ -176,7 +226,12 @@ export class HttpClient {
           };
           this.applyTlsTrust(options, req.url);
           if (forceHttp1) options.usingProtocol = http.HttpProtocol.HTTP1_1;
-          responseCode = await client.requestInStream(req.url, options);
+          streamSentAt = Date.now();
+          try {
+            responseCode = await client.requestInStream(req.url, options);
+          } finally {
+            this.endTiming(req, 'http-stream-transport', streamSentAt, (): string => `http1=${forceHttp1}`);
+          }
         } catch (error) {
           streamError = this.decorateTlsError(req.url, this.describeError(error as Object));
         } finally {
@@ -215,8 +270,9 @@ export class HttpClient {
       };
       this.applyTlsTrust(options, req.url);
       if (forceHttp1) options.usingProtocol = http.HttpProtocol.HTTP1_1;
+      const transportStartedAt = Date.now();
       const resp = await client.request(req.url, options);
-
+      this.endTransportTiming(req, transportStartedAt, forceHttp1, resp);
       const responseHeaders = (resp.header || {}) as Record<string, string>;
       return this.buildResponse(req, resp.responseCode, responseHeaders, resp.result);
     } catch (e) {
@@ -253,12 +309,16 @@ export class HttpClient {
 
   private async executeBinaryWithProtocol(req: HttpRequest, maxResponseBytes: number,
     forceHttp1: boolean): Promise<HttpBinaryResponse> {
+    if (req.cancelCheck && req.cancelCheck()) {
+      return { url: req.url, statusCode: 0, headers: {}, data: new Uint8Array(), success: false,
+        error: HttpClient.CANCELLED_ERROR };
+    }
     const client = http.createHttp();
     this.activeClients.add(client);
     try {
       const headers: Record<string, string> = { ...this.defaultHeaders, ...req.headers };
       const requestData = this.requestData(req);
-      const cookie = req.useCookieJar === false ? '' : CookieStore.getCookie(req.url);
+      const cookie = req.useCookieJar === false ? '' : CookieStore.forSource(req.cookieSource).getCookie(req.url);
       if (cookie && !headers['Cookie']) headers['Cookie'] = cookie;
       const options: http.HttpRequestOptions = {
         method: this.resolveMethod(req.method),
@@ -270,12 +330,14 @@ export class HttpClient {
       };
       this.applyTlsTrust(options, req.url);
       if (forceHttp1) options.usingProtocol = http.HttpProtocol.HTTP1_1;
+      const transportStartedAt = Date.now();
       const resp = await client.request(req.url, options);
+      this.endTransportTiming(req, transportStartedAt, forceHttp1, resp);
       const responseHeaders = (resp.header || {}) as Record<string, string>;
       const setCookie = this.findHeader(responseHeaders, 'set-cookie');
-      if (setCookie) {
-        CookieStore.setCookies(req.url, setCookie);
-        CookieStore.saveAsync();
+      if (setCookie && req.useCookieJar !== false) {
+        CookieStore.forSource(req.cookieSource).setCookies(req.url, setCookie);
+        CookieStore.forSource(req.cookieSource).saveAsync();
       }
       const data = resp.result instanceof ArrayBuffer ?
         new Uint8Array(resp.result as ArrayBuffer) :
@@ -348,14 +410,16 @@ export class HttpClient {
 
   private buildResponse(req: HttpRequest, responseCode: number, responseHeaders: Record<string, string>,
     result: string | Object): HttpResponse {
+    const decodeStartedAt = Date.now();
     const setCookie = this.findHeader(responseHeaders, 'set-cookie');
-    if (setCookie) {
-      CookieStore.setCookies(req.url, setCookie);
-      CookieStore.saveAsync();
+    if (setCookie && req.useCookieJar !== false) {
+      CookieStore.forSource(req.cookieSource).setCookies(req.url, setCookie);
+      CookieStore.forSource(req.cookieSource).saveAsync();
     }
     const charset = req.charset || this.responseCharset(responseHeaders);
     const body = this.decodeBody(result, charset);
     const finalBody = req.charset ? body : this.decodeBodyWithMetaCharset(result, body, charset);
+    this.endTiming(req, 'http-cookie-decode', decodeStartedAt);
     return {
       url: req.url,
       statusCode: responseCode,

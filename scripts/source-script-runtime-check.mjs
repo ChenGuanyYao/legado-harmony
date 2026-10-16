@@ -29,7 +29,8 @@ async function load(relative, rewrite = (text) => text) {
 }
 
 try {
-  const { BookSourceRuntimeRouter } = await load('core/book/BookSourceRuntimeRouter.ts');
+  const { BookSourceRuntimeRouter } = await load('core/book/BookSourceRuntimeRouter.ts',
+    text => text.replace(/^import \{ SourceEngineHost \}.*$/m, 'const SourceEngineHost = { scriptExecutor: () => undefined };'));
   // 只测解析：BookSource 是类型，阶段运行时与路由常量在这里用不到。
   const { BookSourceHeaderRuntime } = await load('core/book/BookSourceHeaderRuntime.ts',
     (text) => text.replace(/^import \{ BookSource \}.*$/m, 'type BookSource = { header: string, bookSourceUrl: string, variable: string };')

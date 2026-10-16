@@ -53,6 +53,7 @@ const MAX_VALIDATION_CONFIG_CHARS = 512 * 1024;
 const ENABLE_SEARCH_DEBUG_LOG = false;
 
 export interface SearchOptions {
+  page?: number;
   exactMatch?: boolean;
   exactMatchAuthor?: boolean;
   sourceGroups?: string[];
@@ -97,6 +98,7 @@ export class SearchCoordinator {
   // Distinguishes one search run from the next: `cancelled` is cleared when a new search starts, which must not
   // revive requests of the previous run that are still queued behind a source's rate limit.
   private searchSerial: number = 0;
+  private currentPage: number = 1;
   private stageRuntimeOwnerId: string = '';
   private lastFailureReason: string = '';
 
@@ -120,6 +122,7 @@ export class SearchCoordinator {
   async search(keyword: string, callback: SearchCallback, options: SearchOptions = {}): Promise<SearchBook[]> {
     this.cancelled = false;
     this.searchSerial++;
+    this.currentPage = Math.max(1, Math.floor(options.page || 1));
     this.lastFailureReason = '';
     VerificationSupport.clearVerification();
     const safeCallback = (progress: SearchProgress): void => {
@@ -335,7 +338,7 @@ export class SearchCoordinator {
       js.setVar('searchKey', encodeURIComponent(keyword));
       js.setVar('keyword', encodeURIComponent(keyword));
       js.setVar('searchKeyRaw', keyword);
-      js.setVar('page', '1');
+      js.setVar('page', String(this.currentPage));
 
       const searchSerial = this.searchSerial;
       const au = new AnalyzeUrl(source, this.http)
@@ -347,7 +350,7 @@ export class SearchCoordinator {
         return this.sourceResult([], BookSource.VALIDATION_FAILED, '搜索地址无法解析');
       }
       // Search requests the first page, so `<first,following>` resolves to its first candidate.
-      urlTemplate = PageCandidateUrl.apply(urlTemplate, 1);
+      urlTemplate = PageCandidateUrl.apply(urlTemplate, this.currentPage);
       if (ENABLE_SEARCH_DEBUG_LOG) {
         console.log('[SC] search source:', source.bookSourceName);
       }
@@ -386,7 +389,7 @@ export class SearchCoordinator {
       rule.setJsVar('key', encodeURIComponent(keyword));
       rule.setJsVar('searchKey', encodeURIComponent(keyword));
       rule.setJsVar('keyword', encodeURIComponent(keyword));
-      rule.setJsVar('page', '1');
+      rule.setJsVar('page', String(this.currentPage));
       const searchRule = source.searchRule;
       const stageItems = await BookSourceStageRuleSupport.getElements(source, resp.body, baseUrl,
         searchRule.bookList || '', SourceRuntimeStage.SEARCH, this.stageRuntimeOwnerId,
@@ -607,7 +610,7 @@ export class SearchCoordinator {
     let found: SearchBook[] = [];
     try {
       found = await NativeSourceService.search(source, this.http, keyword, stopped, responseLimit,
-        options.debugContext || null);
+        options.debugContext || null, this.currentPage);
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e);
       if (reason.indexOf(NativeSourceService.VERIFICATION_REASON) >= 0) {
@@ -1150,7 +1153,8 @@ export class SearchCoordinator {
     if (stageUrl) return stageUrl;
     const scriptedFormUrl = await this.tryBuildScriptedFormSearchUrl(source, keyword, maxResponseBytes);
     if (scriptedFormUrl) return scriptedFormUrl;
-    const buildRequestUrl = BookSourceDataUrlSupport.buildRequestUrl(source, searchUrl, '1', keyword);
+    const buildRequestUrl = BookSourceDataUrlSupport.buildRequestUrl(source, searchUrl, String(this.currentPage),
+      keyword);
     if (buildRequestUrl) return buildRequestUrl;
     // Complete or complex JavaScript URLs are never retried in the synchronous compatibility
     // interpreter. A failed ArkWeb execution should fail this source, not freeze the UI thread.
@@ -1208,8 +1212,8 @@ export class SearchCoordinator {
       searchKey: isFullJsUrl ? keyword : encodeURIComponent(keyword),
       keyword: isFullJsUrl ? keyword : encodeURIComponent(keyword),
       searchKeyRaw: keyword,
-      page: '1',
-      pageIndex: '1'
+      page: String(this.currentPage),
+      pageIndex: String(this.currentPage)
     };
     if (isFullJsUrl) {
       // A full-JS URL must run as code. Treating it as a template returns the literal "@js:..."

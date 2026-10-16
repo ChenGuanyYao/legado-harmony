@@ -67,6 +67,7 @@ export class ComicImagePipeline {
     if (existing) return existing;
 
     const response = await http.executeBinary({
+      cookieSource: source.bookSourceUrl,
       url: spec.url,
       method: 'GET',
       headers: {

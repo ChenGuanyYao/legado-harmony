@@ -31,6 +31,7 @@ export class AnalyzeRule {
     this.baseUrl = baseUrl;
     this.ctx = ctx || new RuleContext();
     this.js = new JsRuntime();
+    this.bindCookieSource();
     this.js.setVar('baseUrl', baseUrl);
     this.scriptEngine = new ScriptEngine(this.js);
   }
@@ -41,7 +42,17 @@ export class AnalyzeRule {
     this.js.setVar('baseUrl', u);
     return this;
   }
-  setContext(ctx: RuleContext): AnalyzeRule { this.ctx = ctx; return this; }
+  setContext(ctx: RuleContext): AnalyzeRule {
+    this.ctx = ctx;
+    this.bindCookieSource();
+    return this;
+  }
+
+  /** 让 JsRuntime 里的 cookie.* 调用知道自己属于哪个书源；上下文里没有书源地址时不覆盖已有值。 */
+  private bindCookieSource(): void {
+    const sourceUrl = this.ctx.get('source.bookSourceUrl') || this.ctx.get('bookSourceUrl');
+    if (sourceUrl) this.js.setVar('source.bookSourceUrl', sourceUrl);
+  }
   getContext(): RuleContext { return this.ctx; }
   setJsVar(k: string, v: string): AnalyzeRule { this.js.setVar(k, v); return this; }
   setNoticeScope(stage: string, sourceName: string): AnalyzeRule {

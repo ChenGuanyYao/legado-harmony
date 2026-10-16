@@ -41,6 +41,28 @@ import { QuickJsDiagnostics } from '@legado/sourceengine/Diagnostics';
 | 网页验证 | 遇到验证页时 `VerificationSupport` 写入 AppStorage：`pendingVerificationUrl`、`pendingVerificationTitle`、`pendingVerificationTime`、`pendingVerificationSourceUrl`、`pendingVerificationLoginUrl`。宿主的验证页读取这些值。 |
 | QuickJS 诊断刷新 | 存储变化时更新 AppStorage 的 `quickJsMigrationRevision`、`quickJsValidationRevision`、`quickJsRegressionArtifactRevision`，界面可以监听这些值来刷新。 |
 
+## 可选宿主端口
+
+另一个应用复用本包时，可以通过 `SourceEngineHost.install(adapter)` 替换下面这些能力。这个调用在启动时、执行任何书源之前做一次，任务执行期间不要更换 adapter。每个端口都可以不提供；开源轻页本身不安装任何端口，行为与没有这一层时相同。
+
+端口都是可信的宿主代码，绝不能暴露给书源脚本。
+
+| 端口 | 作用 | 不提供时 |
+| --- | --- | --- |
+| `cookies(sourceUrl)` | 按书源返回 Cookie 存储（`SourceCookieJar`），实现按书源或按账号隔离 | 全局 `CookieStore` |
+| `persistence(source)` | 按书源读写运行时登录状态 | `BookSourceRuntimeStore.install` 安装的实现 |
+| `scripts` | 用宿主的执行器运行阶段脚本。只有每次都在独立、有预算限制的上下文里执行时才能声明 `concurrent: true`；`forceFullScripts` 让所有脚本都走完整脚本层；`allowSynchronousQuickJs: false` 禁止同步执行 QuickJS | 隐藏 ArkWeb 串行执行 |
+| `requests` | 决定同一书源下等待者的先后和取消状态。请求频率窗口仍由本包维护，优先级只改变排队顺序，不会额外放出额度 | 按到达顺序等待窗口 |
+| `web` | 网页会话租约，WebView 抓取与听书音频嗅探在租约内执行 | 直接执行 |
+| `state` | 按书源记录最近一次失败原因 | 写入 AppStorage 的 `bookSourceStageLastError` |
+| `diagnostics` | 接收分段耗时（HTTP 传输与首字节、限流等待、脚本拼装等） | 不记录，也不拼接耗时明细 |
+
+`NativeSourceImport.importObject` / `toBookSource` 只做定义转换，不清缓存、不访问网络或数据库；应用内导入仍用 `NativeSourceService.importObject`，它会清掉该书源的缓存。原生书源的声明式缓存按“定义 + 请求头 + 登录头 + 登录信息”分开，所以只用 `NativeSourceImport` 换了定义也不会读到旧值；登录站点的 Cookie 不参与分区，网页登录与退出登录时各自清缓存。
+
+## 宿主兼容性回归
+
+把 `DEVECO_HOME` 设为 DevEco Studio 的安装目录后执行 `node scripts/source-engine-host-check.cjs`。它覆盖默认串行与注入并发执行、Cookie、持久化、取消和原生书源导入；平台 API 用测试替身，不能代替真机验证。
+
 ## 回归检查
 
 `scripts/` 里的 Node 回归脚本通过 `scripts/lib/ets-module-staging.mjs` 加载本模块的源码。这个工具把 `entry` 和 `sourceengine` 两个源码根合并成同一棵目录树，并把 `@legado/sourceengine` 的导入按名字改写成指向定义文件的相对导入。改动内核后至少运行：

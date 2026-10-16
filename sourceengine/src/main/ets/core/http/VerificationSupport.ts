@@ -283,9 +283,10 @@ export class VerificationSupport {
 
   static sourceCookieHeader(source: BookSource, requestUrl: string): string {
     if (!source || !requestUrl) return '';
-    const existing = CookieStore.getCookie(requestUrl);
+    const jar = CookieStore.forSource(source.bookSourceUrl);
+    const existing = jar.getCookie(requestUrl);
     const loginUrl = this.cleanUrl(source.loginUrl || '');
-    const loginCookie = CookieStore.getCookie(loginUrl) || CookieStore.getCookie(this.originOf(loginUrl));
+    const loginCookie = jar.getCookie(loginUrl) || jar.getCookie(this.originOf(loginUrl));
     const requestHost = this.hostOf(requestUrl);
     const loginHost = this.hostOf(loginUrl);
     if (!loginCookie || !requestHost || !loginHost || !this.hostsShareSite(requestHost, loginHost)) return existing;
@@ -299,9 +300,10 @@ export class VerificationSupport {
       this.originOf(currentUrl),
       this.originOf(loginUrl)
     ].filter((item: string) => this.isHttpUrl(item));
+    const jar = CookieStore.forSource(sourceUrl);
     let fromUrl = '';
     for (const item of fromUrls) {
-      if (CookieStore.getCookie(item)) {
+      if (jar.getCookie(item)) {
         fromUrl = item;
         break;
       }
@@ -317,10 +319,10 @@ export class VerificationSupport {
       this.isHttpUrl(item) && array.indexOf(item) === index &&
       this.hostsShareSite(this.hostOf(fromUrl), this.hostOf(item)));
     for (const target of targets) {
-      CookieStore.copyCookies(fromUrl, target);
-      CookieStore.copyCookies(fromUrl, `${target}/`);
+      jar.copyCookies(fromUrl, target);
+      jar.copyCookies(fromUrl, `${target}/`);
     }
-    CookieStore.saveAsync();
+    jar.saveAsync();
   }
 
   private static mergeCookieHeaders(primary: string, secondary: string): string {

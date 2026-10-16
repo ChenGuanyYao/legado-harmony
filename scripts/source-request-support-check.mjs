@@ -26,6 +26,32 @@ async function load(relative, rewrite = (text) => text) {
   return await import(pathToFileURL(target).href);
 }
 
+// 限流器经由 SourceEngineHost 排队。这里的替身与它没装宿主时的行为一致（只是等待、永远排第一），
+// 测试可以临时装一个按优先级排队的调度器。
+const hostStub = {
+  scheduler: null,
+  owners: new Map(),
+  isCancelled: () => false,
+  enqueue(key, source, cancelCheck) {
+    if (!hostStub.scheduler) {
+      return { isCancelled: () => !!(cancelCheck && cancelCheck()), wait: (ms) => new Promise((r) => setTimeout(r, ms)) };
+    }
+    const waiter = hostStub.scheduler.enqueue(key, source, cancelCheck);
+    hostStub.owners.set(waiter, hostStub.scheduler);
+    return waiter;
+  },
+  first(key, waiter) {
+    const owner = hostStub.owners.get(waiter);
+    return owner ? owner.first(key, waiter) : true;
+  },
+  remove(key, waiter) {
+    const owner = hostStub.owners.get(waiter);
+    hostStub.owners.delete(waiter);
+    if (owner) owner.remove(key, waiter);
+  }
+};
+globalThis.__sourceEngineHostStub = hostStub;
+
 try {
   const { SetCookieParser } = await load('core/http/SetCookieParser.ts');
   // HttpResponse 只是类型；BookSource 只是类型；sleepMs 与解析无关。
@@ -33,7 +59,7 @@ try {
     (text) => text.replace(/^import \{ HttpResponse \}.*$/m, 'type HttpResponse = { url?: string };'));
   const { BookSourceRateLimiter } = await load('core/http/BookSourceRateLimiter.ts',
     (text) => text.replace(/^import \{ BookSource \}.*$/m, 'type BookSource = { concurrentRate: string, bookSourceUrl: string, bookSourceName: string };')
-      .replace(/^import \{ sleepMs \}.*$/m, 'const sleepMs = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));')
+      .replace(/^import \{ SourceEngineHost \}.*$/m, 'const SourceEngineHost: any = (globalThis as any).__sourceEngineHostStub;')
       // Node 的类型剥离不支持 enum：换成等值的常量对象。
       .replace(/export enum RateLimitAcquireResult \{[\s\S]*?\n\}/,
         'export const RateLimitAcquireResult = { Acquired: 0, Cancelled: 1, RateLimited: 2 };')
@@ -101,6 +127,42 @@ try {
   assertions++;
   if (Date.now() - startedAt < 100) throw new Error('间隔形式没有让第二个请求等待');
   equal(await BookSourceRateLimiter.acquire(source, () => true), 1, '已取消的等待不占用名额');
+  const unlimited = { concurrentRate: '', bookSourceUrl: 'https://free.example', bookSourceName: '' };
+  equal(await BookSourceRateLimiter.acquire(unlimited), 0, '不限流的书源直接放行');
+  equal(await BookSourceRateLimiter.acquire(unlimited, () => true), 1, '不限流的书源已取消时也不再发请求');
+
+  // 等待上限：窗口还没过就到了上限，返回被限流而不是一直等。
+  const capped = { concurrentRate: '1/60000', bookSourceUrl: 'https://capped.example', bookSourceName: '' };
+  equal(await BookSourceRateLimiter.acquire(capped), 0, '窗口内第一个请求放行');
+  const cappedAt = Date.now();
+  equal(await BookSourceRateLimiter.acquire(capped, undefined, 80), 2, '超过等待上限返回被限流');
+  assertions++;
+  if (Date.now() - cappedAt > 1000) throw new Error('等待上限没有生效');
+
+  // 宿主调度器：额度空出来时只放行优先级最高的等待者，窗口仍由限流器控制。
+  const queue = [];
+  hostStub.scheduler = {
+    enqueue: (key, src, cancelCheck) => {
+      const waiter = { priority: src.priority, isCancelled: () => !!(cancelCheck && cancelCheck()),
+        wait: (ms) => new Promise((r) => setTimeout(r, ms)) };
+      queue.push(waiter);
+      return waiter;
+    },
+    first: (key, waiter) => queue.every((other) => other === waiter || other.priority <= waiter.priority),
+    remove: (key, waiter) => queue.splice(queue.indexOf(waiter), 1)
+  };
+  try {
+    const shared = { concurrentRate: '1/150', bookSourceUrl: 'https://shared.example', bookSourceName: '' };
+    equal(await BookSourceRateLimiter.acquire({ ...shared, priority: 0 }), 0, '调度器下第一个请求放行');
+    const order = [];
+    const low = BookSourceRateLimiter.acquire({ ...shared, priority: 1 }).then(() => order.push('low'));
+    const high = BookSourceRateLimiter.acquire({ ...shared, priority: 2 }).then(() => order.push('high'));
+    await Promise.all([low, high]);
+    equal(order, ['high', 'low'], '高优先级的等待者先拿到额度');
+    equal(queue.length, 0, '放行后等待者离开队列');
+  } finally {
+    hostStub.scheduler = null;
+  }
 
   // ---- 规则变量表 ----
   const context = new RuleContext();

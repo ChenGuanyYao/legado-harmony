@@ -6,6 +6,7 @@ import { BookSourceRateLimiter, RateLimitAcquireResult } from '../http/BookSourc
 import { util } from '@kit.ArkTS';
 import { BookSourceDebugContext } from '../book/BookSourceDebugModels';
 import { BookSourceHeaderRuntime } from '../book/BookSourceHeaderRuntime';
+import { SourceEngineHost } from '../host/SourceEngineHost';
 
 export interface UrlConfig {
   url: string;
@@ -449,12 +450,16 @@ export class AnalyzeUrl {
       const cookie = VerificationSupport.sourceCookieHeader(this.source, this.config.url);
       if (cookie) merged['Cookie'] = cookie;
     }
-    RequestSessionSupport.apply(this.config.url, merged, this.config.session);
+    RequestSessionSupport.apply(this.config.url, merged, this.config.session, this.source?.bookSourceUrl || '');
     if (this.config.method === 'POST' && this.config.body && !this.findHeader(merged, 'content-type')) {
       merged['Content-Type'] = this.looksLikeStructuredBody(this.config.body) && this.config.body.trim().startsWith('{') ?
         'application/json; charset=utf-8' : 'application/x-www-form-urlencoded';
     }
     const request: HttpRequest = {
+      cancelCheck: (): boolean =>
+        SourceEngineHost.isCancelled(this.source) || (!!this.cancelCheck && this.cancelCheck()),
+      timingId: SourceEngineHost.id(this.source),
+      cookieSource: this.source?.bookSourceUrl || '',
       url: this.config.url,
       method: this.config.method,
       headers: merged,
@@ -501,7 +506,8 @@ export class AnalyzeUrl {
     // scope exactly; normal HTTP status failures are never hidden by the fallback.
     if (this.shouldRetryWithWebView(req, resp)) {
       console.info('[AnalyzeUrl] native transport failed; retrying with WebView:', this.urlHost(req.url));
-      const webResponse = await this.client.execute({ ...req, useWebView: true });
+      if (req.cancelCheck && req.cancelCheck()) return this.notSentResponse(req, RateLimitAcquireResult.Cancelled);
+      const webResponse = await this.fetchFollowingRedirects({ ...req, useWebView: true });
       if (this.isUsableResponse(webResponse)) return webResponse;
     }
 
@@ -513,6 +519,10 @@ export class AnalyzeUrl {
       }
     }
     return resp;
+  }
+
+  async fetchPrepared(req: HttpRequest): Promise<HttpResponse> {
+    return this.fetchWithRetry(req);
   }
 
   private async fetchWithRetry(req: HttpRequest): Promise<HttpResponse> {
@@ -581,9 +591,22 @@ export class AnalyzeUrl {
     return payload.length;
   }
 
+  private async acquireTimedSlot(): Promise<RateLimitAcquireResult> {
+    const timingId = SourceEngineHost.id(this.source);
+    const startedAt = Date.now();
+    try {
+      return await BookSourceRateLimiter.acquire(this.source, this.cancelCheck, this.rateLimitMaxWaitMs);
+    } finally {
+      if (timingId > 0) {
+        SourceEngineHost.end(timingId, 'source-rate-wait', startedAt, `priority=${SourceEngineHost.priority(this.source)}` +
+          ` cancelled=${SourceEngineHost.isCancelled(this.source)}`);
+      }
+    }
+  }
+
   private async fetchFollowingRedirects(req: HttpRequest): Promise<HttpResponse> {
     let currentReq = req;
-    let slot = await BookSourceRateLimiter.acquire(this.source, this.cancelCheck, this.rateLimitMaxWaitMs);
+    let slot = await this.acquireTimedSlot();
     if (slot !== RateLimitAcquireResult.Acquired) return this.notSentResponse(currentReq, slot);
     let lastResp = await this.client.execute(currentReq);
     for (let i = 0; i < 3; i++) {
@@ -598,7 +621,7 @@ export class AnalyzeUrl {
       currentReq = switchToGet ?
         { ...currentReq, url: nextUrl, method: 'GET', body: '', headers: redirectHeaders } :
         { ...currentReq, url: nextUrl, headers: redirectHeaders };
-      slot = await BookSourceRateLimiter.acquire(this.source, this.cancelCheck, this.rateLimitMaxWaitMs);
+      slot = await this.acquireTimedSlot();
       if (slot !== RateLimitAcquireResult.Acquired) return this.notSentResponse(currentReq, slot);
       lastResp = await this.client.execute(currentReq);
     }

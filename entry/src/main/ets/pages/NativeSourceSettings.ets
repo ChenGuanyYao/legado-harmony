@@ -129,6 +129,8 @@ struct NativeSourceSettingsPage {
     const login = NativeSourceService.loginSpec(this.source);
     if (!login || !login.url) return;
     const title = `${this.sourceName || '书源'} 登录`;
+    // 网页登录可能换了账号，登录站点的 Cookie 不参与缓存分区，所以在这里清掉旧的缓存值。
+    NativeSourceService.clearCache(this.source.bookSourceUrl);
     VerificationSupport.requestVerification(login.url, title, this.source);
     router.pushUrl({
       url: 'pages/VerifyWeb',

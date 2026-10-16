@@ -1,6 +1,7 @@
 import { JSBoundedExecutionResult, JSContext, JSRuntimeOptions } from '@devzeng/quickjs';
 import { QuickJsObservationContext, QuickJsRuntimeMode, QuickJsRuntimeStatus } from './QuickJsRuntimeStatus';
 import { QuickJsValidationStore } from './QuickJsValidationStore';
+import { SourceEngineHost } from '../host/SourceEngineHost';
 
 export class QuickJsExpressionResult {
   success: boolean = false;
@@ -102,6 +103,10 @@ export class QuickJsScriptRuntime {
   private static evaluateInContext(code: string, variables: Record<string, Object>,
     declarations: string[], timeoutMs: number, output: QuickJsExpressionResult,
     scriptName: string): QuickJsExpressionResult {
+    if (SourceEngineHost.scriptExecutor()?.allowSynchronousQuickJs === false) {
+      output.error = 'synchronous QuickJS disabled by host; use the asynchronous stage runtime';
+      return output;
+    }
     const options = new JSRuntimeOptions();
     options.memoryLimitBytes = 16 * 1024 * 1024;
     options.stackLimitBytes = 512 * 1024;

@@ -4,6 +4,7 @@ import { CookieStore } from '../http/CookieStore';
 import { WebJsAwaitScript } from './WebJsAwaitScript';
 
 export interface WebBookFetchRequest {
+  cookieSource?: string;
   url: string;
   method: string;
   headers: Record<string, string>;
@@ -200,7 +201,7 @@ export class WebBookFetchRuntime {
       const userAgent = this.headerValue(task.request.headers, 'user-agent');
       if (userAgent) this.controller.setCustomUserAgent(userAgent);
       const cookie = this.headerValue(task.request.headers, 'cookie');
-      if (cookie) CookieStore.setCookies(task.request.url, cookie);
+      if (cookie) CookieStore.forSource(task.request.cookieSource).setCookies(task.request.url, cookie);
       if (String(task.request.method || 'GET').toUpperCase() === 'POST') {
         const bytes = new util.TextEncoder().encodeInto(task.request.body || '');
         this.controller.postUrl(task.request.url, bytes.buffer as ArrayBuffer);
