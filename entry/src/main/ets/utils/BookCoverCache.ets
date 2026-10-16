@@ -2,6 +2,8 @@ import { Context } from '@kit.AbilityKit';
 import fs from '@ohos.file.fs';
 import fileUri from '@ohos.file.fileuri';
 import http from '@ohos.net.http';
+import { HttpClient, SourceCoverLoader, SourceCoverUrl } from '@legado/sourceengine';
+import { AppDatabase } from '../model/data/AppDatabase';
 import { CoverUrlNormalizer } from './CoverUrlNormalizer';
 
 export class BookCoverCache {
@@ -10,6 +12,60 @@ export class BookCoverCache {
   private static activeNetworkTasks: number = 0;
   private static readonly MAX_NETWORK_TASKS: number = 4;
   private static networkWaiters: Array<() => void> = [];
+  // 书源声明了 coverDecode 的封面：地址带 SourceCoverUrl 标记，下载后要用该书源的参数解密才是图片。
+  private static sourceCoverHttp: HttpClient | null = null;
+  private static sourceCoverFailedAt: Map<string, number> = new Map();
+  private static readonly SOURCE_COVER_RETRY_MS: number = 60000;
+  private static sourceCoverRevisionTimer: number = -1;
+
+  /**
+   * Cover address an Image can load. An encrypted source cover is never handed to Image directly: until its
+   * decrypted copy is cached this returns '' (callers show their placeholder) and starts decrypting in the
+   * background; when that finishes, AppStorage `sourceCoverRevision` is bumped so views that read it re-render.
+   * Other addresses are returned unchanged.
+   */
+  static displayCover(context: Context, raw: string): string {
+    if (!raw || !SourceCoverUrl.isEncoded(raw)) return raw;
+    const cached = BookCoverCache.resolveCachedCover(context, raw);
+    if (cached) return cached;
+    const failedAt = BookCoverCache.sourceCoverFailedAt.get(raw) || 0;
+    if (!BookCoverCache.inFlightResolutions.has(raw) && Date.now() - failedAt > BookCoverCache.SOURCE_COVER_RETRY_MS) {
+      BookCoverCache.resolveCover(context, raw).then((resolved: string) => {
+        if (resolved) {
+          BookCoverCache.sourceCoverFailedAt.delete(raw);
+          BookCoverCache.bumpSourceCoverRevision();
+        } else {
+          BookCoverCache.sourceCoverFailedAt.set(raw, Date.now());
+        }
+      }).catch(() => {
+        BookCoverCache.sourceCoverFailedAt.set(raw, Date.now());
+      });
+    }
+    return '';
+  }
+
+  /** Decrypted bytes of an encrypted source cover, or null when the source is missing or decoding fails. */
+  static async loadSourceCoverBytes(raw: string): Promise<Uint8Array | null> {
+    try {
+      const source = await AppDatabase.getInstance().getBookSource(SourceCoverUrl.source(raw));
+      if (!source) return null;
+      if (!BookCoverCache.sourceCoverHttp) BookCoverCache.sourceCoverHttp = new HttpClient(15000);
+      const data = await SourceCoverLoader.load(BookCoverCache.sourceCoverHttp, source, raw);
+      return data.byteLength > 0 ? data : null;
+    } catch (e) {
+      console.warn('解密书源封面失败:', e instanceof Error ? e.message : String(e));
+      return null;
+    }
+  }
+
+  private static bumpSourceCoverRevision(): void {
+    // 一屏封面陆续解密完成时合并成一次刷新。
+    if (BookCoverCache.sourceCoverRevisionTimer !== -1) return;
+    BookCoverCache.sourceCoverRevisionTimer = setTimeout(() => {
+      BookCoverCache.sourceCoverRevisionTimer = -1;
+      AppStorage.setOrCreate<number>('sourceCoverRevision', (AppStorage.get<number>('sourceCoverRevision') || 0) + 1);
+    }, 200);
+  }
 
   static resolveCachedCover(context: Context, raw: string): string {
     if (!raw || (!raw.startsWith('http://') && !raw.startsWith('https://'))) {
@@ -61,7 +117,7 @@ export class BookCoverCache {
         return resolved;
       }
       const path = await BookCoverCache.downloadCover(context, raw);
-      if (!path) return raw;
+      if (!path) return SourceCoverUrl.isEncoded(raw) ? '' : raw;
       const resolved = fileUri.getUriFromPath(path);
       BookCoverCache.resolvedCoverUris.set(raw, resolved);
       return resolved;
@@ -118,12 +174,7 @@ export class BookCoverCache {
     if (!raw || data.byteLength === 0) return '';
     await BookCoverCache.ensureDirAsync(`${context.cacheDir}/book_covers`);
     const path = BookCoverCache.cachedCoverPath(context, raw);
-    const file = await fs.open(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
-    try {
-      await fs.write(file.fd, data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
-    } finally {
-      await fs.close(file);
-    }
+    await BookCoverCache.writeFile(path, data);
     const resolved = fileUri.getUriFromPath(path);
     BookCoverCache.resolvedCoverUris.set(raw, resolved);
     return resolved;
@@ -140,6 +191,12 @@ export class BookCoverCache {
     try {
       // Another request may have completed while this one waited for a slot.
       if (await BookCoverCache.existsAsync(path)) return path;
+      if (SourceCoverUrl.isEncoded(url)) {
+        const data = await BookCoverCache.loadSourceCoverBytes(url);
+        if (!data) return '';
+        await BookCoverCache.writeFile(path, data);
+        return path;
+      }
       const candidates = CoverUrlNormalizer.downloadCandidates(url);
       for (const requestUrl of candidates) {
         const request = http.createHttp();
@@ -175,6 +232,15 @@ export class BookCoverCache {
       return '';
     } finally {
       BookCoverCache.releaseNetworkSlot();
+    }
+  }
+
+  private static async writeFile(path: string, data: Uint8Array): Promise<void> {
+    const file = await fs.open(path, fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC);
+    try {
+      await fs.write(file.fd, data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+    } finally {
+      await fs.close(file);
     }
   }
 

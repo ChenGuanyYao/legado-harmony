@@ -2,6 +2,7 @@ import { Book, SearchBook, BookTypeSupport } from '@legado/sourceengine';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { BookDisplayHelper } from '../../utils/BookDisplayHelper';
 import { CoverGallerySettings } from '../../utils/CoverGallerySettings';
+import { BookCoverCache } from '../../utils/BookCoverCache';
 import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
 import deviceInfo from '@ohos.deviceInfo';
 import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
@@ -36,6 +37,8 @@ class SearchBookResultDataSource implements IDataSource {
 
 @Component
 export struct SearchBookResultList {
+  // 加密的书源封面解密完成后递增，读取它的封面会重新取到本地文件地址。
+  @StorageProp('sourceCoverRevision') sourceCoverRevision: number = 0;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
   @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
   @StorageLink('bookshelfCoverAlbums') bookshelfCoverAlbums: string = '';
@@ -419,7 +422,7 @@ export struct SearchBookResultList {
   displayCover(book: SearchBook): string {
     const key = `${this.itemKey(book)}\n${book.coverUrl || ''}`;
     const cached = this.coverCache.get(key);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) return this.imageCover(cached);
     let result = '';
     if (this.useBookshelfCoverGallery) {
       const galleryCover = this.bookshelfGalleryCover(book);
@@ -429,7 +432,11 @@ export struct SearchBookResultList {
     }
     if (!result) result = this.safeText(book.coverUrl, '');
     this.coverCache.set(key, result);
-    return result;
+    return this.imageCover(result);
+  }
+
+  imageCover(raw: string): string {
+    return this.sourceCoverRevision >= 0 ? BookCoverCache.displayCover(getContext(this), raw) : raw;
   }
 
   metadataLine(book: SearchBook): string {

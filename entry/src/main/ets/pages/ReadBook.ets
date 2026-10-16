@@ -272,6 +272,8 @@ struct ReadBookPage {
   @State statusBarSafeHeight: number = 0;
   @StorageProp('statusBarHeight') @Watch('onStoredStatusBarHeightChanged') storedStatusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
+  // 加密的书源封面解密完成后递增，朗读面板等处的封面重新取到本地文件地址。
+  @StorageProp('sourceCoverRevision') sourceCoverRevision: number = 0;
   @State isTtsSpeaking: boolean = false;
   @State isTtsPaused: boolean = false;
   @State showTtsQuickPlayer: boolean = false;
@@ -10824,7 +10826,8 @@ struct ReadBookPage {
     const context = getContext(this);
     for (const raw of covers) {
       const cached = BookCoverCache.resolveCachedCover(context, raw);
-      displayCovers.push(cached || raw);
+      // 加密的书源封面不能直接交给 Image：解密完成前为空，完成后随 sourceCoverRevision 刷新。
+      displayCovers.push(cached || (this.sourceCoverRevision >= 0 ? BookCoverCache.displayCover(context, raw) : raw));
     }
     return displayCovers;
   }

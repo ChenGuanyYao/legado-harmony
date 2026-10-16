@@ -4,6 +4,7 @@ import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { Book, BookChapter, Bookmark } from '@legado/sourceengine';
 import { AppDatabase } from '../../model/data/AppDatabase';
 import { HdsFeedback } from '../../utils/HdsFeedback';
+import { BookCoverCache } from '../../utils/BookCoverCache';
 import { VirtualListScrollbar } from '../../utils/VirtualListScrollbar';
 import { ImmersiveBackButton } from '../ImmersiveBackButton';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
@@ -38,6 +39,8 @@ export class ReaderTocPanelController {
  */
 @Component
 export struct ReaderTocPanel {
+  // 加密的书源封面解密完成后递增，读取它的封面会重新取到本地文件地址。
+  @StorageProp('sourceCoverRevision') sourceCoverRevision: number = 0;
   @Link chapters: BookChapter[];
   @Link bookmarks: Bookmark[];
   /** 目录倒序在阅读页一次会话内保持。 */
@@ -687,7 +690,8 @@ export struct ReaderTocPanel {
   }
 
   private bookCover(): string {
-    return this.book ? this.book.getDisplayCover() : '';
+    const raw = this.book ? this.book.getDisplayCover() : '';
+    return this.sourceCoverRevision >= 0 ? BookCoverCache.displayCover(getContext(this), raw) : raw;
   }
 
   private bookInitial(): string {

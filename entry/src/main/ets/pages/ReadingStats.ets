@@ -6,6 +6,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 import { appDb } from '../model/data/AppDatabase';
 import { ReadStatsTracker, readStatsTracker } from '../core/stats/ReadStatsTracker';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { BookCoverCache } from '../utils/BookCoverCache';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
 import { PageScaffold } from '../components/common/PageScaffold';
@@ -32,6 +33,8 @@ class StatBookItem {
 @Entry
 @Component
 struct ReadingStatsPage {
+  // 加密的书源封面解密完成后递增，读取它的封面会重新取到本地文件地址。
+  @StorageProp('sourceCoverRevision') sourceCoverRevision: number = 0;
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
@@ -128,6 +131,10 @@ struct ReadingStatsPage {
     } finally {
       this.loading = false;
     }
+  }
+
+  imageCover(raw: string): string {
+    return this.sourceCoverRevision >= 0 ? BookCoverCache.displayCover(getContext(this), raw) : raw;
   }
 
   build() {
@@ -298,8 +305,8 @@ struct ReadingStatsPage {
         .justifyContent(FlexAlign.Center)
         .backgroundColor(this.accentColor())
 
-        if (item.coverUrl) {
-          Image(item.coverUrl)
+        if (this.imageCover(item.coverUrl)) {
+          Image(this.imageCover(item.coverUrl))
             .width('100%')
             .height('100%')
             .objectFit(ImageFit.Cover)

@@ -6,7 +6,8 @@ import { Context } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
 import { appDb } from '../../model/data/AppDatabase';
-import { Book, BookChapter, BookSource, SearchBook, HttpClient, BookTypeSupport } from '@legado/sourceengine';
+import { Book, BookChapter, BookSource, SearchBook, HttpClient, BookTypeSupport, SourceCoverUrl } from '@legado/sourceengine';
+import { BookCoverCache } from '../../utils/BookCoverCache';
 import { ReadBookEngine } from '../book/ReadBookEngine';
 import { PrivateShelfStore } from '../../utils/PrivateShelfStore';
 import { SearchCoordinator } from '../book/SearchCoordinator';
@@ -833,6 +834,7 @@ export class LanReaderServer {
     if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
       return { status: 404, contentType: 'text/plain; charset=utf-8', body: 'Cover Not Found' };
     }
+    if (SourceCoverUrl.isEncoded(url)) return await this.sourceCoverResponse(url);
     const response = await this.httpClient.executeBinary({ url, method: 'GET', headers: {}, maxResponseBytes: 8 * 1024 * 1024 });
     if (!response.success || response.data.byteLength === 0) {
       return { status: 404, contentType: 'text/plain; charset=utf-8', body: 'Cover Not Found' };
@@ -846,6 +848,7 @@ export class LanReaderServer {
     if (!/^https?:\/\//i.test(url) || await this.isPrivateProxyTarget(url)) {
       return { status: 400, contentType: 'text/plain; charset=utf-8', body: 'Invalid image URL' };
     }
+    if (SourceCoverUrl.isEncoded(url)) return await this.sourceCoverResponse(url);
     const response = await this.httpClient.executeBinary({ url, method: 'GET', headers: {}, maxResponseBytes: 12 * 1024 * 1024 });
     if (!response.success || response.data.byteLength === 0) {
       return { status: 404, contentType: 'text/plain; charset=utf-8', body: 'Image Not Found' };
@@ -853,6 +856,21 @@ export class LanReaderServer {
     const contentType = this.imageContentType(this.header(response.headers, 'content-type'));
     if (!contentType) return { status: 404, contentType: 'text/plain; charset=utf-8', body: 'Image Not Found' };
     return { status: 200, contentType, body: response.data.buffer as ArrayBuffer };
+  }
+
+  /** 书源声明了 coverDecode 的封面：按该书源的参数解密后再转发，浏览器拿到的是明文图片。 */
+  private async sourceCoverResponse(url: string): Promise<LanHttpResponse> {
+    const data = await BookCoverCache.loadSourceCoverBytes(url);
+    if (!data) return { status: 404, contentType: 'text/plain; charset=utf-8', body: 'Cover Not Found' };
+    const body = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+    return { status: 200, contentType: this.sniffImageType(data), body };
+  }
+
+  private sniffImageType(data: Uint8Array): string {
+    if (data.length >= 4 && data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4E && data[3] === 0x47) return 'image/png';
+    if (data.length >= 3 && data[0] === 0x47 && data[1] === 0x49 && data[2] === 0x46) return 'image/gif';
+    if (data.length >= 12 && data[8] === 0x57 && data[9] === 0x45 && data[10] === 0x42 && data[11] === 0x50) return 'image/webp';
+    return 'image/jpeg';
   }
 
   /**

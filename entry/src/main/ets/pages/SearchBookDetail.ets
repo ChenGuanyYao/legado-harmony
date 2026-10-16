@@ -6,6 +6,7 @@ import { syncSystemBars } from '../utils/SystemBars';
 import { BookDisplayHelper } from '../utils/BookDisplayHelper';
 import { BookIdentity } from '../utils/BookIdentity';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
+import { BookCoverCache } from '../utils/BookCoverCache';
 import { ImmersiveBackButton } from '../components/ImmersiveBackButton';
 import { CoverGallerySettings } from '../utils/CoverGallerySettings';
 import { SearchExplorePendingBook } from '../utils/SearchExplorePendingBook';
@@ -25,6 +26,8 @@ import { AppSpacing } from '../theme/AppSpacing';
 @Entry
 @Component
 struct SearchBookDetailPage {
+  // 加密的书源封面解密完成后递增，读取它的封面会重新取到本地文件地址。
+  @StorageProp('sourceCoverRevision') sourceCoverRevision: number = 0;
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
@@ -1301,7 +1304,7 @@ struct SearchBookDetailPage {
         return galleryCover;
       }
     }
-    return this.coverUrl;
+    return this.sourceCoverRevision >= 0 ? BookCoverCache.displayCover(getContext(this), this.coverUrl) : this.coverUrl;
   }
 
   bookshelfGalleryCoverUrl(): string {

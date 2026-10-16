@@ -11,6 +11,7 @@ import { AudioRuleSupport } from '../core/book/AudioRuleSupport';
 import { AudioStartTiming, RemoteAudioPlayback, RemoteAudioPlaybackListener } from '../utils/RemoteAudioPlayback';
 import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
+import { BookCoverCache } from '../utils/BookCoverCache';
 import { syncSystemBars } from '../utils/SystemBars';
 import { ThemeAssetRegistry } from '../theme/ThemeAssetRegistry';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
@@ -63,6 +64,8 @@ class AudioBookAvSessionHolder {
 @Entry
 @Component
 struct AudioBookPage {
+  // 加密的书源封面解密完成后递增，读取它的封面会重新取到本地文件地址。
+  @StorageProp('sourceCoverRevision') sourceCoverRevision: number = 0;
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
@@ -1499,7 +1502,8 @@ struct AudioBookPage {
   }
 
   displayCover(): string {
-    return this.book ? CoverUrlNormalizer.normalize(this.book.getDisplayCover()) : '';
+    const raw = this.book ? CoverUrlNormalizer.normalize(this.book.getDisplayCover()) : '';
+    return this.sourceCoverRevision >= 0 ? BookCoverCache.displayCover(getContext(this), raw) : raw;
   }
 
   onThemeBookCoverChanged(): void {

@@ -66,6 +66,8 @@ interface ShelfFullTextCacheTask {
 /** 首页"书架"页签：书架展示、分组与排序、封面加载、更新检查、全文缓存与书籍操作。 */
 @Component
 export struct BookshelfPage {
+  // 加密的书源封面解密完成后递增，读取它的封面会重新取到本地文件地址。
+  @StorageProp('sourceCoverRevision') sourceCoverRevision: number = 0;
   @Prop statusBarHeight: number = 0;
   @Prop navBarHeight: number = 0;
   @Link isBookMultiSelect: boolean;
@@ -1476,7 +1478,7 @@ export struct BookshelfPage {
                         .justifyContent(FlexAlign.Center)
                         .backgroundColor(this.accentColor())
 
-                        Image(candidate.coverUrl)
+                        Image(this.imageCover(candidate.coverUrl))
                           .width('100%')
                           .height('100%')
                           .objectFit(ImageFit.Cover)
@@ -3849,14 +3851,14 @@ export struct BookshelfPage {
         .backgroundColor(this.getBookColor(book.name))
         .justifyContent(FlexAlign.Center)
       } else if (this.getShelfCoverList(book).length === 1) {
-        Image(this.getShelfCover(book))
+        Image(this.imageCover(this.getShelfCover(book)))
           .width(width)
           .height(height)
           .objectFit(imageFit)
       } else {
         Swiper() {
           ForEach(this.getShelfCoverList(book), (cover: string) => {
-            Image(cover)
+            Image(this.imageCover(cover))
               .width(width)
               .height(height)
               .objectFit(imageFit)
@@ -4015,6 +4017,11 @@ export struct BookshelfPage {
 
   activeThemeShelfFolder(): ResourceStr {
     return ThemeAssetRegistry.themeShelfFolder(ThemeRuntime.bookTokens(this.appDarkMode).shelfFolderAssetId);
+  }
+
+  /** Image 能直接加载的封面地址；加密的书源封面在解密完成前为空。 */
+  imageCover(raw: string): string {
+    return this.sourceCoverRevision >= 0 ? BookCoverCache.displayCover(getContext(this), raw) : raw;
   }
 
   getShelfCover(book: Book): string {
