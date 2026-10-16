@@ -38,6 +38,7 @@ import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
 
 const BOOK_SOURCE_IMPORT_FILE_LIMIT_BYTES = 25 * 1024 * 1024;
+const BOOK_SOURCE_IMPORT_MAX_FILES = 50;
 const BOOK_SOURCE_IMPORT_TIMEOUT_MS = 20000;
 const BOOK_SOURCE_IMPORT_URL_RETRY_COUNT = 3;
 const BOOK_SOURCE_WEB_IMPORT_RETRY_COUNT = 3;
@@ -74,6 +75,11 @@ class BookSourceCheckUiUpdate {
   bookSourceUrl: string = '';
   validationStatus: number = BookSource.VALIDATION_UNCHECKED;
   detail: string = '';
+}
+
+class BookSourceImportParseResult {
+  sources: BookSource[] = [];
+  nativeProblem: string = '';
 }
 
 // 头部里类型分段和兼容书源提示条的高度，列表顶部避让按它们计算。
@@ -6299,7 +6305,7 @@ struct BookSourcePage {
   async importFromFile() {
     try {
       const options: picker.DocumentSelectOptions = new picker.DocumentSelectOptions();
-      options.maxSelectNumber = 1;
+      options.maxSelectNumber = BOOK_SOURCE_IMPORT_MAX_FILES;
       options.fileSuffixFilters = ['JSON|.json', '文本|.txt'];
       const pickerResult: Array<string> = await new picker.DocumentViewPicker().select(options);
 
@@ -6308,18 +6314,82 @@ struct BookSourcePage {
       }
 
       this.isImporting = true;
-      const content = await this.readTextFile(pickerResult[0]);
-      if (!content.trim()) {
-        HdsFeedback.showToast('文件内容为空');
+      if (pickerResult.length === 1) {
+        const content = await this.readTextFile(pickerResult[0]);
+        if (!content.trim()) {
+          HdsFeedback.showToast('文件内容为空');
+          return;
+        }
+        await this.importSourcesFromJson(content);
         return;
       }
-      await this.importSourcesFromJson(content);
+      await this.importSourcesFromFiles(pickerResult);
     } catch (e) {
       console.error('从文件导入失败:', e);
       const errMsg = this.importErrorMessage(e as Object);
       HdsFeedback.showToast(`导入失败: ${errMsg}`);
     } finally {
       this.isImporting = false;
+    }
+  }
+
+  // 多个文件合并成一次导入：坏文件只跳过并提示文件名，不影响其余文件。
+  async importSourcesFromFiles(uris: string[]): Promise<void> {
+    const sources: BookSource[] = [];
+    const failedFiles: string[] = [];
+    let nativeProblem = '';
+    for (const uri of uris) {
+      const name = this.importFileDisplayName(uri);
+      try {
+        const content = await this.readTextFile(uri);
+        if (!content.trim()) {
+          failedFiles.push(`${name}（内容为空）`);
+          continue;
+        }
+        const result = this.parseImportSources(content);
+        if (result.nativeProblem) {
+          nativeProblem = result.nativeProblem;
+        }
+        if (result.sources.length === 0 && !result.nativeProblem) {
+          failedFiles.push(`${name}（无有效书源）`);
+          continue;
+        }
+        for (const source of result.sources) {
+          sources.push(source);
+        }
+      } catch (e) {
+        console.error('读取书源文件失败:', name, e);
+        failedFiles.push(`${name}（${this.importErrorMessage(e as Object)}）`);
+      }
+    }
+
+    const notices: string[] = [];
+    if (failedFiles.length > 0) {
+      const shown = failedFiles.slice(0, 3).join('、');
+      const more = failedFiles.length > 3 ? ` 等 ${failedFiles.length} 个文件` : '';
+      notices.push(`已跳过 ${shown}${more}`);
+    }
+    if (nativeProblem) {
+      notices.push(`原生书源未导入，${nativeProblem}`);
+    }
+    if (notices.length > 0) {
+      HdsFeedback.showToast(notices.join('\n'));
+    }
+    if (sources.length === 0) {
+      if (notices.length === 0) {
+        HdsFeedback.showToast('未找到有效的书源');
+      }
+      return;
+    }
+    await this.presentImportedSources(sources);
+  }
+
+  importFileDisplayName(uri: string): string {
+    const segment = uri.split('?')[0].split('/').pop() || uri;
+    try {
+      return decodeURIComponent(segment);
+    } catch (e) {
+      return segment;
     }
   }
 
@@ -6839,70 +6909,85 @@ struct BookSourcePage {
 
   async importSourcesFromJson(json: string) {
     try {
-      console.log('开始解析JSON，长度:', json.length);
-      let sources: BookSource[] = [];
-
-      const parsed: Object = JSON.parse(json);
-      console.log('JSON解析成功，类型:', typeof parsed);
-
-      // 处理 {"value": [...]} 结构
-      let items: Record<string, Object>[] = [];
-      if (Array.isArray(parsed)) {
-        items = parsed as Record<string, Object>[];
-      } else if (typeof parsed === 'object') {
-        const obj = parsed as Record<string, Object>;
-        if (Array.isArray(obj['value'])) {
-          items = obj['value'] as Record<string, Object>[];
-        } else if (obj['bookSourceUrl'] || NativeSourceSpec.isDefinitionObject(obj)) {
-          items = [obj];
-        }
+      const result = this.parseImportSources(json);
+      if (result.nativeProblem) {
+        HdsFeedback.showToast(`原生书源未导入，${result.nativeProblem}`);
+        if (result.sources.length === 0) return;
       }
-
-      console.log('待解析书源数量:', items.length);
-
-      let nativeProblem = '';
-      for (const item of items) {
-        if (NativeSourceSpec.isDefinitionObject(item)) {
-          // 原生书源在导入时就完成整份校验，写法有误的直接给出原因，不留到使用时才失败。
-          try {
-            sources.push(NativeSourceService.importObject(item));
-          } catch (e) {
-            nativeProblem = `${String(item['name'] || '原生书源')}：${(e as Error).message || '定义不合法'}`;
-          }
-          continue;
-        }
-        const source = this.parseBookSource(item);
-        if (source.bookSourceUrl) {
-          sources.push(source);
-        }
-      }
-      if (nativeProblem) {
-        HdsFeedback.showToast(`原生书源未导入，${nativeProblem}`);
-        if (sources.length === 0) return;
-      }
-
-      console.log('解析到书源数量:', sources.length);
-
-      if (sources.length === 0) {
-        HdsFeedback.showToast('未找到有效的书源');
-        return;
-      }
-
-      // Multiple sources require an explicit choice so a large import does not
-      // unexpectedly add every source to the local database.
-      if (sources.length > 1) {
-        this.pendingImportSources = sources;
-        this.selectedImportSourceUrls = sources.map((source: BookSource) => source.bookSourceUrl);
-        this.openImportSourceSelectionDialog();
-        return;
-      }
-
-      await this.persistImportedSources(sources);
+      await this.presentImportedSources(result.sources);
     } catch (e) {
       console.error('解析书源失败:', e);
       const errMsg = this.importErrorMessage(e as Object);
       HdsFeedback.showToast(`书源格式错误: ${errMsg}`);
     }
+  }
+
+  // 只解析不落库；JSON 本身不合法时直接抛出，由调用方决定怎么提示。
+  parseImportSources(json: string): BookSourceImportParseResult {
+    console.log('开始解析JSON，长度:', json.length);
+    const result = new BookSourceImportParseResult();
+
+    const parsed: Object = JSON.parse(json);
+    console.log('JSON解析成功，类型:', typeof parsed);
+
+    // 处理 {"value": [...]} 结构
+    let items: Record<string, Object>[] = [];
+    if (Array.isArray(parsed)) {
+      items = parsed as Record<string, Object>[];
+    } else if (typeof parsed === 'object') {
+      const obj = parsed as Record<string, Object>;
+      if (Array.isArray(obj['value'])) {
+        items = obj['value'] as Record<string, Object>[];
+      } else if (obj['bookSourceUrl'] || NativeSourceSpec.isDefinitionObject(obj)) {
+        items = [obj];
+      }
+    }
+
+    console.log('待解析书源数量:', items.length);
+
+    for (const item of items) {
+      if (NativeSourceSpec.isDefinitionObject(item)) {
+        // 原生书源在导入时就完成整份校验，写法有误的直接给出原因，不留到使用时才失败。
+        try {
+          result.sources.push(NativeSourceService.importObject(item));
+        } catch (e) {
+          result.nativeProblem = `${String(item['name'] || '原生书源')}：${(e as Error).message || '定义不合法'}`;
+        }
+        continue;
+      }
+      const source = this.parseBookSource(item);
+      if (source.bookSourceUrl) {
+        result.sources.push(source);
+      }
+    }
+    console.log('解析到书源数量:', result.sources.length);
+    return result;
+  }
+
+  async presentImportedSources(parsedSources: BookSource[]): Promise<void> {
+    // 同地址只保留最后出现的一条，否则选择框按地址勾选时会对不上数量。
+    const byUrl = new Map<string, BookSource>();
+    for (const source of parsedSources) {
+      byUrl.delete(source.bookSourceUrl);
+      byUrl.set(source.bookSourceUrl, source);
+    }
+    const sources = Array.from(byUrl.values());
+
+    if (sources.length === 0) {
+      HdsFeedback.showToast('未找到有效的书源');
+      return;
+    }
+
+    // Multiple sources require an explicit choice so a large import does not
+    // unexpectedly add every source to the local database.
+    if (sources.length > 1) {
+      this.pendingImportSources = sources;
+      this.selectedImportSourceUrls = sources.map((source: BookSource) => source.bookSourceUrl);
+      this.openImportSourceSelectionDialog();
+      return;
+    }
+
+    await this.persistImportedSources(sources);
   }
 
   async persistImportedSources(sources: BookSource[]): Promise<void> {
