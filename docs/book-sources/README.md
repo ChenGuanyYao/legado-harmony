@@ -38,7 +38,7 @@
 
 ## 修改规则引擎时
 
-改动 `sourceengine` 模块（书源解析内核）或 `entry` 下 `core/book` 等规则执行代码后，运行中立性检查：
+改动书源解析内核（子模块 `harmony-book-source-engine`）或 `entry` 下 `core/book` 等规则执行代码后，运行中立性检查：
 
 ```powershell
 node scripts/neutral-source-engine-check.mjs

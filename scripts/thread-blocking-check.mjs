@@ -12,11 +12,11 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-const scheduler = read('sourceengine/src/main/ets/core/concurrency/CooperativeScheduler.ts');
+const scheduler = read('harmony-book-source-engine/sourceengine/src/main/ets/core/concurrency/CooperativeScheduler.ts');
 const preprocessor = read('entry/src/main/ets/core/concurrency/ReaderContentPreprocessor.ets');
-const models = read('sourceengine/src/main/ets/core/rule/RuleExecutionModels.ts');
-const service = read('sourceengine/src/main/ets/core/rule/RuleExecutionService.ts');
-const stageRuntime = read('sourceengine/src/main/ets/core/book/BookSourceStageWebRuntime.ts');
+const models = read('harmony-book-source-engine/sourceengine/src/main/ets/core/rule/RuleExecutionModels.ts');
+const service = read('harmony-book-source-engine/sourceengine/src/main/ets/core/rule/RuleExecutionService.ts');
+const stageRuntime = read('harmony-book-source-engine/sourceengine/src/main/ets/core/book/BookSourceStageWebRuntime.ts');
 const search = read('entry/src/main/ets/core/book/SearchCoordinator.ts');
 const explore = read('entry/src/main/ets/core/book/ExploreCoordinator.ts');
 const webBook = read('entry/src/main/ets/core/book/WebBookService.ts');

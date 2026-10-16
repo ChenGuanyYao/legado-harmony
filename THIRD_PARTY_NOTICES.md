@@ -9,7 +9,7 @@
 - 许可证：MIT
 - 版权所有：Copyright (c) 2026 zengjing
 
-本项目对该组件进行了 HarmonyOS 集成、稳定性和能力扩展方面的修改。原始 MIT 许可见 [quickjs/LICENSE](quickjs/LICENSE)，发行包内许可合集见 [THIRD_PARTY_LICENSES.txt](entry/src/main/resources/rawfile/licenses/THIRD_PARTY_LICENSES.txt)。
+本项目对该组件进行了 HarmonyOS 集成、稳定性和能力扩展方面的修改。该组件随书源解析内核一起放在子模块 `harmony-book-source-engine/quickjs/`，原始 MIT 许可见 [harmony-book-source-engine/quickjs/LICENSE](harmony-book-source-engine/quickjs/LICENSE)，发行包内许可合集见 [THIRD_PARTY_LICENSES.txt](entry/src/main/resources/rawfile/licenses/THIRD_PARTY_LICENSES.txt)。
 
 ## QuickJS
 

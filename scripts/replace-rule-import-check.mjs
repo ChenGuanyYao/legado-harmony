@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ReplaceRuleImport } from '../sourceengine/src/main/ets/core/rule/ReplaceRuleImport.ts';
-import { JavaRegexCompat } from '../sourceengine/src/main/ets/core/rule/JavaRegexCompat.ts';
+import { ReplaceRuleImport } from '../harmony-book-source-engine/sourceengine/src/main/ets/core/rule/ReplaceRuleImport.ts';
+import { JavaRegexCompat } from '../harmony-book-source-engine/sourceengine/src/main/ets/core/rule/JavaRegexCompat.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 

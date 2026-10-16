@@ -153,19 +153,11 @@ legado-harmony/
 │       ├── utils/                    # 设置、缓存、字体、TTS 与音频工具
 │       ├── webdav/                   # WebDAV 书籍浏览与下载
 │       └── widgets/                  # 桌面服务卡片界面
-├── sourceengine/                     # 书源解析内核（HAR，包名 @legado/sourceengine）
-│   ├── Index.ts                      # 公开接口；QuickJS 诊断另由 Diagnostics.ets 导出
-│   └── src/main/ets/
-│       ├── core/
-│       │   ├── book/                 # 阶段脚本运行时、网页抓取、书源地址与调试记录
-│       │   ├── concurrency/          # 协作式调度与耗时保护
-│       │   ├── http/                 # HTTP、Cookie、TLS 与验证支持
-│       │   ├── nativesource/         # 原生书源格式、表达式语言与执行器
-│       │   ├── rule/                 # URL、选择器、正则和 JS 规则解析
-│       │   └── script/               # QuickJS 脚本运行与诊断
-│       ├── model/data/Book.ts        # 书籍、章节、书源等数据模型
-│       └── utils/                    # 内核用到的小工具
-├── quickjs/                          # QuickJS 原生模块
+├── harmony-book-source-engine/       # 子模块：书源解析内核（独立仓库，GPL-3.0）
+│   ├── sourceengine/                 # 内核 HAR，包名 @legado/sourceengine；QuickJS 诊断另由 Diagnostics.ets 导出
+│   │   └── src/main/ets/core/        # book / concurrency / http / nativesource / rule / script
+│   ├── quickjs/                      # 修改版 ohos_quickjs 原生模块
+│   └── scripts/                      # 内核自己的回归检查
 ├── docs/                             # 开发文档与使用说明书网站（docs/manual）
 └── scripts/                          # 构建前与架构回归检查
 ```
@@ -212,6 +204,22 @@ legado-harmony/
 | `minAPIVersion` / `targetAPIVersion` | `20` / `26` |
 | 权限 | `INTERNET`、`GET_NETWORK_INFO`、`KEEP_BACKGROUND_RUNNING`、`CAMERA`（仅在用户启用眼动翻页时请求） |
 
+### 获取源码
+
+书源解析内核是独立仓库 [harmony-book-source-engine](https://github.com/wip3l/harmony-book-source-engine)，以 git 子模块的形式放在 `harmony-book-source-engine/`。克隆时带上子模块：
+
+```bash
+git clone --recursive https://github.com/wip3l/legado-harmony.git
+```
+
+已经克隆过的仓库补拉子模块：
+
+```bash
+git submodule update --init
+```
+
+修改内核时在 `harmony-book-source-engine/` 里提交并推送到内核仓库，再回到本仓库提交子模块指向的新版本。
+
 ### 命令行构建
 
 以下命令以 DevEco Studio 默认安装目录为例：
@@ -256,7 +264,6 @@ node scripts/thread-blocking-check.mjs
 node scripts/theme-framework-check.mjs
 node scripts/log-policy-check.mjs
 node --experimental-strip-types scripts/opds-parser-check.mjs
-node --experimental-strip-types scripts/http-auth-check.mjs
 node --experimental-strip-types scripts/opds-kavita-check.mjs
 node --experimental-strip-types scripts/java-regex-compat-check.mjs
 node --experimental-strip-types scripts/budgeted-regex-replace-check.mjs
@@ -268,6 +275,12 @@ node --experimental-strip-types scripts/epub-mixed-layout-check.mjs
 node --experimental-strip-types scripts/reader-info-bar-check.mjs
 ```
 
+书源解析内核的回归检查在子模块里（HTTP 认证、页码候选、原生书源、请求支撑、脚本运行时、宿主端口等），用法见 [harmony-book-source-engine/README.md](harmony-book-source-engine/README.md)：
+
+```bash
+for f in harmony-book-source-engine/scripts/*-check.mjs; do node --experimental-strip-types "$f" || exit 1; done
+```
+
 | 脚本 | 检查内容 |
 | --- | --- |
 | `neutral-source-engine-check` | 是否引入固定内容接口、默认凭据或站点专用后端。 |
@@ -275,7 +288,6 @@ node --experimental-strip-types scripts/reader-info-bar-check.mjs
 | `theme-framework-check` | 主题注册、令牌和资源安全约束。 |
 | `log-policy-check` | 日志策略：不把凭据类变量和完整请求地址写进日志。 |
 | `opds-parser-check` | OPDS 目录、条目和 OpenSearch 描述的解析（基于 `scripts/opds-fixtures`）。 |
-| `http-auth-check` | OPDS / WebDAV 共用的 HTTP 认证：`WWW-Authenticate` 质询解析与 Digest 应答（RFC 2617 / 7616 标准向量）。 |
 | `opds-kavita-check` | Kavita 适配：OPDS 地址识别、登录响应取密钥、展示时遮住密钥。 |
 | `java-regex-compat-check` | Android/Java 正则方言到 JavaScript 的转换，含 `\w`、`\d`、`\b` 的 Unicode 语义。 |
 | `budgeted-regex-replace-check` | 净化替换的逐行执行、跨行判定和超时放弃。 |

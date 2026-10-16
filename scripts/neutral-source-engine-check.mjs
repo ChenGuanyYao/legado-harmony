@@ -4,10 +4,10 @@ import path from 'node:path';
 const projectRoot = path.resolve(import.meta.dirname, '..');
 const scanRoots = [
   'entry/src/main/ets/core/book',
-  'sourceengine/src/main/ets/core/book',
-  'sourceengine/src/main/ets/core/http',
-  'sourceengine/src/main/ets/core/nativesource',
-  'sourceengine/src/main/ets/core/rule',
+  'harmony-book-source-engine/sourceengine/src/main/ets/core/book',
+  'harmony-book-source-engine/sourceengine/src/main/ets/core/http',
+  'harmony-book-source-engine/sourceengine/src/main/ets/core/nativesource',
+  'harmony-book-source-engine/sourceengine/src/main/ets/core/rule',
   'entry/src/main/ets/pages/BookSource.ets',
   'entry/src/main/ets/pages/ReadBook.ets',
   'entry/src/main/ets/pages/VerifyWeb.ets',

@@ -607,7 +607,7 @@ fn sign(path, ts) {
 
 ## 实现与验证
 
-- 表达式引擎：`sourceengine/src/main/ets/core/nativesource/NativeExpr.ts`
+- 表达式引擎：`harmony-book-source-engine/sourceengine/src/main/ets/core/nativesource/NativeExpr.ts`
 - 定义的解析、校验与存储：`NativeSourceSpec.ts`
 - 阶段执行器：`NativeSourceRunner.ts`
 - 接入请求层与数据模型：`NativeSourceService.ts`
@@ -625,7 +625,7 @@ fn sign(path, ts) {
 回归脚本（不需要设备）：
 
 ```bash
-node --experimental-strip-types scripts/native-source-check.mjs
+node --experimental-strip-types harmony-book-source-engine/scripts/native-source-check.mjs
 ```
 
 ---
@@ -2201,36 +2201,36 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 需要继续扩展规则能力时，可从这些实现入口核对：
 
-- 数据模型：`sourceengine/src/main/ets/model/data/Book.ts`
+- 数据模型：`harmony-book-source-engine/sourceengine/src/main/ets/model/data/Book.ts`
 - JSON 导入兼容：`entry/src/main/ets/pages/BookSource.ets`
 - 书源与搜索结果列表快捷操作：`entry/src/main/ets/pages/BookSource.ets`、`entry/src/main/ets/components/book/SearchBookResultList.ets`
-- URL 相对地址解析：`sourceengine/src/main/ets/core/book/BookUrlResolver.ts`
+- URL 相对地址解析：`harmony-book-source-engine/sourceengine/src/main/ets/core/book/BookUrlResolver.ts`
 - 编辑器字段：`entry/src/main/ets/pages/BookSourceEdit.ets`
-- URL 和请求选项：`sourceengine/src/main/ets/core/rule/AnalyzeUrl.ts`
-- 页码候选写法：`sourceengine/src/main/ets/core/rule/PageCandidateUrl.ts`，回归脚本 `scripts/page-candidate-url-check.mjs`
-- 通用规则解析：`sourceengine/src/main/ets/core/rule/AnalyzeRule.ts`
-- 规则中间值与执行目标：`sourceengine/src/main/ets/core/rule/RuleValue.ts`
-- JSONPath：`sourceengine/src/main/ets/core/rule/JsonPathEvaluator.ts`
-- Java 正则方言转换：`sourceengine/src/main/ets/core/rule/JavaRegexCompat.ts`（字符表由 `scripts/generate-java-regex-word-class.mjs` 生成）
-- 带时间预算的净化替换：`sourceengine/src/main/ets/core/rule/BudgetedRegexReplace.ts`、`entry/src/main/ets/core/concurrency/ReaderContentPreprocessor.ets`
-- JS 兼容层：`sourceengine/src/main/ets/core/rule/JsRuntime.ts`
-- QuickJS 迁移运行时：`sourceengine/src/main/ets/core/script/QuickJsScriptRuntime.ts`、`QuickJsAsyncRouter.ts`、`QuickJsMigrationStore.ts`、`QuickJsRuntimeStatus.ts`、`QuickJsShadowExecutor.ets`
-- 分阶段运行路由：`sourceengine/src/main/ets/core/book/BookSourceRuntimeRouter.ts`，回归脚本 `scripts/source-script-runtime-check.mjs`
-- 动态 `@js:` 请求头：`sourceengine/src/main/ets/core/book/BookSourceHeaderRuntime.ts`
-- 搜索/发现/详情/目录/正文 ArkWeb：`sourceengine/src/main/ets/core/book/BookSourceStageWebRuntime.ts`
-- 显式 `webView` 请求：`sourceengine/src/main/ets/core/book/WebBookFetchRuntime.ts`；`webJs` 的 Promise 等待脚本：`sourceengine/src/main/ets/core/book/WebJsAwaitScript.ts`
+- URL 和请求选项：`harmony-book-source-engine/sourceengine/src/main/ets/core/rule/AnalyzeUrl.ts`
+- 页码候选写法：`harmony-book-source-engine/sourceengine/src/main/ets/core/rule/PageCandidateUrl.ts`，回归脚本 `harmony-book-source-engine/scripts/page-candidate-url-check.mjs`
+- 通用规则解析：`harmony-book-source-engine/sourceengine/src/main/ets/core/rule/AnalyzeRule.ts`
+- 规则中间值与执行目标：`harmony-book-source-engine/sourceengine/src/main/ets/core/rule/RuleValue.ts`
+- JSONPath：`harmony-book-source-engine/sourceengine/src/main/ets/core/rule/JsonPathEvaluator.ts`
+- Java 正则方言转换：`harmony-book-source-engine/sourceengine/src/main/ets/core/rule/JavaRegexCompat.ts`（字符表由 `harmony-book-source-engine/scripts/generate-java-regex-word-class.mjs` 生成）
+- 带时间预算的净化替换：`harmony-book-source-engine/sourceengine/src/main/ets/core/rule/BudgetedRegexReplace.ts`、`entry/src/main/ets/core/concurrency/ReaderContentPreprocessor.ets`
+- JS 兼容层：`harmony-book-source-engine/sourceengine/src/main/ets/core/rule/JsRuntime.ts`
+- QuickJS 迁移运行时：`harmony-book-source-engine/sourceengine/src/main/ets/core/script/QuickJsScriptRuntime.ts`、`QuickJsAsyncRouter.ts`、`QuickJsMigrationStore.ts`、`QuickJsRuntimeStatus.ts`、`QuickJsShadowExecutor.ets`
+- 分阶段运行路由：`harmony-book-source-engine/sourceengine/src/main/ets/core/book/BookSourceRuntimeRouter.ts`，回归脚本 `harmony-book-source-engine/scripts/source-script-runtime-check.mjs`
+- 动态 `@js:` 请求头：`harmony-book-source-engine/sourceengine/src/main/ets/core/book/BookSourceHeaderRuntime.ts`
+- 搜索/发现/详情/目录/正文 ArkWeb：`harmony-book-source-engine/sourceengine/src/main/ets/core/book/BookSourceStageWebRuntime.ts`
+- 显式 `webView` 请求：`harmony-book-source-engine/sourceengine/src/main/ets/core/book/WebBookFetchRuntime.ts`；`webJs` 的 Promise 等待脚本：`harmony-book-source-engine/sourceengine/src/main/ets/core/book/WebJsAwaitScript.ts`
 - 阶段规则识别：`entry/src/main/ets/core/book/BookSourceStageRuleSupport.ts`
 - 登录面板 ArkWeb：`entry/src/main/ets/core/book/BookSourceLoginWebRuntime.ts`
 - 搜索流程：`entry/src/main/ets/core/book/SearchCoordinator.ts`
-- 书源限流：`sourceengine/src/main/ets/core/http/BookSourceRateLimiter.ts`
+- 书源限流：`harmony-book-source-engine/sourceengine/src/main/ets/core/http/BookSourceRateLimiter.ts`
 - Web 能力探测：`entry/src/main/ets/utils/WebRuntimeAvailability.ets`
 - 发现流程：`entry/src/main/ets/core/book/ExploreCoordinator.ts`
 - 发现结果缓存与失效：`entry/src/main/ets/utils/ExploreResultCache.ets`
-- 日志地址脱敏：`sourceengine/src/main/ets/utils/LogText.ts`
+- 日志地址脱敏：`harmony-book-source-engine/sourceengine/src/main/ets/utils/LogText.ts`
 - 详情、目录、正文：`entry/src/main/ets/core/book/WebBookService.ts`
-- 编码地址与快捷协议：`entry/src/main/ets/core/book/BookSourceDataUrlSupport.ts`、`sourceengine/src/main/ets/core/book/EncodedSourceUrl.ts`
-- 正文交互后处理：`entry/src/main/ets/core/book/BookSourceInteractionPostProcessor.ts`、`sourceengine/src/main/ets/core/book/ReaderActionMarker.ts`
-- 书籍类型识别：`sourceengine/src/main/ets/core/book/BookTypeSupport.ts`
+- 编码地址与快捷协议：`entry/src/main/ets/core/book/BookSourceDataUrlSupport.ts`、`harmony-book-source-engine/sourceengine/src/main/ets/core/book/EncodedSourceUrl.ts`
+- 正文交互后处理：`entry/src/main/ets/core/book/BookSourceInteractionPostProcessor.ts`、`harmony-book-source-engine/sourceengine/src/main/ets/core/book/ReaderActionMarker.ts`
+- 书籍类型识别：`harmony-book-source-engine/sourceengine/src/main/ets/core/book/BookTypeSupport.ts`
 - 有声书规则辅助（`sourceRegex`、地址请求头、`@webjs:`）：`entry/src/main/ets/core/book/AudioRuleSupport.ts`，回归脚本 `scripts/audio-rule-support-check.mjs`
 - 有声书页面与后台播放：`entry/src/main/ets/pages/AudioBook.ets`、`entry/src/main/ets/utils/RemoteAudioPlayback.ets`、`entry/src/main/ets/utils/ReaderTtsFloatingSession.ets`
 - 数据库存储：`entry/src/main/ets/model/data/AppDatabase.ts`
@@ -2241,8 +2241,8 @@ https://img.example/page.jpg,{"headers":{"Referer":"https://example.com/"}}
 
 - 书源管理页及导入、校验、批量操作：`entry/src/main/ets/pages/BookSource.ets`
 - 校验状态和后台校验任务：`BookSource.ets` 中的 `startCheckSources`、`bookSourceCheckProgressText`、`deleteFailedCheckedSources`
-- 单书源调试页及阶段执行：`entry/src/main/ets/pages/BookSourceDebug.ets`、`sourceengine/src/main/ets/core/book/BookSourceDebugModels.ts`
+- 单书源调试页及阶段执行：`entry/src/main/ets/pages/BookSourceDebug.ets`、`harmony-book-source-engine/sourceengine/src/main/ets/core/book/BookSourceDebugModels.ts`
 - 调试请求和规则轨迹：`HttpClient.ts`、`RuleExecutionService.ts`、`BookSourceStageWebRuntime.ts` 中的 `BookSourceDebugContext`
 - 发现/阅读全链路校验：`entry/src/main/ets/core/book/ExploreReadingValidator.ts`
-- 用户控制的精确主机证书例外：`sourceengine/src/main/ets/core/http/TlsTrustStore.ts`
+- 用户控制的精确主机证书例外：`harmony-book-source-engine/sourceengine/src/main/ets/core/http/TlsTrustStore.ts`
 - 规则执行快照与阅读交互桥接：`entry/src/main/ets/core/book/BookSourceRuntimeSnapshot.ts`、`entry/src/main/ets/core/book/ReaderInteractionProvider.ts`

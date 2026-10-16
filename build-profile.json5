@@ -100,7 +100,7 @@
     },
     {
       "name": "sourceengine",
-      "srcPath": "./sourceengine",
+      "srcPath": "./harmony-book-source-engine/sourceengine",
       "targets": [
         {
           "name": "default",
@@ -113,7 +113,7 @@
     },
     {
       "name": "quickjs",
-      "srcPath": "./quickjs",
+      "srcPath": "./harmony-book-source-engine/quickjs",
       "targets": [
         {
           "name": "default",
