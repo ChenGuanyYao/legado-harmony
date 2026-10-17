@@ -166,9 +166,10 @@ export class ThemeRuntime {
       ThemeRuntime.KEY_LIGHT_CARD_COLOR, fallback);
   }
 
+  /** 顶栏与页面同色，只靠模糊和半透明区分滚过去的内容，不做成一条单独的白条。 */
   static topBarColor(darkMode: boolean): string {
-    const fallback = ThemeRuntime.fallbackVariant(darkMode).colors.cardColor;
-    const color = ThemeRuntime.normalizeColor(ThemeRuntime.cardColor(darkMode), fallback);
+    const fallback = ThemeRuntime.fallbackVariant(darkMode).colors.pageColor;
+    const color = ThemeRuntime.normalizeColor(ThemeRuntime.pageColor(darkMode), fallback);
     return ThemeRuntime.dropdownPanelColor(darkMode, color, 'overlay');
   }
 
@@ -410,6 +411,16 @@ export class ThemeRuntime {
   /** 列表行、卡片的细分隔线和描边。 */
   static hairlineColor(darkMode: boolean): string {
     return darkMode ? '#24FFFFFF' : '#14000000';
+  }
+
+  /** 首页顶部白色胶囊、圆形按钮等悬浮控件的浅投影；深色模式靠底色区分，不加投影。 */
+  static floatingControlShadow(darkMode: boolean): ShadowOptions {
+    return {
+      radius: darkMode ? 0 : 12,
+      color: darkMode ? Color.Transparent : '#14000000',
+      offsetX: 0,
+      offsetY: darkMode ? 0 : 2
+    };
   }
 
   /** 叠在任意底色上的浅色填充，用于次要按钮、选中行、占位块。 */

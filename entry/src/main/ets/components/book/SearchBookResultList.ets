@@ -39,8 +39,8 @@ class SearchBookResultDataSource implements IDataSource {
 export struct SearchBookResultList {
   // 加密的书源封面解密完成后递增，读取它的封面会重新取到本地文件地址。
   @StorageProp('sourceCoverRevision') sourceCoverRevision: number = 0;
-  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
-  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
+  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#C4475B';
+  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#E0697C';
   @StorageLink('bookshelfCoverAlbums') bookshelfCoverAlbums: string = '';
   @StorageLink('bookshelfLightCoverAlbumId') bookshelfLightCoverAlbumId: string = '';
   @StorageLink('bookshelfDarkCoverAlbumId') bookshelfDarkCoverAlbumId: string = '';

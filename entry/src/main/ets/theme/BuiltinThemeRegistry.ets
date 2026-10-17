@@ -144,26 +144,26 @@ export class BuiltinThemeRegistry {
     const theme = BuiltinThemeRegistry.theme(
       ThemeIds.PLAIN_DEFAULT,
       '默认主题',
-      '无纹理、低装饰、清晰耐看的基础主题',
+      '浅灰底、白卡片与玫瑰红点缀，清爽耐看的基础主题',
       'sans-serif',
       'classic'
     );
     theme.light = BuiltinThemeRegistry.variant(
-      BuiltinThemeRegistry.colors('#F7F7F7', '#FFFFFF', '#F0F0F0', '#202124', '#73777F', '#E2E2E2',
-        '#5B6573', '#505967', '#C93F3F'),
+      BuiltinThemeRegistry.colors('#F5F5F5', '#FFFFFF', '#F0F0F0', '#1A1A1A', '#666666', '#EBEBEB',
+        '#C4475B', '#C4475B', '#E5484D'),
       BuiltinThemeRegistry.reader('#FAFAFA', '', '#262626', '#777777', 'light'),
-      BuiltinThemeRegistry.regex(ThemeBubbleStyles.CAPSULE, '#E7E9EC', '#34383D')
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.CAPSULE, '#F6E3E6', '#7A2433')
     );
     theme.dark = BuiltinThemeRegistry.variant(
-      BuiltinThemeRegistry.colors('#111111', '#1B1B1B', '#262626', '#F0F0F0', '#A0A0A0', '#343434',
-        '#AAB2BD', '#737D8A', '#E86A6A'),
+      BuiltinThemeRegistry.colors('#111111', '#1C1C1E', '#2A2A2C', '#F2F2F2', '#9A9A9A', '#2E2E2E',
+        '#E0697C', '#C4475B', '#FF6B6B'),
       BuiltinThemeRegistry.reader('#161616', '', '#E1E1E1', '#9A9A9A', 'dark'),
-      BuiltinThemeRegistry.regex(ThemeBubbleStyles.CAPSULE, '#34383D', '#E4E7EB')
+      BuiltinThemeRegistry.regex(ThemeBubbleStyles.CAPSULE, '#4A2A31', '#F6DCE1')
     );
     theme.book.coverAssetId = '';
     theme.book.shelfFrameAssetId = '';
     theme.book.shelfFolderAssetId = '';
-    theme.radius = BuiltinThemeRegistry.radius(4, 8, 12, 8, 16, 8);
+    theme.radius = BuiltinThemeRegistry.radius(6, 12, 20, 12, 24, 8);
     theme.readerLayout = BuiltinThemeRegistry.readerLayout(20, 12, 0, 18, 18, 18, 18);
     return theme;
   }

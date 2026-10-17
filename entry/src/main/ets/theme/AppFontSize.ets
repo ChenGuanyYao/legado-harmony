@@ -17,4 +17,6 @@ export class AppFontSize {
   static readonly TITLE: number = 20;
   /** 大标题、突出显示的数字。 */
   static readonly HEADLINE: number = 24;
+  /** 首页各页签顶部的大标题。 */
+  static readonly DISPLAY: number = 28;
 }

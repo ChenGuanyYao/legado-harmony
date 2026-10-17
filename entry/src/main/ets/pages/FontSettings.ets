@@ -34,8 +34,8 @@ struct FontSettingsPage {
   @StorageLink('readerCustomFontsRaw') readerCustomFontsRaw: string = '';
   @StorageLink('readerActiveFontFamily') readerActiveFontFamily: string = '';
   @StorageLink('readerFontRegistered') readerFontRegistered: boolean = false;
-  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
-  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
+  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#C4475B';
+  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#E0697C';
   @State customFonts: ReaderCustomFontItem[] = [];
 
   aboutToAppear(): void {

@@ -66,6 +66,8 @@ interface ShelfFullTextCacheTask {
 /** 首页"书架"页签：书架展示、分组与排序、封面加载、更新检查、全文缓存与书籍操作。 */
 @Component
 export struct BookshelfPage {
+  /** 标题下方“全部 / 网络 / 本地”胶囊的高度。 */
+  static readonly SCOPE_TABS_HEIGHT: number = 44;
   // 加密的书源封面解密完成后递增，读取它的封面会重新取到本地文件地址。
   @StorageProp('sourceCoverRevision') sourceCoverRevision: number = 0;
   @Prop statusBarHeight: number = 0;
@@ -88,7 +90,6 @@ export struct BookshelfPage {
   @State privateShelfPasswordInput: string = '';
   @State privateShelfPasswordError: string = '';
   private privateShelfUnlockDialogSession: SystemDialogSession = new SystemDialogSession();
-  @State showShelfScopeOptions: boolean = false;
   @State showShelfSortMenu: boolean = false;
   @State showShelfLayoutMenu: boolean = false;
   @State showShelfGroups: boolean = false;
@@ -197,10 +198,10 @@ export struct BookshelfPage {
   @StorageLink('bookshelfCoverTargetBooks') @Watch('onShelfCoverSettingsChanged') bookshelfCoverTargetBooks: string = '';
   @StorageLink('bookshelfIgnoreSourceCover') @Watch('onShelfCoverSettingsChanged') bookshelfIgnoreSourceCover: boolean = false;
   @StorageLink('bookshelfCoverMode') @Watch('onShelfCoverSettingsChanged') bookshelfCoverMode: string = 'sequence';
-  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
-  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
-  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
-  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
+  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#C4475B';
+  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#E0697C';
+  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#C4475B';
+  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#C4475B';
   @StorageLink('fullTextCacheCancelNonce') @Watch('onFullTextCacheCancelNonceChanged') fullTextCacheCancelNonce: number = 0;
   @StorageLink('fullTextCacheCancelSignal') @Watch('onFullTextCacheCancelSignalChanged') fullTextCacheCancelSignal: string = '';
   @StorageLink('shelfBookCloseAnimationNonce') @Watch('onShelfBookCloseAnimationRequested')
@@ -991,7 +992,10 @@ export struct BookshelfPage {
               .fontSize(AppFontSize.BODY)
               .fontColor('#999')
           } else {
-            this.shelfLayoutButton()
+            Text('书架')
+              .fontSize(AppFontSize.DISPLAY)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.primaryTextColor())
 
             if (this.isBookMultiSelect) {
               Blank()
@@ -1003,7 +1007,26 @@ export struct BookshelfPage {
                 .textAlign(TextAlign.Center)
                 .onClick(() => this.exitBookMultiSelect())
             } else {
-              this.shelfScopeSegment()
+              Row({ space: AppSpacing.XXS }) {
+                Text(this.books.length > 0 ? `${this.books.length}本` : '分组')
+                  .fontSize(AppFontSize.BODY)
+                  .fontColor(this.secondaryTextColor())
+                SymbolGlyph(this.showShelfGroups ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+                  .fontSize(14)
+                  .fontColor([this.secondaryTextColor()])
+              }
+              .height(36)
+              .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
+              .alignItems(VerticalAlign.Center)
+              .accessibilityText(this.showShelfGroups ? '收起分组' : '展开分组')
+              .onClick(() => {
+                const next = !this.showShelfGroups;
+                animateTo({ duration: 190, curve: Curve.Friction }, () => {
+                  this.showShelfGroups = next;
+                });
+                this.showShelfSortMenu = false;
+                this.showShelfLayoutMenu = false;
+              })
 
               Blank()
 
@@ -1011,36 +1034,22 @@ export struct BookshelfPage {
                 this.shelfSortButton()
               }
 
-              Row({ space: AppSpacing.XS }) {
-                Text(this.books.length > 0 ? `${this.books.length}本` : '')
-                  .fontSize(AppFontSize.BODY)
-                  .fontColor('#999')
-                SymbolGlyph(this.showShelfGroups ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
-                  .fontSize(15)
-                  .fontColor([this.secondaryTextColor()])
-              }
-              .height(36)
-              .alignItems(VerticalAlign.Center)
-              .onClick(() => {
-                const next = !this.showShelfGroups;
-                animateTo({ duration: 190, curve: Curve.Friction }, () => {
-                  this.showShelfGroups = next;
-                });
-                this.showShelfScopeOptions = false;
-                this.showShelfSortMenu = false;
-                this.showShelfLayoutMenu = false;
-              })
+              this.shelfLayoutButton()
             }
           }
         }
         .width('100%')
         .height(56 + this.statusBarHeight)
         .padding({
-          left: this.isTileGroupPage() && !this.isBookMultiSelect ? 0 : 16,
+          left: this.isTileGroupPage() && !this.isBookMultiSelect ? 0 : AppSpacing.XL,
           right: AppSpacing.XL,
           top: this.statusBarHeight
         })
         .alignItems(VerticalAlign.Center)
+
+        if (this.showsShelfScopeTabs()) {
+          this.shelfScopeTabs()
+        }
 
         if (this.isBookMultiSelect) {
           this.bookSelectionStatusBar()
@@ -1087,8 +1096,10 @@ export struct BookshelfPage {
           )
         } else if (this.books.length === 0) {
           Column() {
-            Text('📚')
-              .fontSize(48)
+            SymbolGlyph($r('sys.symbol.bookshelf'))
+              .fontSize(56)
+              .fontColor([this.subTextColor()])
+              .opacity(0.5)
               .margin({ bottom: AppSpacing.XL })
             Text('暂无书籍')
               .fontSize(AppFontSize.BODY_LARGE)
@@ -1231,10 +1242,6 @@ export struct BookshelfPage {
 
       if (this.showShelfLayoutMenu && !this.isBookMultiSelect && !this.isTileGroupPage()) {
         this.shelfLayoutFloatingMenu()
-      }
-
-      if (this.showShelfScopeOptions && !this.isBookMultiSelect && !this.isTileGroupPage()) {
-        this.shelfScopeFloatingMenu()
       }
 
       if (this.showActionDialog && this.pendingActionBook) {
@@ -2364,7 +2371,6 @@ export struct BookshelfPage {
   }
 
   enterTileGroupPage(groupId: number): void {
-    this.showShelfScopeOptions = false;
     this.showShelfGroups = false;
     this.showShelfSortMenu = false;
     this.showShelfLayoutMenu = false;
@@ -2372,7 +2378,6 @@ export struct BookshelfPage {
   }
 
   exitTileGroupPage(): void {
-    this.showShelfScopeOptions = false;
     this.showShelfGroups = false;
     this.showShelfSortMenu = false;
     this.selectShelfGroup(0);
@@ -2380,7 +2385,6 @@ export struct BookshelfPage {
 
   enterBookMultiSelect(initialBookUrl: string): void {
     this.isBookMultiSelect = true;
-    this.showShelfScopeOptions = false;
     this.selectedBookUrls = initialBookUrl ? [initialBookUrl] : [];
     this.showShelfSortMenu = false;
     this.showShelfLayoutMenu = false;
@@ -2579,6 +2583,9 @@ export struct BookshelfPage {
 
   bookshelfTopOverlayHeight(): number {
     let height = this.statusBarHeight + 56;
+    if (this.showsShelfScopeTabs()) {
+      height += BookshelfPage.SCOPE_TABS_HEIGHT + AppSpacing.MD;
+    }
     if (this.isBookMultiSelect) {
       height += 42;
     } else if (this.showShelfGroups) {
@@ -3229,7 +3236,7 @@ export struct BookshelfPage {
         width: this.isBookSelected(book.bookUrl) ? 2 : ThemeRuntime.glassBorderWidth(),
         color: this.isBookSelected(book.bookUrl) ? this.accentColor() : this.glassBorderColor()
       })
-      .borderRadius(7)
+      .borderRadius(8)
       .shadow({ radius: ThemeRuntime.glassShadowRadius(), color: this.glassShadowColor(),
         offsetX: ThemeRuntime.glassShadowOffsetX(), offsetY: ThemeRuntime.glassShadowOffsetY() })
 
@@ -3890,7 +3897,7 @@ export struct BookshelfPage {
     }
     .width(width)
     .height(height)
-    .borderRadius(6)
+    .borderRadius(8)
     .clip(true)
     .backgroundColor(this.inputColor())
     .onAppear(() => this.ensureShelfBookCoverCache(book))
@@ -4403,7 +4410,6 @@ export struct BookshelfPage {
   setShelfScope(scope: string): void {
     const next = scope === 'local' || scope === 'network' || (scope === 'private' && this.privateShelfEnabled) ?
       scope : 'all';
-    this.showShelfScopeOptions = false;
     if (this.shelfScope === next) return;
     this.shelfScope = next;
     this.showShelfSortMenu = false;
@@ -4456,7 +4462,6 @@ export struct BookshelfPage {
     const scopes: string[] = this.shelfScopeOrder();
     const currentIndex = scopes.indexOf(this.shelfScope);
     const nextIndex = scopes.indexOf(scope);
-    this.showShelfScopeOptions = false;
     if (currentIndex < 0 || nextIndex < 0 || currentIndex === nextIndex) {
       return;
     }
@@ -5817,108 +5822,50 @@ export struct BookshelfPage {
     .hitTestBehavior(HitTestMode.None)
   }
 
-  @Builder
-  shelfScopeSegment() {
-    Row({ space: 5 }) {
-      Text(this.shelfScopeLabel())
-        .fontSize(AppFontSize.BODY)
-        .fontWeight(FontWeight.Medium)
-        .fontColor(this.accentColor())
-      SymbolGlyph(this.showShelfScopeOptions ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
-        .fontSize(12)
-        .fontColor([this.secondaryTextColor()])
-    }
-    .width(72)
-    .height(32)
-    .borderRadius(18)
-    .backgroundColor(this.showShelfScopeOptions ? this.selectedSoftBackgroundColor() : this.glassCardColor())
-    .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
-    .justifyContent(FlexAlign.Center)
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => {
-      this.showShelfScopeOptions = !this.showShelfScopeOptions;
-      this.showShelfGroups = false;
-      this.showShelfSortMenu = false;
-      this.showShelfLayoutMenu = false;
-    })
+  showsShelfScopeTabs(): boolean {
+    return !this.isBookMultiSelect && !this.isTileGroupPage();
   }
 
   @Builder
-  shelfScopeFloatingMenu() {
-    Stack({ alignContent: Alignment.TopStart }) {
-      Column()
-        .width('100%')
-        .height('100%')
-        .onClick(() => {
-          this.showShelfScopeOptions = false;
-        })
-
-      Column() {
-        this.expandedShelfScopeSegment()
-      }
-      .width(116)
-      .position({ x: 60, y: this.statusBarHeight + 52 })
-      .onClick(() => {
-      })
-    }
-    .width('100%')
-    .height('100%')
-    .zIndex(12)
-  }
-
-  @Builder
-  expandedShelfScopeSegment() {
-    Column({ space: AppSpacing.XS }) {
-      this.scopeDropdownItem('全部', 'all')
-      this.scopeDropdownItem('网络', 'network')
-      this.scopeDropdownItem('本地', 'local')
-      if (this.privateShelfEnabled) {
-        this.scopeDropdownItem('隐私', 'private')
-      }
-    }
-    .width(116)
-    .padding(AppSpacing.SM)
-    .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
-    .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
-    .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
-    .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
-    .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
-  }
-
-  @Builder
-  scopeDropdownItem(label: string, scope: string) {
+  shelfScopeTabs() {
     Row() {
-      Text(label)
-        .fontSize(AppFontSize.BODY)
-        .fontWeight(this.shelfScope === scope ? FontWeight.Medium : FontWeight.Regular)
-        .fontColor(this.shelfScope === scope ? this.accentColor() : this.primaryTextColor())
+      ForEach(this.shelfScopeOrder(), (scope: string) => {
+        Column({ space: 3 }) {
+          Text(this.shelfScopeName(scope))
+            .fontSize(AppFontSize.BODY_LARGE)
+            .fontWeight(this.shelfScope === scope ? FontWeight.Medium : FontWeight.Regular)
+            .fontColor(this.shelfScope === scope ? this.accentColor() : this.secondaryTextColor())
+          Row()
+            .width(16)
+            .height(3)
+            .borderRadius(1.5)
+            .backgroundColor(this.shelfScope === scope ? this.accentColor() : Color.Transparent)
+        }
         .layoutWeight(1)
-
-      if (this.shelfScope === scope) {
-        Text('✓')
-          .fontSize(AppFontSize.BODY)
-          .fontColor(this.accentColor())
-      }
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .accessibilityText(this.shelfScopeName(scope))
+        .onClick(() => this.switchShelfScopeBySelection(scope))
+      }, (scope: string) => scope)
     }
     .width('100%')
-    .height(34)
-    .padding({ left: 10, right: 10 })
-    .borderRadius(ThemeRuntime.mediumRadius())
-    .backgroundColor(this.shelfScope === scope ? this.selectedSoftBackgroundColor() : '#00000000')
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => {
-      this.switchShelfScopeBySelection(scope);
-    })
+    .height(BookshelfPage.SCOPE_TABS_HEIGHT)
+    .padding({ top: 3 })
+    .borderRadius(BookshelfPage.SCOPE_TABS_HEIGHT / 2)
+    .backgroundColor(this.cardColor())
+    .shadow(ThemeRuntime.floatingControlShadow(this.appDarkMode))
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
   }
 
-  shelfScopeLabel(): string {
-    if (this.shelfScope === 'network') {
+  shelfScopeName(scope: string): string {
+    if (scope === 'network') {
       return '网络';
     }
-    if (this.shelfScope === 'local') {
+    if (scope === 'local') {
       return '本地';
     }
-    if (this.shelfScope === 'private') {
+    if (scope === 'private') {
       return '隐私';
     }
     return '全部';
@@ -5928,19 +5875,19 @@ export struct BookshelfPage {
   shelfLayoutButton() {
     Row() {
       SymbolGlyph($r('sys.symbol.square_grid_2x2'))
-        .fontSize(24)
+        .fontSize(20)
         .fontColor([this.showShelfLayoutMenu ? this.accentColor() : this.primaryTextColor()])
     }
-    .width(44)
-    .height(44)
-    .borderRadius(22)
+    .width(40)
+    .height(40)
+    .borderRadius(20)
     .justifyContent(FlexAlign.Center)
     .alignItems(VerticalAlign.Center)
-    .backgroundColor(this.showShelfLayoutMenu ? this.selectedSoftBackgroundColor() : '#00000000')
+    .backgroundColor(this.showShelfLayoutMenu ? this.selectedSoftBackgroundColor() : this.cardColor())
+    .shadow(ThemeRuntime.floatingControlShadow(this.appDarkMode))
     .accessibilityText('布局切换')
     .onClick(() => {
       this.showShelfLayoutMenu = !this.showShelfLayoutMenu;
-      this.showShelfScopeOptions = false;
       this.showShelfSortMenu = false;
       this.showShelfGroups = false;
     })
@@ -5949,11 +5896,11 @@ export struct BookshelfPage {
   @Builder
   shelfLayoutFloatingMenu() {
     Row() {
-      this.shelfLayoutDropdown()
       Blank()
+      this.shelfLayoutDropdown()
     }
     .width('100%')
-    .padding({ left: AppSpacing.LG })
+    .padding({ right: AppSpacing.XL })
     .position({ x: 0, y: this.statusBarHeight + 52 })
     .zIndex(11)
   }
@@ -6032,16 +5979,15 @@ export struct BookshelfPage {
         .fontSize(14)
         .fontColor([this.secondaryTextColor()])
     }
-    .height(32)
-    .padding({ left: 11, right: 9 })
-    .borderRadius(16)
-    .backgroundColor(this.glassCardColor())
-    .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
+    .height(40)
+    .padding({ left: 14, right: 12 })
+    .borderRadius(20)
+    .backgroundColor(this.showShelfSortMenu ? this.selectedSoftBackgroundColor() : this.cardColor())
+    .shadow(ThemeRuntime.floatingControlShadow(this.appDarkMode))
     .alignItems(VerticalAlign.Center)
     .margin({ right: 10 })
     .onClick(() => {
       this.showShelfSortMenu = !this.showShelfSortMenu;
-      this.showShelfScopeOptions = false;
       this.showShelfLayoutMenu = false;
     })
   }
@@ -6053,7 +5999,8 @@ export struct BookshelfPage {
       this.shelfSortDropdown()
     }
     .width('100%')
-    .padding({ right: 56 })
+    // 排序按钮在布局按钮（40）左侧并隔开 10，菜单右缘对齐排序按钮。
+    .padding({ right: AppSpacing.XL + 50 })
     .position({ x: 0, y: this.statusBarHeight + 52 })
     .zIndex(10)
     .transition(this.shelfSortMenuTransition())
@@ -6622,7 +6569,7 @@ export struct BookshelfPage {
   }
 
   sourceTagBackgroundColor(): string {
-    return this.appDarkMode ? '#24272D' : '#E8F0FE';
+    return this.selectedSoftBackgroundColor();
   }
 
   sourceTagTextColor(): string {

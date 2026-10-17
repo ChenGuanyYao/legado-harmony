@@ -13,8 +13,8 @@ import { PageScaffold } from '../components/common/PageScaffold';
 struct LocalBookSettingsPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
-  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
-  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
+  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#C4475B';
+  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#C4475B';
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @State isScanning: boolean = false;
   @State statusText: string = '';

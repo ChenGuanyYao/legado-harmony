@@ -17,8 +17,8 @@ struct OtherSettingsPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('immersiveLightLevel') immersiveLightLevel: string = 'adaptive';
-  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
-  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
+  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#C4475B';
+  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#E0697C';
   @StorageLink('lanReaderEnabled') lanReaderEnabled: boolean = false;
   @StorageLink('lanReaderAddress') lanReaderAddress: string = '';
   @StorageLink('lanReaderStatus') lanReaderStatus: string = '已关闭';

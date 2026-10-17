@@ -20,8 +20,8 @@ import { PageScaffold } from '../components/common/PageScaffold';
 struct WebDavPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
-  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
-  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
+  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#C4475B';
+  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#E0697C';
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
 

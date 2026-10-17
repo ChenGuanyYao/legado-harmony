@@ -76,8 +76,8 @@ export struct SearchPage {
   @StorageLink('singleSourceSearchUrl') singleSourceSearchUrl: string = '';
   @StorageLink('singleSourceSearchName') singleSourceSearchName: string = '';
   @StorageLink('globalSearchPendingNonce') @Watch('onGlobalSearchPendingNonceChanged') globalSearchPendingNonce: number = 0;
-  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
-  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
+  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#C4475B';
+  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#C4475B';
   private coordinator: SearchCoordinator | null = null;
   private hasInitialized: boolean = false;
   private shelfStatusVersion: number = 0;
@@ -484,8 +484,7 @@ export struct SearchPage {
           .height(40)
           .borderRadius(20)
           .backgroundColor(this.glassCardColor())
-          .border({ width: ThemeRuntime.glassBorderWidth(), color: this.glassBorderColor() })
-          .shadow({ radius: ThemeRuntime.glassShadowRadius(), color: this.glassShadowColor(), offsetX: ThemeRuntime.glassShadowOffsetX(), offsetY: ThemeRuntime.glassShadowOffsetY() })
+          .shadow(ThemeRuntime.floatingControlShadow(this.appDarkMode))
           .alignItems(VerticalAlign.Center)
         }
 
@@ -543,8 +542,9 @@ export struct SearchPage {
         .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.SM })
         .borderRadius(18)
         .backgroundColor(this.glassCardColor())
-        .border({ width: 1, color: (this.singleSourceSearchUrl || !this.isAllSearchSourcesSelected()) ?
-          this.buttonColor() : this.glassBorderColor() })
+        .border({ width: (this.singleSourceSearchUrl || !this.isAllSearchSourcesSelected()) ? 1 : 0,
+          color: this.buttonColor() })
+        .shadow(ThemeRuntime.floatingControlShadow(this.appDarkMode))
         .alignItems(VerticalAlign.Center)
         .onClick(() => this.openSearchSourcePicker())
 

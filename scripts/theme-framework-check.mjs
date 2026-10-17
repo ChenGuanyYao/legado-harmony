@@ -315,12 +315,12 @@ assert(indexPage.includes('this.shelfSortButton()') &&
   indexPage.includes("this.sortDropdownItem('新阅读', 'recentRead')") &&
   !indexPage.includes("this.sortChip('新阅读', 'recentRead')"),
   'Bookshelf sorting must use a compact dropdown selector');
-assert(indexPage.includes('shelfScopeSegment()') &&
-  indexPage.includes('expandedShelfScopeSegment()') &&
-  indexPage.includes("this.scopeDropdownItem('网络', 'network')") &&
-  indexPage.includes("this.scopeDropdownItem('本地', 'local')") &&
-  !indexPage.includes("this.scopeChip('网络', 'network')"),
-  'Bookshelf network/local switch must use the compact dropdown selector');
+assert(indexPage.includes('this.shelfScopeTabs()') &&
+  indexPage.includes('ForEach(this.shelfScopeOrder()') &&
+  indexPage.includes('this.switchShelfScopeBySelection(scope)') &&
+  indexPage.includes("return '网络';") && indexPage.includes("return '本地';") &&
+  !indexPage.includes('expandedShelfScopeSegment()'),
+  'Bookshelf network/local switch must use the capsule tabs under the title');
 assert((indexPage.includes("this.actionItem('多选'") ||
   indexPage.includes("this.contextActionItem($r('sys.symbol.checkmark_circle'), '多选'")) &&
   indexPage.includes('this.bookMultiSelectBar()'),

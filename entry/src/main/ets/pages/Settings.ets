@@ -92,10 +92,10 @@ struct SettingsPage {
   @StorageLink('readerPreloadEnabled') readerPreloadEnabled: boolean = true;
   @StorageLink('readerPreloadChapterCount') readerPreloadChapterCount: number = 1;
   @StorageLink('readerQuickBookmarkEnabled') readerQuickBookmarkEnabled: boolean = true;
-  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
-  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
-  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
-  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
+  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#C4475B';
+  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#E0697C';
+  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#C4475B';
+  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#C4475B';
   @State customFonts: ReaderCustomFontItem[] = [];
   @State previewFontRenderVersion: number = 0;
   private tapZoneDialogSession: SystemDialogSession = new SystemDialogSession();

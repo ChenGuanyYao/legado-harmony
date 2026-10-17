@@ -31,17 +31,32 @@ export struct SettingsPage {
             .height(56 + this.statusBarHeight)
 
           this.accountSummaryCard()
+
           Column() {
             this.syncMenuItem()
-            this.menuItem($r('sys.symbol.timer'), '阅读统计', true, () => {
+            this.menuItem($r('sys.symbol.timer'), '阅读统计', false, () => {
               router.pushUrl({ url: 'pages/ReadingStats' });
             })
+          }
+          .width('100%')
+          .borderRadius(ThemeRuntime.largeRadius())
+          .clip(true)
+          .backgroundColor(this.glassCardColor())
+
+          Column() {
             this.menuItem($r('sys.symbol.externaldrive'), '书源管理', true, () => {
               router.pushUrl({ url: 'pages/BookSource' });
             })
-            this.menuItem($r('sys.symbol.download'), '书籍导入', true, () => {
+            this.menuItem($r('sys.symbol.download'), '书籍导入', false, () => {
               router.pushUrl({ url: 'pages/BookImport' });
             })
+          }
+          .width('100%')
+          .borderRadius(ThemeRuntime.largeRadius())
+          .clip(true)
+          .backgroundColor(this.glassCardColor())
+
+          Column() {
             this.menuItem($r('sys.symbol.book'), '阅读设置', true, () => {
               router.pushUrl({ url: 'pages/Settings' });
             })
@@ -57,9 +72,16 @@ export struct SettingsPage {
             this.menuItem($r('sys.symbol.circle_lefthalf_inset_filled'), '主题', true, () => {
               router.pushUrl({ url: 'pages/ThemeSettings' });
             })
-            this.menuItem($r('sys.symbol.gearshape'), '其他设置', true, () => {
+            this.menuItem($r('sys.symbol.gearshape'), '其他设置', false, () => {
               router.pushUrl({ url: 'pages/OtherSettings' });
             })
+          }
+          .width('100%')
+          .borderRadius(ThemeRuntime.largeRadius())
+          .clip(true)
+          .backgroundColor(this.glassCardColor())
+
+          Column() {
             this.menuItem($r('sys.symbol.questionmark_circle'), '帮助', true, () => {
               router.pushUrl({ url: 'pages/Help' });
             })
@@ -76,8 +98,8 @@ export struct SettingsPage {
             .width('100%')
             .height(56 + Math.max(this.navBarHeight, 8) + 20)
         }
-        .width('calc(100% - 24vp)')
-        .margin({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG })
+        .width('calc(100% - 32vp)')
+        .margin({ left: AppSpacing.XL, right: AppSpacing.XL })
         .justifyContent(FlexAlign.Start)
       }
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
@@ -89,7 +111,7 @@ export struct SettingsPage {
 
       Row() {
         Text('我的')
-          .fontSize(AppFontSize.TITLE)
+          .fontSize(AppFontSize.DISPLAY)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
@@ -112,21 +134,21 @@ export struct SettingsPage {
     Row({ space: AppSpacing.LG }) {
       if (this.accountLoggedIn && this.accountAvatarUrl) {
         Image(this.accountAvatarUrl)
-          .width(48)
-          .height(48)
-          .borderRadius(24)
+          .width(56)
+          .height(56)
+          .borderRadius(28)
           .objectFit(ImageFit.Cover)
       } else {
         Image($r('app.media.ic_default_reader_avatar'))
-          .width(48)
-          .height(48)
-          .borderRadius(24)
+          .width(56)
+          .height(56)
+          .borderRadius(28)
           .objectFit(ImageFit.Cover)
       }
 
       Column({ space: AppSpacing.XS }) {
         Text(this.accountLoggedIn ? this.accountDisplayName : '登录华为账号')
-          .fontSize(AppFontSize.BODY_LARGE)
+          .fontSize(AppFontSize.SUBTITLE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor())
         Text(this.accountLoggedIn ? `${this.accountPoints} 点` : '首次登录免费送 300 点')
@@ -155,13 +177,12 @@ export struct SettingsPage {
       Row() {
         SymbolGlyph($r('sys.symbol.arrow_clockwise'))
           .fontSize(22)
-          .fontColor([this.subTextColor()])
+          .fontColor([this.accentColor()])
           .width(32)
 
         Column({ space: AppSpacing.XXS }) {
           Text('数据同步')
             .fontSize(AppFontSize.BODY_LARGE)
-            .fontWeight(FontWeight.Medium)
             .fontColor(this.primaryTextColor())
           Text(CloudSyncSettingsStore.statusSummary(this.accountLoggedIn, this.cloudSyncEnabled,
             this.cloudSyncStatus, this.cloudSyncPendingCount, this.cloudSyncLastSuccessAt))
@@ -199,12 +220,11 @@ export struct SettingsPage {
       Row() {
         SymbolGlyph(icon)
           .fontSize(22)
-          .fontColor([this.subTextColor()])
+          .fontColor([this.accentColor()])
           .width(32)
 
         Text(title)
           .fontSize(AppFontSize.BODY_LARGE)
-          .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
           .margin({ left: AppSpacing.LG })
