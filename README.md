@@ -21,7 +21,7 @@
 | 项目 | 信息 |
 | --- | --- |
 | 应用包名 | `io.legado.read` |
-| 当前版本 | `4.0.921`（以 `AppScope/app.json5` 为准） |
+| 当前版本 | `4.0.922`（以 `AppScope/app.json5` 为准） |
 | 支持设备 | `phone`、`tablet`、`2in1` |
 | 最低 / 目标 API | HarmonyOS 6.0.0（API 20）/ API 26 |
 | 开源协议 | GPL-3.0 |
@@ -127,7 +127,7 @@
 | 登录 | 动态登录面板、`startBrowserAwait`、登录页脚本、验证码跳转和跨地址 Cookie 同步。 |
 | 内容类型 | 普通文本、漫画、有声书识别；正文中的显式网页操作、图片和媒体标记；`data:` / Base64 地址。 |
 
-以上是兼容书源（Android 阅读格式）的能力，这种格式已过时，仅为存量书源保留。新书源请使用开源轻页自己的原生书源格式：不执行 JavaScript，用声明式规则和自定表达式语言编写，支持视频播放页、听书音色列表、分卷、详情与正文的附加请求、账号密码登录（可发验证码）、书源设置页动作按钮、漫画图片解密和加密封面解密（`coverDecode`）。
+以上是兼容书源（Android 阅读格式）的能力，这种格式已过时，仅为存量书源保留。新书源请使用开源轻页自己的原生书源格式：不执行 JavaScript，用声明式规则和自定表达式语言编写，支持视频播放页、听书音色列表、分卷、目录与正文的列表分页并发抓取（正文最多 200 页）、详情与正文的附加请求、账号密码登录（可发验证码）、书源设置页动作按钮、漫画图片解密和加密封面解密（`coverDecode`）。
 
 书源规则由书源解析内核 [harmony-book-source-engine](https://github.com/wip3l/harmony-book-source-engine) 实现，开源轻页与简听共用同一份规则定义。
 
@@ -208,8 +208,8 @@ legado-harmony/
 | 配置 | 值 |
 | --- | --- |
 | 主模块 / 入口 Ability | `entry` / `EntryAbility` |
-| `versionName` | `4.0.921` |
-| `versionCode` / `buildVersion` | `4000921` |
+| `versionName` | `4.0.922` |
+| `versionCode` / `buildVersion` | `4000922` |
 | `minAPIVersion` / `targetAPIVersion` | `20` / `26` |
 | 权限 | `INTERNET`、`GET_NETWORK_INFO`、`KEEP_BACKGROUND_RUNNING`、`CAMERA`（仅在用户启用眼动翻页时请求） |
 
