@@ -4,8 +4,8 @@ import { BookSource, SearchBook, SearchKeyword, BookTypeSupport } from '@legado/
 import { AppDatabase } from '../../model/data/AppDatabase';
 import { SearchCoordinator, SearchCallback, SearchProgress } from '../../core/book/SearchCoordinator';
 import { SearchBookResultList } from '../../components/book/SearchBookResultList';
-import { ImmersiveBackButton } from '../../components/ImmersiveBackButton';
-import { ImmersiveMaterialRuntime } from '../../utils/ImmersiveMaterialRuntime';
+import { ImmersiveMaterialSurface } from '../../components/ImmersiveMaterialSurface';
+import { ImmersiveMaterialRuntime, ImmersiveTagModifier } from '../../utils/ImmersiveMaterialRuntime';
 import { HdsFeedback } from '../../utils/HdsFeedback';
 import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
 import { SearchExploreSettings, SearchExploreSettingsStore } from '../../utils/SearchExploreSettingsStore';
@@ -29,6 +29,13 @@ class SearchCategoryChip {
 /** 首页"搜索"页签：搜索输入、历史、多源搜索进度与结果。 */
 @Component
 export struct SearchPage {
+  /** 标题行里搜索范围标签、设置按钮，以及搜索框与搜索按钮的高度。 */
+  static readonly HEADER_CONTROL_SIZE: number = 40;
+  /** 结果分类栏的高度、两侧留白与选中指示条宽度。 */
+  static readonly CATEGORY_BAR_HEIGHT: number = 44;
+  static readonly CATEGORY_BAR_PADDING: number = 6;
+  static readonly CATEGORY_INDICATOR_WIDTH: number = 18;
+  static readonly STATUS_ROW_HEIGHT: number = 32;
   @Prop statusBarHeight: number = 0;
   @Prop navBarHeight: number = 0;
   @Prop @Watch('onActiveChanged') isActive: boolean = false;
@@ -56,6 +63,8 @@ export struct SearchPage {
   @State pendingSelectedSourceUrlsRaw: string = '';
   @State expandedSearchSourceGroups: string[] = [];
   @State searchViewportWidth: number = 360;
+  /** 结果分类栏的实际宽度：沉浸材质底板需要具体数值。 */
+  @State searchCategoryBarWidth: number = 0;
   @StorageLink('shelfUpdateTime') @Watch('onShelfChanged') shelfUpdateTime: number = 0;
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
@@ -465,119 +474,105 @@ export struct SearchPage {
     Stack() {
       Column() {
         Column() {
-        Row() {
-        if (ImmersiveMaterialRuntime.supportsHds()) {
           Row() {
-            this.searchFieldContent()
-          }
-          .layoutWeight(1)
-          .height(40)
-          .borderRadius(20)
-          .systemMaterial(this.searchFieldMaterial())
-          .border({ width: 1, color: this.glassBorderColor() })
-          .alignItems(VerticalAlign.Center)
-        } else {
-          Row() {
-            this.searchFieldContent()
-          }
-          .layoutWeight(1)
-          .height(40)
-          .borderRadius(20)
-          .backgroundColor(this.glassCardColor())
-          .shadow(ThemeRuntime.floatingControlShadow(this.appDarkMode))
-          .alignItems(VerticalAlign.Center)
-        }
+            Text('搜索')
+              .fontSize(AppFontSize.DISPLAY)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(this.primaryTextColor())
+              .flexShrink(0)
 
-        ImmersiveBackButton({
-            icon: this.isSearching ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'),
-            iconOffsetX: 0,
-            iconColor: this.isSearching ? ThemeRuntime.dangerColor(this.appDarkMode) : this.primaryTextColor(),
-            darkMode: this.appDarkMode,
-            buttonSize: 40,
-            containerWidth: 40,
-            containerHeight: 40,
-            startInset: 0,
-            materialScale: 0.83,
-            accessibilityLabel: this.isSearching ? '停止搜索' : '搜索',
-            onBack: () => {
-              if (this.isSearching) {
-                this.showSearchHistoryDropdown = false;
-                this.searchSessionId++;
-                this.coordinator?.cancel();
-                this.coordinator = null;
-                this.isSearching = false;
-                this.applySearchResultsSnapshot(this.searchResults);
-                this.statusMessage = '搜索已停止';
-              } else {
+            Blank()
+
+            this.searchScopeLabel()
+
+            Row() {
+              this.searchHeaderCircleButton($r('sys.symbol.gearshape'), this.showSearchSettingsDialog, '搜索设置', () => {
                 this.showSearchHistoryDropdown = false;
                 this.hideKeyboard();
-                this.doSearch();
-              }
+                this.showSearchSettingsDialog = !this.showSearchSettingsDialog;
+              })
             }
-        })
-          .margin({ left: AppSpacing.MD, right: -24 })
-        }
-        .width('100%')
-        .height(56 + this.statusBarHeight)
-        .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.statusBarHeight })
-        .alignItems(VerticalAlign.Center)
-
-        Row({ space: AppSpacing.SM }) {
-          SymbolGlyph($r('sys.symbol.magnifyingglass'))
-            .fontSize(14)
-            .fontColor([this.buttonColor()])
-          Text(`搜索范围：${this.searchScopeSummary()}`)
-            .fontSize(AppFontSize.BODY)
-            .fontColor(this.primaryTextColor())
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .layoutWeight(1)
-          Text('选择')
-            .fontSize(AppFontSize.CAPTION)
-            .fontColor(this.buttonColor())
-        }
-        .width('calc(100% - 32vp)')
-        .height(36)
-        .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
-        .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.SM })
-        .borderRadius(18)
-        .backgroundColor(this.glassCardColor())
-        .border({ width: (this.singleSourceSearchUrl || !this.isAllSearchSourcesSelected()) ? 1 : 0,
-          color: this.buttonColor() })
-        .shadow(ThemeRuntime.floatingControlShadow(this.appDarkMode))
-        .alignItems(VerticalAlign.Center)
-        .onClick(() => this.openSearchSourcePicker())
-
-        if (this.statusMessage) {
-          Row() {
-            Text(this.statusMessage)
-              .fontSize(AppFontSize.BODY)
-              .fontColor(this.secondaryTextColor())
-              .layoutWeight(1)
-              .textAlign(TextAlign.Center)
-
-            if (this.verificationUrl) {
-              Button('去验证')
-                .height(28)
-                .fontSize(AppFontSize.CAPTION)
-                .borderRadius(14)
-                .backgroundColor(this.buttonColor())
-                .fontColor(ThemeRuntime.onAccentColor())
-                .margin({ right: AppSpacing.LG })
-                .onClick(() => {
-                  this.openVerification();
-                })
-            }
+            .bindPopup(this.showSearchSettingsDialog, ImmersiveMaterialRuntime.popupMenuOptions((): void => {
+              this.searchSettingsContent()
+            }, Placement.BottomRight, this.appDarkMode, this.accentColor(), () => {
+              this.showSearchSettingsDialog = false;
+            }))
           }
           .width('100%')
-          .height(40)
-          .backgroundColor(this.statusMessageColor())
+          .height(56 + this.statusBarHeight)
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.statusBarHeight })
           .alignItems(VerticalAlign.Center)
-        }
 
-        if (this.showSearchCategoryBar()) {
-          this.searchCategoryBar()
-        }
+          Row() {
+            if (ImmersiveMaterialRuntime.supportsHds()) {
+              Row() {
+                this.searchFieldContent()
+              }
+              .layoutWeight(1)
+              .height(SearchPage.HEADER_CONTROL_SIZE)
+              .borderRadius(SearchPage.HEADER_CONTROL_SIZE / 2)
+              .systemMaterial(this.searchFieldMaterial())
+              .border({ width: 1, color: this.glassBorderColor() })
+              .alignItems(VerticalAlign.Center)
+            } else {
+              Row() {
+                this.searchFieldContent()
+              }
+              .layoutWeight(1)
+              .height(SearchPage.HEADER_CONTROL_SIZE)
+              .borderRadius(SearchPage.HEADER_CONTROL_SIZE / 2)
+              .backgroundColor(this.glassCardColor())
+              .shadow(ThemeRuntime.floatingControlShadow(this.appDarkMode))
+              .alignItems(VerticalAlign.Center)
+            }
+
+            Row() {
+              this.searchHeaderCircleButton(this.isSearching ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'),
+                false, this.isSearching ? '停止搜索' : '搜索', () => {
+                  this.onSearchButtonTap();
+                })
+            }
+            .margin({ left: 10 })
+          }
+          .width('100%')
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
+          .alignItems(VerticalAlign.Center)
+
+          if (this.statusMessage) {
+            Row({ space: AppSpacing.SM }) {
+              if (this.isSearching) {
+                LoadingProgress()
+                  .width(16)
+                  .height(16)
+                  .color(this.secondaryTextColor())
+              }
+              Text(this.statusMessage)
+                .fontSize(AppFontSize.CAPTION)
+                .fontColor(this.secondaryTextColor())
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .layoutWeight(1)
+
+              if (this.verificationUrl) {
+                Text('去验证')
+                  .fontSize(AppFontSize.CAPTION)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(this.accentColor())
+                  .padding({ left: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
+                  .onClick(() => {
+                    this.openVerification();
+                  })
+              }
+            }
+            .width('100%')
+            .height(SearchPage.STATUS_ROW_HEIGHT)
+            .padding({ left: AppSpacing.XL + AppSpacing.XS, right: AppSpacing.XL })
+            .alignItems(VerticalAlign.Center)
+          }
+
+          if (this.showSearchCategoryBar()) {
+            this.searchCategoryBar()
+          }
         }
         .width('100%')
         .position({ x: 0, y: 0 })
@@ -640,15 +635,7 @@ export struct SearchPage {
           .padding({ top: this.searchTopOverlayHeight() })
           .justifyContent(FlexAlign.Center)
         } else {
-          Column() {
-            Text('输入关键词搜索书籍')
-              .fontSize(AppFontSize.BODY_LARGE)
-              .fontColor(this.subTextColor())
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .padding({ top: this.searchTopOverlayHeight() })
-          .justifyContent(FlexAlign.Center)
+          this.searchIdleContent()
         }
       }
       .width('100%')
@@ -656,12 +643,8 @@ export struct SearchPage {
       .backgroundColor(this.pageColor())
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
 
-      if (this.showSearchHistoryDropdown && this.searchHistory.length > 0) {
+      if (this.showSearchHistoryDropdown && this.showResult && this.searchHistory.length > 0) {
         this.searchHistoryDropdown()
-      }
-
-      if (this.showSearchSettingsDialog) {
-        this.searchSettingsDialog()
       }
 
       if (this.showSearchSourcePicker) {
@@ -681,47 +664,281 @@ export struct SearchPage {
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
   }
 
+  onSearchButtonTap(): void {
+    if (this.isSearching) {
+      this.showSearchHistoryDropdown = false;
+      this.searchSessionId++;
+      this.coordinator?.cancel();
+      this.coordinator = null;
+      this.isSearching = false;
+      this.applySearchResultsSnapshot(this.searchResults);
+      this.statusMessage = '搜索已停止';
+    } else {
+      this.showSearchHistoryDropdown = false;
+      this.hideKeyboard();
+      this.doSearch();
+    }
+  }
+
+  /** 标题右侧的搜索范围标签：按文字估宽，最多占屏宽 45%，点开书源选择。范围收窄时用强调色。 */
+  @Builder
+  searchScopeLabel() {
+    Row() {
+      ImmersiveMaterialSurface({
+        surfaceWidth: this.searchScopeLabelWidth(),
+        surfaceHeight: SearchPage.HEADER_CONTROL_SIZE,
+        darkMode: this.appDarkMode,
+        fallbackColor: this.cardColor(),
+        glowColor: this.accentGlowColor()
+      }) {
+        Row({ space: AppSpacing.XS }) {
+          Text(this.searchScopeSummary())
+            .fontSize(AppFontSize.BODY)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.isSearchScopeNarrowed() ? this.accentColor() : this.primaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .flexShrink(1)
+          SymbolGlyph($r('sys.symbol.chevron_down'))
+            .fontSize(14)
+            .fontColor([this.secondaryTextColor()])
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ left: 14, right: 10 })
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .accessibilityText(`搜索范围：${this.searchScopeSummary()}，选择书源`)
+        .onClick(() => {
+          this.showSearchHistoryDropdown = false;
+          this.openSearchSourcePicker();
+        })
+      }
+    }
+    .margin({ left: AppSpacing.MD, right: 10 })
+  }
+
+  isSearchScopeNarrowed(): boolean {
+    return !!this.singleSourceSearchUrl || !this.isAllSearchSourcesSelected();
+  }
+
+  searchScopeLabelWidth(): number {
+    const text = this.searchScopeSummary();
+    let textWidth = 0;
+    for (let index = 0; index < text.length; index++) {
+      textWidth += text.charCodeAt(index) > 0x2E80 ? AppFontSize.BODY : AppFontSize.BODY * 0.6;
+    }
+    // 左右留白 24、箭头 14、间隔 4。
+    const desired = Math.ceil(textWidth) + 42;
+    return Math.max(72, Math.min(desired, Math.floor(this.searchViewportWidth * 0.45)));
+  }
+
+  @Builder
+  searchHeaderCircleButton(icon: Resource, active: boolean, label: string, onTap: () => void) {
+    ImmersiveMaterialSurface({
+      surfaceWidth: SearchPage.HEADER_CONTROL_SIZE,
+      surfaceHeight: SearchPage.HEADER_CONTROL_SIZE,
+      darkMode: this.appDarkMode,
+      fallbackColor: this.cardColor(),
+      glowColor: this.accentGlowColor()
+    }) {
+      Stack() {
+        SymbolGlyph(icon)
+          .fontSize(20)
+          .fontColor([this.isSearching && label === '停止搜索' ? ThemeRuntime.dangerColor(this.appDarkMode) :
+            (active ? this.accentColor() : this.primaryTextColor())])
+      }
+      .width('100%')
+      .height('100%')
+      .accessibilityText(label)
+      .onClick(() => onTap())
+    }
+  }
+
+  /** 没搜索时页面上直接显示的搜索历史；没有历史时给出引导和当前范围。 */
+  @Builder
+  searchIdleContent() {
+    Scroll() {
+      Column() {
+        if (this.searchHistory.length > 0) {
+          Row() {
+            Text('搜索历史')
+              .fontSize(AppFontSize.BODY_LARGE)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.primaryTextColor())
+              .layoutWeight(1)
+            Text('清空')
+              .fontSize(AppFontSize.BODY)
+              .fontColor(this.secondaryTextColor())
+              .padding({ left: AppSpacing.LG, top: AppSpacing.SM, bottom: AppSpacing.SM })
+              .onClick(() => {
+                this.clearSearchHistory();
+              })
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+
+          Flex({ wrap: FlexWrap.Wrap }) {
+            ForEach(this.searchHistory, (keyword: string) => {
+              this.searchHistoryTag(keyword)
+            }, (keyword: string) => keyword)
+          }
+          .width('100%')
+          .margin({ top: AppSpacing.MD })
+
+          Text('长按单条可删除')
+            .fontSize(AppFontSize.CAPTION)
+            .fontColor(this.secondaryTextColor())
+            .opacity(0.8)
+            .margin({ top: AppSpacing.XS })
+        } else {
+          Column({ space: AppSpacing.MD }) {
+            SymbolGlyph($r('sys.symbol.magnifyingglass'))
+              .fontSize(48)
+              .fontColor([this.secondaryTextColor()])
+              .opacity(0.5)
+            Text('输入书名或作者搜索')
+              .fontSize(AppFontSize.BODY_LARGE)
+              .fontColor(this.secondaryTextColor())
+            Text(`当前范围：${this.searchScopeSummary()}`)
+              .fontSize(AppFontSize.CAPTION)
+              .fontColor(this.secondaryTextColor())
+              .opacity(0.8)
+          }
+          .width('100%')
+          .padding({ top: 96 })
+          .alignItems(HorizontalAlign.Center)
+        }
+      }
+      .width('100%')
+      .padding({
+        left: AppSpacing.XL,
+        right: AppSpacing.XL,
+        top: this.searchTopOverlayHeight() + AppSpacing.SM,
+        bottom: this.resultListBottomInset()
+      })
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .align(Alignment.TopStart)
+    .scrollBar(BarState.Off)
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+  }
+
+  @Builder
+  searchHistoryTag(keyword: string) {
+    Text(keyword)
+      .fontSize(AppFontSize.BODY)
+      .fontColor(this.primaryTextColor())
+      .maxLines(1)
+      .textOverflow({ overflow: TextOverflow.Ellipsis })
+      .constraintSize({ maxWidth: '72%' })
+      .height(34)
+      .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
+      .margin({ right: AppSpacing.SM, bottom: AppSpacing.SM })
+      .attributeModifier(new ImmersiveTagModifier(ThemeRuntime.cardColor(this.appDarkMode),
+        this.secondaryTextColor(), this.appDarkMode))
+      .priorityGesture(
+        GestureGroup(GestureMode.Exclusive,
+          LongPressGesture({ repeat: false })
+            .onAction(() => {
+              this.deleteSearchHistoryItem(keyword);
+            }),
+          TapGesture()
+            .onAction(() => {
+              this.showSearchHistoryDropdown = false;
+              this.searchFromHistory(keyword);
+            })
+        ),
+        GestureMask.IgnoreInternal
+      )
+  }
+
   @Builder
   searchCategoryBar() {
-    // 五个分段在窄屏上放不下，横向可滑动。
-    Scroll() {
-    Row({ space: AppSpacing.MD }) {
-      ForEach(this.searchCategoryChips(), (chip: SearchCategoryChip) => {
-        Text(`${chip.label} ${chip.count}`)
-          .fontSize(AppFontSize.BODY)
-          .fontColor(chip.key === this.effectiveSearchCategory() ?
-            ThemeRuntime.onAccentColor() : this.secondaryTextColor())
-          .height(30)
-          .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
-          .borderRadius(15)
-          .backgroundColor(chip.key === this.effectiveSearchCategory() ?
-            this.buttonColor() : this.buttonBackgroundColor())
-          .textAlign(TextAlign.Center)
-          .onClick(() => this.selectSearchCategory(chip.key))
-      }, (chip: SearchCategoryChip) =>
-        `${chip.key}:${chip.count}:${chip.key === this.effectiveSearchCategory() ? 1 : 0}`)
+    Row() {
+      if (this.searchCategoryBarWidth > 0) {
+        ImmersiveMaterialSurface({
+          surfaceWidth: this.searchCategoryBarWidth,
+          surfaceHeight: SearchPage.CATEGORY_BAR_HEIGHT,
+          darkMode: this.appDarkMode,
+          fallbackColor: this.cardColor(),
+          glowColor: this.accentGlowColor()
+        }) {
+          Stack({ alignContent: Alignment.BottomStart }) {
+            Row() {
+              ForEach(this.searchCategoryChips(), (chip: SearchCategoryChip) => {
+                Text() {
+                  Span(chip.label)
+                    .fontSize(AppFontSize.BODY_LARGE)
+                  Span(` ${chip.count}`)
+                    .fontSize(AppFontSize.CAPTION)
+                }
+                .fontWeight(chip.key === this.effectiveSearchCategory() ? FontWeight.Medium : FontWeight.Regular)
+                .fontColor(chip.key === this.effectiveSearchCategory() ? this.accentColor() : this.secondaryTextColor())
+                .maxLines(1)
+                .textAlign(TextAlign.Center)
+                .layoutWeight(1)
+                .height('100%')
+                .accessibilityText(`${chip.label} ${chip.count} 条`)
+                .accessibilitySelected(chip.key === this.effectiveSearchCategory())
+                .onClick(() => this.selectSearchCategory(chip.key))
+              }, (chip: SearchCategoryChip) =>
+                `${chip.key}:${chip.count}:${chip.key === this.effectiveSearchCategory() ? 1 : 0}`)
+            }
+            .width('100%')
+            .height('100%')
+            .padding({ left: SearchPage.CATEGORY_BAR_PADDING, right: SearchPage.CATEGORY_BAR_PADDING })
+
+            Row()
+              .width(SearchPage.CATEGORY_INDICATOR_WIDTH)
+              .height(3)
+              .borderRadius(1.5)
+              .backgroundColor(this.accentColor())
+              .translate({ x: this.searchCategoryIndicatorX(), y: -5 })
+              .animation({ duration: 280, curve: Curve.Friction })
+              .hitTestBehavior(HitTestMode.None)
+          }
+          .width('100%')
+          .height('100%')
+        }
+      }
     }
-    .height(40)
-    .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .alignItems(VerticalAlign.Center)
-    }
-    .scrollable(ScrollDirection.Horizontal)
-    .scrollBar(BarState.Off)
-    .align(Alignment.Start)
-    .width('100%')
-    .height(40)
+    .width(`calc(100% - ${AppSpacing.XL * 2}vp)`)
+    .height(SearchPage.CATEGORY_BAR_HEIGHT)
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
+    .onAreaChange((_oldValue: Area, newValue: Area) => {
+      const width = Math.floor(Number(newValue.width));
+      if (Number.isFinite(width) && width > 0 && width !== this.searchCategoryBarWidth) {
+        this.searchCategoryBarWidth = width;
+      }
+    })
+  }
+
+  /** 指示条居中在选中分类下方；各分类等宽平分去掉两侧留白后的宽度。 */
+  searchCategoryIndicatorX(): number {
+    const chips = this.searchCategoryChips();
+    const count = Math.max(1, chips.length);
+    const index = Math.max(0, chips.findIndex((chip: SearchCategoryChip) => chip.key === this.effectiveSearchCategory()));
+    const itemWidth = (this.searchCategoryBarWidth - SearchPage.CATEGORY_BAR_PADDING * 2) / count;
+    return SearchPage.CATEGORY_BAR_PADDING + itemWidth * index + (itemWidth - SearchPage.CATEGORY_INDICATOR_WIDTH) / 2;
   }
 
   @Builder
   searchFieldContent() {
-    TextInput({ placeholder: '搜索书籍', text: this.keyword })
+    SymbolGlyph($r('sys.symbol.magnifyingglass'))
+      .fontSize(18)
+      .fontColor([this.secondaryTextColor()])
+      .margin({ left: 14 })
+    TextInput({ placeholder: '书名或作者', text: this.keyword })
       .layoutWeight(1)
-      .height(40)
+      .height(SearchPage.HEADER_CONTROL_SIZE)
       .enterKeyType(EnterKeyType.Search)
       .backgroundColor(Color.Transparent)
       .fontColor(this.primaryTextColor())
       .placeholderColor(this.subTextColor())
-      .padding({ left: AppSpacing.XL, right: AppSpacing.XS })
+      .padding({ left: AppSpacing.SM, right: AppSpacing.XS })
       .onFocus(() => {
         this.showSearchHistoryDropdown = this.keyword.trim().length === 0 && this.searchHistory.length > 0;
       })
@@ -736,7 +953,19 @@ export struct SearchPage {
         this.submitKeywordSearch();
       })
 
-    this.searchSettingIcon()
+    if (this.keyword.length > 0) {
+      SymbolGlyph($r('sys.symbol.xmark_circle_fill'))
+        .fontSize(18)
+        .fontColor([this.secondaryTextColor()])
+        .width(36)
+        .height(36)
+        .margin({ right: AppSpacing.XS })
+        .accessibilityText('清除输入')
+        .onClick(() => {
+          this.keyword = '';
+          this.showSearchHistoryDropdown = this.showResult && this.searchHistory.length > 0;
+        })
+    }
   }
 
   private searchFieldMaterial(): uiMaterial.ImmersiveMaterial {
@@ -755,11 +984,6 @@ export struct SearchPage {
 
   searchSettingsPopupPanelWidth(): number {
     return Math.min(272, Math.max(200, this.searchViewportWidth - 32));
-  }
-
-  searchSettingsPopupPanelLeft(): number {
-    const panelWidth = this.searchSettingsPopupPanelWidth();
-    return Math.max(16, this.searchViewportWidth - panelWidth - 40);
   }
 
   @Builder
@@ -839,8 +1063,8 @@ export struct SearchPage {
     .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
     .shadow({ radius: ThemeRuntime.glassShadowRadius('overlay'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'overlay'), offsetX: ThemeRuntime.glassShadowOffsetX('overlay'), offsetY: ThemeRuntime.glassShadowOffsetY('overlay') })
     .position({
-      x: 16,
-      y: this.statusBarHeight + 92
+      x: AppSpacing.XL,
+      y: this.statusBarHeight + 56 + SearchPage.HEADER_CONTROL_SIZE + AppSpacing.SM
     })
     .zIndex(10)
   }
@@ -1421,93 +1645,46 @@ export struct SearchPage {
     });
   }
 
+  /** 搜索设置弹出层：开关即时生效，点弹出层外收起。 */
   @Builder
-  searchSettingsDialog() {
-    Stack({ alignContent: Alignment.TopStart }) {
-      Column()
+  searchSettingsContent() {
+    Column() {
+      Text('搜索设置')
+        .fontSize(AppFontSize.BODY_LARGE)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.primaryTextColor())
         .width('100%')
-        .height('100%')
-        .onClick(() => {
-          this.showSearchSettingsDialog = false;
-        })
+        .margin({ bottom: AppSpacing.SM })
 
-      Column() {
-        Text('搜索设置')
-          .fontSize(AppFontSize.SUBTITLE)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(this.primaryTextColor())
-          .width('100%')
-          .textAlign(TextAlign.Center)
-          .margin({ bottom: AppSpacing.XL })
-
-        this.switchSettingRow('精准搜索', this.exactSearch, (checked: boolean) => {
-          this.exactSearch = checked;
-          this.saveSearchExploreSettings();
-        })
-
-        this.switchSettingRow('匹配作者', this.exactSearchMatchAuthor, (checked: boolean) => {
-          this.exactSearchMatchAuthor = checked;
-          this.saveSearchExploreSettings();
-        })
-
-        this.switchSettingRow('显示搜索进度', this.showSearchProgress, (checked: boolean) => {
-          this.showSearchProgress = checked;
-          this.saveSearchExploreSettings();
-        })
-
-        this.switchSettingRow('聚合同名结果', this.searchExploreAggregateResults, (checked: boolean) => {
-          this.searchExploreAggregateResults = checked;
-          this.applySearchResultsSnapshot(this.searchResults);
-          this.saveSearchExploreSettings();
-        })
-
-        this.numberSettingRow('搜索并发数', this.searchConcurrency, 1, 12, (value: number) => {
-          this.searchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(value);
-          this.saveSearchExploreSettings();
-        })
-
-        Button('完成')
-          .width('100%')
-          .height(44)
-          .margin({ top: AppSpacing.XL })
-          .backgroundColor(this.buttonColor())
-          .fontColor(ThemeRuntime.onAccentColor())
-          .onClick(() => {
-            this.showSearchSettingsDialog = false;
-          })
-      }
-      .width(this.searchSettingsPopupPanelWidth())
-      .constraintSize({ maxHeight: 430 })
-      .padding(AppSpacing.XL)
-      .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
-      .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
-      .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
-      .border({ width: ThemeRuntime.glassBorderWidth('overlay'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'overlay') })
-      .shadow({ radius: ThemeRuntime.glassShadowRadius('overlay'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'overlay'), offsetX: ThemeRuntime.glassShadowOffsetX('overlay'), offsetY: ThemeRuntime.glassShadowOffsetY('overlay') })
-      .position({
-        x: this.searchSettingsPopupPanelLeft(),
-        y: this.statusBarHeight + 92
+      this.switchSettingRow('精准搜索', this.exactSearch, (checked: boolean) => {
+        this.exactSearch = checked;
+        this.saveSearchExploreSettings();
       })
-      .onClick(() => {
+
+      this.switchSettingRow('匹配作者', this.exactSearchMatchAuthor, (checked: boolean) => {
+        this.exactSearchMatchAuthor = checked;
+        this.saveSearchExploreSettings();
       })
+
+      this.switchSettingRow('显示搜索进度', this.showSearchProgress, (checked: boolean) => {
+        this.showSearchProgress = checked;
+        this.saveSearchExploreSettings();
+      })
+
+      this.switchSettingRow('聚合同名结果', this.searchExploreAggregateResults, (checked: boolean) => {
+        this.searchExploreAggregateResults = checked;
+        this.applySearchResultsSnapshot(this.searchResults);
+        this.saveSearchExploreSettings();
+      })
+
+      this.numberSettingRow('搜索并发数', this.searchConcurrency, 1, 12, (value: number) => {
+        this.searchConcurrency = SearchExploreSettingsStore.normalizeSearchConcurrency(value);
+        this.saveSearchExploreSettings();
+      })
+
     }
-    .width('100%')
-    .height('100%')
-  }
-
-  @Builder
-  searchSettingIcon() {
-    SymbolGlyph($r('sys.symbol.gearshape'))
-      .fontSize(20)
-      .fontColor([this.secondaryTextColor()])
-      .width(36)
-      .height(36)
-      .margin({ right: AppSpacing.XXS })
-      .onClick(() => {
-        this.showSearchHistoryDropdown = false;
-        this.hideKeyboard();
-        this.showSearchSettingsDialog = !this.showSearchSettingsDialog;
-      })
+    .width(this.searchSettingsPopupPanelWidth())
+    .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.LG, bottom: AppSpacing.SM })
   }
 
   @Builder
@@ -1616,12 +1793,16 @@ export struct SearchPage {
     return ThemeRuntime.subTextColor(this.appDarkMode);
   }
 
-  statusMessageColor(): string {
-    return this.appDarkMode ? '#14251B' : '#E8F5E9';
-  }
-
   buttonColor(): string {
     return ThemeRuntime.buttonColor(this.appDarkMode);
+  }
+
+  accentColor(): string {
+    return ThemeRuntime.accentColor(this.appDarkMode);
+  }
+
+  accentGlowColor(): string {
+    return `#40${this.accentColor().substring(1)}`;
   }
 
   buttonBackgroundColor(): string {
@@ -1630,12 +1811,12 @@ export struct SearchPage {
   }
 
   searchTopOverlayHeight(): number {
-    let height = this.statusBarHeight + 98;
+    let height = this.statusBarHeight + 56 + SearchPage.HEADER_CONTROL_SIZE + AppSpacing.MD;
     if (this.statusMessage) {
-      height += 40;
+      height += SearchPage.STATUS_ROW_HEIGHT;
     }
     if (this.showSearchCategoryBar()) {
-      height += 40;
+      height += SearchPage.CATEGORY_BAR_HEIGHT + AppSpacing.MD;
     }
     return height;
   }

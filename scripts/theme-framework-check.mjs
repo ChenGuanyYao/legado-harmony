@@ -482,6 +482,11 @@ assert(indexPage.includes('this.exploreChannelBar()') &&
   indexPage.includes('this.exploreFilterPopupContent()') &&
   !indexPage.includes('compactExploreFilterBar()') && !indexPage.includes('inlineExploreFilterRow('),
   'Explore header must stay at a title row plus one channel bar, with modes and filters in popups');
+assert(indexPage.includes('this.searchScopeLabel()') &&
+  indexPage.includes('this.searchSettingsContent()') &&
+  indexPage.includes('this.searchIdleContent()') &&
+  !indexPage.includes('searchSettingsDialog()'),
+  'Search header must use the title row scope label, a settings popup and inline search history');
 assert(!themePage.includes("'衬线字体'") && !themePage.includes("'清晰字体'") &&
   !themePage.includes("'水墨图标'") && !themePage.includes("'主题图标'") &&
   !themePage.includes('themeFeatureChips') && !themePage.includes('featureChip(') &&
