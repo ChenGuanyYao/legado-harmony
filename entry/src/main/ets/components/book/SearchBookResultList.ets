@@ -319,16 +319,24 @@ export struct SearchBookResultList {
 
   /**
    * 结果行背景：封面按极低分辨率解码后拉伸铺满，得到模糊效果而不做实时模糊；
-   * 上面盖一层半透明卡片色保证文字可读，标签的玻璃材质也因此有内容可透出。最底层垫主题色。
+   * 上面盖一层半透明卡片色保证文字可读，标签的玻璃材质也因此有内容可透出。最底层垫淡淡的主题色渐变。
    */
   @Builder
   resultCardBackdrop(book: SearchBook) {
     Stack() {
-      // 主题色始终垫在最底层：封面加载失败或还没加载出来时露出主题色，而不是一片白。
+      // 最底层垫一层柔和的主题色斜向渐变：封面加载失败或还没加载出来时露出淡淡的主题色微光，
+      // 不会是一片白，也不会像整块主题色那样压重。封面加载后盖在上面。
       Column()
         .width('100%')
         .height('100%')
-        .backgroundColor(this.accentColor())
+        .linearGradient({
+          angle: 135,
+          colors: [
+            [this.accentWithAlpha(this.isDarkMode() ? '80' : '66'), 0],
+            [this.accentWithAlpha(this.isDarkMode() ? '33' : '1F'), 0.55],
+            [this.accentWithAlpha('00'), 1]
+          ]
+        })
       if (this.showResultCover && this.displayCover(book)) {
         Image(this.displayCover(book))
           .width('100%')
@@ -344,6 +352,11 @@ export struct SearchBookResultList {
     }
     .width('100%')
     .height('100%')
+  }
+
+  accentWithAlpha(alpha: string): string {
+    const accent = this.accentColor();
+    return /^#[0-9A-Fa-f]{6}$/.test(accent) ? `#${alpha}${accent.substring(1)}` : accent;
   }
 
   resultCardScrimColor(): string {
