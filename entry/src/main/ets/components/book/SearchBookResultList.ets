@@ -9,6 +9,7 @@ import { HdsListItem, HdsSwipeActionOptions } from '@kit.UIDesignKit';
 import { SymbolGlyphModifier } from '@kit.ArkUI';
 import { AppFontSize } from '../../theme/AppFontSize';
 import { AppSpacing } from '../../theme/AppSpacing';
+import { CoverBackdropCard } from './CoverBackdropCard';
 
 export type SearchBookAction = (book: SearchBook) => void;
 
@@ -317,127 +318,89 @@ export struct SearchBookResultList {
     }
   }
 
-  /**
-   * 结果行背景：封面按极低分辨率解码后拉伸铺满，得到模糊效果而不做实时模糊；
-   * 上面盖一层半透明卡片色保证文字可读，标签的玻璃材质也因此有内容可透出。最底层垫淡淡的主题色渐变。
-   */
-  @Builder
-  resultCardBackdrop(book: SearchBook) {
-    Stack() {
-      // 最底层垫一层柔和的主题色斜向渐变：封面加载失败或还没加载出来时露出淡淡的主题色微光，
-      // 不会是一片白，也不会像整块主题色那样压重。封面加载后盖在上面。
-      Column()
-        .width('100%')
-        .height('100%')
-        .linearGradient({
-          angle: 135,
-          colors: [
-            [this.accentWithAlpha(this.isDarkMode() ? '80' : '66'), 0],
-            [this.accentWithAlpha(this.isDarkMode() ? '33' : '1F'), 0.55],
-            [this.accentWithAlpha('00'), 1]
-          ]
-        })
-      if (this.showResultCover && this.displayCover(book)) {
-        Image(this.displayCover(book))
-          .width('100%')
-          .height('100%')
-          .objectFit(ImageFit.Cover)
-          .sourceSize({ width: 12, height: 16 })
-          .interpolation(ImageInterpolation.High)
-      }
-      Column()
-        .width('100%')
-        .height('100%')
-        .backgroundColor(this.resultCardScrimColor())
-    }
-    .width('100%')
-    .height('100%')
-  }
-
-  accentWithAlpha(alpha: string): string {
-    const accent = this.accentColor();
-    return /^#[0-9A-Fa-f]{6}$/.test(accent) ? `#${alpha}${accent.substring(1)}` : accent;
-  }
-
-  resultCardScrimColor(): string {
-    const card = /^#[0-9A-Fa-f]{6}$/.test(this.cardColor) ? this.cardColor : (this.isDarkMode() ? '#191B1F' : '#FFFFFF');
-    return `${this.isDarkMode() ? '#C2' : '#B8'}${card.substring(1)}`;
-  }
-
   @Builder
   searchResultCard(book: SearchBook) {
-    Row() {
-      if (this.showResultCover) {
-        this.coverView(book)
-      }
+    // 尾随闭包形式的自定义组件后面不能再接属性，圆角、边框、点击等挂在外层 Column 上。
+    Column() {
+      CoverBackdropCard({
+        cover: this.showResultCover ? this.displayCover(book) : '',
+        accentColor: this.accentColor(),
+        cardColor: this.cardColor,
+        darkMode: this.isDarkMode()
+      }) {
+        Row() {
+          if (this.showResultCover) {
+            this.coverView(book)
+          }
 
-      Column() {
-        Row({ space: AppSpacing.SM }) {
-          Text(this.safeText(book.name, '未知书名'))
-            .fontSize(AppFontSize.BODY_LARGE)
-            .fontWeight(FontWeight.Bold)
-            .fontColor(this.primaryTextColor)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .flexShrink(1)
+          Column() {
+            Row({ space: AppSpacing.SM }) {
+              Text(this.safeText(book.name, '未知书名'))
+                .fontSize(AppFontSize.BODY_LARGE)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.primaryTextColor)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .flexShrink(1)
 
-          if (this.mediaBadge(book)) {
-            Text(this.mediaBadge(book))
-              .fontSize(AppFontSize.CAPTION)
-              .fontColor(this.accentColor())
-              .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: 1, bottom: 1 })
-              .border({ width: 1, color: this.accentColor() })
-              .borderRadius(ThemeRuntime.mediumRadius())
+              if (this.mediaBadge(book)) {
+                Text(this.mediaBadge(book))
+                  .fontSize(AppFontSize.CAPTION)
+                  .fontColor(this.accentColor())
+                  .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: 1, bottom: 1 })
+                  .border({ width: 1, color: this.accentColor() })
+                  .borderRadius(ThemeRuntime.mediumRadius())
+              }
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+
+            Text(this.safeText(book.author, '作者未知'))
+              .fontSize(AppFontSize.BODY)
+              .fontColor(this.secondaryTextColor)
+              .margin({ top: AppSpacing.XS })
+
+            if (this.showResultTags && this.getTags(book).length > 0) {
+              Flex({ wrap: FlexWrap.Wrap }) {
+                ForEach(this.getTags(book), (tag: string, index: number) => {
+                  this.tagChip(tag, index)
+                })
+              }
+              .width('100%')
+              .margin({ top: AppSpacing.SM })
+            }
+
+            if (this.metadataLine(book)) {
+              Text(this.metadataLine(book))
+                .fontSize(AppFontSize.CAPTION)
+                .fontColor(this.subTextColor)
+                .margin({ top: AppSpacing.XXS })
+                .maxLines(2)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+            }
+
+            if (this.showSourceLine) {
+              Text(this.sourceLine(book))
+                .fontSize(AppFontSize.CAPTION)
+                .fontColor(this.subTextColor)
+                .margin({ top: this.showResultTags && this.getTags(book).length > 0 ? 6 : 4 })
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+            }
+          }
+          .layoutWeight(1)
+          .margin({ left: this.showResultCover ? 12 : 0 })
+          .alignItems(HorizontalAlign.Start)
+
+          if (book.aggregationCount > 1) {
+            this.aggregationIndicator(book)
           }
         }
         .width('100%')
-        .alignItems(VerticalAlign.Center)
-
-        Text(this.safeText(book.author, '作者未知'))
-          .fontSize(AppFontSize.BODY)
-          .fontColor(this.secondaryTextColor)
-          .margin({ top: AppSpacing.XS })
-
-        if (this.showResultTags && this.getTags(book).length > 0) {
-          Flex({ wrap: FlexWrap.Wrap }) {
-            ForEach(this.getTags(book), (tag: string, index: number) => {
-              this.tagChip(tag, index)
-            })
-          }
-          .width('100%')
-          .margin({ top: AppSpacing.SM })
-        }
-
-        if (this.metadataLine(book)) {
-          Text(this.metadataLine(book))
-            .fontSize(AppFontSize.CAPTION)
-            .fontColor(this.subTextColor)
-            .margin({ top: AppSpacing.XXS })
-            .maxLines(2)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-
-        if (this.showSourceLine) {
-          Text(this.sourceLine(book))
-            .fontSize(AppFontSize.CAPTION)
-            .fontColor(this.subTextColor)
-            .margin({ top: this.showResultTags && this.getTags(book).length > 0 ? 6 : 4 })
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-      }
-      .layoutWeight(1)
-      .margin({ left: this.showResultCover ? 12 : 0 })
-      .alignItems(HorizontalAlign.Start)
-
-      if (book.aggregationCount > 1) {
-        this.aggregationIndicator(book)
+        .padding(AppSpacing.LG)
       }
     }
     .width('100%')
-    .padding(AppSpacing.LG)
-    .backgroundColor(this.cardColor)
-    .background(this.resultCardBackdrop(book))
     .borderRadius(ThemeRuntime.cardRadius())
     .clip(true)
     .border({ width: this.itemBorderWidth, color: this.itemBorderColor })
@@ -673,9 +636,7 @@ export struct SearchBookResultList {
   }
 
   listItemKey(book: SearchBook): string {
-    // 封面地址也进 key：行背景挂在 background 属性上，只在行创建时绘制一次；
-    // 发现页的封面多为之后补拉，地址一变就重建这一行，背景才会换成封面。
-    const baseKey = `${this.itemKey(book)}|${this.safeText(book.coverUrl, '')}`;
+    const baseKey = this.itemKey(book);
     if (book.aggregationCount > 1) return baseKey;
     const shelfState = SearchBookShelfHelper.isInShelf(book, this.shelfBookKeys) ? 'shelf' : 'not_shelf';
     return `${baseKey}|${shelfState}`;
