@@ -331,7 +331,7 @@ assert(indexPage.includes('ImmersiveMaterialSurface({') &&
   read('entry/src/main/ets/components/ImmersiveMaterialSurface.ets').includes('barFloatingStyle({'),
   'Bookshelf header controls must sit on the HDS immersive material surface');
 assert(indexPage.includes('this.shelfMenuPopupOptions(') &&
-  indexPage.includes('ImmersiveMaterialRuntime.popupMenuMaterial(this.accentColor())') &&
+  indexPage.includes('ImmersiveMaterialRuntime.popupMenuOptions(') &&
   !indexPage.includes('shelfSortFloatingMenu()') && !indexPage.includes('shelfGroupFloatingMenu()'),
   'Bookshelf header dropdowns must use system popups with the immersive material');
 assert((indexPage.includes("this.actionItem('多选'") ||
@@ -471,13 +471,17 @@ assert(bookSourcePage.includes('checkOptionsDialog()') &&
   bookSourcePage.includes('handleCheckedSourceCompletion') &&
   searchCoordinator.includes('await options.onSourceComplete'),
   'Book source validation must support immediate disable/delete actions per completed source');
-assert(indexPage.includes("TextInput({ placeholder: '输入书源关键词'") &&
-  indexPage.includes("Button('搜索')") &&
-  indexPage.includes('this.exploreSourceDropdown()') &&
+assert(indexPage.includes("TextInput({ placeholder: '搜索书源名称、地址或分组'") &&
+  indexPage.includes('this.exploreSourcePickerContent()') &&
   !indexPage.includes('builder: this.exploreSourcePopup') &&
   indexPage.includes('applyExploreSourceFilter') &&
   indexPage.includes('getFilteredExploreSourceOptions()'),
-  'Explore source dropdown must support keyword filtering from an explicit search button');
+  'Explore source picker must filter sources by keyword inside the immersive popup');
+assert(indexPage.includes('this.exploreChannelBar()') &&
+  indexPage.includes('this.explorePlatformMenuContent()') &&
+  indexPage.includes('this.exploreFilterPopupContent()') &&
+  !indexPage.includes('compactExploreFilterBar()') && !indexPage.includes('inlineExploreFilterRow('),
+  'Explore header must stay at a title row plus one channel bar, with modes and filters in popups');
 assert(!themePage.includes("'衬线字体'") && !themePage.includes("'清晰字体'") &&
   !themePage.includes("'水墨图标'") && !themePage.includes("'主题图标'") &&
   !themePage.includes('themeFeatureChips') && !themePage.includes('featureChip(') &&

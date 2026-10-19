@@ -9,7 +9,8 @@ import {
   ExploreSourceOption
 } from '../../core/book/ExploreCoordinator';
 import { SearchBookResultList } from '../../components/book/SearchBookResultList';
-import { ImmersiveBackButton } from '../../components/ImmersiveBackButton';
+import { ImmersiveMaterialSurface } from '../../components/ImmersiveMaterialSurface';
+import { ImmersiveMaterialRuntime } from '../../utils/ImmersiveMaterialRuntime';
 import { HdsFeedback } from '../../utils/HdsFeedback';
 import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
 import { SearchExploreSettingsStore } from '../../utils/SearchExploreSettingsStore';
@@ -25,6 +26,11 @@ import { AppSpacing } from '../../theme/AppSpacing';
 /** 首页"发现"页签：发现源、筛选条件与结果列表。 */
 @Component
 export struct ExplorePage {
+  /** 顶部书源标签、筛选与刷新按钮的高度。 */
+  static readonly HEADER_CONTROL_SIZE: number = 40;
+  /** 标题下方频道栏的高度。 */
+  static readonly CHANNEL_BAR_HEIGHT: number = 44;
+  static readonly MENU_ITEM_HEIGHT: number = 44;
   @Prop statusBarHeight: number = 0;
   @Prop navBarHeight: number = 0;
   @Prop @Watch('onActiveChanged') isActive: boolean = false;
@@ -41,6 +47,10 @@ export struct ExplorePage {
   @State selectedSourceName: string = '';
   @State selectedIndex: number = 0;
   @State showExploreSourcePicker: boolean = false;
+  /** 频道栏左侧“模式”的下拉。 */
+  @State showExplorePlatformMenu: boolean = false;
+  /** 频道栏的实际宽度：沉浸材质底板需要具体数值。 */
+  @State exploreChannelBarWidth: number = 0;
   @State showExploreSourceActionMenu: boolean = false;
   @State actionExploreSourceUrl: string = '';
   @State actionExploreSourceNative: boolean = false;
@@ -90,6 +100,7 @@ export struct ExplorePage {
   @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
   private coordinator: ExploreCoordinator = new ExploreCoordinator();
   private exploreSourceScroller: Scroller = new Scroller();
+  private exploreChannelScroller: Scroller = new Scroller();
   private hasLoaded: boolean = false;
   private hasRestoredExploreSelection: boolean = false;
   private shelfStatusVersion: number = 0;
@@ -113,6 +124,7 @@ export struct ExplorePage {
       this.ensureLoaded();
     } else {
       this.closeExploreFilterPanel();
+      this.showExplorePlatformMenu = false;
       if (this.showExploreSourcePicker) {
         this.showExploreSourcePicker = false;
         this.clearExploreSourceFilter();
@@ -400,180 +412,58 @@ export struct ExplorePage {
     Stack({ alignContent: Alignment.TopStart }) {
       Column() {
         Column() {
-        Row() {
-        Row() {
-          if (this.showExploreSourcePicker) {
-            TextInput({ placeholder: '输入书源关键词', text: this.exploreSourceFilterInput })
-              .fontSize(AppFontSize.BODY_LARGE)
+          Row() {
+            Text('发现')
+              .fontSize(AppFontSize.DISPLAY)
+              .fontWeight(FontWeight.Bold)
               .fontColor(this.primaryTextColor())
-              .placeholderColor(this.secondaryTextColor())
-              .layoutWeight(1)
-              .height(36)
-              .padding(0)
-              .backgroundColor(Color.Transparent)
-              .onChange((value: string) => {
-                this.exploreSourceFilterInput = value;
-              })
-              .onSubmit(() => {
-                this.applyExploreSourceFilter();
-              })
-          } else {
-            Text(this.selectedSourceName || '发现')
-              .fontSize(AppFontSize.BODY_LARGE)
-              .fontColor(this.primaryTextColor())
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .layoutWeight(1)
-              .onClick(() => {
-                this.openExploreSourcePicker();
-              })
-          }
+              .flexShrink(0)
 
-          SymbolGlyph(this.showExploreSourcePicker ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
-            .fontSize(18)
-            .fontColor([this.secondaryTextColor()])
-            .margin({ left: AppSpacing.SM })
-            .onClick(() => {
-              this.toggleExploreSourcePicker();
-            })
+            Blank()
 
-          if (this.showExploreSourcePicker) {
-            Button('搜索')
-              .height(30)
-              .fontSize(AppFontSize.CAPTION)
-              .borderRadius(15)
-              .backgroundColor(this.buttonColor())
-              .fontColor(ThemeRuntime.onAccentColor())
-              .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
-              .margin({ left: AppSpacing.MD })
-              .onClick(() => {
-                this.applyExploreSourceFilter();
-              })
-          }
-        }
-          .layoutWeight(1)
-          .height(40)
-          .borderRadius(20)
-          .backgroundColor(this.glassCardColor())
-          .shadow(ThemeRuntime.floatingControlShadow(this.appDarkMode))
-          .padding({ left: AppSpacing.XL, right: AppSpacing.MD })
-          .alignItems(VerticalAlign.Center)
-          .onClick(() => {
-            if (!this.showExploreSourcePicker) {
-              this.openExploreSourcePicker();
+            this.exploreSourceLabel()
+
+            if (this.exploreFilters.length > 0) {
+              this.exploreFilterButton()
             }
-          })
 
-        ImmersiveBackButton({
-          icon: $r('sys.symbol.arrow_clockwise'),
-          iconOffsetX: 0,
-          iconColor: this.primaryTextColor(),
-          darkMode: this.appDarkMode,
-          buttonSize: 40,
-          containerWidth: 40,
-          containerHeight: 40,
-          startInset: 0,
-          materialScale: 0.83,
-          accessibilityLabel: '刷新发现内容',
-          onBack: () => {
-            this.loadEntries('', true);
-          }
-        })
-          .margin({ left: AppSpacing.MD, right: -24 })
-      }
-      .width('100%')
-      .height(56 + this.statusBarHeight)
-      .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.statusBarHeight })
-      .alignItems(VerticalAlign.Center)
-
-      if (this.exploreFilters.length > 0) {
-        if (this.useCompactExploreFilters()) {
-          this.compactExploreFilterBar()
-        } else {
-          ForEach(this.exploreFilters, (filter: ExploreFilterGroup) => {
-            this.inlineExploreFilterRow(filter)
-          }, (filter: ExploreFilterGroup): string =>
-            `${filter.title}:${filter.selected}:${filter.options.join('|')}`)
-        }
-      } else if (this.platformNames.length > 0) {
-        Scroll() {
-          Row({ space: AppSpacing.MD }) {
-            ForEach(this.platformNames, (name: string) => {
-              Text(name)
-                .fontSize(AppFontSize.BODY)
-                .fontColor(this.selectedPlatform === name ? '#FFFFFF' : this.primaryTextColor())
-                .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.MD, bottom: AppSpacing.MD })
-                .backgroundColor(this.selectedPlatform === name ? this.accentColor() : this.glassCardColor())
-                .borderRadius(ThemeRuntime.buttonRadius())
-                .border({ width: this.selectedPlatform === name ? 0 : 1, color: this.glassBorderColor() })
-                .onClick(() => {
-                  this.switchExplorePlatform(name);
-                })
+            this.exploreHeaderCircleButton($r('sys.symbol.arrow_clockwise'), false, '刷新发现内容', () => {
+              this.loadEntries('', true);
             })
           }
-          .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
-          .constraintSize({ minWidth: '100%' })
-          .justifyContent(FlexAlign.Start)
-        }
-        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-        .width('100%')
-        .height(48)
-        .scrollable(ScrollDirection.Horizontal)
-        .scrollBar(BarState.Off)
-      }
+          .width('100%')
+          .height(56 + this.statusBarHeight)
+          .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.statusBarHeight })
+          .alignItems(VerticalAlign.Center)
 
-      if (this.getActiveEntries().length > 0) {
-        Scroll() {
-          Row({ space: AppSpacing.MD }) {
-            ForEach(this.getActiveEntries(), (entry: ExploreEntry, index: number) => {
-              Text(entry.title)
+          if (this.showsExploreChannelBar()) {
+            this.exploreChannelBar()
+          }
+
+          if (this.shouldShowExploreStatus()) {
+            Row() {
+              Text(this.status)
                 .fontSize(AppFontSize.BODY)
-                .fontColor(this.selectedIndex === index ? '#FFFFFF' : this.secondaryTextColor())
-                .padding({ left: AppSpacing.LG, right: AppSpacing.LG, top: AppSpacing.SM, bottom: AppSpacing.SM })
-                .backgroundColor(this.selectedIndex === index ? this.accentColor() : this.glassCardColor())
-                .borderRadius(ThemeRuntime.buttonRadius())
-                .border({ width: this.selectedIndex === index ? 0 : 1, color: this.glassBorderColor() })
-                .onClick(() => {
-                  this.selectedIndex = index;
-                  this.loadBooks();
-                })
-            })
-          }
-          .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
-          .constraintSize({ minWidth: '100%' })
-          .justifyContent(FlexAlign.Start)
-        }
-        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-        .width('100%')
-        .height(44)
-        .scrollable(ScrollDirection.Horizontal)
-        .scrollBar(BarState.Off)
-      }
+                .fontColor(this.secondaryTextColor())
+                .layoutWeight(1)
 
-      if (this.shouldShowExploreStatus()) {
-        Row() {
-          Text(this.status)
-            .fontSize(AppFontSize.BODY)
-            .fontColor(this.secondaryTextColor())
-            .layoutWeight(1)
-
-          if (this.verificationUrl) {
-            Button('去验证')
-              .height(28)
-              .fontSize(AppFontSize.CAPTION)
-              .borderRadius(14)
-              .backgroundColor(this.buttonColor())
-              .fontColor(ThemeRuntime.onAccentColor())
-              .margin({ left: AppSpacing.LG })
-              .onClick(() => {
-                this.openVerification();
-              })
+              if (this.verificationUrl) {
+                Button('去验证')
+                  .height(28)
+                  .fontSize(AppFontSize.CAPTION)
+                  .borderRadius(14)
+                  .backgroundColor(this.buttonColor())
+                  .fontColor(ThemeRuntime.onAccentColor())
+                  .margin({ left: AppSpacing.LG })
+                  .onClick(() => {
+                    this.openVerification();
+                  })
+              }
+            }
+            .width('100%')
+            .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.SM, bottom: AppSpacing.SM })
+            .alignItems(VerticalAlign.Center)
           }
-        }
-        .width('100%')
-        .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: AppSpacing.SM, bottom: AppSpacing.SM })
-        .alignItems(VerticalAlign.Center)
-      }
         }
         .width('100%')
         .position({ x: 0, y: 0 })
@@ -679,34 +569,6 @@ export struct ExplorePage {
       .backgroundColor(this.pageColor())
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
 
-      if (this.showExploreSourcePicker) {
-        Column()
-          .width('100%')
-          .height('100%')
-          .position({ x: 0, y: this.statusBarHeight + 56 })
-          .backgroundColor(Color.Transparent)
-          .zIndex(9)
-          .onClick(() => {
-            this.showExploreSourcePicker = false;
-            this.clearExploreSourceFilter();
-          })
-
-        this.exploreSourceDropdown()
-      }
-
-      if (this.showExploreFilterPanel && this.useCompactExploreFilters()) {
-        Column()
-          .width('100%')
-          .height('100%')
-          .backgroundColor(this.appDarkMode ? '#4D000000' : '#26000000')
-          .zIndex(7)
-          .onClick(() => {
-            this.closeExploreFilterPanel();
-          })
-
-        this.exploreFilterPanel()
-      }
-
       if (this.showExploreSourceActionMenu) {
         this.exploreSourceActionMenu()
       }
@@ -753,21 +615,45 @@ export struct ExplorePage {
     });
   }
 
+  /** 书源选择弹出层：顶部搜索框，下面是分组小标签和书源列表；长按书源打开操作菜单。 */
   @Builder
-  exploreSourceDropdown() {
-    Column() {
-      this.exploreSourceGroupBar()
+  exploreSourcePickerContent() {
+    Column({ space: AppSpacing.XS }) {
+      Row({ space: AppSpacing.SM }) {
+        SymbolGlyph($r('sys.symbol.magnifyingglass'))
+          .fontSize(16)
+          .fontColor([this.secondaryTextColor()])
+        TextInput({ placeholder: '搜索书源名称、地址或分组', text: this.exploreSourceFilterInput })
+          .fontSize(AppFontSize.BODY)
+          .fontColor(this.primaryTextColor())
+          .placeholderColor(this.secondaryTextColor())
+          .placeholderFont({ size: AppFontSize.BODY })
+          .layoutWeight(1)
+          .height(36)
+          .padding(0)
+          .backgroundColor(Color.Transparent)
+          .onChange((value: string) => {
+            this.exploreSourceFilterInput = value;
+            this.applyExploreSourceFilter();
+          })
+      }
+      .width('100%')
+      .height(40)
+      .padding({ left: 12, right: 12 })
+      .borderRadius(this.exploreMenuItemRadius())
+      .backgroundColor(ThemeRuntime.softFillColor(this.appDarkMode))
+
+      if (this.exploreSourceGroups.length > 1) {
+        this.exploreSourceGroupTabs()
+      }
 
       if (this.getFilteredExploreSourceOptions().length === 0) {
-        Column() {
-            Text(this.activeExploreSourceGroup === '__all__' ? '没有匹配的书源' : '当前分组没有匹配的书源')
-              .fontSize(AppFontSize.BODY)
-              .fontColor(this.secondaryTextColor())
-              .width('100%')
-              .height(52)
-              .textAlign(TextAlign.Center)
-        }
-        .width('100%')
+        Text(this.activeExploreSourceGroup === '__all__' ? '没有匹配的书源' : '当前分组没有匹配的书源')
+          .fontSize(AppFontSize.BODY)
+          .fontColor(this.secondaryTextColor())
+          .width('100%')
+          .height(52)
+          .textAlign(TextAlign.Center)
       } else {
         List({ scroller: this.exploreSourceScroller, space: 0 }) {
           LazyForEach(this.exploreSourceDataSource, (option: ExploreSourceOption) => {
@@ -802,9 +688,9 @@ export struct ExplorePage {
                 }
               }
               .width('100%')
-              .height(44)
-              .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
-              .borderRadius(ThemeRuntime.mediumRadius())
+              .height(ExplorePage.MENU_ITEM_HEIGHT)
+              .padding({ left: 12, right: 12 })
+              .borderRadius(this.exploreMenuItemRadius())
               .backgroundColor(option.sourceUrl === this.selectedSourceUrl ? this.exploreSelectedBackgroundColor() : '#00000000')
               .alignItems(VerticalAlign.Center)
               .onClick(() => {
@@ -831,15 +717,7 @@ export struct ExplorePage {
       }
     }
     .width(this.exploreSourceDropdownWidth())
-    .padding(AppSpacing.MD)
-    .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
-    .clip(true)
-    .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
-    .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
-    .border({ width: ThemeRuntime.glassBorderWidth('overlay'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'overlay') })
-    .shadow({ radius: ThemeRuntime.glassShadowRadius('overlay'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'overlay'), offsetX: ThemeRuntime.glassShadowOffsetX('overlay'), offsetY: ThemeRuntime.glassShadowOffsetY('overlay') })
-    .position({ x: 16, y: this.statusBarHeight + 52 })
-    .zIndex(10)
+    .padding(ImmersiveMaterialRuntime.POPUP_MENU_PADDING)
     .parallelGesture(
       PanGesture({ direction: PanDirection.Horizontal, distance: 18 })
         .onActionEnd((event: GestureEvent) => {
@@ -1082,38 +960,359 @@ export struct ExplorePage {
 
 
   @Builder
-  exploreSourceGroupBar() {
+  exploreSourceGroupTabs() {
     Scroll() {
-      Row({ space: AppSpacing.SM }) {
-        this.exploreSourceGroupChip('全部', '__all__')
+      Row() {
+        this.exploreSourceGroupTab('全部', '__all__')
         ForEach(this.exploreSourceGroups, (group: string) => {
-          this.exploreSourceGroupChip(group, group)
+          this.exploreSourceGroupTab(group, group)
         }, (group: string) => group)
       }
-      .padding({ left: AppSpacing.XS, right: AppSpacing.XS, bottom: AppSpacing.MD })
       .constraintSize({ minWidth: '100%' })
     }
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
+    .height(36)
     .scrollable(ScrollDirection.Horizontal)
     .scrollBar(BarState.Off)
-    .clip(true)
   }
 
   @Builder
-  exploreSourceGroupChip(label: string, groupKey: string) {
-    Text(label)
-      .fontSize(AppFontSize.CAPTION)
-      .fontColor(this.activeExploreSourceGroup === groupKey ? '#FFFFFF' : this.secondaryTextColor())
-      .height(30)
-      .maxLines(1)
-      .textOverflow({ overflow: TextOverflow.Ellipsis })
-      .constraintSize({ maxWidth: 128 })
-      .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
-      .textAlign(TextAlign.Center)
-      .borderRadius(15)
-      .backgroundColor(this.activeExploreSourceGroup === groupKey ? this.accentColor() : this.inputColor())
-      .onClick(() => this.selectExploreSourceGroup(groupKey))
+  exploreSourceGroupTab(label: string, groupKey: string) {
+    Column({ space: 3 }) {
+      Text(label)
+        .fontSize(AppFontSize.BODY)
+        .fontWeight(this.activeExploreSourceGroup === groupKey ? FontWeight.Medium : FontWeight.Regular)
+        .fontColor(this.activeExploreSourceGroup === groupKey ? this.accentColor() : this.secondaryTextColor())
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .constraintSize({ maxWidth: 112 })
+      Row()
+        .width(14)
+        .height(3)
+        .borderRadius(1.5)
+        .backgroundColor(this.accentColor())
+        .opacity(this.activeExploreSourceGroup === groupKey ? 1 : 0)
+    }
+    .height('100%')
+    .padding({ left: 10, right: 10 })
+    .justifyContent(FlexAlign.Center)
+    .onClick(() => this.selectExploreSourceGroup(groupKey))
+  }
+
+  /** 标题右侧的书源名标签：按名称估宽，最多占屏宽 45%，点开书源选择弹出层。 */
+  @Builder
+  exploreSourceLabel() {
+    Row() {
+      ImmersiveMaterialSurface({
+        surfaceWidth: this.exploreSourceLabelWidth(),
+        surfaceHeight: ExplorePage.HEADER_CONTROL_SIZE,
+        darkMode: this.appDarkMode,
+        fallbackColor: this.cardColor(),
+        glowColor: this.accentGlowColor()
+      }) {
+        Row({ space: AppSpacing.XS }) {
+          Text(this.selectedSourceName || '选择书源')
+            .fontSize(AppFontSize.BODY)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.accentColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .flexShrink(1)
+          SymbolGlyph(this.showExploreSourcePicker ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
+            .fontSize(14)
+            .fontColor([this.secondaryTextColor()])
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ left: 14, right: 10 })
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .accessibilityText(`当前书源${this.selectedSourceName}，切换书源`)
+        .onClick(() => {
+          this.showExploreFilterPanel = false;
+          this.showExplorePlatformMenu = false;
+          this.toggleExploreSourcePicker();
+        })
+      }
+    }
+    .margin({ left: AppSpacing.MD, right: 10 })
+    .bindPopup(this.showExploreSourcePicker, ImmersiveMaterialRuntime.popupMenuOptions((): void => {
+      this.exploreSourcePickerContent()
+    }, Placement.BottomRight, this.appDarkMode, this.accentColor(), () => {
+      this.showExploreSourcePicker = false;
+      this.clearExploreSourceFilter();
+    }))
+  }
+
+  exploreSourceLabelWidth(): number {
+    const name = this.selectedSourceName || '选择书源';
+    let textWidth = 0;
+    for (let index = 0; index < name.length; index++) {
+      textWidth += name.charCodeAt(index) > 0x2E80 ? AppFontSize.BODY : AppFontSize.BODY * 0.6;
+    }
+    // 左右留白 24、箭头 14、间隔 4。
+    const desired = Math.ceil(textWidth) + 42;
+    return Math.max(72, Math.min(desired, Math.floor(this.exploreViewportWidth * 0.45)));
+  }
+
+  @Builder
+  exploreHeaderCircleButton(icon: Resource, active: boolean, label: string, onTap: () => void) {
+    ImmersiveMaterialSurface({
+      surfaceWidth: ExplorePage.HEADER_CONTROL_SIZE,
+      surfaceHeight: ExplorePage.HEADER_CONTROL_SIZE,
+      darkMode: this.appDarkMode,
+      fallbackColor: this.cardColor(),
+      glowColor: this.accentGlowColor()
+    }) {
+      Stack() {
+        SymbolGlyph(icon)
+          .fontSize(20)
+          .fontColor([active ? this.accentColor() : this.primaryTextColor()])
+      }
+      .width('100%')
+      .height('100%')
+      .accessibilityText(label)
+      .onClick(() => onTap())
+    }
+  }
+
+  @Builder
+  exploreFilterButton() {
+    Row() {
+      this.exploreHeaderCircleButton($r('sys.symbol.funnel'), this.showExploreFilterPanel,
+        `筛选条件：${this.exploreFilterSummary()}`, () => {
+          this.showExploreSourcePicker = false;
+          this.showExplorePlatformMenu = false;
+          this.toggleExploreFilterPanel();
+        })
+    }
+    .margin({ right: 10 })
+    .bindPopup(this.showExploreFilterPanel, ImmersiveMaterialRuntime.popupMenuOptions((): void => {
+      this.exploreFilterPopupContent()
+    }, Placement.BottomRight, this.appDarkMode, this.accentColor(), () => {
+      this.closeExploreFilterPanel();
+    }))
+  }
+
+  exploreFilterSummary(): string {
+    return this.exploreFilters.map((filter: ExploreFilterGroup) => `${filter.title}${filter.selected || '未选'}`)
+      .join('，');
+  }
+
+  /** 书源提供的筛选条件（分类、状态、排序等）：分组排列，选好后点“完成”一次生效。 */
+  @Builder
+  exploreFilterPopupContent() {
+    Column() {
+      Row() {
+        Text('筛选条件')
+          .fontSize(AppFontSize.BODY_LARGE)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.primaryTextColor())
+          .layoutWeight(1)
+        Text('完成')
+          .fontSize(AppFontSize.BODY_LARGE)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.accentColor())
+          .padding({ left: AppSpacing.LG, right: AppSpacing.XS, top: AppSpacing.MD, bottom: AppSpacing.MD })
+          .onClick(() => {
+            this.applyExploreFilterDrafts();
+          })
+      }
+      .width('100%')
+      .height(ExplorePage.MENU_ITEM_HEIGHT)
+      .padding({ left: 12, right: 8 })
+
+      Scroll() {
+        Column({ space: AppSpacing.LG }) {
+          ForEach(this.exploreFilterDrafts, (filter: ExploreFilterGroup) => {
+            Column({ space: AppSpacing.SM }) {
+              Text(filter.title)
+                .fontSize(AppFontSize.CAPTION)
+                .fontColor(this.secondaryTextColor())
+              Flex({ wrap: FlexWrap.Wrap }) {
+                ForEach(filter.options, (name: string) => {
+                  this.exploreFilterDraftOptionChip(filter, name)
+                }, (name: string): string => `${filter.title}:${name}`)
+              }
+              .width('100%')
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Start)
+          }, (filter: ExploreFilterGroup): string =>
+            `${filter.title}:${filter.selected}:${filter.options.join('|')}`)
+        }
+        .width('100%')
+        .padding({ left: 12, right: 4, top: AppSpacing.XS, bottom: AppSpacing.LG })
+      }
+      .width('100%')
+      .constraintSize({ maxHeight: Math.min(420, Math.floor(this.exploreViewportHeight * 0.6)) })
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
+    }
+    .width(Math.min(340, Math.max(1, this.exploreViewportWidth - 32)))
+    .padding(ImmersiveMaterialRuntime.POPUP_MENU_PADDING)
+  }
+
+  showsExploreChannelBar(): boolean {
+    return this.getActiveEntries().length > 0 || this.showsExplorePlatformSelector();
+  }
+
+  /** 书源有多个模式（站点）时，频道栏左侧固定显示当前模式；有筛选条件的书源不走模式。 */
+  showsExplorePlatformSelector(): boolean {
+    return this.exploreFilters.length === 0 && this.platformNames.length > 1;
+  }
+
+  /** 标题下方唯一的一行：左侧可选的模式，右侧横滑频道，选中项强调色加下划线。 */
+  @Builder
+  exploreChannelBar() {
+    Row() {
+      if (this.exploreChannelBarWidth > 0) {
+        ImmersiveMaterialSurface({
+          surfaceWidth: this.exploreChannelBarWidth,
+          surfaceHeight: ExplorePage.CHANNEL_BAR_HEIGHT,
+          darkMode: this.appDarkMode,
+          fallbackColor: this.cardColor(),
+          glowColor: this.accentGlowColor()
+        }) {
+          Row() {
+            if (this.showsExplorePlatformSelector()) {
+              Row({ space: AppSpacing.XXS }) {
+                Text(this.selectedPlatform || this.platformNames[0])
+                  .fontSize(AppFontSize.BODY)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(this.primaryTextColor())
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .constraintSize({ maxWidth: 96 })
+                SymbolGlyph(this.showExplorePlatformMenu ? $r('sys.symbol.chevron_up') :
+                  $r('sys.symbol.chevron_down'))
+                  .fontSize(12)
+                  .fontColor([this.secondaryTextColor()])
+              }
+              .height('100%')
+              .padding({ left: 16, right: 10 })
+              .alignItems(VerticalAlign.Center)
+              .accessibilityText(`当前模式${this.selectedPlatform}，切换模式`)
+              .bindPopup(this.showExplorePlatformMenu, ImmersiveMaterialRuntime.popupMenuOptions((): void => {
+                this.explorePlatformMenuContent()
+              }, Placement.BottomLeft, this.appDarkMode, this.accentColor(), () => {
+                this.showExplorePlatformMenu = false;
+              }))
+              .onClick(() => {
+                this.showExploreSourcePicker = false;
+                this.showExploreFilterPanel = false;
+                this.showExplorePlatformMenu = !this.showExplorePlatformMenu;
+              })
+
+              Divider()
+                .vertical(true)
+                .height(18)
+                .strokeWidth(1)
+                .color(ThemeRuntime.hairlineColor(this.appDarkMode))
+            }
+
+            List({ scroller: this.exploreChannelScroller }) {
+              ForEach(this.getActiveEntries(), (entry: ExploreEntry, index: number) => {
+                ListItem() {
+                  Column({ space: 3 }) {
+                    Text(entry.title)
+                      .fontSize(AppFontSize.BODY_LARGE)
+                      .fontWeight(this.selectedIndex === index ? FontWeight.Medium : FontWeight.Regular)
+                      .fontColor(this.selectedIndex === index ? this.accentColor() : this.secondaryTextColor())
+                      .maxLines(1)
+                    Row()
+                      .width(16)
+                      .height(3)
+                      .borderRadius(1.5)
+                      .backgroundColor(this.accentColor())
+                      .opacity(this.selectedIndex === index ? 1 : 0)
+                      .scale({ x: this.selectedIndex === index ? 1 : 0.4, y: 1 })
+                      .animation({ duration: 220, curve: Curve.Friction })
+                  }
+                  .height('100%')
+                  .padding({ left: 10, right: 10, top: 6 })
+                  .justifyContent(FlexAlign.Center)
+                  .accessibilityText(entry.title)
+                  .accessibilitySelected(this.selectedIndex === index)
+                  .onClick(() => this.selectExploreEntry(index))
+                }
+              }, (entry: ExploreEntry, index: number): string => `${index}_${entry.title}`)
+            }
+            .listDirection(Axis.Horizontal)
+            .layoutWeight(1)
+            .height('100%')
+            .padding({ left: this.showsExplorePlatformSelector() ? 2 : 6, right: 6 })
+            .scrollBar(BarState.Off)
+            .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          }
+          .width('100%')
+          .height('100%')
+          .alignItems(VerticalAlign.Center)
+        }
+      }
+    }
+    .width(`calc(100% - ${AppSpacing.XL * 2}vp)`)
+    .height(ExplorePage.CHANNEL_BAR_HEIGHT)
+    .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
+    .onAreaChange((_oldValue: Area, newValue: Area) => {
+      const width = Math.floor(Number(newValue.width));
+      if (Number.isFinite(width) && width > 0 && width !== this.exploreChannelBarWidth) {
+        this.exploreChannelBarWidth = width;
+      }
+    })
+  }
+
+  selectExploreEntry(index: number): void {
+    this.selectedIndex = index;
+    this.loadBooks();
+    try {
+      this.exploreChannelScroller.scrollToIndex(index, true, ScrollAlign.CENTER);
+    } catch (error) {
+      console.warn('定位当前发现频道失败:', error);
+    }
+  }
+
+  @Builder
+  explorePlatformMenuContent() {
+    Column({ space: AppSpacing.XXS }) {
+      ForEach(this.platformNames, (name: string) => {
+        Row() {
+          Text(name)
+            .fontSize(AppFontSize.BODY_LARGE)
+            .fontWeight(this.selectedPlatform === name ? FontWeight.Medium : FontWeight.Regular)
+            .fontColor(this.selectedPlatform === name ? this.accentColor() : this.primaryTextColor())
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+          if (this.selectedPlatform === name) {
+            SymbolGlyph($r('sys.symbol.checkmark'))
+              .fontSize(14)
+              .fontColor([this.accentColor()])
+          }
+        }
+        .width('100%')
+        .height(ExplorePage.MENU_ITEM_HEIGHT)
+        .padding({ left: 12, right: 12 })
+        .borderRadius(this.exploreMenuItemRadius())
+        .backgroundColor(this.selectedPlatform === name ? this.exploreSelectedBackgroundColor() : '#00000000')
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => {
+          this.showExplorePlatformMenu = false;
+          this.switchExplorePlatform(name);
+        })
+      }, (name: string) => name)
+    }
+    .width(180)
+    .padding(ImmersiveMaterialRuntime.POPUP_MENU_PADDING)
+  }
+
+  exploreMenuItemRadius(): number {
+    return ImmersiveMaterialRuntime.POPUP_MENU_RADIUS - ImmersiveMaterialRuntime.POPUP_MENU_PADDING;
+  }
+
+  accentGlowColor(): string {
+    return `#40${this.accentColor().substring(1)}`;
   }
 
   exploreSourceDropdownWidth(): number {
@@ -1209,6 +1408,8 @@ export struct ExplorePage {
     }
     this.actionExploreSourceUrl = option.sourceUrl;
     this.actionExploreSourceNative = option.isNative === true;
+    // 操作菜单画在页面上，书源弹出层在系统浮层里，先收起弹出层免得挡住菜单。
+    this.showExploreSourcePicker = false;
     this.showExploreSourceActionMenu = true;
   }
 
@@ -1444,27 +1645,6 @@ export struct ExplorePage {
     AppStorage.setOrCreate('explorePlatform', platform);
     this.saveExploreSelection();
     this.loadEntries(platform);
-  }
-
-  async switchExploreFilter(title: string, selection: string): Promise<void> {
-    if (this.isLoading || !this.selectedSourceUrl) return;
-    this.closeExploreFilterPanel();
-    this.status = `正在切换${title}到 ${selection}...`;
-    this.books = [];
-    this.isLoading = true;
-    // 先把选中状态切过去，分类和内容随后刷新；失败时再还原。
-    const previousFilters = this.exploreFilters;
-    this.exploreFilters = previousFilters.map((filter: ExploreFilterGroup): ExploreFilterGroup =>
-      filter.title === title ? { title: filter.title, options: filter.options, selected: selection } : filter);
-    const applied = await this.coordinator.applyExploreFilter(this.selectedSourceUrl, title, selection);
-    this.isLoading = false;
-    if (!applied) {
-      this.exploreFilters = previousFilters;
-      this.status = `${title}切换失败`;
-      return;
-    }
-    this.selectedPlatform = '';
-    await this.loadEntries('', true);
   }
 
   switchExploreSource(option: ExploreSourceOption): void {
@@ -1775,22 +1955,13 @@ export struct ExplorePage {
 
   exploreTopOverlayHeight(): number {
     let height = this.statusBarHeight + 56;
-    if (this.exploreFilters.length > 0) {
-      height += this.useCompactExploreFilters() ? 48 : this.exploreFilters.length * 48;
-    } else if (this.platformNames.length > 0) {
-      height += 48;
-    }
-    if (this.getActiveEntries().length > 0) {
-      height += 44;
+    if (this.showsExploreChannelBar()) {
+      height += ExplorePage.CHANNEL_BAR_HEIGHT + AppSpacing.MD;
     }
     if (this.shouldShowExploreStatus()) {
       height += 40;
     }
     return height;
-  }
-
-  useCompactExploreFilters(): boolean {
-    return this.exploreFilters.length > 2;
   }
 
   copyExploreFilterGroups(filters: ExploreFilterGroup[]): ExploreFilterGroup[] {
@@ -1863,197 +2034,22 @@ export struct ExplorePage {
     }
   }
 
-  compactExploreFilterPanelTop(): number {
-    return this.statusBarHeight + 56 + 48;
-  }
-
-  compactExploreFilterPanelHeight(): number {
-    const desired = 58 + this.exploreFilters.length * 62;
-    const available = Math.max(160, this.exploreViewportHeight - this.compactExploreFilterPanelTop() - 20);
-    return Math.min(desired, Math.min(420, available));
-  }
-
-  @Builder
-  inlineExploreFilterRow(filter: ExploreFilterGroup) {
-    Scroll() {
-      Row({ space: AppSpacing.MD }) {
-        Text(`${filter.title}：`)
-          .fontSize(AppFontSize.BODY)
-          .fontColor(this.secondaryTextColor())
-          .flexShrink(0)
-        ForEach(filter.options, (name: string) => {
-          this.exploreFilterOptionChip(filter, name)
-        }, (name: string): string => `${filter.title}:${name}`)
-      }
-      .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
-      .constraintSize({ minWidth: '100%' })
-      .justifyContent(FlexAlign.Start)
-    }
-    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-    .width('100%')
-    .height(48)
-    .scrollable(ScrollDirection.Horizontal)
-    .scrollBar(BarState.Off)
-  }
-
-  @Builder
-  compactExploreFilterBar() {
-    Row({ space: AppSpacing.SM }) {
-      Scroll() {
-        Row({ space: AppSpacing.SM }) {
-          ForEach(this.exploreFilters, (filter: ExploreFilterGroup) => {
-            Text(`${filter.title} · ${filter.selected || '未选'}`)
-              .fontSize(AppFontSize.CAPTION)
-              .fontColor(this.primaryTextColor())
-              .height(30)
-              .maxLines(1)
-              .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
-              .borderRadius(15)
-              .backgroundColor(this.glassCardColor())
-              .border({ width: 1, color: this.glassBorderColor() })
-              .onClick(() => {
-                this.toggleExploreFilterPanel();
-              })
-          }, (filter: ExploreFilterGroup): string => `${filter.title}:${filter.selected}`)
-        }
-        .constraintSize({ minWidth: '100%' })
-        .justifyContent(FlexAlign.Start)
-      }
-      .layoutWeight(1)
-      .height(40)
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-
-      Row({ space: AppSpacing.XS }) {
-        SymbolGlyph($r('sys.symbol.gearshape'))
-          .fontSize(16)
-          .fontColor([this.showExploreFilterPanel ? '#FFFFFF' : this.primaryTextColor()])
-        Text('筛选')
-          .fontSize(AppFontSize.CAPTION)
-          .fontColor(this.showExploreFilterPanel ? '#FFFFFF' : this.primaryTextColor())
-      }
-      .height(32)
-      .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
-      .borderRadius(16)
-      .backgroundColor(this.showExploreFilterPanel ? this.accentColor() : this.inputColor())
-      .flexShrink(0)
-      .onClick(() => {
-        this.toggleExploreFilterPanel();
-      })
-    }
-    .width('100%')
-    .height(48)
-    .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
-    .alignItems(VerticalAlign.Center)
-    .onClick(() => {
-      this.toggleExploreFilterPanel();
-    })
-  }
-
-  @Builder
-  exploreFilterOptionChip(filter: ExploreFilterGroup, name: string) {
-    Text(name)
-      .fontSize(AppFontSize.BODY)
-      .fontColor(filter.selected === name ? '#FFFFFF' : this.primaryTextColor())
-      .height(32)
-      .maxLines(1)
-      .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
-      .backgroundColor(filter.selected === name ? this.accentColor() : this.glassCardColor())
-      .borderRadius(16)
-      .border({ width: filter.selected === name ? 0 : 1, color: this.glassBorderColor() })
-      .onClick(() => {
-        if (filter.selected !== name) this.switchExploreFilter(filter.title, name);
-      })
-  }
-
   @Builder
   exploreFilterDraftOptionChip(filter: ExploreFilterGroup, name: string) {
     Text(name)
       .fontSize(AppFontSize.BODY)
-      .fontColor(filter.selected === name ? '#FFFFFF' : this.primaryTextColor())
+      .fontWeight(filter.selected === name ? FontWeight.Medium : FontWeight.Regular)
+      .fontColor(filter.selected === name ? this.accentColor() : this.primaryTextColor())
       .height(32)
       .maxLines(1)
       .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
-      .backgroundColor(filter.selected === name ? this.accentColor() : this.glassCardColor())
+      .backgroundColor(filter.selected === name ? this.exploreSelectedBackgroundColor() :
+        ThemeRuntime.softFillColor(this.appDarkMode))
       .borderRadius(16)
-      .border({ width: filter.selected === name ? 0 : 1, color: this.glassBorderColor() })
+      .margin({ right: AppSpacing.SM, bottom: AppSpacing.SM })
       .onClick(() => {
         if (filter.selected !== name) this.selectExploreFilterDraft(filter.title, name);
       })
-  }
-
-  @Builder
-  exploreFilterPanel() {
-    Column() {
-      Row() {
-        Text('筛选条件')
-          .fontSize(AppFontSize.BODY_LARGE)
-          .fontWeight(FontWeight.Medium)
-          .fontColor(this.primaryTextColor())
-          .layoutWeight(1)
-        Text('完成')
-          .fontSize(AppFontSize.BODY)
-          .fontColor(this.accentColor())
-          .padding({ left: AppSpacing.LG, right: AppSpacing.XS, top: AppSpacing.MD, bottom: AppSpacing.MD })
-          .onClick(() => {
-            this.applyExploreFilterDrafts();
-          })
-      }
-      .width('100%')
-      .height(44)
-      .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
-
-      Scroll() {
-        Column() {
-          ForEach(this.exploreFilterDrafts, (filter: ExploreFilterGroup) => {
-            Row({ space: AppSpacing.MD }) {
-              Text(filter.title)
-                .fontSize(AppFontSize.CAPTION)
-                .fontColor(this.secondaryTextColor())
-                .width(46)
-                .maxLines(1)
-                .textAlign(TextAlign.Start)
-
-              Scroll() {
-                Row({ space: AppSpacing.MD }) {
-                  ForEach(filter.options, (name: string) => {
-                    this.exploreFilterDraftOptionChip(filter, name)
-                  }, (name: string): string => `${filter.title}:${name}`)
-                }
-                .constraintSize({ minWidth: '100%' })
-                .justifyContent(FlexAlign.Start)
-              }
-              .layoutWeight(1)
-              .height(44)
-              .scrollable(ScrollDirection.Horizontal)
-              .scrollBar(BarState.Off)
-              .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-            }
-            .width('100%')
-            .height(54)
-            .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
-          }, (filter: ExploreFilterGroup): string =>
-            `${filter.title}:${filter.selected}:${filter.options.join('|')}`)
-        }
-      }
-      .width('100%')
-      .layoutWeight(1)
-      .scrollBar(BarState.Auto)
-    }
-    .width('calc(100% - 32vp)')
-    .height(this.compactExploreFilterPanelHeight())
-    .position({ x: 16, y: this.compactExploreFilterPanelTop() })
-    .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
-    .clip(true)
-    .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
-    .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
-    .border({ width: ThemeRuntime.glassBorderWidth('overlay'),
-      color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'overlay') })
-    .shadow({ radius: ThemeRuntime.glassShadowRadius('overlay'),
-      color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'overlay'),
-      offsetX: ThemeRuntime.glassShadowOffsetX('overlay'), offsetY: ThemeRuntime.glassShadowOffsetY('overlay') })
-    .zIndex(8)
   }
 
   resultListBottomInset(): number {

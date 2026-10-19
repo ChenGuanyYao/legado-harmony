@@ -1,6 +1,7 @@
 import deviceInfo from '@ohos.deviceInfo';
 import { uiMaterial } from '@kit.ArkUI';
 import { hdsMaterial } from '@kit.UIDesignKit';
+import { ThemeRuntime } from '../theme/ThemeRuntime';
 
 /**
  * Applies the shared dropdown material to a Select. `menuSystemMaterial` only exists from API 26; calling the
@@ -17,6 +18,9 @@ export class SelectMenuMaterialModifier implements AttributeModifier<SelectAttri
 /** Centralizes HDS material probing and compatibility fallback. */
 export class ImmersiveMaterialRuntime {
   static readonly KEY_LIGHT_LEVEL: string = 'immersiveLightLevel';
+  /** 下拉弹出菜单的圆角与内边距；菜单项圆角取两者之差，与弹出层同心。 */
+  static readonly POPUP_MENU_RADIUS: number = 18;
+  static readonly POPUP_MENU_PADDING: number = 4;
   private static resolved: boolean = false;
   private static resolvedType: hdsMaterial.MaterialType = hdsMaterial.MaterialType.ADAPTIVE;
   private static hdsMaterialSupported: boolean | null = null;
@@ -143,6 +147,35 @@ export class ImmersiveMaterialRuntime {
       interactive: false,
       lightEffect: { color: accentColor }
     });
+  }
+
+  /**
+   * 下拉菜单统一用系统弹出层：API 26+ 背景是沉浸光感材质，旧系统退回半透明磨砂；
+   * 点菜单外自动收起，收起时回调让调用方复位开关。builder 用箭头函数传入，保证其中的 this 指向页面。
+   */
+  static popupMenuOptions(builder: CustomBuilder, placement: Placement, darkMode: boolean, accentColor: string,
+    onHidden: () => void): CustomPopupOptions {
+    const material = ImmersiveMaterialRuntime.popupMenuMaterial(accentColor);
+    const options: CustomPopupOptions = {
+      builder: builder,
+      placement: placement,
+      popupColor: material !== undefined ? Color.Transparent : ThemeRuntime.glassPanelColor(darkMode, '', 'panel'),
+      radius: ImmersiveMaterialRuntime.POPUP_MENU_RADIUS,
+      enableArrow: false,
+      targetSpace: 8,
+      focusable: true,
+      onStateChange: (event) => {
+        if (!event.isVisible) {
+          onHidden();
+        }
+      }
+    };
+    if (material !== undefined) {
+      options.systemMaterial = material;
+    } else {
+      options.backgroundBlurStyle = BlurStyle.COMPONENT_THICK;
+    }
+    return options;
   }
 
   static selectMenuMaterial(): uiMaterial.ImmersiveMaterial | undefined {

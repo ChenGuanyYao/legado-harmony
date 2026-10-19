@@ -80,8 +80,8 @@ export struct BookshelfPage {
   /** 顶部排序胶囊、筛选和布局圆形按钮的高度。 */
   static readonly HEADER_CONTROL_SIZE: number = 40;
   /** 顶部下拉菜单（沉浸光感弹出层）的圆角、内边距和菜单项高度。 */
-  static readonly MENU_RADIUS: number = 18;
-  static readonly MENU_PADDING: number = 4;
+  static readonly MENU_RADIUS: number = ImmersiveMaterialRuntime.POPUP_MENU_RADIUS;
+  static readonly MENU_PADDING: number = ImmersiveMaterialRuntime.POPUP_MENU_PADDING;
   static readonly MENU_ITEM_HEIGHT: number = 44;
   // 加密的书源封面解密完成后递增，读取它的封面会重新取到本地文件地址。
   @StorageProp('sourceCoverRevision') sourceCoverRevision: number = 0;
@@ -6265,32 +6265,8 @@ export struct BookshelfPage {
     }))
   }
 
-  /**
-   * 顶部下拉菜单统一用系统弹出层：API 26+ 背景是沉浸光感材质，旧系统退回半透明磨砂；
-   * 点菜单外自动收起，收起时回调把对应开关复位。
-   */
   shelfMenuPopupOptions(builder: CustomBuilder, placement: Placement, onHidden: () => void): CustomPopupOptions {
-    const material = ImmersiveMaterialRuntime.popupMenuMaterial(this.accentColor());
-    const options: CustomPopupOptions = {
-      builder: builder,
-      placement: placement,
-      popupColor: material !== undefined ? Color.Transparent : ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'),
-      radius: BookshelfPage.MENU_RADIUS,
-      enableArrow: false,
-      targetSpace: AppSpacing.MD,
-      focusable: true,
-      onStateChange: (event) => {
-        if (!event.isVisible) {
-          onHidden();
-        }
-      }
-    };
-    if (material !== undefined) {
-      options.systemMaterial = material;
-    } else {
-      options.backgroundBlurStyle = BlurStyle.COMPONENT_THICK;
-    }
-    return options;
+    return ImmersiveMaterialRuntime.popupMenuOptions(builder, placement, this.appDarkMode, this.accentColor(), onHidden);
   }
 
   shelfMenuItemRadius(): number {
