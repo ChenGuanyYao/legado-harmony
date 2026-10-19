@@ -73,6 +73,37 @@ export class ImmersiveTagModifier implements AttributeModifier<CommonAttribute> 
   }
 }
 
+/**
+ * 玻璃标签：放在有图像的背景上（如模糊封面行、详情页氛围背景）时使用。
+ * API 26+ 用透明的组件级沉浸材质叠一层半透明白（深色模式为深色玻璃），交互光感取标签文字色；
+ * 旧系统画半透明白底加细边。文字颜色由调用处设置，按序号配色不变。
+ */
+export class GlassTagModifier implements AttributeModifier<CommonAttribute> {
+  private lightColor: string;
+  private darkMode: boolean;
+
+  /** @param lightColor 标签文字色，用作交互光感颜色 */
+  constructor(lightColor: string, darkMode: boolean) {
+    this.lightColor = lightColor;
+    this.darkMode = darkMode;
+  }
+
+  applyNormalAttribute(instance: CommonAttribute): void {
+    const material = ImmersiveMaterialRuntime.glassTagMaterial(this.lightColor, this.darkMode);
+    if (material !== undefined) {
+      instance.backgroundColor(Color.Transparent);
+      instance.systemMaterial(material);
+      // 离屏合成会把材质压成平面，保持逐层绘制。
+      instance.renderGroup(false);
+    } else {
+      instance.backgroundColor(this.darkMode ? '#4D1B1D22' : '#B3FFFFFF');
+      instance.border({ width: 0.5, color: this.darkMode ? '#26FFFFFF' : '#14000000' });
+      instance.shadow({ radius: 6, color: this.darkMode ? '#33000000' : '#14000000', offsetX: 0, offsetY: 2 });
+    }
+    instance.borderRadius(ImmersiveTagModifier.CAPSULE_RADIUS);
+  }
+}
+
 /** Centralizes HDS material probing and compatibility fallback. */
 export class ImmersiveMaterialRuntime {
   static readonly KEY_LIGHT_LEVEL: string = 'immersiveLightLevel';
@@ -234,6 +265,28 @@ export class ImmersiveMaterialRuntime {
       options.backgroundBlurStyle = BlurStyle.COMPONENT_THICK;
     }
     return options;
+  }
+
+  private static glassTagMaterials: Map<string, uiMaterial.ImmersiveMaterial> =
+    new Map<string, uiMaterial.ImmersiveMaterial>();
+
+  /** 玻璃标签材质按光感颜色、光感档位与深浅模式缓存；组件级材质只要 API 26 就能绘制。 */
+  static glassTagMaterial(lightColor: string, darkMode: boolean): uiMaterial.ImmersiveMaterial | undefined {
+    if (deviceInfo.sdkApiVersion < 26) return undefined;
+    const light = /^#[0-9A-Fa-f]{6}$/.test(lightColor) ? lightColor : '#FFFFFF';
+    const style = ImmersiveMaterialRuntime.materialStyle();
+    const key = `${light}|${style}|${darkMode ? 'dark' : 'light'}`;
+    const cached = ImmersiveMaterialRuntime.glassTagMaterials.get(key);
+    if (cached !== undefined) return cached;
+    const material = new uiMaterial.ImmersiveMaterial({
+      style: style,
+      materialColor: darkMode ? '#401B1D22' : '#66FFFFFF',
+      applyShadow: true,
+      interactive: true,
+      lightEffect: { color: light }
+    });
+    ImmersiveMaterialRuntime.glassTagMaterials.set(key, material);
+    return material;
   }
 
   static selectMenuMaterial(): uiMaterial.ImmersiveMaterial | undefined {

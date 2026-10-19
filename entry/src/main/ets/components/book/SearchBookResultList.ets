@@ -170,6 +170,40 @@ export struct SearchBookResultList {
     }
   }
 
+  /**
+   * 结果行背景：封面按极低分辨率解码后拉伸铺满，得到模糊效果而不做实时模糊；
+   * 上面盖一层半透明卡片色保证文字可读，标签的玻璃材质也因此有内容可透出。没有封面时用主题色打底。
+   */
+  @Builder
+  resultCardBackdrop(book: SearchBook) {
+    Stack() {
+      if (this.showResultCover && this.displayCover(book)) {
+        Image(this.displayCover(book))
+          .width('100%')
+          .height('100%')
+          .objectFit(ImageFit.Cover)
+          .sourceSize({ width: 12, height: 16 })
+          .interpolation(ImageInterpolation.High)
+      } else {
+        Column()
+          .width('100%')
+          .height('100%')
+          .backgroundColor(this.accentColor())
+      }
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.resultCardScrimColor())
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  resultCardScrimColor(): string {
+    const card = /^#[0-9A-Fa-f]{6}$/.test(this.cardColor) ? this.cardColor : (this.isDarkMode() ? '#191B1F' : '#FFFFFF');
+    return `${this.isDarkMode() ? '#C2' : '#B8'}${card.substring(1)}`;
+  }
+
   @Builder
   searchResultCard(book: SearchBook) {
     Row() {
@@ -243,7 +277,9 @@ export struct SearchBookResultList {
     .width('100%')
     .padding(AppSpacing.LG)
     .backgroundColor(this.cardColor)
+    .background(this.resultCardBackdrop(book))
     .borderRadius(ThemeRuntime.cardRadius())
+    .clip(true)
     .border({ width: this.itemBorderWidth, color: this.itemBorderColor })
     .shadow({ radius: 10, color: this.shadowColor, offsetX: 0, offsetY: 4 })
     .onClick(() => {
@@ -379,7 +415,7 @@ export struct SearchBookResultList {
       .fontSize(AppFontSize.CAPTION)
       .fontColor(BookDisplayHelper.getTagTextColor(index, this.isDarkMode()))
       .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
-      .attributeModifier(BookDisplayHelper.getTagModifier(index, this.isDarkMode()))
+      .attributeModifier(BookDisplayHelper.getGlassTagModifier(index, this.isDarkMode()))
       .margin({ right: AppSpacing.SM, bottom: AppSpacing.XS })
   }
 

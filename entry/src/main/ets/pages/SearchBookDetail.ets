@@ -4,7 +4,7 @@ import { AppDatabase } from '../model/data/AppDatabase';
 import { WebBookService } from '../core/book/WebBookService';
 import { syncSystemBars } from '../utils/SystemBars';
 import { BookDisplayHelper } from '../utils/BookDisplayHelper';
-import { ImmersiveTagModifier } from '../utils/ImmersiveMaterialRuntime';
+import { GlassTagModifier } from '../utils/ImmersiveMaterialRuntime';
 import { BookIdentity } from '../utils/BookIdentity';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 import { BookCoverCache } from '../utils/BookCoverCache';
@@ -1471,8 +1471,8 @@ struct SearchBookDetailPage {
   }
 
   /** 字数、更新时间这类中性信息标签：同样的沉浸光感胶囊，用输入框底色染色。 */
-  neutralTagModifier(): ImmersiveTagModifier {
-    return new ImmersiveTagModifier(this.inputColor(), this.secondaryTextColor(), this.appDarkMode);
+  neutralTagModifier(): GlassTagModifier {
+    return new GlassTagModifier(this.secondaryTextColor(), this.appDarkMode);
   }
 
   @Builder
@@ -1481,7 +1481,7 @@ struct SearchBookDetailPage {
       .fontSize(AppFontSize.BODY)
       .fontColor(BookDisplayHelper.getTagTextColor(index, this.appDarkMode))
       .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
-      .attributeModifier(BookDisplayHelper.getTagModifier(index, this.appDarkMode))
+      .attributeModifier(BookDisplayHelper.getGlassTagModifier(index, this.appDarkMode))
       .margin({ right: AppSpacing.MD, bottom: AppSpacing.MD })
   }
 
