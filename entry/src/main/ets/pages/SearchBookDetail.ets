@@ -30,7 +30,7 @@ struct SearchBookDetailPage {
   /** 顶栏底色与书名渐显所需的滚动距离。 */
   static readonly TITLE_FADE_DISTANCE: number = 120;
   /** 封面氛围背景的高度。 */
-  static readonly AMBIENT_HEIGHT: number = 420;
+  static readonly AMBIENT_HEIGHT: number = 460;
   /** 简介收起时显示的行数。 */
   static readonly INTRO_COLLAPSED_LINES: number = 6;
   // 加密的书源封面解密完成后递增，读取它的封面会重新取到本地文件地址。
@@ -89,6 +89,8 @@ struct SearchBookDetailPage {
   /** 正文滚动距离：顶栏底色与书名随之渐显。 */
   @State detailScrollY: number = 0;
   @State introExpanded: boolean = false;
+  /** 头部封面已加载完成的地址；氛围背景只对它显示，读系统缓存而不再发第二次网络请求。 */
+  @State readyCoverUrl: string = '';
   private detailScroller: Scroller = new Scroller();
   private openingCatalogChapter: boolean = false;
   private authorSearchDialogBuilder: CustomBuilder | undefined = undefined;
@@ -361,9 +363,9 @@ struct SearchBookDetailPage {
   }
 
   /**
-   * 封面氛围背景：封面低分辨率模糊铺在顶部，用渐变蒙版（DST_IN）让图片自身自上而下渐隐到完全透明，
-   * 下面直接透出页面底色，不靠颜色去遮，所以滚动、深浅色和换主题时底部都不会出现硬边。
-   * 滚动时只淡化图片这一层。
+   * 封面氛围背景：封面低分辨率模糊铺在顶部，上面盖一层“透明 → 页面底色”的渐变，渐变底部是不透明的页面色、
+   * 正好对齐图片底边，所以图片底部自然消失、没有硬边。页面底色层与渐变层始终不透明，滚动时只淡化图片这一层。
+   * 封面等头部封面加载完成后再显示，读系统缓存，不再发第二次网络请求。
    */
   @Builder
   ambientBackdrop() {
@@ -373,31 +375,29 @@ struct SearchBookDetailPage {
         .height('100%')
         .backgroundColor(this.pageColor())
 
-      if (this.displayCoverUrl()) {
-        Stack() {
-          Image(this.displayCoverUrl())
-            .width('100%')
-            .height(SearchBookDetailPage.AMBIENT_HEIGHT)
-            .objectFit(ImageFit.Cover)
-            .sourceSize({ width: 96, height: 128 })
-            .blur(48)
+      if (this.displayCoverUrl() && this.readyCoverUrl === this.displayCoverUrl()) {
+        Image(this.displayCoverUrl())
+          .width('100%')
+          .height(SearchBookDetailPage.AMBIENT_HEIGHT)
+          .objectFit(ImageFit.Cover)
+          .sourceSize({ width: 96, height: 128 })
+          .blur(48)
+          .opacity((this.appDarkMode ? 0.5 : 0.62) * (1 - this.titleBarProgress() * 0.4))
+      }
 
-          // 蒙版：不透明处保留图片，透明处把图片擦掉；中段开始渐隐，底部完全透明。
-          Column()
-            .width('100%')
-            .height(SearchBookDetailPage.AMBIENT_HEIGHT)
-            .linearGradient({
-              direction: GradientDirection.Bottom,
-              colors: [['#FF000000', 0], ['#B3000000', 0.45], ['#33000000', 0.78], ['#00000000', 1]]
-            })
-            .blendMode(BlendMode.DST_IN, BlendApplyType.OFFSCREEN)
-        }
+      Column()
         .width('100%')
         .height(SearchBookDetailPage.AMBIENT_HEIGHT)
-        // 在离屏层里合成，蒙版只作用于这张图片，不影响下面的页面底色。
-        .blendMode(BlendMode.SRC_OVER, BlendApplyType.OFFSCREEN)
-        .opacity((this.appDarkMode ? 0.36 : 0.46) * (1 - this.titleBarProgress() * 0.5))
-      }
+        .linearGradient({
+          direction: GradientDirection.Bottom,
+          colors: [
+            // 顶部也叠一层淡淡的页面色，保证作者、书源等次要文字在封面色上看得清。
+            [`#40${this.pageColor().substring(1)}`, 0],
+            [`#33${this.pageColor().substring(1)}`, 0.3],
+            [`#A6${this.pageColor().substring(1)}`, 0.68],
+            [this.pageColor(), 1]
+          ]
+        })
     }
     .width('100%')
     .height('100%')
@@ -939,7 +939,7 @@ struct SearchBookDetailPage {
     this.resolvedBookInfo = null;
     this.bookInfoPromise = null;
     this.hasLoadedBookInfo = false;
-    this.syncStateFromBook(switched, false);
+    this.syncStateFromBook(switched);
     if (this.pendingAddToShelfBookUrl && this.pendingAddToShelfBookUrl === previousBookUrl) {
       this.pendingAddToShelfBookUrl = switched.bookUrl;
     }
@@ -1048,8 +1048,9 @@ struct SearchBookDetailPage {
       const existing = await db.getBook(this.bookUrl) || await this.findShelfBookByKey(requestKey, true);
       if (existing) {
         let bookChanged = false;
+        const knownCategory = BookTypeSupport.mediaCategoryOf(this.detailTypeProbe());
         const inferredType = this.bookType || BookTypeSupport.typeFromVariable(this.bookVariable);
-        if (inferredType && existing.type !== inferredType) {
+        if (knownCategory === BookTypeSupport.CATEGORY_NOVEL && inferredType && existing.type !== inferredType) {
           existing.type = inferredType;
           bookChanged = true;
         }
@@ -1059,6 +1060,12 @@ struct SearchBookDetailPage {
           bookChanged = true;
         }
         if (this.mergeResolvedDetailIntoBook(existing)) {
+          bookChanged = true;
+        }
+        const typeBefore = existing.type;
+        const variableBefore = existing.variable;
+        this.ensureMediaCategory(existing, knownCategory);
+        if (existing.type !== typeBefore || existing.variable !== variableBefore) {
           bookChanged = true;
         }
         if (bookChanged) {
@@ -1081,7 +1088,12 @@ struct SearchBookDetailPage {
       const book = await this.buildBookForShelf();
       const resolvedExisting = await this.findShelfBookByKey(BookIdentity.keyOfBook(book), true);
       if (resolvedExisting) {
-        if (this.mergeResolvedDetailIntoBook(resolvedExisting)) {
+        const resolvedTypeBefore = resolvedExisting.type;
+        const resolvedVariableBefore = resolvedExisting.variable;
+        const resolvedMerged = this.mergeResolvedDetailIntoBook(resolvedExisting);
+        this.ensureMediaCategory(resolvedExisting, BookTypeSupport.mediaCategoryOf(book));
+        if (resolvedMerged || resolvedExisting.type !== resolvedTypeBefore ||
+          resolvedExisting.variable !== resolvedVariableBefore) {
           await db.updateBook(resolvedExisting, true, 'prepare_read_update_resolved');
           AppStorage.setOrCreate('shelfUpdateTime', Date.now());
         }
@@ -1195,7 +1207,35 @@ struct SearchBookDetailPage {
       book.variable = fullBook.variable || book.variable;
       book.type = fullBook.type || book.type;
     }
+    // 类型以书源详情为准；是有声/漫画/视频时在 variable 里写入 tab，阅读页据此转到听书/漫画/播放页。
+    this.ensureMediaCategory(book, BookTypeSupport.mediaCategoryOf(book));
     return book;
+  }
+
+  /**
+   * 让书籍记录与已知类型一致：有声/漫画补类型标记位，并在 variable 里写入 tab
+   * （阅读页按 variable 的 tab 优先定类型）；视频在 variable 里写入 tab=video。小说不做处理。
+   */
+  private ensureMediaCategory(target: Book, category: string): void {
+    let tab = '';
+    let bit = 0;
+    if (category === BookTypeSupport.CATEGORY_AUDIO) {
+      tab = 'audio';
+      bit = BookTypeSupport.AUDIO;
+    } else if (category === BookTypeSupport.CATEGORY_COMIC) {
+      tab = 'comic';
+      bit = BookTypeSupport.IMAGE;
+    } else if (category === BookTypeSupport.CATEGORY_VIDEO) {
+      tab = 'video';
+    }
+    if (!tab) return;
+    if (bit) {
+      target.type = (target.type & ~(BookTypeSupport.TEXT | BookTypeSupport.AUDIO | BookTypeSupport.IMAGE)) | bit;
+    }
+    if (BookTypeSupport.typeFromVariable(target.variable) !== bit || category === BookTypeSupport.CATEGORY_VIDEO) {
+      const merged = SearchBookDetailPage.mergeVariableTab(target.variable, tab);
+      if (merged) target.variable = merged;
+    }
   }
 
   @Builder
@@ -1325,15 +1365,7 @@ struct SearchBookDetailPage {
     return SearchBookShelfHelper.findShelfBookByKey(bookKey, includePending);
   }
 
-  /**
-   * @param keepKnownMediaType 书源详情接口常不带类型标记（如有声版与小说版共用书籍 ID 时返回小说信息），
-   *   直接覆盖会把列表里已知的有声/漫画/视频退回成小说；默认保留已知类型，换源时传 false 跟随新书源。
-   */
-  syncStateFromBook(book: Book, keepKnownMediaType: boolean = true): void {
-    const previousCategory = BookTypeSupport.mediaCategoryOf(this.detailTypeProbe());
-    const previousType = this.bookType;
-    const previousVariable = this.bookVariable;
-    const previousKind = this.kind;
+  syncStateFromBook(book: Book): void {
     this.bookUrl = book.bookUrl || this.bookUrl;
     this.tocUrl = book.tocUrl || this.tocUrl;
     this.origin = book.origin || this.origin;
@@ -1349,40 +1381,7 @@ struct SearchBookDetailPage {
     this.updateTime = book.updateTime || this.updateTime;
     this.bookType = book.type || this.bookType;
     this.bookVariable = book.variable || this.bookVariable;
-    if (keepKnownMediaType && previousCategory !== BookTypeSupport.CATEGORY_NOVEL &&
-      BookTypeSupport.mediaCategoryOf(this.detailTypeProbe()) === BookTypeSupport.CATEGORY_NOVEL) {
-      this.restoreKnownMediaType(previousType, previousVariable, previousKind);
-    }
     this.bookInfoRenderVersion++;
-  }
-
-  /** 把列表阶段已知的类型并回当前状态：类型标记位取并集，variable 里补回 tab，仍不行再退回原 variable 与分类。 */
-  private restoreKnownMediaType(previousType: number, previousVariable: string, previousKind: string): void {
-    const mediaBits = BookTypeSupport.AUDIO | BookTypeSupport.IMAGE;
-    if ((previousType & mediaBits) !== 0) {
-      this.bookType = (this.bookType & ~BookTypeSupport.TEXT) | (previousType & mediaBits);
-    }
-    const previousTab = SearchBookDetailPage.variableTab(previousVariable);
-    if (previousTab && !SearchBookDetailPage.variableTab(this.bookVariable)) {
-      this.bookVariable = SearchBookDetailPage.mergeVariableTab(this.bookVariable, previousTab) || previousVariable;
-    }
-    if (BookTypeSupport.mediaCategoryOf(this.detailTypeProbe()) === BookTypeSupport.CATEGORY_NOVEL) {
-      // 类型来自书源名或分类字样（identity）时，恢复原分类，必要时恢复原 variable。
-      this.kind = previousKind || this.kind;
-      if (BookTypeSupport.mediaCategoryOf(this.detailTypeProbe()) === BookTypeSupport.CATEGORY_NOVEL) {
-        this.bookVariable = previousVariable || this.bookVariable;
-      }
-    }
-  }
-
-  private static variableTab(variable: string): string {
-    if (!variable) return '';
-    try {
-      const record = JSON.parse(variable) as Record<string, Object>;
-      return String(record['tab'] || record['type'] || record['mediaType'] || '');
-    } catch (_) {
-      return '';
-    }
   }
 
   /** 在 variable 里补上 tab，保留其余字段（目录等规则可能依赖它们）；不是 JSON 对象时返回空串。 */
@@ -1483,6 +1482,14 @@ struct SearchBookDetailPage {
       return;
     }
 
+    if (BookTypeSupport.isAudio(this.detailTypeProbe())) {
+      router.pushUrl({
+        url: 'pages/AudioBook',
+        params: { bookUrl: this.bookUrl }
+      });
+      return;
+    }
+
     router.pushUrl({
       url: 'pages/ReadBook',
       params: { bookUrl: this.bookUrl }
@@ -1575,6 +1582,10 @@ struct SearchBookDetailPage {
           .width(width)
           .height(height)
           .objectFit(ImageFit.Cover)
+          .sourceSize({ width: 360, height: 480 })
+          .onComplete(() => {
+            this.readyCoverUrl = coverUrl;
+          })
       }
     }
     .width(width)
