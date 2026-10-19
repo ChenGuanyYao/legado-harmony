@@ -10,6 +10,11 @@ import { ImmersiveMaterialSurface } from './ImmersiveMaterialSurface';
 
 /** 顶栏圆形按钮的尺寸。 */
 const PANEL_CONTROL_SIZE: number = 40;
+const SECONDARY_TIMER: string = 'timer';
+const SECONDARY_SPEED: string = 'speed';
+const SECONDARY_VOICE: string = 'voice';
+const SECONDARY_CATALOG: string = 'catalog';
+const SECONDARY_STOP: string = 'stop';
 
 @Component
 export struct ReaderTtsPlayerPanel {
@@ -225,7 +230,7 @@ export struct ReaderTtsPlayerPanel {
   audioHero() {
     Column({ space: AppSpacing.MD }) {
       Stack() {
-        this.heroCover(Math.round(this.coverHeight() * 0.75), this.coverHeight())
+        this.heroCover(true)
       }
       .shadow({ radius: 24, color: this.darkMode ? '#73000000' : '#40000000', offsetX: 0, offsetY: 10 })
       .margin({ top: AppSpacing.SM })
@@ -263,7 +268,7 @@ export struct ReaderTtsPlayerPanel {
   readingCard() {
     Column({ space: AppSpacing.MD }) {
       Row({ space: AppSpacing.MD }) {
-        this.heroCover(42, 56)
+        this.heroCover(false)
         Column({ space: AppSpacing.XXS }) {
           Text(this.hostChapterTitle || this.globalTtsChapterTitle || '正在朗读')
             .fontSize(AppFontSize.BODY)
@@ -314,7 +319,7 @@ export struct ReaderTtsPlayerPanel {
       .width('100%')
       .scrollBar(BarState.Off)
 
-      if (ReaderTtsFloatingSession.ttsVoiceTitles().length > 0) {
+      if (this.hasTtsVoices()) {
         Row() {
           this.ttsVoiceSelect()
         }
@@ -330,7 +335,7 @@ export struct ReaderTtsPlayerPanel {
   }
 
   @Builder
-  heroCover(width: number, height: number) {
+  heroCover(large: boolean) {
     Stack({ alignContent: Alignment.Center }) {
       if (this.coverSource()) {
         Image(this.coverSource())
@@ -357,13 +362,13 @@ export struct ReaderTtsPlayerPanel {
         }
       } else {
         Text(this.coverInitial())
-          .fontSize(Math.max(16, Math.round(height * 0.22)))
+          .fontSize(large ? Math.max(16, Math.round(this.coverHeight() * 0.22)) : 16)
           .fontColor(ThemeRuntime.onAccentColor())
       }
     }
-    .width(width)
-    .height(height)
-    .borderRadius(height > 100 ? 14 : 6)
+    .width(large ? Math.round(this.coverHeight() * 0.75) : 42)
+    .height(large ? this.coverHeight() : 56)
+    .borderRadius(large ? 14 : 6)
     .clip(true)
     .backgroundColor(this.accentColor)
   }
@@ -396,8 +401,7 @@ export struct ReaderTtsPlayerPanel {
   @Builder
   mainControls() {
     Row() {
-      this.chapterButton($r('sys.symbol.backward_end_fill'), '上一章', this.globalTtsCanPrevious,
-        () => ReaderTtsFloatingSession.previous())
+      this.chapterButton(false)
       Stack({ alignContent: Alignment.Center }) {
         Circle().width(68).height(68).fill(this.playButtonColor)
         if (this.isBusy()) {
@@ -421,28 +425,36 @@ export struct ReaderTtsPlayerPanel {
       .onClick(() => {
         if (!this.isBusy()) this.onTogglePlayback();
       })
-      this.chapterButton($r('sys.symbol.forward_end_fill'), '下一章', this.globalTtsCanNext,
-        () => ReaderTtsFloatingSession.next())
+      this.chapterButton(true)
     }
     .width('100%')
     .justifyContent(FlexAlign.SpaceEvenly)
     .alignItems(VerticalAlign.Center)
   }
 
+  /**
+   * 上一章/下一章。可用状态在 Builder 内直接读状态变量：按值传进来的参数不会随状态刷新，
+   * 面板先于章节信息打开时按钮会一直停在不可用。
+   */
   @Builder
-  chapterButton(icon: Resource, label: string, enabled: boolean, action: () => void) {
+  chapterButton(forward: boolean) {
     Stack({ alignContent: Alignment.Center }) {
-      SymbolGlyph(icon)
+      SymbolGlyph(forward ? $r('sys.symbol.forward_end_fill') : $r('sys.symbol.backward_end_fill'))
         .fontSize(30)
-        .fontColor([enabled ? this.primaryTextColor : this.subTextColor])
+        .fontColor([this.chapterEnabled(forward) ? this.primaryTextColor : this.subTextColor])
     }
     .width(56)
     .height(56)
-    .opacity(enabled ? 1 : 0.4)
+    .opacity(this.chapterEnabled(forward) ? 1 : 0.4)
     .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.9 })
-    .accessibilityText(label)
+    .accessibilityText(forward ? '下一章' : '上一章')
     .onClick(() => {
-      if (enabled) action();
+      if (!this.chapterEnabled(forward)) return;
+      if (forward) {
+        ReaderTtsFloatingSession.next();
+      } else {
+        ReaderTtsFloatingSession.previous();
+      }
     })
   }
 
@@ -450,37 +462,28 @@ export struct ReaderTtsPlayerPanel {
   @Builder
   secondaryActions() {
     Row() {
-      this.secondaryItem($r('sys.symbol.timer'), this.globalTtsTimerMinutes > 0 ?
-        `${Math.max(1, Math.ceil(this.globalTtsTimerRemainingSeconds / 60))}分` : '定时',
-        this.globalTtsTimerMinutes > 0 || this.optionsPanel === 1, false,
-        () => this.optionsPanel = this.optionsPanel === 1 ? 0 : 1)
-      this.secondaryItem($r('sys.symbol.hourglass'), `${this.globalTtsSpeed.toFixed(1)}x`,
-        Math.abs(this.globalTtsSpeed - 1) > 0.01 || this.optionsPanel === 2, false,
-        () => this.optionsPanel = this.optionsPanel === 2 ? 0 : 2)
+      this.secondaryItem(SECONDARY_TIMER)
+      this.secondaryItem(SECONDARY_SPEED)
       if (this.isAudio()) {
-        this.secondaryItem($r('sys.symbol.speaker_wave_3'),
-          this.globalTtsVoiceCode ? `音色 ${this.globalTtsVoiceCode}` : '音色', false, false,
-          () => this.onOpenVoice())
+        this.secondaryItem(SECONDARY_VOICE)
       }
-      this.secondaryItem($r('sys.symbol.list_bullet'), '目录', false, false, () => this.onOpenCatalog())
-      this.secondaryItem($r('sys.symbol.stop_circle'), '停止', false, true, () => {
-        this.close();
-        ReaderTtsFloatingSession.stop();
-      })
+      this.secondaryItem(SECONDARY_CATALOG)
+      this.secondaryItem(SECONDARY_STOP)
     }
     .width('100%')
     .padding({ top: AppSpacing.XS })
   }
 
+  /** 文字和高亮在 Builder 内按类型现读状态变量，剩余定时、倍速等变化后立即刷新。 */
   @Builder
-  secondaryItem(icon: Resource, label: string, active: boolean, danger: boolean, action: () => void) {
+  secondaryItem(kind: string) {
     Column({ space: AppSpacing.XS }) {
-      SymbolGlyph(icon)
+      SymbolGlyph(this.secondaryIcon(kind))
         .fontSize(22)
-        .fontColor([danger ? ThemeRuntime.dangerColor(this.darkMode) : (active ? this.accentColor : this.primaryTextColor)])
-      Text(label)
+        .fontColor([this.secondaryColor(kind, true)])
+      Text(this.secondaryLabel(kind))
         .fontSize(AppFontSize.CAPTION)
-        .fontColor(danger ? ThemeRuntime.dangerColor(this.darkMode) : (active ? this.accentColor : this.subTextColor))
+        .fontColor(this.secondaryColor(kind, false))
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
@@ -488,8 +491,8 @@ export struct ReaderTtsPlayerPanel {
     .height(56)
     .justifyContent(FlexAlign.Center)
     .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.92 })
-    .accessibilityText(label)
-    .onClick(action)
+    .accessibilityText(this.secondaryLabel(kind))
+    .onClick(() => this.onSecondaryTap(kind))
   }
 
   @Builder
@@ -685,6 +688,61 @@ export struct ReaderTtsPlayerPanel {
   coverHeight(): number {
     return Math.round(Math.min(300, Math.max(150,
       (Math.max(1, this.viewportHeight) - this.topInset - this.bottomInset) * 0.36)));
+  }
+
+  hasTtsVoices(): boolean {
+    // 先读修订号登记依赖：音色列表在面板打开后才发布时，这里会跟着重新判断。
+    return this.globalTtsVoiceRevision >= 0 && ReaderTtsFloatingSession.ttsVoiceTitles().length > 0;
+  }
+
+  chapterEnabled(forward: boolean): boolean {
+    return forward ? this.globalTtsCanNext : this.globalTtsCanPrevious;
+  }
+
+  secondaryIcon(kind: string): Resource {
+    if (kind === SECONDARY_TIMER) return $r('sys.symbol.timer');
+    if (kind === SECONDARY_SPEED) return $r('sys.symbol.hourglass');
+    if (kind === SECONDARY_VOICE) return $r('sys.symbol.speaker_wave_3');
+    if (kind === SECONDARY_CATALOG) return $r('sys.symbol.list_bullet');
+    return $r('sys.symbol.stop_circle');
+  }
+
+  secondaryLabel(kind: string): string {
+    if (kind === SECONDARY_TIMER) {
+      return this.globalTtsTimerMinutes > 0 ?
+        `${Math.max(1, Math.ceil(this.globalTtsTimerRemainingSeconds / 60))}分` : '定时';
+    }
+    if (kind === SECONDARY_SPEED) return `${this.globalTtsSpeed.toFixed(1)}x`;
+    if (kind === SECONDARY_VOICE) return this.globalTtsVoiceCode ? `音色 ${this.globalTtsVoiceCode}` : '音色';
+    if (kind === SECONDARY_CATALOG) return '目录';
+    return '停止';
+  }
+
+  secondaryColor(kind: string, icon: boolean): ResourceColor {
+    if (kind === SECONDARY_STOP) return ThemeRuntime.dangerColor(this.darkMode);
+    let active = false;
+    if (kind === SECONDARY_TIMER) {
+      active = this.globalTtsTimerMinutes > 0 || this.optionsPanel === 1;
+    } else if (kind === SECONDARY_SPEED) {
+      active = Math.abs(this.globalTtsSpeed - 1) > 0.01 || this.optionsPanel === 2;
+    }
+    if (active) return this.accentColor;
+    return icon ? this.primaryTextColor : this.subTextColor;
+  }
+
+  onSecondaryTap(kind: string): void {
+    if (kind === SECONDARY_TIMER) {
+      this.optionsPanel = this.optionsPanel === 1 ? 0 : 1;
+    } else if (kind === SECONDARY_SPEED) {
+      this.optionsPanel = this.optionsPanel === 2 ? 0 : 2;
+    } else if (kind === SECONDARY_VOICE) {
+      this.onOpenVoice();
+    } else if (kind === SECONDARY_CATALOG) {
+      this.onOpenCatalog();
+    } else {
+      this.close();
+      ReaderTtsFloatingSession.stop();
+    }
   }
 
   ambientHeight(): number {
