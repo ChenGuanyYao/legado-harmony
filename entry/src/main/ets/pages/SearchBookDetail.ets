@@ -4,6 +4,7 @@ import { AppDatabase } from '../model/data/AppDatabase';
 import { WebBookService } from '../core/book/WebBookService';
 import { syncSystemBars } from '../utils/SystemBars';
 import { BookDisplayHelper } from '../utils/BookDisplayHelper';
+import { ImmersiveTagModifier } from '../utils/ImmersiveMaterialRuntime';
 import { BookIdentity } from '../utils/BookIdentity';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 import { BookCoverCache } from '../utils/BookCoverCache';
@@ -223,8 +224,7 @@ struct SearchBookDetailPage {
                   .fontSize(AppFontSize.BODY)
                   .fontColor(this.secondaryTextColor())
                   .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
-                  .backgroundColor(this.inputColor())
-                  .borderRadius(ThemeRuntime.buttonRadius())
+                  .attributeModifier(this.neutralTagModifier())
                   .margin({ right: AppSpacing.MD, bottom: AppSpacing.MD })
               }
 
@@ -233,18 +233,17 @@ struct SearchBookDetailPage {
                   .fontSize(AppFontSize.BODY)
                   .fontColor(this.secondaryTextColor())
                   .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
-                  .backgroundColor(this.inputColor())
-                  .borderRadius(ThemeRuntime.buttonRadius())
+                  .attributeModifier(this.neutralTagModifier())
                   .margin({ right: AppSpacing.MD, bottom: AppSpacing.MD })
               }
 
               if (this.isInShelf) {
                 Text('已在书架')
                   .fontSize(AppFontSize.BODY)
-                  .fontColor(this.appDarkMode ? '#7DD89B' : '#0A7D36')
+                  .fontColor(BookDisplayHelper.getTagTextColor(BookDisplayHelper.TAG_GREEN_INDEX, this.appDarkMode))
                   .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
-                  .backgroundColor(this.appDarkMode ? '#173B24' : '#E8F5E9')
-                  .borderRadius(ThemeRuntime.buttonRadius())
+                  .attributeModifier(BookDisplayHelper.getTagModifier(BookDisplayHelper.TAG_GREEN_INDEX,
+                    this.appDarkMode))
                   .margin({ right: AppSpacing.MD, bottom: AppSpacing.MD })
               }
             }
@@ -1327,14 +1326,18 @@ struct SearchBookDetailPage {
     return BookDisplayHelper.pickCover(covers);
   }
 
+  /** 字数、更新时间这类中性信息标签：同样的沉浸光感胶囊，用输入框底色染色。 */
+  neutralTagModifier(): ImmersiveTagModifier {
+    return new ImmersiveTagModifier(this.inputColor(), this.secondaryTextColor(), this.appDarkMode);
+  }
+
   @Builder
   tagChip(tag: string, index: number) {
     Text(tag)
       .fontSize(AppFontSize.BODY)
       .fontColor(BookDisplayHelper.getTagTextColor(index, this.appDarkMode))
       .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
-      .backgroundColor(BookDisplayHelper.getTagBackgroundColor(index, this.appDarkMode))
-      .borderRadius(ThemeRuntime.buttonRadius())
+      .attributeModifier(BookDisplayHelper.getTagModifier(index, this.appDarkMode))
       .margin({ right: AppSpacing.MD, bottom: AppSpacing.MD })
   }
 

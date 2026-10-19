@@ -379,8 +379,7 @@ export struct SearchBookResultList {
       .fontSize(AppFontSize.CAPTION)
       .fontColor(BookDisplayHelper.getTagTextColor(index, this.isDarkMode()))
       .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
-      .backgroundColor(BookDisplayHelper.getTagBackgroundColor(index, this.isDarkMode()))
-      .borderRadius(ThemeRuntime.mediumRadius())
+      .attributeModifier(BookDisplayHelper.getTagModifier(index, this.isDarkMode()))
       .margin({ right: AppSpacing.SM, bottom: AppSpacing.XS })
   }
 

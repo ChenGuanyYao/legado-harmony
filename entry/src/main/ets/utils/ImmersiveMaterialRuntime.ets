@@ -15,6 +15,37 @@ export class SelectMenuMaterialModifier implements AttributeModifier<SelectAttri
   }
 }
 
+/**
+ * 彩色标签的沉浸光感底：API 26+ 用组件级沉浸材质，并以标签原本的浅底色染色；旧系统直接画浅底色。
+ * 文字颜色由调用处照旧设置，这里只负责背景与一圈同色系细描边，保证标签按序号配色的规则不变。
+ */
+export class ImmersiveTagModifier implements AttributeModifier<CommonAttribute> {
+  static readonly CAPSULE_RADIUS: number = 999;
+  private tintColor: string;
+  private outlineColor: string;
+  private darkMode: boolean;
+
+  constructor(tintColor: string, outlineColor: string, darkMode: boolean) {
+    this.tintColor = tintColor;
+    this.outlineColor = outlineColor;
+    this.darkMode = darkMode;
+  }
+
+  applyNormalAttribute(instance: CommonAttribute): void {
+    const material = ImmersiveMaterialRuntime.tagMaterial(this.tintColor, this.darkMode);
+    if (material !== undefined) {
+      instance.systemMaterial(material);
+    } else {
+      instance.backgroundColor(this.tintColor);
+    }
+    if (/^#[0-9A-Fa-f]{6}$/.test(this.outlineColor)) {
+      instance.border({ width: 0.5, color: `#33${this.outlineColor.substring(1)}` });
+    }
+    // 胶囊形：圆角超过高度一半时按一半绘制。
+    instance.borderRadius(ImmersiveTagModifier.CAPSULE_RADIUS);
+  }
+}
+
 /** Centralizes HDS material probing and compatibility fallback. */
 export class ImmersiveMaterialRuntime {
   static readonly KEY_LIGHT_LEVEL: string = 'immersiveLightLevel';
@@ -176,6 +207,26 @@ export class ImmersiveMaterialRuntime {
       options.backgroundBlurStyle = BlurStyle.COMPONENT_THICK;
     }
     return options;
+  }
+
+  private static tagMaterials: Map<string, uiMaterial.ImmersiveMaterial> = new Map<string, uiMaterial.ImmersiveMaterial>();
+
+  /** 标签材质按染色、光感档位与深浅模式缓存，列表里大量标签共用同一个实例。 */
+  static tagMaterial(tintColor: string, darkMode: boolean): uiMaterial.ImmersiveMaterial | undefined {
+    if (!ImmersiveMaterialRuntime.supportsHds() || !/^#[0-9A-Fa-f]{6}$/.test(tintColor)) return undefined;
+    const style = ImmersiveMaterialRuntime.materialStyle();
+    const key = `${tintColor}|${style}|${darkMode ? 'dark' : 'light'}`;
+    const cached = ImmersiveMaterialRuntime.tagMaterials.get(key);
+    if (cached !== undefined) return cached;
+    const material = new uiMaterial.ImmersiveMaterial({
+      style: style,
+      // 浅色模式染色更实一些，保证彩色文字在浅底上的对比；深色模式透一些露出材质。
+      materialColor: `${darkMode ? '#99' : '#CC'}${tintColor.substring(1)}`,
+      applyShadow: false,
+      interactive: false
+    });
+    ImmersiveMaterialRuntime.tagMaterials.set(key, material);
+    return material;
   }
 
   static selectMenuMaterial(): uiMaterial.ImmersiveMaterial | undefined {

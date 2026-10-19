@@ -2263,8 +2263,7 @@ export struct BookshelfPage {
                 .margin({ left: AppSpacing.SM })
             }
             .padding({ left: 10, right: AppSpacing.MD, top: 5, bottom: 5 })
-            .backgroundColor(BookDisplayHelper.getTagBackgroundColor(index, this.appDarkMode))
-            .borderRadius(14)
+            .attributeModifier(BookDisplayHelper.getTagModifier(index, this.appDarkMode))
             .margin({ right: AppSpacing.MD, bottom: AppSpacing.MD })
             .onClick(() => {
               this.removeEditingTag(tag);
@@ -4153,8 +4152,7 @@ export struct BookshelfPage {
       .fontSize(fontSize)
       .fontColor(BookDisplayHelper.getTagTextColor(index, this.appDarkMode))
       .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: 3, bottom: 3 })
-      .backgroundColor(BookDisplayHelper.getTagBackgroundColor(index, this.appDarkMode))
-      .borderRadius(ThemeRuntime.mediumRadius())
+      .attributeModifier(BookDisplayHelper.getTagModifier(index, this.appDarkMode))
       .margin({ left: AppSpacing.XS, bottom: AppSpacing.SM })
       .maxLines(1)
       .textOverflow({ overflow: TextOverflow.Ellipsis })
