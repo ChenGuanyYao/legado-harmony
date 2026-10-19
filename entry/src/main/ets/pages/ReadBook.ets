@@ -1189,7 +1189,11 @@ struct ReadBookPage {
         ReaderOpenTrace.finish(this.bookUrl, 'redirect-video-player');
         await router.replaceUrl({
           url: 'pages/VideoPlayer',
-          params: { bookUrl: this.book.bookUrl, chapterIndex: '' }
+          params: {
+            bookUrl: this.book.bookUrl,
+            chapterIndex: '',
+            shelfBookOpening: this.openedWithShelfAnimation ? 'true' : 'false'
+          }
         });
         return;
       }

@@ -13,6 +13,7 @@ import { ThemeRuntime } from '../theme/ThemeRuntime';
 interface VideoPlayerParams {
   bookUrl?: string;
   chapterIndex?: string;
+  shelfBookOpening?: string;
 }
 
 /** 选集列表的数据源：集数可能上千，用懒加载避免一次创建全部条目。 */
@@ -96,12 +97,17 @@ struct VideoPlayerPage {
   private resumeSec: number = 0;
   private retried: boolean = false;
   private lastSavedSec: number = -1;
+  // 从书架带开书动画进来时，书架那层“正在打开书籍”要等这里通知才会收起，否则返回后一直转圈。
+  private openedWithShelfAnimation: boolean = false;
+  private openedBookUrl: string = '';
 
   aboutToAppear(): void {
     const params = router.getParams() as VideoPlayerParams;
     const bookUrl = params && params.bookUrl ? params.bookUrl : '';
     const requestedIndex = params && params.chapterIndex !== undefined && params.chapterIndex !== '' ?
       Number(params.chapterIndex) : -1;
+    this.openedWithShelfAnimation = !!params && params.shelfBookOpening === 'true';
+    this.openedBookUrl = bookUrl;
     this.enterImmersive();
     this.loadBook(bookUrl, requestedIndex);
   }
@@ -111,6 +117,7 @@ struct VideoPlayerPage {
     this.clearHideTimer();
     this.saveProgress(true);
     this.leaveImmersive();
+    this.requestShelfCloseAnimation();
   }
 
   onPageHide(): void {
@@ -127,7 +134,17 @@ struct VideoPlayerPage {
       this.setLandscape(false);
       return true;
     }
+    this.requestShelfCloseAnimation();
     return false;
+  }
+
+  private requestShelfCloseAnimation(): void {
+    if (!this.openedWithShelfAnimation) {
+      return;
+    }
+    this.openedWithShelfAnimation = false;
+    AppStorage.setOrCreate('shelfBookCloseAnimationUrl', this.openedBookUrl);
+    AppStorage.setOrCreate('shelfBookCloseAnimationNonce', Date.now());
   }
 
   private enterImmersive(): void {
@@ -345,8 +362,12 @@ struct VideoPlayerPage {
         .width(40)
         .height(40)
         .onClick(() => {
-          if (this.landscape) this.setLandscape(false);
-          else router.back();
+          if (this.landscape) {
+            this.setLandscape(false);
+          } else {
+            this.requestShelfCloseAnimation();
+            router.back();
+          }
         })
       Column() {
         Text(this.bookName)
