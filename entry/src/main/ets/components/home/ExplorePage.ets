@@ -15,6 +15,8 @@ import { CollapsingHeader } from '../../utils/CollapsingHeader';
 import { HdsFeedback } from '../../utils/HdsFeedback';
 import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
 import { SearchExploreSettingsStore } from '../../utils/SearchExploreSettingsStore';
+import { ExploreCategoryHistoryStore } from '../../utils/ExploreCategoryHistoryStore';
+import { ExploreCategoryItem, ExploreCategorySheet } from './ExploreCategorySheet';
 import { ExploreCacheHit, ExploreResultCache } from '../../utils/ExploreResultCache';
 import { ThemeRuntime } from '../../theme/ThemeRuntime';
 import { WebBookService } from '../../core/book/WebBookService';
@@ -32,6 +34,8 @@ export struct ExplorePage {
   /** 标题下方频道栏的高度。 */
   static readonly CHANNEL_BAR_HEIGHT: number = 44;
   static readonly MENU_ITEM_HEIGHT: number = 44;
+  /** 分类达到这个数量才在频道栏右端显示“全部分类”按钮，少量分类横滑就能看完。 */
+  static readonly CATEGORY_SHEET_MIN_COUNT: number = 6;
   @Prop statusBarHeight: number = 0;
   @Prop navBarHeight: number = 0;
   @Prop @Watch('onActiveChanged') isActive: boolean = false;
@@ -50,6 +54,7 @@ export struct ExplorePage {
   @State showExploreSourcePicker: boolean = false;
   /** 频道栏左侧“模式”的下拉。 */
   @State showExplorePlatformMenu: boolean = false;
+  @State showExploreCategorySheet: boolean = false;
   /** 频道栏的实际宽度：沉浸材质底板需要具体数值。 */
   @State exploreChannelBarWidth: number = 0;
   @State showExploreSourceActionMenu: boolean = false;
@@ -243,9 +248,20 @@ export struct ExplorePage {
         // Keep the group that was visible before refresh. Resetting to index 0 made a refresh
         // from (for example) “玄幻” reload the first group and leave the visible group stale.
         const refreshedActiveEntries = this.getActiveEntries();
-        const restoredIndex = previousEntryKey ? refreshedActiveEntries.findIndex((entry: ExploreEntry): boolean =>
+        let restoredIndex = previousEntryKey ? refreshedActiveEntries.findIndex((entry: ExploreEntry): boolean =>
           `${entry.title}\n${entry.url}` === previousEntryKey) : -1;
+        if (restoredIndex < 0 && !previousEntryKey) {
+          // 首次进入或刚切换到这个书源：回到上次在该书源停留的分类。
+          await ExploreCategoryHistoryStore.load(getContext(this));
+          if (!this.isCurrentExploreLoad(loadVersion)) return;
+          const lastKey = ExploreCategoryHistoryStore.last(this.selectedSourceUrl);
+          restoredIndex = lastKey ? refreshedActiveEntries.findIndex((entry: ExploreEntry): boolean =>
+            ExploreCategoryHistoryStore.entryKey(entry.title, entry.url) === lastKey) : -1;
+        }
         this.selectedIndex = restoredIndex >= 0 ? restoredIndex : 0;
+        if (this.selectedIndex > 0) {
+          this.scrollExploreChannelToSelected();
+        }
         await this.loadBooks(loadVersion, forceRefresh);
       } else {
         this.books = [];
@@ -620,6 +636,44 @@ export struct ExplorePage {
       }
     })
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+    .bindSheet($$this.showExploreCategorySheet, this.exploreCategorySheet(), this.exploreCategorySheetOptions())
+  }
+
+  /** 全部分类面板：与详情页目录同一种半模态，停 60% 与全屏两档。 */
+  exploreCategorySheetOptions(): SheetOptions {
+    const material = ImmersiveMaterialRuntime.sheetMaterial(this.accentColor());
+    const options: SheetOptions = {
+      detents: ['60%', SheetSize.LARGE],
+      dragBar: true,
+      showClose: false,
+      scrollSizeMode: ScrollSizeMode.CONTINUOUS,
+      onDisappear: () => {
+        this.showExploreCategorySheet = false;
+      }
+    };
+    if (material !== undefined) {
+      options.backgroundColor = Color.Transparent;
+      options.systemMaterial = material;
+    } else {
+      options.blurStyle = BlurStyle.COMPONENT_THICK;
+      options.backgroundColor = ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel');
+    }
+    return options;
+  }
+
+  @Builder
+  exploreCategorySheet() {
+    ExploreCategorySheet({
+      items: this.exploreCategoryItems(),
+      recentKeys: ExploreCategoryHistoryStore.recent(this.selectedSourceUrl),
+      selectedKey: this.currentExploreEntryKey(),
+      onSelect: (key: string): void => {
+        this.selectExploreCategory(key);
+      },
+      onClose: (): void => {
+        this.showExploreCategorySheet = false;
+      }
+    })
   }
 
   openSearchBookDetail(book: SearchBook, autoStartRead: boolean = false) {
@@ -1281,6 +1335,26 @@ export struct ExplorePage {
             .padding({ left: this.showsExplorePlatformSelector() ? 2 : 6, right: 6 })
             .scrollBar(BarState.Off)
             .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+
+            // 固定在右端、不随频道横滑：打开全部分类面板。图标与标题行的布局切换按钮区分开。
+            if (this.showsExploreCategoryButton()) {
+              Divider()
+                .vertical(true)
+                .height(18)
+                .strokeWidth(1)
+                .color(ThemeRuntime.hairlineColor(this.appDarkMode))
+
+              Row() {
+                SymbolGlyph($r('sys.symbol.chevron_down_circle'))
+                  .fontSize(20)
+                  .fontColor([this.showExploreCategorySheet ? this.accentColor() : this.primaryTextColor()])
+              }
+              .width(46)
+              .height('100%')
+              .justifyContent(FlexAlign.Center)
+              .accessibilityText('全部分类')
+              .onClick(() => this.openExploreCategorySheet())
+            }
           }
           .width('100%')
           .height('100%')
@@ -1301,6 +1375,11 @@ export struct ExplorePage {
 
   selectExploreEntry(index: number): void {
     this.selectedIndex = index;
+    const entry = this.getActiveEntries()[index];
+    if (entry) {
+      ExploreCategoryHistoryStore.record(getContext(this), this.selectedSourceUrl,
+        ExploreCategoryHistoryStore.entryKey(entry.title, entry.url));
+    }
     this.loadBooks();
     try {
       this.exploreChannelScroller.scrollToIndex(index, true, ScrollAlign.CENTER);
@@ -1978,6 +2057,81 @@ export struct ExplorePage {
       (entry.groupTitle || '') === this.selectedPlatform);
     return hasSelectedGroup ? sourceEntries.filter((entry: ExploreEntry): boolean =>
       (entry.groupTitle || '') === this.selectedPlatform) : sourceEntries;
+  }
+
+  /** 当前书源已加载的全部分类（不按模式过滤），供全部分类面板分组展示。 */
+  exploreCategoryEntries(): ExploreEntry[] {
+    return !this.selectedSourceUrl ? this.entries :
+      this.entries.filter((entry: ExploreEntry): boolean => entry.sourceUrl === this.selectedSourceUrl);
+  }
+
+  showsExploreCategoryButton(): boolean {
+    return this.exploreCategoryEntries().length >= ExplorePage.CATEGORY_SHEET_MIN_COUNT;
+  }
+
+  exploreCategoryItems(): ExploreCategoryItem[] {
+    const items: ExploreCategoryItem[] = [];
+    const seen: Set<string> = new Set<string>();
+    for (const entry of this.exploreCategoryEntries()) {
+      const key = ExploreCategoryHistoryStore.entryKey(entry.title, entry.url);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push({ key: key, title: entry.title, groupTitle: entry.groupTitle || '' });
+    }
+    return items;
+  }
+
+  currentExploreEntryKey(): string {
+    const entries = this.getActiveEntries();
+    if (entries.length === 0) return '';
+    const entry = entries[Math.min(Math.max(0, this.selectedIndex), entries.length - 1)];
+    return ExploreCategoryHistoryStore.entryKey(entry.title, entry.url);
+  }
+
+  async openExploreCategorySheet(): Promise<void> {
+    this.showExploreSourcePicker = false;
+    this.showExploreFilterPanel = false;
+    this.showExplorePlatformMenu = false;
+    // “最近”要在面板创建时就有数据，先确保本机记录已读入。
+    await ExploreCategoryHistoryStore.load(getContext(this));
+    this.showExploreCategorySheet = true;
+  }
+
+  /**
+   * 面板里点选分类。分类属于另一个已加载的分组（左侧模式）时先切到该分组，分组内容已在内存里，不必重新加载。
+   */
+  selectExploreCategory(key: string): void {
+    this.showExploreCategorySheet = false;
+    const matches = (entry: ExploreEntry): boolean =>
+      ExploreCategoryHistoryStore.entryKey(entry.title, entry.url) === key;
+    const entry = this.exploreCategoryEntries().find(matches);
+    if (!entry) return;
+    const group = (entry.groupTitle || '').trim();
+    let platformChanged = false;
+    if (group && group !== this.selectedPlatform && this.platformNames.includes(group)) {
+      this.selectedPlatform = group;
+      this.saveExploreSelection();
+      platformChanged = true;
+    }
+    const index = this.getActiveEntries().findIndex(matches);
+    if (index < 0) return;
+    if (!platformChanged && index === this.selectedIndex) {
+      ExploreCategoryHistoryStore.record(getContext(this), this.selectedSourceUrl, key);
+      return;
+    }
+    this.selectExploreEntry(index);
+    // 切换分组后频道栏会重建，等它布局完再滚到选中项。
+    this.scrollExploreChannelToSelected();
+  }
+
+  scrollExploreChannelToSelected(): void {
+    setTimeout(() => {
+      try {
+        this.exploreChannelScroller.scrollToIndex(this.selectedIndex, true, ScrollAlign.CENTER);
+      } catch (error) {
+        console.warn('定位当前发现频道失败:', error);
+      }
+    }, 0);
   }
 
   getEntryGroupNames(entries: ExploreEntry[]): string[] {
