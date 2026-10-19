@@ -972,30 +972,31 @@ export struct ExplorePage {
     }
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
-    .height(36)
+    .height(ExplorePage.MENU_ITEM_HEIGHT)
     .scrollable(ScrollDirection.Horizontal)
     .scrollBar(BarState.Off)
   }
 
+  /** 字号与下面的书源列表、书架分类栏一致，选中项强调色加下划线。 */
   @Builder
   exploreSourceGroupTab(label: string, groupKey: string) {
     Column({ space: 3 }) {
       Text(label)
-        .fontSize(AppFontSize.BODY)
+        .fontSize(AppFontSize.BODY_LARGE)
         .fontWeight(this.activeExploreSourceGroup === groupKey ? FontWeight.Medium : FontWeight.Regular)
         .fontColor(this.activeExploreSourceGroup === groupKey ? this.accentColor() : this.secondaryTextColor())
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .constraintSize({ maxWidth: 112 })
+        .constraintSize({ maxWidth: 128 })
       Row()
-        .width(14)
+        .width(16)
         .height(3)
         .borderRadius(1.5)
         .backgroundColor(this.accentColor())
         .opacity(this.activeExploreSourceGroup === groupKey ? 1 : 0)
     }
     .height('100%')
-    .padding({ left: 10, right: 10 })
+    .padding({ left: 12, right: 12, top: 6 })
     .justifyContent(FlexAlign.Center)
     .onClick(() => this.selectExploreSourceGroup(groupKey))
   }
