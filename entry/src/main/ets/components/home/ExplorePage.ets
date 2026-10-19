@@ -81,7 +81,7 @@ export struct ExplorePage {
   @State verificationUrl: string = '';
   @State verificationTitle: string = '';
   @StorageLink('explorePlatform') selectedPlatform: string = '';
-  /** 结果布局：'list' 卡片列表，'grid' 三列封面平铺；持久保存。 */
+  /** 结果布局：'list' 卡片列表，'grid' 封面平铺（列数随宽度自适应）；持久保存。 */
   @StorageLink('exploreResultLayout') exploreResultLayout: string = 'list';
   @StorageLink('exploreSourceUrl') selectedSourceUrl: string = '';
   @StorageLink('bookSourceExploreRefreshNonce') @Watch('onExploreRefreshRequested')

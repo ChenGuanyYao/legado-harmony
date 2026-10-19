@@ -74,7 +74,7 @@ export struct SearchPage {
   @StorageLink('searchExploreAggregateResults') @Watch('onSearchAggregationChanged')
   searchExploreAggregateResults: boolean = true;
   @StorageLink('searchResultCategory') searchResultCategory: string = SEARCH_CATEGORY_ALL;
-  /** 结果布局：'list' 卡片列表，'grid' 三列封面平铺；持久保存。 */
+  /** 结果布局：'list' 卡片列表，'grid' 封面平铺（列数随宽度自适应）；持久保存。 */
   @StorageLink('searchResultLayout') searchResultLayout: string = 'list';
   @StorageLink('searchExplorePromptAddToShelfOnBack') searchExplorePromptAddToShelfOnBack: boolean = true;
   @StorageLink('searchExploreExactSearch') exactSearch: boolean = false;

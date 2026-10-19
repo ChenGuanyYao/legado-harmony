@@ -37,6 +37,9 @@ class SearchBookResultDataSource implements IDataSource {
 
 @Component
 export struct SearchBookResultList {
+  /** 平铺时每列封面的最小、最大宽度，列数由可用宽度按最小列宽算出。 */
+  static readonly GRID_MIN_ITEM_WIDTH: number = 100;
+  static readonly GRID_MAX_ITEM_WIDTH: number = 150;
   // 加密的书源封面解密完成后递增，读取它的封面会重新取到本地文件地址。
   @StorageProp('sourceCoverRevision') sourceCoverRevision: number = 0;
   @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
@@ -64,7 +67,7 @@ export struct SearchBookResultList {
   @Prop subTextColor: string = '#999999';
   @Prop topPadding: number = 0;
   @Prop bottomPadding: number = 12;
-  /** 'list' 为卡片列表，'grid' 为三列封面平铺。 */
+  /** 'list' 为卡片列表，'grid' 为封面平铺（列数随宽度自适应）。 */
   @Prop layoutMode: string = 'list';
   scroller: ListScroller = new ListScroller();
   private dataSource: SearchBookResultDataSource = new SearchBookResultDataSource();
@@ -101,7 +104,7 @@ export struct SearchBookResultList {
     }
   }
 
-  /** 三列封面平铺：多列 List 保留懒加载；顶部留白与底部加载提示放在分组页眉页脚里，不占格子。 */
+  /** 封面平铺：多列 List 保留懒加载，列数随宽度自适应；顶部留白与底部加载提示放在分组页眉页脚里，不占格子。 */
   @Builder
   resultGrid() {
     List({ scroller: this.scroller }) {
@@ -113,7 +116,9 @@ export struct SearchBookResultList {
         }, (book: SearchBook) => `grid_${this.listItemKey(book)}`)
       }
     }
-    .lanes(3, AppSpacing.MD)
+    // 按可用宽度自动算列数：竖屏手机约 3 列，横屏、平板、电脑宽窗口随宽度增加，窗口缩放时实时调整。
+    .lanes({ minLength: SearchBookResultList.GRID_MIN_ITEM_WIDTH, maxLength: SearchBookResultList.GRID_MAX_ITEM_WIDTH },
+      AppSpacing.MD)
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
     .layoutWeight(1)
