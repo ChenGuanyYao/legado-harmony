@@ -414,6 +414,8 @@ struct SearchBookDetailPage {
       Stack() {
         this.coverView(this.name, this.displayCoverUrl(), 104, 140)
       }
+      // 投影按外层形状绘制，不给圆角会是直角矩形的影子，在封面四角露出来。
+      .borderRadius(8)
       .shadow({ radius: 16, color: this.appDarkMode ? '#66000000' : '#33000000', offsetX: 0, offsetY: 6 })
 
       Column() {
@@ -1566,16 +1568,20 @@ struct SearchBookDetailPage {
 
   @Builder
   coverView(name: string, coverUrl: string, width: number, height: number) {
+    // 圆角边缘是抗锯齿的半透明像素：容器底色或占位色垫在封面下面，会在四角透出一圈浅色细边。
+    // 所以容器不设底色，占位色块只在封面没加载好时显示，封面自己也带圆角。
     Stack() {
-      Column() {
-        Text(name ? name.substring(0, 1) : '书')
-          .fontSize(30)
-          .fontColor('#FFFFFF')
+      if (!coverUrl || this.readyCoverUrl !== coverUrl) {
+        Column() {
+          Text(name ? name.substring(0, 1) : '书')
+            .fontSize(30)
+            .fontColor('#FFFFFF')
+        }
+        .width(width)
+        .height(height)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor(this.accentColor())
       }
-      .width(width)
-      .height(height)
-      .justifyContent(FlexAlign.Center)
-      .backgroundColor(this.accentColor())
 
       if (coverUrl) {
         Image(coverUrl)
@@ -1583,6 +1589,7 @@ struct SearchBookDetailPage {
           .height(height)
           .objectFit(ImageFit.Cover)
           .sourceSize({ width: 360, height: 480 })
+          .borderRadius(8)
           .onComplete(() => {
             this.readyCoverUrl = coverUrl;
           })
@@ -1592,7 +1599,6 @@ struct SearchBookDetailPage {
     .height(height)
     .borderRadius(8)
     .clip(true)
-    .backgroundColor(this.inputColor())
   }
 
   pageColor(): string {
