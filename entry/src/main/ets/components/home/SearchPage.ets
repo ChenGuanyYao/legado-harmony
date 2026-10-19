@@ -5,7 +5,7 @@ import { AppDatabase } from '../../model/data/AppDatabase';
 import { SearchCoordinator, SearchCallback, SearchProgress } from '../../core/book/SearchCoordinator';
 import { SearchBookResultList } from '../../components/book/SearchBookResultList';
 import { ImmersiveMaterialSurface } from '../../components/ImmersiveMaterialSurface';
-import { ImmersiveMaterialRuntime, ImmersiveTagModifier } from '../../utils/ImmersiveMaterialRuntime';
+import { GlassTagModifier, ImmersiveMaterialRuntime, ImmersiveTagModifier } from '../../utils/ImmersiveMaterialRuntime';
 import { HdsFeedback } from '../../utils/HdsFeedback';
 import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
 import { SearchExploreSettings, SearchExploreSettingsStore } from '../../utils/SearchExploreSettingsStore';
@@ -537,6 +537,12 @@ export struct SearchPage {
           .width('100%')
           .padding({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
           .alignItems(VerticalAlign.Center)
+          .bindPopup(this.showSearchHistoryDropdown && this.showResult && this.searchHistory.length > 0,
+            ImmersiveMaterialRuntime.popupMenuOptions((): void => {
+              this.searchHistoryPopupContent()
+            }, Placement.Bottom, this.appDarkMode, this.accentColor(), () => {
+              this.showSearchHistoryDropdown = false;
+            }, false))
 
           if (this.statusMessage) {
             Row({ space: AppSpacing.SM }) {
@@ -643,9 +649,6 @@ export struct SearchPage {
       .backgroundColor(this.pageColor())
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
 
-      if (this.showSearchHistoryDropdown && this.showResult && this.searchHistory.length > 0) {
-        this.searchHistoryDropdown()
-      }
 
       if (this.showSearchSourcePicker) {
         this.searchSourcePickerDialog()
@@ -986,87 +989,68 @@ export struct SearchPage {
     return Math.min(272, Math.max(200, this.searchViewportWidth - 32));
   }
 
+  /** 已有结果时聚焦空输入框弹出的搜索历史：沉浸光感弹出层，历史词为玻璃标签，点按搜索、长按删除。 */
   @Builder
-  searchHistoryDropdown() {
+  searchHistoryPopupContent() {
     Column() {
       Row() {
         Text('搜索历史')
           .fontSize(AppFontSize.BODY_LARGE)
-          .fontWeight(FontWeight.Bold)
+          .fontWeight(FontWeight.Medium)
           .fontColor(this.primaryTextColor())
           .layoutWeight(1)
-
-        Text('清除')
+        Text('清空')
           .fontSize(AppFontSize.BODY)
-          .fontWeight(FontWeight.Medium)
           .fontColor(this.secondaryTextColor())
-          .height(32)
-          .padding({ left: AppSpacing.LG, right: AppSpacing.XS })
-          .textAlign(TextAlign.Center)
+          .padding({ left: AppSpacing.LG, top: AppSpacing.SM, bottom: AppSpacing.SM })
           .onClick(() => {
+            this.showSearchHistoryDropdown = false;
             this.clearSearchHistory();
           })
       }
       .width('100%')
-      .height(46)
-      .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
+      .padding({ left: AppSpacing.MD, right: AppSpacing.SM })
       .alignItems(VerticalAlign.Center)
-
-      Divider()
-        .color(this.glassBorderColor())
-        .margin({ left: AppSpacing.LG, right: AppSpacing.LG })
 
       Scroll() {
         Flex({ wrap: FlexWrap.Wrap }) {
           ForEach(this.searchHistory, (keyword: string) => {
-            Row() {
-              Text(keyword)
-                .fontSize(AppFontSize.BODY)
-                .fontColor(this.secondaryTextColor())
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-            }
-            .constraintSize({ maxWidth: '72%' })
-            .height(34)
-            .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
-            .margin({ right: AppSpacing.MD, bottom: AppSpacing.MD })
-            .borderRadius(17)
-            .backgroundColor(this.buttonBackgroundColor())
-            .alignItems(VerticalAlign.Center)
-            .priorityGesture(
-              GestureGroup(GestureMode.Exclusive,
-                LongPressGesture({ repeat: false })
-                  .onAction(() => {
-                    this.deleteSearchHistoryItem(keyword);
-                  }),
-                TapGesture()
-                  .onAction(() => {
-                    this.showSearchHistoryDropdown = false;
-                    this.searchFromHistory(keyword);
-                  })
-              ),
-              GestureMask.IgnoreInternal
-            )
+            Text(keyword)
+              .fontSize(AppFontSize.BODY)
+              .fontColor(this.primaryTextColor())
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .constraintSize({ maxWidth: '72%' })
+              .height(34)
+              .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
+              .margin({ right: AppSpacing.SM, bottom: AppSpacing.SM })
+              .attributeModifier(new GlassTagModifier(this.accentColor(), this.appDarkMode))
+              .priorityGesture(
+                GestureGroup(GestureMode.Exclusive,
+                  LongPressGesture({ repeat: false })
+                    .onAction(() => {
+                      this.deleteSearchHistoryItem(keyword);
+                    }),
+                  TapGesture()
+                    .onAction(() => {
+                      this.showSearchHistoryDropdown = false;
+                      this.searchFromHistory(keyword);
+                    })
+                ),
+                GestureMask.IgnoreInternal
+              )
           }, (keyword: string) => keyword)
         }
         .width('100%')
-        .padding({ left: AppSpacing.LG, right: AppSpacing.SM, top: AppSpacing.LG, bottom: AppSpacing.XS })
+        .padding({ left: AppSpacing.MD, right: AppSpacing.XS, top: AppSpacing.SM })
       }
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .width('100%')
       .constraintSize({ maxHeight: 260 })
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
     }
     .width(this.searchHistoryPopupPanelWidth())
-    .backgroundColor(ThemeRuntime.dropdownPanelColor(this.appDarkMode, '', 'overlay'))
-    .backdropBlur(ThemeRuntime.glassBlur('overlay', 28))
-    .border({ width: ThemeRuntime.glassBorderWidth('overlay'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'overlay') })
-    .borderRadius(ThemeRuntime.glassCornerRadius(16, 'overlay'))
-    .shadow({ radius: ThemeRuntime.glassShadowRadius('overlay'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'overlay'), offsetX: ThemeRuntime.glassShadowOffsetX('overlay'), offsetY: ThemeRuntime.glassShadowOffsetY('overlay') })
-    .position({
-      x: AppSpacing.XL,
-      y: this.statusBarHeight + 56 + SearchPage.HEADER_CONTROL_SIZE + AppSpacing.SM
-    })
-    .zIndex(10)
+    .padding({ top: AppSpacing.SM, bottom: AppSpacing.XS })
   }
 
   @Builder

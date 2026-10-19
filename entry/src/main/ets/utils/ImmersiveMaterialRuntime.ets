@@ -243,7 +243,7 @@ export class ImmersiveMaterialRuntime {
    * 点菜单外自动收起，收起时回调让调用方复位开关。builder 用箭头函数传入，保证其中的 this 指向页面。
    */
   static popupMenuOptions(builder: CustomBuilder, placement: Placement, darkMode: boolean, accentColor: string,
-    onHidden: () => void): CustomPopupOptions {
+    onHidden: () => void, focusable: boolean = true): CustomPopupOptions {
     const material = ImmersiveMaterialRuntime.popupMenuMaterial(accentColor);
     const options: CustomPopupOptions = {
       builder: builder,
@@ -252,7 +252,8 @@ export class ImmersiveMaterialRuntime {
       radius: ImmersiveMaterialRuntime.POPUP_MENU_RADIUS,
       enableArrow: false,
       targetSpace: 8,
-      focusable: true,
+      // 跟着输入框弹出的面板传 false，免得抢走焦点收起键盘。
+      focusable: focusable,
       onStateChange: (event) => {
         if (!event.isVisible) {
           onHidden();
