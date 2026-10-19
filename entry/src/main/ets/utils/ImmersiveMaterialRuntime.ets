@@ -290,6 +290,20 @@ export class ImmersiveMaterialRuntime {
     return material;
   }
 
+  /**
+   * 半模态弹层（目录等）的沉浸光感材质：固定厚材质保证列表文字清晰，带投影，光感取强调色。
+   * API 26 以下返回 undefined，调用方退回厚磨砂。
+   */
+  static sheetMaterial(accentColor: string): uiMaterial.ImmersiveMaterial | undefined {
+    if (deviceInfo.sdkApiVersion < 26) return undefined;
+    return new uiMaterial.ImmersiveMaterial({
+      style: uiMaterial.ImmersiveStyle.THICK,
+      applyShadow: true,
+      interactive: false,
+      lightEffect: { color: accentColor }
+    });
+  }
+
   static selectMenuMaterial(): uiMaterial.ImmersiveMaterial | undefined {
     if (!ImmersiveMaterialRuntime.supportsHds()) return undefined;
     return new uiMaterial.ImmersiveMaterial({

@@ -4,7 +4,7 @@ import { AppDatabase } from '../model/data/AppDatabase';
 import { WebBookService } from '../core/book/WebBookService';
 import { syncSystemBars } from '../utils/SystemBars';
 import { BookDisplayHelper } from '../utils/BookDisplayHelper';
-import { GlassTagModifier } from '../utils/ImmersiveMaterialRuntime';
+import { GlassTagModifier, ImmersiveMaterialRuntime } from '../utils/ImmersiveMaterialRuntime';
 import { BookIdentity } from '../utils/BookIdentity';
 import { CoverUrlNormalizer } from '../utils/CoverUrlNormalizer';
 import { BookCoverCache } from '../utils/BookCoverCache';
@@ -278,17 +278,29 @@ struct SearchBookDetailPage {
     .width('100%')
     .height('100%')
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-    .bindSheet($$this.showCatalogSheet, this.catalogSheet(), {
+    .bindSheet($$this.showCatalogSheet, this.catalogSheet(), this.catalogSheetOptions())
+  }
+
+  /** 目录弹层：API 26+ 透明背景挂沉浸光感厚材质，旧系统退回厚磨砂加半透明面板色。 */
+  catalogSheetOptions(): SheetOptions {
+    const material = ImmersiveMaterialRuntime.sheetMaterial(this.accentColor());
+    const options: SheetOptions = {
       detents: ['67%', SheetSize.LARGE],
       dragBar: true,
       showClose: false,
       scrollSizeMode: ScrollSizeMode.CONTINUOUS,
-      blurStyle: BlurStyle.COMPONENT_THICK,
-      backgroundColor: ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'),
       onDisappear: () => {
         this.showCatalogSheet = false;
       }
-    })
+    };
+    if (material !== undefined) {
+      options.backgroundColor = Color.Transparent;
+      options.systemMaterial = material;
+    } else {
+      options.blurStyle = BlurStyle.COMPONENT_THICK;
+      options.backgroundColor = ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel');
+    }
+    return options;
   }
 
   @Builder
