@@ -64,6 +64,8 @@ export struct SearchBookResultList {
   @Prop subTextColor: string = '#999999';
   @Prop topPadding: number = 0;
   @Prop bottomPadding: number = 12;
+  /** 'list' 为卡片列表，'grid' 为三列封面平铺。 */
+  @Prop layoutMode: string = 'list';
   scroller: ListScroller = new ListScroller();
   private dataSource: SearchBookResultDataSource = new SearchBookResultDataSource();
   private tagCache: Map<string, string[]> = new Map<string, string[]>();
@@ -92,6 +94,146 @@ export struct SearchBookResultList {
   }
 
   build() {
+    if (this.layoutMode === 'grid') {
+      this.resultGrid()
+    } else {
+      this.resultList()
+    }
+  }
+
+  /** 三列封面平铺：多列 List 保留懒加载；顶部留白与底部加载提示放在分组页眉页脚里，不占格子。 */
+  @Builder
+  resultGrid() {
+    List({ scroller: this.scroller }) {
+      ListItemGroup({ header: this.gridHeader(), footer: this.gridFooter(), space: AppSpacing.LG }) {
+        LazyForEach(this.dataSource, (book: SearchBook) => {
+          ListItem() {
+            this.searchResultGridItem(book)
+          }
+        }, (book: SearchBook) => `grid_${this.listItemKey(book)}`)
+      }
+    }
+    .lanes(3, AppSpacing.MD)
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .width('100%')
+    .layoutWeight(1)
+    .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
+    .backgroundColor(this.pageColor)
+    .scrollBar(BarState.Auto)
+    .onReachEnd(() => {
+      this.onReachEnd();
+    })
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
+  }
+
+  @Builder
+  gridHeader() {
+    Row()
+      .width('100%')
+      .height(this.topPadding + AppSpacing.XS)
+  }
+
+  @Builder
+  gridFooter() {
+    Column() {
+      if (this.showLoadingMore) {
+        Row() {
+          LoadingProgress()
+            .width(20)
+            .height(20)
+          Text('继续加载中...')
+            .fontSize(AppFontSize.BODY)
+            .fontColor(this.subTextColor)
+            .margin({ left: AppSpacing.MD })
+        }
+        .width('100%')
+        .height(44)
+        .justifyContent(FlexAlign.Center)
+      }
+      Column()
+        .height(this.bottomPadding)
+    }
+    .width('100%')
+  }
+
+  @Builder
+  searchResultGridItem(book: SearchBook) {
+    Column({ space: AppSpacing.XS }) {
+      Stack({ alignContent: Alignment.TopEnd }) {
+        Stack() {
+          Column() {
+            Text(this.safeText(book.name, '书').substring(0, 1))
+              .fontSize(AppFontSize.HEADLINE)
+              .fontColor('#FFFFFF')
+          }
+          .width('100%')
+          .height('100%')
+          .justifyContent(FlexAlign.Center)
+          .backgroundColor(this.accentColor())
+
+          if (this.showResultCover && this.displayCover(book)) {
+            Image(this.displayCover(book))
+              .width('100%')
+              .height('100%')
+              .objectFit(ImageFit.Cover)
+          }
+        }
+        .width('100%')
+        .aspectRatio(0.75)
+        .borderRadius(8)
+        .clip(true)
+
+        if (book.aggregationCount > 1) {
+          Text(`${book.aggregationCount} 个结果`)
+            .fontSize(AppFontSize.MICRO)
+            .fontColor('#FFFFFF')
+            .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
+            .backgroundColor('#99000000')
+            .borderRadius(8)
+            .margin({ top: AppSpacing.XS, right: AppSpacing.XS })
+        } else if (this.mediaBadge(book)) {
+          Text(this.mediaBadge(book))
+            .fontSize(AppFontSize.MICRO)
+            .fontColor('#FFFFFF')
+            .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: AppSpacing.XXS, bottom: AppSpacing.XXS })
+            .backgroundColor(this.accentColor())
+            .borderRadius(8)
+            .margin({ top: AppSpacing.XS, right: AppSpacing.XS })
+        }
+      }
+      .width('100%')
+      .shadow({ radius: 8, color: this.isDarkMode() ? '#55000000' : '#22000000', offsetX: 0, offsetY: 3 })
+
+      Text(this.safeText(book.name, '未知书名'))
+        .fontSize(AppFontSize.BODY)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.primaryTextColor)
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+        .margin({ top: AppSpacing.XS })
+      Text(this.safeText(book.author, '作者未知'))
+        .fontSize(AppFontSize.CAPTION)
+        .fontColor(this.subTextColor)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .onClick(() => {
+      this.onOpenBook(book);
+    })
+    .onAppear(() => {
+      if (book.aggregationCount <= 1 &&
+        (!this.safeText(book.author, '') || (this.showResultCover && !this.safeText(book.coverUrl, '')))) {
+        this.onNeedMetadata(book);
+      }
+    })
+  }
+
+  @Builder
+  resultList() {
     List({ scroller: this.scroller, space: AppSpacing.MD }) {
       if (this.topPadding > 0) {
         ListItem() {
@@ -172,11 +314,16 @@ export struct SearchBookResultList {
 
   /**
    * 结果行背景：封面按极低分辨率解码后拉伸铺满，得到模糊效果而不做实时模糊；
-   * 上面盖一层半透明卡片色保证文字可读，标签的玻璃材质也因此有内容可透出。没有封面时用主题色打底。
+   * 上面盖一层半透明卡片色保证文字可读，标签的玻璃材质也因此有内容可透出。最底层垫主题色。
    */
   @Builder
   resultCardBackdrop(book: SearchBook) {
     Stack() {
+      // 主题色始终垫在最底层：封面加载失败或还没加载出来时露出主题色，而不是一片白。
+      Column()
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.accentColor())
       if (this.showResultCover && this.displayCover(book)) {
         Image(this.displayCover(book))
           .width('100%')
@@ -184,11 +331,6 @@ export struct SearchBookResultList {
           .objectFit(ImageFit.Cover)
           .sourceSize({ width: 12, height: 16 })
           .interpolation(ImageInterpolation.High)
-      } else {
-        Column()
-          .width('100%')
-          .height('100%')
-          .backgroundColor(this.accentColor())
       }
       Column()
         .width('100%')

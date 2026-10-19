@@ -74,6 +74,8 @@ export struct SearchPage {
   @StorageLink('searchExploreAggregateResults') @Watch('onSearchAggregationChanged')
   searchExploreAggregateResults: boolean = true;
   @StorageLink('searchResultCategory') searchResultCategory: string = SEARCH_CATEGORY_ALL;
+  /** 结果布局：'list' 卡片列表，'grid' 三列封面平铺；持久保存。 */
+  @StorageLink('searchResultLayout') searchResultLayout: string = 'list';
   @StorageLink('searchExplorePromptAddToShelfOnBack') searchExplorePromptAddToShelfOnBack: boolean = true;
   @StorageLink('searchExploreExactSearch') exactSearch: boolean = false;
   @StorageLink('searchExploreExactSearchMatchAuthor') exactSearchMatchAuthor: boolean = true;
@@ -486,6 +488,15 @@ export struct SearchPage {
             this.searchScopeLabel()
 
             Row() {
+              this.searchHeaderCircleButton(this.searchResultLayout === 'grid' ? $r('sys.symbol.list_bullet') :
+                $r('sys.symbol.square_grid_2x2'), false,
+                this.searchResultLayout === 'grid' ? '切换为列表' : '切换为平铺', () => {
+                  this.searchResultLayout = this.searchResultLayout === 'grid' ? 'list' : 'grid';
+                })
+            }
+            .margin({ right: 10 })
+
+            Row() {
               this.searchHeaderCircleButton($r('sys.symbol.gearshape'), this.showSearchSettingsDialog, '搜索设置', () => {
                 this.showSearchHistoryDropdown = false;
                 this.hideKeyboard();
@@ -590,6 +601,7 @@ export struct SearchPage {
           SearchBookResultList({
             books: this.displayedSearchResults,
             scroller: this.searchResultScroller,
+            layoutMode: this.searchResultLayout,
             shelfBookKeys: this.shelfBookKeys,
             busyBookKeys: this.addingShelfBookKeys,
             showLoadingMore: this.isSearching,
@@ -683,7 +695,7 @@ export struct SearchPage {
     }
   }
 
-  /** 标题右侧的搜索范围标签：按文字估宽，最多占屏宽 45%，点开书源选择。范围收窄时用强调色。 */
+  /** 标题右侧的搜索范围标签：按文字估宽，最多占屏宽 40%，点开书源选择。范围收窄时用强调色。 */
   @Builder
   searchScopeLabel() {
     Row() {
@@ -733,7 +745,7 @@ export struct SearchPage {
     }
     // 左右留白 24、箭头 14、间隔 4。
     const desired = Math.ceil(textWidth) + 42;
-    return Math.max(72, Math.min(desired, Math.floor(this.searchViewportWidth * 0.45)));
+    return Math.max(72, Math.min(desired, Math.floor(this.searchViewportWidth * 0.4)));
   }
 
   @Builder
