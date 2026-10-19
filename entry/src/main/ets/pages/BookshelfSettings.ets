@@ -887,7 +887,7 @@ struct BookshelfSettingsPage {
   privateShelfSwitchItem() {
     SettingSwitchRow({
       title: '隐私书架',
-      description: '在书架“本地”分类继续左滑进入，顶部不显示入口；关闭后隐私书籍仍隐藏',
+      description: '在书架最后一个分类继续左滑进入，顶部不显示入口；关闭后隐私书籍仍隐藏',
       isOn: this.privateShelfSwitchOn,
       showDivider: false,
       onChange: (checked: boolean) => {

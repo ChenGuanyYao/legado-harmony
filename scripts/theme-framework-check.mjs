@@ -317,15 +317,19 @@ assert(indexPage.includes('this.shelfSortButton()') &&
   'Bookshelf sorting must use a compact dropdown selector');
 assert(indexPage.includes('this.shelfScopeTabs()') &&
   indexPage.includes('CapsuleSegmentButtonV2({') &&
-  indexPage.includes("SCOPE_TAB_IDS: string[] = ['all', 'network', 'local']") &&
-  indexPage.includes('this.switchShelfScopeBySelection(BookshelfPage.SCOPE_TAB_IDS[index])') &&
-  indexPage.includes('ImmersiveMaterialRuntime.capsuleControlMaterial(this.appDarkMode)') &&
+  indexPage.includes("TYPE_TAB_IDS: string[] = ['all', 'text', 'image', 'audio', 'video']") &&
+  indexPage.includes('this.refreshShelfTypeTabs()') &&
+  indexPage.includes('this.switchShelfScopeBySelection(this.shelfTypeTabIds[index])') &&
   !indexPage.includes('expandedShelfScopeSegment()'),
-  'Bookshelf all/network/local switch must use the immersive capsule segment under the title, without a private tab');
+  'Bookshelf tabs must switch book types, hide empty types and keep the private shelf out of the bar');
 assert(indexPage.includes('this.shelfFilterButton()') &&
-  indexPage.includes("TYPE_FILTER_IDS: string[] = ['all', 'text', 'image', 'audio', 'video']") &&
-  indexPage.includes('this.matchesShelfTypeFilter(book)'),
-  'Bookshelf type filter must sit beside the layout button and filter the visible books');
+  indexPage.includes("FILTER_SOURCE_KEYS: string[] = ['network', 'local']") &&
+  indexPage.includes("FILTER_STATUS_KEYS: string[] = ['finished', 'ongoing']") &&
+  indexPage.includes('this.matchesShelfFilters(book)'),
+  'Bookshelf filter must offer source and status conditions beside the layout button');
+assert(indexPage.includes('ImmersiveMaterialSurface({') &&
+  read('entry/src/main/ets/components/ImmersiveMaterialSurface.ets').includes('barFloatingStyle({'),
+  'Bookshelf header controls must sit on the HDS immersive material surface');
 assert((indexPage.includes("this.actionItem('多选'") ||
   indexPage.includes("this.contextActionItem($r('sys.symbol.checkmark_circle'), '多选'")) &&
   indexPage.includes('this.bookMultiSelectBar()'),
