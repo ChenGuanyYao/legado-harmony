@@ -337,10 +337,8 @@ export struct SearchBookResultList {
         .height('100%')
         .backgroundColor(this.resultCardScrimColor())
     }
-    .position({ x: 0, y: 0 })
     .width('100%')
     .height('100%')
-    .hitTestBehavior(HitTestMode.None)
   }
 
   resultCardScrimColor(): string {
@@ -350,83 +348,78 @@ export struct SearchBookResultList {
 
   @Builder
   searchResultCard(book: SearchBook) {
-    Stack({ alignContent: Alignment.TopStart }) {
-      // 背景层放进组件树里（不用 background 属性），封面补拉回来时随行一起刷新。
-      this.resultCardBackdrop(book)
+    Row() {
+      if (this.showResultCover) {
+        this.coverView(book)
+      }
 
-      Row() {
-        if (this.showResultCover) {
-          this.coverView(book)
+      Column() {
+        Row({ space: AppSpacing.SM }) {
+          Text(this.safeText(book.name, '未知书名'))
+            .fontSize(AppFontSize.BODY_LARGE)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(this.primaryTextColor)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .flexShrink(1)
+
+          if (this.mediaBadge(book)) {
+            Text(this.mediaBadge(book))
+              .fontSize(AppFontSize.CAPTION)
+              .fontColor(this.accentColor())
+              .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: 1, bottom: 1 })
+              .border({ width: 1, color: this.accentColor() })
+              .borderRadius(ThemeRuntime.mediumRadius())
+          }
         }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
 
-        Column() {
-          Row({ space: AppSpacing.SM }) {
-            Text(this.safeText(book.name, '未知书名'))
-              .fontSize(AppFontSize.BODY_LARGE)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(this.primaryTextColor)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .flexShrink(1)
+        Text(this.safeText(book.author, '作者未知'))
+          .fontSize(AppFontSize.BODY)
+          .fontColor(this.secondaryTextColor)
+          .margin({ top: AppSpacing.XS })
 
-            if (this.mediaBadge(book)) {
-              Text(this.mediaBadge(book))
-                .fontSize(AppFontSize.CAPTION)
-                .fontColor(this.accentColor())
-                .padding({ left: AppSpacing.SM, right: AppSpacing.SM, top: 1, bottom: 1 })
-                .border({ width: 1, color: this.accentColor() })
-                .borderRadius(ThemeRuntime.mediumRadius())
-            }
+        if (this.showResultTags && this.getTags(book).length > 0) {
+          Flex({ wrap: FlexWrap.Wrap }) {
+            ForEach(this.getTags(book), (tag: string, index: number) => {
+              this.tagChip(tag, index)
+            })
           }
           .width('100%')
-          .alignItems(VerticalAlign.Center)
-
-          Text(this.safeText(book.author, '作者未知'))
-            .fontSize(AppFontSize.BODY)
-            .fontColor(this.secondaryTextColor)
-            .margin({ top: AppSpacing.XS })
-
-          if (this.showResultTags && this.getTags(book).length > 0) {
-            Flex({ wrap: FlexWrap.Wrap }) {
-              ForEach(this.getTags(book), (tag: string, index: number) => {
-                this.tagChip(tag, index)
-              })
-            }
-            .width('100%')
-            .margin({ top: AppSpacing.SM })
-          }
-
-          if (this.metadataLine(book)) {
-            Text(this.metadataLine(book))
-              .fontSize(AppFontSize.CAPTION)
-              .fontColor(this.subTextColor)
-              .margin({ top: AppSpacing.XXS })
-              .maxLines(2)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-
-          if (this.showSourceLine) {
-            Text(this.sourceLine(book))
-              .fontSize(AppFontSize.CAPTION)
-              .fontColor(this.subTextColor)
-              .margin({ top: this.showResultTags && this.getTags(book).length > 0 ? 6 : 4 })
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
+          .margin({ top: AppSpacing.SM })
         }
-        .layoutWeight(1)
-        .margin({ left: this.showResultCover ? 12 : 0 })
-        .alignItems(HorizontalAlign.Start)
 
-        if (book.aggregationCount > 1) {
-          this.aggregationIndicator(book)
+        if (this.metadataLine(book)) {
+          Text(this.metadataLine(book))
+            .fontSize(AppFontSize.CAPTION)
+            .fontColor(this.subTextColor)
+            .margin({ top: AppSpacing.XXS })
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+
+        if (this.showSourceLine) {
+          Text(this.sourceLine(book))
+            .fontSize(AppFontSize.CAPTION)
+            .fontColor(this.subTextColor)
+            .margin({ top: this.showResultTags && this.getTags(book).length > 0 ? 6 : 4 })
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
         }
       }
-      .width('100%')
-      .padding(AppSpacing.LG)
+      .layoutWeight(1)
+      .margin({ left: this.showResultCover ? 12 : 0 })
+      .alignItems(HorizontalAlign.Start)
+
+      if (book.aggregationCount > 1) {
+        this.aggregationIndicator(book)
+      }
     }
     .width('100%')
+    .padding(AppSpacing.LG)
     .backgroundColor(this.cardColor)
+    .background(this.resultCardBackdrop(book))
     .borderRadius(ThemeRuntime.cardRadius())
     .clip(true)
     .border({ width: this.itemBorderWidth, color: this.itemBorderColor })
@@ -662,7 +655,9 @@ export struct SearchBookResultList {
   }
 
   listItemKey(book: SearchBook): string {
-    const baseKey = this.itemKey(book);
+    // 封面地址也进 key：行背景挂在 background 属性上，只在行创建时绘制一次；
+    // 发现页的封面多为之后补拉，地址一变就重建这一行，背景才会换成封面。
+    const baseKey = `${this.itemKey(book)}|${this.safeText(book.coverUrl, '')}`;
     if (book.aggregationCount > 1) return baseKey;
     const shelfState = SearchBookShelfHelper.isInShelf(book, this.shelfBookKeys) ? 'shelf' : 'not_shelf';
     return `${baseKey}|${shelfState}`;
