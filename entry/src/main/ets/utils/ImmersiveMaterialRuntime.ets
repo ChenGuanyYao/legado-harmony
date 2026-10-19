@@ -16,30 +16,35 @@ export class SelectMenuMaterialModifier implements AttributeModifier<SelectAttri
 }
 
 /**
- * 彩色标签的沉浸光感底：API 26+ 用组件级沉浸材质，并以标签原本的浅底色染色；旧系统直接画浅底色。
- * 文字颜色由调用处照旧设置，这里只负责背景与一圈同色系细描边，保证标签按序号配色的规则不变。
+ * 彩色标签的沉浸光感胶囊：API 26+ 用透明的组件级沉浸材质（不压实色底），只叠一层很淡的标签文字色，
+ * 交互光感也取这个颜色，按下时按标签自己的颜色泛光；边缘高光交给材质，不另画描边。
+ * 旧系统画标签原本的浅底色。文字颜色由调用处照旧设置，按序号配色的规则不变。
  */
 export class ImmersiveTagModifier implements AttributeModifier<CommonAttribute> {
   static readonly CAPSULE_RADIUS: number = 999;
-  private tintColor: string;
-  private outlineColor: string;
+  private fallbackColor: string;
+  private lightColor: string;
   private darkMode: boolean;
 
-  constructor(tintColor: string, outlineColor: string, darkMode: boolean) {
-    this.tintColor = tintColor;
-    this.outlineColor = outlineColor;
+  /**
+   * @param fallbackColor 旧系统上的底色（标签原本的浅底色）
+   * @param lightColor 标签文字色，用于材质淡染与光感颜色
+   */
+  constructor(fallbackColor: string, lightColor: string, darkMode: boolean) {
+    this.fallbackColor = fallbackColor;
+    this.lightColor = lightColor;
     this.darkMode = darkMode;
   }
 
   applyNormalAttribute(instance: CommonAttribute): void {
-    const material = ImmersiveMaterialRuntime.tagMaterial(this.tintColor, this.darkMode);
+    const material = ImmersiveMaterialRuntime.tagMaterial(this.lightColor, this.darkMode);
     if (material !== undefined) {
+      instance.backgroundColor(Color.Transparent);
       instance.systemMaterial(material);
+      // 离屏合成会把材质压成平面，保持逐层绘制。
+      instance.renderGroup(false);
     } else {
-      instance.backgroundColor(this.tintColor);
-    }
-    if (/^#[0-9A-Fa-f]{6}$/.test(this.outlineColor)) {
-      instance.border({ width: 0.5, color: `#33${this.outlineColor.substring(1)}` });
+      instance.backgroundColor(this.fallbackColor);
     }
     // 胶囊形：圆角超过高度一半时按一半绘制。
     instance.borderRadius(ImmersiveTagModifier.CAPSULE_RADIUS);
@@ -211,19 +216,22 @@ export class ImmersiveMaterialRuntime {
 
   private static tagMaterials: Map<string, uiMaterial.ImmersiveMaterial> = new Map<string, uiMaterial.ImmersiveMaterial>();
 
-  /** 标签材质按染色、光感档位与深浅模式缓存，列表里大量标签共用同一个实例。 */
-  static tagMaterial(tintColor: string, darkMode: boolean): uiMaterial.ImmersiveMaterial | undefined {
-    if (!ImmersiveMaterialRuntime.supportsHds() || !/^#[0-9A-Fa-f]{6}$/.test(tintColor)) return undefined;
+  /**
+   * 标签材质按颜色、光感档位与深浅模式缓存，列表里大量标签共用同一个实例。
+   * 组件级材质只要 API 26 就能绘制，不依赖设备的沉浸能力查询结果。
+   */
+  static tagMaterial(lightColor: string, darkMode: boolean): uiMaterial.ImmersiveMaterial | undefined {
+    if (deviceInfo.sdkApiVersion < 26 || !/^#[0-9A-Fa-f]{6}$/.test(lightColor)) return undefined;
     const style = ImmersiveMaterialRuntime.materialStyle();
-    const key = `${tintColor}|${style}|${darkMode ? 'dark' : 'light'}`;
+    const key = `${lightColor}|${style}|${darkMode ? 'dark' : 'light'}`;
     const cached = ImmersiveMaterialRuntime.tagMaterials.get(key);
     if (cached !== undefined) return cached;
     const material = new uiMaterial.ImmersiveMaterial({
       style: style,
-      // 浅色模式染色更实一些，保证彩色文字在浅底上的对比；深色模式透一些露出材质。
-      materialColor: `${darkMode ? '#99' : '#CC'}${tintColor.substring(1)}`,
+      materialColor: `${darkMode ? '#26' : '#14'}${lightColor.substring(1)}`,
       applyShadow: false,
-      interactive: false
+      interactive: true,
+      lightEffect: { color: lightColor }
     });
     ImmersiveMaterialRuntime.tagMaterials.set(key, material);
     return material;
