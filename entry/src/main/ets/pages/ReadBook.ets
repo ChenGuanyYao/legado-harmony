@@ -207,16 +207,11 @@ struct ReadBookPage {
   @State readerCommentPanelUrl: string = '';
   @State readerCommentPanelProgress: number = 0;
   @State readerCommentPanelLoading: boolean = false;
-  @State readerCommentPanelHeightRatio: number = 0.6;
-  @State readerCommentPanelHeightValue: number = 432;
   private readerCommentPanelHtml: string = '';
   private readerCommentPanelBaseUrl: string = '';
   private readerCommentPanelHtmlLoaded: boolean = false;
   private readerCommentPanelLoadSerial: number = 0;
   private readerCommentPanelReadyTimerId: number = -1;
-  private readerCommentPanelDragStartRatio: number = 0.6;
-  private readerCommentPanelDragStartWindowY: number = 0;
-  private readerCommentPanelDragging: boolean = false;
   @State showToc: boolean = false;
   @State bookmarks: Bookmark[] = [];
   @State showBookmarkActionMenu: boolean = false;
@@ -2841,10 +2836,6 @@ struct ReadBookPage {
         })
       }
 
-      if (this.showReaderCommentPanel) {
-        this.readerCommentPanel()
-      }
-
       if (this.readerEyeTurnEnabled && this.readerInitialPageReady && !this.eyeTurnState.showCalibration &&
         !this.showMenu && !this.showToc && !this.showReaderCommentPanel) {
         this.readerEyeTurnPrompt()
@@ -2863,123 +2854,97 @@ struct ReadBookPage {
         this.refreshReaderScreenTimeout();
       }
     })
+    .bindSheet($$this.showReaderCommentPanel, this.readerCommentPanel(), this.readerCommentSheetOptions())
+  }
+
+  /**
+   * 段评弹层与详情页目录一致：系统半模态，停 60% 与全屏两档，网页内上滑先把弹层拉满再滚动评论，
+   * 下滑先滚回顶部再收起弹层，不用再对准顶部那条拖动区。
+   */
+  readerCommentSheetOptions(): SheetOptions {
+    return {
+      detents: ['60%', SheetSize.LARGE],
+      // 系统拖动条会在网页上方单独占一条底色不同的横带；改为在网页顶部叠一根拖动条（见 readerCommentPanel）。
+      dragBar: false,
+      showClose: false,
+      // 拖动过程中不逐帧改网页高度：网页每次改尺寸都要重绘，深色下会先露出一块白底再变黑。
+      scrollSizeMode: ScrollSizeMode.FOLLOW_DETENT,
+      // 底色与评论页一致，拖动到网页尚未铺满的位置时也看不出接缝。
+      backgroundColor: this.readerCommentPanelWebBackground(),
+      onDisappear: () => {
+        if (!this.showReaderCommentPanel) {
+          this.resetReaderCommentPanelState();
+        }
+      }
+    };
+  }
+
+  /** 评论页（含注入的反色样式）在深浅色下的大致底色，用作网页默认底色与弹层底色。 */
+  readerCommentPanelWebBackground(): string {
+    return this.appDarkMode ? '#131313' : '#FFFFFF';
   }
 
   @Builder
   readerCommentPanel() {
-    Column() {
-      Row()
+    Stack({ alignContent: Alignment.Top }) {
+      Web({ src: this.readerCommentPanelUrl, controller: this.readerCommentPanelController })
         .width('100%')
-        .layoutWeight(1)
-        .backgroundColor(this.isReaderThemeDark() ? '#52000000' : '#26000000')
-        .onClick(() => {
-          this.closeReaderCommentPanel();
+        .height('100%')
+        .backgroundColor(this.readerCommentPanelWebBackground())
+        .javaScriptAccess(true)
+        .domStorageAccess(true)
+        .onlineImageAccess(true)
+        .imageAccess(true)
+        .darkMode(this.appDarkMode ? WebDarkMode.On : WebDarkMode.Off)
+        // 强制深色在部分 ArkWeb 版本上不生效，生效时又会和下面的注入样式叠加反色；
+        // 没有深色样式的评论页统一由 syncReaderCommentPanelWebTheme 注入反色样式。
+        .forceDarkAccess(false)
+        // 上滑先交给弹层展开到全屏，下滑先滚网页、到顶后再交给弹层收起。
+        .nestedScroll({
+          scrollForward: NestedScrollMode.PARENT_FIRST,
+          scrollBackward: NestedScrollMode.SELF_FIRST
+        })
+        .onControllerAttached(() => {
+          this.readerCommentPanelHtmlLoaded = false;
+          setTimeout(() => this.loadReaderCommentPanelHtmlIfNeeded(), 0);
+        })
+        .onPageBegin(() => {
+          this.readerCommentPanelLoading = true;
+        })
+        .onPageEnd(() => {
+          if (this.loadReaderCommentPanelHtmlIfNeeded()) return;
+          this.scheduleReaderCommentPanelHostReady(0);
         })
 
-      Stack() {
-        Column() {
-          this.readerCommentPanelDragHandle()
-          Stack() {
-            Web({ src: this.readerCommentPanelUrl, controller: this.readerCommentPanelController })
-            .width('100%')
-            .height(Math.max(1, this.readerCommentPanelHeightValue - this.readerCommentPanelDragHandleHeight()))
-            .monopolizeEvents(true)
-            .javaScriptAccess(true)
-            .domStorageAccess(true)
-            .onlineImageAccess(true)
-            .imageAccess(true)
-            .darkMode(this.appDarkMode ? WebDarkMode.On : WebDarkMode.Off)
-            // 强制深色在部分 ArkWeb 版本上不生效，生效时又会和下面的注入样式叠加反色；
-            // 没有深色样式的评论页统一由 syncReaderCommentPanelWebTheme 注入反色样式。
-            .forceDarkAccess(false)
-            .onControllerAttached(() => {
-              this.readerCommentPanelHtmlLoaded = false;
-              setTimeout(() => this.loadReaderCommentPanelHtmlIfNeeded(), 0);
-            })
-            .onPageBegin(() => {
-              this.readerCommentPanelLoading = true;
-            })
-            .onPageEnd(() => {
-              if (this.loadReaderCommentPanelHtmlIfNeeded()) return;
-              this.scheduleReaderCommentPanelHostReady(0);
-            })
-
-            if (this.readerCommentPanelLoading) {
-              Column({ space: 10 }) {
-                LoadingProgress()
-                  .width(38)
-                  .height(38)
-                  .color(this.accentColor())
-                Text('评论加载中…')
-                  .fontSize(AppFontSize.BODY)
-                  .fontColor(this.getTextColor())
-              }
-              .width('100%')
-              .height('100%')
-              .justifyContent(FlexAlign.Center)
-              .alignItems(HorizontalAlign.Center)
-              .backgroundColor(this.readerGlassPanelColor())
-            }
-          }
-          .width('100%')
-          .height(this.readerCommentPanelContentHeight())
-          .backgroundColor(this.readerGlassPanelColor())
-          .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
-          .borderRadius({
-            topLeft: ThemeRuntime.glassCornerRadius(28, 'panel'),
-            topRight: ThemeRuntime.glassCornerRadius(28, 'panel')
-          })
-          .clip(true)
+      if (this.readerCommentPanelLoading) {
+        Column({ space: 10 }) {
+          LoadingProgress()
+            .width(38)
+            .height(38)
+            .color(this.accentColor())
+          Text('评论加载中…')
+            .fontSize(AppFontSize.BODY)
+            .fontColor(ThemeRuntime.subTextColor(this.appDarkMode))
         }
         .width('100%')
-        .backgroundColor(Color.Transparent)
-        .height(this.readerCommentPanelHeightValue)
-
-        this.readerCommentPanelDragOverlay()
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+        .backgroundColor(this.readerCommentPanelWebBackground())
       }
-      .width('100%')
-      .height(this.readerCommentPanelHeightValue)
-      .alignContent(Alignment.Top)
+
+      // 叠在评论页标题栏上方留白处的拖动条，只作提示，不拦截触摸。
+      Row()
+        .width(34)
+        .height(4)
+        .borderRadius(2)
+        .margin({ top: 8 })
+        .backgroundColor(this.appDarkMode ? '#59FFFFFF' : '#33000000')
+        .hitTestBehavior(HitTestMode.None)
+        .accessibilityLevel('no')
     }
     .width('100%')
     .height('100%')
-  }
-
-  @Builder
-  readerCommentPanelDragHandle() {
-    Stack({ alignContent: Alignment.Bottom }) {
-      Row()
-        .width('100%')
-        .height('100%')
-        .backgroundColor(this.isReaderThemeDark() ? '#52000000' : '#26000000')
-        .hitTestBehavior(HitTestMode.None)
-
-      Row()
-        .width(34)
-        .height(3)
-        .borderRadius(1.5)
-        .borderWidth(0)
-        .backgroundColor(this.isReaderThemeDark() ? '#66FFFFFF' : '#33000000')
-        .hitTestBehavior(HitTestMode.None)
-    }
-    .width('100%')
-    .height(this.readerCommentPanelDragHandleHeight())
-    .borderWidth(0)
-    .zIndex(2)
-    .accessibilityText('上滑展开评论面板')
-    .hitTestBehavior(HitTestMode.None)
-  }
-
-  @Builder
-  readerCommentPanelDragOverlay() {
-    Row()
-    .width('100%')
-    .height(this.readerCommentPanelDragHandleHeight())
-    .backgroundColor(Color.Transparent)
-    .zIndex(50)
-    .accessibilityText('上滑展开评论面板')
-    .hitTestBehavior(HitTestMode.Block)
-    .onTouch((event: TouchEvent) => this.handleReaderCommentPanelDragTouch(event))
   }
 
   @Builder
@@ -12878,9 +12843,6 @@ struct ReadBookPage {
       this.readerCommentPanelReadyTimerId = -1;
     }
     this.readerCommentPanelTitle = title || '段评';
-    this.readerCommentPanelHeightRatio = 0.6;
-    this.readerCommentPanelHeightValue = this.readerCommentPanelHeightForRatio(0.6);
-    this.readerCommentPanelDragStartRatio = 0.6;
     const providerPanel = ReaderInteractionProviderRegistry.buildPanel(normalizedUrl);
     if (sourceHtml) {
       this.readerCommentPanelHtmlLoaded = false;
@@ -12955,7 +12917,16 @@ struct ReadBookPage {
       clearTimeout(this.readerCommentPanelReadyTimerId);
       this.readerCommentPanelReadyTimerId = -1;
     }
+    // 弹层收起动画期间网页仍挂着，等 onDisappear 再清地址和换控制器，避免收起时闪白。
     this.showReaderCommentPanel = false;
+  }
+
+  resetReaderCommentPanelState(): void {
+    this.readerCommentPanelLoadSerial++;
+    if (this.readerCommentPanelReadyTimerId >= 0) {
+      clearTimeout(this.readerCommentPanelReadyTimerId);
+      this.readerCommentPanelReadyTimerId = -1;
+    }
     this.readerCommentPanelUrl = '';
     this.readerCommentPanelMarker = '';
     this.readerCommentPanelAnchorBottom = -1;
@@ -12964,9 +12935,6 @@ struct ReadBookPage {
     this.readerCommentPanelHtml = '';
     this.readerCommentPanelBaseUrl = '';
     this.readerCommentPanelHtmlLoaded = false;
-    this.readerCommentPanelHeightRatio = 0.6;
-    this.readerCommentPanelHeightValue = this.readerCommentPanelHeightForRatio(0.6);
-    this.readerCommentPanelDragStartRatio = 0.6;
     this.readerCommentPanelController = new webview.WebviewController();
     this.readerSourceActionOpenedAt = 0;
   }
@@ -13011,50 +12979,6 @@ struct ReadBookPage {
       await this.readerCommentPanelController.runJavaScript(script);
     } catch (error) {
       console.warn('同步评论面板深浅色模式失败:', error);
-    }
-  }
-
-  readerCommentPanelHeight(): number {
-    return this.readerCommentPanelHeightValue;
-  }
-
-  readerCommentPanelHeightForRatio(ratio: number): number {
-    const viewportHeight = this.readerCommentPageAreaHeight > 0 ? this.readerCommentPageAreaHeight :
-      (this.pageViewHeight > 0 ? this.pageViewHeight : 720);
-    return Math.max(1, viewportHeight *
-      Math.max(0.6, Math.min(0.9, ratio)));
-  }
-
-  readerCommentPanelContentHeight(): number {
-    return Math.max(1, this.readerCommentPanelHeight() - this.readerCommentPanelDragHandleHeight());
-  }
-
-  readerCommentPanelDragHandleHeight(): number {
-    return 44;
-  }
-
-  handleReaderCommentPanelDragTouch(event: TouchEvent): void {
-    const point = event.changedTouches.length > 0 ? event.changedTouches[0] :
-      (event.touches.length > 0 ? event.touches[0] : null);
-    if (!point) return;
-    const windowY = Number(point.windowY);
-    if (event.type === TouchType.Down) {
-      this.readerCommentPanelDragging = true;
-      this.readerCommentPanelDragStartRatio = this.readerCommentPanelHeightRatio;
-      this.readerCommentPanelDragStartWindowY = windowY;
-      return;
-    }
-    if (event.type === TouchType.Move && this.readerCommentPanelDragging) {
-      const viewportHeight = Math.max(1, this.readerCommentPageAreaHeight || this.pageViewHeight);
-      const nextRatio = this.readerCommentPanelDragStartRatio -
-        (windowY - this.readerCommentPanelDragStartWindowY) / viewportHeight;
-      this.readerCommentPanelHeightRatio = Math.max(0.6, Math.min(0.9, nextRatio));
-      this.readerCommentPanelHeightValue = this.readerCommentPanelHeightForRatio(
-        this.readerCommentPanelHeightRatio);
-      return;
-    }
-    if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-      this.readerCommentPanelDragging = false;
     }
   }
 
