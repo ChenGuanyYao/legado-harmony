@@ -854,6 +854,7 @@ export struct SearchPage {
       .margin({ right: AppSpacing.SM, bottom: AppSpacing.SM })
       .attributeModifier(new ImmersiveTagModifier(ThemeRuntime.cardColor(this.appDarkMode),
         this.secondaryTextColor(), this.appDarkMode))
+      .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.94 })
       .priorityGesture(
         GestureGroup(GestureMode.Exclusive,
           LongPressGesture({ repeat: false })
@@ -1037,6 +1038,7 @@ export struct SearchPage {
               .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
               .margin({ right: AppSpacing.SM, bottom: AppSpacing.SM })
               .attributeModifier(new GlassTagModifier(this.appDarkMode))
+              .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.94 })
               .priorityGesture(
                 GestureGroup(GestureMode.Exclusive,
                   LongPressGesture({ repeat: false })
@@ -1323,6 +1325,27 @@ export struct SearchPage {
 
     let sessionId = 0;
     let activeCoordinator: SearchCoordinator | null = null;
+    // 先切到“搜索中”并让这一帧画出来，点击立刻有反馈；读书源、建协调器等准备工作随后进行。
+    const previousShowResult = this.showResult;
+    this.coordinator?.cancel();
+    this.coordinator = null;
+    sessionId = ++this.searchSessionId;
+    this.isSearching = true;
+    this.showResult = true;
+    this.searchResults = [];
+    this.displayedSearchResults = [];
+    this.searchCategoryCounts = [0, 0, 0, 0];
+    this.statusMessage = '正在准备搜索...';
+    this.verificationUrl = '';
+    this.verificationTitle = '';
+    await SearchPage.nextFrame();
+    if (sessionId !== this.searchSessionId) return;
+    const restoreIdleState = (): void => {
+      if (sessionId !== this.searchSessionId) return;
+      this.isSearching = false;
+      this.showResult = previousShowResult;
+      this.statusMessage = '';
+    };
     try {
       const db = AppDatabase.getInstance();
       await db.initWithContext(getContext(this));
@@ -1331,14 +1354,20 @@ export struct SearchPage {
         const targetSource = await db.getBookSource(this.singleSourceSearchUrl);
         if (!targetSource) {
           HdsFeedback.showToast('指定书源不存在或已被删除');
+          restoreIdleState();
           this.clearSingleSourceSearch();
           return;
         }
         targetSources.push(targetSource);
       } else {
-        await this.loadSearchableSources(db);
+        // 搜索页激活时已加载过书源，这里直接复用，不再每次搜索都从数据库读出全部书源规则。
+        if (this.searchableSources.length === 0) {
+          await this.loadSearchableSources(db);
+        }
+        if (sessionId !== this.searchSessionId) return;
         if (this.isNoSearchSourcesSelected() || this.effectiveSelectedSourceUrls().length === 0) {
           HdsFeedback.showToast('请先在搜索范围中选择书源');
+          restoreIdleState();
           return;
         }
         if (!this.isAllSearchSourcesSelected()) {
@@ -1348,19 +1377,10 @@ export struct SearchPage {
         }
       }
 
-      this.isSearching = true;
-      this.showResult = true;
-      this.searchResults = [];
-      this.displayedSearchResults = [];
-      this.searchCategoryCounts = [0, 0, 0, 0];
       this.searchResultKeySet.clear();
       this.statusMessage = targetSources.length === 1 ?
         `正在通过 ${this.singleSourceSearchName || targetSources[0].bookSourceName} 搜索...` :
         (targetSources.length > 1 ? `正在通过 ${targetSources.length} 个书源搜索...` : '正在搜索...');
-      this.verificationUrl = '';
-      this.verificationTitle = '';
-      this.coordinator?.cancel();
-      sessionId = ++this.searchSessionId;
       const coordinator = new SearchCoordinator(SearchExploreSettingsStore.getSearchConcurrency());
       activeCoordinator = coordinator;
       this.coordinator = coordinator;
@@ -1428,6 +1448,13 @@ export struct SearchPage {
         this.coordinator = null;
       }
     }
+  }
+
+  /** 让出一帧，让刚改的界面状态先画出来，再继续后面的同步重活。 */
+  private static nextFrame(): Promise<void> {
+    return new Promise<void>((resolve: () => void) => {
+      setTimeout(() => resolve(), 32);
+    });
   }
 
   async saveSearchHistoryLater(db: AppDatabase, keyword: string): Promise<void> {
