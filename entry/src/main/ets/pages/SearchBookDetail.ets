@@ -360,7 +360,11 @@ struct SearchBookDetailPage {
     return BookTypeSupport.isVideo(this.detailTypeProbe()) ? '剧集详情' : '书籍详情';
   }
 
-  /** 封面氛围背景：封面低分辨率模糊铺在顶部，再渐隐到页面底色；随正文滚动淡出。 */
+  /**
+   * 封面氛围背景：封面低分辨率模糊铺在顶部，用渐变蒙版（DST_IN）让图片自身自上而下渐隐到完全透明，
+   * 下面直接透出页面底色，不靠颜色去遮，所以滚动、深浅色和换主题时底部都不会出现硬边。
+   * 滚动时只淡化图片这一层。
+   */
   @Builder
   ambientBackdrop() {
     Stack({ alignContent: Alignment.Top }) {
@@ -370,31 +374,34 @@ struct SearchBookDetailPage {
         .backgroundColor(this.pageColor())
 
       if (this.displayCoverUrl()) {
-        Image(this.displayCoverUrl())
-          .width('100%')
-          .height(SearchBookDetailPage.AMBIENT_HEIGHT)
-          .objectFit(ImageFit.Cover)
-          .sourceSize({ width: 96, height: 128 })
-          .blur(48)
-          .opacity(this.appDarkMode ? 0.32 : 0.42)
-      }
+        Stack() {
+          Image(this.displayCoverUrl())
+            .width('100%')
+            .height(SearchBookDetailPage.AMBIENT_HEIGHT)
+            .objectFit(ImageFit.Cover)
+            .sourceSize({ width: 96, height: 128 })
+            .blur(48)
 
-      Column()
+          // 蒙版：不透明处保留图片，透明处把图片擦掉；中段开始渐隐，底部完全透明。
+          Column()
+            .width('100%')
+            .height(SearchBookDetailPage.AMBIENT_HEIGHT)
+            .linearGradient({
+              direction: GradientDirection.Bottom,
+              colors: [['#FF000000', 0], ['#B3000000', 0.45], ['#33000000', 0.78], ['#00000000', 1]]
+            })
+            .blendMode(BlendMode.DST_IN, BlendApplyType.OFFSCREEN)
+        }
         .width('100%')
-        .height(SearchBookDetailPage.AMBIENT_HEIGHT + 2)
-        .linearGradient({
-          direction: GradientDirection.Bottom,
-          colors: [
-            [`#33${this.pageColor().substring(1)}`, 0],
-            [`#B3${this.pageColor().substring(1)}`, 0.55],
-            [this.pageColor(), 1]
-          ]
-        })
+        .height(SearchBookDetailPage.AMBIENT_HEIGHT)
+        // 在离屏层里合成，蒙版只作用于这张图片，不影响下面的页面底色。
+        .blendMode(BlendMode.SRC_OVER, BlendApplyType.OFFSCREEN)
+        .opacity((this.appDarkMode ? 0.36 : 0.46) * (1 - this.titleBarProgress() * 0.5))
+      }
     }
     .width('100%')
     .height('100%')
     .clip(true)
-    .opacity(1 - this.titleBarProgress() * 0.5)
     .hitTestBehavior(HitTestMode.None)
     .accessibilityLevel('no')
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
