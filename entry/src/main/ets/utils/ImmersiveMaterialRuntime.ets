@@ -75,7 +75,7 @@ export class ImmersiveTagModifier implements AttributeModifier<CommonAttribute> 
 
 /**
  * 玻璃标签（白玻璃彩字）：放在有图像的背景上（模糊封面行、详情页氛围背景、弹出层）时使用。
- * 半透明白底自上而下略淡、上沿稍亮，模糊标签背后的内容，再加白色细边与很浅的投影；
+ * 半透明白底自上而下略淡、上沿稍亮，再加白色细边与很浅的投影；
  * 直接绘制而不用组件级系统材质（后者在真机上几乎不可见），各系统版本效果一致。
  * 文字颜色由调用处按序号配色设置。
  */
@@ -87,14 +87,14 @@ export class GlassTagModifier implements AttributeModifier<CommonAttribute> {
   }
 
   applyNormalAttribute(instance: CommonAttribute): void {
+    // 不做实时背景模糊：列表里几十个标签各开一块离屏缓冲，显存开销过大；背后的封面本身已是模糊图。
     instance.linearGradient({
       direction: GradientDirection.Bottom,
       colors: this.darkMode ?
-        [['#40FFFFFF', 0], ['#26FFFFFF', 0.5], ['#1FFFFFFF', 1]] :
-        [['#BFFFFFFF', 0], ['#8CFFFFFF', 0.5], ['#80FFFFFF', 1]]
+        [['#2EFFFFFF', 0], ['#1FFFFFFF', 0.5], ['#1AFFFFFF', 1]] :
+        [['#D9FFFFFF', 0], ['#A6FFFFFF', 0.5], ['#99FFFFFF', 1]]
     });
-    instance.backdropBlur(10);
-    instance.border({ width: 0.5, color: this.darkMode ? '#33FFFFFF' : '#E6FFFFFF' });
+    instance.border({ width: 0.5, color: this.darkMode ? '#26FFFFFF' : '#E6FFFFFF' });
     instance.shadow({ radius: 4, color: this.darkMode ? '#33000000' : '#1A000000', offsetX: 0, offsetY: 1 });
     instance.borderRadius(ImmersiveTagModifier.CAPSULE_RADIUS);
   }

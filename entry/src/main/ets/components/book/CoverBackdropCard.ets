@@ -76,6 +76,7 @@ export struct CoverBackdropCard {
 
   private scrimColor(): string {
     const card = /^#[0-9A-Fa-f]{6}$/.test(this.cardColor) ? this.cardColor : (this.darkMode ? '#191B1F' : '#FFFFFF');
-    return `${this.darkMode ? '#C2' : '#B8'}${card.substring(1)}`;
+    // 遮罩更实一些，封面只透出一层淡淡的颜色，避免行背景偏深。
+    return `${this.darkMode ? '#D4' : '#CF'}${card.substring(1)}`;
   }
 }

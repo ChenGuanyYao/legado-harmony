@@ -74,6 +74,13 @@ export struct SearchBookResultList {
   private dataSource: SearchBookResultDataSource = new SearchBookResultDataSource();
   private tagCache: Map<string, string[]> = new Map<string, string[]>();
   private coverCache: Map<string, string> = new Map<string, string>();
+  /**
+   * 左侧封面已加载完成的地址。模糊背景只对这些地址显示：此时图片已在系统缓存里，背景直接读缓存，
+   * 不再对同一张封面发第二次网络请求（封面服务器偏慢时，请求翻倍会把图片下载队列堵死）。
+   */
+  private loadedCoverUrls: Set<string> = new Set<string>();
+  @State coverLoadRevision: number = 0;
+  private coverLoadTimer: number = -1;
   onOpenBook: SearchBookAction = (_book: SearchBook) => {};
   onReadBook: SearchBookAction = (_book: SearchBook) => {};
   onToggleShelf: SearchBookAction = (_book: SearchBook) => {};
@@ -182,6 +189,7 @@ export struct SearchBookResultList {
               .width('100%')
               .height('100%')
               .objectFit(ImageFit.Cover)
+              .sourceSize({ width: 360, height: 480 })
           }
         }
         .width('100%')
@@ -323,7 +331,7 @@ export struct SearchBookResultList {
     // 尾随闭包形式的自定义组件后面不能再接属性，圆角、边框、点击等挂在外层 Column 上。
     Column() {
       CoverBackdropCard({
-        cover: this.showResultCover ? this.displayCover(book) : '',
+        cover: this.showResultCover ? this.backdropCover(book) : '',
         accentColor: this.accentColor(),
         cardColor: this.cardColor,
         darkMode: this.isDarkMode()
@@ -560,6 +568,11 @@ export struct SearchBookResultList {
           .width(54)
           .height(72)
           .objectFit(ImageFit.Cover)
+          // 按显示尺寸解码：书源封面常是 1200px 高清图，原尺寸解码一张就占数 MB 内存与显存，滑几屏就会撑爆图片缓存。
+          .sourceSize({ width: 180, height: 240 })
+          .onComplete(() => {
+            this.markCoverLoaded(this.displayCover(book));
+          })
       }
     }
     .width(54)
@@ -571,6 +584,31 @@ export struct SearchBookResultList {
 
   isDarkMode(): boolean {
     return this.pageColor === '#101113' || this.cardColor === '#191B1F';
+  }
+
+  /** 模糊背景用的封面：左侧封面加载完成后才给出地址。 */
+  backdropCover(book: SearchBook): string {
+    const url = this.displayCover(book);
+    return this.coverLoadRevision >= 0 && url && this.loadedCoverUrls.has(url) ? url : '';
+  }
+
+  markCoverLoaded(url: string): void {
+    if (!url || this.loadedCoverUrls.has(url)) return;
+    if (this.loadedCoverUrls.size > 600) this.loadedCoverUrls.clear();
+    this.loadedCoverUrls.add(url);
+    // 一屏封面陆续加载完成时合并成一次刷新。
+    if (this.coverLoadTimer !== -1) return;
+    this.coverLoadTimer = setTimeout(() => {
+      this.coverLoadTimer = -1;
+      this.coverLoadRevision++;
+    }, 150);
+  }
+
+  aboutToDisappear(): void {
+    if (this.coverLoadTimer !== -1) {
+      clearTimeout(this.coverLoadTimer);
+      this.coverLoadTimer = -1;
+    }
   }
 
   accentColor(): string {
