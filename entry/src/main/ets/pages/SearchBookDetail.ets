@@ -932,7 +932,7 @@ struct SearchBookDetailPage {
     this.resolvedBookInfo = null;
     this.bookInfoPromise = null;
     this.hasLoadedBookInfo = false;
-    this.syncStateFromBook(switched);
+    this.syncStateFromBook(switched, false);
     if (this.pendingAddToShelfBookUrl && this.pendingAddToShelfBookUrl === previousBookUrl) {
       this.pendingAddToShelfBookUrl = switched.bookUrl;
     }
@@ -1318,7 +1318,15 @@ struct SearchBookDetailPage {
     return SearchBookShelfHelper.findShelfBookByKey(bookKey, includePending);
   }
 
-  syncStateFromBook(book: Book): void {
+  /**
+   * @param keepKnownMediaType 书源详情接口常不带类型标记（如有声版与小说版共用书籍 ID 时返回小说信息），
+   *   直接覆盖会把列表里已知的有声/漫画/视频退回成小说；默认保留已知类型，换源时传 false 跟随新书源。
+   */
+  syncStateFromBook(book: Book, keepKnownMediaType: boolean = true): void {
+    const previousCategory = BookTypeSupport.mediaCategoryOf(this.detailTypeProbe());
+    const previousType = this.bookType;
+    const previousVariable = this.bookVariable;
+    const previousKind = this.kind;
     this.bookUrl = book.bookUrl || this.bookUrl;
     this.tocUrl = book.tocUrl || this.tocUrl;
     this.origin = book.origin || this.origin;
@@ -1334,7 +1342,52 @@ struct SearchBookDetailPage {
     this.updateTime = book.updateTime || this.updateTime;
     this.bookType = book.type || this.bookType;
     this.bookVariable = book.variable || this.bookVariable;
+    if (keepKnownMediaType && previousCategory !== BookTypeSupport.CATEGORY_NOVEL &&
+      BookTypeSupport.mediaCategoryOf(this.detailTypeProbe()) === BookTypeSupport.CATEGORY_NOVEL) {
+      this.restoreKnownMediaType(previousType, previousVariable, previousKind);
+    }
     this.bookInfoRenderVersion++;
+  }
+
+  /** 把列表阶段已知的类型并回当前状态：类型标记位取并集，variable 里补回 tab，仍不行再退回原 variable 与分类。 */
+  private restoreKnownMediaType(previousType: number, previousVariable: string, previousKind: string): void {
+    const mediaBits = BookTypeSupport.AUDIO | BookTypeSupport.IMAGE;
+    if ((previousType & mediaBits) !== 0) {
+      this.bookType = (this.bookType & ~BookTypeSupport.TEXT) | (previousType & mediaBits);
+    }
+    const previousTab = SearchBookDetailPage.variableTab(previousVariable);
+    if (previousTab && !SearchBookDetailPage.variableTab(this.bookVariable)) {
+      this.bookVariable = SearchBookDetailPage.mergeVariableTab(this.bookVariable, previousTab) || previousVariable;
+    }
+    if (BookTypeSupport.mediaCategoryOf(this.detailTypeProbe()) === BookTypeSupport.CATEGORY_NOVEL) {
+      // 类型来自书源名或分类字样（identity）时，恢复原分类，必要时恢复原 variable。
+      this.kind = previousKind || this.kind;
+      if (BookTypeSupport.mediaCategoryOf(this.detailTypeProbe()) === BookTypeSupport.CATEGORY_NOVEL) {
+        this.bookVariable = previousVariable || this.bookVariable;
+      }
+    }
+  }
+
+  private static variableTab(variable: string): string {
+    if (!variable) return '';
+    try {
+      const record = JSON.parse(variable) as Record<string, Object>;
+      return String(record['tab'] || record['type'] || record['mediaType'] || '');
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /** 在 variable 里补上 tab，保留其余字段（目录等规则可能依赖它们）；不是 JSON 对象时返回空串。 */
+  private static mergeVariableTab(variable: string, tab: string): string {
+    try {
+      const record = (variable ? JSON.parse(variable) : {}) as Record<string, Object>;
+      if (record === null || typeof record !== 'object' || Array.isArray(record)) return '';
+      record['tab'] = tab;
+      return JSON.stringify(record);
+    } catch (_) {
+      return '';
+    }
   }
 
   detailTypeProbe(): Book {
