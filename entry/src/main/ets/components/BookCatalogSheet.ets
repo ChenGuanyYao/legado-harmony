@@ -121,7 +121,8 @@ export struct BookCatalogSheet {
         })
       }
       .width('100%')
-      .padding({ left: AppSpacing.XXL, right: AppSpacing.XL, top: AppSpacing.LG, bottom: AppSpacing.MD })
+      // 半模态已在拖动条下方留出位置，这里只留很小的上边距。
+      .padding({ left: AppSpacing.XXL, right: AppSpacing.XL, top: AppSpacing.XS, bottom: AppSpacing.MD })
       .alignItems(VerticalAlign.Center)
 
       this.summaryBar()
@@ -140,8 +141,6 @@ export struct BookCatalogSheet {
     }
     .width('100%')
     .height('100%')
-    // 顶部留给半模态的拖动条。
-    .padding({ top: AppSpacing.XL })
   }
 
   @Builder
