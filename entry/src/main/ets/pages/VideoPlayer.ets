@@ -4,6 +4,7 @@ import { AppDatabase } from '../model/data/AppDatabase';
 import { ReadBookEngine } from '../core/book/ReadBookEngine';
 import { WebBookService } from '../core/book/WebBookService';
 import { HdsFeedback } from '../utils/HdsFeedback';
+import { ReaderTtsFloatingSession } from '../utils/ReaderTtsFloatingSession';
 import { syncSystemBars } from '../utils/SystemBars';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
@@ -511,6 +512,10 @@ struct VideoPlayerPage {
             this.onVideoPrepared(event.duration);
           })
           .onStart(() => {
+            // 同一应用内的音频流系统不会互相打断，朗读/听书要自己停下，免得和视频声音叠在一起。
+            ReaderTtsFloatingSession.pause().catch((error: Error) => {
+              console.warn('[VideoPlayer] pause tts failed:', error.message);
+            });
             this.isPlaying = true;
             this.statusText = '';
             this.scheduleHideControls();

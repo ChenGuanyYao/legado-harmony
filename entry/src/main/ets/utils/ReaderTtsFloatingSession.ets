@@ -326,6 +326,15 @@ export class ReaderTtsFloatingSession {
     }
   }
 
+  /** 正在朗读/听书时暂停，已暂停或没在播放则不动。App 内其他声音（如视频）开播时调用。 */
+  static async pause(): Promise<void> {
+    if (!ReaderTtsFloatingSession.isActive()) return;
+    const pausedState = ReaderTtsFloatingSession.pausedState;
+    const paused = pausedState ? pausedState() : (AppStorage.get<boolean>('globalTtsPaused') || false);
+    if (paused) return;
+    await ReaderTtsFloatingSession.toggle();
+  }
+
   static stop(): void {
     const action = ReaderTtsFloatingSession.stopAction;
     if (action) {
