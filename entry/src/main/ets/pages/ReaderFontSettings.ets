@@ -52,8 +52,8 @@ class ReaderBubbleStyleOption {
 @Component
 struct ReaderFontSettingsPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
-  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#C4475B';
-  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#E0697C';
+  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
+  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
   @StorageLink('themeRevision') themeRevision: number = 0;
   @StorageLink('accountEntitlementsRevision') accountEntitlementsRevision: number = 0;
   @State readerFontSize: number = 20;

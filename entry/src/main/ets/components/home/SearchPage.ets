@@ -76,8 +76,8 @@ export struct SearchPage {
   @StorageLink('singleSourceSearchUrl') singleSourceSearchUrl: string = '';
   @StorageLink('singleSourceSearchName') singleSourceSearchName: string = '';
   @StorageLink('globalSearchPendingNonce') @Watch('onGlobalSearchPendingNonceChanged') globalSearchPendingNonce: number = 0;
-  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#C4475B';
-  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#C4475B';
+  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
+  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
   private coordinator: SearchCoordinator | null = null;
   private hasInitialized: boolean = false;
   private shelfStatusVersion: number = 0;

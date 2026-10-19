@@ -316,11 +316,16 @@ assert(indexPage.includes('this.shelfSortButton()') &&
   !indexPage.includes("this.sortChip('新阅读', 'recentRead')"),
   'Bookshelf sorting must use a compact dropdown selector');
 assert(indexPage.includes('this.shelfScopeTabs()') &&
-  indexPage.includes('ForEach(this.shelfScopeOrder()') &&
-  indexPage.includes('this.switchShelfScopeBySelection(scope)') &&
-  indexPage.includes("return '网络';") && indexPage.includes("return '本地';") &&
+  indexPage.includes('CapsuleSegmentButtonV2({') &&
+  indexPage.includes("SCOPE_TAB_IDS: string[] = ['all', 'network', 'local']") &&
+  indexPage.includes('this.switchShelfScopeBySelection(BookshelfPage.SCOPE_TAB_IDS[index])') &&
+  indexPage.includes('ImmersiveMaterialRuntime.capsuleControlMaterial(this.appDarkMode)') &&
   !indexPage.includes('expandedShelfScopeSegment()'),
-  'Bookshelf network/local switch must use the capsule tabs under the title');
+  'Bookshelf all/network/local switch must use the immersive capsule segment under the title, without a private tab');
+assert(indexPage.includes('this.shelfFilterButton()') &&
+  indexPage.includes("TYPE_FILTER_IDS: string[] = ['all', 'text', 'image', 'audio', 'video']") &&
+  indexPage.includes('this.matchesShelfTypeFilter(book)'),
+  'Bookshelf type filter must sit beside the layout button and filter the visible books');
 assert((indexPage.includes("this.actionItem('多选'") ||
   indexPage.includes("this.contextActionItem($r('sys.symbol.checkmark_circle'), '多选'")) &&
   indexPage.includes('this.bookMultiSelectBar()'),

@@ -79,10 +79,10 @@ export class AppThemeSettingsStore {
   static readonly KEY_CUSTOM_LIGHT_STARTUP_SUBTITLE: string = 'appCustomLightStartupSubtitle';
   static readonly KEY_CUSTOM_DARK_STARTUP_SUBTITLE: string = 'appCustomDarkStartupSubtitle';
   static readonly DEFAULT_THEME_ID: string = BuiltinThemeRegistry.DEFAULT_THEME_ID;
-  static readonly DEFAULT_LIGHT_ACCENT_COLOR: string = '#C4475B';
-  static readonly DEFAULT_DARK_ACCENT_COLOR: string = '#E0697C';
-  static readonly DEFAULT_LIGHT_BUTTON_COLOR: string = '#C4475B';
-  static readonly DEFAULT_DARK_BUTTON_COLOR: string = '#C4475B';
+  static readonly DEFAULT_LIGHT_ACCENT_COLOR: string = '#007DFF';
+  static readonly DEFAULT_DARK_ACCENT_COLOR: string = '#4E9BFF';
+  static readonly DEFAULT_LIGHT_BUTTON_COLOR: string = '#007DFF';
+  static readonly DEFAULT_DARK_BUTTON_COLOR: string = '#3F8CFF';
   private static readonly STORE_NAME: string = 'app_theme_settings';
   private static cachedSettings: AppThemeSettings | null = null;
 
@@ -131,9 +131,6 @@ export class AppThemeSettingsStore {
       store, AppThemeSettingsStore.KEY_DARK_BUTTON_COLOR,
       AppStorage.get<string>(AppThemeSettingsStore.KEY_DARK_BUTTON_COLOR) || defaults.darkButtonColor),
       defaults.darkButtonColor);
-    if (settings.themeId === ThemeIds.PLAIN_DEFAULT) {
-      AppThemeSettingsStore.migrateLegacyPlainDefaultColors(settings, defaults);
-    }
     // The active color keys existed before custom themes. They are the migration fallback so an
     // existing user's four color choices become their initial custom theme without data loss.
     settings.customLightAccentColor = AppThemeSettingsStore.normalizeColor(await AppThemeSettingsStore.getString(
@@ -432,25 +429,6 @@ export class AppThemeSettingsStore {
       return;
     }
     AppThemeSettingsStore.applyToStorage(AppThemeSettingsStore.cachedSettings);
-  }
-
-  /**
-   * 默认主题的配色从灰蓝换成了玫瑰红。偏好里存的仍是旧默认值时说明用户没改过，
-   * 换成新默认值；用户自己挑过的颜色保持不动。
-   */
-  private static migrateLegacyPlainDefaultColors(settings: AppThemeSettings, defaults: AppThemeSettings): void {
-    if (settings.lightAccentColor === '#5B6573') {
-      settings.lightAccentColor = defaults.lightAccentColor;
-    }
-    if (settings.darkAccentColor === '#AAB2BD') {
-      settings.darkAccentColor = defaults.darkAccentColor;
-    }
-    if (settings.lightButtonColor === '#505967') {
-      settings.lightButtonColor = defaults.lightButtonColor;
-    }
-    if (settings.darkButtonColor === '#737D8A') {
-      settings.darkButtonColor = defaults.darkButtonColor;
-    }
   }
 
   private static defaultsForTheme(themeId: string): AppThemeSettings {

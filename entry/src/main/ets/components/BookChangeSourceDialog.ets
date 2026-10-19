@@ -21,8 +21,8 @@ import { AppSpacing } from '../theme/AppSpacing';
 export struct BookChangeSourceDialog {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
-  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#C4475B';
-  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#C4475B';
+  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
+  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
   targetBook: Book | null = null;
   onSwitched: (book: Book) => void = (_book: Book): void => {
   };

@@ -176,10 +176,10 @@ export default class EntryAbility extends UIAbility {
     PersistentStorage.persistProp('searchExploreSourceSort', '');
     PersistentStorage.persistProp('bookSourceOrderRevision', 0);
     PersistentStorage.persistProp('compatSourceNoticeDismissed', false);
-    PersistentStorage.persistProp('appLightAccentColor', '#C4475B');
-    PersistentStorage.persistProp('appDarkAccentColor', '#E0697C');
-    PersistentStorage.persistProp('appLightButtonColor', '#C4475B');
-    PersistentStorage.persistProp('appDarkButtonColor', '#C4475B');
+    PersistentStorage.persistProp('appLightAccentColor', '#007DFF');
+    PersistentStorage.persistProp('appDarkAccentColor', '#4E9BFF');
+    PersistentStorage.persistProp('appLightButtonColor', '#007DFF');
+    PersistentStorage.persistProp('appDarkButtonColor', '#3F8CFF');
     // Immersive light strength: adaptive follows the system by default.
     PersistentStorage.persistProp('immersiveLightLevel', 'adaptive');
     PersistentStorage.persistProp('appIconId', AppIconSettingsStore.DEFAULT_ICON_ID);

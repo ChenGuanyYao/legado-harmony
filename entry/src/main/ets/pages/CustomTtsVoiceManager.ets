@@ -50,10 +50,10 @@ struct CustomTtsVoiceManagerPage {
   @StorageLink('ttsCloudVoiceId') ttsCloudVoiceId: string = '';
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
-  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#C4475B';
-  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#E0697C';
-  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#C4475B';
-  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#C4475B';
+  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
+  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
+  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
+  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
 

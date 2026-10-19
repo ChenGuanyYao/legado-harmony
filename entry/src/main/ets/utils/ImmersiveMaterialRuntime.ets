@@ -131,6 +131,21 @@ export class ImmersiveMaterialRuntime {
     return new SelectMenuMaterialModifier();
   }
 
+  /**
+   * 首页顶部胶囊控件（书架分类栏等）的沉浸光感底材，触摸时有光感反馈。
+   * API 26 以下返回 undefined，调用方退回实色底。
+   */
+  static capsuleControlMaterial(darkMode: boolean): uiMaterial.ImmersiveMaterial | undefined {
+    if (!ImmersiveMaterialRuntime.supportsHds()) return undefined;
+    return new uiMaterial.ImmersiveMaterial({
+      style: ImmersiveMaterialRuntime.materialStyle(),
+      materialColor: darkMode ? '#351B1D22' : '#35FFFFFF',
+      applyShadow: true,
+      interactive: ImmersiveMaterialRuntime.configuredLightLevel() !== 'weak',
+      lightEffect: ImmersiveMaterialRuntime.lightEffect(true)
+    });
+  }
+
   static selectMenuMaterial(): uiMaterial.ImmersiveMaterial | undefined {
     if (!ImmersiveMaterialRuntime.supportsHds()) return undefined;
     return new uiMaterial.ImmersiveMaterial({

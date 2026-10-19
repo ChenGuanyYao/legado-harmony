@@ -12,8 +12,8 @@ import { PageScaffold } from '../components/common/PageScaffold';
 struct BookImportPage {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
-  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#C4475B';
-  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#E0697C';
+  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
+  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
   @State isScanning: boolean = false;
   @State statusText: string = '';
 

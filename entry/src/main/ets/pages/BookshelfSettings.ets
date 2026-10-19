@@ -46,8 +46,8 @@ struct BookshelfSettingsPage {
   @StorageLink('coverGalleryUpdateTime') @Watch('onCoverGalleryUpdateTimeChanged') coverGalleryUpdateTime: number = 0;
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
-  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#C4475B';
-  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#C4475B';
+  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
+  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
 
   @State albums: CoverAlbum[] = [];
   @State albumSelectOptions: SelectOption[] = [{ value: '不使用图集' }];
@@ -887,7 +887,7 @@ struct BookshelfSettingsPage {
   privateShelfSwitchItem() {
     SettingSwitchRow({
       title: '隐私书架',
-      description: '在书架左上角显示“隐私”入口；关闭后隐私书籍仍隐藏',
+      description: '在书架“本地”分类继续左滑进入，顶部不显示入口；关闭后隐私书籍仍隐藏',
       isOn: this.privateShelfSwitchOn,
       showDivider: false,
       onChange: (checked: boolean) => {

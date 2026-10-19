@@ -27,6 +27,9 @@ import { AppSpacing } from '../theme/AppSpacing';
 @Entry
 @Component
 struct Index {
+  /** 底部页签切换时新页面滑入的距离和时长。 */
+  static readonly TAB_ENTER_DISTANCE: number = 32;
+  static readonly TAB_ENTER_DURATION: number = 260;
   private stageRuntimeController: webview.WebviewController = new webview.WebviewController();
   @State stageRuntimeMounted: boolean = true;
   private stageRuntimeResetScheduled: boolean = false;
@@ -35,6 +38,8 @@ struct Index {
   private shortcutRoutingActive: boolean = false;
   private cloudSyncDebounceTimer: number = -1;
   @State currentIndex: number = 0;
+  /** 新页签从哪一侧滑入：往右边的页签切换时从右侧进入，反之从左侧。 */
+  @State homeTabEnterOffset: number = Index.TAB_ENTER_DISTANCE;
   @State hdsMaterialRenderBranch: boolean = false;
   @State bookshelfMultiSelectActive: boolean = false;
   @State bookshelfActiveGroupId: number = 0;
@@ -42,8 +47,8 @@ struct Index {
   @StorageProp('statusBarHeight') statusBarHeight: number = 0;
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   @StorageLink('appDarkMode') @Watch('onAppDarkModeChanged') appDarkMode: boolean = false;
-  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#C4475B';
-  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#E0697C';
+  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
+  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
   @StorageLink('launchShortcutNonce') @Watch('onLaunchShortcutChanged') launchShortcutNonce: number = 0;
   @StorageLink('singleSourceSearchNonce') @Watch('onSingleSourceSearchRequested') singleSourceSearchNonce: number = 0;
   @StorageLink('globalSearchPendingNonce') @Watch('onGlobalSearchRequested') globalSearchPendingNonce: number = 0;
@@ -597,6 +602,16 @@ struct Index {
     return ReaderTtsFloatingSession.catalogCachedFlag(this.globalTtsCatalogCanonicalIndex(displayIndex));
   }
 
+  /** 页签内容的进入转场：淡入并从切换方向一侧轻微滑入；离开时直接隐藏。 */
+  homeTabEnterTransition(): TransitionEffect {
+    return TransitionEffect.asymmetric(
+      TransitionEffect.opacity(0)
+        .combine(TransitionEffect.translate({ x: this.homeTabEnterOffset }))
+        .animation({ duration: Index.TAB_ENTER_DURATION, curve: Curve.Friction }),
+      TransitionEffect.IDENTITY
+    );
+  }
+
   supportsImmersiveTabs(): boolean {
     return ImmersiveMaterialRuntime.supportsHdsTabs();
   }
@@ -617,6 +632,7 @@ struct Index {
             isBookMultiSelect: $bookshelfMultiSelectActive,
             activeShelfGroupId: $bookshelfActiveGroupId
           })
+            .transition(this.homeTabEnterTransition())
         } else {
           BlankTabPage()
         }
@@ -632,6 +648,7 @@ struct Index {
             navBarHeight: this.navBarHeight,
             isActive: true
           })
+            .transition(this.homeTabEnterTransition())
         } else {
           BlankTabPage()
         }
@@ -646,6 +663,10 @@ struct Index {
           navBarHeight: this.navBarHeight,
           isActive: this.currentIndex === 2
         })
+          // 搜索页常驻不重建，没有出现转场，用透明度和位移的隐式动画做同样的进入效果。
+          .opacity(this.currentIndex === 2 ? 1 : 0)
+          .translate({ x: this.currentIndex === 2 ? 0 : this.homeTabEnterOffset })
+          .animation({ duration: Index.TAB_ENTER_DURATION, curve: Curve.Friction })
       }
       .height('100%')
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
@@ -654,6 +675,7 @@ struct Index {
       TabContent() {
         if (this.currentIndex === 3) {
           SettingsPage({ statusBarHeight: this.statusBarHeight, navBarHeight: this.navBarHeight })
+            .transition(this.homeTabEnterTransition())
         } else {
           BlankTabPage()
         }
@@ -686,6 +708,7 @@ struct Index {
     })
     .scrollable(false)
     .onChange((index: number) => {
+      this.homeTabEnterOffset = index >= this.currentIndex ? Index.TAB_ENTER_DISTANCE : -Index.TAB_ENTER_DISTANCE;
       this.currentIndex = index;
       this.syncHomeSystemBars();
     })
@@ -706,6 +729,7 @@ struct Index {
             isBookMultiSelect: $bookshelfMultiSelectActive,
             activeShelfGroupId: $bookshelfActiveGroupId
           })
+            .transition(this.homeTabEnterTransition())
         } else {
           BlankTabPage()
         }
@@ -721,6 +745,7 @@ struct Index {
             navBarHeight: this.navBarHeight,
             isActive: true
           })
+            .transition(this.homeTabEnterTransition())
         } else {
           BlankTabPage()
         }
@@ -735,6 +760,10 @@ struct Index {
           navBarHeight: this.navBarHeight,
           isActive: this.currentIndex === 2
         })
+          // 搜索页常驻不重建，没有出现转场，用透明度和位移的隐式动画做同样的进入效果。
+          .opacity(this.currentIndex === 2 ? 1 : 0)
+          .translate({ x: this.currentIndex === 2 ? 0 : this.homeTabEnterOffset })
+          .animation({ duration: Index.TAB_ENTER_DURATION, curve: Curve.Friction })
       }
       .height('100%')
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
@@ -743,6 +772,7 @@ struct Index {
       TabContent() {
         if (this.currentIndex === 3) {
           SettingsPage({ statusBarHeight: this.statusBarHeight, navBarHeight: this.navBarHeight })
+            .transition(this.homeTabEnterTransition())
         } else {
           BlankTabPage()
         }
@@ -757,6 +787,7 @@ struct Index {
     .barBackgroundColor(ThemeRuntime.cardColor(this.appDarkMode))
     .scrollable(false)
     .onChange((index: number) => {
+      this.homeTabEnterOffset = index >= this.currentIndex ? Index.TAB_ENTER_DISTANCE : -Index.TAB_ENTER_DISTANCE;
       this.currentIndex = index;
       this.syncHomeSystemBars();
     })

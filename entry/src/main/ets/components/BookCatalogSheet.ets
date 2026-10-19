@@ -51,10 +51,10 @@ class CatalogSheetDataSource implements IDataSource {
 export struct BookCatalogSheet {
   @StorageLink('appDarkMode') appDarkMode: boolean = false;
   @StorageLink('themeRevision') themeRevision: number = 0;
-  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#C4475B';
-  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#E0697C';
-  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#C4475B';
-  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#C4475B';
+  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
+  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
+  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
+  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
   @StorageProp('navBarHeight') navBarHeight: number = 0;
   /** 宿主按当前详情拼出的书籍；目录规则可能依赖其中的 variable。 */
   book: Book = new Book();

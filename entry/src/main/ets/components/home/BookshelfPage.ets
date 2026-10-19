@@ -1,4 +1,4 @@
-import { router } from '@kit.ArkUI';
+import { CapsuleSegmentButtonV2, ColorMetrics, LengthMetrics, router, SegmentButtonV2Items } from '@kit.ArkUI';
 import { common, WantAgent, wantAgent } from '@kit.AbilityKit';
 import { backgroundTaskManager } from '@kit.BackgroundTasksKit';
 import { notificationManager } from '@kit.NotificationKit';
@@ -33,6 +33,7 @@ import { PrivateShelfStore } from '../../utils/PrivateShelfStore';
 import { RecentReadCardUpdater } from '../../utils/RecentReadCardUpdater';
 import { AppFontSize } from '../../theme/AppFontSize';
 import { AppSpacing } from '../../theme/AppSpacing';
+import { ImmersiveMaterialRuntime } from '../../utils/ImmersiveMaterialRuntime';
 
 const SHELF_FULL_TEXT_CACHE_NOTIFICATION_INTERVAL_MS: number = 5000;
 const SHELF_COVER_INITIAL_PREFETCH_COUNT: number = 16;
@@ -68,6 +69,9 @@ interface ShelfFullTextCacheTask {
 export struct BookshelfPage {
   /** 标题下方“全部 / 网络 / 本地”胶囊的高度。 */
   static readonly SCOPE_TABS_HEIGHT: number = 44;
+  /** 顶部分类栏只放这三项；隐私书架不露出入口，从“本地”继续左滑进入。 */
+  static readonly SCOPE_TAB_IDS: string[] = ['all', 'network', 'local'];
+  static readonly TYPE_FILTER_IDS: string[] = ['all', 'text', 'image', 'audio', 'video'];
   // 加密的书源封面解密完成后递增，读取它的封面会重新取到本地文件地址。
   @StorageProp('sourceCoverRevision') sourceCoverRevision: number = 0;
   @Prop statusBarHeight: number = 0;
@@ -85,6 +89,11 @@ export struct BookshelfPage {
   private shelfTileEntriesCacheKey: string = '';
   private shelfTileEntriesCache: ShelfTileSortEntry[] = [];
   @State shelfScope: string = 'all';
+  /** 分类栏上已经点中、书籍列表还在切换动画里的目标分类；空串表示跟随 shelfScope。 */
+  @State shelfScopeTabSelection: string = '';
+  private readonly shelfScopeTabItems: SegmentButtonV2Items = new SegmentButtonV2Items([
+    { text: '全部' }, { text: '网络' }, { text: '本地' }
+  ]);
   @StorageLink('privateShelfEnabled') @Watch('onPrivateShelfEnabledChanged') privateShelfEnabled: boolean = false;
   @StorageLink('privateShelfHasPassword') privateShelfHasPassword: boolean = false;
   @State privateShelfPasswordInput: string = '';
@@ -92,6 +101,9 @@ export struct BookshelfPage {
   private privateShelfUnlockDialogSession: SystemDialogSession = new SystemDialogSession();
   @State showShelfSortMenu: boolean = false;
   @State showShelfLayoutMenu: boolean = false;
+  @State showShelfFilterMenu: boolean = false;
+  /** 书架类型筛选，只在本次运行内保留（切换页签不丢，重启后回到“全部”）。 */
+  @StorageLink('bookshelfTypeFilter') shelfTypeFilter: string = 'all';
   @State showShelfGroups: boolean = false;
   @State shelfGroups: BookGroup[] = [];
   @State shelfScopeTransitionX: number = 0;
@@ -198,10 +210,10 @@ export struct BookshelfPage {
   @StorageLink('bookshelfCoverTargetBooks') @Watch('onShelfCoverSettingsChanged') bookshelfCoverTargetBooks: string = '';
   @StorageLink('bookshelfIgnoreSourceCover') @Watch('onShelfCoverSettingsChanged') bookshelfIgnoreSourceCover: boolean = false;
   @StorageLink('bookshelfCoverMode') @Watch('onShelfCoverSettingsChanged') bookshelfCoverMode: string = 'sequence';
-  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#C4475B';
-  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#E0697C';
-  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#C4475B';
-  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#C4475B';
+  @StorageLink('appLightAccentColor') appLightAccentColor: string = '#007DFF';
+  @StorageLink('appDarkAccentColor') appDarkAccentColor: string = '#4E9BFF';
+  @StorageLink('appLightButtonColor') appLightButtonColor: string = '#007DFF';
+  @StorageLink('appDarkButtonColor') appDarkButtonColor: string = '#3F8CFF';
   @StorageLink('fullTextCacheCancelNonce') @Watch('onFullTextCacheCancelNonceChanged') fullTextCacheCancelNonce: number = 0;
   @StorageLink('fullTextCacheCancelSignal') @Watch('onFullTextCacheCancelSignalChanged') fullTextCacheCancelSignal: string = '';
   @StorageLink('shelfBookCloseAnimationNonce') @Watch('onShelfBookCloseAnimationRequested')
@@ -1008,13 +1020,18 @@ export struct BookshelfPage {
                 .onClick(() => this.exitBookMultiSelect())
             } else {
               Row({ space: AppSpacing.XXS }) {
-                Text(this.books.length > 0 ? `${this.books.length}本` : '分组')
+                Text(this.shelfHeaderCountText())
                   .fontSize(AppFontSize.BODY)
                   .fontColor(this.secondaryTextColor())
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .flexShrink(1)
                 SymbolGlyph(this.showShelfGroups ? $r('sys.symbol.chevron_up') : $r('sys.symbol.chevron_down'))
                   .fontSize(14)
                   .fontColor([this.secondaryTextColor()])
               }
+              // 窄屏上右侧按钮放不下时这一段先收缩。
+              .flexShrink(1)
               .height(36)
               .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
               .alignItems(VerticalAlign.Center)
@@ -1026,6 +1043,7 @@ export struct BookshelfPage {
                 });
                 this.showShelfSortMenu = false;
                 this.showShelfLayoutMenu = false;
+                this.showShelfFilterMenu = false;
               })
 
               Blank()
@@ -1034,6 +1052,7 @@ export struct BookshelfPage {
                 this.shelfSortButton()
               }
 
+              this.shelfFilterButton()
               this.shelfLayoutButton()
             }
           }
@@ -1242,6 +1261,10 @@ export struct BookshelfPage {
 
       if (this.showShelfLayoutMenu && !this.isBookMultiSelect && !this.isTileGroupPage()) {
         this.shelfLayoutFloatingMenu()
+      }
+
+      if (this.showShelfFilterMenu && !this.isBookMultiSelect && !this.isTileGroupPage()) {
+        this.shelfFilterFloatingMenu()
       }
 
       if (this.showActionDialog && this.pendingActionBook) {
@@ -2374,6 +2397,7 @@ export struct BookshelfPage {
     this.showShelfGroups = false;
     this.showShelfSortMenu = false;
     this.showShelfLayoutMenu = false;
+    this.showShelfFilterMenu = false;
     this.selectShelfGroup(groupId);
   }
 
@@ -2388,6 +2412,7 @@ export struct BookshelfPage {
     this.selectedBookUrls = initialBookUrl ? [initialBookUrl] : [];
     this.showShelfSortMenu = false;
     this.showShelfLayoutMenu = false;
+    this.showShelfFilterMenu = false;
     this.showShelfGroups = false;
   }
 
@@ -4382,7 +4407,16 @@ export struct BookshelfPage {
     }
   }
 
+  /** 标题旁的书本数；隐私书架不在分类栏里，在这里标出当前位置。 */
+  shelfHeaderCountText(): string {
+    const count = this.books.length > 0 ? `${this.books.length}本` : '分组';
+    return this.shelfScope === 'private' ? `隐私 · ${count}` : count;
+  }
+
   shelfScopeEmptyHint(): string {
+    if (this.shelfTypeFilter !== 'all') {
+      return `没有${this.shelfTypeFilterLabel(this.shelfTypeFilter)}，可在右上角筛选里切换`;
+    }
     if (this.shelfScope === 'private') {
       return '长按书籍并选择“标记为隐私”，即可移入隐私书架';
     }
@@ -4403,17 +4437,34 @@ export struct BookshelfPage {
       const scopeMatches = scope === 'all' || scope === 'private' || (scope === 'local' ? isLocal : !isLocal);
       const groupMatches = this.activeShelfGroupId === 0 ||
         (this.activeShelfGroupId === -1 ? book.group <= 0 : book.group === this.activeShelfGroupId);
-      return scopeMatches && groupMatches;
+      return scopeMatches && groupMatches && this.matchesShelfTypeFilter(book);
     });
+  }
+
+  matchesShelfTypeFilter(book: Book): boolean {
+    switch (this.shelfTypeFilter) {
+      case 'video':
+        return BookTypeSupport.isVideo(book);
+      case 'audio':
+        return !BookTypeSupport.isVideo(book) && BookTypeSupport.isAudio(book);
+      case 'image':
+        return !BookTypeSupport.isVideo(book) && !BookTypeSupport.isAudio(book) && BookTypeSupport.isImage(book);
+      case 'text':
+        return !BookTypeSupport.isVideo(book) && !BookTypeSupport.isAudio(book) && !BookTypeSupport.isImage(book);
+      default:
+        return true;
+    }
   }
 
   setShelfScope(scope: string): void {
     const next = scope === 'local' || scope === 'network' || (scope === 'private' && this.privateShelfEnabled) ?
       scope : 'all';
+    this.shelfScopeTabSelection = '';
     if (this.shelfScope === next) return;
     this.shelfScope = next;
     this.showShelfSortMenu = false;
     this.showShelfLayoutMenu = false;
+    this.showShelfFilterMenu = false;
     this.applyShelfScope();
     this.shelfTileEntriesCacheKey = '';
     this.shelfTileEntriesCache = [];
@@ -4435,8 +4486,9 @@ export struct BookshelfPage {
     if (currentIndex < 0 || nextIndex < 0 || nextIndex >= scopes.length) {
       return;
     }
-    // 设了密码的隐私书架不能靠滑动进入，只能从下拉菜单输入密码后进入。
+    // 隐私书架不在顶部分类栏里，只能从“本地”继续左滑进入；设了密码先输密码。
     if (scopes[nextIndex] === 'private' && this.privateShelfHasPassword) {
+      this.openPrivateShelfUnlockDialog();
       return;
     }
     this.animateShelfScopeSwitch(scopes[nextIndex], offsetX < 0 ? -1 : 1);
@@ -4572,6 +4624,7 @@ export struct BookshelfPage {
   animateShelfScopeSwitch(scope: string, outgoingDirection: number): void {
     this.clearShelfScopeTransition(false);
     this.shelfScopeSwitchAnimating = true;
+    this.shelfScopeTabSelection = scope;
     animateTo({ duration: 130, curve: Curve.EaseIn }, () => {
       this.shelfScopeTransitionX = outgoingDirection * 48;
       this.shelfScopeTransitionScale = 0.985;
@@ -4631,6 +4684,7 @@ export struct BookshelfPage {
       this.shelfScopeFinishTimer = -1;
     }
     this.shelfScopeSwitchAnimating = false;
+    this.shelfScopeTabSelection = '';
     if (resetVisuals) {
       this.shelfScopeTransitionX = 0;
       this.shelfScopeTransitionScale = 1;
@@ -5829,33 +5883,53 @@ export struct BookshelfPage {
   @Builder
   shelfScopeTabs() {
     Row() {
-      ForEach(this.shelfScopeOrder(), (scope: string) => {
-        Column({ space: 3 }) {
-          Text(this.shelfScopeName(scope))
-            .fontSize(AppFontSize.BODY_LARGE)
-            .fontWeight(this.shelfScope === scope ? FontWeight.Medium : FontWeight.Regular)
-            .fontColor(this.shelfScope === scope ? this.accentColor() : this.secondaryTextColor())
-          Row()
-            .width(16)
-            .height(3)
-            .borderRadius(1.5)
-            .backgroundColor(this.shelfScope === scope ? this.accentColor() : Color.Transparent)
-        }
-        .layoutWeight(1)
-        .height('100%')
-        .justifyContent(FlexAlign.Center)
-        .alignItems(HorizontalAlign.Center)
-        .accessibilityText(this.shelfScopeName(scope))
-        .onClick(() => this.switchShelfScopeBySelection(scope))
-      }, (scope: string) => scope)
+      CapsuleSegmentButtonV2({
+        items: this.shelfScopeTabItems,
+        selectedIndex: this.shelfScopeTabIndex(),
+        onItemClicked: (index: number) => {
+          if (index >= 0 && index < BookshelfPage.SCOPE_TAB_IDS.length) {
+            this.switchShelfScopeBySelection(BookshelfPage.SCOPE_TAB_IDS[index]);
+          }
+        },
+        itemFontSize: LengthMetrics.fp(AppFontSize.BODY_LARGE),
+        itemSelectedFontSize: LengthMetrics.fp(AppFontSize.BODY_LARGE),
+        itemFontColor: ColorMetrics.resourceColor(this.secondaryTextColor()),
+        // 隐私书架不在分类栏里：停在隐私书架时选中项画成和未选中一样，三项都不高亮。
+        itemSelectedFontColor: ColorMetrics.resourceColor(this.shelfScopeTabHighlighted() ?
+          this.accentColor() : this.secondaryTextColor()),
+        itemSelectedFontWeight: this.shelfScopeTabHighlighted() ? FontWeight.Medium : FontWeight.Regular,
+        itemSelectedBackgroundColor: ColorMetrics.resourceColor(this.shelfScopeTabHighlighted() ?
+          this.shelfScopeTabSelectedColor() : Color.Transparent),
+        itemMinHeight: LengthMetrics.vp(BookshelfPage.SCOPE_TABS_HEIGHT - 8),
+        buttonMinHeight: LengthMetrics.vp(BookshelfPage.SCOPE_TABS_HEIGHT),
+        buttonPadding: LengthMetrics.vp(4),
+        buttonBackgroundColor: ImmersiveMaterialRuntime.supportsHds() ? undefined :
+          ColorMetrics.resourceColor(this.shelfScopeTabTrackColor()),
+        backgroundSystemMaterial: ImmersiveMaterialRuntime.capsuleControlMaterial(this.appDarkMode)
+      })
+        .width('100%')
     }
-    .width('100%')
+    .width(`calc(100% - ${AppSpacing.XL * 2}vp)`)
     .height(BookshelfPage.SCOPE_TABS_HEIGHT)
-    .padding({ top: 3 })
-    .borderRadius(BookshelfPage.SCOPE_TABS_HEIGHT / 2)
-    .backgroundColor(this.cardColor())
-    .shadow(ThemeRuntime.floatingControlShadow(this.appDarkMode))
     .margin({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
+  }
+
+  /** 切换动画进行中时先让分类栏跳到目标项，书籍列表的淡出淡入随后跟上。 */
+  shelfScopeTabIndex(): number {
+    const index = BookshelfPage.SCOPE_TAB_IDS.indexOf(this.shelfScopeTabSelection || this.shelfScope);
+    return index >= 0 ? index : 0;
+  }
+
+  shelfScopeTabHighlighted(): boolean {
+    return BookshelfPage.SCOPE_TAB_IDS.indexOf(this.shelfScopeTabSelection || this.shelfScope) >= 0;
+  }
+
+  shelfScopeTabSelectedColor(): string {
+    return this.appDarkMode ? '#3A3D44' : '#FFFFFF';
+  }
+
+  shelfScopeTabTrackColor(): string {
+    return this.appDarkMode ? '#24272D' : '#E9EAEC';
   }
 
   shelfScopeName(scope: string): string {
@@ -5869,6 +5943,102 @@ export struct BookshelfPage {
       return '隐私';
     }
     return '全部';
+  }
+
+  @Builder
+  shelfFilterButton() {
+    Row() {
+      SymbolGlyph($r('sys.symbol.funnel'))
+        .fontSize(20)
+        .fontColor([this.showShelfFilterMenu || this.shelfTypeFilter !== 'all' ? this.accentColor() :
+          this.primaryTextColor()])
+    }
+    .width(40)
+    .height(40)
+    .borderRadius(20)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(this.showShelfFilterMenu || this.shelfTypeFilter !== 'all' ?
+      this.selectedSoftBackgroundColor() : this.cardColor())
+    .shadow(ThemeRuntime.floatingControlShadow(this.appDarkMode))
+    .margin({ right: 10 })
+    .accessibilityText(this.shelfTypeFilter === 'all' ? '筛选书籍类型' :
+      `筛选书籍类型，当前${this.shelfTypeFilterLabel(this.shelfTypeFilter)}`)
+    .onClick(() => {
+      this.showShelfFilterMenu = !this.showShelfFilterMenu;
+      this.showShelfSortMenu = false;
+      this.showShelfLayoutMenu = false;
+      this.showShelfGroups = false;
+    })
+  }
+
+  @Builder
+  shelfFilterFloatingMenu() {
+    Row() {
+      Blank()
+      Column({ space: AppSpacing.XS }) {
+        ForEach(BookshelfPage.TYPE_FILTER_IDS, (type: string) => {
+          this.filterDropdownItem(type)
+        }, (type: string) => type)
+      }
+      .width(116)
+      .padding(AppSpacing.SM)
+      .borderRadius(ThemeRuntime.glassCornerRadius(14, 'panel'))
+      .backgroundColor(ThemeRuntime.glassPanelColor(this.appDarkMode, '', 'panel'))
+      .backdropBlur(ThemeRuntime.glassBlur('panel', 22))
+      .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.appDarkMode, 'panel') })
+      .shadow({ radius: ThemeRuntime.glassShadowRadius('panel'), color: ThemeRuntime.glassShadowColor(this.appDarkMode, 'panel'), offsetX: ThemeRuntime.glassShadowOffsetX('panel'), offsetY: ThemeRuntime.glassShadowOffsetY('panel') })
+    }
+    .width('100%')
+    // 筛选按钮右侧是布局按钮（40，间隔 10），菜单右缘对齐筛选按钮。
+    .padding({ right: AppSpacing.XL + 50 })
+    .position({ x: 0, y: this.statusBarHeight + 52 })
+    .zIndex(10)
+    .transition(this.shelfSortMenuTransition())
+  }
+
+  @Builder
+  filterDropdownItem(type: string) {
+    Row() {
+      Text(this.shelfTypeFilterLabel(type))
+        .fontSize(AppFontSize.BODY)
+        .fontWeight(this.shelfTypeFilter === type ? FontWeight.Medium : FontWeight.Regular)
+        .fontColor(this.shelfTypeFilter === type ? this.accentColor() : this.primaryTextColor())
+        .layoutWeight(1)
+
+      if (this.shelfTypeFilter === type) {
+        Text('✓')
+          .fontSize(AppFontSize.BODY)
+          .fontColor(this.accentColor())
+      }
+    }
+    .width('100%')
+    .height(34)
+    .padding({ left: 10, right: 10 })
+    .borderRadius(ThemeRuntime.mediumRadius())
+    .backgroundColor(this.shelfTypeFilter === type ? this.selectedSoftBackgroundColor() : '#00000000')
+    .alignItems(VerticalAlign.Center)
+    .onClick(() => this.applyShelfTypeFilter(type))
+  }
+
+  shelfTypeFilterLabel(type: string): string {
+    if (type === 'text') return '小说';
+    if (type === 'image') return '漫画';
+    if (type === 'audio') return '有声书';
+    if (type === 'video') return '视频';
+    return '全部';
+  }
+
+  applyShelfTypeFilter(type: string): void {
+    this.showShelfFilterMenu = false;
+    const next = BookshelfPage.TYPE_FILTER_IDS.indexOf(type) >= 0 ? type : 'all';
+    if (this.shelfTypeFilter === next) {
+      return;
+    }
+    this.shelfTypeFilter = next;
+    this.applyShelfScope();
+    this.reloadShelfDataSources(true);
+    this.refreshShelfCoverCache(this.books);
   }
 
   @Builder
@@ -5889,6 +6059,7 @@ export struct BookshelfPage {
     .onClick(() => {
       this.showShelfLayoutMenu = !this.showShelfLayoutMenu;
       this.showShelfSortMenu = false;
+      this.showShelfFilterMenu = false;
       this.showShelfGroups = false;
     })
   }
@@ -5956,6 +6127,7 @@ export struct BookshelfPage {
     // cannot be rendered alongside the expanded tile card.
     this.reloadShelfDataSources(true);
     this.showShelfLayoutMenu = false;
+    this.showShelfFilterMenu = false;
     const settings = BookshelfDisplaySettingsStore.fromStorage();
     settings.layoutMode = next;
     BookshelfDisplaySettingsStore.applyToStorage(settings);
@@ -5989,6 +6161,7 @@ export struct BookshelfPage {
     .onClick(() => {
       this.showShelfSortMenu = !this.showShelfSortMenu;
       this.showShelfLayoutMenu = false;
+      this.showShelfFilterMenu = false;
     })
   }
 
@@ -5999,8 +6172,8 @@ export struct BookshelfPage {
       this.shelfSortDropdown()
     }
     .width('100%')
-    // 排序按钮在布局按钮（40）左侧并隔开 10，菜单右缘对齐排序按钮。
-    .padding({ right: AppSpacing.XL + 50 })
+    // 排序按钮右侧依次是筛选、布局两个圆形按钮（各 40，间隔 10），菜单右缘对齐排序按钮。
+    .padding({ right: this.isTileGroupPage() ? AppSpacing.XL + 50 : AppSpacing.XL + 100 })
     .position({ x: 0, y: this.statusBarHeight + 52 })
     .zIndex(10)
     .transition(this.shelfSortMenuTransition())
