@@ -330,6 +330,10 @@ assert(indexPage.includes('this.shelfFilterButton()') &&
 assert(indexPage.includes('ImmersiveMaterialSurface({') &&
   read('entry/src/main/ets/components/ImmersiveMaterialSurface.ets').includes('barFloatingStyle({'),
   'Bookshelf header controls must sit on the HDS immersive material surface');
+assert(indexPage.includes('this.shelfMenuPopupOptions(') &&
+  indexPage.includes('ImmersiveMaterialRuntime.popupMenuMaterial(this.accentColor())') &&
+  !indexPage.includes('shelfSortFloatingMenu()') && !indexPage.includes('shelfGroupFloatingMenu()'),
+  'Bookshelf header dropdowns must use system popups with the immersive material');
 assert((indexPage.includes("this.actionItem('多选'") ||
   indexPage.includes("this.contextActionItem($r('sys.symbol.checkmark_circle'), '多选'")) &&
   indexPage.includes('this.bookMultiSelectBar()'),

@@ -131,6 +131,20 @@ export class ImmersiveMaterialRuntime {
     return new SelectMenuMaterialModifier();
   }
 
+  /**
+   * 下拉弹出菜单（bindPopup）的沉浸光感材质：随光感档位的薄材质、带投影，光感取强调色。
+   * API 26 以下返回 undefined，调用方退回磨砂底。
+   */
+  static popupMenuMaterial(accentColor: string): uiMaterial.ImmersiveMaterial | undefined {
+    if (!ImmersiveMaterialRuntime.supportsHds()) return undefined;
+    return new uiMaterial.ImmersiveMaterial({
+      style: ImmersiveMaterialRuntime.materialStyle(),
+      applyShadow: true,
+      interactive: false,
+      lightEffect: { color: accentColor }
+    });
+  }
+
   static selectMenuMaterial(): uiMaterial.ImmersiveMaterial | undefined {
     if (!ImmersiveMaterialRuntime.supportsHds()) return undefined;
     return new uiMaterial.ImmersiveMaterial({
