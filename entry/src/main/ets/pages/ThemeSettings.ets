@@ -475,7 +475,8 @@ struct ThemeSettingsPage {
       `段距 ${theme.readerLayout.paragraphSpacing} · 边距 ${theme.readerLayout.marginLeft}/${theme.readerLayout.marginRight}`;
     this.applyDialogHasCover = this.themeHasBookCover(theme);
     this.applyDialogApplyLayout = previous.themeApplyLayoutEnabled;
-    this.applyDialogApplyCover = this.applyDialogHasCover && previous.themeBookCoverEnabled;
+    // 主题带封面时默认勾选“应用主题封面”，不再沿用上次的选择。
+    this.applyDialogApplyCover = this.applyDialogHasCover;
     this.showThemeApplyDialog = true;
     return new Promise<ThemeApplyChoice | null>(
       (resolve: (choice: ThemeApplyChoice | null) => void) => {

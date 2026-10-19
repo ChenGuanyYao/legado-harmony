@@ -316,10 +316,10 @@ assert(indexPage.includes('this.shelfSortButton()') &&
   !indexPage.includes("this.sortChip('新阅读', 'recentRead')"),
   'Bookshelf sorting must use a compact dropdown selector');
 assert(indexPage.includes('this.shelfScopeTabs()') &&
-  indexPage.includes('CapsuleSegmentButtonV2({') &&
+  indexPage.includes('this.shelfScopeTabIndicatorX()') &&
   indexPage.includes("TYPE_TAB_IDS: string[] = ['all', 'text', 'image', 'audio', 'video']") &&
   indexPage.includes('this.refreshShelfTypeTabs()') &&
-  indexPage.includes('this.switchShelfScopeBySelection(this.shelfTypeTabIds[index])') &&
+  indexPage.includes('this.switchShelfScopeBySelection(id)') &&
   !indexPage.includes('expandedShelfScopeSegment()'),
   'Bookshelf tabs must switch book types, hide empty types and keep the private shelf out of the bar');
 assert(indexPage.includes('this.shelfFilterButton()') &&
@@ -334,8 +334,9 @@ assert((indexPage.includes("this.actionItem('多选'") ||
   indexPage.includes("this.contextActionItem($r('sys.symbol.checkmark_circle'), '多选'")) &&
   indexPage.includes('this.bookMultiSelectBar()'),
   'Bookshelf multi-select entry and action bar must stay connected');
-assert(indexPage.includes("this.shelfGroupChip('未分组', -1)") && indexPage.includes("Text('＋')"),
-  'Bookshelf group bar must include ungrouped and add-group actions');
+assert(indexPage.includes('this.shelfGroupSwitcher()') &&
+  indexPage.includes("this.shelfGroupMenuItem('未分组', -1)") && indexPage.includes("Text('新建分组')"),
+  'Bookshelf group menu must include ungrouped and add-group actions');
 const settingsPageSource = indexPage.slice(indexPage.indexOf('struct SettingsPage'));
 assert(settingsPageSource.includes('.backgroundColor(this.pageColor())'),
   'Mine page background is not connected to the active theme');
