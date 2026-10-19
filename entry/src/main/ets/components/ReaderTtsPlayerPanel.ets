@@ -6,6 +6,10 @@ import deviceInfo from '@ohos.deviceInfo';
 import { AppFontSize } from '../theme/AppFontSize';
 import { AppSpacing } from '../theme/AppSpacing';
 import { TtsPanelThemeBackground } from './TtsPanelThemeBackground';
+import { ImmersiveMaterialSurface } from './ImmersiveMaterialSurface';
+
+/** 顶栏圆形按钮的尺寸。 */
+const PANEL_CONTROL_SIZE: number = 40;
 
 @Component
 export struct ReaderTtsPlayerPanel {
@@ -83,17 +87,34 @@ export struct ReaderTtsPlayerPanel {
       Stack({ alignContent: Alignment.TopStart }) {
         if (this.backgroundThemeId) {
           TtsPanelThemeBackground({ themeId: this.backgroundThemeId, darkMode: this.darkMode })
+        } else {
+          this.ambientBackdrop()
         }
 
         Column({ space: AppSpacing.LG }) {
           this.header()
-          this.contentPanel()
+
+          if (this.isAudio()) {
+            this.audioHero()
+          } else {
+            this.readingCard()
+          }
+
+          if (this.statusText()) {
+            this.statusLine()
+          }
 
           if (this.isAudio()) {
             this.audioProgress()
+          } else if (this.globalTtsProgress > 0) {
+            Progress({ value: this.globalTtsProgress, total: 100, type: ProgressType.Linear })
+              .width('100%')
+              .height(3)
+              .color(this.accentColor)
+              .backgroundColor(ThemeRuntime.hairlineColor(this.darkMode))
           }
 
-          this.playbackControls()
+          this.mainControls()
 
           if (this.optionsPanel === 1) {
             this.timerOptions()
@@ -101,16 +122,15 @@ export struct ReaderTtsPlayerPanel {
             this.speedOptions()
           }
 
-          this.bottomActions()
+          this.secondaryActions()
         }
         .width('100%')
         .height('100%')
-        .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.topInset + 16, bottom: this.bottomInset + 16 })
+        .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.topInset + 8, bottom: this.bottomInset + 12 })
       }
       .width('100%')
       .height('100%')
-      .backgroundColor(this.backgroundThemeId ? Color.Transparent : this.panelColor)
-      .backdropBlur(this.backgroundThemeId ? 0 : ThemeRuntime.glassBlur('panel', 24))
+      .backgroundColor(this.backgroundThemeId ? Color.Transparent : ThemeRuntime.pageColor(this.darkMode))
       .transition(TransitionEffect.translate({ y: 520 })
         .combine(TransitionEffect.opacity(0))
         .animation({ duration: 280, curve: Curve.Friction }))
@@ -119,172 +139,233 @@ export struct ReaderTtsPlayerPanel {
     .height('100%')
   }
 
+  /** 没有主题背景图时，用封面做模糊氛围背景，渐隐到页面底色（底色层与渐变层不透明，底部无硬边）。 */
+  @Builder
+  ambientBackdrop() {
+    Stack({ alignContent: Alignment.Top }) {
+      if (this.coverSource()) {
+        Image(this.coverSource())
+          .width('100%')
+          .height(this.ambientHeight())
+          .objectFit(ImageFit.Cover)
+          .sourceSize({ width: 96, height: 128 })
+          .blur(48)
+          .opacity(this.darkMode ? 0.5 : 0.6)
+      }
+      Column()
+        .width('100%')
+        .height(this.ambientHeight())
+        .linearGradient({
+          direction: GradientDirection.Bottom,
+          colors: [
+            [this.pageColorWithAlpha('40'), 0],
+            [this.pageColorWithAlpha('33'), 0.3],
+            [this.pageColorWithAlpha('B3'), 0.7],
+            [ThemeRuntime.pageColor(this.darkMode), 1]
+          ]
+        })
+    }
+    .width('100%')
+    .height('100%')
+    .clip(true)
+    .hitTestBehavior(HitTestMode.None)
+  }
+
   @Builder
   header() {
-    Row({ space: AppSpacing.LG }) {
-      Stack({ alignContent: Alignment.Center }) {
-        Circle().width(38).height(38).fill(ThemeRuntime.accentSurfaceColor(this.darkMode))
-        SymbolGlyph($r('sys.symbol.speaker_wave_3'))
-          .fontSize(19)
-          .fontColor([this.accentColor])
-      }
+    Row() {
+      this.circleButton($r('sys.symbol.chevron_down'), '收起播放面板', () => this.close())
       Column({ space: AppSpacing.XXS }) {
-        Text(this.hostBookName || this.globalTtsBookName || '快速朗读')
-          .fontSize(AppFontSize.SUBTITLE)
+        Text(this.hostBookName || this.globalTtsBookName || (this.isAudio() ? '听书' : '快速朗读'))
+          .fontSize(AppFontSize.BODY_LARGE)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.primaryTextColor)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(this.hostChapterTitle || this.globalTtsChapterTitle || this.globalTtsChapterProgress)
+        Text(this.isAudio() ? (this.globalTtsChapterProgress || '正在听书') : '正在朗读')
           .fontSize(AppFontSize.CAPTION)
           .fontColor(this.subTextColor)
           .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
       .layoutWeight(1)
-      .alignItems(HorizontalAlign.Start)
-      SymbolGlyph($r('sys.symbol.chevron_down'))
-        .fontSize(20)
-        .fontColor([this.primaryTextColor])
-        .width(38)
-        .height(38)
-        .accessibilityText('收起播放面板')
-        .onClick(() => this.close())
+      .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
+      .alignItems(HorizontalAlign.Center)
+      // 与左侧按钮等宽的占位，让标题真正居中。
+      Column()
+        .width(PANEL_CONTROL_SIZE)
+        .height(PANEL_CONTROL_SIZE)
     }
     .width('100%')
+    .alignItems(VerticalAlign.Center)
   }
 
   @Builder
-  contentPanel() {
-    Column({ space: AppSpacing.MD }) {
-      this.bookCover()
-      if (this.statusText()) {
-        this.statusLine()
-      }
-      if (this.isAudio()) {
-        Scroll() {
-          Text(this.globalTtsContent || this.hostIntro || '暂无书籍简介')
-            .fontSize(AppFontSize.BODY_LARGE)
-            .lineHeight(25)
-            .fontColor(this.primaryTextColor)
-            .copyOption(CopyOptions.LocalDevice)
-            .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
-            .width('100%')
-        }
-        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-        .layoutWeight(1)
-        .width('100%')
-        .padding({ left: AppSpacing.XS, right: AppSpacing.XS })
-        .scrollBar(BarState.Auto)
-      } else {
-        List({ scroller: this.textScroller, space: AppSpacing.MD }) {
-          ListItem() {
-            Text(this.globalTtsTextBefore)
-              .fontSize(AppFontSize.BODY_LARGE)
-              .lineHeight(25)
-              .fontColor(this.subTextColor)
-              .width('100%')
-          }
-          ListItem() {
-            Text(this.globalTtsCurrentText || '正在定位当前朗读内容…')
-              .fontSize(AppFontSize.BODY_LARGE)
-              .fontWeight(FontWeight.Medium)
-              .lineHeight(26)
-              .fontColor(this.primaryTextColor)
-              .width('100%')
-              .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.SM, bottom: AppSpacing.SM })
-              .borderRadius(ThemeRuntime.mediumRadius())
-              .backgroundColor(ThemeRuntime.hairlineColor(this.darkMode))
-          }
-          ListItem() {
-            Text(this.globalTtsTextAfter || (this.globalTtsContent ? '' : '正在准备当前朗读内容…'))
-              .fontSize(AppFontSize.BODY_LARGE)
-              .lineHeight(25)
-              .fontColor(this.subTextColor)
-              .width('100%')
-          }
-        }
-        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-        .layoutWeight(1)
-        .width('100%')
-        .padding({ left: AppSpacing.XS, right: AppSpacing.XS })
-        .scrollBar(BarState.Auto)
-      }
-      Row() {
-        Text(this.globalTtsChapterProgress || (this.isAudio() ? '后台听书' : '正在朗读'))
-          .fontSize(AppFontSize.MICRO)
-          .fontColor(this.subTextColor)
-          .layoutWeight(1)
-        if (this.globalTtsVoiceCode) {
-          Text(this.globalTtsVoiceCode)
-            .fontSize(AppFontSize.MICRO)
-            .fontColor(this.subTextColor)
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .constraintSize({ maxWidth: 150 })
-        }
+  circleButton(icon: Resource, label: string, action: () => void) {
+    ImmersiveMaterialSurface({
+      surfaceWidth: PANEL_CONTROL_SIZE,
+      surfaceHeight: PANEL_CONTROL_SIZE,
+      darkMode: this.darkMode,
+      fallbackColor: ThemeRuntime.cardColor(this.darkMode),
+      glowColor: this.accentGlowColor()
+    }) {
+      Stack() {
+        SymbolGlyph(icon)
+          .fontSize(20)
+          .fontColor([this.primaryTextColor])
       }
       .width('100%')
-      if (!this.isAudio() && this.globalTtsProgress > 0) {
-        Progress({ value: this.globalTtsProgress, total: 100, type: ProgressType.Linear })
+      .height('100%')
+      .accessibilityText(label)
+      .onClick(() => action())
+    }
+  }
+
+  /** 听书：大封面居中，下面是章节名、进度与简介。 */
+  @Builder
+  audioHero() {
+    Column({ space: AppSpacing.MD }) {
+      Stack() {
+        this.heroCover(Math.round(this.coverHeight() * 0.75), this.coverHeight())
+      }
+      .shadow({ radius: 24, color: this.darkMode ? '#73000000' : '#40000000', offsetX: 0, offsetY: 10 })
+      .margin({ top: AppSpacing.SM })
+
+      Text(this.hostChapterTitle || this.globalTtsChapterTitle || '正在获取章节…')
+        .fontSize(AppFontSize.SUBTITLE)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(this.primaryTextColor)
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .textAlign(TextAlign.Center)
+        .margin({ top: AppSpacing.SM })
+
+      Scroll() {
+        Text(this.globalTtsContent || this.hostIntro || '暂无书籍简介')
+          .fontSize(AppFontSize.BODY)
+          .lineHeight(22)
+          .fontColor(this.subTextColor)
+          .copyOption(CopyOptions.LocalDevice)
+          .textSelectable(TextSelectableMode.SELECTABLE_FOCUSABLE)
           .width('100%')
-          .height(3)
-          .color(this.accentColor)
-          .backgroundColor(ThemeRuntime.hairlineColor(this.darkMode))
+      }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+      .layoutWeight(1)
+      .width('100%')
+      .scrollBar(BarState.Off)
+    }
+    .layoutWeight(1)
+    .width('100%')
+    .alignItems(HorizontalAlign.Center)
+  }
+
+  /** 朗读：当前朗读文字放在玻璃卡片里，上下文浅色，当前句高亮并自动居中。 */
+  @Builder
+  readingCard() {
+    Column({ space: AppSpacing.MD }) {
+      Row({ space: AppSpacing.MD }) {
+        this.heroCover(42, 56)
+        Column({ space: AppSpacing.XXS }) {
+          Text(this.hostChapterTitle || this.globalTtsChapterTitle || '正在朗读')
+            .fontSize(AppFontSize.BODY)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.primaryTextColor)
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Text(this.globalTtsChapterProgress || '')
+            .fontSize(AppFontSize.CAPTION)
+            .fontColor(this.subTextColor)
+            .maxLines(1)
+        }
+        .layoutWeight(1)
+        .alignItems(HorizontalAlign.Start)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      List({ scroller: this.textScroller, space: AppSpacing.MD }) {
+        ListItem() {
+          Text(this.globalTtsTextBefore)
+            .fontSize(AppFontSize.BODY_LARGE)
+            .lineHeight(26)
+            .fontColor(this.subTextColor)
+            .width('100%')
+        }
+        ListItem() {
+          Text(this.globalTtsCurrentText || '正在定位当前朗读内容…')
+            .fontSize(AppFontSize.SUBTITLE)
+            .fontWeight(FontWeight.Medium)
+            .lineHeight(28)
+            .fontColor(this.primaryTextColor)
+            .width('100%')
+            .padding({ left: AppSpacing.MD, right: AppSpacing.MD, top: AppSpacing.SM, bottom: AppSpacing.SM })
+            .borderRadius(ThemeRuntime.mediumRadius())
+            .backgroundColor(ThemeRuntime.accentSurfaceColor(this.darkMode))
+        }
+        ListItem() {
+          Text(this.globalTtsTextAfter || (this.globalTtsContent ? '' : '正在准备当前朗读内容…'))
+            .fontSize(AppFontSize.BODY_LARGE)
+            .lineHeight(26)
+            .fontColor(this.subTextColor)
+            .width('100%')
+        }
+      }
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+      .layoutWeight(1)
+      .width('100%')
+      .scrollBar(BarState.Off)
+
+      if (ReaderTtsFloatingSession.ttsVoiceTitles().length > 0) {
+        Row() {
+          this.ttsVoiceSelect()
+        }
+        .width('100%')
       }
     }
     .layoutWeight(1)
     .width('100%')
     .padding(AppSpacing.LG)
     .borderRadius(ThemeRuntime.largeRadius())
-    .backgroundColor(ThemeRuntime.accentSurfaceColor(this.darkMode))
-    .border({ width: ThemeRuntime.glassBorderWidth('panel'), color: ThemeRuntime.glassBorderColor(this.darkMode) })
+    .backgroundColor(this.darkMode ? '#991C1C1E' : '#B3FFFFFF')
+    .border({ width: 0.5, color: this.darkMode ? '#26FFFFFF' : '#E6FFFFFF' })
   }
 
   @Builder
-  bookCover() {
+  heroCover(width: number, height: number) {
     Stack({ alignContent: Alignment.Center }) {
       if (this.coverSource()) {
         Image(this.coverSource())
           .width('100%')
           .height('100%')
-          .objectFit(ImageFit.Contain)
+          .objectFit(ImageFit.Cover)
+          .sourceSize({ width: 480, height: 640 })
         if (this.globalTtsCoverFrame) {
           Image(this.globalTtsCoverFrame)
             .width('100%')
             .height('100%')
-            .objectFit(ImageFit.Contain)
+            .objectFit(ImageFit.Fill)
         }
       } else if (this.themePlaceholderCover()) {
         Image(this.themePlaceholderCover())
           .width('100%')
           .height('100%')
-          .objectFit(ImageFit.Contain)
+          .objectFit(ImageFit.Cover)
         if (this.themePlaceholderFrame()) {
           Image(this.themePlaceholderFrame())
             .width('100%')
             .height('100%')
-            .objectFit(ImageFit.Contain)
+            .objectFit(ImageFit.Fill)
         }
       } else {
-        Column() {
-          Text(this.globalTtsBookName ? this.globalTtsBookName.substring(0, 1) : '书')
-            .fontSize(42)
-            .fontColor(ThemeRuntime.onAccentColor())
-        }
-        .width('58%')
-        .height('88%')
-        .constraintSize({ maxWidth: 260, maxHeight: 360 })
-        .borderRadius(ThemeRuntime.mediumRadius())
-        .backgroundColor(this.accentColor)
-        .justifyContent(FlexAlign.Center)
+        Text(this.coverInitial())
+          .fontSize(Math.max(16, Math.round(height * 0.22)))
+          .fontColor(ThemeRuntime.onAccentColor())
       }
     }
-    .width('100%')
-    .height(this.coverHeight())
-    .padding(AppSpacing.MD)
-    .borderRadius(ThemeRuntime.mediumRadius())
+    .width(width)
+    .height(height)
+    .borderRadius(height > 100 ? 14 : 6)
     .clip(true)
+    .backgroundColor(this.accentColor)
   }
 
   @Builder
@@ -311,85 +392,104 @@ export struct ReaderTtsPlayerPanel {
     .accessibilityText(this.statusText())
   }
 
+  /** 主控制区：上一章、大号播放键、下一章。 */
   @Builder
-  playbackControls() {
+  mainControls() {
     Row() {
-      this.control($r('sys.symbol.timer'), this.globalTtsTimerMinutes > 0 ?
-        `${Math.max(1, Math.ceil(this.globalTtsTimerRemainingSeconds / 60))}分` : '定时', true,
-        () => this.optionsPanel = this.optionsPanel === 1 ? 0 : 1)
-      this.control($r('sys.symbol.arrow_left'), '上一章', this.globalTtsCanPrevious,
+      this.chapterButton($r('sys.symbol.backward_end_fill'), '上一章', this.globalTtsCanPrevious,
         () => ReaderTtsFloatingSession.previous())
-      this.playbackControl()
-      this.control($r('sys.symbol.arrow_right'), '下一章', this.globalTtsCanNext,
-        () => ReaderTtsFloatingSession.next())
-      this.speedControl()
-    }
-    .width('100%')
-  }
-
-  @Builder
-  playbackControl() {
-    Column({ space: AppSpacing.SM }) {
       Stack({ alignContent: Alignment.Center }) {
-        Circle().width(46).height(46).fill(this.playButtonColor)
+        Circle().width(68).height(68).fill(this.playButtonColor)
         if (this.isBusy()) {
           LoadingProgress()
-            .width(28)
-            .height(28)
+            .width(36)
+            .height(36)
             .color(ThemeRuntime.onAccentColor())
         } else {
-          SymbolGlyph(this.isPaused() ? $r('sys.symbol.play') : $r('sys.symbol.pause'))
+          SymbolGlyph(this.isPaused() ? $r('sys.symbol.play_fill') : $r('sys.symbol.pause_fill'))
             .id(`shared_tts_panel_playback_${this.isPaused()}`)
-            .fontSize(23)
+            .fontSize(30)
             .fontColor([ThemeRuntime.onAccentColor()])
         }
       }
-      Text(this.isBusy() ? '加载中' : (this.isPaused() ? '播放' : '暂停'))
-        .fontSize(AppFontSize.MICRO)
-        .fontColor(this.subTextColor)
+      .width(68)
+      .height(68)
+      .borderRadius(34)
+      .shadow({ radius: 16, color: this.darkMode ? '#66000000' : '#33000000', offsetX: 0, offsetY: 6 })
+      .clickEffect({ level: ClickEffectLevel.MIDDLE, scale: 0.92 })
+      .accessibilityText(this.isBusy() ? '正在加载' : (this.isPaused() ? '播放' : '暂停'))
+      .onClick(() => {
+        if (!this.isBusy()) this.onTogglePlayback();
+      })
+      this.chapterButton($r('sys.symbol.forward_end_fill'), '下一章', this.globalTtsCanNext,
+        () => ReaderTtsFloatingSession.next())
     }
-    .layoutWeight(1)
-    .height(68)
-    .justifyContent(FlexAlign.Center)
-    .accessibilityText(this.isBusy() ? '正在加载' : (this.isPaused() ? '播放' : '暂停'))
+    .width('100%')
+    .justifyContent(FlexAlign.SpaceEvenly)
+    .alignItems(VerticalAlign.Center)
+  }
+
+  @Builder
+  chapterButton(icon: Resource, label: string, enabled: boolean, action: () => void) {
+    Stack({ alignContent: Alignment.Center }) {
+      SymbolGlyph(icon)
+        .fontSize(30)
+        .fontColor([enabled ? this.primaryTextColor : this.subTextColor])
+    }
+    .width(56)
+    .height(56)
+    .opacity(enabled ? 1 : 0.4)
+    .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.9 })
+    .accessibilityText(label)
     .onClick(() => {
-      if (!this.isBusy()) this.onTogglePlayback();
+      if (enabled) action();
     })
   }
 
+  /** 底部一排：定时、倍速、音色（听书）、目录、停止；开启的选项用主题色，停止用警示色。 */
   @Builder
-  control(icon: Resource, label: string, enabled: boolean, action: () => void) {
-    Column({ space: AppSpacing.SM }) {
-      Stack({ alignContent: Alignment.Center }) {
-        Circle().width(38).height(38).fill(ThemeRuntime.hairlineColor(this.darkMode))
-        SymbolGlyph(icon)
-          .fontSize(19)
-          .fontColor([enabled ? this.primaryTextColor : this.subTextColor])
+  secondaryActions() {
+    Row() {
+      this.secondaryItem($r('sys.symbol.timer'), this.globalTtsTimerMinutes > 0 ?
+        `${Math.max(1, Math.ceil(this.globalTtsTimerRemainingSeconds / 60))}分` : '定时',
+        this.globalTtsTimerMinutes > 0 || this.optionsPanel === 1, false,
+        () => this.optionsPanel = this.optionsPanel === 1 ? 0 : 1)
+      this.secondaryItem($r('sys.symbol.hourglass'), `${this.globalTtsSpeed.toFixed(1)}x`,
+        Math.abs(this.globalTtsSpeed - 1) > 0.01 || this.optionsPanel === 2, false,
+        () => this.optionsPanel = this.optionsPanel === 2 ? 0 : 2)
+      if (this.isAudio()) {
+        this.secondaryItem($r('sys.symbol.speaker_wave_3'),
+          this.globalTtsVoiceCode ? `音色 ${this.globalTtsVoiceCode}` : '音色', false, false,
+          () => this.onOpenVoice())
       }
-      Text(label).fontSize(AppFontSize.MICRO).fontColor(this.subTextColor)
+      this.secondaryItem($r('sys.symbol.list_bullet'), '目录', false, false, () => this.onOpenCatalog())
+      this.secondaryItem($r('sys.symbol.stop_circle'), '停止', false, true, () => {
+        this.close();
+        ReaderTtsFloatingSession.stop();
+      })
     }
-    .layoutWeight(1)
-    .height(68)
-    .justifyContent(FlexAlign.Center)
-    .opacity(enabled ? 1 : 0.45)
-    .onClick(() => { if (enabled) action(); })
+    .width('100%')
+    .padding({ top: AppSpacing.XS })
   }
 
   @Builder
-  speedControl() {
-    Column({ space: AppSpacing.SM }) {
-      Stack({ alignContent: Alignment.Center }) {
-        Circle().width(38).height(38).fill(ThemeRuntime.hairlineColor(this.darkMode))
-        SymbolGlyph($r('sys.symbol.hourglass'))
-          .fontSize(19)
-          .fontColor([this.primaryTextColor])
-      }
-      Text(`${this.globalTtsSpeed.toFixed(1)}x`).fontSize(AppFontSize.MICRO).fontColor(this.subTextColor)
+  secondaryItem(icon: Resource, label: string, active: boolean, danger: boolean, action: () => void) {
+    Column({ space: AppSpacing.XS }) {
+      SymbolGlyph(icon)
+        .fontSize(22)
+        .fontColor([danger ? ThemeRuntime.dangerColor(this.darkMode) : (active ? this.accentColor : this.primaryTextColor)])
+      Text(label)
+        .fontSize(AppFontSize.CAPTION)
+        .fontColor(danger ? ThemeRuntime.dangerColor(this.darkMode) : (active ? this.accentColor : this.subTextColor))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
     }
     .layoutWeight(1)
-    .height(68)
+    .height(56)
     .justifyContent(FlexAlign.Center)
-    .onClick(() => this.optionsPanel = this.optionsPanel === 2 ? 0 : 2)
+    .clickEffect({ level: ClickEffectLevel.LIGHT, scale: 0.92 })
+    .accessibilityText(label)
+    .onClick(action)
   }
 
   @Builder
@@ -548,84 +648,6 @@ export struct ReaderTtsPlayerPanel {
     .width('100%')
   }
 
-  /**
-   * Voice, catalog and stop share one row so the reading text keeps the panel
-   * height. Both reader modes use this row; their footers only differ in where
-   * the voice list comes from.
-   */
-  @Builder
-  bottomActions() {
-    Row({ space: AppSpacing.MD }) {
-      if (this.isAudio()) {
-        this.voiceButton()
-      } else if (ReaderTtsFloatingSession.ttsVoiceTitles().length > 0) {
-        this.ttsVoiceSelect()
-      }
-      this.bottomAction($r('sys.symbol.list_bullet'), '目录', '目录跳转', false,
-        () => this.onOpenCatalog())
-      this.bottomAction($r('sys.symbol.stop_circle_fill'), '停止',
-        this.isAudio() ? '停止听书' : '停止朗读', true, () => {
-          this.close();
-          ReaderTtsFloatingSession.stop();
-        })
-    }
-    .width('100%')
-    .height(44)
-    .alignItems(VerticalAlign.Center)
-  }
-
-  @Builder
-  bottomAction(icon: Resource, label: string, accessibility: string, danger: boolean,
-    action: () => void) {
-    Row({ space: AppSpacing.XS }) {
-      SymbolGlyph(icon)
-        .fontSize(16)
-        .fontColor([danger ? ThemeRuntime.onAccentColor() : this.primaryTextColor])
-      Text(label)
-        .fontSize(AppFontSize.CAPTION)
-        .fontColor(danger ? ThemeRuntime.onAccentColor() : this.primaryTextColor)
-        .maxLines(1)
-    }
-    .height(44)
-    .padding({ left: AppSpacing.MD, right: AppSpacing.MD })
-    .borderRadius(ThemeRuntime.mediumRadius())
-    .backgroundColor(danger ? ThemeRuntime.dangerColor(this.darkMode) : (ThemeRuntime.softFillColor(this.darkMode)))
-    .border({ width: danger ? 0 : ThemeRuntime.glassBorderWidth('button'),
-      color: ThemeRuntime.glassBorderColor(this.darkMode, 'button') })
-    .alignItems(VerticalAlign.Center)
-    .accessibilityText(accessibility)
-    .onClick(action)
-  }
-
-  /** Voice entry for the audio mode, whose voice list comes from the book source. */
-  @Builder
-  voiceButton() {
-    Row({ space: AppSpacing.SM }) {
-      SymbolGlyph($r('sys.symbol.speaker_wave_3'))
-        .fontSize(16)
-        .fontColor([this.accentColor])
-      Text(`音色 · ${this.globalTtsVoiceCode || '4'}`)
-        .fontSize(AppFontSize.BODY)
-        .fontColor(this.primaryTextColor)
-        .maxLines(1)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .layoutWeight(1)
-      SymbolGlyph($r('sys.symbol.chevron_down'))
-        .fontSize(13)
-        .fontColor([this.subTextColor])
-    }
-    .layoutWeight(1)
-    .height(44)
-    .padding({ left: AppSpacing.LG, right: AppSpacing.MD })
-    .borderRadius(ThemeRuntime.mediumRadius())
-    .backgroundColor(ThemeRuntime.softFillColor(this.darkMode))
-    .border({ width: ThemeRuntime.glassBorderWidth('button'),
-      color: ThemeRuntime.glassBorderColor(this.darkMode, 'button') })
-    .alignItems(VerticalAlign.Center)
-    .accessibilityText('选择音色')
-    .onClick(() => this.onOpenVoice())
-  }
-
   close(): void {
     this.optionsPanel = 0;
     this.onClose();
@@ -661,8 +683,25 @@ export struct ReaderTtsPlayerPanel {
   }
 
   coverHeight(): number {
-    return Math.min(250, Math.max(130,
-      (Math.max(1, this.viewportHeight) - this.topInset - this.bottomInset) * 0.32));
+    return Math.round(Math.min(300, Math.max(150,
+      (Math.max(1, this.viewportHeight) - this.topInset - this.bottomInset) * 0.36)));
+  }
+
+  ambientHeight(): number {
+    return Math.round(Math.max(360, (Math.max(1, this.viewportHeight)) * 0.6));
+  }
+
+  coverInitial(): string {
+    const name = this.hostBookName || this.globalTtsBookName;
+    return name ? name.substring(0, 1) : '书';
+  }
+
+  pageColorWithAlpha(alpha: string): string {
+    return `#${alpha}${ThemeRuntime.pageColor(this.darkMode).substring(1)}`;
+  }
+
+  accentGlowColor(): string {
+    return `#40${ThemeRuntime.accentColor(this.darkMode).substring(1)}`;
   }
 
   scrollToCurrentSentence(smooth: boolean): void {
