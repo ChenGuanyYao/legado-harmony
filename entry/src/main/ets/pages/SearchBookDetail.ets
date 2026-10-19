@@ -1484,7 +1484,7 @@ struct SearchBookDetailPage {
 
   /** 字数、更新时间这类中性信息标签：同样的沉浸光感胶囊，用输入框底色染色。 */
   neutralTagModifier(): GlassTagModifier {
-    return new GlassTagModifier(this.secondaryTextColor(), this.appDarkMode);
+    return new GlassTagModifier(this.appDarkMode);
   }
 
   @Builder

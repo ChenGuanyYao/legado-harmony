@@ -1036,7 +1036,7 @@ export struct SearchPage {
               .height(34)
               .padding({ left: AppSpacing.LG, right: AppSpacing.LG })
               .margin({ right: AppSpacing.SM, bottom: AppSpacing.SM })
-              .attributeModifier(new GlassTagModifier(this.accentColor(), this.appDarkMode))
+              .attributeModifier(new GlassTagModifier(this.appDarkMode))
               .priorityGesture(
                 GestureGroup(GestureMode.Exclusive,
                   LongPressGesture({ repeat: false })

@@ -74,32 +74,28 @@ export class ImmersiveTagModifier implements AttributeModifier<CommonAttribute> 
 }
 
 /**
- * 玻璃标签：放在有图像的背景上（如模糊封面行、详情页氛围背景）时使用。
- * API 26+ 用透明的组件级沉浸材质叠一层半透明白（深色模式为深色玻璃），交互光感取标签文字色；
- * 旧系统画半透明白底加细边。文字颜色由调用处设置，按序号配色不变。
+ * 玻璃标签（白玻璃彩字）：放在有图像的背景上（模糊封面行、详情页氛围背景、弹出层）时使用。
+ * 半透明白底自上而下略淡、上沿稍亮，模糊标签背后的内容，再加白色细边与很浅的投影；
+ * 直接绘制而不用组件级系统材质（后者在真机上几乎不可见），各系统版本效果一致。
+ * 文字颜色由调用处按序号配色设置。
  */
 export class GlassTagModifier implements AttributeModifier<CommonAttribute> {
-  private lightColor: string;
   private darkMode: boolean;
 
-  /** @param lightColor 标签文字色，用作交互光感颜色 */
-  constructor(lightColor: string, darkMode: boolean) {
-    this.lightColor = lightColor;
+  constructor(darkMode: boolean) {
     this.darkMode = darkMode;
   }
 
   applyNormalAttribute(instance: CommonAttribute): void {
-    const material = ImmersiveMaterialRuntime.glassTagMaterial(this.lightColor, this.darkMode);
-    if (material !== undefined) {
-      instance.backgroundColor(Color.Transparent);
-      instance.systemMaterial(material);
-      // 离屏合成会把材质压成平面，保持逐层绘制。
-      instance.renderGroup(false);
-    } else {
-      instance.backgroundColor(this.darkMode ? '#4D1B1D22' : '#B3FFFFFF');
-      instance.border({ width: 0.5, color: this.darkMode ? '#26FFFFFF' : '#14000000' });
-      instance.shadow({ radius: 6, color: this.darkMode ? '#33000000' : '#14000000', offsetX: 0, offsetY: 2 });
-    }
+    instance.linearGradient({
+      direction: GradientDirection.Bottom,
+      colors: this.darkMode ?
+        [['#40FFFFFF', 0], ['#26FFFFFF', 0.5], ['#1FFFFFFF', 1]] :
+        [['#BFFFFFFF', 0], ['#8CFFFFFF', 0.5], ['#80FFFFFF', 1]]
+    });
+    instance.backdropBlur(10);
+    instance.border({ width: 0.5, color: this.darkMode ? '#33FFFFFF' : '#E6FFFFFF' });
+    instance.shadow({ radius: 4, color: this.darkMode ? '#33000000' : '#1A000000', offsetX: 0, offsetY: 1 });
     instance.borderRadius(ImmersiveTagModifier.CAPSULE_RADIUS);
   }
 }
@@ -266,28 +262,6 @@ export class ImmersiveMaterialRuntime {
       options.backgroundBlurStyle = BlurStyle.COMPONENT_THICK;
     }
     return options;
-  }
-
-  private static glassTagMaterials: Map<string, uiMaterial.ImmersiveMaterial> =
-    new Map<string, uiMaterial.ImmersiveMaterial>();
-
-  /** 玻璃标签材质按光感颜色、光感档位与深浅模式缓存；组件级材质只要 API 26 就能绘制。 */
-  static glassTagMaterial(lightColor: string, darkMode: boolean): uiMaterial.ImmersiveMaterial | undefined {
-    if (deviceInfo.sdkApiVersion < 26) return undefined;
-    const light = /^#[0-9A-Fa-f]{6}$/.test(lightColor) ? lightColor : '#FFFFFF';
-    const style = ImmersiveMaterialRuntime.materialStyle();
-    const key = `${light}|${style}|${darkMode ? 'dark' : 'light'}`;
-    const cached = ImmersiveMaterialRuntime.glassTagMaterials.get(key);
-    if (cached !== undefined) return cached;
-    const material = new uiMaterial.ImmersiveMaterial({
-      style: style,
-      materialColor: darkMode ? '#401B1D22' : '#66FFFFFF',
-      applyShadow: true,
-      interactive: true,
-      lightEffect: { color: light }
-    });
-    ImmersiveMaterialRuntime.glassTagMaterials.set(key, material);
-    return material;
   }
 
   /**

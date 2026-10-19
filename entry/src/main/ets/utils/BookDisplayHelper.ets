@@ -239,9 +239,9 @@ export class BookDisplayHelper {
       BookDisplayHelper.getTagTextColor(index, darkMode), darkMode);
   }
 
-  /** 放在图像背景上的玻璃标签，文字色与 getTagTextColor 同序号。 */
-  static getGlassTagModifier(index: number, darkMode: boolean): GlassTagModifier {
-    return new GlassTagModifier(BookDisplayHelper.getTagTextColor(index, darkMode), darkMode);
+  /** 放在图像背景上的白玻璃标签；文字色由调用处按 getTagTextColor 同序号设置。 */
+  static getGlassTagModifier(_index: number, darkMode: boolean): GlassTagModifier {
+    return new GlassTagModifier(darkMode);
   }
 
   static getTagBackgroundColor(index: number, darkMode: boolean): string {
