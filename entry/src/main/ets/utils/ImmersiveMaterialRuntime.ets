@@ -16,38 +16,60 @@ export class SelectMenuMaterialModifier implements AttributeModifier<SelectAttri
 }
 
 /**
- * 彩色标签的沉浸光感胶囊：API 26+ 用透明的组件级沉浸材质（不压实色底），只叠一层很淡的标签文字色，
- * 交互光感也取这个颜色，按下时按标签自己的颜色泛光；边缘高光交给材质，不另画描边。
- * 旧系统画标签原本的浅底色。文字颜色由调用处照旧设置，按序号配色的规则不变。
+ * 彩色标签的玻璃胶囊：标签原浅底色上叠一层自上而下的高光渐变、一圈同色系半透明细边，
+ * 再用标签文字色做很淡的柔和投影，让标签像悬浮栏的沉浸材质那样有反光、轮廓和浮起感。
+ * 组件级系统材质放在不透明卡片里没有可透出的内容，几乎看不见，所以这里直接画出这三层，
+ * 各系统版本效果一致。文字颜色由调用处照旧设置，按序号配色的规则不变。
  */
 export class ImmersiveTagModifier implements AttributeModifier<CommonAttribute> {
   static readonly CAPSULE_RADIUS: number = 999;
-  private fallbackColor: string;
+  private surfaceColor: string;
   private lightColor: string;
   private darkMode: boolean;
 
   /**
-   * @param fallbackColor 旧系统上的底色（标签原本的浅底色）
-   * @param lightColor 标签文字色，用于材质淡染与光感颜色
+   * @param surfaceColor 标签原本的浅底色
+   * @param lightColor 标签文字色，用于边缘与投影的色调
    */
-  constructor(fallbackColor: string, lightColor: string, darkMode: boolean) {
-    this.fallbackColor = fallbackColor;
+  constructor(surfaceColor: string, lightColor: string, darkMode: boolean) {
+    this.surfaceColor = surfaceColor;
     this.lightColor = lightColor;
     this.darkMode = darkMode;
   }
 
   applyNormalAttribute(instance: CommonAttribute): void {
-    const material = ImmersiveMaterialRuntime.tagMaterial(this.lightColor, this.darkMode);
-    if (material !== undefined) {
-      instance.backgroundColor(Color.Transparent);
-      instance.systemMaterial(material);
-      // 离屏合成会把材质压成平面，保持逐层绘制。
-      instance.renderGroup(false);
-    } else {
-      instance.backgroundColor(this.fallbackColor);
+    const surface = ImmersiveTagModifier.isHex(this.surfaceColor) ? this.surfaceColor : '#F0F0F0';
+    // 顶部向白色提亮，模拟玻璃上沿的反光；深色模式提亮幅度小一些。
+    const highlight = ImmersiveTagModifier.mixWithWhite(surface, this.darkMode ? 0.14 : 0.7);
+    instance.linearGradient({
+      direction: GradientDirection.Bottom,
+      colors: [[highlight, 0], [surface, 0.62], [surface, 1]]
+    });
+    if (ImmersiveTagModifier.isHex(this.lightColor)) {
+      const tone = this.lightColor.substring(1);
+      instance.border({ width: 0.75, color: `${this.darkMode ? '#4D' : '#3D'}${tone}` });
+      instance.shadow({
+        radius: 6,
+        color: `${this.darkMode ? '#33' : '#2E'}${tone}`,
+        offsetX: 0,
+        offsetY: 2
+      });
     }
     // 胶囊形：圆角超过高度一半时按一半绘制。
     instance.borderRadius(ImmersiveTagModifier.CAPSULE_RADIUS);
+  }
+
+  private static isHex(color: string): boolean {
+    return /^#[0-9A-Fa-f]{6}$/.test(color);
+  }
+
+  private static mixWithWhite(hex: string, ratio: number): string {
+    const channel = (start: number): string => {
+      const value = parseInt(hex.substring(start, start + 2), 16);
+      const mixed = Math.round(value + (255 - value) * ratio);
+      return mixed.toString(16).padStart(2, '0').toUpperCase();
+    };
+    return `#${channel(1)}${channel(3)}${channel(5)}`;
   }
 }
 
@@ -212,29 +234,6 @@ export class ImmersiveMaterialRuntime {
       options.backgroundBlurStyle = BlurStyle.COMPONENT_THICK;
     }
     return options;
-  }
-
-  private static tagMaterials: Map<string, uiMaterial.ImmersiveMaterial> = new Map<string, uiMaterial.ImmersiveMaterial>();
-
-  /**
-   * 标签材质按颜色、光感档位与深浅模式缓存，列表里大量标签共用同一个实例。
-   * 组件级材质只要 API 26 就能绘制，不依赖设备的沉浸能力查询结果。
-   */
-  static tagMaterial(lightColor: string, darkMode: boolean): uiMaterial.ImmersiveMaterial | undefined {
-    if (deviceInfo.sdkApiVersion < 26 || !/^#[0-9A-Fa-f]{6}$/.test(lightColor)) return undefined;
-    const style = ImmersiveMaterialRuntime.materialStyle();
-    const key = `${lightColor}|${style}|${darkMode ? 'dark' : 'light'}`;
-    const cached = ImmersiveMaterialRuntime.tagMaterials.get(key);
-    if (cached !== undefined) return cached;
-    const material = new uiMaterial.ImmersiveMaterial({
-      style: style,
-      materialColor: `${darkMode ? '#26' : '#14'}${lightColor.substring(1)}`,
-      applyShadow: false,
-      interactive: true,
-      lightEffect: { color: lightColor }
-    });
-    ImmersiveMaterialRuntime.tagMaterials.set(key, material);
-    return material;
   }
 
   static selectMenuMaterial(): uiMaterial.ImmersiveMaterial | undefined {
