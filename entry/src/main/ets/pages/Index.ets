@@ -37,7 +37,9 @@ struct Index {
   private stageRuntimeAttachRetryId: number = -1;
   private shortcutRoutingActive: boolean = false;
   private cloudSyncDebounceTimer: number = -1;
-  @State currentIndex: number = 0;
+  @State @Watch('onCurrentIndexChanged') currentIndex: number = 0;
+  /** 发现页第一次打开后常驻，切走只停用不销毁，回来时直接显示已加载的分类和列表。 */
+  @State exploreTabMounted: boolean = false;
   /** 新页签从哪一侧滑入：往右边的页签切换时从右侧进入，反之从左侧。 */
   @State homeTabEnterOffset: number = Index.TAB_ENTER_DISTANCE;
   @State hdsMaterialRenderBranch: boolean = false;
@@ -195,6 +197,12 @@ struct Index {
     this.bookshelfMultiSelectActive = false;
     this.currentIndex = 2;
     this.syncHomeSystemBars();
+  }
+
+  onCurrentIndexChanged(): void {
+    if (this.currentIndex === 1) {
+      this.exploreTabMounted = true;
+    }
   }
 
   onBookSourceExploreRefreshRequested(): void {
@@ -642,13 +650,17 @@ struct Index {
       .tabBar(this.bottomTabBar(this.navigationIcon('bookshelf'), '书架'))
 
       TabContent() {
-        if (this.currentIndex === 1) {
+        if (this.exploreTabMounted) {
           ExplorePage({
             statusBarHeight: this.statusBarHeight,
             navBarHeight: this.navBarHeight,
-            isActive: true
+            isActive: this.currentIndex === 1
           })
             .transition(this.homeTabEnterTransition())
+            // 常驻后切回来不会再触发出现转场，与搜索页一样用隐式动画做进入效果。
+            .opacity(this.currentIndex === 1 ? 1 : 0)
+            .translate({ x: this.currentIndex === 1 ? 0 : this.homeTabEnterOffset })
+            .animation({ duration: Index.TAB_ENTER_DURATION, curve: Curve.Friction })
         } else {
           BlankTabPage()
         }
@@ -739,13 +751,17 @@ struct Index {
       .tabBar(this.compatTabBar(this.navigationIcon('bookshelf'), '书架', 0))
 
       TabContent() {
-        if (this.currentIndex === 1) {
+        if (this.exploreTabMounted) {
           ExplorePage({
             statusBarHeight: this.statusBarHeight,
             navBarHeight: this.navBarHeight,
-            isActive: true
+            isActive: this.currentIndex === 1
           })
             .transition(this.homeTabEnterTransition())
+            // 常驻后切回来不会再触发出现转场，与搜索页一样用隐式动画做进入效果。
+            .opacity(this.currentIndex === 1 ? 1 : 0)
+            .translate({ x: this.currentIndex === 1 ? 0 : this.homeTabEnterOffset })
+            .animation({ duration: Index.TAB_ENTER_DURATION, curve: Curve.Friction })
         } else {
           BlankTabPage()
         }

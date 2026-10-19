@@ -149,6 +149,9 @@ export struct ExplorePage {
   onBookSourceOrderChanged(): void {
     if (this.isActive && this.hasLoaded && !this.isLoading) {
       this.loadEntries();
+    } else if (this.hasLoaded) {
+      // 页面常驻但不在前台：标记过期，下次切回发现页时按新顺序重新加载书源列表。
+      this.exploreContentLoadedAt = 0;
     }
   }
 
