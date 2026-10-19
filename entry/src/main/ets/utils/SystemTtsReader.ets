@@ -98,6 +98,14 @@ export class SystemTtsReader {
   private static readonly OFFLINE_MODE: number = 1;
   private static readonly CUSTOM_TTS_PREFETCH_WINDOW: number = 3;
   private static readonly CUSTOM_TTS_HIDDEN_GAP_LENGTH: number = 8;
+  // Custom voices return the whole clip only after synthesizing it, so the wait before the first sound grows
+  // with the first chunk (a 60-character WAV is ~430KB and 1-2s on Baidu). A shorter opening chunk starts
+  // speech sooner; later chunks keep the normal length because they are prefetched behind playback.
+  private static readonly CUSTOM_TTS_CHUNK_LENGTH: number = 64;
+  private static readonly CUSTOM_TTS_FIRST_CHUNK_LENGTH: number = 32;
+  // The opening request is sent alone for this long (or until it settles) before the prefetch requests
+  // follow, so it does not share bandwidth with them or trip per-IP rate limits with a burst.
+  private static readonly CUSTOM_TTS_FIRST_REQUEST_HEAD_START_MS: number = 600;
   private static readonly CLOUD_TTS_WIFI_PREFETCH_WINDOW: number = 2;
   private static readonly CLOUD_TTS_MOBILE_PREFETCH_WINDOW: number = 1;
   // Fallback highlight granularity only. Cloud highlight normally follows the server
@@ -429,7 +437,7 @@ export class SystemTtsReader {
     this.keepAudioOutputOnFinish = options?.keepAudioOutputOnFinish === true;
     const customVoice = this.getCurrentCustomVoice();
     const splitChunks = this.optionCloudVoiceId ? this.splitCloudText(cleanText) :
-      (customVoice ? this.splitCustomText(cleanText, 64) :
+      (customVoice ? this.splitCustomText(cleanText, SystemTtsReader.CUSTOM_TTS_CHUNK_LENGTH) :
         this.splitSystemText(cleanText, this.optionFocusBreakOffsets));
     // A run of trailing punctuation (for example "......" or "……") can be split into a
     // punctuation-only chunk. Some Harmony TTS engines return no PCM/onStart for such a
@@ -1217,7 +1225,8 @@ export class SystemTtsReader {
 
   private async playCustomQueue(generation: number, voice: HttpTTS): Promise<void> {
     const jobs: CustomTtsAudioJob[] = [];
-    this.fillCustomAudioJobs(generation, voice, jobs);
+    this.fillCustomAudioJobs(generation, voice, jobs, 1);
+    this.prefetchCustomAudioAfterHeadStart(generation, voice, jobs);
     while (this.readGeneration === generation && this.active) {
       if (jobs.length === 0) {
         await this.httpReader.drain();
@@ -1272,8 +1281,41 @@ export class SystemTtsReader {
     }
   }
 
-  private fillCustomAudioJobs(generation: number, voice: HttpTTS, jobs: CustomTtsAudioJob[]): void {
-    const prefetchWindow = this.customTtsPrefetchWindow(voice);
+  // Lets the opening request run alone briefly, then fills the rest of the prefetch window. The playback loop
+  // takes the opening job out of `jobs` while it is still in flight, so it is counted against the window here.
+  private prefetchCustomAudioAfterHeadStart(generation: number, voice: HttpTTS, jobs: CustomTtsAudioJob[]): void {
+    if (jobs.length === 0) {
+      return;
+    }
+    const firstPromise = jobs[0].promise;
+    let firstSettled = false;
+    let released = false;
+    let timer = -1;
+    const release = (): void => {
+      if (released) {
+        return;
+      }
+      released = true;
+      clearTimeout(timer);
+      const prefetchWindow = this.customTtsPrefetchWindow(voice);
+      this.fillCustomAudioJobs(generation, voice, jobs, firstSettled ? prefetchWindow : prefetchWindow - 1);
+    };
+    timer = setTimeout(release, SystemTtsReader.CUSTOM_TTS_FIRST_REQUEST_HEAD_START_MS);
+    firstPromise.then((result: CustomTtsAudioResult): void => {
+      if (!result.audio) {
+        // The playback loop reports this failure and stops; do not start requests it will never play.
+        released = true;
+        clearTimeout(timer);
+        return;
+      }
+      firstSettled = true;
+      release();
+    });
+  }
+
+  private fillCustomAudioJobs(generation: number, voice: HttpTTS, jobs: CustomTtsAudioJob[],
+    limit?: number): void {
+    const prefetchWindow = limit === undefined ? this.customTtsPrefetchWindow(voice) : limit;
     while (this.readGeneration === generation && this.active &&
       jobs.length < prefetchWindow && this.chunkIndex < this.chunks.length) {
       const index = this.chunkIndex;
@@ -2733,8 +2775,10 @@ export class SystemTtsReader {
     let start = Math.max(0, Math.min(rangeStart, text.length));
     const safeRangeEnd = Math.max(start, Math.min(rangeEnd, text.length));
     while (start < safeRangeEnd) {
-      let end = Math.min(safeRangeEnd, start + maxLength);
-      const sentence = this.findSentenceBreak(text, start, end, maxLength);
+      const chunkLength = result.length === 0 ?
+        Math.min(maxLength, SystemTtsReader.CUSTOM_TTS_FIRST_CHUNK_LENGTH) : maxLength;
+      let end = Math.min(safeRangeEnd, start + chunkLength);
+      const sentence = this.findSentenceBreak(text, start, end, chunkLength);
       if (sentence > start && sentence <= safeRangeEnd) {
         end = sentence;
       }
