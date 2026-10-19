@@ -81,6 +81,8 @@ export struct ExplorePage {
   @State verificationUrl: string = '';
   @State verificationTitle: string = '';
   @StorageLink('explorePlatform') selectedPlatform: string = '';
+  /** 结果布局：'list' 卡片列表，'grid' 三列封面平铺；持久保存。 */
+  @StorageLink('exploreResultLayout') exploreResultLayout: string = 'list';
   @StorageLink('exploreSourceUrl') selectedSourceUrl: string = '';
   @StorageLink('bookSourceExploreRefreshNonce') @Watch('onExploreRefreshRequested')
   bookSourceExploreRefreshNonce: number = 0;
@@ -427,6 +429,15 @@ export struct ExplorePage {
               this.exploreFilterButton()
             }
 
+            Row() {
+              this.exploreHeaderCircleButton(this.exploreResultLayout === 'grid' ? $r('sys.symbol.list_bullet') :
+                $r('sys.symbol.square_grid_2x2'), false,
+                this.exploreResultLayout === 'grid' ? '切换为列表' : '切换为平铺', () => {
+                  this.exploreResultLayout = this.exploreResultLayout === 'grid' ? 'list' : 'grid';
+                })
+            }
+            .margin({ right: 10 })
+
             this.exploreHeaderCircleButton($r('sys.symbol.arrow_clockwise'), false, '刷新发现内容', () => {
               this.loadEntries('', true);
             })
@@ -488,6 +499,7 @@ export struct ExplorePage {
       } else if (this.books.length > 0) {
         SearchBookResultList({
           books: this.books,
+          layoutMode: this.exploreResultLayout,
           shelfBookKeys: this.shelfBookKeys,
           busyBookKeys: this.addingShelfBookKeys,
           showLoadingMore: this.isLoadingMore,
@@ -1054,7 +1066,10 @@ export struct ExplorePage {
     }
     // 左右留白 24、箭头 14、间隔 4。
     const desired = Math.ceil(textWidth) + 42;
-    return Math.max(72, Math.min(desired, Math.floor(this.exploreViewportWidth * 0.45)));
+    // 右侧还有布局、刷新（以及可选的筛选）按钮，各 40 加 10 间隔；标题约 56，页边距 32。
+    const buttonsWidth = (this.exploreFilters.length > 0 ? 3 : 2) * (ExplorePage.HEADER_CONTROL_SIZE + 10);
+    const available = this.exploreViewportWidth - 32 - 56 - AppSpacing.MD - buttonsWidth;
+    return Math.max(72, Math.min(desired, Math.floor(Math.min(this.exploreViewportWidth * 0.45, available))));
   }
 
   @Builder
