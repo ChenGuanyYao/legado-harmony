@@ -37,6 +37,8 @@ export struct SearchPage {
   static readonly CATEGORY_BAR_PADDING: number = 6;
   static readonly CATEGORY_INDICATOR_WIDTH: number = 18;
   static readonly STATUS_ROW_HEIGHT: number = 32;
+  /** 大标题行高度（不含状态栏）。 */
+  static readonly TITLE_ROW_HEIGHT: number = 56;
   @Prop statusBarHeight: number = 0;
   @Prop navBarHeight: number = 0;
   @Prop @Watch('onActiveChanged') isActive: boolean = false;
@@ -97,7 +99,7 @@ export struct SearchPage {
   private pendingShelfSyncBooks: SearchBook[] = [];
   private searchResultKeySet: Set<string> = new Set<string>();
   private searchResultScroller: ListScroller = new ListScroller();
-  /** 标题行收起量，0 为完整显示，CollapsingHeader.DISTANCE 为完全收起；搜索框和分类栏不收起。 */
+  /** 分类栏以上（标题行、搜索框、状态行）的收起量，0 为完整显示；结果分类栏不收起。 */
   @State searchHeaderCollapse: number = 0;
   private searchSessionId: number = 0;
   private readonly NO_SOURCE_GROUPS_SELECTED: string = '__NO_SOURCE_GROUPS_SELECTED__';
@@ -479,124 +481,138 @@ export struct SearchPage {
     Stack() {
       Column() {
         Column() {
-          // 列表上滑时标题行收起：外层按收起量变矮并裁剪，标题行贴底上移并淡出。
+          // 状态栏占位固定不动；下面的标题行、搜索框和状态行作为一整块随列表上滑收起，只留结果分类栏。
+          Column()
+            .width('100%')
+            .height(this.statusBarHeight)
+
+          // 外层按收起量变矮并裁剪，内容贴底上移；各行在被裁掉前依次淡出。
           Stack({ alignContent: Alignment.Bottom }) {
-            Row() {
-              Text('搜索')
-                .fontSize(AppFontSize.DISPLAY)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(this.primaryTextColor())
-                .flexShrink(0)
-
-              Blank()
-
-              this.searchScopeLabel()
-
+            Column() {
               Row() {
-                this.searchHeaderCircleButton(this.searchResultLayout === 'grid' ? $r('sys.symbol.list_bullet') :
-                  $r('sys.symbol.square_grid_2x2'), false,
-                  this.searchResultLayout === 'grid' ? '切换为列表' : '切换为平铺', () => {
-                    this.searchResultLayout = this.searchResultLayout === 'grid' ? 'list' : 'grid';
+                Text('搜索')
+                  .fontSize(AppFontSize.DISPLAY)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(this.primaryTextColor())
+                  .flexShrink(0)
+
+                Blank()
+
+                this.searchScopeLabel()
+
+                Row() {
+                  this.searchHeaderCircleButton(this.searchResultLayout === 'grid' ? $r('sys.symbol.list_bullet') :
+                    $r('sys.symbol.square_grid_2x2'), false,
+                    this.searchResultLayout === 'grid' ? '切换为列表' : '切换为平铺', () => {
+                      this.searchResultLayout = this.searchResultLayout === 'grid' ? 'list' : 'grid';
+                    })
+                }
+                .margin({ right: 10 })
+
+                Row() {
+                  this.searchHeaderCircleButton($r('sys.symbol.gearshape'), this.showSearchSettingsDialog, '搜索设置', () => {
+                    this.showSearchHistoryDropdown = false;
+                    this.hideKeyboard();
+                    this.showSearchSettingsDialog = !this.showSearchSettingsDialog;
                   })
+                }
+                .bindPopup(this.showSearchSettingsDialog, ImmersiveMaterialRuntime.popupMenuOptions((): void => {
+                  this.searchSettingsContent()
+                }, Placement.BottomRight, this.appDarkMode, this.accentColor(), () => {
+                  this.showSearchSettingsDialog = false;
+                }))
               }
-              .margin({ right: 10 })
+              .width('100%')
+              .height(SearchPage.TITLE_ROW_HEIGHT)
+              .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
+              .alignItems(VerticalAlign.Center)
+              .opacity(this.searchHeaderRowOpacity(0, SearchPage.TITLE_ROW_HEIGHT))
+              .hitTestBehavior(this.searchHeaderRowHitTest(0, SearchPage.TITLE_ROW_HEIGHT))
 
               Row() {
-                this.searchHeaderCircleButton($r('sys.symbol.gearshape'), this.showSearchSettingsDialog, '搜索设置', () => {
+                if (ImmersiveMaterialRuntime.supportsHds()) {
+                  Row() {
+                    this.searchFieldContent()
+                  }
+                  .layoutWeight(1)
+                  .height(SearchPage.HEADER_CONTROL_SIZE)
+                  .borderRadius(SearchPage.HEADER_CONTROL_SIZE / 2)
+                  .systemMaterial(this.searchFieldMaterial())
+                  .border({ width: 1, color: this.glassBorderColor() })
+                  .alignItems(VerticalAlign.Center)
+                } else {
+                  Row() {
+                    this.searchFieldContent()
+                  }
+                  .layoutWeight(1)
+                  .height(SearchPage.HEADER_CONTROL_SIZE)
+                  .borderRadius(SearchPage.HEADER_CONTROL_SIZE / 2)
+                  .backgroundColor(this.glassCardColor())
+                  .shadow(ThemeRuntime.floatingControlShadow(this.appDarkMode))
+                  .alignItems(VerticalAlign.Center)
+                }
+
+                Row() {
+                  this.searchHeaderCircleButton(this.isSearching ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'),
+                    false, this.isSearching ? '停止搜索' : '搜索', () => {
+                      this.onSearchButtonTap();
+                    })
+                }
+                .margin({ left: 10 })
+              }
+              .width('100%')
+              .height(this.searchFieldRowHeight())
+              .padding({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
+              .alignItems(VerticalAlign.Center)
+              .opacity(this.searchHeaderRowOpacity(SearchPage.TITLE_ROW_HEIGHT, this.searchFieldRowHeight()))
+              .hitTestBehavior(this.searchHeaderRowHitTest(SearchPage.TITLE_ROW_HEIGHT, this.searchFieldRowHeight()))
+              .bindPopup(this.showSearchHistoryDropdown && this.showResult && this.searchHistory.length > 0,
+                ImmersiveMaterialRuntime.popupMenuOptions((): void => {
+                  this.searchHistoryPopupContent()
+                }, Placement.Bottom, this.appDarkMode, this.accentColor(), () => {
                   this.showSearchHistoryDropdown = false;
-                  this.hideKeyboard();
-                  this.showSearchSettingsDialog = !this.showSearchSettingsDialog;
-                })
+                }, false))
+
+              if (this.statusMessage) {
+                Row({ space: AppSpacing.SM }) {
+                  if (this.isSearching) {
+                    LoadingProgress()
+                      .width(16)
+                      .height(16)
+                      .color(this.secondaryTextColor())
+                  }
+                  Text(this.statusMessage)
+                    .fontSize(AppFontSize.CAPTION)
+                    .fontColor(this.secondaryTextColor())
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .layoutWeight(1)
+
+                  if (this.verificationUrl) {
+                    Text('去验证')
+                      .fontSize(AppFontSize.CAPTION)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor(this.accentColor())
+                      .padding({ left: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
+                      .onClick(() => {
+                        this.openVerification();
+                      })
+                  }
+                }
+                .width('100%')
+                .height(SearchPage.STATUS_ROW_HEIGHT)
+                .padding({ left: AppSpacing.XL + AppSpacing.XS, right: AppSpacing.XL })
+                .alignItems(VerticalAlign.Center)
+                .opacity(this.searchHeaderRowOpacity(this.searchStatusRowTop(), SearchPage.STATUS_ROW_HEIGHT))
+                .hitTestBehavior(this.searchHeaderRowHitTest(this.searchStatusRowTop(), SearchPage.STATUS_ROW_HEIGHT))
               }
-              .bindPopup(this.showSearchSettingsDialog, ImmersiveMaterialRuntime.popupMenuOptions((): void => {
-                this.searchSettingsContent()
-              }, Placement.BottomRight, this.appDarkMode, this.accentColor(), () => {
-                this.showSearchSettingsDialog = false;
-              }))
             }
             .width('100%')
-            .height(56 + this.statusBarHeight)
-            .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.statusBarHeight })
-            .alignItems(VerticalAlign.Center)
-            .opacity(CollapsingHeader.contentOpacity(this.searchHeaderCollapseValue()))
-            .hitTestBehavior(CollapsingHeader.acceptsTouch(this.searchHeaderCollapseValue()) ? HitTestMode.Default : HitTestMode.None)
+            .height(this.searchCollapsibleHeight())
           }
           .width('100%')
-          .height(56 + this.statusBarHeight - this.searchHeaderCollapseValue())
+          .height(this.searchCollapsibleHeight() - this.searchHeaderCollapseValue())
           .clip(true)
-
-          Row() {
-            if (ImmersiveMaterialRuntime.supportsHds()) {
-              Row() {
-                this.searchFieldContent()
-              }
-              .layoutWeight(1)
-              .height(SearchPage.HEADER_CONTROL_SIZE)
-              .borderRadius(SearchPage.HEADER_CONTROL_SIZE / 2)
-              .systemMaterial(this.searchFieldMaterial())
-              .border({ width: 1, color: this.glassBorderColor() })
-              .alignItems(VerticalAlign.Center)
-            } else {
-              Row() {
-                this.searchFieldContent()
-              }
-              .layoutWeight(1)
-              .height(SearchPage.HEADER_CONTROL_SIZE)
-              .borderRadius(SearchPage.HEADER_CONTROL_SIZE / 2)
-              .backgroundColor(this.glassCardColor())
-              .shadow(ThemeRuntime.floatingControlShadow(this.appDarkMode))
-              .alignItems(VerticalAlign.Center)
-            }
-
-            Row() {
-              this.searchHeaderCircleButton(this.isSearching ? $r('sys.symbol.xmark') : $r('sys.symbol.magnifyingglass'),
-                false, this.isSearching ? '停止搜索' : '搜索', () => {
-                  this.onSearchButtonTap();
-                })
-            }
-            .margin({ left: 10 })
-          }
-          .width('100%')
-          .padding({ left: AppSpacing.XL, right: AppSpacing.XL, bottom: AppSpacing.MD })
-          .alignItems(VerticalAlign.Center)
-          .bindPopup(this.showSearchHistoryDropdown && this.showResult && this.searchHistory.length > 0,
-            ImmersiveMaterialRuntime.popupMenuOptions((): void => {
-              this.searchHistoryPopupContent()
-            }, Placement.Bottom, this.appDarkMode, this.accentColor(), () => {
-              this.showSearchHistoryDropdown = false;
-            }, false))
-
-          if (this.statusMessage) {
-            Row({ space: AppSpacing.SM }) {
-              if (this.isSearching) {
-                LoadingProgress()
-                  .width(16)
-                  .height(16)
-                  .color(this.secondaryTextColor())
-              }
-              Text(this.statusMessage)
-                .fontSize(AppFontSize.CAPTION)
-                .fontColor(this.secondaryTextColor())
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .layoutWeight(1)
-
-              if (this.verificationUrl) {
-                Text('去验证')
-                  .fontSize(AppFontSize.CAPTION)
-                  .fontWeight(FontWeight.Medium)
-                  .fontColor(this.accentColor())
-                  .padding({ left: AppSpacing.MD, top: AppSpacing.XS, bottom: AppSpacing.XS })
-                  .onClick(() => {
-                    this.openVerification();
-                  })
-              }
-            }
-            .width('100%')
-            .height(SearchPage.STATUS_ROW_HEIGHT)
-            .padding({ left: AppSpacing.XL + AppSpacing.XS, right: AppSpacing.XL })
-            .alignItems(VerticalAlign.Center)
-          }
 
           if (this.showSearchCategoryBar()) {
             this.searchCategoryBar()
@@ -1850,20 +1866,44 @@ export struct SearchPage {
     return `#${this.appDarkMode ? '33' : '1A'}${normalized.substring(1)}`;
   }
 
-  /** 实际生效的标题行收起量：没有可滚动的列表时标题行始终完整显示。 */
+  /** 实际生效的收起量：没有可滚动的列表时完整显示；状态行消失后收起区变矮，收起量随之收紧。 */
   searchHeaderCollapseValue(): number {
-    return this.showResult && this.displayedSearchResults.length > 0 ? this.searchHeaderCollapse : 0;
+    return this.showResult && this.displayedSearchResults.length > 0 ?
+      Math.min(this.searchHeaderCollapse, this.searchCollapsibleHeight()) : 0;
+  }
+
+  searchFieldRowHeight(): number {
+    return SearchPage.HEADER_CONTROL_SIZE + AppSpacing.MD;
+  }
+
+  searchStatusRowTop(): number {
+    return SearchPage.TITLE_ROW_HEIGHT + this.searchFieldRowHeight();
+  }
+
+  /** 可收起的总高度：标题行 + 搜索框行 + 状态行（有搜索进度/结果提示时）。 */
+  searchCollapsibleHeight(): number {
+    return this.searchStatusRowTop() + (this.statusMessage ? SearchPage.STATUS_ROW_HEIGHT : 0);
+  }
+
+  searchHeaderRowOpacity(top: number, height: number): number {
+    return CollapsingHeader.rowOpacity(this.searchHeaderCollapseValue(), top, height);
+  }
+
+  searchHeaderRowHitTest(top: number, height: number): HitTestMode {
+    return this.searchHeaderRowOpacity(top, height) > 0.5 ? HitTestMode.Default : HitTestMode.None;
   }
 
   onSearchListScroll(delta: number, offset: number): void {
-    const next = CollapsingHeader.next(this.searchHeaderCollapse, delta, offset);
+    const next = CollapsingHeader.next(this.searchHeaderCollapseValue(), delta, offset,
+      this.searchCollapsibleHeight());
     if (next !== this.searchHeaderCollapse) {
       this.searchHeaderCollapse = next;
     }
   }
 
   onSearchListScrollStop(offset: number): void {
-    const target = CollapsingHeader.settle(this.searchHeaderCollapse, offset);
+    const target = CollapsingHeader.settle(this.searchHeaderCollapseValue(), offset,
+      this.searchCollapsibleHeight());
     if (target !== this.searchHeaderCollapse) {
       animateTo({ duration: 200, curve: Curve.FastOutSlowIn }, () => {
         this.searchHeaderCollapse = target;
@@ -1873,10 +1913,7 @@ export struct SearchPage {
 
   /** 列表顶部留白按标题行完整显示时的高度预留，不随收起变化，避免滚动中列表跳动。 */
   searchTopOverlayHeight(): number {
-    let height = this.statusBarHeight + 56 + SearchPage.HEADER_CONTROL_SIZE + AppSpacing.MD;
-    if (this.statusMessage) {
-      height += SearchPage.STATUS_ROW_HEIGHT;
-    }
+    let height = this.statusBarHeight + this.searchCollapsibleHeight();
     if (this.showSearchCategoryBar()) {
       height += SearchPage.CATEGORY_BAR_HEIGHT + AppSpacing.MD;
     }
