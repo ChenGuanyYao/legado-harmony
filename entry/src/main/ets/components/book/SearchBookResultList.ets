@@ -86,6 +86,9 @@ export struct SearchBookResultList {
   onToggleShelf: SearchBookAction = (_book: SearchBook) => {};
   onNeedMetadata: SearchBookAction = (_book: SearchBook) => {};
   onReachEnd: () => void = () => {};
+  /** 列表滚动：本次位移和当前滚动距离，首页据此收起或展开标题行。 */
+  onListScroll: (delta: number, offset: number) => void = (_delta: number, _offset: number) => {};
+  onListScrollStop: (offset: number) => void = (_offset: number) => {};
 
   aboutToAppear(): void {
     this.onBooksChanged();
@@ -135,6 +138,12 @@ export struct SearchBookResultList {
     .scrollBar(BarState.Auto)
     .onReachEnd(() => {
       this.onReachEnd();
+    })
+    .onDidScroll((delta: number) => {
+      this.onListScroll(delta, this.scroller.currentOffset().yOffset);
+    })
+    .onScrollStop(() => {
+      this.onListScrollStop(this.scroller.currentOffset().yOffset);
     })
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }
@@ -290,6 +299,12 @@ export struct SearchBookResultList {
     .scrollBar(BarState.Auto)
     .onReachEnd(() => {
       this.onReachEnd();
+    })
+    .onDidScroll((delta: number) => {
+      this.onListScroll(delta, this.scroller.currentOffset().yOffset);
+    })
+    .onScrollStop(() => {
+      this.onListScrollStop(this.scroller.currentOffset().yOffset);
     })
     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
   }

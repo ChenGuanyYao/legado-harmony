@@ -11,6 +11,7 @@ import {
 import { SearchBookResultList } from '../../components/book/SearchBookResultList';
 import { ImmersiveMaterialSurface } from '../../components/ImmersiveMaterialSurface';
 import { ImmersiveMaterialRuntime } from '../../utils/ImmersiveMaterialRuntime';
+import { CollapsingHeader } from '../../utils/CollapsingHeader';
 import { HdsFeedback } from '../../utils/HdsFeedback';
 import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
 import { SearchExploreSettingsStore } from '../../utils/SearchExploreSettingsStore';
@@ -103,6 +104,8 @@ export struct ExplorePage {
   private coordinator: ExploreCoordinator = new ExploreCoordinator();
   private exploreSourceScroller: Scroller = new Scroller();
   private exploreChannelScroller: Scroller = new Scroller();
+  /** 标题行收起量，0 为完整显示，CollapsingHeader.DISTANCE 为完全收起。 */
+  @State exploreHeaderCollapse: number = 0;
   private hasLoaded: boolean = false;
   private hasRestoredExploreSelection: boolean = false;
   private shelfStatusVersion: number = 0;
@@ -417,38 +420,46 @@ export struct ExplorePage {
     Stack({ alignContent: Alignment.TopStart }) {
       Column() {
         Column() {
-          Row() {
-            Text('发现')
-              .fontSize(AppFontSize.DISPLAY)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(this.primaryTextColor())
-              .flexShrink(0)
-
-            Blank()
-
-            this.exploreSourceLabel()
-
-            if (this.exploreFilters.length > 0) {
-              this.exploreFilterButton()
-            }
-
+          // 列表上滑时标题行收起：外层按收起量变矮并裁剪，标题行贴底上移并淡出。
+          Stack({ alignContent: Alignment.Bottom }) {
             Row() {
-              this.exploreHeaderCircleButton(this.exploreResultLayout === 'grid' ? $r('sys.symbol.list_bullet') :
-                $r('sys.symbol.square_grid_2x2'), false,
-                this.exploreResultLayout === 'grid' ? '切换为列表' : '切换为平铺', () => {
-                  this.exploreResultLayout = this.exploreResultLayout === 'grid' ? 'list' : 'grid';
-                })
-            }
-            .margin({ right: 10 })
+              Text('发现')
+                .fontSize(AppFontSize.DISPLAY)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.primaryTextColor())
+                .flexShrink(0)
 
-            this.exploreHeaderCircleButton($r('sys.symbol.arrow_clockwise'), false, '刷新发现内容', () => {
-              this.loadEntries('', true);
-            })
+              Blank()
+
+              this.exploreSourceLabel()
+
+              if (this.exploreFilters.length > 0) {
+                this.exploreFilterButton()
+              }
+
+              Row() {
+                this.exploreHeaderCircleButton(this.exploreResultLayout === 'grid' ? $r('sys.symbol.list_bullet') :
+                  $r('sys.symbol.square_grid_2x2'), false,
+                  this.exploreResultLayout === 'grid' ? '切换为列表' : '切换为平铺', () => {
+                    this.exploreResultLayout = this.exploreResultLayout === 'grid' ? 'list' : 'grid';
+                  })
+              }
+              .margin({ right: 10 })
+
+              this.exploreHeaderCircleButton($r('sys.symbol.arrow_clockwise'), false, '刷新发现内容', () => {
+                this.loadEntries('', true);
+              })
+            }
+            .width('100%')
+            .height(56 + this.statusBarHeight)
+            .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.statusBarHeight })
+            .alignItems(VerticalAlign.Center)
+            .opacity(CollapsingHeader.contentOpacity(this.exploreHeaderCollapseValue()))
+            .hitTestBehavior(CollapsingHeader.acceptsTouch(this.exploreHeaderCollapseValue()) ? HitTestMode.Default : HitTestMode.None)
           }
           .width('100%')
-          .height(56 + this.statusBarHeight)
-          .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.statusBarHeight })
-          .alignItems(VerticalAlign.Center)
+          .height(56 + this.statusBarHeight - this.exploreHeaderCollapseValue())
+          .clip(true)
 
           if (this.showsExploreChannelBar()) {
             this.exploreChannelBar()
@@ -535,6 +546,12 @@ export struct ExplorePage {
           },
           onReachEnd: () => {
             this.loadMoreExploreBooks();
+          },
+          onListScroll: (delta: number, offset: number) => {
+            this.onExploreListScroll(delta, offset);
+          },
+          onListScrollStop: (offset: number) => {
+            this.onExploreListScrollStop(offset);
           }
         })
       } else {
@@ -1972,6 +1989,28 @@ export struct ExplorePage {
     return names;
   }
 
+  /** 实际生效的标题行收起量：没有可滚动的列表时标题行始终完整显示。 */
+  exploreHeaderCollapseValue(): number {
+    return !this.isLoading && this.books.length > 0 ? this.exploreHeaderCollapse : 0;
+  }
+
+  onExploreListScroll(delta: number, offset: number): void {
+    const next = CollapsingHeader.next(this.exploreHeaderCollapse, delta, offset);
+    if (next !== this.exploreHeaderCollapse) {
+      this.exploreHeaderCollapse = next;
+    }
+  }
+
+  onExploreListScrollStop(offset: number): void {
+    const target = CollapsingHeader.settle(this.exploreHeaderCollapse, offset);
+    if (target !== this.exploreHeaderCollapse) {
+      animateTo({ duration: 200, curve: Curve.FastOutSlowIn }, () => {
+        this.exploreHeaderCollapse = target;
+      });
+    }
+  }
+
+  /** 列表顶部留白按标题行完整显示时的高度预留，不随收起变化，避免滚动中列表跳动。 */
   exploreTopOverlayHeight(): number {
     let height = this.statusBarHeight + 56;
     if (this.showsExploreChannelBar()) {

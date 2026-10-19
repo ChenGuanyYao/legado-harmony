@@ -13,6 +13,7 @@ import { ReadBookEngine } from '../../core/book/ReadBookEngine';
 import { ImmersiveBackButton } from '../../components/ImmersiveBackButton';
 import { ImmersiveMaterialSurface } from '../../components/ImmersiveMaterialSurface';
 import { ImmersiveMaterialRuntime } from '../../utils/ImmersiveMaterialRuntime';
+import { CollapsingHeader } from '../../utils/CollapsingHeader';
 import { HdsFeedback } from '../../utils/HdsFeedback';
 import { BookDisplayHelper } from '../../utils/BookDisplayHelper';
 import { BookCoverCache } from '../../utils/BookCoverCache';
@@ -991,73 +992,86 @@ export struct BookshelfPage {
     }, SHELF_COVER_UPDATE_BATCH_MS);
   }
 
+  /** 标题行收起量，0 为完整显示，CollapsingHeader.DISTANCE 为完全收起；类型页签不收起。 */
+  @State shelfHeaderCollapse: number = 0;
+  private shelfListScroller: ListScroller = new ListScroller();
+  private shelfTileScroller: Scroller = new Scroller();
+
   build() {
     Stack({ alignContent: Alignment.Bottom }) {
       Column() {
         Column() {
-        Row() {
-          if (this.isTileGroupPage() && !this.isBookMultiSelect) {
-            ImmersiveBackButton({
-              iconColor: this.primaryTextColor(),
-              darkMode: this.appDarkMode,
-              buttonSize: 40,
-              containerWidth: 56,
-              materialScale: 0.83,
-              compactLayout: true,
-              onBack: () => this.exitTileGroupPage()
-            })
-            Text(this.activeShelfGroupName())
-              .fontSize(AppFontSize.TITLE)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(this.primaryTextColor())
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-            Blank()
-            if (this.books.length > 0) {
-              this.shelfSortButton()
-            }
-            Text(this.books.length > 0 ? `${this.books.length}本` : '')
-              .fontSize(AppFontSize.BODY)
-              .fontColor('#999')
-          } else {
-            if (this.isBookMultiSelect) {
-              Text('书架')
-                .fontSize(AppFontSize.DISPLAY)
+        // 列表上滑时标题行收起：外层按收起量变矮并裁剪，标题行贴底上移并淡出。
+        Stack({ alignContent: Alignment.Bottom }) {
+          Row() {
+            if (this.isTileGroupPage() && !this.isBookMultiSelect) {
+              ImmersiveBackButton({
+                iconColor: this.primaryTextColor(),
+                darkMode: this.appDarkMode,
+                buttonSize: 40,
+                containerWidth: 56,
+                materialScale: 0.83,
+                compactLayout: true,
+                onBack: () => this.exitTileGroupPage()
+              })
+              Text(this.activeShelfGroupName())
+                .fontSize(AppFontSize.TITLE)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(this.primaryTextColor())
-            } else {
-              this.shelfGroupSwitcher()
-            }
-
-            if (this.isBookMultiSelect) {
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
               Blank()
-              Text('取消')
-                .fontSize(AppFontSize.BODY_LARGE)
-                .fontColor(this.primaryTextColor())
-                .width(52)
-                .height(56)
-                .textAlign(TextAlign.Center)
-                .onClick(() => this.exitBookMultiSelect())
-            } else {
-              Blank()
-
               if (this.books.length > 0) {
                 this.shelfSortButton()
               }
+              Text(this.books.length > 0 ? `${this.books.length}本` : '')
+                .fontSize(AppFontSize.BODY)
+                .fontColor('#999')
+            } else {
+              if (this.isBookMultiSelect) {
+                Text('书架')
+                  .fontSize(AppFontSize.DISPLAY)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(this.primaryTextColor())
+              } else {
+                this.shelfGroupSwitcher()
+              }
 
-              this.shelfFilterButton()
-              this.shelfLayoutButton()
+              if (this.isBookMultiSelect) {
+                Blank()
+                Text('取消')
+                  .fontSize(AppFontSize.BODY_LARGE)
+                  .fontColor(this.primaryTextColor())
+                  .width(52)
+                  .height(56)
+                  .textAlign(TextAlign.Center)
+                  .onClick(() => this.exitBookMultiSelect())
+              } else {
+                Blank()
+
+                if (this.books.length > 0) {
+                  this.shelfSortButton()
+                }
+
+                this.shelfFilterButton()
+                this.shelfLayoutButton()
+              }
             }
           }
+          .width('100%')
+          .height(56 + this.statusBarHeight)
+          .padding({
+            left: this.isTileGroupPage() && !this.isBookMultiSelect ? 0 : AppSpacing.XL,
+            right: AppSpacing.XL,
+            top: this.statusBarHeight
+          })
+          .alignItems(VerticalAlign.Center)
+          .opacity(CollapsingHeader.contentOpacity(this.shelfHeaderCollapseValue()))
+          .hitTestBehavior(CollapsingHeader.acceptsTouch(this.shelfHeaderCollapseValue()) ? HitTestMode.Default : HitTestMode.None)
         }
         .width('100%')
-        .height(56 + this.statusBarHeight)
-        .padding({
-          left: this.isTileGroupPage() && !this.isBookMultiSelect ? 0 : AppSpacing.XL,
-          right: AppSpacing.XL,
-          top: this.statusBarHeight
-        })
-        .alignItems(VerticalAlign.Center)
+        .height(56 + this.statusBarHeight - this.shelfHeaderCollapseValue())
+        .clip(true)
 
         if (this.showsShelfScopeTabs()) {
           this.shelfScopeTabs()
@@ -1142,7 +1156,7 @@ export struct BookshelfPage {
             if (this.isTileLayout()) {
               this.shelfTileGrid()
             } else {
-              List({ space: AppSpacing.MD }) {
+              List({ scroller: this.shelfListScroller, space: AppSpacing.MD }) {
               ListItem() {
                 Row()
                   .height(this.bookshelfTopOverlayHeight())
@@ -1207,6 +1221,12 @@ export struct BookshelfPage {
             .height('100%')
             .padding({ left: AppSpacing.XL, right: AppSpacing.XL })
             .backgroundColor(this.pageColor())
+            .onDidScroll((delta: number) => {
+              this.onShelfListScroll(delta, this.shelfListScroller.currentOffset().yOffset);
+            })
+            .onScrollStop(() => {
+              this.onShelfListScrollStop(this.shelfListScroller.currentOffset().yOffset);
+            })
               .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM])
             }
           }
@@ -2667,6 +2687,28 @@ export struct BookshelfPage {
   }
 
 
+  /** 实际生效的标题行收起量：没有可滚动的列表时标题行始终完整显示。 */
+  shelfHeaderCollapseValue(): number {
+    return !this.isLoading && this.books.length > 0 && !this.isBookMultiSelect && !this.isTileGroupPage() ? this.shelfHeaderCollapse : 0;
+  }
+
+  onShelfListScroll(delta: number, offset: number): void {
+    const next = CollapsingHeader.next(this.shelfHeaderCollapse, delta, offset);
+    if (next !== this.shelfHeaderCollapse) {
+      this.shelfHeaderCollapse = next;
+    }
+  }
+
+  onShelfListScrollStop(offset: number): void {
+    const target = CollapsingHeader.settle(this.shelfHeaderCollapse, offset);
+    if (target !== this.shelfHeaderCollapse) {
+      animateTo({ duration: 200, curve: Curve.FastOutSlowIn }, () => {
+        this.shelfHeaderCollapse = target;
+      });
+    }
+  }
+
+  /** 列表顶部留白按标题行完整显示时的高度预留，不随收起变化，避免滚动中列表跳动。 */
   bookshelfTopOverlayHeight(): number {
     let height = this.statusBarHeight + 56;
     if (this.showsShelfScopeTabs()) {
@@ -3002,7 +3044,7 @@ export struct BookshelfPage {
 
   @Builder
   shelfTileGrid() {
-    Grid() {
+    Grid(this.shelfTileScroller) {
       GridItem() {
         Row()
           .height(this.bookshelfTileTopSpacerHeight())
@@ -3056,6 +3098,12 @@ export struct BookshelfPage {
     .backgroundColor(this.pageColor())
     .scrollBar(BarState.Off)
     .cachedCount(4)
+    .onDidScroll((delta: number) => {
+      this.onShelfListScroll(delta, this.shelfTileScroller.currentOffset().yOffset);
+    })
+    .onScrollStop(() => {
+      this.onShelfListScrollStop(this.shelfTileScroller.currentOffset().yOffset);
+    })
     .translate({ x: this.tileGroupTransitionX })
     .scale({ x: this.tileGroupTransitionScale, y: this.tileGroupTransitionScale })
     .opacity(this.tileGroupTransitionOpacity)

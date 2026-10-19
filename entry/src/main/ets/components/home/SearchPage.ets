@@ -6,6 +6,7 @@ import { SearchCoordinator, SearchCallback, SearchProgress } from '../../core/bo
 import { SearchBookResultList } from '../../components/book/SearchBookResultList';
 import { ImmersiveMaterialSurface } from '../../components/ImmersiveMaterialSurface';
 import { GlassTagModifier, ImmersiveMaterialRuntime, ImmersiveTagModifier } from '../../utils/ImmersiveMaterialRuntime';
+import { CollapsingHeader } from '../../utils/CollapsingHeader';
 import { HdsFeedback } from '../../utils/HdsFeedback';
 import { SearchBookShelfHelper } from '../../utils/SearchBookShelfHelper';
 import { SearchExploreSettings, SearchExploreSettingsStore } from '../../utils/SearchExploreSettingsStore';
@@ -96,6 +97,8 @@ export struct SearchPage {
   private pendingShelfSyncBooks: SearchBook[] = [];
   private searchResultKeySet: Set<string> = new Set<string>();
   private searchResultScroller: ListScroller = new ListScroller();
+  /** 标题行收起量，0 为完整显示，CollapsingHeader.DISTANCE 为完全收起；搜索框和分类栏不收起。 */
+  @State searchHeaderCollapse: number = 0;
   private searchSessionId: number = 0;
   private readonly NO_SOURCE_GROUPS_SELECTED: string = '__NO_SOURCE_GROUPS_SELECTED__';
   private readonly NO_SOURCES_SELECTED: string = '__NO_SOURCES_SELECTED__';
@@ -476,43 +479,51 @@ export struct SearchPage {
     Stack() {
       Column() {
         Column() {
-          Row() {
-            Text('搜索')
-              .fontSize(AppFontSize.DISPLAY)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(this.primaryTextColor())
-              .flexShrink(0)
-
-            Blank()
-
-            this.searchScopeLabel()
-
+          // 列表上滑时标题行收起：外层按收起量变矮并裁剪，标题行贴底上移并淡出。
+          Stack({ alignContent: Alignment.Bottom }) {
             Row() {
-              this.searchHeaderCircleButton(this.searchResultLayout === 'grid' ? $r('sys.symbol.list_bullet') :
-                $r('sys.symbol.square_grid_2x2'), false,
-                this.searchResultLayout === 'grid' ? '切换为列表' : '切换为平铺', () => {
-                  this.searchResultLayout = this.searchResultLayout === 'grid' ? 'list' : 'grid';
+              Text('搜索')
+                .fontSize(AppFontSize.DISPLAY)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(this.primaryTextColor())
+                .flexShrink(0)
+
+              Blank()
+
+              this.searchScopeLabel()
+
+              Row() {
+                this.searchHeaderCircleButton(this.searchResultLayout === 'grid' ? $r('sys.symbol.list_bullet') :
+                  $r('sys.symbol.square_grid_2x2'), false,
+                  this.searchResultLayout === 'grid' ? '切换为列表' : '切换为平铺', () => {
+                    this.searchResultLayout = this.searchResultLayout === 'grid' ? 'list' : 'grid';
+                  })
+              }
+              .margin({ right: 10 })
+
+              Row() {
+                this.searchHeaderCircleButton($r('sys.symbol.gearshape'), this.showSearchSettingsDialog, '搜索设置', () => {
+                  this.showSearchHistoryDropdown = false;
+                  this.hideKeyboard();
+                  this.showSearchSettingsDialog = !this.showSearchSettingsDialog;
                 })
+              }
+              .bindPopup(this.showSearchSettingsDialog, ImmersiveMaterialRuntime.popupMenuOptions((): void => {
+                this.searchSettingsContent()
+              }, Placement.BottomRight, this.appDarkMode, this.accentColor(), () => {
+                this.showSearchSettingsDialog = false;
+              }))
             }
-            .margin({ right: 10 })
-
-            Row() {
-              this.searchHeaderCircleButton($r('sys.symbol.gearshape'), this.showSearchSettingsDialog, '搜索设置', () => {
-                this.showSearchHistoryDropdown = false;
-                this.hideKeyboard();
-                this.showSearchSettingsDialog = !this.showSearchSettingsDialog;
-              })
-            }
-            .bindPopup(this.showSearchSettingsDialog, ImmersiveMaterialRuntime.popupMenuOptions((): void => {
-              this.searchSettingsContent()
-            }, Placement.BottomRight, this.appDarkMode, this.accentColor(), () => {
-              this.showSearchSettingsDialog = false;
-            }))
+            .width('100%')
+            .height(56 + this.statusBarHeight)
+            .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.statusBarHeight })
+            .alignItems(VerticalAlign.Center)
+            .opacity(CollapsingHeader.contentOpacity(this.searchHeaderCollapseValue()))
+            .hitTestBehavior(CollapsingHeader.acceptsTouch(this.searchHeaderCollapseValue()) ? HitTestMode.Default : HitTestMode.None)
           }
           .width('100%')
-          .height(56 + this.statusBarHeight)
-          .padding({ left: AppSpacing.XL, right: AppSpacing.XL, top: this.statusBarHeight })
-          .alignItems(VerticalAlign.Center)
+          .height(56 + this.statusBarHeight - this.searchHeaderCollapseValue())
+          .clip(true)
 
           Row() {
             if (ImmersiveMaterialRuntime.supportsHds()) {
@@ -626,6 +637,12 @@ export struct SearchPage {
             },
             onToggleShelf: (book: SearchBook) => {
               this.toggleSearchBookShelf(book);
+            },
+            onListScroll: (delta: number, offset: number) => {
+              this.onSearchListScroll(delta, offset);
+            },
+            onListScrollStop: (offset: number) => {
+              this.onSearchListScrollStop(offset);
             }
           })
         } else if (this.isSearching) {
@@ -1833,6 +1850,28 @@ export struct SearchPage {
     return `#${this.appDarkMode ? '33' : '1A'}${normalized.substring(1)}`;
   }
 
+  /** 实际生效的标题行收起量：没有可滚动的列表时标题行始终完整显示。 */
+  searchHeaderCollapseValue(): number {
+    return this.showResult && this.displayedSearchResults.length > 0 ? this.searchHeaderCollapse : 0;
+  }
+
+  onSearchListScroll(delta: number, offset: number): void {
+    const next = CollapsingHeader.next(this.searchHeaderCollapse, delta, offset);
+    if (next !== this.searchHeaderCollapse) {
+      this.searchHeaderCollapse = next;
+    }
+  }
+
+  onSearchListScrollStop(offset: number): void {
+    const target = CollapsingHeader.settle(this.searchHeaderCollapse, offset);
+    if (target !== this.searchHeaderCollapse) {
+      animateTo({ duration: 200, curve: Curve.FastOutSlowIn }, () => {
+        this.searchHeaderCollapse = target;
+      });
+    }
+  }
+
+  /** 列表顶部留白按标题行完整显示时的高度预留，不随收起变化，避免滚动中列表跳动。 */
   searchTopOverlayHeight(): number {
     let height = this.statusBarHeight + 56 + SearchPage.HEADER_CONTROL_SIZE + AppSpacing.MD;
     if (this.statusMessage) {
