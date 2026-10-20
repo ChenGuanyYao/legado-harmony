@@ -172,6 +172,7 @@ export class ReaderSettingsStore {
     const store = await preferences.getPreferences(context, ReaderSettingsStore.STORE_NAME);
     const profile = await ReaderSettingsStore.loadThemeProfile(store, activeThemeId);
     if (profile) {
+      await ReaderSettingsStore.readGlobalFontSettings(store, profile);
       ReaderSettingsStore.cachedSettings = ReaderSettingsStore.clone(profile);
       ReaderSettingsStore.cachedThemeId = activeThemeId;
       return ReaderSettingsStore.clone(profile);
@@ -453,8 +454,9 @@ export class ReaderSettingsStore {
       next.lightThemeIndex = ReaderThemeHelper.APP_THEME_INDEX;
       next.darkThemeIndex = ReaderThemeHelper.APP_THEME_INDEX;
       next.themeIndex = ReaderThemeHelper.APP_THEME_INDEX;
-      await ReaderSettingsStore.persistThemeProfile(store, nextId, next);
     }
+    ReaderSettingsStore.copyGlobalFontSettings(current, next);
+    await ReaderSettingsStore.persistThemeProfile(store, nextId, next);
     ReaderSettingsStore.cachedSettings = ReaderSettingsStore.clone(next);
     ReaderSettingsStore.cachedThemeId = nextId;
     ReaderSettingsStore.applyToStorage(next);
@@ -1088,6 +1090,33 @@ export class ReaderSettingsStore {
       console.warn('读取主题阅读设置失败:', e);
       return null;
     }
+  }
+
+  // The global font is one app-wide choice. Theme profiles still carry a copy because they serialize the whole
+  // ReaderSettings, but the top-level keys written by saveFontSettings are the source of truth.
+  private static async readGlobalFontSettings(store: preferences.Preferences,
+    settings: ReaderSettings): Promise<void> {
+    settings.fontFamily = await ReaderSettingsStore.getString(
+      store, ReaderSettingsStore.KEY_FONT_FAMILY, settings.fontFamily);
+    settings.fontFilePath = await ReaderSettingsStore.getString(
+      store, ReaderSettingsStore.KEY_FONT_FILE_PATH, settings.fontFilePath);
+    settings.fontSourceName = await ReaderSettingsStore.getString(
+      store, ReaderSettingsStore.KEY_FONT_SOURCE_NAME, settings.fontSourceName);
+    settings.fontMode = await ReaderSettingsStore.getString(
+      store, ReaderSettingsStore.KEY_FONT_MODE, settings.fontMode);
+    settings.systemFontFamily = await ReaderSettingsStore.getString(
+      store, ReaderSettingsStore.KEY_SYSTEM_FONT_FAMILY, settings.systemFontFamily);
+    settings.customFontsRaw = await ReaderSettingsStore.getString(
+      store, ReaderSettingsStore.KEY_CUSTOM_FONTS_RAW, settings.customFontsRaw);
+  }
+
+  private static copyGlobalFontSettings(source: ReaderSettings, target: ReaderSettings): void {
+    target.fontFamily = source.fontFamily;
+    target.fontFilePath = source.fontFilePath;
+    target.fontSourceName = source.fontSourceName;
+    target.fontMode = source.fontMode;
+    target.systemFontFamily = source.systemFontFamily;
+    target.customFontsRaw = source.customFontsRaw;
   }
 
   private static async persistActiveThemeProfile(store: preferences.Preferences,

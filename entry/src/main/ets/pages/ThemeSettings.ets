@@ -1,7 +1,8 @@
 import { promptAction, router } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import { AppThemeSettings, AppThemeSettingsStore } from '../utils/AppThemeSettingsStore';
-import { ReaderSettings, ReaderSettingsStore } from '../utils/ReaderSettingsStore';
+import { ReaderSettingsStore } from '../utils/ReaderSettingsStore';
+import { ReaderFontBootstrap } from '../utils/ReaderFontBootstrap';
 import { ReaderThemeHelper } from '../utils/ReaderThemeHelper';
 import { syncSystemBars } from '../utils/SystemBars';
 import { RecentReadCardUpdater } from '../utils/RecentReadCardUpdater';
@@ -26,7 +27,6 @@ import {
   ReaderRegexEmphasisContext,
   ReaderResolvedRegexEmphasis
 } from '../model/reader/ReaderRegexFontRule';
-import fs from '@ohos.file.fs';
 import {
   ReaderCommentBubbleImage,
   ReaderCommentBubbleStyles,
@@ -457,7 +457,7 @@ struct ThemeSettingsPage {
       this.readerLightThemeIndex = ReaderThemeHelper.APP_THEME_INDEX;
       this.readerDarkThemeIndex = ReaderThemeHelper.APP_THEME_INDEX;
       this.focusedThemeId = '';
-      await this.applyThemeFontWhenAvailable();
+      ReaderFontBootstrap.applyApplicationFont(getContext(this), 'theme-settings');
       this.refreshRecentReadCard();
       this.syncBars();
       HdsFeedback.showToast(choice.applyLayout ? `已应用「${theme.name}」主题` : `已应用「${theme.name}」主题，排版保持不变`);
@@ -602,29 +602,6 @@ struct ThemeSettingsPage {
     } catch (e) {
       console.error('保存主题封面设置失败:', e);
       HdsFeedback.showToast('保存主题封面设置失败');
-    }
-  }
-
-  async applyThemeFontWhenAvailable(): Promise<void> {
-    const settings: ReaderSettings = await ReaderSettingsStore.load(getContext(this));
-    if (settings.fontFilePath && this.fontFileExists(settings.fontFilePath)) {
-      return;
-    }
-    try {
-      getContext(this).getApplicationContext().setFont(ThemeRuntime.fontFamily());
-    } catch (e) {
-      console.warn('应用主题默认字体失败:', e);
-    }
-  }
-
-  fontFileExists(filePath: string): boolean {
-    if (!filePath) {
-      return false;
-    }
-    try {
-      return fs.accessSync(filePath);
-    } catch (e) {
-      return false;
     }
   }
 

@@ -7,6 +7,24 @@ import { ReaderSystemFontHelper } from './ReaderSystemFontHelper';
 import { ThemeRuntime } from '../theme/ThemeRuntime';
 
 export class ReaderFontBootstrap {
+  // The user's global font wins over the theme font; the theme font only applies while "跟随主题" is selected.
+  static applicationFontFamily(): string {
+    const activeFamily = AppStorage.get<string>('readerActiveFontFamily') || '';
+    if (activeFamily && AppStorage.get<boolean>('readerFontRegistered')) {
+      return activeFamily;
+    }
+    return ThemeRuntime.fontFamily() || AppStorage.get<string>('readerSystemFontFamily') || '';
+  }
+
+  static applyApplicationFont(context: Context, source: string): void {
+    try {
+      context.getApplicationContext().setFont(ReaderFontBootstrap.applicationFontFamily());
+    } catch (err) {
+      hilog.warn(0x0000, 'testTag', 'Apply application font failed source=%{public}s err=%{public}s',
+        source, JSON.stringify(err));
+    }
+  }
+
   static async registerFromSettings(context: Context, uiContext: UIContext | null, source: string): Promise<boolean> {
     try {
       const settings = await ReaderSettingsStore.load(context);
@@ -26,15 +44,9 @@ export class ReaderFontBootstrap {
   ): boolean {
     if (!settings.fontFilePath) {
       const systemFontFamily = ReaderSystemFontHelper.applyToStorage(uiContext);
-      const applicationFontFamily = ThemeRuntime.fontFamily() || systemFontFamily;
       AppStorage.setOrCreate('readerActiveFontFamily', '');
       AppStorage.setOrCreate('readerFontRegistered', false);
-      try {
-        context.getApplicationContext().setFont(applicationFontFamily);
-      } catch (err) {
-        hilog.warn(0x0000, 'testTag', 'Reader font bootstrap reset default failed source=%{public}s err=%{public}s',
-          source, JSON.stringify(err));
-      }
+      ReaderFontBootstrap.applyApplicationFont(context, source);
       if (settings.systemFontFamily !== systemFontFamily) {
         ReaderSettingsStore.saveFontSettings(
           context,
@@ -62,13 +74,7 @@ export class ReaderFontBootstrap {
     if (!result.registered) {
       AppStorage.setOrCreate('readerActiveFontFamily', '');
       AppStorage.setOrCreate('readerFontRegistered', false);
-      try {
-        context.getApplicationContext().setFont(ThemeRuntime.fontFamily());
-      } catch (fallbackError) {
-        hilog.warn(0x0000, 'testTag',
-          'Reader font bootstrap theme fallback failed source=%{public}s err=%{public}s',
-          source, JSON.stringify(fallbackError));
-      }
+      ReaderFontBootstrap.applyApplicationFont(context, source);
       hilog.warn(0x0000, 'testTag',
         'Reader font bootstrap failed source=%{public}s path=%{public}s family=%{public}s ark=%{public}s legacy=%{public}s graphics=%{public}s errors=%{public}s',
         source, result.filePath || settings.fontFilePath, result.familyName, String(result.arkUiRegistered),

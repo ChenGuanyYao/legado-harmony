@@ -103,7 +103,12 @@ struct FontSettingsPage {
       const parsed = JSON.parse(raw) as ReaderCustomFontData | ReaderCustomFontItem[];
       const source = Array.isArray(parsed) ? parsed as ReaderCustomFontItem[] : ((parsed as ReaderCustomFontData).fonts || []);
       this.customFonts = this.cleanCustomFonts(source);
-      this.saveCustomFonts(this.customFonts);
+      // Only write back when cleaning dropped or fixed entries; opening the page must not re-save the selection.
+      const cleaned = new ReaderCustomFontData();
+      cleaned.fonts = this.customFonts;
+      if (JSON.stringify(cleaned) !== raw) {
+        this.saveCustomFonts(this.customFonts);
+      }
     } catch (e) {
       this.customFonts = [];
     }

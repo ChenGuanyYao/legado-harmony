@@ -2,7 +2,7 @@ import { common } from '@kit.AbilityKit';
 import { AppThemeSettings, AppThemeSettingsStore } from './AppThemeSettingsStore';
 import { RecentReadCardUpdater } from './RecentReadCardUpdater';
 import { BuiltinThemeRegistry } from '../theme/BuiltinThemeRegistry';
-import { ThemeRuntime } from '../theme/ThemeRuntime';
+import { ReaderFontBootstrap } from './ReaderFontBootstrap';
 
 export class ThemeTrialManager {
   static readonly STORAGE_TRIAL_THEME_ID: string = 'themeTrialThemeId';
@@ -75,11 +75,7 @@ export class ThemeTrialManager {
   }
 
   private static applyThemeFont(context: common.UIAbilityContext): void {
-    try {
-      context.getApplicationContext().setFont(ThemeRuntime.fontFamily());
-    } catch (e) {
-      console.warn('应用试用主题字体失败:', e);
-    }
+    ReaderFontBootstrap.applyApplicationFont(context, 'theme-trial');
   }
 
   private static refreshRecentReadCard(context: common.UIAbilityContext): void {

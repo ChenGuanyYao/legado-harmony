@@ -1,6 +1,6 @@
 import { AbilityConstant, UIAbility, Want, Configuration, ConfigurationConstant } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { window } from '@kit.ArkUI';
+import { UIContext, window } from '@kit.ArkUI';
 import { RecentReadShortcut, RECENT_READ_SHORTCUT_ACTION, OPEN_BOOK_SHORTCUT_ACTION } from '../utils/RecentReadShortcut';
 import { CoverGalleryStore } from '../utils/CoverGalleryStore';
 import { BookshelfDisplaySettingsStore } from '../utils/BookshelfDisplaySettingsStore';
@@ -227,9 +227,12 @@ export default class EntryAbility extends UIAbility {
     });
     // Theme and glass affect the first frame, but they are independent and can be restored in parallel.
     this.themeBootstrapPromise = Promise.all([appThemePromise, glassPromise]).then(() => {});
-    // Reader preferences and custom font registration are not needed to paint Index/Startup. Keep their I/O warm,
-    // but do not make the first application content wait for them.
-    this.readerBootstrapPromise = ReaderSettingsStore.load(this.context).then((settings) => {
+    // Reader preferences and custom font registration are not needed to paint Index/Startup, so the first
+    // content does not wait for them. They do wait for the theme: reader settings are kept per theme, and
+    // loading before appThemeId is restored would read the default theme's copy (including its global font).
+    this.readerBootstrapPromise = appThemePromise.then(() => {
+      return ReaderSettingsStore.load(this.context);
+    }).then((settings) => {
       ReaderSettingsStore.applyToStorage(settings);
       if (AppStorage.get<boolean>('lanReaderEnabled')) {
         return lanReaderServer.start(this.context);
@@ -295,13 +298,27 @@ export default class EntryAbility extends UIAbility {
       QuickJsDiagnostics.initialize(this.context).catch((error: Error) => {
         hilog.warn(0x0000, 'QuickJS', 'Migration initialization failed: %{public}s', error.message);
       });
+      // ReaderFontHelper only counts a font as registered when the UIContext registration succeeds, so a null
+      // context here always fell back to the theme font when Index (not Startup) was the first page.
       this.readerBootstrapPromise
         .then(() => ReaderFontBootstrap.registerFromSettings(
-          this.context, null, 'ability-after-first-content'))
+          this.context, this.mainUIContext(), 'ability-after-first-content'))
         .catch((e: Error) => {
           hilog.warn(0x0000, 'testTag', 'Deferred reader bootstrap failed: %{public}s', JSON.stringify(e));
         });
     }, 80);
+  }
+
+  private mainUIContext(): UIContext | null {
+    if (!this.mainWindowStage) {
+      return null;
+    }
+    try {
+      return this.mainWindowStage.getMainWindowSync().getUIContext();
+    } catch (e) {
+      hilog.warn(0x0000, 'testTag', 'Get main UIContext failed: %{public}s', JSON.stringify(e));
+      return null;
+    }
   }
 
   onWindowStageDestroy(): void {
@@ -418,11 +435,7 @@ export default class EntryAbility extends UIAbility {
     }
     this.modeDependentThemeKey = themeKey;
     AppThemeSettingsStore.reapplyCustomForMode(darkMode);
-    try {
-      this.context.getApplicationContext().setFont(ThemeRuntime.fontFamily());
-    } catch (e) {
-      hilog.warn(0x0000, 'testTag', 'Apply mode-dependent theme font failed: %{public}s', JSON.stringify(e));
-    }
+    ReaderFontBootstrap.applyApplicationFont(this.context, 'mode-dependent-theme');
   }
 
   private setApplicationColorMode(colorMode: number): void {
